@@ -1,0 +1,20 @@
+{
+  "name": "情熱MAP [予定確認]",
+  "short_name": "予定MAP",
+  "start_url": "./schedule.html",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#2196F3",
+  "icons": [
+    {
+      "src": "icon_schedule.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon_schedule.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

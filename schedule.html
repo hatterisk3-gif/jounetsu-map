@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>情熱MAP [予定確認用]</title>
+    <link rel="apple-touch-icon" href="icon_schedule.png">
+    <link rel="icon" href="icon_schedule.png">
+    <link rel="manifest" href="manifest_schedule.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+      html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; overflow: hidden; background-color: #f8f9fa; }
+      .control-panel { padding: 10px; background-color: #222; border-bottom: 1px solid #444; z-index: 10; display: flex; justify-content: space-between; align-items: center; color: white; }
+      
+      /* ★追加：部署フィルターのエリア */
+      #deptFilterBar { display: flex; overflow-x: auto; gap: 8px; padding: 8px 10px; background: #333; border-bottom: 2px solid #2196F3; white-space: nowrap; align-items: center; z-index: 10; }
+      .dept-btn { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; border: 1px solid #777; background: #555; color: #ccc; cursor: pointer; transition: 0.2s; }
+      .dept-btn.active { background: #2196F3; color: white; border-color: #1976D2; box-shadow: 0 0 5px rgba(33, 150, 243, 0.5); }
+
+      #map { flex-grow: 1; width: 100%; }
+      button { padding: 10px 15px; font-size: 14px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; }
+      .btn-primary { background: #2196F3; color: white; }
+      .btn-reload { background: #fff; color: #333; border: 1px solid #ccc; padding: 8px 12px; }
+      .polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
+      .signboard-label { background: rgba(255,255,255,0.95); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 11px; font-weight: bold; margin-top: 5px; color: #000; }
+      
+      #scheduleModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 4000; justify-content: center; align-items: center; }
+      .modal-content { background: #fff; color: #333; padding: 0; border-radius: 8px; width: 95%; max-width: 900px; height: 90%; display: flex; flex-direction: column; overflow: hidden; }
+      .modal-header { background: #2196F3; color: white; padding: 15px; font-size: 18px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+      .modal-body { flex: 1; overflow-y: auto; padding: 10px; background: #f4f6f8; }
+      
+      table { width: 100%; border-collapse: collapse; font-size: 12px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+      th, td { padding: 8px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
+      th { background-color: #e3f2fd; color: #1a73e8; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1); }
+      .overdue-row { background-color: #ffebee; color: #d32f2f; font-weight: bold; }
+      
+      .legend { display: flex; gap: 10px; font-size: 11px; padding: 5px; background: #333; border-radius: 4px; margin-right: 10px;}
+      .leg-item { display: flex; align-items: center; gap: 3px; }
+      .leg-color { width: 12px; height: 12px; border-radius: 2px; }
+    </style>
+  </head>
+  <body>
+    <div id="customAlertModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div id="customAlertMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;"></div>
+        <button id="customAlertOk" style="width: 100%; background: #2196F3; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
+      </div>
+    </div>
+
+    <div class="control-panel">
+      <div style="font-weight:bold; font-size:16px;">🗺️ 予定確認MAP</div>
+      <div style="display:flex; align-items:center;">
+        <div class="legend">
+          <div class="leg-item"><div class="leg-color" style="background:#4CAF50;"></div>平和</div>
+          <div class="leg-item"><div class="leg-color" style="background:#FFEB3B;"></div>予定有</div>
+          <div class="leg-item"><div class="leg-color" style="background:#F44336;"></div>問題/遅延</div>
+          <div class="leg-item"><div class="leg-color" style="background:#FF9800;"></div>収穫中</div>
+          <div class="leg-item"><div class="leg-color" style="background:#777777;"></div>対象外</div>
+        </div>
+        <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
+        <button class="btn-primary" onclick="openScheduleTable()">📋 作業一覧</button>
+      </div>
+    </div>
+    
+    <div id="deptFilterBar">
+       </div>
+
+    <div id="map"></div>
+
+    <div id="scheduleModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span>📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
+          <span style="cursor:pointer; font-size:24px;" onclick="document.getElementById('scheduleModal').style.display='none'">×</span>
+        </div>
+        <div class="modal-body">
+          <table id="scheduleTable">
+            <thead>
+              <tr>
+                <th>作業名</th>
+                <th>部署</th>
+                <th>品目</th>
+                <th>圃場/看板名</th>
+                <th>予定日</th>
+                <th>期限日</th>
+                <th>時間(h)</th>
+                <th>適合者</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleTableBody">
+              </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry&language=ja"></script>
+    <script>
+      const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8/exec";
+      let map, infoWindow, loadedPolygons = {};
+      let globalSchedules = [];
+      let currentDept = 'すべて'; // 現在選択されている部署フィルター
+
+      window.customAlert = (msg) => {
+        document.getElementById('customAlertMessage').innerText = msg;
+        document.getElementById('customAlertModal').style.display = 'flex';
+        document.getElementById('customAlertOk').onclick = () => { document.getElementById('customAlertModal').style.display = 'none'; };
+      };
+
+      async function callGAS(action, params = {}) {
+        params.action = action;
+        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
+        const json = await res.json();
+        if (json.status !== "success") throw new Error(json.message);
+        return json.data;
+      }
+
+      function initMap() {
+        let savedLat = localStorage.getItem('lastLat');
+        let savedLng = localStorage.getItem('lastLng');
+        let savedZoom = localStorage.getItem('lastZoom');
+        let centerPos = (savedLat && savedLng) ? {lat: parseFloat(savedLat), lng: parseFloat(savedLng)} : {lat: 33.91, lng: 134.66};
+        let zoomLevel = savedZoom ? parseInt(savedZoom) : 15;
+
+        map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, mapTypeId: 'hybrid', gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true });
+        infoWindow = new google.maps.InfoWindow();
+        google.maps.event.addListener(map, 'click', () => infoWindow.close());
+
+        map.addListener('zoom_changed', () => { 
+          const z = map.getZoom(); 
+          for(let id in loadedPolygons) { 
+            const p = loadedPolygons[id]; 
+            if(p.isMarker) { 
+              p.marker.setVisible(z >= 15); 
+              if(z < 17) p.marker.setLabel(null); 
+              else if(p.labelConfig) p.marker.setLabel(p.labelConfig); 
+            } else if(p.marker) {
+              p.marker.setVisible(z >= 14); 
+            }
+          } 
+        });
+
+        map.addListener('idle', () => {
+          localStorage.setItem('lastLat', map.getCenter().lat());
+          localStorage.setItem('lastLng', map.getCenter().lng());
+          localStorage.setItem('lastZoom', map.getZoom());
+        });
+
+        loadData();
+      }
+
+      function loadData() {
+        const btn = document.querySelector('.btn-primary');
+        const orgTxt = btn.innerText;
+        btn.innerText = "通信中..."; btn.disabled = true;
+
+        callGAS('getScheduleData').then(data => {
+          globalSchedules = data.activeSchedules || [];
+          
+          // 生のポリゴン情報をロード（描画はまだしない）
+          data.polygons.forEach(p => {
+             loadedPolygons[p.id] = { ...p };
+          });
+          
+          buildDeptFilter();
+          updateMapVisuals(); // ここで描画と色付けを同時に行う
+          
+          btn.innerText = orgTxt; btn.disabled = false;
+        }).catch(e => {
+          customAlert("エラーが発生しました。");
+          btn.innerText = orgTxt; btn.disabled = false;
+        });
+      }
+
+      // ★追加：部署フィルターボタンを構築
+      function buildDeptFilter() {
+        // 存在するすべての部署を抽出
+        let depts = [...new Set(globalSchedules.map(t => t.dept))].filter(String);
+        depts.unshift('すべて'); // 先頭にすべてを追加
+
+        const bar = document.getElementById('deptFilterBar');
+        bar.innerHTML = depts.map(d => {
+            const isActive = d === currentDept ? 'active' : '';
+            return `<div class="dept-btn ${isActive}" onclick="applyDeptFilter('${d}')">${d}</div>`;
+        }).join('');
+      }
+
+      // ★追加：部署フィルターを適用
+      window.applyDeptFilter = (dept) => {
+        currentDept = dept;
+        buildDeptFilter(); // ボタンのハイライト更新
+        infoWindow.close();
+        updateMapVisuals(); // 地図の色を再計算
+      };
+
+      // ★変更：選択された部署に基づいて地図上のオブジェクトを描画＆色付けする
+      function updateMapVisuals() {
+        for (let id in loadedPolygons) {
+          const p = loadedPolygons[id];
+          
+          // 該当場所のタスクを抽出（部署フィルタ適用）
+          let fieldTasks = globalSchedules.filter(t => t.fieldName === p.name);
+          let filteredTasks = currentDept === 'すべて' ? fieldTasks : fieldTasks.filter(t => t.dept === currentDept);
+          
+          const isHarvesting = currentDept === 'すべて' ? p.harvestingDepts.length > 0 : p.harvestingDepts.includes(currentDept);
+          const hasProblem = filteredTasks.some(t => String(t.workName).includes('⚠️'));
+          const isOverdue = filteredTasks.some(t => t.isOverdue);
+          const hasTasks = filteredTasks.length > 0;
+          
+          // 状態に基づく色とテキストの決定
+          let sColor = '#4CAF50'; // デフォルト緑（平和）
+          let sText = '✅ 予定なし';
+          let isActiveForDept = true;
+
+          if (isHarvesting) {
+              sColor = '#FF9800'; sText = '🍊 収穫中';
+          } else if (isOverdue) {
+              sColor = '#F44336'; sText = '⚠️ 期限超過';
+          } else if (hasTasks) {
+              sColor = '#FFEB3B'; sText = '📅 予定あり';
+          } else if (currentDept !== 'すべて') {
+              // 選択された部署のタスクが全くない場合はグレーアウト
+              sColor = '#777777'; sText = 'ー'; isActiveForDept = false;
+          }
+
+          if (hasProblem) {
+              sColor = '#F44336'; sText = '🚨 問題あり';
+          }
+          
+          // ラベルテキスト（問題があれば詳細を表示）
+          let labelText = p.name;
+          if (hasProblem) {
+              const probTasks = filteredTasks.filter(t => String(t.workName).includes('⚠️'));
+              const desc = probTasks[0].workName.replace('⚠️問題対応: ', '').replace('⚠️問題対応:', '');
+              labelText = `⚠️ ${p.name} (${desc.substring(0, 8)}${desc.length > 8 ? '...' : ''})`;
+          }
+          
+          p.statusText = sText; // ポップアップ用に保持
+          p.filteredTasks = filteredTasks; // ポップアップ用に保持
+
+          // --- 描画処理 ---
+          if (p.isMarker) {
+            const strokeCol = hasProblem ? '#FFEB3B' : 'white';
+            const strokeWid = hasProblem ? '4' : '2';
+            const opacity = isActiveForDept ? 1 : 0.4;
+            const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18" fill="${sColor}" stroke="${strokeCol}" stroke-width="${strokeWid}" opacity="${opacity}"/><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="22" opacity="${opacity}">${p.color}</text></svg>`;
+            const iconUrl = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgStr)}`;
+            const lblConf = {text: labelText, color: hasProblem ? '#d32f2f' : (isActiveForDept ? '#333' : '#999'), fontSize: '12px', fontWeight: 'bold', className: 'signboard-label'};
+
+            if (!p.marker) {
+              p.marker = new google.maps.Marker({
+                position: new google.maps.LatLng(p.coords[0].lat, p.coords[0].lng), map: map, 
+                visible: map.getZoom() >= 15, label: map.getZoom() >= 17 ? lblConf : null,
+                icon: { url: iconUrl, scaledSize: new google.maps.Size(40,40), anchor: new google.maps.Point(20,20), labelOrigin: new google.maps.Point(20,45) }
+              });
+              google.maps.event.addListener(p.marker, 'click', (e) => showPopup(p, e.latLng));
+            } else {
+              p.marker.setIcon({ url: iconUrl, scaledSize: new google.maps.Size(40,40), anchor: new google.maps.Point(20,20), labelOrigin: new google.maps.Point(20,45) });
+              p.marker.setLabel(map.getZoom() >= 17 ? lblConf : null);
+            }
+            p.labelConfig = lblConf;
+
+          } else {
+            const polyColor = hasProblem ? '#F44336' : sColor;
+            const polyStroke = hasProblem ? '#FFEB3B' : sColor;
+            const polyOpacity = isActiveForDept ? 0.6 : 0.2;
+            const markerColor = hasProblem ? '#FFEB3B' : (isActiveForDept ? 'white' : '#aaa');
+
+            if (!p.polygon) {
+              p.polygon = new google.maps.Polygon({ paths: p.coords, map, fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeOpacity: 1, strokeWeight: hasProblem ? 4 : (isActiveForDept ? 3 : 1) });
+              const bounds = new google.maps.LatLngBounds(); p.coords.forEach(pt => bounds.extend(pt));
+              p.marker = new google.maps.Marker({ position: bounds.getCenter(), map, visible: map.getZoom() >= 14, label: {text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label'}, icon: {path: google.maps.SymbolPath.CIRCLE, scale: 0} });
+              google.maps.event.addListener(p.polygon, 'click', (e) => showPopup(p, e.latLng));
+            } else {
+              p.polygon.setOptions({ fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeWeight: hasProblem ? 4 : (isActiveForDept ? 3 : 1) });
+              p.marker.setLabel({text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label'});
+            }
+          }
+        }
+      }
+
+      function showPopup(p, latLng) {
+        const tasks = p.filteredTasks; // フィルター済みのタスクを使用
+        let tasksHtml = tasks.length === 0 ? '<div style="color:#aaa; font-size:12px;">現在の予定はありません</div>' : tasks.map(t => {
+          let cl = String(t.workName).includes('⚠️') ? 'color:#d32f2f; font-weight:bold; background:#ffebee;' : (t.isOverdue ? 'color:#d32f2f; font-weight:bold;' : 'color:#333;');
+          return `<div style="${cl} border-bottom:1px solid #eee; padding:6px;">
+                    <span style="background:#e3f2fd; color:#1a73e8; padding:2px 4px; border-radius:4px; font-size:10px; margin-right:4px;">${t.dept}</span>
+                    <b>${t.workName}</b> ${t.cropName ? `(${t.cropName})` : ''}<br>
+                    <small>期限: ${t.deadline}</small>
+                  </div>`;
+        }).join('');
+
+        let funcHtml = p.isMarker ? `<div style="font-size:11px; color:#555; margin-bottom:5px;">機能: <b>${p.signFunction || '一般看板'}</b></div>` : '';
+
+        let h = `<div style="width:200px; padding:5px; font-family:sans-serif;">
+                   <h3 style="margin:0 0 5px 0;">${p.isMarker?p.color+' ':''}${p.name}</h3>
+                   ${funcHtml}
+                   <div style="font-size:12px; font-weight:bold; margin-bottom:5px;">${p.statusText}</div>
+                   <div style="background:#f9f9f9; padding:5px; border-radius:4px; max-height:150px; overflow-y:auto;">
+                     ${tasksHtml}
+                   </div>
+                 </div>`;
+        infoWindow.setContent(h);
+        infoWindow.setPosition(latLng);
+        infoWindow.open(map);
+      }
+
+      window.openScheduleTable = () => {
+        const tbody = document.getElementById('scheduleTableBody');
+        document.getElementById('tableDeptName').innerText = currentDept;
+
+        let filteredSchedules = currentDept === 'すべて' ? globalSchedules : globalSchedules.filter(t => t.dept === currentDept);
+
+        if (filteredSchedules.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">現在必要な作業はありません</td></tr>';
+        } else {
+          let sorted = [...filteredSchedules].sort((a, b) => {
+             if(a.deadline === '-') return 1;
+             if(b.deadline === '-') return -1;
+             return new Date(a.deadline) - new Date(b.deadline);
+          });
+
+          tbody.innerHTML = sorted.map(t => {
+            const rowClass = String(t.workName).includes('⚠️') ? 'style="background-color:#ffebee; color:#d32f2f; font-weight:bold;"' : (t.isOverdue ? 'class="overdue-row"' : '');
+            return `<tr ${rowClass}>
+                      <td>${t.workName}</td>
+                      <td>${t.dept}</td>
+                      <td>${t.cropName || '-'}</td>
+                      <td>${t.fieldName}</td>
+                      <td>${t.schedDate}</td>
+                      <td>${t.deadline}</td>
+                      <td>${t.hours || '-'}</td>
+                      <td>${t.person || '-'}</td>
+                    </tr>`;
+          }).join('');
+        }
+        document.getElementById('scheduleModal').style.display = 'flex';
+      };
+
+      window.onload = initMap;
+    </script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+      }
+    </script>
+  </body>
+</html>
