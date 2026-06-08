@@ -183,22 +183,13 @@
           try { renderInitData(JSON.parse(cachedData)); return true; } catch (e) { return false; }
       }
 
-// 🌟 1. 管理用のログイン処理（完全無敵版） 🌟
+// 🌟 1. 管理用のログイン処理（indexと完全同期した無敵版） 🌟
 async function executeLogin(isAuto = false) {
-          // ★ index.html と同じように、シンプルにフォームから読み取る！
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
           const btn = document.getElementById('loginBtn');
           const err = document.getElementById('loginError');
           
-          if (!id || !pw) {
-              if (isAuto) return;
-              showLoginScreen('❌ IDとパスワードを入力してください');
-              if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-              return;
-          }
-
-          // 自動ログイン時はボタンの文字を変えない（チラつき防止）
           if (!isAuto && btn) {
               btn.innerText = "認証中..."; 
               btn.disabled = true;
@@ -208,9 +199,11 @@ async function executeLogin(isAuto = false) {
               const res = await callGAS('login', {userId: id, password: pw});
               if (res.success) {
                   if (res.role !== "管理者") { 
-                      showLoginScreen("⛔ 管理者権限がありません");
+                      document.getElementById('loginScreen').style.display = 'flex';
+                      if (err) err.innerText = "⛔ 管理者権限がありません"; 
                       if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-                      if (!isAuto) clearAdminCredentials();
+                      localStorage.removeItem('pMapAdminId');
+                      localStorage.removeItem('pMapAdminPw');
                       return; 
                   }
                   
@@ -218,38 +211,44 @@ async function executeLogin(isAuto = false) {
                   document.getElementById('loginScreen').style.display = 'none';
                   if (err) err.innerText = '';
                   
-                  saveAdminCredentials(id, pw, res.name);
-                  restoreAdminLoginForm();
+                  // ★index.htmlと同じシンプルで確実な保存方法
+                  localStorage.setItem('pMapAdminId', id); 
+                  localStorage.setItem('pMapAdminPw', pw);
+                  localStorage.setItem('pMapAdminName', res.name); 
                   
                   loadInitData(); 
                   startLocationWatch();
               } else { 
-                  if (isAuto) {
-                      showLoginScreen('⚠️ 自動ログインに失敗しました。再度ログインしてください');
-                  } else {
-                      showLoginScreen("❌ ID/PWが違います");
-                      clearAdminCredentials();
-                  }
+                  document.getElementById('loginScreen').style.display = 'flex';
+                  if (err) err.innerText = "❌ ID/PWが違います"; 
                   if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
+                  if (!isAuto) {
+                      localStorage.removeItem('pMapAdminId');
+                      localStorage.removeItem('pMapAdminPw');
+                  }
               }
           } catch(e) { 
               if (isAuto) {
+                  // ★通信エラー時はログイン画面に戻さず、キャッシュのまま強行突破！
                   console.log("通信不安定：キャッシュモードで起動します", e);
                   const savedName = localStorage.getItem('pMapAdminName');
                   if (savedName) currentUser = savedName;
-                  document.getElementById('loginScreen').style.display = 'none';
-                  bootFromAdminCache();
                   startLocationWatch();
               } else {
-                  showLoginScreen("⚠️ 通信エラー");
+                  document.getElementById('loginScreen').style.display = 'flex';
+                  if (err) err.innerText = "⚠️ 通信エラー"; 
                   if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
               }
           }
       }
 
-      function executeLogout() {
-          ADMIN_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
-          location.reload();
+      // 🌟 ログアウト処理 🌟
+      function executeLogout() { 
+          localStorage.removeItem('pMapAdminId');
+          localStorage.removeItem('pMapAdminPw');
+          localStorage.removeItem('pMapAdminName');
+          localStorage.removeItem('pMapAdminInitData');
+          location.reload(); 
       }
 
       function startLocationWatch() {
@@ -263,19 +262,15 @@ async function executeLogin(isAuto = false) {
         }
       }
 
-     // 🌟 2. 管理者データの取得とキャッシュ保存（爆速最適化版！） 🌟
-      function loadInitData() {
+  // 🌟 2. 管理者データの取得とキャッシュ保存 🌟
+  function loadInitData() {
           callGAS('getInitData').then(data => {
               const newDataStr = JSON.stringify(data);
               const oldDataStr = localStorage.getItem('pMapAdminInitData');
               
-              // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
-              if (newDataStr === oldDataStr) {
-                  console.log("変更なし：再描画をスキップしました");
-                  return; 
-              }
+              // 前回とデータが同じなら再描画をスキップ
+              if (newDataStr === oldDataStr) return; 
 
-              // 変更があった場合のみ保存して再描画
               localStorage.setItem('pMapAdminInitData', newDataStr);
               renderInitData(data); 
           }).catch(e => console.log("Admin InitData Error:", e));
@@ -1019,25 +1014,31 @@ window.openRidgeSim = (id) => {
       };
       window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
       
-   // 🌟 管理者画面の起動爆速処理 🌟
-   document.addEventListener('DOMContentLoaded', () => {
+// 🌟 管理者画面の起動爆速処理 🌟
+document.addEventListener('DOMContentLoaded', () => {
           initMap();
-          restoreAdminLoginForm();
           const id = localStorage.getItem('pMapAdminId'); 
           const pw = localStorage.getItem('pMapAdminPw'); 
           const savedName = localStorage.getItem('pMapAdminName'); 
           
           if(id && pw) { 
+              // 画面を即座に隠す
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
               if(savedName) currentUser = savedName;
               
-              // ★ここでフォームに値をセットしておくことで、executeLoginが確実に読み取れるようにします
+              // フォームに値を直接セットしてexecuteLoginに確実に読み取らせる
               document.getElementById('loginId').value = id; 
               document.getElementById('loginPw').value = pw; 
               
-              if (bootFromAdminCache()) {
-                  setTimeout(() => { executeLogin(true); }, 1500);
+              const cachedData = localStorage.getItem('pMapAdminInitData'); 
+              if (cachedData) {
+                  try { 
+                      renderInitData(JSON.parse(cachedData)); 
+                      setTimeout(() => { executeLogin(true); }, 1500);
+                  } catch(e) {
+                      executeLogin(true);
+                  }
               } else {
                   executeLogin(true);
               }
