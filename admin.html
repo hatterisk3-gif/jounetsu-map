@@ -183,14 +183,13 @@
           try { renderInitData(JSON.parse(cachedData)); return true; } catch (e) { return false; }
       }
 
-// 🌟 1. 管理用のログイン処理（index.htmlベースのシンプル版） 🌟
+// 🌟 1. 管理用のログイン処理（index.htmlのキャッシュ共有版） 🌟
 async function executeLogin(isAuto = false) {
     const id = document.getElementById('loginId').value;
     const pw = document.getElementById('loginPw').value;
     const btn = document.getElementById('loginBtn');
     const err = document.getElementById('loginError');
     
-    // 自動ログイン時はボタンの文字を変えない（チラつき防止）
     if (!isAuto && btn) { 
         btn.innerText = "認証中..."; 
         btn.disabled = true; 
@@ -211,16 +210,16 @@ async function executeLogin(isAuto = false) {
             document.getElementById('loginScreen').style.display = 'none';
             if (err) err.innerText = '';
             
-            // index.htmlと同じようにシンプルに直接保存
+            // ★最強の安定化：admin用とindex用、両方のキャッシュ金庫に保存しておく
             localStorage.setItem('pMapAdminId', id); 
             localStorage.setItem('pMapAdminPw', pw);
             localStorage.setItem('pMapAdminName', res.name); 
+            localStorage.setItem('passionMapUserId', id); 
+            localStorage.setItem('passionMapUserPw', pw);
             
-            // 最新データを取りに行く
             loadInitData(); 
             startLocationWatch();
         } else { 
-            // 失敗時は画面を表示
             document.getElementById('loginScreen').style.display = 'flex';
             if (err) err.innerText = "❌ ID/PWが違います"; 
             if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
@@ -1008,11 +1007,12 @@ window.openRidgeSim = (id) => {
       };
       window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
       
-// 🌟 4. アプリ起動時の爆速処理（index.htmlと完全同期版） 🌟
+// 🌟 4. アプリ起動時の爆速処理（地図エラー巻き添え防止＆キャッシュ共有版） 🌟
 document.addEventListener('DOMContentLoaded', () => {
-    initMap();
-    const id = localStorage.getItem('pMapAdminId');
-    const pw = localStorage.getItem('pMapAdminPw');
+    // ★大修正：何よりも先にIDとパスワードを復元する！
+    // adminのキャッシュが無ければ、うまくいっているindex.htmlのキャッシュを使う
+    const id = localStorage.getItem('pMapAdminId') || localStorage.getItem('passionMapUserId');
+    const pw = localStorage.getItem('pMapAdminPw') || localStorage.getItem('passionMapUserPw');
     const savedName = localStorage.getItem('pMapAdminName'); 
     
     if(id && pw) { 
@@ -1021,22 +1021,30 @@ document.addEventListener('DOMContentLoaded', () => {
         if(loginScreen) loginScreen.style.display = 'none';
         if(savedName) currentUser = savedName;
         
-        // フォームに値を直接セットして、executeLoginに確実に読み取らせる
+        // フォームに値を直接セットして、空欄になるのを絶対に防ぐ
         document.getElementById('loginId').value = id; 
         document.getElementById('loginPw').value = pw; 
-        
+    }
+
+    // ★IDの復元が終わった後で、地図を読み込む（ここでエラーが起きてもログインは止まらない）
+    try {
+        initMap();
+    } catch(err) {
+        console.warn("地図の初期化が遅延していますが、処理を継続します", err);
+    }
+
+    if(id && pw) { 
         // キャッシュがあれば先に描画する
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
             try { 
                 renderInitData(JSON.parse(cachedData)); 
-                // 地図が表示されてから、1.5秒後に裏でこっそりログイン＆更新通信を開始する
+                // 1.5秒後に裏でこっそりログイン＆更新通信を開始する
                 setTimeout(() => { executeLogin(true); }, 1500);
             } catch(e) {
                 executeLogin(true);
             }
         } else {
-            // キャッシュがない初回はすぐに通信する
             executeLogin(true);
         }
     }
