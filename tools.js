@@ -1,7 +1,7 @@
 function generateMarkdownMemo() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheets = ss.getSheets();
-    let markdown = "# 百姓システム データベース構造メモ\n\n";
+    let markdown = "#情熱MAPデータベース構造メモ\n\n";
   
     // 列番号(1始まり)をA, B, C...に変換する関数
     function getColumnLetter(col) {
