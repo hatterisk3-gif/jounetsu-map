@@ -263,10 +263,19 @@
         }
       }
 
-     // 🌟 2. 管理者データの取得とキャッシュ保存（強制再描画版！） 🌟
+     // 🌟 2. 管理者データの取得とキャッシュ保存（爆速最適化版！） 🌟
       function loadInitData() {
           callGAS('getInitData').then(data => {
               const newDataStr = JSON.stringify(data);
+              const oldDataStr = localStorage.getItem('pMapAdminInitData');
+              
+              // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
+              if (newDataStr === oldDataStr) {
+                  console.log("変更なし：再描画をスキップしました");
+                  return; 
+              }
+
+              // 変更があった場合のみ保存して再描画
               localStorage.setItem('pMapAdminInitData', newDataStr);
               renderInitData(data); 
           }).catch(e => console.log("Admin InitData Error:", e));
