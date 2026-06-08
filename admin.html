@@ -184,10 +184,10 @@
       }
 
 // 🌟 1. 管理用のログイン処理（完全無敵版） 🌟
-      async function executeLogin(isAuto = false, savedCreds = null) {
-          // 自動ログインは localStorage から直接読む（非表示フォームはブラウザが空にすることがある）
-          const id = savedCreds?.id ?? document.getElementById('loginId').value;
-          const pw = savedCreds?.pw ?? document.getElementById('loginPw').value;
+async function executeLogin(isAuto = false) {
+          // ★ index.html と同じように、シンプルにフォームから読み取る！
+          const id = document.getElementById('loginId').value;
+          const pw = document.getElementById('loginPw').value;
           const btn = document.getElementById('loginBtn');
           const err = document.getElementById('loginError');
           
@@ -1019,24 +1019,27 @@ window.openRidgeSim = (id) => {
       };
       window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
       
-    // 🌟 管理者画面の起動爆速処理 🌟
-      document.addEventListener('DOMContentLoaded', () => {
+   // 🌟 管理者画面の起動爆速処理 🌟
+   document.addEventListener('DOMContentLoaded', () => {
           initMap();
           restoreAdminLoginForm();
           const id = localStorage.getItem('pMapAdminId'); 
           const pw = localStorage.getItem('pMapAdminPw'); 
           const savedName = localStorage.getItem('pMapAdminName'); 
-          const savedCreds = { id, pw };
           
           if(id && pw) { 
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
               if(savedName) currentUser = savedName;
               
+              // ★ここでフォームに値をセットしておくことで、executeLoginが確実に読み取れるようにします
+              document.getElementById('loginId').value = id; 
+              document.getElementById('loginPw').value = pw; 
+              
               if (bootFromAdminCache()) {
-                  setTimeout(() => { executeLogin(true, savedCreds); }, 1500);
+                  setTimeout(() => { executeLogin(true); }, 1500);
               } else {
-                  executeLogin(true, savedCreds);
+                  executeLogin(true);
               }
           }
       });
