@@ -1007,9 +1007,9 @@ window.openRidgeSim = (id) => {
       };
       window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
       
-// 🌟 4. アプリ起動時の爆速処理（地図エラー巻き添え防止＆キャッシュ共有版） 🌟
+// 🌟 4. アプリ起動時の爆速処理（Cloudflare・読み込み遅延 完全対策版） 🌟
 document.addEventListener('DOMContentLoaded', () => {
-    // ★大修正：何よりも先にIDとパスワードを復元する！
+    // ★何よりも最優先でIDとパスワードを復元する！(initMapの前にやるのが絶対条件)
     // adminのキャッシュが無ければ、うまくいっているindex.htmlのキャッシュを使う
     const id = localStorage.getItem('pMapAdminId') || localStorage.getItem('passionMapUserId');
     const pw = localStorage.getItem('pMapAdminPw') || localStorage.getItem('passionMapUserPw');
@@ -1024,30 +1024,32 @@ document.addEventListener('DOMContentLoaded', () => {
         // フォームに値を直接セットして、空欄になるのを絶対に防ぐ
         document.getElementById('loginId').value = id; 
         document.getElementById('loginPw').value = pw; 
-    }
-
-    // ★IDの復元が終わった後で、地図を読み込む（ここでエラーが起きてもログインは止まらない）
-    try {
-        initMap();
-    } catch(err) {
-        console.warn("地図の初期化が遅延していますが、処理を継続します", err);
-    }
-
-    if(id && pw) { 
+        
         // キャッシュがあれば先に描画する
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
+            try { renderInitData(JSON.parse(cachedData)); } catch(e) {}
+        }
+        
+        // 1.5秒後に裏でこっそりログイン＆更新通信を開始する
+        setTimeout(() => { executeLogin(true); }, 1500);
+    }
+
+    // ★IDの復元が終わった後で、地図を読み込む
+    // Cloudflare環境でGoogle Mapsの読み込みが遅れている場合は、読み込まれるまで待つ
+    function tryInitMap() {
+        if (typeof google === 'object' && typeof google.maps === 'object') {
             try { 
-                renderInitData(JSON.parse(cachedData)); 
-                // 1.5秒後に裏でこっそりログイン＆更新通信を開始する
-                setTimeout(() => { executeLogin(true); }, 1500);
-            } catch(e) {
-                executeLogin(true);
+                initMap(); 
+            } catch(err) {
+                console.warn("地図の初期化でエラーが起きましたが、処理を継続します", err);
             }
         } else {
-            executeLogin(true);
+            // まだ読み込まれていなければ0.5秒後に再挑戦（これがないとエラーで止まる）
+            setTimeout(tryInitMap, 500);
         }
     }
+    tryInitMap();
 });
     </script>
     <script>
