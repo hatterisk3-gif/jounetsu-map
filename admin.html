@@ -183,7 +183,7 @@
           try { renderInitData(JSON.parse(cachedData)); return true; } catch (e) { return false; }
       }
 
-// 🌟 1. 管理用のログイン処理（indexと完全同期した無敵版） 🌟
+// 🌟 1. 管理用のログイン処理（完全無敵版） 🌟
 async function executeLogin(isAuto = false) {
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
@@ -211,7 +211,6 @@ async function executeLogin(isAuto = false) {
                   document.getElementById('loginScreen').style.display = 'none';
                   if (err) err.innerText = '';
                   
-                  // ★index.htmlと同じシンプルで確実な保存方法
                   localStorage.setItem('pMapAdminId', id); 
                   localStorage.setItem('pMapAdminPw', pw);
                   localStorage.setItem('pMapAdminName', res.name); 
@@ -229,7 +228,6 @@ async function executeLogin(isAuto = false) {
               }
           } catch(e) { 
               if (isAuto) {
-                  // ★通信エラー時はログイン画面に戻さず、キャッシュのまま強行突破！
                   console.log("通信不安定：キャッシュモードで起動します", e);
                   const savedName = localStorage.getItem('pMapAdminName');
                   if (savedName) currentUser = savedName;
@@ -262,21 +260,18 @@ async function executeLogin(isAuto = false) {
         }
       }
 
-  // 🌟 2. 管理者データの取得とキャッシュ保存 🌟
-  function loadInitData() {
+      // 🌟 2. 管理者データの取得とキャッシュ保存 🌟
+      function loadInitData() {
           callGAS('getInitData').then(data => {
               const newDataStr = JSON.stringify(data);
               const oldDataStr = localStorage.getItem('pMapAdminInitData');
-              
-              // 前回とデータが同じなら再描画をスキップ
               if (newDataStr === oldDataStr) return; 
-
               localStorage.setItem('pMapAdminInitData', newDataStr);
               renderInitData(data); 
           }).catch(e => console.log("Admin InitData Error:", e));
       }
 
-      // 🌟 3. データを地図に描画する（管理者用：修正版） 🌟
+      // 🌟 3. データを地図に描画する（管理者用） 🌟
       function renderInitData(data) {
           if(!data || !data.pdl) return;
 
@@ -1015,7 +1010,7 @@ window.openRidgeSim = (id) => {
       window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
       
 // 🌟 管理者画面の起動爆速処理 🌟
-      document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
           initMap();
           const id = localStorage.getItem('pMapAdminId'); 
           const pw = localStorage.getItem('pMapAdminPw'); 
@@ -1027,7 +1022,7 @@ window.openRidgeSim = (id) => {
               if(loginScreen) loginScreen.style.display = 'none';
               if(savedName) currentUser = savedName;
               
-              // ★フォームに値を直接セットしてexecuteLoginに確実に読み取らせる
+              // フォームに値を直接セットしてexecuteLoginに確実に読み取らせる
               document.getElementById('loginId').value = id; 
               document.getElementById('loginPw').value = pw; 
               
