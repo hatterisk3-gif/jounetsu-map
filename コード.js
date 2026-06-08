@@ -6,7 +6,6 @@ function doPost(e) {
     const params = JSON.parse(e.postData.contents);
     const action = params.action;
     let result = null;
-
     if (action === "login") result = checkLogin(params.userId, params.password);
     else if (action === "getInitData") result = getInitData(); 
     else if (action === "savePolygon") result = savePolygon(params); // ★ savePolygonDataからsavePolygonに変更(関数名統一)

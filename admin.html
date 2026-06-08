@@ -142,13 +142,62 @@
       const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場' };
 
       async function callGAS(action, params={}) { params.action=action; const res=await fetch(GAS_URL, {method:'POST',body:JSON.stringify(params)}); const j=await res.json(); if(j.status!=="success") throw new Error(j.message); return j.data; }
+
+      const ADMIN_STORAGE_KEYS = ['pMapAdminId', 'pMapAdminPw', 'pMapAdminName', 'pMapAdminInitData', 'pMapAdminLastLat', 'pMapAdminLastLng', 'pMapAdminLastZoom'];
+
+      function saveAdminCredentials(id, pw, name) {
+          try {
+              localStorage.setItem('pMapAdminId', String(id).trim());
+              localStorage.setItem('pMapAdminPw', String(pw));
+              if (name) localStorage.setItem('pMapAdminName', name);
+          } catch (e) { console.warn('ログイン情報の保存に失敗:', e); }
+      }
+
+      function clearAdminCredentials() {
+          localStorage.removeItem('pMapAdminId');
+          localStorage.removeItem('pMapAdminPw');
+          localStorage.removeItem('pMapAdminName');
+      }
+
+      function restoreAdminLoginForm() {
+          const id = localStorage.getItem('pMapAdminId');
+          const pw = localStorage.getItem('pMapAdminPw');
+          const loginId = document.getElementById('loginId');
+          const loginPw = document.getElementById('loginPw');
+          if (id && loginId) loginId.value = id;
+          if (pw && loginPw) loginPw.value = pw;
+          return !!(id && pw);
+      }
+
+      function showLoginScreen(message) {
+          const loginScreen = document.getElementById('loginScreen');
+          const err = document.getElementById('loginError');
+          if (loginScreen) loginScreen.style.display = 'flex';
+          if (err) err.innerText = message || '';
+          restoreAdminLoginForm();
+      }
+
+      function bootFromAdminCache() {
+          const cachedData = localStorage.getItem('pMapAdminInitData');
+          if (!cachedData) return false;
+          try { renderInitData(JSON.parse(cachedData)); return true; } catch (e) { return false; }
+      }
+
 // 🌟 1. 管理用のログイン処理（完全無敵版） 🌟
-      async function executeLogin(isAuto = false) {
-          const id = document.getElementById('loginId').value;
-          const pw = document.getElementById('loginPw').value;
+      async function executeLogin(isAuto = false, savedCreds = null) {
+          // 自動ログインは localStorage から直接読む（非表示フォームはブラウザが空にすることがある）
+          const id = savedCreds?.id ?? document.getElementById('loginId').value;
+          const pw = savedCreds?.pw ?? document.getElementById('loginPw').value;
           const btn = document.getElementById('loginBtn');
           const err = document.getElementById('loginError');
           
+          if (!id || !pw) {
+              if (isAuto) return;
+              showLoginScreen('❌ IDとパスワードを入力してください');
+              if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
+              return;
+          }
+
           // 自動ログイン時はボタンの文字を変えない（チラつき防止）
           if (!isAuto && btn) {
               btn.innerText = "認証中..."; 
@@ -159,49 +208,49 @@
               const res = await callGAS('login', {userId: id, password: pw});
               if (res.success) {
                   if (res.role !== "管理者") { 
-                      document.getElementById('loginScreen').style.display = 'flex';
-                      if (err) err.innerText = "⛔ 管理者権限がありません"; 
+                      showLoginScreen("⛔ 管理者権限がありません");
                       if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-                      // 権限がない場合は記憶も消す
-                      localStorage.removeItem('pMapAdminId');
-                      localStorage.removeItem('pMapAdminPw');
+                      if (!isAuto) clearAdminCredentials();
                       return; 
                   }
                   
                   currentUser = res.name;
                   document.getElementById('loginScreen').style.display = 'none';
+                  if (err) err.innerText = '';
                   
-                  // ID・パスワード・名前を記憶させる
-                  localStorage.setItem('pMapAdminId', id); 
-                  localStorage.setItem('pMapAdminPw', pw);
-                  localStorage.setItem('pMapAdminName', res.name); 
+                  saveAdminCredentials(id, pw, res.name);
+                  restoreAdminLoginForm();
                   
                   loadInitData(); 
                   startLocationWatch();
               } else { 
-                  // パスワード間違いなどで弾かれた場合
-                  document.getElementById('loginScreen').style.display = 'flex';
-                  if (err) err.innerText = "❌ ID/PWが違います"; 
+                  if (isAuto) {
+                      showLoginScreen('⚠️ 自動ログインに失敗しました。再度ログインしてください');
+                  } else {
+                      showLoginScreen("❌ ID/PWが違います");
+                      clearAdminCredentials();
+                  }
                   if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-                  localStorage.removeItem('pMapAdminId');
-                  localStorage.removeItem('pMapAdminPw');
               }
           } catch(e) { 
               if (isAuto) {
-                  // ★画像で送っていただいた重要部分！オフライン・通信エラー時はキャッシュで強行突破！
                   console.log("通信不安定：キャッシュモードで起動します", e);
                   const savedName = localStorage.getItem('pMapAdminName');
                   if (savedName) currentUser = savedName;
+                  document.getElementById('loginScreen').style.display = 'none';
+                  bootFromAdminCache();
                   startLocationWatch();
               } else {
-                  document.getElementById('loginScreen').style.display = 'flex';
-                  if (err) err.innerText = "⚠️ 通信エラー"; 
+                  showLoginScreen("⚠️ 通信エラー");
                   if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
               }
           }
       }
 
-      function executeLogout() { localStorage.clear(); location.reload(); }
+      function executeLogout() {
+          ADMIN_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
+          location.reload();
+      }
 
       function startLocationWatch() {
         if (navigator.geolocation) {
@@ -964,41 +1013,28 @@ window.openRidgeSim = (id) => {
     // 🌟 管理者画面の起動爆速処理 🌟
       document.addEventListener('DOMContentLoaded', () => {
           initMap();
+          restoreAdminLoginForm();
           const id = localStorage.getItem('pMapAdminId'); 
           const pw = localStorage.getItem('pMapAdminPw'); 
           const savedName = localStorage.getItem('pMapAdminName'); 
+          const savedCreds = { id, pw };
           
           if(id && pw) { 
-              // 画面を即座に隠す
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
-              
-              // ★名前が記憶されていれば即座にセット（待ち時間ゼロで操作可能に！）
               if(savedName) currentUser = savedName;
               
-              document.getElementById('loginId').value = id; 
-              document.getElementById('loginPw').value = pw; 
-              
-              // キャッシュがあれば先に0.1秒で地図を描画する
-              const cachedData = localStorage.getItem('pMapAdminInitData'); 
-              if (cachedData) {
-                  try { 
-                      renderInitData(JSON.parse(cachedData)); 
-                      // 地図が表示されてから、1.5秒後に裏でこっそりログイン＆更新通信を開始する
-                      setTimeout(() => { executeLogin(true); }, 1500);
-                  } catch(e) {
-                      executeLogin(true);
-                  }
+              if (bootFromAdminCache()) {
+                  setTimeout(() => { executeLogin(true, savedCreds); }, 1500);
               } else {
-                  // キャッシュがない初回はすぐに通信する
-                  executeLogin(true);
+                  executeLogin(true, savedCreds);
               }
           }
       });
     </script>
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js');
+        navigator.serviceWorker.register('./sw.js');
       }
     </script>
   </body>
