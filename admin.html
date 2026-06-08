@@ -1015,7 +1015,7 @@ window.openRidgeSim = (id) => {
       window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
       
 // 🌟 管理者画面の起動爆速処理 🌟
-document.addEventListener('DOMContentLoaded', () => {
+      document.addEventListener('DOMContentLoaded', () => {
           initMap();
           const id = localStorage.getItem('pMapAdminId'); 
           const pw = localStorage.getItem('pMapAdminPw'); 
@@ -1027,7 +1027,7 @@ document.addEventListener('DOMContentLoaded', () => {
               if(loginScreen) loginScreen.style.display = 'none';
               if(savedName) currentUser = savedName;
               
-              // フォームに値を直接セットしてexecuteLoginに確実に読み取らせる
+              // ★フォームに値を直接セットしてexecuteLoginに確実に読み取らせる
               document.getElementById('loginId').value = id; 
               document.getElementById('loginPw').value = pw; 
               
