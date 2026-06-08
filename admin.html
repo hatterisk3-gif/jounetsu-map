@@ -216,9 +216,8 @@ async function executeLogin(isAuto = false, autoId = null, autoPw = null) {
             document.getElementById('loginScreen').style.display = 'none';
             if (err) err.innerText = '';
             
-            localStorage.setItem('pMapAdminId', id); 
-            localStorage.setItem('pMapAdminPw', pw);
-            localStorage.setItem('pMapAdminName', res.name); 
+           // 専用の安全な関数を使って保存するよう変更
+           saveAdminCredentials(id, pw, res.name);
             
             loadInitData(); 
             startLocationWatch();
@@ -1014,62 +1013,62 @@ window.openRidgeSim = (id) => {
       };
       window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
       
-// 🌟 管理者画面の起動爆速処理（Cloudflare・非同期環境 完全対応版） 🌟
-function startAdminApp() {
-    // スクリプトの二重実行を防止
-    if (window.adminAppStarted) return;
-    window.adminAppStarted = true;
-
+// 🌟 限界まで堅牢にした初期化・復元処理（Cloudflare・プライベートモード完全対策） 🌟
+(function() {
     try {
-        initMap(); // 地図の初期化
-    } catch(e) {
-        console.warn("Map Initialization Error:", e);
-    }
-
-    // ローカルストレージからログイン情報を取得
-    const id = localStorage.getItem('pMapAdminId'); 
-    const pw = localStorage.getItem('pMapAdminPw'); 
-    const savedName = localStorage.getItem('pMapAdminName'); 
-    
-    const loginScreen = document.getElementById('loginScreen');
-    const loginIdEl = document.getElementById('loginId');
-    const loginPwEl = document.getElementById('loginPw');
-
-    // 【重要】自動ログインに失敗して画面が表示された時のために、まず入力欄に値を復元しておく
-    if (id && loginIdEl) loginIdEl.value = id;
-    if (pw && loginPwEl) loginPwEl.value = pw;
-
-    if (id && pw) { 
-        // 資格情報があれば、即座に画面を隠す
-        if(loginScreen) loginScreen.style.display = 'none';
-        if(savedName) currentUser = savedName;
+        // 何かの処理でエラーになる前に、最優先でストレージから値を取り出してフォームに入れる
+        const id = localStorage.getItem('pMapAdminId') || "";
+        const pw = localStorage.getItem('pMapAdminPw') || "";
+        const loginIdEl = document.getElementById('loginId');
+        const loginPwEl = document.getElementById('loginPw');
         
-        // 保存されているマップデータの描画
-        const cachedData = localStorage.getItem('pMapAdminInitData'); 
-        if (cachedData) {
+        if (id && loginIdEl) loginIdEl.value = id;
+        if (pw && loginPwEl) loginPwEl.value = pw;
+
+        function startAdminApp() {
+            if (window.adminAppStarted) return;
+            window.adminAppStarted = true;
+
             try { 
-                renderInitData(JSON.parse(cachedData)); 
-            } catch(e) {
-                console.warn("キャッシュの復元エラー:", e);
+                initMap(); // 地図の初期化
+            } catch(e) { 
+                console.warn("地図の初期化でエラーが起きましたが処理を継続します:", e); 
+            }
+
+            const savedId = localStorage.getItem('pMapAdminId'); 
+            const savedPw = localStorage.getItem('pMapAdminPw'); 
+            const savedName = localStorage.getItem('pMapAdminName'); 
+            const loginScreen = document.getElementById('loginScreen');
+
+            if (savedId && savedPw) { 
+                // 資格情報があれば画面を即座に隠す
+                if(loginScreen) loginScreen.style.display = 'none';
+                if(savedName) currentUser = savedName;
+                
+                // キャッシュデータの描画
+                const cachedData = localStorage.getItem('pMapAdminInitData'); 
+                if (cachedData) {
+                    try { renderInitData(JSON.parse(cachedData)); } catch(e) {}
+                }
+                
+                // 確実に自動ログインを実行（少しだけ遅延させて安定化）
+                setTimeout(() => { executeLogin(true, savedId, savedPw); }, 500);
+            } else {
+                // キャッシュが完全に無い場合のみ画面を表示
+                if(loginScreen) loginScreen.style.display = 'flex';
             }
         }
-        
-        // 変数 id, pw を直接渡して確実に自動ログインさせる
-        setTimeout(() => { executeLogin(true, id, pw); }, 800);
-    } else {
-        // キャッシュがない場合のみログイン画面を表示
-        if(loginScreen) loginScreen.style.display = 'flex';
-    }
-}
 
-// ▼ Cloudflare環境でも絶対に処理を発火させるための判定 ▼
-if (document.readyState === 'loading') {
-    // まだHTMLを読み込み中なら、読み込み完了を待って実行
-    document.addEventListener('DOMContentLoaded', startAdminApp);
-} else {
-    // 既にHTMLが構築済み（Cloudflare等で読み込みが爆速で終わっている）なら即座に実行
-    startAdminApp(); 
-}
+        // HTMLの読み込み状態に関わらず確実に実行する
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startAdminApp);
+        } else {
+            startAdminApp(); 
+        }
+    } catch(err) {
+        console.error("致命的な起動エラー:", err);
+    }
+})();
     </script>
     <script>
       if ('serviceWorker' in navigator) {
