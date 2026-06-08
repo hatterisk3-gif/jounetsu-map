@@ -184,62 +184,66 @@
       }
 
 // 🌟 1. 管理用のログイン処理（完全無敵版） 🌟
-async function executeLogin(isAuto = false) {
-          const id = document.getElementById('loginId').value;
-          const pw = document.getElementById('loginPw').value;
-          const btn = document.getElementById('loginBtn');
-          const err = document.getElementById('loginError');
-          
-          if (!isAuto && btn) {
-              btn.innerText = "認証中..."; 
-              btn.disabled = true;
-          }
+async function executeLogin(isAuto = false, autoId = null, autoPw = null) {
+    // 引数があればそれを使い、なければフォームから取得する（空白除去も追加）
+    const id = (autoId !== null ? autoId : document.getElementById('loginId').value).trim();
+    const pw = (autoPw !== null ? autoPw : document.getElementById('loginPw').value);
+    
+    const btn = document.getElementById('loginBtn');
+    const err = document.getElementById('loginError');
+    
+    if (!isAuto && btn) {
+        btn.innerText = "認証中..."; 
+        btn.disabled = true;
+    }
 
-          try {
-              const res = await callGAS('login', {userId: id, password: pw});
-              if (res.success) {
-                  if (res.role !== "管理者") { 
-                      document.getElementById('loginScreen').style.display = 'flex';
-                      if (err) err.innerText = "⛔ 管理者権限がありません"; 
-                      if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-                      localStorage.removeItem('pMapAdminId');
-                      localStorage.removeItem('pMapAdminPw');
-                      return; 
-                  }
-                  
-                  currentUser = res.name;
-                  document.getElementById('loginScreen').style.display = 'none';
-                  if (err) err.innerText = '';
-                  
-                  localStorage.setItem('pMapAdminId', id); 
-                  localStorage.setItem('pMapAdminPw', pw);
-                  localStorage.setItem('pMapAdminName', res.name); 
-                  
-                  loadInitData(); 
-                  startLocationWatch();
-              } else { 
-                  document.getElementById('loginScreen').style.display = 'flex';
-                  if (err) err.innerText = "❌ ID/PWが違います"; 
-                  if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-                  if (!isAuto) {
-                      localStorage.removeItem('pMapAdminId');
-                      localStorage.removeItem('pMapAdminPw');
-                  }
-              }
-          } catch(e) { 
-              if (isAuto) {
-                  console.log("通信不安定：キャッシュモードで起動します", e);
-                  const savedName = localStorage.getItem('pMapAdminName');
-                  if (savedName) currentUser = savedName;
-                  startLocationWatch();
-              } else {
-                  document.getElementById('loginScreen').style.display = 'flex';
-                  if (err) err.innerText = "⚠️ 通信エラー"; 
-                  if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-              }
-          }
-      }
-
+    try {
+        const res = await callGAS('login', {userId: id, password: pw});
+        if (res.success) {
+            if (res.role !== "管理者") { 
+                document.getElementById('loginScreen').style.display = 'flex';
+                if (err) err.innerText = "⛔ 管理者権限がありません"; 
+                if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
+                // 自動ログイン失敗時でもキャッシュは消さないよう調整
+                if (!isAuto) {
+                    localStorage.removeItem('pMapAdminId');
+                    localStorage.removeItem('pMapAdminPw');
+                }
+                return; 
+            }
+            
+            currentUser = res.name;
+            document.getElementById('loginScreen').style.display = 'none';
+            if (err) err.innerText = '';
+            
+            localStorage.setItem('pMapAdminId', id); 
+            localStorage.setItem('pMapAdminPw', pw);
+            localStorage.setItem('pMapAdminName', res.name); 
+            
+            loadInitData(); 
+            startLocationWatch();
+        } else { 
+            document.getElementById('loginScreen').style.display = 'flex';
+            if (err) err.innerText = "❌ ID/PWが違います"; 
+            if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
+            if (!isAuto) {
+                localStorage.removeItem('pMapAdminId');
+                localStorage.removeItem('pMapAdminPw');
+            }
+        }
+    } catch(e) { 
+        if (isAuto) {
+            console.log("通信不安定：キャッシュモードで起動します", e);
+            const savedName = localStorage.getItem('pMapAdminName');
+            if (savedName) currentUser = savedName;
+            startLocationWatch();
+        } else {
+            document.getElementById('loginScreen').style.display = 'flex';
+            if (err) err.innerText = "⚠️ 通信エラー"; 
+            if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
+        }
+    }
+}
       // 🌟 ログアウト処理 🌟
       function executeLogout() { 
           localStorage.removeItem('pMapAdminId');
@@ -521,7 +525,8 @@ function openAttr(id) {
       };
       function initMap() {
         let savedLat = localStorage.getItem('pMapAdminLastLat'), savedLng = localStorage.getItem('pMapAdminLastLng'), savedZoom = localStorage.getItem('pMapAdminLastZoom');
-        let centerPos = (savedLat && savedLng) ? {lat: parseFloat(savedLat), lng: parseFloat(savedLng)} : {lat: 33.91, lng: 134.66};
+        let parsedLat = parseFloat(savedLat), parsedLng = parseFloat(savedLng);
+        let centerPos = (!isNaN(parsedLat) && !isNaN(parsedLng)) ? {lat: parsedLat, lng: parsedLng} : {lat: 33.91, lng: 134.66};
         map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: savedZoom ? parseInt(savedZoom) : 15, mapTypeId: 'hybrid', gestureHandling: 'greedy', styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
         infoWindow = new google.maps.InfoWindow(); google.maps.event.addListener(map, 'click', ()=>infoWindow.close());
         drawingManager = new google.maps.drawing.DrawingManager({ drawingMode: null, drawingControl: false, polygonOptions: { fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1, strokeWeight: 3, editable: true } }); drawingManager.setMap(map);
@@ -1011,34 +1016,42 @@ window.openRidgeSim = (id) => {
       
 // 🌟 管理者画面の起動爆速処理 🌟
 document.addEventListener('DOMContentLoaded', () => {
-          initMap();
-          const id = localStorage.getItem('pMapAdminId'); 
-          const pw = localStorage.getItem('pMapAdminPw'); 
-          const savedName = localStorage.getItem('pMapAdminName'); 
-          
-          if(id && pw) { 
-              // 画面を即座に隠す
-              const loginScreen = document.getElementById('loginScreen');
-              if(loginScreen) loginScreen.style.display = 'none';
-              if(savedName) currentUser = savedName;
-              
-              // フォームに値を直接セットしてexecuteLoginに確実に読み取らせる
-              document.getElementById('loginId').value = id; 
-              document.getElementById('loginPw').value = pw; 
-              
-              const cachedData = localStorage.getItem('pMapAdminInitData'); 
-              if (cachedData) {
-                  try { 
-                      renderInitData(JSON.parse(cachedData)); 
-                      setTimeout(() => { executeLogin(true); }, 1500);
-                  } catch(e) {
-                      executeLogin(true);
-                  }
-              } else {
-                  executeLogin(true);
-              }
-          }
-      });
+    try {
+        initMap(); // エラーが起きても自動ログインが止まらないよう保護
+    } catch(e) {
+        console.warn("Map Initialization Error:", e);
+    }
+
+    const id = localStorage.getItem('pMapAdminId'); 
+    const pw = localStorage.getItem('pMapAdminPw'); 
+    const savedName = localStorage.getItem('pMapAdminName'); 
+    
+    if(id && pw) { 
+        // 画面を即座に隠す
+        const loginScreen = document.getElementById('loginScreen');
+        if(loginScreen) loginScreen.style.display = 'none';
+        if(savedName) currentUser = savedName;
+        
+        // フォームに値をセット（万が一手動ログイン画面に戻った時のため）
+        const loginIdEl = document.getElementById('loginId');
+        const loginPwEl = document.getElementById('loginPw');
+        if (loginIdEl) loginIdEl.value = id; 
+        if (loginPwEl) loginPwEl.value = pw; 
+        
+        const cachedData = localStorage.getItem('pMapAdminInitData'); 
+        if (cachedData) {
+            try { 
+                renderInitData(JSON.parse(cachedData)); 
+                // 変数 id, pw を直接渡して確実に自動ログインさせる
+                setTimeout(() => { executeLogin(true, id, pw); }, 1500);
+            } catch(e) {
+                executeLogin(true, id, pw);
+            }
+        } else {
+            executeLogin(true, id, pw);
+        }
+    }
+});
     </script>
     <script>
       if ('serviceWorker' in navigator) {
