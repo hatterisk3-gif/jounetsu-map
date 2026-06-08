@@ -183,32 +183,27 @@
           try { renderInitData(JSON.parse(cachedData)); return true; } catch (e) { return false; }
       }
 
-// 🌟 1. 管理用のログイン処理（完全無敵版） 🌟
-async function executeLogin(isAuto = false, autoId = null, autoPw = null) {
-    // 引数があればそれを使い、なければフォームから取得する（空白除去も追加）
-    const id = (autoId !== null ? autoId : document.getElementById('loginId').value).trim();
-    const pw = (autoPw !== null ? autoPw : document.getElementById('loginPw').value);
-    
+// 🌟 1. 管理用のログイン処理（index.htmlベースのシンプル版） 🌟
+async function executeLogin(isAuto = false) {
+    const id = document.getElementById('loginId').value;
+    const pw = document.getElementById('loginPw').value;
     const btn = document.getElementById('loginBtn');
     const err = document.getElementById('loginError');
     
-    if (!isAuto && btn) {
+    // 自動ログイン時はボタンの文字を変えない（チラつき防止）
+    if (!isAuto && btn) { 
         btn.innerText = "認証中..."; 
-        btn.disabled = true;
+        btn.disabled = true; 
     }
 
     try {
         const res = await callGAS('login', {userId: id, password: pw});
         if (res.success) {
+            // 管理者権限チェック
             if (res.role !== "管理者") { 
                 document.getElementById('loginScreen').style.display = 'flex';
                 if (err) err.innerText = "⛔ 管理者権限がありません"; 
                 if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-                // 自動ログイン失敗時でもキャッシュは消さないよう調整
-                if (!isAuto) {
-                    localStorage.removeItem('pMapAdminId');
-                    localStorage.removeItem('pMapAdminPw');
-                }
                 return; 
             }
             
@@ -216,19 +211,19 @@ async function executeLogin(isAuto = false, autoId = null, autoPw = null) {
             document.getElementById('loginScreen').style.display = 'none';
             if (err) err.innerText = '';
             
-           // 専用の安全な関数を使って保存するよう変更
-           saveAdminCredentials(id, pw, res.name);
+            // index.htmlと同じようにシンプルに直接保存
+            localStorage.setItem('pMapAdminId', id); 
+            localStorage.setItem('pMapAdminPw', pw);
+            localStorage.setItem('pMapAdminName', res.name); 
             
+            // 最新データを取りに行く
             loadInitData(); 
             startLocationWatch();
         } else { 
+            // 失敗時は画面を表示
             document.getElementById('loginScreen').style.display = 'flex';
             if (err) err.innerText = "❌ ID/PWが違います"; 
             if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
-            if (!isAuto) {
-                localStorage.removeItem('pMapAdminId');
-                localStorage.removeItem('pMapAdminPw');
-            }
         }
     } catch(e) { 
         if (isAuto) {
@@ -1013,62 +1008,39 @@ window.openRidgeSim = (id) => {
       };
       window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
       
-// 🌟 限界まで堅牢にした初期化・復元処理（Cloudflare・プライベートモード完全対策） 🌟
-(function() {
-    try {
-        // 何かの処理でエラーになる前に、最優先でストレージから値を取り出してフォームに入れる
-        const id = localStorage.getItem('pMapAdminId') || "";
-        const pw = localStorage.getItem('pMapAdminPw') || "";
-        const loginIdEl = document.getElementById('loginId');
-        const loginPwEl = document.getElementById('loginPw');
+// 🌟 4. アプリ起動時の爆速処理（index.htmlと完全同期版） 🌟
+document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+    const id = localStorage.getItem('pMapAdminId');
+    const pw = localStorage.getItem('pMapAdminPw');
+    const savedName = localStorage.getItem('pMapAdminName'); 
+    
+    if(id && pw) { 
+        // 画面を即座に隠す
+        const loginScreen = document.getElementById('loginScreen');
+        if(loginScreen) loginScreen.style.display = 'none';
+        if(savedName) currentUser = savedName;
         
-        if (id && loginIdEl) loginIdEl.value = id;
-        if (pw && loginPwEl) loginPwEl.value = pw;
-
-        function startAdminApp() {
-            if (window.adminAppStarted) return;
-            window.adminAppStarted = true;
-
+        // フォームに値を直接セットして、executeLoginに確実に読み取らせる
+        document.getElementById('loginId').value = id; 
+        document.getElementById('loginPw').value = pw; 
+        
+        // キャッシュがあれば先に描画する
+        const cachedData = localStorage.getItem('pMapAdminInitData');
+        if (cachedData) {
             try { 
-                initMap(); // 地図の初期化
-            } catch(e) { 
-                console.warn("地図の初期化でエラーが起きましたが処理を継続します:", e); 
+                renderInitData(JSON.parse(cachedData)); 
+                // 地図が表示されてから、1.5秒後に裏でこっそりログイン＆更新通信を開始する
+                setTimeout(() => { executeLogin(true); }, 1500);
+            } catch(e) {
+                executeLogin(true);
             }
-
-            const savedId = localStorage.getItem('pMapAdminId'); 
-            const savedPw = localStorage.getItem('pMapAdminPw'); 
-            const savedName = localStorage.getItem('pMapAdminName'); 
-            const loginScreen = document.getElementById('loginScreen');
-
-            if (savedId && savedPw) { 
-                // 資格情報があれば画面を即座に隠す
-                if(loginScreen) loginScreen.style.display = 'none';
-                if(savedName) currentUser = savedName;
-                
-                // キャッシュデータの描画
-                const cachedData = localStorage.getItem('pMapAdminInitData'); 
-                if (cachedData) {
-                    try { renderInitData(JSON.parse(cachedData)); } catch(e) {}
-                }
-                
-                // 確実に自動ログインを実行（少しだけ遅延させて安定化）
-                setTimeout(() => { executeLogin(true, savedId, savedPw); }, 500);
-            } else {
-                // キャッシュが完全に無い場合のみ画面を表示
-                if(loginScreen) loginScreen.style.display = 'flex';
-            }
-        }
-
-        // HTMLの読み込み状態に関わらず確実に実行する
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', startAdminApp);
         } else {
-            startAdminApp(); 
+            // キャッシュがない初回はすぐに通信する
+            executeLogin(true);
         }
-    } catch(err) {
-        console.error("致命的な起動エラー:", err);
     }
-})();
+});
     </script>
     <script>
       if ('serviceWorker' in navigator) {
