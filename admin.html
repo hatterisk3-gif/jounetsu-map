@@ -542,38 +542,62 @@ function openAttr(id) {
       function setupSearch() { const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions'); input.oninput = () => { const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; } const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val)); matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'🪧':'🌿')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); }); sug.style.display = matches.length ? 'block' : 'none'; }; }
       function focusAndOpen(id) { const p = loadedPolygons[id]; let center; if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); } map.setZoom(18); map.panTo(center); setTimeout(() => { openM(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500); }
       
-   // 🌟 描画モード切替（index.htmlと完全同期・確実動作版） 🌟
-   document.getElementById('btnViewMode').onclick = () => { 
-          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
-          document.getElementById('btnViewMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display='none'; 
-          if(drawingManager) drawingManager.setDrawingMode(null); 
-          if(currentPolygon) { currentPolygon.setMap(null); currentPolygon=null; } 
-          document.getElementById('addressHint').style.display='none';
-      };
+ // 🌟 描画モード切替（カスタムカーソル＆ドラッグ完全制御版） 🌟
+ function setMapMode(mode) {
+          document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+          if (drawingManager) drawingManager.setDrawingMode(null);
 
-      document.getElementById('btnDrawMode').onclick = () => { 
-          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
-          document.getElementById('btnDrawMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display='block'; 
-          if(currentPolygon) { currentPolygon.setMap(null); currentPolygon=null; document.getElementById('saveBtn').disabled=true; }
-          // ★ここで確実にポリゴン描画システムを起動！
-          if(drawingManager) drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
-          document.getElementById('addressHint').style.display='none';
-      };
+          if (mode === 'VIEW') {
+              document.getElementById('btnViewMode').classList.add('active');
+              document.getElementById('drawArea').style.display = 'none';
+              if(currentPolygon) { currentPolygon.setMap(null); currentPolygon=null; }
+              
+              // 閲覧モード：ドラッグを許可し、カーソルを元に戻す
+              map.setOptions({ draggableCursor: null, draggingCursor: null, draggable: true });
+              document.getElementById('addressHint').style.display = 'none';
+          }
+          else if (mode === 'DRAW') {
+              document.getElementById('btnDrawMode').classList.add('active');
+              document.getElementById('drawArea').style.display = 'block';
+              if(currentPolygon) { currentPolygon.setMap(null); currentPolygon=null; document.getElementById('saveBtn').disabled = true; }
+              
+              if(drawingManager) {
+                  drawingManager.setMap(map); // 念のため再バインド
+                  drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
+              }
+              // ✏️カーソルに変更し、地図のドラッグ（移動）を禁止して確実になぞれるようにする
+              map.setOptions({ 
+                  draggableCursor: 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'26\' font-size=\'26\'>✏️</text></svg>") 0 26, crosshair',
+                  draggingCursor: 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'26\' font-size=\'26\'>✏️</text></svg>") 0 26, crosshair',
+                  draggable: false 
+              });
+              document.getElementById('addressHint').style.display = 'none';
+          }
+          else if (mode === 'MARKER') {
+              document.getElementById('btnMarkerMode').classList.add('active');
+              document.getElementById('drawArea').style.display = 'none';
+              
+              if(drawingManager) {
+                  drawingManager.setMap(map); // 念のため再バインド
+                  drawingManager.setDrawingMode(google.maps.drawing.OverlayType.MARKER);
+              }
+              // 📍カーソルに変更し、ドラッグを禁止して確実にピンを打てるようにする
+              map.setOptions({ 
+                  draggableCursor: 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'26\' font-size=\'26\'>📍</text></svg>") 16 26, crosshair',
+                  draggingCursor: 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'26\' font-size=\'26\'>📍</text></svg>") 16 26, crosshair',
+                  draggable: false 
+              });
+              document.getElementById('addressHint').style.display = 'none';
+          }
+      }
 
-      document.getElementById('btnMarkerMode').onclick = () => { 
-          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
-          document.getElementById('btnMarkerMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display='none'; 
-          // ★ここで確実に看板（マーカー）描画システムを起動！
-          if(drawingManager) drawingManager.setDrawingMode(google.maps.drawing.OverlayType.MARKER); 
-          document.getElementById('addressHint').style.display='none';
-      };
+      document.getElementById('btnViewMode').onclick = () => setMapMode('VIEW');
+      document.getElementById('btnDrawMode').onclick = () => setMapMode('DRAW');
+      document.getElementById('btnMarkerMode').onclick = () => setMapMode('MARKER');
 
       document.getElementById('cancelDrawBtn').onclick = () => { 
           if(currentPolygon){currentPolygon.setMap(null); currentPolygon=null;} 
-          if(drawingManager) drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON); 
+          setMapMode('DRAW'); // リセットして再度描画モードへ
           document.getElementById('saveBtn').disabled=true; 
           document.getElementById('addressHint').style.display='none'; 
           document.getElementById('fieldName').value=''; 
@@ -581,6 +605,7 @@ function openAttr(id) {
           document.getElementById('fieldCondition').value=''; 
           document.getElementById('fieldStatus').value=''; 
       };
+      
       document.getElementById('saveBtn').onclick=()=>{
         const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
         if(!n) { customAlert("名前必須"); return; }
