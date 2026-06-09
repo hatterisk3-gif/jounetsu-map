@@ -542,25 +542,71 @@ function openAttr(id) {
       function setupSearch() { const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions'); input.oninput = () => { const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; } const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val)); matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'🪧':'🌿')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); }); sug.style.display = matches.length ? 'block' : 'none'; }; }
       function focusAndOpen(id) { const p = loadedPolygons[id]; let center; if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); } map.setZoom(18); map.panTo(center); setTimeout(() => { openM(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500); }
       
-      // 🌟 追加：描画モードの切り替え関数（カーソル＆ドラッグ制御） 🌟
-      function enterDrawMode() { 
+    // 🌟 追加：描画モードの切り替え関数（スマホ・タブレット完全対応版！） 🌟
+    function enterDrawMode() { 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnDrawMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='block'; 
           if (currentPolygon) { currentPolygon.setMap(null); currentPolygon = null; document.getElementById('saveBtn').disabled = true; } 
-          drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON); 
-          map.setOptions({ draggable: false, draggableCursor: 'crosshair', draggingCursor: 'crosshair' }); 
+          
+          // ★確実に描画モードをセットする（setOptionsを使うとスマホでも確実です）
+          if (drawingManager) {
+              drawingManager.setOptions({
+                  drawingMode: google.maps.drawing.OverlayType.POLYGON,
+                  drawingControl: false
+              });
+          }
+          // ★draggable: false はスマホでのタッチ操作をバグらせるため削除しました！
+          map.setOptions({ draggableCursor: 'crosshair', draggingCursor: 'crosshair' }); 
           document.getElementById('addressHint').style.display='none'; 
       }
+      
       function exitDrawMode() { 
-          drawingManager.setDrawingMode(null); 
-          map.setOptions({ draggable: true, draggableCursor: null, draggingCursor: null }); 
+          if (drawingManager) {
+              drawingManager.setDrawingMode(null); 
+          }
+          map.setOptions({ draggableCursor: null, draggingCursor: null }); 
       }
 
-      document.getElementById('btnViewMode').onclick=()=>{ document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); document.getElementById('btnViewMode').classList.add('active'); document.getElementById('drawArea').style.display='none'; exitDrawMode(); if(currentPolygon)currentPolygon.setMap(null); document.getElementById('addressHint').style.display='none';};
-      document.getElementById('btnDrawMode').onclick=()=>{ enterDrawMode(); };
-      document.getElementById('btnMarkerMode').onclick=()=>{ document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); document.getElementById('btnMarkerMode').classList.add('active'); document.getElementById('drawArea').style.display='none'; drawingManager.setDrawingMode(google.maps.drawing.OverlayType.MARKER); map.setOptions({ draggableCursor: null }); document.getElementById('addressHint').style.display='none';};
-      document.getElementById('cancelDrawBtn').onclick=()=>{ if(currentPolygon){currentPolygon.setMap(null);currentPolygon=null;} enterDrawMode(); document.getElementById('saveBtn').disabled=true; document.getElementById('addressHint').style.display='none'; document.getElementById('fieldName').value=''; document.getElementById('fieldLocation').value=''; document.getElementById('fieldCondition').value=''; document.getElementById('fieldStatus').value=''; };
+      document.getElementById('btnViewMode').onclick = () => { 
+          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
+          document.getElementById('btnViewMode').classList.add('active'); 
+          document.getElementById('drawArea').style.display='none'; 
+          exitDrawMode(); 
+          if(currentPolygon) currentPolygon.setMap(null); 
+          document.getElementById('addressHint').style.display='none';
+      };
+
+      document.getElementById('btnDrawMode').onclick = () => { 
+          enterDrawMode(); 
+      };
+
+      document.getElementById('btnMarkerMode').onclick = () => { 
+          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
+          document.getElementById('btnMarkerMode').classList.add('active'); 
+          document.getElementById('drawArea').style.display='none'; 
+          
+          // ★看板（マーカー）モードも同様に強力なセット方法に変更
+          if (drawingManager) {
+              drawingManager.setOptions({
+                  drawingMode: google.maps.drawing.OverlayType.MARKER,
+                  drawingControl: false
+              });
+          }
+          map.setOptions({ draggableCursor: 'crosshair' }); 
+          document.getElementById('addressHint').style.display='none';
+      };
+
+      document.getElementById('cancelDrawBtn').onclick = () => { 
+          if(currentPolygon){currentPolygon.setMap(null); currentPolygon=null;} 
+          enterDrawMode(); 
+          document.getElementById('saveBtn').disabled=true; 
+          document.getElementById('addressHint').style.display='none'; 
+          document.getElementById('fieldName').value=''; 
+          document.getElementById('fieldLocation').value=''; 
+          document.getElementById('fieldCondition').value=''; 
+          document.getElementById('fieldStatus').value=''; 
+      };
       document.getElementById('saveBtn').onclick=()=>{
         const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
         if(!n) { customAlert("名前必須"); return; }
