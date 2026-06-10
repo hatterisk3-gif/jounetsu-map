@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>情熱MAP [管理者用]</title>
+    <link rel="apple-touch-icon" href="icon_admin.png">
+    <link rel="icon" href="icon_admin.png">
+    <link rel="manifest" href="manifest_admin.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <style>
+      html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; overflow: hidden; background-color: #1a1a1a; color: #fff; }
+      #loginScreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 3000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
+      .login-box { background: #fff; padding: 30px; border-radius: 12px; width: 85%; max-width: 320px; text-align: center; color: #333; }
+      .login-input { width: 90%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; background: #fff; color: #333; }
+      .login-btn { background: #d32f2f; color: white; border: none; padding: 14px; width: 90%; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; }
+      .control-panel { padding: 10px; background: #222; border-bottom: 2px solid #d32f2f; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+      .control-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; width: 100%; align-items: center; }
+      #map { flex-grow: 1; width: 100%; }
+      input[type="text"], select, input[type="number"] { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; background: #fff; color: #333; box-sizing: border-box; }
+      ::placeholder { color: #888; }
+      #drawArea input[type="text"], #drawArea select { background: #333; color: #fff; border: 1px solid #666; }
+      button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; font-size: 13px; }
+      .mode-btn { background: #444; color: #fff; } .mode-btn.active { background: #d32f2f; color: #fff; }
+      .gps-btn { background-color: #fff; color: #4285F4; border: 1px solid #4285F4; font-weight: bold; }
+      .polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
+      .signboard-label { background: rgba(255,255,255,0.95); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 11px; font-weight: bold; margin-top: 5px; color: #000; }
+      #modal, #masterModal, #feedbackModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 4000; justify-content: center; align-items: center; }
+      .modal-content { background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 90%; max-width: 360px; max-height: 80%; overflow-y: auto; }
+      .form-label { display: block; font-size: 12px; color: #666; margin-bottom: 2px; font-weight: bold; text-align: left; }
+      .form-input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; background: #fff !important; color: #333 !important; }
+      
+      .search-container { position: relative; display: flex; align-items: center; }
+      .search-input { width: 160px; padding: 8px 12px; border-radius: 20px; border: 1px solid #888; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); color: #333; background: #fff; }
+      #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
+      .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
+    </style>
+  </head>
+  <body>
+    <div id="loginScreen"><div class="login-box"><h2>情熱MAP [管理]</h2><div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div><input type="text" id="loginId" class="login-input" placeholder="スタッフID"><input type="password" id="loginPw" class="login-input" placeholder="パスワード"><button class="login-btn" id="loginBtn" onclick="executeLogin()">管理者としてログイン</button></div></div>
+    
+    <div id="customAlertModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div id="customAlertMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;"></div>
+        <button id="customAlertOk" style="width: 100%; background: #2196F3; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
+      </div>
+    </div>
+
+    <div id="customConfirmModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div id="customConfirmMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;"></div>
+        <div style="display: flex; gap: 10px;">
+          <button id="customConfirmOk" style="flex: 1; background: #d32f2f; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">はい</button>
+          <button id="customConfirmCancel" style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">いいえ</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="customPromptModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div id="customPromptMessage" style="margin-bottom: 10px; font-size: 15px; font-weight: bold; line-height: 1.5;"></div>
+        <input type="text" id="customPromptInput" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px;">
+        <div style="display: flex; gap: 10px;">
+          <button id="customPromptOk" style="flex: 1; background: #4CAF50; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
+          <button id="customPromptCancel" style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">キャンセル</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal"><div class="modal-content" id="modalBody"></div></div>
+
+    <div id="masterModal">
+      <div style="background:#fff; color:#333; padding:20px; border-radius:8px; width:90%; max-width:400px; max-height:85%; display:flex; flex-direction:column;">
+        <h3 style="margin-top:0; color:#d32f2f;">⚙️ マスタ項目設定</h3>
+        <div id="masterSections" style="overflow-y:auto; flex:1; padding-right:5px;"></div>
+        <button onclick="document.getElementById('masterModal').style.display='none'" style="width:100%; padding:12px; background:#666; color:#fff; border-radius:4px; margin-top:15px; border:none; font-weight:bold; font-size:16px;">閉じる</button>
+      </div>
+    </div>
+
+    <div id="feedbackModal">
+       <div style="background:#222; color:#fff; width:90%; max-width:400px; border-radius:8px; display:flex; flex-direction:column; padding:20px; box-sizing:border-box; border:1px solid #444;">
+           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+              <h3 style="margin:0; color:#d32f2f; font-size:18px;">✉️ システム管理者へ連絡</h3>
+              <span onclick="closeFeedback()" style="cursor:pointer; font-size:24px; color:#999; line-height:1;">×</span>
+           </div>
+           <p style="font-size:12px; color:#aaa; margin-top:0;">バグの報告や機能追加の要望などをご記入ください。</p>
+           <textarea id="feedbackText" rows="6" placeholder="例：〇〇の画面でエラーが出ます。〇〇の機能を追加してほしいです。" style="width:100%; padding:10px; border-radius:4px; border:1px solid #555; background:#333; color:#fff; box-sizing:border-box; margin-bottom:15px; resize:none;"></textarea>
+           <button id="sendFeedbackBtn" onclick="sendFeedback()" style="width:100%; background:#d32f2f; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold; font-size:16px;">送信する</button>
+       </div>
+    </div>
+
+    <div class="control-panel">
+      <div class="control-row">
+        <div class="search-container">
+          <input type="text" id="searchInput" class="search-input" placeholder="🔍 圃場・看板...">
+          <div id="searchSuggestions"></div>
+        </div>
+        <div class="search-container">
+          <input type="text" id="mapSearchInput" class="search-input" placeholder="🌍 住所・地域...">
+        </div>
+        <button id="btnCurrentLocation" class="gps-btn">🧭 現在地</button>
+        <button onclick="openFeedback()" style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️ 連絡</button>
+        <button onclick="executeLogout()" style="background:#F44336; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">ログアウト</button>
+      </div>
+      <div class="control-row">
+        <button id="btnViewMode" class="mode-btn active">👀 閲覧</button>
+        <button id="btnDrawMode" class="mode-btn">✏️ 圃場</button>
+        <button id="btnMarkerMode" class="mode-btn">📍 看板</button>
+        <button onclick="openMasterModal()" style="background:#2196F3; color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️ マスタ</button>
+      </div>
+      <div id="drawArea" style="display:none; background:#222; padding:10px; border-radius:8px; border:1px solid #444; width:90%; max-width:300px;">
+        <input type="text" id="fieldName" placeholder="圃場名" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;">
+        <select id="fieldLocation" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;"></select>
+        <select id="fieldCondition" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;"></select>
+        <select id="fieldStatus" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;"></select>
+        <div id="addressHint" style="display:none; margin-bottom:10px; font-size:12px; color:#aaa; line-height:1.4; background:#333; padding:8px; border-radius:4px; border:1px solid #555; text-align:left;"></div>
+        <div style="display:flex; gap:10px;"><button id="saveBtn" style="background:#d32f2f; color:white; flex:1;" disabled>圃場を保存</button><button id="cancelDrawBtn" style="background:#666; flex:1; color:#fff;">消去</button></div>
+      </div>
+    </div>
+    <div id="editShapePanel" style="display:none; background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center;">⚠️ 形状変更中 <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 10px;">確定</button><button id="cancelShapeBtn" style="background:#666; color:#fff;">戻す</button></div>
+    <div id="map"></div>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=★APIキー★&libraries=drawing,geometry,places&language=ja"></script>
+    <script>
+      const GAS_URL = "★GASのURL★";
+      let currentUser="", loadedPolygons={}, editingId=null, originalCoordsForEdit=[], pdlLocations=[], pdlConditions=[], pdlStatuses=[], toukiList=[], map, drawingManager, infoWindow, currentPolygon=null, currentMarker=null, isMergeMode=false, mergeBaseId=null, userLocationMarker=null;
+      let pdlCrops = [], pdlFieldWorkNames = [];
+      let pdlSignFunctions = []; // ★作業記録マスタから取得した看板機能リスト
+      let latestUserPos = null;
+
+      window.customAlert = (msg) => {
+        document.getElementById('customAlertMessage').innerText = msg;
+        document.getElementById('customAlertModal').style.display = 'flex';
+        document.getElementById('customAlertOk').onclick = () => { document.getElementById('customAlertModal').style.display = 'none'; };
+      };
+
+      window.customConfirm = (msg) => {
+        return new Promise(resolve => {
+          document.getElementById('customConfirmMessage').innerText = msg;
+          document.getElementById('customConfirmModal').style.display = 'flex';
+          document.getElementById('customConfirmOk').onclick = () => { document.getElementById('customConfirmModal').style.display = 'none'; resolve(true); };
+          document.getElementById('customConfirmCancel').onclick = () => { document.getElementById('customConfirmModal').style.display = 'none'; resolve(false); };
+        });
+      };
+
+      window.customPrompt = (msg) => {
+        return new Promise(resolve => {
+          document.getElementById('customPromptMessage').innerText = msg;
+          document.getElementById('customPromptInput').value = '';
+          document.getElementById('customPromptModal').style.display = 'flex';
+          document.getElementById('customPromptInput').focus();
+          document.getElementById('customPromptOk').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(document.getElementById('customPromptInput').value); };
+          document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); };
+        });
+      };
+
+      const iconFunctionMap = {
+        '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場',
+        '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', 
+        '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備',
+        '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場'
+      };
+
+      async function callGAS(action, params={}) { params.action=action; const res=await fetch(GAS_URL, {method:'POST',body:JSON.stringify(params)}); const j=await res.json(); if(j.status!=="success") throw new Error(j.message); return j.data; }
+      
+      async function executeLogin() { 
+        const id=document.getElementById('loginId').value, pw=document.getElementById('loginPw').value; 
+        const btn=document.getElementById('loginBtn'), err=document.getElementById('loginError');
+        btn.disabled=true; btn.innerText="認証中...";
+        try { 
+          const res = await callGAS('login', {userId:id, password:pw}); 
+          if(res.success) { 
+            if(res.role !== "管理者") { err.innerText="⛔ 管理者権限がありません"; btn.disabled=false; btn.innerText="ログイン"; return; }
+            currentUser=res.name; document.getElementById('loginScreen').style.display='none'; localStorage.setItem('pMapAdminId',id); localStorage.setItem('pMapAdminPw',pw); 
+            loadInitData(); 
+            startLocationWatch();
+          } else { err.innerText="❌ ID/PWが違います"; btn.disabled=false; btn.innerText="ログイン"; }
+        } catch(e){ err.innerText="⚠️ 通信エラー"; btn.disabled=false; } 
+      }
+      
+      function executeLogout() { localStorage.clear(); location.reload(); }
+
+      function startLocationWatch() {
+        if (navigator.geolocation) {
+          navigator.geolocation.watchPosition(p => {
+            latestUserPos = {lat: p.coords.latitude, lng: p.coords.longitude};
+            if (map) {
+              if (!userLocationMarker) {
+                userLocationMarker = new google.maps.Marker({
+                  position: latestUserPos, map,
+                  icon: {path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2},
+                  zIndex: 999
+                });
+              } else { userLocationMarker.setPosition(latestUserPos); }
+            }
+          }, null, { enableHighAccuracy: true, maximumAge: 30000, timeout: 27000 });
+        }
+      }
+
+      function loadInitData() {
+        callGAS('getInitData').then(data => {
+          pdlLocations=data.pdl.locations; pdlConditions=data.pdl.conditions; pdlStatuses=data.pdl.statuses; toukiList=data.toukiList;
+          pdlCrops = data.pdl.crops || []; pdlFieldWorkNames = data.pdl.fieldWorkNames || []; 
+          pdlSignFunctions = data.pdl.signFunctions || []; // 作業記録マスタから抽出されたリスト
+
+          const html=(list)=>list.map(l=>`<option value="${l}">${l}</option>`).join('');
+          document.getElementById('fieldLocation').innerHTML='<option value="">拠点</option>'+html(pdlLocations); document.getElementById('fieldCondition').innerHTML='<option value="">条件</option>'+html(pdlConditions); document.getElementById('fieldStatus').innerHTML='<option value="">稼働状況</option>'+html(pdlStatuses);
+          for(let id in loadedPolygons) { if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); if(loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null); } loadedPolygons={};
+          data.polygons.forEach(f => createPolygonObject(f));
+        });
+      }
+
+      function createSignboardMarker(name, pos, icon, id) {
+        const zoom = map.getZoom();
+        const config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
+        const marker = new google.maps.Marker({
+          position: pos,
+          map: map,
+          visible: zoom >= 15,
+          label: zoom >= 17 ? config : null,
+          icon: {
+            url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`,
+            scaledSize: new google.maps.Size(26,26),
+            labelOrigin: new google.maps.Point(13,30)
+          }
+        });
+        google.maps.event.addListener(marker, 'click', () => { if(editingId) return; openM(id); });
+        return marker;
+      }
+
+      window.calcRidges = (coords, dir, widthCm) => {
+        if(!dir || !widthCm || widthCm <= 0 || !coords || coords.length < 3) return "--";
+        const gCoords = coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
+        let areaM2 = google.maps.geometry.spherical.computeArea(gCoords);
+        let edges = [];
+        for (let i = 0; i < gCoords.length; i++) {
+          let p1 = gCoords[i]; let p2 = gCoords[(i + 1) % gCoords.length];
+          let length = google.maps.geometry.spherical.computeDistanceBetween(p1, p2);
+          let heading = google.maps.geometry.spherical.computeHeading(p1, p2);
+          let absH = Math.abs(heading); if (absH > 90) absH = 180 - absH; 
+          edges.push({ length, heading: absH });
+        }
+        let targetEdges = [];
+        if (dir === '南北') targetEdges = edges.filter(e => e.heading <= 45);
+        else if (dir === '東西') targetEdges = edges.filter(e => e.heading > 45);
+        if (targetEdges.length === 0) targetEdges = edges;
+        targetEdges.sort((a, b) => b.length - a.length);
+        let baseLength = targetEdges[0].length;
+        let fieldWidthM = areaM2 / baseLength;
+        let ridgeWidthM = widthCm / 100;
+        return Math.floor((fieldWidthM * 0.95) / ridgeWidthM);
+      };
+
+      window.updateRidgeCalc = (id) => {
+        const p = loadedPolygons[id];
+        const dir = document.getElementById('edRDir').value;
+        const width = parseFloat(document.getElementById('edRW').value);
+        const resDiv = document.getElementById('ridgeCalcResult');
+        if(!dir || !width) { resDiv.innerText = "推定: -- 畝"; return; }
+        const count = calcRidges(p.coords, dir, width);
+        resDiv.innerText = `推定: 約 ${count} 畝`;
+      };
+
+      function initMap() {
+        let savedLat = localStorage.getItem('pMapAdminLastLat');
+        let savedLng = localStorage.getItem('pMapAdminLastLng');
+        let savedZoom = localStorage.getItem('pMapAdminLastZoom');
+        let centerPos = (savedLat && savedLng) ? {lat: parseFloat(savedLat), lng: parseFloat(savedLng)} : {lat: 33.91, lng: 134.66};
+        let zoomLevel = savedZoom ? parseInt(savedZoom) : 15;
+
+        map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, mapTypeId: 'hybrid', gestureHandling: 'greedy', styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
+        infoWindow = new google.maps.InfoWindow(); google.maps.event.addListener(map, 'click', ()=>infoWindow.close());
+        drawingManager = new google.maps.drawing.DrawingManager({ drawingMode: null, drawingControl: false, polygonOptions: { fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1, strokeWeight: 3, editable: true } }); drawingManager.setMap(map);
+        
+        map.addListener('zoom_changed', () => { const z=map.getZoom(); for(let id in loadedPolygons){ const p=loadedPolygons[id]; if(!p.marker)continue; if(p.isMarker){ p.marker.setVisible(z>=15); if(z<17)p.marker.setLabel(null); else if(p.labelConfig)p.marker.setLabel(p.labelConfig); } else p.marker.setVisible(z>=14); } });
+        
+        map.addListener('idle', () => {
+          let center = map.getCenter();
+          localStorage.setItem('pMapAdminLastLat', center.lat());
+          localStorage.setItem('pMapAdminLastLng', center.lng());
+          localStorage.setItem('pMapAdminLastZoom', map.getZoom());
+        });
+        
+        document.getElementById('btnCurrentLocation').onclick = () => { 
+          if (latestUserPos) {
+             map.setCenter(latestUserPos); map.setZoom(18);
+          } else if(navigator.geolocation) {
+            const btn = document.getElementById('btnCurrentLocation');
+            const orgText = btn.innerHTML; btn.innerHTML = "取得中..."; btn.disabled = true;
+            navigator.geolocation.getCurrentPosition(p => { 
+                latestUserPos = {lat:p.coords.latitude, lng:p.coords.longitude}; 
+                map.setCenter(latestUserPos); map.setZoom(18); 
+                if(!userLocationMarker) userLocationMarker = new google.maps.Marker({position:latestUserPos, map, icon:{path:google.maps.SymbolPath.CIRCLE, scale:8, fillColor:'#4285F4', fillOpacity:1, strokeColor:'white', strokeWeight:2}, zIndex:999}); else userLocationMarker.setPosition(latestUserPos); 
+                btn.innerHTML = orgText; btn.disabled = false;
+            }, function(){ customAlert("現在地を取得できませんでした"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true }); 
+          }
+        };
+
+        google.maps.event.addListener(drawingManager, 'overlaycomplete', e => {
+          if (e.type === 'polygon') { 
+            if(currentPolygon) currentPolygon.setMap(null); 
+            currentPolygon=e.overlay; 
+            document.getElementById('saveBtn').disabled=false; 
+
+            const bounds = new google.maps.LatLngBounds();
+            currentPolygon.getPath().forEach(pt => bounds.extend(pt));
+            const center = bounds.getCenter();
+            
+            const hintDiv = document.getElementById('addressHint');
+            hintDiv.innerHTML = "📍 住所を取得中...";
+            hintDiv.style.display = "block";
+            
+            new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
+              if (status === 'OK' && results.length > 0) {
+                 let targetResult = results.find(r => !r.types.includes("plus_code")) || results[0];
+                 let addr = targetResult.formatted_address.replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '');
+                 addr = addr.replace(/^[A-Z0-9\+]+\s/, '');
+                 hintDiv.innerHTML = `<span style="font-size:10px;">📍 推定住所</span><br><b style="color:#4CAF50; font-size:13px;">${addr}</b>`;
+              } else {
+                 hintDiv.innerHTML = "📍 住所取得失敗 (原因: " + status + ")";
+              }
+            });
+
+          }
+          else if (e.type === 'marker') {
+            if(currentMarker) currentMarker.setMap(null); currentMarker=e.overlay;
+            
+            window.selectMI = (i) => { 
+              document.getElementById('selIco').value=i; 
+              document.querySelectorAll('.ib').forEach(el=>el.style.background='none'); 
+              document.getElementById('i_'+i).style.background='#ddd'; 
+              
+              const defaultFunc = '機能なし';
+              const mappedFunc = iconFunctionMap[i] || defaultFunc;
+              
+              const mFunc = document.getElementById('mFunc');
+              if (mFunc) {
+                if(Array.from(mFunc.options).some(opt => opt.value === mappedFunc)) {
+                  mFunc.value = mappedFunc;
+                } else {
+                  mFunc.value = '機能なし';
+                }
+              }
+            };
+            
+            const icons = ['🪧','🚻','🚰','⛲','🚿','🌀','⛏️','🪚','✂️','🧹','🔬','📦','🏭','🚚','🛻','🏪','⛽','🛠️','🏢','⚠️','🅿️','📢','🚫','🧼','🪵','🔩','🛢️','🚜','💩','⛰️','🗑️'];
+            
+            // ★変更：機能なしを必ず先頭に追加
+            const funcOpts = `<option value="機能なし">機能なし</option>` + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join('');
+            
+            infoWindow.setContent(`
+              <div style="width:260px;max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
+                <b>看板登録</b><br>
+                <input type="text" id="mName" class="form-input" placeholder="看板名">
+                <select id="mFunc" class="form-input" style="margin-bottom:10px;">${funcOpts}</select>
+                <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:20px;gap:2px;">
+                  ${icons.map(i=>`<span class="ib" id="i_${i}" onclick="selectMI('${i}')" style="cursor:pointer;padding:2px;border-radius:4px;">${i}</span>`).join('')}
+                </div>
+                <input type="hidden" id="selIco" value="🪧"><br>
+                <button onclick="saveM()" style="background:#d32f2f;color:white;width:100%;margin-top:10px;padding:10px;border-radius:4px;border:none;font-weight:bold;">マスタに登録</button>
+              </div>
+            `);
+            infoWindow.setPosition(currentMarker.getPosition()); infoWindow.open(map); setTimeout(()=>selectMI('🪧'),10);
+          }
+        });
+        
+        setupSearch();
+        setupMapSearch();
+      }
+
+      function setupMapSearch() {
+        const input = document.getElementById('mapSearchInput');
+        const searchBox = new google.maps.places.SearchBox(input);
+
+        map.addListener('bounds_changed', () => {
+          searchBox.setBounds(map.getBounds());
+        });
+
+        searchBox.addListener('places_changed', () => {
+          const places = searchBox.getPlaces();
+          if (places.length == 0) return;
+
+          const bounds = new google.maps.LatLngBounds();
+          places.forEach(place => {
+            if (!place.geometry || !place.geometry.location) return;
+            if (place.geometry.viewport) {
+              bounds.union(place.geometry.viewport);
+            } else {
+              bounds.extend(place.geometry.location);
+            }
+          });
+          map.fitBounds(bounds);
+        });
+      }
+
+      function setupSearch() {
+        const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions');
+        input.oninput = () => {
+          const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; }
+          const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val));
+          matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'🪧':'🌿')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); });
+          sug.style.display = matches.length ? 'block' : 'none';
+        };
+      }
+
+      function focusAndOpen(id) {
+        const p = loadedPolygons[id]; let center;
+        if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); }
+        map.setZoom(18); map.panTo(center); setTimeout(() => { openMainMenu(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500);
+      }
+
+      document.getElementById('btnViewMode').onclick=()=>{ document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); document.getElementById('btnViewMode').classList.add('active'); document.getElementById('drawArea').style.display='none'; drawingManager.setDrawingMode(null); if(currentPolygon)currentPolygon.setMap(null); document.getElementById('addressHint').style.display='none';};
+      document.getElementById('btnDrawMode').onclick=()=>{ document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); document.getElementById('btnDrawMode').classList.add('active'); document.getElementById('drawArea').style.display='block'; drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);};
+      document.getElementById('btnMarkerMode').onclick=()=>{ document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); document.getElementById('btnMarkerMode').classList.add('active'); document.getElementById('drawArea').style.display='none'; drawingManager.setDrawingMode(google.maps.drawing.OverlayType.MARKER); document.getElementById('addressHint').style.display='none';};
+      
+      document.getElementById('cancelDrawBtn').onclick=()=>{
+        if(currentPolygon){currentPolygon.setMap(null);currentPolygon=null;}
+        drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON); 
+        document.getElementById('saveBtn').disabled=true;
+        document.getElementById('addressHint').style.display='none';
+        document.getElementById('fieldName').value='';
+        document.getElementById('fieldLocation').value='';
+        document.getElementById('fieldCondition').value='';
+        document.getElementById('fieldStatus').value='';
+      };
+
+      document.getElementById('saveBtn').onclick=()=>{
+        const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value;
+        const t = ""; 
+        if(!n) { customAlert("名前必須"); return; }
+        const path=currentPolygon.getPath().getArray().map(pt=>({lat:pt.lat(),lng:pt.lng()})), area=Math.round(google.maps.geometry.spherical.computeArea(currentPolygon.getPath())/100);
+        callGAS('savePolygon', {name:n, coords:JSON.stringify(path), color:'#d32f2f', userName:currentUser, location:l, condition:c, area, status:s, toukiId:t}).then(id=>{ 
+          createPolygonObject({id,name:n,coords:path,color:'#d32f2f',location:l,condition:c,area,status:s,toukiId:t,isMarker:false}); 
+          currentPolygon.setMap(null); currentPolygon=null; 
+          document.getElementById('btnViewMode').click(); 
+          document.getElementById('addressHint').style.display='none';
+          document.getElementById('fieldName').value='';
+          document.getElementById('fieldLocation').value='';
+          document.getElementById('fieldCondition').value='';
+          document.getElementById('fieldStatus').value='';
+        });
+      };
+      
+      window.saveM=()=>{
+        const n=document.getElementById('mName').value; 
+        if(!n) { customAlert("看板名を入力してください"); return; }
+        const ic=document.getElementById('selIco').value;
+        const funcType = document.getElementById('mFunc').value; 
+        const pos=currentMarker.getPosition(), coords=[{lat:pos.lat(),lng:pos.lng()}]; 
+        
+        callGAS('savePolygon',{name:n, coords:JSON.stringify(coords), color:ic, signFunction:funcType, userName:currentUser}).then(id=>{
+          infoWindow.close(); 
+          createPolygonObject({id,name:n,coords,color:ic,signFunction:funcType,isMarker:true}); 
+          currentMarker.setMap(null); currentMarker=null; 
+          document.getElementById('btnViewMode').click();
+        });
+      };
+      
+      document.getElementById('saveShapeBtn').onclick=()=>{
+        const p=loadedPolygons[editingId];
+        if(p.isMarker){const pos=p.marker.getPosition(); p.marker.setDraggable(false); callGAS('updatePolygon',{id:editingId, coords:JSON.stringify([{lat:pos.lat(),lng:pos.lng()}])});}
+        else{p.polygon.setEditable(false); const path=p.polygon.getPath().getArray().map(pt=>({lat:pt.lat(),lng:pt.lng()})), area=Math.round(google.maps.geometry.spherical.computeArea(p.polygon.getPath())/100); p.area=area; p.marker.setMap(null); p.marker=createLabelMarker(p.name,path,p.color,area); callGAS('updatePolygon',{id:editingId, coords:JSON.stringify(path), area});}
+        document.getElementById('editShapePanel').style.display='none'; editingId=null;
+      };
+      document.getElementById('cancelShapeBtn').onclick=()=>{ const p=loadedPolygons[editingId]; if(p.isMarker){p.marker.setDraggable(false); p.marker.setPosition(originalCoordsForEdit[0]);}else{p.polygon.setEditable(false); p.polygon.setPath(originalCoordsForEdit);} document.getElementById('editShapePanel').style.display='none'; editingId=null; };
+
+      function createPolygonObject(p) {
+        if(p.isMarker){
+          const m = createSignboardMarker(p.name, new google.maps.LatLng(p.coords[0].lat, p.coords[0].lng), p.color, p.id);
+          loadedPolygons[p.id]={...p, marker:m, labelConfig:{text:p.name,color:'#333',fontSize:'12px',fontWeight:'bold',className:'signboard-label'}};
+        } else {
+          const isU=(p.status==='未使用（返却）'||p.status==='未使用'), dC=isU?'#999':p.color, poly=new google.maps.Polygon({paths:p.coords, map, fillColor:dC, fillOpacity:isU?0.5:0.3, strokeColor:dC, strokeOpacity:1, strokeWeight:3}), m=createLabelMarker(p.name,p.coords,p.color,p.area);
+          google.maps.event.addListener(poly,'click',()=>{ if(editingId) return; if(isMergeMode){execMerge(mergeBaseId,p.id);return;}openM(p.id); }); 
+          loadedPolygons[p.id]={...p, polygon:poly, marker:m};
+        }
+      }
+      
+      function createLabelMarker(n,c,col,a) { const b=new google.maps.LatLngBounds(); c.forEach(pt=>b.extend(pt)); return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=14, label:{text:`${n} / ${a}a`, color:'white', fontSize:'13px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); }
+
+      window.executeNavigation = (id) => {
+        const p = loadedPolygons[id]; let lat, lng;
+        if (p.isMarker) { lat = p.marker.getPosition().lat(); lng = p.marker.getPosition().lng(); }
+        else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); lat = b.getCenter().lat(); lng = b.getCenter().lng(); }
+        window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank');
+      };
+
+      window.openM = (id) => {
+        const p=loadedPolygons[id], isU=(p.status==='未使用（返却）'||p.status==='未使用');
+        const titleHtml = p.isMarker ? `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${p.color}</div><b>${p.name}</b>` : `<b>${p.name}</b>`;
+        const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:8px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🚗 ここに行く（ナビ）</button>`;
+
+        let ridgeStr = '';
+        if(!p.isMarker && p.ridgeDir && p.ridgeWidth) {
+           const ridges = calcRidges(p.coords, p.ridgeDir, p.ridgeWidth);
+           ridgeStr = `<br><span style="color:#2196F3; font-weight:bold;">📏 約${ridges}畝 (${p.ridgeDir} / ${p.ridgeWidth}cm)</span>`;
+        }
+
+        let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:6px;">${!p.isMarker?(isU?'<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ':'')+(p.location||'-')+' / '+(p.condition||'-')+' / '+p.area+'a'+ridgeStr+'<hr>':''}</div>${navBtn}`;
+        if(!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="showToukiInfo('${id}')" style="background:#2196F3;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">📋登記情報</button><button onclick="openAddTouki('${id}')" style="background:#4CAF50;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">➕登記登録</button></div><div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="startMerge('${id}')" style="background:#FF9800;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜統合</button><button onclick="execSplit('${id}')" style="background:#9C27B0;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">✂️分割</button></div>`;
+        h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button><button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">${p.isMarker?'ｱｲｺﾝ':'色'}変更</button></div><div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">範囲変更</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
+        infoWindow.setContent(h); infoWindow.setPosition(p.isMarker?p.marker.getPosition():p.marker.getPosition()); infoWindow.open(map);
+      };
+
+      window.openMasterModal = () => { renderMasterSection(); document.getElementById('masterModal').style.display = 'flex'; };
+
+      window.renderMasterSection = () => {
+        const buildHTML = (title, type, list) => {
+          let html = `<div style="background:#f4f6f8; padding:10px; margin-bottom:10px; border-radius:6px; color:#333;">`;
+          
+          if (type === 'crop') {
+             html += `<b style="color:#d32f2f;">${title} ＆ 10a栽植本数</b><br>
+                <div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;">
+                  <input type="text" id="add_${type}_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作物名">
+                  <input type="number" id="add_${type}_density" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="本/10a">
+                  <button onclick="execMaster('${type}', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button>
+                </div>
+                <div style="max-height:120px; overflow-y:auto; border:1px solid #ddd; background:#fff; border-radius:4px; padding:5px;">`;
+             if (list.length === 0) html += `<div style="color:#888; font-size:12px; text-align:center;">データがありません</div>`;
+             list.forEach(v => {
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;">
+                  <span>${v.name} <small style="color:#666;">(${v.density}本/10a)</small></span>
+                  <span onclick="execMaster('${type}', 'delete', '${v.name}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span>
+                </div>`;
+             });
+          } else {
+             html += `<b style="color:#d32f2f;">${title}</b><br>
+                <div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;">
+                  <input type="text" id="add_${type}" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="新規追加...">
+                  <button onclick="execMaster('${type}', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button>
+                </div>
+                <div style="max-height:120px; overflow-y:auto; border:1px solid #ddd; background:#fff; border-radius:4px; padding:5px;">`;
+             if (list.length === 0) html += `<div style="color:#888; font-size:12px; text-align:center;">データがありません</div>`;
+             list.forEach(v => {
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;">
+                  <span>${v}</span><span onclick="execMaster('${type}', 'delete', '${v}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span>
+                </div>`;
+             });
+          }
+          html += `</div></div>`;
+          return html;
+        };
+
+        let content = buildHTML('🌱 作物名', 'crop', pdlCrops);
+        content += buildHTML('🚜 圃場作業名', 'fieldWork', pdlFieldWorkNames);
+        // ★変更：看板機能は作業記録マスタから抽出するため、ここでの設定欄は廃止
+        document.getElementById('masterSections').innerHTML = content;
+      };
+
+      window.execMaster = async (type, act, val) => {
+        let value = val;
+        if (act === 'add') {
+          if (type === 'crop') {
+             const name = document.getElementById('add_crop_name').value.trim();
+             const density = document.getElementById('add_crop_density').value || 0;
+             if (!name) { customAlert("作物名を入力してください"); return; }
+             value = { name: name, density: parseInt(density) };
+          } else {
+             value = document.getElementById('add_' + type).value.trim();
+             if (!value) { customAlert("項目名を入力してください"); return; }
+          }
+        } else {
+          if (!await customConfirm(`「${type === 'crop' ? val : val}」を削除しますか？`)) return;
+        }
+
+        document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
+        try {
+          const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
+          if (type === 'crop') pdlCrops = updatedList;
+          else if (type === 'fieldWork') pdlFieldWorkNames = updatedList;
+          renderMasterSection();
+        } catch(e) {
+          customAlert("エラーが発生しました。再度お試しください。");
+          renderMasterSection();
+        }
+      };
+
+      window.showToukiInfo = async (id) => {
+        const p = loadedPolygons[id]; if(!p.toukiId) { customAlert("紐付いている登記情報がありません"); return; }
+        document.getElementById('modalBody').innerHTML = "読み込み中..."; document.getElementById('modal').style.display='flex';
+        try {
+          const details = await callGAS('getToukiDetails', {toukiIds: p.toukiId});
+          let html = `<h3>${p.name} の登記情報</h3><table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:15px;" border="1"><tr><th>ID</th><th>住所</th><th>面積</th><th>地主</th></tr>`;
+          details.forEach(d => html += `<tr><td>${d.id}</td><td>${d.address}</td><td>${d.area}</td><td>${d.owner}</td></tr>`);
+          html += `</table><button onclick="document.getElementById('modal').style.display='none'" style="width:100%;padding:10px;background:#666;color:#fff;border-radius:4px;border:none;font-weight:bold;">閉じる</button>`;
+          document.getElementById('modalBody').innerHTML = html;
+        } catch(e) { customAlert("取得失敗"); }
+      };
+
+      window.openAddTouki = (hojoId) => {
+        let html = `<h3>📋 登記マスタ登録</h3><label class="form-label">公報住所・地番</label><input type="text" id="t_addr" class="form-input" placeholder="例: 阿南市宝田町〇〇"><label class="form-label">住所面積 (㎡)</label><input type="text" id="t_area" class="form-input"><label class="form-label">地主名</label><input type="text" id="t_owner" class="form-input"><label class="form-label">所有形態</label><select id="t_type" class="form-input"><option value="借地">借地</option><option value="自作地">自作地</option></select><div style="display:flex;gap:10px;"><button onclick="saveTouki('${hojoId}')" style="background:#d32f2f;color:white;flex:1;padding:10px;border-radius:4px;border:none;font-weight:bold;">登録＆紐付</button><button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc;flex:1;padding:10px;border-radius:4px;color:#333;border:none;font-weight:bold;">戻る</button></div>`;
+        document.getElementById('modalBody').innerHTML = html; document.getElementById('modal').style.display='flex';
+      };
+
+      window.saveTouki = async (hojoId) => {
+        const ad = document.getElementById('t_addr').value, ar = document.getElementById('t_area').value, ow = document.getElementById('t_owner').value, ty = document.getElementById('t_type').value;
+        if(!ad) { customAlert("住所は必須です"); return; }
+        try {
+          await callGAS('saveTouki', {toukiData: {address:ad, area:ar, owner:ow, type:ty}, targetHojoId: hojoId});
+          customAlert("登記を登録しました！圃場と紐付きました。"); document.getElementById('modal').style.display='none'; loadInitData();
+        } catch(e) { customAlert("追加失敗"); }
+      };
+
+      window.openAttr = (id) => {
+        const p=loadedPolygons[id];
+        if(p.isMarker) {
+           // ★変更：機能なしを必ず先頭に追加してプルダウンを生成
+           const funcOpts = `<option value="機能なし" ${!p.signFunction || p.signFunction === '機能なし' ? 'selected' : ''}>機能なし</option>` + 
+                            pdlSignFunctions.map(f => `<option value="${f}" ${p.signFunction === f ? 'selected' : ''}>${f}</option>`).join('');
+           
+           infoWindow.setContent(`<div style="width:230px;max-width:100%;box-sizing:border-box;text-align:center;color:#000;padding:4px;">
+             <b>看板情報変更</b><br>
+             <input type="text" id="rnIn" value="${p.name}" class="form-input" style="margin-top:10px;">
+             <select id="rnFunc" class="form-input" style="margin-bottom:10px;">${funcOpts}</select>
+             <button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;border:none;font-weight:bold;">保存</button>
+           </div>`);
+        } else {
+          const rDirOpts = ['未設定', '南北', '東西'].map(d => `<option value="${d==='未設定'?'':d}" ${p.ridgeDir===d?'selected':''}>${d}${d!=='未設定'?'畝':''}</option>`).join('');
+          const rWidth = p.ridgeWidth || '';
+          
+          infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;">
+          <b>圃場情報変更</b><br>
+          <label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input">
+          <label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l=>`<option value="${l}" ${l===p.location?'selected':''}>${l}</option>`).join('')}</select>
+          <label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c=>`<option value="${c}" ${c===p.condition?'selected':''}>${c}</option>`).join('')}</select>
+          <label class="form-label">稼働状況</label><select id="edS" class="form-input"><option value="">未設定</option>${pdlStatuses.map(s=>`<option value="${s}" ${s===p.status?'selected':''}>${s}</option>`).join('')}</select>
+          
+          <label class="form-label" style="color:#2196F3; margin-top:10px;">📏 畝立てシミュレーション</label>
+          <div style="background:#e8f4fd; padding:10px; border-radius:4px; margin-bottom:10px; border:1px solid #bbdefb;">
+            <div style="display:flex; gap:5px;">
+              <select id="edRDir" class="form-input" style="flex:1; margin-bottom:5px; padding:6px;" onchange="updateRidgeCalc('${id}')">${rDirOpts}</select>
+              <input type="number" id="edRW" class="form-input" style="flex:1; margin-bottom:5px; padding:6px;" value="${rWidth}" placeholder="畝幅(cm)" oninput="updateRidgeCalc('${id}')">
+            </div>
+            <div style="font-size:14px; font-weight:bold; color:#1a73e8; text-align:right;" id="ridgeCalcResult">推定: -- 畝</div>
+          </div>
+          <button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;">情報を更新</button></div>`);
+          setTimeout(() => updateRidgeCalc(id), 50);
+        }
+      };
+
+      window.execAttr = (id) => {
+        const p=loadedPolygons[id];
+        if(p.isMarker){
+           const n=document.getElementById('rnIn').value; 
+           const f=document.getElementById('rnFunc').value;
+           if(!n)return; 
+           p.name=n; p.signFunction=f; p.labelConfig.text=n; 
+           p.marker.setMap(null); p.marker=createSignboardMarker(n,p.marker.getPosition(),p.color,id); 
+           callGAS('updatePolygon',{id,name:n,signFunction:f,userName:currentUser});
+        }
+        else{
+          const n=document.getElementById('edN').value, l=document.getElementById('edL').value, c=document.getElementById('edC').value, s=document.getElementById('edS').value;
+          const t = p.toukiId; 
+          const rDir=document.getElementById('edRDir').value, rW=document.getElementById('edRW').value;
+          if(!n)return; p.name=n; p.location=l; p.condition=c; p.status=s; p.toukiId=t; p.ridgeDir=rDir; p.ridgeWidth=rW;
+          const isU=(s==='未使用（返却）'||s==='未使用'), col=isU?'#999':p.color; p.polygon.setOptions({fillColor:col,strokeColor:col,fillOpacity:isU?0.5:0.3}); p.marker.setMap(null); p.marker=createLabelMarker(n,p.polygon.getPath().getArray(),p.color,p.area); 
+          callGAS('updatePolygon',{id,name:n,location:l,condition:c,status:s,toukiId:t, ridgeDir:rDir, ridgeWidth:rW, userName:currentUser}); 
+        } infoWindow.close();
+      };
+
+      window.openCol = (id) => {
+        const p=loadedPolygons[id]; let h;
+        if(p.isMarker){const ic=['🪧','🚻','🚰','⛲','🚿','🌀','⛏️','🪚','✂️','🧹','🔬','📦','🏭','🚚','🛻','🏪','⛽','🛠️','🏢','⚠️','🅿️','📢','🚫','🧼','🪵','🔩','🛢️','🚜','💩','⛰️','🗑️']; h=`<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;font-size:24px;">${ic.map(i=>`<span onclick="applyCol('${id}','${i}')" style="cursor:pointer;">${i}</span>`).join('')}</div>`;}
+        else{const cl=['#FF0000','#FF6600','#FFFF00','#00FF00','#556B2F','#00CCFF','#0033FF','#9900FF','#d32f2f']; h=`<div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;">${cl.map(c=>`<button style="background:${c};width:35px;height:35px;border-radius:4px;border:1px solid #ccc;" onclick="applyCol('${id}','${c}')"></button>`).join('')}</div>`;}
+        infoWindow.setContent(`<div style="text-align:center;width:240px;color:#000;"><b>${p.isMarker?'ｱｲｺﾝ':'色'}変更</b><br><br>${h}</div>`);
+      };
+      
+      window.applyCol = (id,v) => { 
+        const p=loadedPolygons[id]; 
+        p.color=v; 
+        if(p.isMarker){
+          p.marker.setMap(null); 
+          p.marker=createSignboardMarker(p.name,p.marker.getPosition(),v,id);
+        } else {
+          if(p.status!=='未使用（返却）'&&p.status!=='未使用')p.polygon.setOptions({fillColor:v,strokeColor:v});
+        } 
+        callGAS('updatePolygon',{id, color:v, signFunction: p.signFunction, userName:currentUser}); 
+        infoWindow.close(); 
+      };
+
+      window.actionEditShape = (id) => { infoWindow.close(); editingId=id; loadedPolygons[id].polygon?loadedPolygons[id].polygon.setEditable(true):loadedPolygons[id].marker.setDraggable(true); if(loadedPolygons[id].polygon) originalCoordsForEdit=loadedPolygons[id].polygon.getPath().getArray().map(p=>({lat:p.lat(),lng:p.lng()})); else originalCoordsForEdit=[loadedPolygons[id].marker.getPosition()]; document.getElementById('editShapePanel').style.display='block'; map.setZoom(map.getZoom()); };
+      window.actionDelete = async (id) => { 
+        if(await customConfirm("削除しますか？")){
+          if(loadedPolygons[id].polygon)loadedPolygons[id].polygon.setMap(null); 
+          loadedPolygons[id].marker.setMap(null); 
+          delete loadedPolygons[id]; 
+          callGAS('deletePolygon',{id,userName:currentUser}); 
+          infoWindow.close();
+        } 
+      };
+
+      window.startMerge = (id) => { isMergeMode=true; mergeBaseId=id; infoWindow.close(); customAlert("統合する別の圃場をクリックしてください。"); };
+      window.execMerge = async (bId, tId) => {
+        if(bId===tId) return; if(!await customConfirm("マスタと履歴を統合しますか？")) {isMergeMode=false; return;}
+        const bP=loadedPolygons[bId], tP=loadedPolygons[tId];
+        if(tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId+","+tP.toukiId).split(","))].join(",") : tP.toukiId;
+        tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; isMergeMode=false;
+        callGAS('mergeFields',{baseId:bId, targetId:tId, userName:currentUser}); customAlert("完了！範囲を広げてください");
+      };
+      window.execSplit = async (id) => {
+        if(!await customConfirm("同じ形で分割・複製しますか？(登記IDも引き継がれます)")) return;
+        const newId = await callGAS('splitField',{id, userName:currentUser}), p = loadedPolygons[id];
+        createPolygonObject({...p, id:newId, name:p.name+"_分割"});
+        customAlert("完了！重なっているので範囲変更してください");
+      };
+
+      window.openFeedback = () => { document.getElementById('feedbackModal').style.display = 'flex'; };
+      window.closeFeedback = () => { document.getElementById('feedbackModal').style.display = 'none'; };
+      window.sendFeedback = async () => {
+         const text = document.getElementById('feedbackText').value;
+         if (!text.trim()) { customAlert("内容を入力してください"); return; }
+         const btn = document.getElementById('sendFeedbackBtn');
+         btn.disabled = true; btn.innerText = "送信中...";
+         try {
+            await callGAS('manageMaster', { masterType: 'crop', manageAction: 'feedback', value: text, userName: currentUser }); 
+            customAlert("開発者に連絡を送信しました！\nご協力ありがとうございます。");
+            document.getElementById('feedbackText').value = "";
+            closeFeedback();
+         } catch(e) { customAlert("エラーが発生しました。"); } 
+         finally { btn.disabled = false; btn.innerText = "送信する"; }
+      };
+
+      window.onload = () => { initMap(); const id=localStorage.getItem('pMapAdminId'), pw=localStorage.getItem('pMapAdminPw'); if(id&&pw){document.getElementById('loginId').value=id; document.getElementById('loginPw').value=pw; executeLogin();} };
+    </script>
+    
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+      }
+    </script>
+  </body>
+</html>
