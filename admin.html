@@ -441,7 +441,8 @@ function openAttr(id) {
 
       function createSignboardMarker(name, pos, icon, id) {
         const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
-        const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26,26), labelOrigin: new google.maps.Point(13,30) } });
+        // ★修正: zoom >= 15 で常に看板名を表示する
+        const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 15 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26,26), labelOrigin: new google.maps.Point(13,30) } });
         google.maps.event.addListener(marker, 'click', () => { 
           if(window.isAdminMapSelecting) { 
               if (window.tempLinkedSigns.includes(id)) { window.tempLinkedSigns = window.tempLinkedSigns.filter(x => x !== id); } else { window.tempLinkedSigns.push(id); }
@@ -538,21 +539,8 @@ function openAttr(id) {
           drawingManager.setMap(map);
           
           // ★看板名の表示ギミック（過去と同じズーム連動処理）
-          map.addListener('zoom_changed', () => { 
-              const z = map.getZoom(); 
-              for(let id in loadedPolygons){ 
-                  const p = loadedPolygons[id]; 
-                  if(!p.marker) continue; 
-                  if(p.isMarker){ 
-                      p.marker.setVisible(z >= 15); 
-                      if(z < 17) p.marker.setLabel(null); 
-                      else if(p.labelConfig) p.marker.setLabel(p.labelConfig); 
-                  } else {
-                      p.marker.setVisible(z >= 14); 
-                  }
-              } 
-          });
-          
+          map.addListener('zoom_changed', () => { const z=map.getZoom(); for(let id in loadedPolygons){ const p=loadedPolygons[id]; if(!p.marker)continue; if(p.isMarker){ p.marker.setVisible(z>=15); if(z<15)p.marker.setLabel(null); else if(p.labelConfig)p.marker.setLabel(p.labelConfig); } else p.marker.setVisible(z>=14); } });
+              
           map.addListener('idle', () => { 
               let center = map.getCenter(); 
               localStorage.setItem('pMapAdminLastLat', center.lat()); 
@@ -588,6 +576,7 @@ function openAttr(id) {
 
           // ★図形・マーカーを描き終わった時の処理（過去の処理を復元）
           google.maps.event.addListener(drawingManager, 'overlaycomplete', e => {
+            map.setOptions({ gestureHandling: 'greedy' });
               if (e.type === 'polygon') { 
                   if(currentPolygon) currentPolygon.setMap(null); 
                   currentPolygon = e.overlay; 
@@ -643,45 +632,44 @@ function openAttr(id) {
       function setupSearch() { const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions'); input.oninput = () => { const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; } const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val)); matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'🪧':'🌿')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); }); sug.style.display = matches.length ? 'block' : 'none'; }; }
       function focusAndOpen(id) { const p = loadedPolygons[id]; let center; if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); } map.setZoom(18); map.panTo(center); setTimeout(() => { openM(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500); }
 
-      // 🌟 過去の完璧なボタン切り替えギミックを復元！ 🌟
-      document.getElementById('btnViewMode').onclick = () => { 
-          document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active')); 
+      document.getElementById('btnViewMode').onclick=()=>{ 
+          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnViewMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display = 'none'; 
+          document.getElementById('drawArea').style.display='none'; 
           drawingManager.setDrawingMode(null); 
-          if(currentPolygon) { currentPolygon.setMap(null); currentPolygon=null; } 
-          document.getElementById('addressHint').style.display = 'none';
+          if(currentPolygon)currentPolygon.setMap(null); 
+          document.getElementById('addressHint').style.display='none';
+          map.setOptions({ gestureHandling: 'greedy' }); // ★スクロールを許可
       };
 
-      document.getElementById('btnDrawMode').onclick = () => { 
-          document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active')); 
+      document.getElementById('btnDrawMode').onclick=()=>{ 
+          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnDrawMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display = 'block'; 
-          if(currentPolygon) { currentPolygon.setMap(null); currentPolygon=null; document.getElementById('saveBtn').disabled=true; }
-          // ★ここでGoogle純正の描画モード（十字カーソル＆クリック処理）を起動！
+          document.getElementById('drawArea').style.display='block'; 
           drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
+          map.setOptions({ gestureHandling: 'none' }); // ★スマホでタップできるようにスクロールをロック
       };
 
-      document.getElementById('btnMarkerMode').onclick = () => { 
-          document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active')); 
+      document.getElementById('btnMarkerMode').onclick=()=>{ 
+          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnMarkerMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display = 'none'; 
-          // ★ここでGoogle純正のマーカー設置モードを起動！
+          document.getElementById('drawArea').style.display='none'; 
           drawingManager.setDrawingMode(google.maps.drawing.OverlayType.MARKER); 
-          document.getElementById('addressHint').style.display = 'none';
+          document.getElementById('addressHint').style.display='none';
+          map.setOptions({ gestureHandling: 'none' }); // ★スマホでタップできるようにスクロールをロック
       };
 
-      document.getElementById('cancelDrawBtn').onclick = () => { 
-          if(currentPolygon) { currentPolygon.setMap(null); currentPolygon=null; } 
+      document.getElementById('cancelDrawBtn').onclick=()=>{
+          if(currentPolygon){currentPolygon.setMap(null);currentPolygon=null;}
           drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON); 
-          document.getElementById('saveBtn').disabled = true; 
-          document.getElementById('addressHint').style.display = 'none'; 
-          document.getElementById('fieldName').value=''; 
-          document.getElementById('fieldLocation').value=''; 
-          document.getElementById('fieldCondition').value=''; 
-          document.getElementById('fieldStatus').value=''; 
+          document.getElementById('saveBtn').disabled=true;
+          document.getElementById('addressHint').style.display='none';
+          document.getElementById('fieldName').value='';
+          document.getElementById('fieldLocation').value='';
+          document.getElementById('fieldCondition').value='';
+          document.getElementById('fieldStatus').value='';
+          map.setOptions({ gestureHandling: 'none' }); // ★ロック継続
       };
-
 
       document.getElementById('saveBtn').onclick=()=>{
         const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
