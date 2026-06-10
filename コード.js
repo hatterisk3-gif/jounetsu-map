@@ -94,11 +94,11 @@ function getInitData() {
   };
 
   const pdl = {
-    locations: getCol(['圃場設定マスタ', '拠点マスタ'], 0),
-    conditions: getCol(['圃場設定マスタ', '条件マスタ'], 1),
-    statuses: getCol(['圃場設定マスタ', '状況マスタ'], 2),
-    stages: getCol(['生育記録マスタ', '生育ステージマスタ'], 2),
-    signFunctionsMaster: getCol(['看板マスタ'], 0) // ★ここを追加！看板マスタのA列を取得します
+    locations: getCol(['圃場設定マスタ', '拠点名'], 0),
+    conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
+    statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
+    stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
+    signFunctionsMaster: getCol(['看板機能'], 0) // ★ここを追加！看板マスタのA列を取得します
   };
   
   let workMaster = [];
@@ -272,7 +272,7 @@ pdl.materials = [];
 
   // =========================================================
   // ★修正：履歴から見つけていただいた「完璧なreturn」に上書き！
-  return { pdl, polygons: getSavedPolygons(), toukiList: getCol(['登記マスタ'], 0), activeLots };
+  return { pdl, polygons: getSavedPolygons(), toukiList: getCol(['登記ID'], 0), activeLots };
   // =========================================================
 
 } // ← これが getInitData を閉じる } です
