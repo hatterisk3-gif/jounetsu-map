@@ -531,11 +531,20 @@ function initMap() {
           // 通常のクリック（InfoWindowを閉じる）
           google.maps.event.addListener(map, 'click', () => infoWindow.close());
           
-          // ★過去の完璧なギミック：Google純正の描画システムを使う！
-          drawingManager = new google.maps.drawing.DrawingManager({ 
+       // ★過去の完璧なギミック：Google純正の描画システムを使う！
+       drawingManager = new google.maps.drawing.DrawingManager({ 
               drawingMode: null, 
               drawingControl: false, 
-              polygonOptions: { fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1, strokeWeight: 3, editable: true } 
+              polygonOptions: { 
+                  fillColor: '#d32f2f', 
+                  fillOpacity: 0.3, 
+                  strokeColor: '#d32f2f', 
+                  strokeOpacity: 1, 
+                  strokeWeight: 3, 
+                  editable: true,
+                  zIndex: 9999, // ★追加：描画中の線を絶対に最前面に出す
+                  clickable: false // ★追加：描画中の自分自身の図形も邪魔にならないようにする
+              } 
           }); 
           drawingManager.setMap(map);
           
@@ -668,47 +677,45 @@ function initMap() {
       function focusAndOpen(id) { const p = loadedPolygons[id]; let center; if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); } map.setZoom(18); map.panTo(center); setTimeout(() => { openM(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500); }
 
       document.getElementById('btnViewMode').onclick=()=>{ 
-    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
-    document.getElementById('btnViewMode').classList.add('active'); 
-    document.getElementById('drawArea').style.display='none'; 
-    drawingManager.setDrawingMode(null); 
-    if(currentPolygon) currentPolygon.setMap(null); 
-    document.getElementById('addressHint').style.display='none';
+          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
+          document.getElementById('btnViewMode').classList.add('active'); 
+          document.getElementById('drawArea').style.display='none'; 
+          drawingManager.setDrawingMode(null); 
+          if(currentPolygon) currentPolygon.setMap(null); 
+          document.getElementById('addressHint').style.display='none';
 
-    // ★ここを追加：閲覧モードに戻ったらクリック可能に戻す
-    for(let id in loadedPolygons) {
-        if(!loadedPolygons[id].isMarker && loadedPolygons[id].polygon) {
-            loadedPolygons[id].polygon.setOptions({ clickable: true });
-        }
-    }
-};
+          // ★閲覧モード：すべての図形と文字を「クリック可能」に戻す
+          for(let id in loadedPolygons) {
+              if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: true });
+              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setOptions({ clickable: true });
+          }
+      };
 
       document.getElementById('btnDrawMode').onclick=()=>{ 
-    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
-    document.getElementById('btnDrawMode').classList.add('active'); 
-    document.getElementById('drawArea').style.display='block'; 
-    drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
+          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
+          document.getElementById('btnDrawMode').classList.add('active'); 
+          document.getElementById('drawArea').style.display='block'; 
+          drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
 
-    // ★ここを追加：描画モード中は既存の圃場をクリック不可（すり抜け）にする
-    for(let id in loadedPolygons) {
-        if(!loadedPolygons[id].isMarker && loadedPolygons[id].polygon) {
-            loadedPolygons[id].polygon.setOptions({ clickable: false });
-        }
-    }
-};
+          // ★描画モード：邪魔になる既存の図形と文字を「完全すり抜け」にする！
+          for(let id in loadedPolygons) {
+              if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: false });
+              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setOptions({ clickable: false });
+          }
+      };
 
       document.getElementById('btnMarkerMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnMarkerMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='none'; 
-          // ★ここでGoogle純正のマーカー設置モードを起動！
           drawingManager.setDrawingMode(google.maps.drawing.OverlayType.MARKER); 
           document.getElementById('addressHint').style.display='none';
+          
+          // ★看板モード：邪魔になる既存の図形と文字を「完全すり抜け」にする！
           for(let id in loadedPolygons) {
-        if(!loadedPolygons[id].isMarker && loadedPolygons[id].polygon) {
-            loadedPolygons[id].polygon.setOptions({ clickable: false });
+              if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: false });
+              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setOptions({ clickable: false });
           }
-        }
       };
 
       document.getElementById('cancelDrawBtn').onclick=()=>{
