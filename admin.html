@@ -667,23 +667,35 @@ function initMap() {
       function setupSearch() { const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions'); input.oninput = () => { const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; } const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val)); matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'🪧':'🌿')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); }); sug.style.display = matches.length ? 'block' : 'none'; }; }
       function focusAndOpen(id) { const p = loadedPolygons[id]; let center; if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); } map.setZoom(18); map.panTo(center); setTimeout(() => { openM(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500); }
 
-      // 🌟 ボタンを押した時のモード切り替え（過去の完璧な動作を完全復元） 🌟
       document.getElementById('btnViewMode').onclick=()=>{ 
-          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
-          document.getElementById('btnViewMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display='none'; 
-          drawingManager.setDrawingMode(null); 
-          if(currentPolygon) currentPolygon.setMap(null); 
-          document.getElementById('addressHint').style.display='none';
-      };
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
+    document.getElementById('btnViewMode').classList.add('active'); 
+    document.getElementById('drawArea').style.display='none'; 
+    drawingManager.setDrawingMode(null); 
+    if(currentPolygon) currentPolygon.setMap(null); 
+    document.getElementById('addressHint').style.display='none';
+
+    // ★ここを追加：閲覧モードに戻ったらクリック可能に戻す
+    for(let id in loadedPolygons) {
+        if(!loadedPolygons[id].isMarker && loadedPolygons[id].polygon) {
+            loadedPolygons[id].polygon.setOptions({ clickable: true });
+        }
+    }
+};
 
       document.getElementById('btnDrawMode').onclick=()=>{ 
-          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
-          document.getElementById('btnDrawMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display='block'; 
-          // ★ここでGoogle純正の描画モード（十字カーソル＆クリック処理）を起動！
-          drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
-      };
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
+    document.getElementById('btnDrawMode').classList.add('active'); 
+    document.getElementById('drawArea').style.display='block'; 
+    drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
+
+    // ★ここを追加：描画モード中は既存の圃場をクリック不可（すり抜け）にする
+    for(let id in loadedPolygons) {
+        if(!loadedPolygons[id].isMarker && loadedPolygons[id].polygon) {
+            loadedPolygons[id].polygon.setOptions({ clickable: false });
+        }
+    }
+};
 
       document.getElementById('btnMarkerMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
@@ -692,6 +704,11 @@ function initMap() {
           // ★ここでGoogle純正のマーカー設置モードを起動！
           drawingManager.setDrawingMode(google.maps.drawing.OverlayType.MARKER); 
           document.getElementById('addressHint').style.display='none';
+          for(let id in loadedPolygons) {
+        if(!loadedPolygons[id].isMarker && loadedPolygons[id].polygon) {
+            loadedPolygons[id].polygon.setOptions({ clickable: false });
+          }
+        }
       };
 
       document.getElementById('cancelDrawBtn').onclick=()=>{
