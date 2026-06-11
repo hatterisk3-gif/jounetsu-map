@@ -441,9 +441,12 @@ function openAttr(id) {
 
       function createSignboardMarker(name, pos, icon, id) {
         const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
-        // ★修正: zoom >= 15 で常に看板名を表示する
         const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 15 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26,26), labelOrigin: new google.maps.Point(13,30) } });
-        google.maps.event.addListener(marker, 'click', () => { 
+        
+        google.maps.event.addListener(marker, 'click', (e) => { 
+          // ★究極のすり抜け処理：描画モード中なら「地図をクリックした」ことにする
+          if (customDrawingMode) { google.maps.event.trigger(map, 'click', e); return; }
+          
           if(window.isAdminMapSelecting) { 
               if (window.tempLinkedSigns.includes(id)) { window.tempLinkedSigns = window.tempLinkedSigns.filter(x => x !== id); } else { window.tempLinkedSigns.push(id); }
               updateAdminMapVisuals(); return;
@@ -463,7 +466,15 @@ function openAttr(id) {
           const isU=(p.status==='未使用（返却）'||p.status==='未使用'), dC = getAdminColor(p.status); 
           const poly=new google.maps.Polygon({paths:p.coords, map, fillColor:dC, fillOpacity:isU?0.5:0.3, strokeColor:dC, strokeOpacity:1, strokeWeight:3});
           const m=createLabelMarker(p.name,p.coords,dC,p.area);
-          google.maps.event.addListener(poly,'click',()=>{ if(editingId) return; if(isMergeMode){execMerge(mergeBaseId,p.id);return;}openM(p.id); }); 
+          
+          google.maps.event.addListener(poly,'click', (e) => { 
+              // ★究極のすり抜け処理：描画モード中なら「地図をクリックした」ことにする
+              if (customDrawingMode) { google.maps.event.trigger(map, 'click', e); return; }
+              
+              if(editingId) return; 
+              if(isMergeMode){execMerge(mergeBaseId,p.id);return;}
+              openM(p.id); 
+          }); 
           loadedPolygons[p.id]={...p, polygon:poly, marker:m};
         }
       }
@@ -510,7 +521,7 @@ function openAttr(id) {
         let trueWidthM = maxRy - minRy;
         return Math.floor((trueWidthM * 0.95) / (widthCm / 100));
       };
-// 🌟 地図の初期化（過去の完璧なギミックを完全復元！） 🌟
+// 🌟 地図の初期化（自前の爆速描画システム搭載！） 🌟
 function initMap() {
           let savedLat = localStorage.getItem('pMapAdminLastLat');
           let savedLng = localStorage.getItem('pMapAdminLastLng');
@@ -530,25 +541,50 @@ function initMap() {
           
           // 通常のクリック（InfoWindowを閉じる）
           google.maps.event.addListener(map, 'click', () => infoWindow.close());
-          
-       // ★過去の完璧なギミック：Google純正の描画システムを使う！
-       drawingManager = new google.maps.drawing.DrawingManager({ 
-              drawingMode: null, 
-              drawingControl: false, 
-              polygonOptions: { 
-                  fillColor: '#d32f2f', 
-                  fillOpacity: 0.3, 
-                  strokeColor: '#d32f2f', 
-                  strokeOpacity: 1, 
-                  strokeWeight: 3, 
-                  editable: true,
-                  zIndex: 9999, // ★追加：描画中の線を絶対に最前面に出す
-                  clickable: false // ★追加：描画中の自分自身の図形も邪魔にならないようにする
+
+          // ★追加：純正の描画ツールを捨てて、自前のクリックイベントで図形を描く！
+          map.addListener('click', (e) => {
+              if (!customDrawingMode) return; // 閲覧モードなら何もしない
+              
+              if (customDrawingMode === 'marker') {
+                  // 【看板モード】クリックした場所にマーカーを仮置きしてフォームを開く
+                  if (currentMarker) currentMarker.setMap(null);
+                  currentMarker = new google.maps.Marker({ position: e.latLng, map: map });
+                  openMarkerForm(currentMarker);
+                  customDrawingMode = null; // 連続で置かないようにリセット
+                  map.setOptions({ draggable: true }); // ドラッグ可能に戻す
+                  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+                  document.getElementById('btnViewMode').classList.add('active');
               } 
-          }); 
-          drawingManager.setMap(map);
+              else if (customDrawingMode === 'polygon') {
+                  // 【圃場モード】クリックした場所に頂点を追加する
+                  customDrawingPath.push(e.latLng);
+                  
+                  // 点を線で結ぶ
+                  if (!customDrawingPolyline) {
+                      customDrawingPolyline = new google.maps.Polyline({ map: map, path: customDrawingPath, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9999 });
+                  } else {
+                      customDrawingPolyline.setPath(customDrawingPath);
+                  }
+                  
+                  // 3点以上打たれたら「ポリゴン(面)」として塗りつぶし、保存可能にする
+                  if (customDrawingPath.length >= 3) {
+                      document.getElementById('saveBtn').disabled = false;
+                      document.getElementById('saveBtn').innerText = `圃場を保存（現在${customDrawingPath.length}角形）`;
+                      
+                      if (!currentPolygon) {
+                          currentPolygon = new google.maps.Polygon({ map: map, paths: customDrawingPath, fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9999 });
+                          customDrawingPolyline.setMap(null); // 線はもう要らないので隠す
+                      } else {
+                          currentPolygon.setPath(customDrawingPath);
+                      }
+                      
+                      // 3点目の時に住所を取得
+                      if (customDrawingPath.length === 3) fetchAddressHint(e.latLng);
+                  }
+              }
+          });
           
-          // ★看板名の表示ギミック（過去と同じズーム連動処理を復元・常時表示）
           map.addListener('zoom_changed', () => { 
               const z = map.getZoom(); 
               for(let id in loadedPolygons){ 
@@ -556,7 +592,7 @@ function initMap() {
                   if(!p.marker) continue; 
                   if(p.isMarker){ 
                       p.marker.setVisible(z >= 15); 
-                      if(z < 15) p.marker.setLabel(null); // ★15以上なら常に看板名を表示！
+                      if(z < 15) p.marker.setLabel(null); 
                       else if(p.labelConfig) p.marker.setLabel(p.labelConfig); 
                   } else {
                       p.marker.setVisible(z >= 14); 
@@ -572,169 +608,114 @@ function initMap() {
           });
           
           document.getElementById('btnCurrentLocation').onclick = () => { 
-              if (latestUserPos) { 
-                  map.setCenter(latestUserPos); map.setZoom(18); 
-              } else if (navigator.geolocation) { 
+              if (latestUserPos) { map.setCenter(latestUserPos); map.setZoom(18); } 
+              else if (navigator.geolocation) { 
                   const btn = document.getElementById('btnCurrentLocation'); 
                   const orgText = btn.innerHTML; 
-                  btn.innerHTML = "取得中..."; 
-                  btn.disabled = true; 
+                  btn.innerHTML = "取得中..."; btn.disabled = true; 
                   navigator.geolocation.getCurrentPosition(p => { 
                       latestUserPos = {lat: p.coords.latitude, lng: p.coords.longitude}; 
                       map.setCenter(latestUserPos); map.setZoom(18); 
-                      if (!userLocationMarker) { 
-                          userLocationMarker = new google.maps.Marker({position: latestUserPos, map, icon:{path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2}, zIndex: 999}); 
-                      } else { 
-                          userLocationMarker.setPosition(latestUserPos); 
-                      } 
-                      btn.innerHTML = orgText; 
-                      btn.disabled = false; 
-                  }, function(){ 
-                      customAlert("現在地を取得できませんでした"); 
-                      btn.innerHTML = orgText; 
-                      btn.disabled = false; 
-                  }, { enableHighAccuracy: true }); 
+                      if (!userLocationMarker) { userLocationMarker = new google.maps.Marker({position: latestUserPos, map, icon:{path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2}, zIndex: 999}); } 
+                      else { userLocationMarker.setPosition(latestUserPos); } 
+                      btn.innerHTML = orgText; btn.disabled = false; 
+                  }, function(){ customAlert("現在地を取得できません"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true }); 
               } 
           };
-
-          // ★図形・マーカーを描き終わった時の処理（過去の処理を完全復元）
-          google.maps.event.addListener(drawingManager, 'overlaycomplete', e => {
-              if (e.type === 'polygon') { 
-                  if(currentPolygon) currentPolygon.setMap(null); 
-                  currentPolygon = e.overlay; 
-                  document.getElementById('saveBtn').disabled = false; 
-                  drawingManager.setDrawingMode(null); // 描画モード終了
-                  currentPolygon.setEditable(true); 
-                  
-                  const bounds = new google.maps.LatLngBounds(); 
-                  currentPolygon.getPath().forEach(pt => bounds.extend(pt)); 
-                  const center = bounds.getCenter();
-                  
-                  const hintDiv = document.getElementById('addressHint'); 
-                  hintDiv.innerHTML = "📍 住所を取得中..."; 
-                  hintDiv.style.display = "block";
-                  
-                  new google.maps.Geocoder().geocode({ location: center }, (results, status) => { 
-                      if (status === 'OK' && results.length > 0) { 
-                          let targetResult = results.find(r => !r.types.includes("plus_code")) || results[0]; 
-                          let addr = targetResult.formatted_address.replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').replace(/^[A-Z0-9\+]+\s/, ''); 
-                          hintDiv.innerHTML = `<span style="font-size:10px;">📍 推定住所</span><br><b style="color:#4CAF50; font-size:13px;">${addr}</b>`; 
-                      } else { 
-                          hintDiv.innerHTML = "📍 住所取得失敗 (原因: " + status + ")"; 
-                      } 
-                  });
-              } 
-              else if (e.type === 'marker') {
-                  if(currentMarker) currentMarker.setMap(null); 
-                  currentMarker = e.overlay; 
-                  drawingManager.setDrawingMode(null); // 描画モード終了
-                  
-                  window.selectMI = (i) => { 
-                      document.getElementById('selIco').value = i; 
-                      document.querySelectorAll('.ib').forEach(el => el.style.background = 'none'); 
-                      document.getElementById('i_' + i).style.background = '#ddd'; 
-                      
-                      const defaultFunc = '機能なし';
-                      const mappedFunc = iconFunctionMap[i] || defaultFunc;
-                      
-                      const mFunc = document.getElementById('mFunc'); 
-                      if (mFunc) { 
-                          if(Array.from(mFunc.options).some(opt => opt.value === mappedFunc)) {
-                              mFunc.value = mappedFunc;
-                          } else {
-                              mFunc.value = '機能なし';
-                          }
-                      } 
-                  };
-                  
-                  const icons = ['🪧','🚻','🚰','⛲','🚿','🌀','⛏️','🪚','✂️','🧹','🔬','📦','🏭','🚚','🛻','🏪','⛽','🛠️','🏢','⚠️','🅿️','📢','🚫','🧼','🪵','🔩','🛢️','🚜','💩','⛰️','🗑️'];
-                  const funcOpts = `<option value="機能なし">機能なし</option>` + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join('');
-                  infoWindow.setContent(`
-                    <div style="width:260px;max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
-                      <b>看板登録</b><br>
-                      <input type="text" id="mName" class="form-input" placeholder="看板名">
-                      <select id="mFunc" class="form-input" style="margin-bottom:10px;">${funcOpts}</select>
-                      <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:20px;gap:2px;">
-                        ${icons.map(i=>`<span class="ib" id="i_${i}" onclick="selectMI('${i}')" style="cursor:pointer;padding:2px;border-radius:4px;">${i}</span>`).join('')}
-                      </div>
-                      <input type="hidden" id="selIco" value="🪧"><br>
-                      <button onclick="saveM()" style="background:#d32f2f;color:white;width:100%;margin-top:10px;padding:10px;border-radius:4px;border:none;font-weight:bold;">マスタに登録</button>
-                    </div>
-                  `);
-                  infoWindow.setPosition(currentMarker.getPosition()); 
-                  infoWindow.open(map); 
-                  setTimeout(() => selectMI('🪧'), 10);
-              }
-          });
-          
           setupSearch(); 
           setupMapSearch();
       } // ← initMap の終わり
 
+      // ★追加：自前描画用の補助関数
+      function fetchAddressHint(latLng) {
+          const hintDiv = document.getElementById('addressHint'); 
+          hintDiv.innerHTML = "📍 住所を取得中..."; hintDiv.style.display = "block";
+          new google.maps.Geocoder().geocode({ location: latLng }, (results, status) => { 
+              if (status === 'OK' && results.length > 0) { 
+                  let targetResult = results.find(r => !r.types.includes("plus_code")) || results[0]; 
+                  let addr = targetResult.formatted_address.replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').replace(/^[A-Z0-9\+]+\s/, ''); 
+                  hintDiv.innerHTML = `<span style="font-size:10px;">📍 推定住所</span><br><b style="color:#4CAF50; font-size:13px;">${addr}</b>`; 
+              } else { hintDiv.innerHTML = "📍 住所取得失敗"; } 
+          });
+      }
+
+      function openMarkerForm(markerObj) {
+          window.selectMI = (i) => { 
+              document.getElementById('selIco').value = i; 
+              document.querySelectorAll('.ib').forEach(el => el.style.background = 'none'); 
+              document.getElementById('i_' + i).style.background = '#ddd'; 
+              const mappedFunc = iconFunctionMap[i] || '機能なし';
+              const mFunc = document.getElementById('mFunc'); 
+              if (mFunc) { 
+                  if(Array.from(mFunc.options).some(opt => opt.value === mappedFunc)) mFunc.value = mappedFunc;
+                  else mFunc.value = '機能なし';
+              } 
+          };
+          const icons = ['🪧','🚻','🚰','⛲','🚿','🌀','⛏️','🪚','✂️','🧹','🔬','📦','🏭','🚚','🛻','🏪','⛽','🛠️','🏢','⚠️','🅿️','📢','🚫','🧼','🪵','🔩','🛢️','🚜','💩','⛰️','🗑️'];
+          const funcOpts = `<option value="機能なし">機能なし</option>` + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join('');
+          infoWindow.setContent(`
+            <div style="width:260px;max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
+              <b>看板登録</b><br>
+              <input type="text" id="mName" class="form-input" placeholder="看板名">
+              <select id="mFunc" class="form-input" style="margin-bottom:10px;">${funcOpts}</select>
+              <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:20px;gap:2px;">
+                ${icons.map(i=>`<span class="ib" id="i_${i}" onclick="selectMI('${i}')" style="cursor:pointer;padding:2px;border-radius:4px;">${i}</span>`).join('')}
+              </div>
+              <input type="hidden" id="selIco" value="🪧"><br>
+              <button onclick="saveM()" style="background:#d32f2f;color:white;width:100%;margin-top:10px;padding:10px;border-radius:4px;border:none;font-weight:bold;">マスタに登録</button>
+            </div>
+          `);
+          infoWindow.setPosition(markerObj.getPosition()); infoWindow.open(map); 
+          setTimeout(() => selectMI('🪧'), 10);
+      }
       // === 検索関連の機能 ===
       function setupMapSearch() { const input = document.getElementById('mapSearchInput'); const searchBox = new google.maps.places.SearchBox(input); map.addListener('bounds_changed', () => { searchBox.setBounds(map.getBounds()); }); searchBox.addListener('places_changed', () => { const places = searchBox.getPlaces(); if (places.length == 0) return; const bounds = new google.maps.LatLngBounds(); places.forEach(place => { if (!place.geometry || !place.geometry.location) return; if (place.geometry.viewport) { bounds.union(place.geometry.viewport); } else { bounds.extend(place.geometry.location); } }); map.fitBounds(bounds); }); }
       function setupSearch() { const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions'); input.oninput = () => { const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; } const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val)); matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'🪧':'🌿')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); }); sug.style.display = matches.length ? 'block' : 'none'; }; }
       function focusAndOpen(id) { const p = loadedPolygons[id]; let center; if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); } map.setZoom(18); map.panTo(center); setTimeout(() => { openM(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500); }
 
+      function clearCustomDrawing() {
+          customDrawingPath = [];
+          if(customDrawingPolyline) { customDrawingPolyline.setMap(null); customDrawingPolyline = null; }
+          if(currentPolygon) { currentPolygon.setMap(null); currentPolygon = null; }
+          if(currentMarker) { currentMarker.setMap(null); currentMarker = null; }
+          document.getElementById('saveBtn').disabled = true;
+          document.getElementById('saveBtn').innerText = "圃場を保存";
+          document.getElementById('addressHint').style.display='none';
+      }
+
       document.getElementById('btnViewMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnViewMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='none'; 
-          drawingManager.setDrawingMode(null); 
-          if(currentPolygon) currentPolygon.setMap(null); 
-          document.getElementById('addressHint').style.display='none';
-
-          // ★閲覧モード：すべての図形と文字を「クリック可能」に戻す
-          for(let id in loadedPolygons) {
-              if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: true });
-              // マーカー専用のメソッドを使用
-              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setClickable(true);
-          }
-          
-          // PC操作時のドラッグ（パン）を有効に戻す
-          map.setOptions({ draggable: true });
+          customDrawingMode = null;
+          clearCustomDrawing();
+          map.setOptions({ draggable: true }); // ドラッグ可能に戻す
       };
 
       document.getElementById('btnDrawMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnDrawMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='block'; 
-          drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
-
-          // ★描画モード：邪魔になる既存の図形と文字を「完全すり抜け」にする！
-          for(let id in loadedPolygons) {
-              if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: false });
-              // マーカー専用のメソッドを使用（ここでクリックを完全に無効化）
-              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setClickable(false);
-          }
           
-          // ★PC操作用：描画中は地図のドラッグを無効化し、クリック時の微細なブレを「点」として認識させる
-          map.setOptions({ draggable: false });
+          customDrawingMode = 'polygon';
+          clearCustomDrawing();
+          map.setOptions({ draggable: false }); // 誤操作防止のためドラッグ無効
+          customAlert("【圃場作成モード】\n地図上をタップして頂点を打ってください。\n3点以上打つと「保存」ボタンが押せるようになります。");
       };
 
       document.getElementById('btnMarkerMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnMarkerMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='none'; 
-          drawingManager.setDrawingMode(google.maps.drawing.OverlayType.MARKER); 
-          document.getElementById('addressHint').style.display='none';
           
-          // ★看板モード：邪魔になる既存の図形と文字を「完全すり抜け」にする！
-          for(let id in loadedPolygons) {
-              if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: false });
-              // マーカー専用のメソッドを使用
-              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setClickable(false);
-          }
-          
-          // PC操作時のドラッグ（パン）を有効に戻す（看板はドラッグできた方が配置しやすい）
-          map.setOptions({ draggable: true });
+          customDrawingMode = 'marker';
+          clearCustomDrawing();
+          map.setOptions({ draggable: false }); // 誤操作防止のためドラッグ無効
+          customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。");
       };
 
       document.getElementById('cancelDrawBtn').onclick=()=>{
-          if(currentPolygon) { currentPolygon.setMap(null); currentPolygon=null; }
-          drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON); 
-          document.getElementById('saveBtn').disabled=true;
-          document.getElementById('addressHint').style.display='none';
+          clearCustomDrawing();
           document.getElementById('fieldName').value='';
           document.getElementById('fieldLocation').value='';
           document.getElementById('fieldCondition').value='';
@@ -745,19 +726,24 @@ function initMap() {
         const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
         if(!n) { customAlert("名前必須"); return; }
         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>"; document.getElementById('modal').style.display = 'flex';
-        const path=currentPolygon.getPath().getArray().map(pt=>({lat:pt.lat(),lng:pt.lng()})), area=Math.round(google.maps.geometry.spherical.computeArea(currentPolygon.getPath())/100);
+        
+        // ★自前システムから座標を取得！
+        const path = customDrawingPath.map(pt=>({lat:pt.lat(),lng:pt.lng()}));
+        const area = Math.round(google.maps.geometry.spherical.computeArea(currentPolygon.getPath())/100);
+        
         callGAS('savePolygon', {name:n, coords:JSON.stringify(path), color:'#d32f2f', userName:currentUser, location:l, condition:c, area, status:s, toukiId:t}).then(id=>{ 
           document.getElementById('modal').style.display = 'none';
           createPolygonObject({id,name:n,coords:path,color:'#d32f2f',location:l,condition:c,area,status:s,toukiId:t,isMarker:false}); 
-          currentPolygon.setMap(null); currentPolygon=null; document.getElementById('btnViewMode').click(); document.getElementById('addressHint').style.display='none'; document.getElementById('fieldName').value=''; document.getElementById('fieldLocation').value=''; document.getElementById('fieldCondition').value=''; document.getElementById('fieldStatus').value='';
+          document.getElementById('btnViewMode').click(); 
+          document.getElementById('fieldName').value=''; document.getElementById('fieldLocation').value=''; document.getElementById('fieldCondition').value=''; document.getElementById('fieldStatus').value='';
           customAlert("新しい圃場を登録しました！");
-        }).catch(e => { document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生しました: " + e.message); });
+        }).catch(e => { document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生: " + e.message); });
       };
       
       window.saveM=()=>{
         const n=document.getElementById('mName').value; if(!n) { customAlert("看板名を入力してください"); return; }
         const ic=document.getElementById('selIco').value, funcType = document.getElementById('mFunc').value, pos=currentMarker.getPosition(), coords=[{lat:pos.lat(),lng:pos.lng()}]; 
-        callGAS('savePolygon',{name:n, coords:JSON.stringify(coords), color:ic, signFunction:funcType, userName:currentUser}).then(id=>{ infoWindow.close(); createPolygonObject({id,name:n,coords,color:ic,signFunction:funcType,isMarker:true}); currentMarker.setMap(null); currentMarker=null; document.getElementById('btnViewMode').click(); });
+        callGAS('savePolygon',{name:n, coords:JSON.stringify(coords), color:ic, signFunction:funcType, userName:currentUser}).then(id=>{ infoWindow.close(); createPolygonObject({id,name:n,coords,color:ic,signFunction:funcType,isMarker:true}); document.getElementById('btnViewMode').click(); });
       };
       
       document.getElementById('saveShapeBtn').onclick=()=>{
