@@ -485,7 +485,7 @@ function openAttr(id) {
           loadedPolygons[p.id]={...p, polygon:poly, marker:m};
         }
       }
-      function createLabelMarker(n,c,col,a) { const b=new google.maps.LatLngBounds(); c.forEach(pt=>b.extend(pt)); return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=14, label:{text:`${n} / ${a}a`, color:'white', fontSize:'13px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); }
+      function createLabelMarker(n,c,col,a) { const b=new google.maps.LatLngBounds(); c.forEach(pt=>b.extend(pt)); return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=15, label:{text:`${n} / ${a}a`, color:'white', fontSize:'13px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); }
 // ==========================================
       // 畝シミュレーション計算（分割機能と完全一致版）
       // ==========================================
@@ -599,7 +599,7 @@ function initMap() {
                       if(z < 15) p.marker.setLabel(null); 
                       else if(p.labelConfig) p.marker.setLabel(p.labelConfig); 
                   } else {
-                      p.marker.setVisible(z >= 14); 
+                      p.marker.setVisible(z >= 15); 
                   }
               } 
           });
