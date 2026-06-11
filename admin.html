@@ -115,7 +115,11 @@
         <select id="fieldCondition" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;"></select>
         <select id="fieldStatus" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;"></select>
         <div id="addressHint" style="display:none; margin-bottom:10px; font-size:12px; color:#aaa; line-height:1.4; background:#333; padding:8px; border-radius:4px; border:1px solid #555; text-align:left;"></div>
-        <div style="display:flex; gap:10px;"><button id="saveBtn" style="background:#d32f2f; color:white; flex:1;" disabled>圃場を保存</button><button id="cancelDrawBtn" style="background:#666; flex:1; color:#fff;">消去</button></div>
+      <div style="display:flex; gap:8px;">
+  <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold;" disabled>↩️ 戻す</button>
+  <button id="saveBtn" style="background:#d32f2f; color:white; flex:1; border:none; border-radius:4px; font-weight:bold;" disabled>保存</button>
+  <button id="cancelDrawBtn" style="background:#666; color:#fff; flex:1; border:none; border-radius:4px; font-weight:bold;">消去</button>
+</div>
       </div>
     </div>
     <div id="editShapePanel" style="display:none; background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center;">⚠️ 形状変更中 <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 10px;">確定</button><button id="cancelShapeBtn" style="background:#666; color:#fff;">戻す</button></div>
@@ -129,7 +133,10 @@
       let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [];
       let latestUserPos = null;
       let customDrawingMode = null; let customDrawingPath = []; let customDrawingPolyline = null; let customDrawingPolygon = null;
-      let customDrawingMarkers = []; // ★追加：点を打ったときのピンを管理する配列
+      let customDrawingMarkers = []; let customDrawingLabelMarker = null;
+
+      // ★追加：📍赤いピンマークのカスタムカーソル
+      const pinCursor = "url('data:image/svg+xml;charset=UTF-8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 24 24\"><path fill=\"%23d32f2f\" stroke=\"%23ffffff\" stroke-width=\"1.5\" d=\"M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z\"/></svg>') 16 32, crosshair";
       // Admin用変数
       window.isAdminMapSelecting = false; window.tempLinkedSigns = []; window.editingTargetForLink = null; window.isReturningFromLinkSelect = false;
 
@@ -542,58 +549,43 @@ function initMap() {
           // 通常のクリック（InfoWindowを閉じる）
           google.maps.event.addListener(map, 'click', () => infoWindow.close());
 
-          // ★追加：純正の描画ツールを捨てて、自前のクリックイベントで図形を描く！
           map.addListener('click', (e) => {
-              if (!customDrawingMode) return; // 閲覧モードなら何もしない
+              if (!customDrawingMode) return;
               
               if (customDrawingMode === 'marker') {
-                  // 【看板モード】クリックした場所にマーカーを仮置きしてフォームを開く
                   if (currentMarker) currentMarker.setMap(null);
                   currentMarker = new google.maps.Marker({ position: e.latLng, map: map });
                   openMarkerForm(currentMarker);
-                  customDrawingMode = null; // 連続で置かないようにリセット
-                  map.setOptions({ draggable: true }); // ドラッグ可能に戻す
+                  customDrawingMode = null; 
+                  map.setOptions({ draggable: true, draggableCursor: null });
                   document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
                   document.getElementById('btnViewMode').classList.add('active');
               } 
               else if (customDrawingMode === 'polygon') {
-                  // 【圃場モード】クリックした場所に頂点を追加する
                   customDrawingPath.push(e.latLng);
                   
-                  // ★追加：打った点に「赤いフチの白い丸ピン」を表示する
                   let dotMarker = new google.maps.Marker({
                       position: e.latLng,
                       map: map,
-                      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 4, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
+                      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
                       zIndex: 10000,
-                      clickable: false
+                      draggable: true, // ★ドラッグ可能にする
+                      cursor: 'move'
                   });
-                  customDrawingMarkers.push(dotMarker);
-
-                  // 点を線で結ぶ
-                  if (!customDrawingPolyline) {
-                      customDrawingPolyline = new google.maps.Polyline({ map: map, path: customDrawingPath, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9999 });
-                  } else {
-                      customDrawingPolyline.setPath(customDrawingPath);
-                  }
                   
-                  // 3点以上打たれたら「ポリゴン(面)」として塗りつぶし、保存可能にする
-                  if (customDrawingPath.length >= 3) {
-                      document.getElementById('saveBtn').disabled = false;
-                      
-                      // ★修正：「（現在○角形）」を消してスッキリさせる
-                      document.getElementById('saveBtn').innerText = "圃場を保存";
-                      
-                      if (!currentPolygon) {
-                          currentPolygon = new google.maps.Polygon({ map: map, paths: customDrawingPath, fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9999, clickable: false });
-                          customDrawingPolyline.setMap(null); // 線はもう要らないので隠す
-                      } else {
-                          currentPolygon.setPath(customDrawingPath);
+                  // ★ドラッグ中に図形と面積をリアルタイム更新する
+                  google.maps.event.addListener(dotMarker, 'drag', (evt) => {
+                      let idx = customDrawingMarkers.indexOf(dotMarker);
+                      if (idx !== -1) {
+                          customDrawingPath[idx] = evt.latLng;
+                          updateCustomDrawingVisuals();
                       }
-                      
-                      // 3点目の時に住所を取得
-                      if (customDrawingPath.length === 3) fetchAddressHint(e.latLng);
-                  }
+                  });
+                  
+                  customDrawingMarkers.push(dotMarker);
+                  updateCustomDrawingVisuals(); // 再描画
+                  
+                  if (customDrawingPath.length === 3) fetchAddressHint(e.latLng);
               }
           });
           
@@ -684,22 +676,56 @@ function initMap() {
       function setupMapSearch() { const input = document.getElementById('mapSearchInput'); const searchBox = new google.maps.places.SearchBox(input); map.addListener('bounds_changed', () => { searchBox.setBounds(map.getBounds()); }); searchBox.addListener('places_changed', () => { const places = searchBox.getPlaces(); if (places.length == 0) return; const bounds = new google.maps.LatLngBounds(); places.forEach(place => { if (!place.geometry || !place.geometry.location) return; if (place.geometry.viewport) { bounds.union(place.geometry.viewport); } else { bounds.extend(place.geometry.location); } }); map.fitBounds(bounds); }); }
       function setupSearch() { const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions'); input.oninput = () => { const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; } const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val)); matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'🪧':'🌿')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); }); sug.style.display = matches.length ? 'block' : 'none'; }; }
       function focusAndOpen(id) { const p = loadedPolygons[id]; let center; if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); } map.setZoom(18); map.panTo(center); setTimeout(() => { openM(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500); }
+      // ★追加：図形・面積をリアルタイムに再描画する魔法の関数
+      function updateCustomDrawingVisuals() {
+          let undoBtn = document.getElementById('undoDrawBtn');
+          let saveBtn = document.getElementById('saveBtn');
+          
+          if (undoBtn) undoBtn.disabled = (customDrawingPath.length === 0);
+          if (saveBtn) saveBtn.disabled = (customDrawingPath.length < 3);
 
+          if (customDrawingPolyline) customDrawingPolyline.setMap(null);
+          if (currentPolygon) currentPolygon.setMap(null);
+          if (customDrawingLabelMarker) customDrawingLabelMarker.setMap(null);
+
+          if (customDrawingPath.length > 0 && customDrawingPath.length < 3) {
+              customDrawingPolyline = new google.maps.Polyline({ map: map, path: customDrawingPath, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9999, clickable: false });
+          }
+          
+          if (customDrawingPath.length >= 3) {
+              // ポリゴンを描く
+              currentPolygon = new google.maps.Polygon({ map: map, paths: customDrawingPath, fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9998, clickable: false });
+              
+              // 面積を計算して中心にラベルを表示する
+              let area = Math.round(google.maps.geometry.spherical.computeArea(customDrawingPath) / 100);
+              let bounds = new google.maps.LatLngBounds();
+              customDrawingPath.forEach(pt => bounds.extend(pt));
+              
+              customDrawingLabelMarker = new google.maps.Marker({
+                  position: bounds.getCenter(),
+                  map: map,
+                  icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+                  label: { text: `約 ${area} a`, color: 'white', fontSize: '14px', fontWeight: 'bold', className: 'polygon-label' },
+                  zIndex: 10001,
+                  clickable: false
+              });
+          }
+      }
       function clearCustomDrawing() {
           customDrawingPath = [];
           if(customDrawingPolyline) { customDrawingPolyline.setMap(null); customDrawingPolyline = null; }
           if(currentPolygon) { currentPolygon.setMap(null); currentPolygon = null; }
           if(currentMarker) { currentMarker.setMap(null); currentMarker = null; }
+          if(customDrawingLabelMarker) { customDrawingLabelMarker.setMap(null); customDrawingLabelMarker = null; }
           
-          // ★追加：打ったピンをすべて消す
           if(typeof customDrawingMarkers !== 'undefined') {
               customDrawingMarkers.forEach(m => m.setMap(null));
               customDrawingMarkers = [];
           }
           
-          document.getElementById('saveBtn').disabled = true;
-          document.getElementById('saveBtn').innerText = "圃場を保存";
-          document.getElementById('addressHint').style.display='none';
+          if(document.getElementById('saveBtn')) document.getElementById('saveBtn').disabled = true;
+          if(document.getElementById('undoDrawBtn')) document.getElementById('undoDrawBtn').disabled = true;
+          if(document.getElementById('addressHint')) document.getElementById('addressHint').style.display='none';
       }
 
       document.getElementById('btnViewMode').onclick=()=>{ 
@@ -708,8 +734,6 @@ function initMap() {
           document.getElementById('drawArea').style.display='none'; 
           customDrawingMode = null;
           clearCustomDrawing();
-          
-          // ★修正：マウスカーソルを通常（手のひら）に戻す
           map.setOptions({ draggable: true, draggableCursor: null }); 
       };
 
@@ -721,9 +745,9 @@ function initMap() {
           customDrawingMode = 'polygon';
           clearCustomDrawing();
           
-          // ★修正：マウスカーソルを十字のピンマーク（crosshair）にする
-          map.setOptions({ draggable: false, draggableCursor: 'crosshair' }); 
-          customAlert("【圃場作成モード】\n地図上をタップして頂点を打ってください。\n3点以上打つと「保存」ボタンが押せるようになります。");
+          // ★マウスカーソルを📍ピンマークにする
+          map.setOptions({ draggable: false, draggableCursor: pinCursor }); 
+          customAlert("【圃場作成モード】\n地図上をタップして頂点を打ってください。\n打ったピンはドラッグして移動できます。\n間違えたら「戻す」ボタンで1つ前の点を取り消せます。");
       };
 
       document.getElementById('btnMarkerMode').onclick=()=>{ 
@@ -734,10 +758,29 @@ function initMap() {
           customDrawingMode = 'marker';
           clearCustomDrawing();
           
-          // ★修正：看板モードでもマウスカーソルを十字のピンマークにする
-          map.setOptions({ draggable: false, draggableCursor: 'crosshair' }); 
+          // ★看板モードでもマウスカーソルを📍ピンマークにする
+          map.setOptions({ draggable: false, draggableCursor: pinCursor }); 
           customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。");
       };
+
+      // ★追加：1つ戻すボタンの処理
+      let undoBtn = document.getElementById('undoDrawBtn');
+      if (undoBtn) {
+          undoBtn.onclick = () => {
+              if (customDrawingPath.length > 0) {
+                  customDrawingPath.pop(); // 最後の座標を消す
+                  let m = customDrawingMarkers.pop(); // 最後のピンを消す
+                  if (m) m.setMap(null);
+                  
+                  updateCustomDrawingVisuals(); // 再描画
+                  
+                  // 3点未満になったら住所表示を消す
+                  if (customDrawingPath.length < 3) {
+                      document.getElementById('addressHint').style.display = 'none';
+                  }
+              }
+          };
+      }
 
       document.getElementById('cancelDrawBtn').onclick=()=>{
           clearCustomDrawing();
@@ -746,7 +789,7 @@ function initMap() {
           document.getElementById('fieldCondition').value='';
           document.getElementById('fieldStatus').value='';
       };
-
+      
       document.getElementById('saveBtn').onclick=()=>{
         const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
         if(!n) { customAlert("名前必須"); return; }
