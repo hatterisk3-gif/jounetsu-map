@@ -361,7 +361,6 @@
         };
         setupSearch();
       }
-
       function updateMarkersVisibility() {
         const zoom = map.getZoom(), far = 15, close = 17;
         for (let id in loadedPolygons) {
@@ -371,7 +370,7 @@
             if (!isMapSelecting) {
               if (zoom < close) p.marker.setLabel(null); else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
             }
-          } else p.marker.setVisible(zoom >= 14);
+          } else p.marker.setVisible(zoom >= 15); // ← ★ここの「14」を変更
         }
       }
 
@@ -388,8 +387,11 @@ function createSignboardMarker(name, pos, icon, id) {
         });
         return marker;
       }
-      function createLabelMarker(n,c,col,a) { const b=new google.maps.LatLngBounds(); c.forEach(pt=>b.extend(pt)); return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=14, label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); }
-
+      function createLabelMarker(n,c,col,a) { 
+        const b=new google.maps.LatLngBounds(); 
+        c.forEach(pt=>b.extend(pt)); 
+        return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=15, /* ← ★ここの「14」を変更 */ label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); 
+      }
       window.openMainMenu = (id) => {
         const p = loadedPolygons[id], isU = (p.status === '未使用（返却）' || p.status === '未使用');
         const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">🚗 ナビ開始</button>`;
