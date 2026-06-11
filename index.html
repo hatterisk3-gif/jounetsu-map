@@ -2816,7 +2816,11 @@ function createSignboardMarker(name, pos, icon, id) {
       });
     </script>
     <script>
-      if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }
+      
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js?v=worker', { scope: '/' });
+      }
+   
     </script>
   </body>
 </html>
