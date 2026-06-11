@@ -687,8 +687,12 @@ function initMap() {
           // ★閲覧モード：すべての図形と文字を「クリック可能」に戻す
           for(let id in loadedPolygons) {
               if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: true });
-              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setOptions({ clickable: true });
+              // マーカー専用のメソッドを使用
+              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setClickable(true);
           }
+          
+          // PC操作時のドラッグ（パン）を有効に戻す
+          map.setOptions({ draggable: true });
       };
 
       document.getElementById('btnDrawMode').onclick=()=>{ 
@@ -700,8 +704,12 @@ function initMap() {
           // ★描画モード：邪魔になる既存の図形と文字を「完全すり抜け」にする！
           for(let id in loadedPolygons) {
               if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: false });
-              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setOptions({ clickable: false });
+              // マーカー専用のメソッドを使用（ここでクリックを完全に無効化）
+              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setClickable(false);
           }
+          
+          // ★PC操作用：描画中は地図のドラッグを無効化し、クリック時の微細なブレを「点」として認識させる
+          map.setOptions({ draggable: false });
       };
 
       document.getElementById('btnMarkerMode').onclick=()=>{ 
@@ -714,8 +722,12 @@ function initMap() {
           // ★看板モード：邪魔になる既存の図形と文字を「完全すり抜け」にする！
           for(let id in loadedPolygons) {
               if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setOptions({ clickable: false });
-              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setOptions({ clickable: false });
+              // マーカー専用のメソッドを使用
+              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setClickable(false);
           }
+          
+          // PC操作時のドラッグ（パン）を有効に戻す（看板はドラッグできた方が配置しやすい）
+          map.setOptions({ draggable: true });
       };
 
       document.getElementById('cancelDrawBtn').onclick=()=>{
