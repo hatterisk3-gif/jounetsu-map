@@ -129,7 +129,7 @@
       let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [];
       let latestUserPos = null;
       let customDrawingMode = null; let customDrawingPath = []; let customDrawingPolyline = null; let customDrawingPolygon = null;
-      
+      let customDrawingMarkers = []; // ★追加：点を打ったときのピンを管理する配列
       // Admin用変数
       window.isAdminMapSelecting = false; window.tempLinkedSigns = []; window.editingTargetForLink = null; window.isReturningFromLinkSelect = false;
 
@@ -560,6 +560,16 @@ function initMap() {
                   // 【圃場モード】クリックした場所に頂点を追加する
                   customDrawingPath.push(e.latLng);
                   
+                  // ★追加：打った点に「赤いフチの白い丸ピン」を表示する
+                  let dotMarker = new google.maps.Marker({
+                      position: e.latLng,
+                      map: map,
+                      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 4, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
+                      zIndex: 10000,
+                      clickable: false
+                  });
+                  customDrawingMarkers.push(dotMarker);
+
                   // 点を線で結ぶ
                   if (!customDrawingPolyline) {
                       customDrawingPolyline = new google.maps.Polyline({ map: map, path: customDrawingPath, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9999 });
@@ -570,10 +580,12 @@ function initMap() {
                   // 3点以上打たれたら「ポリゴン(面)」として塗りつぶし、保存可能にする
                   if (customDrawingPath.length >= 3) {
                       document.getElementById('saveBtn').disabled = false;
-                      document.getElementById('saveBtn').innerText = `圃場を保存（現在${customDrawingPath.length}角形）`;
+                      
+                      // ★修正：「（現在○角形）」を消してスッキリさせる
+                      document.getElementById('saveBtn').innerText = "圃場を保存";
                       
                       if (!currentPolygon) {
-                          currentPolygon = new google.maps.Polygon({ map: map, paths: customDrawingPath, fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9999 });
+                          currentPolygon = new google.maps.Polygon({ map: map, paths: customDrawingPath, fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9999, clickable: false });
                           customDrawingPolyline.setMap(null); // 線はもう要らないので隠す
                       } else {
                           currentPolygon.setPath(customDrawingPath);
@@ -678,6 +690,13 @@ function initMap() {
           if(customDrawingPolyline) { customDrawingPolyline.setMap(null); customDrawingPolyline = null; }
           if(currentPolygon) { currentPolygon.setMap(null); currentPolygon = null; }
           if(currentMarker) { currentMarker.setMap(null); currentMarker = null; }
+          
+          // ★追加：打ったピンをすべて消す
+          if(typeof customDrawingMarkers !== 'undefined') {
+              customDrawingMarkers.forEach(m => m.setMap(null));
+              customDrawingMarkers = [];
+          }
+          
           document.getElementById('saveBtn').disabled = true;
           document.getElementById('saveBtn').innerText = "圃場を保存";
           document.getElementById('addressHint').style.display='none';
@@ -689,7 +708,9 @@ function initMap() {
           document.getElementById('drawArea').style.display='none'; 
           customDrawingMode = null;
           clearCustomDrawing();
-          map.setOptions({ draggable: true }); // ドラッグ可能に戻す
+          
+          // ★修正：マウスカーソルを通常（手のひら）に戻す
+          map.setOptions({ draggable: true, draggableCursor: null }); 
       };
 
       document.getElementById('btnDrawMode').onclick=()=>{ 
@@ -699,7 +720,9 @@ function initMap() {
           
           customDrawingMode = 'polygon';
           clearCustomDrawing();
-          map.setOptions({ draggable: false }); // 誤操作防止のためドラッグ無効
+          
+          // ★修正：マウスカーソルを十字のピンマーク（crosshair）にする
+          map.setOptions({ draggable: false, draggableCursor: 'crosshair' }); 
           customAlert("【圃場作成モード】\n地図上をタップして頂点を打ってください。\n3点以上打つと「保存」ボタンが押せるようになります。");
       };
 
@@ -710,7 +733,9 @@ function initMap() {
           
           customDrawingMode = 'marker';
           clearCustomDrawing();
-          map.setOptions({ draggable: false }); // 誤操作防止のためドラッグ無効
+          
+          // ★修正：看板モードでもマウスカーソルを十字のピンマークにする
+          map.setOptions({ draggable: false, draggableCursor: 'crosshair' }); 
           customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。");
       };
 
