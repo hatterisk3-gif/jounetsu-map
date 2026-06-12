@@ -130,7 +130,7 @@
           </div>
         </div>
       </div>
-    <div id="editShapePanel" style="display:none; background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center;">⚠️ 形状変更中 <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 10px;">確定</button><button id="cancelShapeBtn" style="background:#666; color:#fff;">戻す</button></div>
+    </div><div id="editShapePanel" style="display:none; background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center;">⚠️ 形状変更中 <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 10px;">確定</button><button id="cancelShapeBtn" style="background:#666; color:#fff;">戻す</button></div>
     <div id="mergeModePanel" style="display:none; background:#FF9800; color:#fff; padding:10px; font-weight:bold; text-align:center; z-index:10;">🚜 統合モード中：もう一つの圃場をクリックして統合 <button onclick="cancelMerge()" style="background:#666; color:#fff; border:none; padding:6px 15px; border-radius:4px; margin-left:15px; font-weight:bold; cursor:pointer;">キャンセル</button></div>    
     <div id="map"></div>
 
@@ -815,7 +815,7 @@ function initMap() {
           customAlert("新しい圃場を登録しました！");
         }).catch(e => { document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生: " + e.message); });
       };
-      
+
       document.getElementById('cancelDrawBtn').onclick=()=>{
           clearCustomDrawing();
           document.getElementById('fieldName').value='';
