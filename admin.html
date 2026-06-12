@@ -109,19 +109,27 @@
         <button id="btnMarkerMode" class="mode-btn">📍 看板</button>
         <button onclick="openMasterModal()" style="background:#2196F3; color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️ マスタ</button>
       </div>
-      <div id="drawArea" style="display:none; background:#222; padding:10px; border-radius:8px; border:1px solid #444; width:90%; max-width:300px;">
-        <input type="text" id="fieldName" placeholder="圃場名" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;">
-        <select id="fieldLocation" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;"></select>
-        <select id="fieldCondition" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;"></select>
-        <select id="fieldStatus" class="form-input" style="background:#333 !important; color:#fff !important; border-color:#666 !important;"></select>
-        <div id="addressHint" style="display:none; margin-bottom:10px; font-size:12px; color:#aaa; line-height:1.4; background:#333; padding:8px; border-radius:4px; border:1px solid #555; text-align:left;"></div>
-      <div style="display:flex; gap:8px;">
-  <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold;" disabled>↩️ 戻す</button>
-  <button id="saveBtn" style="background:#d32f2f; color:white; flex:1; border:none; border-radius:4px; font-weight:bold;" disabled>保存</button>
-  <button id="cancelDrawBtn" style="background:#666; color:#fff; flex:1; border:none; border-radius:4px; font-weight:bold;">消去</button>
-</div>
+      <div id="drawArea" class="action-bar" style="display:none;">
+        <div id="drawStep1">
+          <div style="display:flex; gap:8px;">
+            <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>↩️ 1つ戻す</button>
+            <button id="step1SaveBtn" style="background:#4CAF50; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>形を決定（次へ）</button>
+          </div>
+        </div>
+  
+        <div id="drawStep2" style="display:none;">
+          <div id="addressHint" style="display:none; background:#222; padding:8px; border-radius:4px; margin-bottom:10px; line-height:1.4;"></div>
+          <input type="text" id="fieldName" class="form-input" placeholder="圃場名">
+          <select id="fieldLocation" class="form-input"><option value="">拠点</option></select>
+          <select id="fieldCondition" class="form-input"><option value="">条件</option></select>
+          <select id="fieldStatus" class="form-input"><option value="">稼働状況</option></select>
+          
+          <div style="display:flex; gap:8px;">
+            <button id="backToStep1Btn" style="background:#666; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;">やり直す</button>
+            <button id="finalSaveBtn" style="background:#d32f2f; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;">圃場登録</button>
+          </div>
+        </div>
       </div>
-    </div>
     <div id="editShapePanel" style="display:none; background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center;">⚠️ 形状変更中 <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 10px;">確定</button><button id="cancelShapeBtn" style="background:#666; color:#fff;">戻す</button></div>
     <div id="mergeModePanel" style="display:none; background:#FF9800; color:#fff; padding:10px; font-weight:bold; text-align:center; z-index:10;">🚜 統合モード中：もう一つの圃場をクリックして統合 <button onclick="cancelMerge()" style="background:#666; color:#fff; border:none; padding:6px 15px; border-radius:4px; margin-left:15px; font-weight:bold; cursor:pointer;">キャンセル</button></div>    
     <div id="map"></div>
@@ -562,6 +570,10 @@ function initMap() {
                   document.getElementById('btnViewMode').classList.add('active');
               } 
               else if (customDrawingMode === 'polygon') {
+                  // ★追加：フォーム入力中(Step2)は、地図をタップしても誤って点を打たないようにする
+                  if (document.getElementById('drawStep2').style.display === 'block') return;
+
+                  // 【圃場モード】クリックした場所に頂点を追加する
                   customDrawingPath.push(e.latLng);
                   
                   let dotMarker = new google.maps.Marker({
@@ -679,10 +691,10 @@ function initMap() {
       // ★追加：図形・面積をリアルタイムに再描画する魔法の関数
       function updateCustomDrawingVisuals() {
           let undoBtn = document.getElementById('undoDrawBtn');
-          let saveBtn = document.getElementById('saveBtn');
+          let step1SaveBtn = document.getElementById('step1SaveBtn'); // ★ボタンIDを変更
           
           if (undoBtn) undoBtn.disabled = (customDrawingPath.length === 0);
-          if (saveBtn) saveBtn.disabled = (customDrawingPath.length < 3);
+          if (step1SaveBtn) step1SaveBtn.disabled = (customDrawingPath.length < 3);
 
           if (customDrawingPolyline) customDrawingPolyline.setMap(null);
           if (currentPolygon) currentPolygon.setMap(null);
@@ -693,39 +705,34 @@ function initMap() {
           }
           
           if (customDrawingPath.length >= 3) {
-              // ポリゴンを描く
               currentPolygon = new google.maps.Polygon({ map: map, paths: customDrawingPath, fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, zIndex: 9998, clickable: false });
-              
-              // 面積を計算して中心にラベルを表示する
               let area = Math.round(google.maps.geometry.spherical.computeArea(customDrawingPath) / 100);
               let bounds = new google.maps.LatLngBounds();
               customDrawingPath.forEach(pt => bounds.extend(pt));
-              
-              customDrawingLabelMarker = new google.maps.Marker({
-                  position: bounds.getCenter(),
-                  map: map,
-                  icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
-                  label: { text: `約 ${area} a`, color: 'white', fontSize: '14px', fontWeight: 'bold', className: 'polygon-label' },
-                  zIndex: 10001,
-                  clickable: false
-              });
+              customDrawingLabelMarker = new google.maps.Marker({ position: bounds.getCenter(), map: map, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, label: { text: `約 ${area} a`, color: 'white', fontSize: '14px', fontWeight: 'bold', className: 'polygon-label' }, zIndex: 10001, clickable: false });
           }
       }
+
       function clearCustomDrawing() {
           customDrawingPath = [];
           if(customDrawingPolyline) { customDrawingPolyline.setMap(null); customDrawingPolyline = null; }
           if(currentPolygon) { currentPolygon.setMap(null); currentPolygon = null; }
           if(currentMarker) { currentMarker.setMap(null); currentMarker = null; }
           if(customDrawingLabelMarker) { customDrawingLabelMarker.setMap(null); customDrawingLabelMarker = null; }
+          if(typeof customDrawingMarkers !== 'undefined') { customDrawingMarkers.forEach(m => m.setMap(null)); customDrawingMarkers = []; }
           
-          if(typeof customDrawingMarkers !== 'undefined') {
-              customDrawingMarkers.forEach(m => m.setMap(null));
-              customDrawingMarkers = [];
-          }
-          
-          if(document.getElementById('saveBtn')) document.getElementById('saveBtn').disabled = true;
+          // ★2ステップUI用にリセット内容を強化
+          if(document.getElementById('step1SaveBtn')) document.getElementById('step1SaveBtn').disabled = true;
           if(document.getElementById('undoDrawBtn')) document.getElementById('undoDrawBtn').disabled = true;
           if(document.getElementById('addressHint')) document.getElementById('addressHint').style.display='none';
+          
+          if(document.getElementById('drawStep1')) document.getElementById('drawStep1').style.display = 'block';
+          if(document.getElementById('drawStep2')) document.getElementById('drawStep2').style.display = 'none';
+          
+          if(document.getElementById('fieldName')) document.getElementById('fieldName').value='';
+          if(document.getElementById('fieldLocation')) document.getElementById('fieldLocation').value='';
+          if(document.getElementById('fieldCondition')) document.getElementById('fieldCondition').value='';
+          if(document.getElementById('fieldStatus')) document.getElementById('fieldStatus').value='';
       }
 
       document.getElementById('btnViewMode').onclick=()=>{ 
@@ -746,7 +753,7 @@ function initMap() {
           clearCustomDrawing();
           
           // ★マウスカーソルを📍ピンマークにする
-          map.setOptions({ draggable: false, draggableCursor: pinCursor }); 
+          map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
           customAlert("【圃場作成モード】\n地図上をタップして頂点を打ってください。\n打ったピンはドラッグして移動できます。\n間違えたら「戻す」ボタンで1つ前の点を取り消せます。");
       };
 
@@ -759,29 +766,56 @@ function initMap() {
           clearCustomDrawing();
           
           // ★看板モードでもマウスカーソルを📍ピンマークにする
-          map.setOptions({ draggable: false, draggableCursor: pinCursor }); 
+          map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
           customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。");
       };
 
-      // ★追加：1つ戻すボタンの処理
-      let undoBtn = document.getElementById('undoDrawBtn');
+     // 1つ戻すボタン
+     let undoBtn = document.getElementById('undoDrawBtn');
       if (undoBtn) {
           undoBtn.onclick = () => {
               if (customDrawingPath.length > 0) {
                   customDrawingPath.pop(); // 最後の座標を消す
                   let m = customDrawingMarkers.pop(); // 最後のピンを消す
                   if (m) m.setMap(null);
-                  
                   updateCustomDrawingVisuals(); // 再描画
-                  
-                  // 3点未満になったら住所表示を消す
-                  if (customDrawingPath.length < 3) {
-                      document.getElementById('addressHint').style.display = 'none';
-                  }
+                  if (customDrawingPath.length < 3) document.getElementById('addressHint').style.display = 'none';
               }
           };
       }
 
+      // ★ステップ1：形を決定して情報入力フォームへ進む
+      document.getElementById('step1SaveBtn').onclick = () => {
+          document.getElementById('drawStep1').style.display = 'none';
+          document.getElementById('drawStep2').style.display = 'block';
+      };
+
+      // ★ステップ2：やっぱり形をやり直す
+      document.getElementById('backToStep1Btn').onclick = () => {
+          document.getElementById('drawStep2').style.display = 'none';
+          document.getElementById('drawStep1').style.display = 'block';
+      };
+
+      // ★最終登録：GASへデータを送信（旧saveBtnの処理）
+      document.getElementById('finalSaveBtn').onclick = () => {
+        const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
+        if(!n) { customAlert("圃場名を入力してください"); return; }
+        
+        document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>"; document.getElementById('modal').style.display = 'flex';
+        
+        const path = customDrawingPath.map(pt=>({lat:pt.lat(),lng:pt.lng()}));
+        const area = Math.round(google.maps.geometry.spherical.computeArea(currentPolygon.getPath())/100);
+        
+        callGAS('savePolygon', {name:n, coords:JSON.stringify(path), color:'#d32f2f', userName:currentUser, location:l, condition:c, area, status:s, toukiId:t}).then(id=>{ 
+          document.getElementById('modal').style.display = 'none';
+          createPolygonObject({id,name:n,coords:path,color:'#d32f2f',location:l,condition:c,area,status:s,toukiId:t,isMarker:false}); 
+          
+          // 登録成功したら自動で閲覧モードに戻す（入力フォームやピンも綺麗に消えます）
+          document.getElementById('btnViewMode').click(); 
+          customAlert("新しい圃場を登録しました！");
+        }).catch(e => { document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生: " + e.message); });
+      };
+      
       document.getElementById('cancelDrawBtn').onclick=()=>{
           clearCustomDrawing();
           document.getElementById('fieldName').value='';
