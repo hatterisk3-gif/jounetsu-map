@@ -370,7 +370,7 @@
             if (!isMapSelecting) {
               if (zoom < close) p.marker.setLabel(null); else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
             }
-          } else p.marker.setVisible(zoom >= 15); // ← ★ここの「14」を変更
+          } else p.marker.setVisible(zoom >= 16); // ← ★ここの「14」を変更
         }
       }
 
@@ -390,7 +390,7 @@ function createSignboardMarker(name, pos, icon, id) {
       function createLabelMarker(n,c,col,a) { 
         const b=new google.maps.LatLngBounds(); 
         c.forEach(pt=>b.extend(pt)); 
-        return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=15, /* ← ★ここの「14」を変更 */ label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); 
+        return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=16, /* ← ★ここの「14」を変更 */ label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); 
       }
       window.openMainMenu = (id) => {
         const p = loadedPolygons[id], isU = (p.status === '未使用（返却）' || p.status === '未使用');
