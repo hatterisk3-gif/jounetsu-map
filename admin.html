@@ -111,9 +111,7 @@
       </div>
       <div id="drawArea" class="action-bar" style="display:none;">
         <div id="drawStep1">
-          <button id="btnLoadFude" style="width:100%; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px; margin-bottom:8px;">🗺️ 筆ポリゴン（農地枠）から自動読込</button>
-          
-          <div style="display:flex; gap:8px;">
+                  <div style="display:flex; gap:8px;">
             <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>↩️ 1つ戻す</button>
             <button id="step1SaveBtn" style="background:#4CAF50; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>形を決定（次へ）</button>
           </div>
@@ -658,7 +656,7 @@
           if (typeof setupSearch === 'function') setupSearch(); 
           if (typeof setupMapSearch === 'function') setupMapSearch();
       }
-      
+
       function fetchAddressHint(latLng) {
           const hintDiv = document.getElementById('addressHint'); 
           hintDiv.innerHTML = "📍 住所を取得中..."; hintDiv.style.display = "block";
