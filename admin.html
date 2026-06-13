@@ -111,7 +111,9 @@
       </div>
       <div id="drawArea" class="action-bar" style="display:none;">
         <div id="drawStep1">
-                  <div style="display:flex; gap:8px;">
+          <button id="btnLoadFude" style="width:100%; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px; margin-bottom:8px;">🗺️ 現在エリアの農地データを自動読込</button>
+          
+          <div style="display:flex; gap:8px;">
             <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>↩️ 1つ戻す</button>
             <button id="step1SaveBtn" style="background:#4CAF50; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>形を決定（次へ）</button>
           </div>
@@ -656,7 +658,7 @@
           if (typeof setupSearch === 'function') setupSearch(); 
           if (typeof setupMapSearch === 'function') setupMapSearch();
       }
-
+      
       function fetchAddressHint(latLng) {
           const hintDiv = document.getElementById('addressHint'); 
           hintDiv.innerHTML = "📍 住所を取得中..."; hintDiv.style.display = "block";
@@ -803,78 +805,87 @@
           document.getElementById('drawStep2').style.display = 'none';
           document.getElementById('drawStep1').style.display = 'block';
       };
-// 🌟変更：筆ポリゴン読込ボタンを押した時の処理（複数ファイル一括読込版）
+// 🌟変更：現在表示している地図の県を自動判別してR2から読み込む完全版
 window.loadedFudeRegion = null; 
 
-// ★ここに使用するファイル名のリストを作ります
+// ★県ごとのフォルダ名とファイル名のリスト（日本語の県名で判定します）
 const fudeFiles = {
-    "tokushima": [
-        // 必要な市のファイルを並べてください（※以下は画像に写っていたファイル名の例です）
-        "2026_362034.json",
-        "2026_362042.json"    
-    ],
-    "hyogo": [
-    "2026_282014.json",
-        "2026_282103.json",
-        "2026_282294.json"      // 兵庫県（姫路市など）も同様に設定できます
-    ]
+    "徳島県": {
+        folder: "tokushima",
+        files: ["2026_362034.json", "2026_362042.json"]
+    },
+    "兵庫県": {
+        folder: "hyogo",
+        files: ["2026_282014.json", "2026_282103.json", "2026_282294.json"]
+    }
 };
 
 document.getElementById('btnLoadFude').onclick = () => {
-    const region = document.getElementById('fudeRegionSelect').value;
     const btn = document.getElementById('btnLoadFude');
-
-    if (window.loadedFudeRegion === region) {
-        customAlert("すでにこの地域のデータは読み込み済みです。");
-        return;
-    }
-
-    const targetList = fudeFiles[region];
-    if (!targetList || targetList.length === 0) {
-        customAlert("読み込むファイルが設定されていません。\nコード内の fudeFiles のリストを確認してください。");
-        return;
-    }
-
-    // 違う県を読み込む場合は、前のデータを消去してスマホのフリーズを防ぐ
-    if (window.loadedFudeRegion !== null) {
-        map.data.forEach(function(feature) {
-            map.data.remove(feature);
-        });
-    }
-
     const originalText = btn.innerHTML;
-    btn.innerHTML = "⏳ 読込中...お待ちください";
+    btn.innerHTML = "🔍 エリアを判定中...";
     btn.disabled = true;
 
-// リストに書かれたファイルを順番に一気に読み込む
-let loadedCount = 0;
-          targetList.forEach(fileName => {
-              // ★変更：フォルダ名（region）をパスに含めて読み込むようにしました！
-              // ★ R2のパブリックURLの基本部分を定義します（ご自身のR2のURLに合わせて書き換えてください）
-const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev"; 
-
-// ★ 読み込み先をR2のURLに変更！
-map.data.loadGeoJson(`${R2_BASE_URL}/${region}/${fileName}`, null, function() {
-            loadedCount++;
-            // 全てのファイルが読み込み終わったらボタンを戻す
-            if (loadedCount === targetList.length) {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-                window.loadedFudeRegion = region;
-                customAlert(`${targetList.length}個の農地データを読み込みました！\n地図上の青い枠をタップしてください。`);
-            }
-        });
-    });
-
-    // 万が一通信エラーなどで読み込みが止まっても、5秒後にボタンを強制復活させる安全装置
-    setTimeout(() => {
-        if (btn.disabled) {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-            window.loadedFudeRegion = region;
-            customAlert("農地データの読み込み処理が完了しました。\n（もし青い枠が出ない場合はファイル名が間違っている可能性があります）");
+    // ① 現在表示している地図の中心座標から都道府県を取得
+    const center = map.getCenter();
+    new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
+        if (status !== 'OK' || results.length === 0) {
+            customAlert("現在のエリアの住所を取得できませんでした。");
+            btn.innerHTML = originalText; btn.disabled = false; return;
         }
-    }, 5000);
+
+        // ② 住所データの中から「都道府県名」を探し出す
+        let prefName = null;
+        for (let component of results[0].address_components) {
+            if (component.types.includes("administrative_area_level_1")) {
+                prefName = component.long_name; // "徳島県" などを取得
+                break;
+            }
+        }
+
+        if (!prefName || !fudeFiles[prefName]) {
+            customAlert(`現在のエリア（${prefName || '不明'}）の農地データはシステムに登録されていません。`);
+            btn.innerHTML = originalText; btn.disabled = false; return;
+        }
+
+        const regionData = fudeFiles[prefName];
+        
+        if (window.loadedFudeRegion === prefName) {
+            customAlert(`すでに ${prefName} のデータは読み込み済みです。\n地図上の青い枠をタップしてください。`);
+            btn.innerHTML = originalText; btn.disabled = false; return;
+        }
+
+        // ③ 違う県に移動した場合は、前のデータを消去してスマホのフリーズを防ぐ
+        if (window.loadedFudeRegion !== null) {
+            map.data.forEach(function(feature) { map.data.remove(feature); });
+        }
+
+        btn.innerHTML = `⏳ ${prefName}のデータを読込中...`;
+
+        // ④ Cloudflare R2 からデータを読み込む
+        const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev"; 
+        let loadedCount = 0;
+        
+        regionData.files.forEach(fileName => {
+            map.data.loadGeoJson(`${R2_BASE_URL}/${regionData.folder}/${fileName}`, null, function() {
+                loadedCount++;
+                if (loadedCount === regionData.files.length) {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    window.loadedFudeRegion = prefName;
+                    customAlert(`${prefName}の農地データを読み込みました！\n地図上の青い枠をタップしてください。`);
+                }
+            });
+        });
+
+        // 万が一通信が詰まっても5秒後にボタンを復活させる安全装置
+        setTimeout(() => {
+            if (btn.disabled) {
+                btn.innerHTML = originalText; btn.disabled = false; window.loadedFudeRegion = prefName;
+                customAlert("読込処理が完了しました。\n（※青い枠が出ない場合はR2のURLやファイル名を確認してください）");
+            }
+        }, 5000);
+    });
 };
 
       document.getElementById('finalSaveBtn').onclick = () => {
