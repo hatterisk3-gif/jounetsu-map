@@ -520,7 +520,6 @@
           
           google.maps.event.addListener(map, 'click', () => infoWindow.close());
 
-          // 🌟筆ポリゴン（下敷き）のデザイン設定
           map.data.setStyle({
               fillColor: '#2196F3',
               fillOpacity: 0.15,
@@ -529,17 +528,17 @@
               clickable: true
           });
 
-          // 🌟筆ポリゴン（青枠）をタップした時の複数選択処理
+          // 🌟修正：読込中のブロックと、もう一度タップでの選択解除
           map.data.addListener('click', (e) => {
+              if (window.isMapLoadingFude) return; // ★読込中バリア
               if (customDrawingMode !== 'polygon') return;
-              if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return; // Step2なら無視
+              if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return; 
 
               window.ignoreNextMapClick = true;
               setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
 
               let geom = e.feature.getGeometry();
               
-              // 最初の筆ポリゴン選択時、手動ピンがあればクリアする
               if (customDrawingPath.length > 0 && (!window.selectedFudePaths || window.selectedFudePaths.length === 0)) {
                   clearCustomDrawing();
                   customDrawingMode = 'polygon';
@@ -559,16 +558,27 @@
                   let path = [];
                   targetArray.forEach(latLng => path.push(latLng));
                   
-                  // ★重複チェック（同じ枠を2回タップしても無視する）
-                  let isAlreadySelected = window.selectedFudePaths.some(p => 
+                  // ★重複チェック（同じ枠を2回タップしたら「選択解除」する！）
+                  let existingIndex = window.selectedFudePaths.findIndex(p => 
                       p.length > 0 && path.length > 0 && 
                       p[0].lat() === path[0].lat() && p[0].lng() === path[0].lng()
                   );
-                  if (isAlreadySelected) return; 
+                  
+                  if (existingIndex !== -1) {
+                      window.selectedFudePaths.splice(existingIndex, 1);
+                      let removedPoly = window.selectedFudePolygons.splice(existingIndex, 1)[0];
+                      if (removedPoly) removedPoly.setMap(null); // 赤枠を消す
+                      
+                      if (window.selectedFudePaths.length === 0) {
+                          document.getElementById('step1SaveBtn').disabled = true;
+                          document.getElementById('undoDrawBtn').disabled = true;
+                          document.getElementById('addressHint').style.display = 'none';
+                      }
+                      return; // 処理を終了する
+                  }
 
                   window.selectedFudePaths.push(path);
 
-                  // 赤いポリゴンを描画して選択状態にする
                   let poly = new google.maps.Polygon({ 
                       map: map, paths: path, 
                       fillColor: '#d32f2f', fillOpacity: 0.3, 
@@ -583,15 +593,13 @@
                   if (window.selectedFudePaths.length === 1) {
                       fetchAddressHint(e.latLng);
                   }
-                  
-               
-                 
               }
           });
 
-          // 🌟通常の手動クリック処理（手動打点と看板用）
+          // 🌟修正：手動ピン打ち時の読込中ブロック
           map.addListener('click', (e) => {
-              if (window.ignoreNextMapClick) return; // 筆ポリゴンをタップした時は無視
+              if (window.isMapLoadingFude) return; // ★読込中バリア
+              if (window.ignoreNextMapClick) return; 
               if (!customDrawingMode) return;
               
               if (customDrawingMode === 'marker') {
@@ -604,29 +612,18 @@
                   document.getElementById('btnViewMode').classList.add('active');
               } 
               else if (customDrawingMode === 'polygon') {
-                  // フォーム入力中(Step2)は、地図をタップしても誤って点を打たないようにする
                   if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
 
-                  // 【圃場モード】クリックした場所に手動で頂点を追加する
                   customDrawingPath.push(e.latLng);
-                  
                   let dotMarker = new google.maps.Marker({
-                      position: e.latLng,
-                      map: map,
+                      position: e.latLng, map: map,
                       icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
-                      zIndex: 10000,
-                      draggable: true,
-                      cursor: 'move'
+                      zIndex: 10000, draggable: true, cursor: 'move'
                   });
-                  
                   google.maps.event.addListener(dotMarker, 'drag', (evt) => {
                       let idx = customDrawingMarkers.indexOf(dotMarker);
-                      if (idx !== -1) {
-                          customDrawingPath[idx] = evt.latLng;
-                          updateCustomDrawingVisuals();
-                      }
+                      if (idx !== -1) { customDrawingPath[idx] = evt.latLng; updateCustomDrawingVisuals(); }
                   });
-                  
                   customDrawingMarkers.push(dotMarker);
                   updateCustomDrawingVisuals(); 
                   
@@ -835,28 +832,41 @@
           };
       }
 
-      // 🌟ここが本命！次へ進むときに図形を合体させ、外枠だけを抽出する！
-      document.getElementById('step1SaveBtn').onclick = () => {
+     // 🌟修正：微細な隙間を無視して、複数の畑を美しく1つに結合する！
+     document.getElementById('step1SaveBtn').onclick = () => {
           if (window.selectedFudePaths && window.selectedFudePaths.length > 1) {
               try {
-                  // ① Turf.jsが計算できる形式に変換
                   let turfPolys = window.selectedFudePaths.map(path => {
                       let coords = path.map(p => [p.lng(), p.lat()]);
-                      coords.push([path[0].lng(), path[0].lat()]); // ループを閉じる
+                      coords.push([path[0].lng(), path[0].lat()]); 
                       return turf.polygon([coords]);
                   });
                   
-                  // ② すべての図形を「合体（union）」させる！
-                  let unionPoly = turfPolys[0];
-                  for (let i = 1; i < turfPolys.length; i++) {
-                      unionPoly = turf.union(unionPoly, turfPolys[i]);
+                  // ★ここがミソ！微細な隙間を埋めるために見えないレベルで「膨張」させる
+                  let bufferedPolys = turfPolys;
+                  try {
+                      bufferedPolys = turfPolys.map(p => turf.buffer(p, 0.001, {units: 'kilometers'}));
+                  } catch(e) { console.warn("膨張スキップ"); }
+                  
+                  let unionPoly = bufferedPolys[0];
+                  for (let i = 1; i < bufferedPolys.length; i++) {
+                      try {
+                          unionPoly = turf.union(unionPoly, bufferedPolys[i]);
+                      } catch(e) { console.warn("結合スキップ"); }
                   }
                   
-                  // ③ 合体した図形から【一番外側の枠（外郭）】だけを抽出する
+                  // ★膨らませた分だけ「縮小」して元のサイズに戻す
+                  try {
+                      let shrunkPoly = turf.buffer(unionPoly, -0.001, {units: 'kilometers'});
+                      if (shrunkPoly) unionPoly = shrunkPoly; 
+                  } catch(e) { console.warn("縮小スキップ"); }
+                  
+                  // 一番外側の枠（外郭）だけを抽出する
                   let bestCoords = null;
                   if (unionPoly.geometry.type === 'Polygon') {
-                      bestCoords = unionPoly.geometry.coordinates[0]; // [0]を指定すると内側の線が消え、外枠だけになる！
+                      bestCoords = unionPoly.geometry.coordinates[0]; 
                   } else if (unionPoly.geometry.type === 'MultiPolygon') {
+                      // それでも離れている場合は、一番面積の大きいものを採用
                       let largestArea = -1;
                       unionPoly.geometry.coordinates.forEach(polyCoords => {
                           let pArea = turf.area(turf.polygon([polyCoords[0]]));
@@ -868,10 +878,8 @@
                       let mergedPath = bestCoords.map(c => new google.maps.LatLng(c[1], c[0]));
                       mergedPath.pop(); 
                       
-                      // 個別の赤枠を隠す
                       window.selectedFudePolygons.forEach(p => p.setVisible(false));
                       
-                      // 結合後の美しい外枠プレビューを描画
                       if (window.mergedPreviewPolygon) window.mergedPreviewPolygon.setMap(null);
                       window.mergedPreviewPolygon = new google.maps.Polygon({
                           map: map, paths: mergedPath,
@@ -949,12 +957,13 @@ document.getElementById('btnLoadFude').onclick = () => {
     const originalText = "🗺️ 現在エリアの農地データを自動読込";
     btn.innerHTML = "🔍 エリアを判定中...";
     btn.disabled = true;
+    window.isMapLoadingFude = true; // ★読込中フラグON
 
     const center = map.getCenter();
     new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
         if (status !== 'OK' || results.length === 0) {
             customAlert("現在のエリアの住所を取得できませんでした。");
-            btn.innerHTML = originalText; btn.disabled = false; return;
+            btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false; return;
         }
 
         let prefName = null;
@@ -967,30 +976,28 @@ document.getElementById('btnLoadFude').onclick = () => {
 
         if (!prefName || !fudeFiles[prefName]) {
             customAlert(`現在のエリア（${prefName || '不明'}）の農地データはシステムに登録されていません。`);
-            btn.innerHTML = originalText; btn.disabled = false; return;
+            btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false; return;
         }
 
         const regionData = fudeFiles[prefName];
         
         if (window.loadedFudeRegion === prefName) {
-            // ★すでに読み込み済みなら、フェッチ通信を飛ばして瞬時に表示！
             setFudeVisibility(true);
-            btn.innerHTML = originalText; btn.disabled = false; 
+            btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false; 
             return;
         }
 
-        // 違う県の場合は前データを消す
         if (window.loadedFudeRegion !== null) {
             map.data.forEach(function(feature) { map.data.remove(feature); });
         }
 
         btn.innerHTML = `⏳ ${prefName}のデータを読込中...`;
+        map.setOptions({ draggableCursor: 'wait' }); // ★マウスカーソルを砂時計にする
 
         const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev"; 
         let loadedCount = 0;
         
         regionData.files.forEach(fileName => {
-            // ★キャッシュをチェック！あれば一瞬で追加、なければR2からダウンロード
             if (window.fudeCache[fileName]) {
                 map.data.addGeoJson(window.fudeCache[fileName]);
                 loadedCount++;
@@ -999,7 +1006,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                 fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
                     .then(res => res.json())
                     .then(geoJson => {
-                        window.fudeCache[fileName] = geoJson; // ★ここでデータをキャッシュ（一時記憶）する
+                        window.fudeCache[fileName] = geoJson; 
                         map.data.addGeoJson(geoJson);
                         loadedCount++;
                         checkComplete();
@@ -1016,16 +1023,19 @@ document.getElementById('btnLoadFude').onclick = () => {
             if (loadedCount === regionData.files.length) {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
+                window.isMapLoadingFude = false; // ★フラグOFF
+                map.setOptions({ draggableCursor: customDrawingMode ? pinCursor : null }); // ★カーソルを元に戻す
                 window.loadedFudeRegion = prefName;
-                setFudeVisibility(true); // ★表示をONにする
+                setFudeVisibility(true); 
                 customAlert(`${prefName}の農地データを表示しました！\n地図上の青い枠をタップしてください。`);
             }
         }
 
-        // 万が一通信が詰まっても8秒後にボタンを復活させる安全装置
         setTimeout(() => {
             if (btn.disabled) {
-                btn.innerHTML = originalText; btn.disabled = false; window.loadedFudeRegion = prefName; setFudeVisibility(true);
+                btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false;
+                map.setOptions({ draggableCursor: customDrawingMode ? pinCursor : null });
+                window.loadedFudeRegion = prefName; setFudeVisibility(true);
             }
         }, 8000);
     });
