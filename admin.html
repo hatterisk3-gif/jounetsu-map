@@ -515,15 +515,23 @@
               styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] 
           });
           infoWindow = new google.maps.InfoWindow(); 
+          
           google.maps.event.addListener(map, 'click', () => infoWindow.close());
 
-          // 🌟追加：筆ポリゴン（下敷き）のデザインとクリックした時の処理
-          map.data.setStyle({ fillColor: '#2196F3', fillOpacity: 0.15, strokeColor: '#2196F3', strokeWeight: 1, clickable: true });
+          // 🌟筆ポリゴン（下敷き）のデザイン設定
+          map.data.setStyle({
+              fillColor: '#2196F3',
+              fillOpacity: 0.15,
+              strokeColor: '#2196F3',
+              strokeWeight: 1,
+              clickable: true
+          });
 
+          // 🌟筆ポリゴン（青枠）をタップした時の自動読込処理
           map.data.addListener('click', (e) => {
               if (customDrawingMode !== 'polygon') return;
-              
-              // 枠をクリックした時に、通常の「手動打点」が発動しないようにガードする
+
+              // 通常の手動打点が誤爆しないようにブロック
               window.ignoreNextMapClick = true;
               setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
 
@@ -531,8 +539,16 @@
               clearCustomDrawing();
               customDrawingMode = 'polygon';
 
+              let targetArray = null;
+              // ★修正点：筆ポリゴンには Polygon と MultiPolygon があるため両方に対応！
               if (geom.getType() === 'Polygon') {
-                  geom.getAt(0).getArray().forEach(latLng => {
+                  targetArray = geom.getAt(0).getArray();
+              } else if (geom.getType() === 'MultiPolygon') {
+                  targetArray = geom.getAt(0).getAt(0).getArray();
+              }
+
+              if (targetArray) {
+                  targetArray.forEach(latLng => {
                       customDrawingPath.push(latLng);
                       let dotMarker = new google.maps.Marker({
                           position: latLng, map: map,
@@ -549,19 +565,43 @@
                   updateCustomDrawingVisuals();
                   fetchAddressHint(e.latLng);
                   
+                  // スムーズに入力フォームへ移行
                   document.getElementById('drawStep1').style.display = 'none';
                   document.getElementById('drawStep2').style.display = 'block';
                   
-                  customAlert("農地データを自動で読み込みました！\n必要であればピンをドラッグして形を微調整し、情報を入力してください。");
+                  customAlert("🤖 農地データを自動で読み込みました！\n必要であればピンをドラッグして形を微調整し、情報を入力してください。");
               }
           });
 
-          // 🌟既存のクリック処理（ガードを1行追加）
+          // 🌟通常の手動クリック処理（手動打点と看板用）
           map.addListener('click', (e) => {
-              if (window.ignoreNextMapClick) return; // ★追加：筆ポリゴンをタップした時は無視する
+              if (window.ignoreNextMapClick) return; // 筆ポリゴンをタップした時は無視
               if (!customDrawingMode) return;
               
               if (customDrawingMode === 'marker') {
+                  if (currentMarker) currentMarker.setMap(null);
+                  currentMarker = new google.maps.Marker({ position: e.latLng, map: map });
+                  openMarkerForm(currentMarker);
+                  customDrawingMode = null; 
+                  map.setOptions({ draggable: true, draggableCursor: null });
+                  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+                  document.getElementById('btnViewMode').classList.add('active');
+              } 
+              else if (customDrawingMode === 'polygon') {
+                  // フォーム入力中(Step2)は、地図をタップしても誤って点を打たないようにする
+                  if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
+
+                  // 【圃場モード】クリックした場所に手動で頂点を追加する
+                  customDrawingPath.push(e.latLng);
+                  
+                  let dotMarker = new google.maps.Marker({
+                      position: e.latLng,
+                      map: map,
+                      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
+                      zIndex: 10000,
+                      draggable: true,
+                      cursor: 'move'
+                  });
                   
                   google.maps.event.addListener(dotMarker, 'drag', (evt) => {
                       let idx = customDrawingMarkers.indexOf(dotMarker);
@@ -615,10 +655,10 @@
                   }, function(){ customAlert("現在地を取得できません"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true }); 
               } 
           };
-          setupSearch(); 
-          setupMapSearch();
+          if (typeof setupSearch === 'function') setupSearch(); 
+          if (typeof setupMapSearch === 'function') setupMapSearch();
       }
-
+      
       function fetchAddressHint(latLng) {
           const hintDiv = document.getElementById('addressHint'); 
           hintDiv.innerHTML = "📍 住所を取得中..."; hintDiv.style.display = "block";
