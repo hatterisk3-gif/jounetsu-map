@@ -527,20 +527,26 @@
               clickable: true
           });
 
-          // 🌟筆ポリゴン（青枠）をタップした時の自動読込処理
+          // 🌟筆ポリゴン（青枠）をタップした時の複数選択処理
           map.data.addListener('click', (e) => {
               if (customDrawingMode !== 'polygon') return;
+              if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return; // Step2なら無視
 
-              // 通常の手動打点が誤爆しないようにブロック
               window.ignoreNextMapClick = true;
               setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
 
               let geom = e.feature.getGeometry();
-              clearCustomDrawing();
-              customDrawingMode = 'polygon';
+              
+              // 最初の筆ポリゴン選択時、手動ピンがあればクリアする
+              if (customDrawingPath.length > 0 && (!window.selectedFudePaths || window.selectedFudePaths.length === 0)) {
+                  clearCustomDrawing();
+                  customDrawingMode = 'polygon';
+              }
+
+              if (!window.selectedFudePaths) window.selectedFudePaths = [];
+              if (!window.selectedFudePolygons) window.selectedFudePolygons = [];
 
               let targetArray = null;
-              // ★修正点：筆ポリゴンには Polygon と MultiPolygon があるため両方に対応！
               if (geom.getType() === 'Polygon') {
                   targetArray = geom.getAt(0).getArray();
               } else if (geom.getType() === 'MultiPolygon') {
@@ -548,29 +554,36 @@
               }
 
               if (targetArray) {
-                  targetArray.forEach(latLng => {
-                      customDrawingPath.push(latLng);
-                      let dotMarker = new google.maps.Marker({
-                          position: latLng, map: map,
-                          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
-                          zIndex: 10000, draggable: true, cursor: 'move'
-                      });
-                      google.maps.event.addListener(dotMarker, 'drag', (evt) => {
-                          let idx = customDrawingMarkers.indexOf(dotMarker);
-                          if (idx !== -1) { customDrawingPath[idx] = evt.latLng; updateCustomDrawingVisuals(); }
-                      });
-                      customDrawingMarkers.push(dotMarker);
+                  let path = [];
+                  targetArray.forEach(latLng => path.push(latLng));
+                  
+                  // ★重複チェック（同じ枠を2回タップしても無視する）
+                  let isAlreadySelected = window.selectedFudePaths.some(p => 
+                      p.length > 0 && path.length > 0 && 
+                      p[0].lat() === path[0].lat() && p[0].lng() === path[0].lng()
+                  );
+                  if (isAlreadySelected) return; 
+
+                  window.selectedFudePaths.push(path);
+
+                  // 赤いポリゴンを描画して選択状態にする
+                  let poly = new google.maps.Polygon({ 
+                      map: map, paths: path, 
+                      fillColor: '#d32f2f', fillOpacity: 0.3, 
+                      strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3, 
+                      zIndex: 9998, clickable: false 
                   });
+                  window.selectedFudePolygons.push(poly);
+
+                  document.getElementById('step1SaveBtn').disabled = false;
+                  document.getElementById('undoDrawBtn').disabled = false;
                   
-                  updateCustomDrawingVisuals();
-                  fetchAddressHint(e.latLng);
+                  if (window.selectedFudePaths.length === 1) {
+                      fetchAddressHint(e.latLng);
+                  }
                   
-                // スムーズに入力フォームへ移行
-                document.getElementById('drawStep1').style.display = 'none';
-                  document.getElementById('drawStep2').style.display = 'block';
-                  setFudeVisibility(false); // ★ここを追加：入力中は青枠を消してスッキリさせる！
-                  
-                  customAlert("🤖 農地データを自動で読み込みました！\n必要であればピンをドラッグして形を微調整し、情報を入力してください。");
+                  // ★連続タップできるように、ここではStep2へ飛ばさない！
+                  customAlert(`現在 ${window.selectedFudePaths.length} 個の農地枠を選択中です！\nさらに青枠をタップして追加するか、「形を決定（次へ）」を押してください。`);
               }
           });
 
@@ -738,6 +751,10 @@
           if(customDrawingLabelMarker) { customDrawingLabelMarker.setMap(null); customDrawingLabelMarker = null; }
           if(typeof customDrawingMarkers !== 'undefined') { customDrawingMarkers.forEach(m => m.setMap(null)); customDrawingMarkers = []; }
           
+          // ★追加：複数選択した筆ポリゴンのリセット
+          if(window.selectedFudePolygons) { window.selectedFudePolygons.forEach(p => p.setMap(null)); window.selectedFudePolygons = []; }
+          window.selectedFudePaths = [];
+          
           if(document.getElementById('step1SaveBtn')) document.getElementById('step1SaveBtn').disabled = true;
           if(document.getElementById('undoDrawBtn')) document.getElementById('undoDrawBtn').disabled = true;
           if(document.getElementById('addressHint')) document.getElementById('addressHint').style.display='none';
@@ -787,7 +804,37 @@
           customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。");
       };
 
-      // --- 「進む」「戻る」の処理も修正 ---
+// --- 「進む」「戻る」の処理も修正 ---
+      
+      // 🌟🌟ここに追加します！🌟🌟
+      let undoBtn = document.getElementById('undoDrawBtn');
+      if (undoBtn) {
+          undoBtn.onclick = () => {
+              if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
+                  // 筆ポリゴン複数選択時のやり直し（最後に選んだ枠を消す）
+                  window.selectedFudePaths.pop();
+                  let poly = window.selectedFudePolygons.pop();
+                  if (poly) poly.setMap(null);
+                  
+                  if (window.selectedFudePaths.length === 0) {
+                      document.getElementById('step1SaveBtn').disabled = true;
+                      undoBtn.disabled = true;
+                      document.getElementById('addressHint').style.display = 'none';
+                  } else {
+                      customAlert(`残り ${window.selectedFudePaths.length} 個の農地枠を選択中です。`);
+                  }
+              } else if (customDrawingPath.length > 0) {
+                  // 手動描画時のやり直し
+                  customDrawingPath.pop();
+                  let m = customDrawingMarkers.pop();
+                  if (m) m.setMap(null);
+                  updateCustomDrawingVisuals(); 
+                  if (customDrawingPath.length < 3) document.getElementById('addressHint').style.display = 'none';
+              }
+          };
+      }
+      // 🌟🌟ここまで🌟🌟
+
       document.getElementById('step1SaveBtn').onclick = () => {
           document.getElementById('drawStep1').style.display = 'none';
           document.getElementById('drawStep2').style.display = 'block';
@@ -911,22 +958,48 @@ document.getElementById('btnLoadFude').onclick = () => {
     });
 };
 
-      document.getElementById('finalSaveBtn').onclick = () => {
+      // 🌟変更：一括で複数の圃場を登録するループ処理
+      document.getElementById('finalSaveBtn').onclick = async () => {
         const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
         if(!n) { customAlert("圃場名を入力してください"); return; }
         
-        document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>"; document.getElementById('modal').style.display = 'flex';
+        // 筆ポリゴンの複数選択か、手動描画の1つだけかを判定
+        let pathsToSave = [];
+        if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
+            pathsToSave = window.selectedFudePaths;
+        } else if (customDrawingPath.length >= 3) {
+            pathsToSave = [customDrawingPath];
+        } else {
+            customAlert("形が描画されていません"); return;
+        }
+
+        document.getElementById('modalBody').innerHTML = `<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 ${pathsToSave.length}件の圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>`; 
+        document.getElementById('modal').style.display = 'flex';
         
-        const path = customDrawingPath.map(pt=>({lat:pt.lat(),lng:pt.lng()}));
-        const area = Math.round(google.maps.geometry.spherical.computeArea(currentPolygon.getPath())/100);
-        
-        callGAS('savePolygon', {name:n, coords:JSON.stringify(path), color:'#d32f2f', userName:currentUser, location:l, condition:c, area, status:s, toukiId:t}).then(id=>{ 
-          document.getElementById('modal').style.display = 'none';
-          createPolygonObject({id,name:n,coords:path,color:'#d32f2f',location:l,condition:c,area,status:s,toukiId:t,isMarker:false}); 
-          
-          document.getElementById('btnViewMode').click(); 
-          customAlert("新しい圃場を登録しました！");
-        }).catch(e => { document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生: " + e.message); });
+        try {
+            // ★選んだ枠の数だけループして、一気にGASへ送信！
+            for (let i = 0; i < pathsToSave.length; i++) {
+                let currentPath = pathsToSave[i];
+                let pathData = currentPath.map(pt=>({lat:pt.lat(),lng:pt.lng()}));
+                
+                // 複数選択時は名前に連番をつける (例: 情熱農場_1, 情熱農場_2)
+                let saveName = n;
+                if (pathsToSave.length > 1) saveName = `${n}_${i + 1}`;
+                
+                let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath)/100);
+                
+                // awaitを使って1件ずつ確実に登録する
+                let newId = await callGAS('savePolygon', {name:saveName, coords:JSON.stringify(pathData), color:'#d32f2f', userName:currentUser, location:l, condition:c, area, status:s, toukiId:t});
+                createPolygonObject({id:newId, name:saveName, coords:pathData, color:'#d32f2f', location:l, condition:c, area, status:s, toukiId:t, isMarker:false}); 
+            }
+
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('btnViewMode').click(); 
+            customAlert(`新しい圃場を ${pathsToSave.length} 件一括で登録しました！`);
+        } catch (e) {
+            document.getElementById('modal').style.display = 'none'; 
+            customAlert("エラーが発生: " + e.message);
+        }
       };
       
       window.saveM=()=>{
