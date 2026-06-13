@@ -765,16 +765,75 @@
           document.getElementById('drawStep2').style.display = 'none';
           document.getElementById('drawStep1').style.display = 'block';
       };
-      // 🌟追加：筆ポリゴン読込ボタンを押した時の処理
-      document.getElementById('btnLoadFude').onclick = () => {
-          if (!window.fudeLoaded) {
-              customAlert("農地データを読み込んでいます...\n地図上に青い枠が表示されたら、対象の畑をタップしてください。");
-              map.data.loadGeoJson('/fude.geojson'); // ★アップロードしたGeoJSONを読み込む
-              window.fudeLoaded = true;
-          } else {
-              customAlert("すでに読み込み済みです。\n地図上の青い枠をタップしてください。");
-          }
-      };
+// 🌟変更：筆ポリゴン読込ボタンを押した時の処理（複数ファイル一括読込版）
+window.loadedFudeRegion = null; 
+
+// ★ここに使用するファイル名のリストを作ります
+const fudeFiles = {
+    "tokushima": [
+        // 必要な市のファイルを並べてください（※以下は画像に写っていたファイル名の例です）
+        "2026_362034.json",
+        "2026_362042.json"    
+    ],
+    "hyogo": [
+    "2026_282014.json",
+        "2026_282103.json",
+        "2026_282294.json"      // 兵庫県（姫路市など）も同様に設定できます
+    ]
+};
+
+document.getElementById('btnLoadFude').onclick = () => {
+    const region = document.getElementById('fudeRegionSelect').value;
+    const btn = document.getElementById('btnLoadFude');
+
+    if (window.loadedFudeRegion === region) {
+        customAlert("すでにこの地域のデータは読み込み済みです。");
+        return;
+    }
+
+    const targetList = fudeFiles[region];
+    if (!targetList || targetList.length === 0) {
+        customAlert("読み込むファイルが設定されていません。\nコード内の fudeFiles のリストを確認してください。");
+        return;
+    }
+
+    // 違う県を読み込む場合は、前のデータを消去してスマホのフリーズを防ぐ
+    if (window.loadedFudeRegion !== null) {
+        map.data.forEach(function(feature) {
+            map.data.remove(feature);
+        });
+    }
+
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "⏳ 読込中...お待ちください";
+    btn.disabled = true;
+
+// リストに書かれたファイルを順番に一気に読み込む
+let loadedCount = 0;
+          targetList.forEach(fileName => {
+              // ★変更：フォルダ名（region）をパスに含めて読み込むようにしました！
+              map.data.loadGeoJson(`/${region}/${fileName}`, null, function() {
+            loadedCount++;
+            // 全てのファイルが読み込み終わったらボタンを戻す
+            if (loadedCount === targetList.length) {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                window.loadedFudeRegion = region;
+                customAlert(`${targetList.length}個の農地データを読み込みました！\n地図上の青い枠をタップしてください。`);
+            }
+        });
+    });
+
+    // 万が一通信エラーなどで読み込みが止まっても、5秒後にボタンを強制復活させる安全装置
+    setTimeout(() => {
+        if (btn.disabled) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            window.loadedFudeRegion = region;
+            customAlert("農地データの読み込み処理が完了しました。\n（もし青い枠が出ない場合はファイル名が間違っている可能性があります）");
+        }
+    }, 5000);
+};
 
       document.getElementById('finalSaveBtn').onclick = () => {
         const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
