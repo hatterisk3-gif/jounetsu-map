@@ -812,7 +812,11 @@ document.getElementById('btnLoadFude').onclick = () => {
 let loadedCount = 0;
           targetList.forEach(fileName => {
               // ★変更：フォルダ名（region）をパスに含めて読み込むようにしました！
-              map.data.loadGeoJson(`/${region}/${fileName}`, null, function() {
+              // ★ R2のパブリックURLの基本部分を定義します（ご自身のR2のURLに合わせて書き換えてください）
+const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev"; 
+
+// ★ 読み込み先をR2のURLに変更！
+map.data.loadGeoJson(`${R2_BASE_URL}/${region}/${fileName}`, null, function() {
             loadedCount++;
             // 全てのファイルが読み込み終わったらボタンを戻す
             if (loadedCount === targetList.length) {
