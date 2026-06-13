@@ -135,8 +135,10 @@
     </div> <div id="editShapePanel" style="display:none; background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center;">⚠️ 形状変更中 <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 10px;">確定</button><button id="cancelShapeBtn" style="background:#666; color:#fff;">戻す</button></div>
     <div id="mergeModePanel" style="display:none; background:#FF9800; color:#fff; padding:10px; font-weight:bold; text-align:center; z-index:10;">🚜 統合モード中：もう一つの圃場をクリックして統合 <button onclick="cancelMerge()" style="background:#666; color:#fff; border:none; padding:6px 15px; border-radius:4px; margin-left:15px; font-weight:bold; cursor:pointer;">キャンセル</button></div>    
     <div id="map"></div>
-
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja"></script>
+   
     <script>
       const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8/exec";
       let currentUser="", loadedPolygons={}, editingId=null, originalCoordsForEdit=[], pdlLocations=[], pdlConditions=[], pdlStatuses=[], toukiList=[], map, drawingManager, infoWindow, currentPolygon=null, currentMarker=null, isMergeMode=false, mergeBaseId=null, userLocationMarker=null;
@@ -582,8 +584,8 @@
                       fetchAddressHint(e.latLng);
                   }
                   
-                  // ★連続タップできるように、ここではStep2へ飛ばさない！
-                  customAlert(`現在 ${window.selectedFudePaths.length} 個の農地枠を選択中です！\nさらに青枠をタップして追加するか、「形を決定（次へ）」を押してください。`);
+               
+                 
               }
           });
 
@@ -751,9 +753,12 @@
           if(customDrawingLabelMarker) { customDrawingLabelMarker.setMap(null); customDrawingLabelMarker = null; }
           if(typeof customDrawingMarkers !== 'undefined') { customDrawingMarkers.forEach(m => m.setMap(null)); customDrawingMarkers = []; }
           
-          // ★追加：複数選択した筆ポリゴンのリセット
           if(window.selectedFudePolygons) { window.selectedFudePolygons.forEach(p => p.setMap(null)); window.selectedFudePolygons = []; }
           window.selectedFudePaths = [];
+          
+          // ★追加：結合後のプレビュー図形もリセットする
+          if(window.mergedPreviewPolygon) { window.mergedPreviewPolygon.setMap(null); window.mergedPreviewPolygon = null; }
+          window.isMergedFude = false;
           
           if(document.getElementById('step1SaveBtn')) document.getElementById('step1SaveBtn').disabled = true;
           if(document.getElementById('undoDrawBtn')) document.getElementById('undoDrawBtn').disabled = true;
@@ -806,12 +811,11 @@
 
 // --- 「進む」「戻る」の処理も修正 ---
       
-      // 🌟🌟ここに追加します！🌟🌟
+      // --- 「進む」「戻る」の処理も修正 ---
       let undoBtn = document.getElementById('undoDrawBtn');
       if (undoBtn) {
           undoBtn.onclick = () => {
               if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
-                  // 筆ポリゴン複数選択時のやり直し（最後に選んだ枠を消す）
                   window.selectedFudePaths.pop();
                   let poly = window.selectedFudePolygons.pop();
                   if (poly) poly.setMap(null);
@@ -820,11 +824,8 @@
                       document.getElementById('step1SaveBtn').disabled = true;
                       undoBtn.disabled = true;
                       document.getElementById('addressHint').style.display = 'none';
-                  } else {
-                      customAlert(`残り ${window.selectedFudePaths.length} 個の農地枠を選択中です。`);
                   }
               } else if (customDrawingPath.length > 0) {
-                  // 手動描画時のやり直し
                   customDrawingPath.pop();
                   let m = customDrawingMarkers.pop();
                   if (m) m.setMap(null);
@@ -833,19 +834,91 @@
               }
           };
       }
-      // 🌟🌟ここまで🌟🌟
 
+      // 🌟ここが本命！次へ進むときに図形を合体させ、外枠だけを抽出する！
       document.getElementById('step1SaveBtn').onclick = () => {
+          if (window.selectedFudePaths && window.selectedFudePaths.length > 1) {
+              try {
+                  // ① Turf.jsが計算できる形式に変換
+                  let turfPolys = window.selectedFudePaths.map(path => {
+                      let coords = path.map(p => [p.lng(), p.lat()]);
+                      coords.push([path[0].lng(), path[0].lat()]); // ループを閉じる
+                      return turf.polygon([coords]);
+                  });
+                  
+                  // ② すべての図形を「合体（union）」させる！
+                  let unionPoly = turfPolys[0];
+                  for (let i = 1; i < turfPolys.length; i++) {
+                      unionPoly = turf.union(unionPoly, turfPolys[i]);
+                  }
+                  
+                  // ③ 合体した図形から【一番外側の枠（外郭）】だけを抽出する
+                  let bestCoords = null;
+                  if (unionPoly.geometry.type === 'Polygon') {
+                      bestCoords = unionPoly.geometry.coordinates[0]; // [0]を指定すると内側の線が消え、外枠だけになる！
+                  } else if (unionPoly.geometry.type === 'MultiPolygon') {
+                      let largestArea = -1;
+                      unionPoly.geometry.coordinates.forEach(polyCoords => {
+                          let pArea = turf.area(turf.polygon([polyCoords[0]]));
+                          if(pArea > largestArea) { largestArea = pArea; bestCoords = polyCoords[0]; }
+                      });
+                  }
+                  
+                  if (bestCoords) {
+                      let mergedPath = bestCoords.map(c => new google.maps.LatLng(c[1], c[0]));
+                      mergedPath.pop(); 
+                      
+                      // 個別の赤枠を隠す
+                      window.selectedFudePolygons.forEach(p => p.setVisible(false));
+                      
+                      // 結合後の美しい外枠プレビューを描画
+                      if (window.mergedPreviewPolygon) window.mergedPreviewPolygon.setMap(null);
+                      window.mergedPreviewPolygon = new google.maps.Polygon({
+                          map: map, paths: mergedPath,
+                          fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3,
+                          zIndex: 9999, clickable: false
+                      });
+                      
+                      customDrawingPath = mergedPath; 
+                      window.isMergedFude = true; 
+                  }
+              } catch(err) {
+                  console.error("結合エラー:", err);
+                  customAlert("図形の結合に失敗しました。");
+                  return; 
+              }
+          } else if (window.selectedFudePaths && window.selectedFudePaths.length === 1) {
+              customDrawingPath = window.selectedFudePaths[0];
+              window.isMergedFude = true; 
+          }
+
           document.getElementById('drawStep1').style.display = 'none';
           document.getElementById('drawStep2').style.display = 'block';
-          setFudeVisibility(false); // ★手動で次へ進んだ時も青枠を隠す
+          setFudeVisibility(false); 
       };
 
+      // 🌟変更：やり直すボタンを押したときに、選択状態をキープして復活させる！
       document.getElementById('backToStep1Btn').onclick = () => {
           document.getElementById('drawStep2').style.display = 'none';
           document.getElementById('drawStep1').style.display = 'block';
-          clearCustomDrawing(); // ★やり直すので描いていた赤い枠をリセット
-          if(window.loadedFudeRegion) setFudeVisibility(true); // ★読込済みなら青枠を再表示
+          
+          if (window.isMergedFude || (window.selectedFudePaths && window.selectedFudePaths.length > 0)) {
+              // 結合プレビューだけを消す
+              if (window.mergedPreviewPolygon) {
+                  window.mergedPreviewPolygon.setMap(null);
+                  window.mergedPreviewPolygon = null;
+              }
+              // 個別の赤枠を再表示（選択状態キープ！）
+              if (window.selectedFudePolygons) {
+                  window.selectedFudePolygons.forEach(p => p.setVisible(true));
+              }
+              customDrawingPath = []; 
+              window.isMergedFude = false;
+          } else {
+              clearCustomDrawing(); 
+          }
+          
+          if(window.loadedFudeRegion) setFudeVisibility(true); 
       };
 // 🌟ここに追加：キャッシュ用変数と、青枠の表示・非表示を切り替える関数
 window.fudeCache = {}; 
@@ -958,44 +1031,33 @@ document.getElementById('btnLoadFude').onclick = () => {
     });
 };
 
-      // 🌟変更：一括で複数の圃場を登録するループ処理
-      document.getElementById('finalSaveBtn').onclick = async () => {
+     // 🌟変更：合体した外郭を「1つの圃場」として保存する
+     document.getElementById('finalSaveBtn').onclick = async () => {
         const n=document.getElementById('fieldName').value, l=document.getElementById('fieldLocation').value, c=document.getElementById('fieldCondition').value, s=document.getElementById('fieldStatus').value, t = ""; 
         if(!n) { customAlert("圃場名を入力してください"); return; }
         
-        // 筆ポリゴンの複数選択か、手動描画の1つだけかを判定
         let pathsToSave = [];
-        if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
-            pathsToSave = window.selectedFudePaths;
-        } else if (customDrawingPath.length >= 3) {
-            pathsToSave = [customDrawingPath];
+        if (window.isMergedFude || customDrawingPath.length >= 3) {
+            pathsToSave = [customDrawingPath]; // 結合済みの1つの大きなパスを使う
         } else {
             customAlert("形が描画されていません"); return;
         }
 
-        document.getElementById('modalBody').innerHTML = `<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 ${pathsToSave.length}件の圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>`; 
+        document.getElementById('modalBody').innerHTML = `<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>`; 
         document.getElementById('modal').style.display = 'flex';
         
         try {
-            // ★選んだ枠の数だけループして、一気にGASへ送信！
-            for (let i = 0; i < pathsToSave.length; i++) {
-                let currentPath = pathsToSave[i];
-                let pathData = currentPath.map(pt=>({lat:pt.lat(),lng:pt.lng()}));
-                
-                // 複数選択時は名前に連番をつける (例: 情熱農場_1, 情熱農場_2)
-                let saveName = n;
-                if (pathsToSave.length > 1) saveName = `${n}_${i + 1}`;
-                
-                let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath)/100);
-                
-                // awaitを使って1件ずつ確実に登録する
-                let newId = await callGAS('savePolygon', {name:saveName, coords:JSON.stringify(pathData), color:'#d32f2f', userName:currentUser, location:l, condition:c, area, status:s, toukiId:t});
-                createPolygonObject({id:newId, name:saveName, coords:pathData, color:'#d32f2f', location:l, condition:c, area, status:s, toukiId:t, isMarker:false}); 
-            }
+            // 1件の巨大な圃場として保存
+            let currentPath = pathsToSave[0];
+            let pathData = currentPath.map(pt=>({lat:pt.lat(),lng:pt.lng()}));
+            let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath)/100);
+            
+            let newId = await callGAS('savePolygon', {name:n, coords:JSON.stringify(pathData), color:'#d32f2f', userName:currentUser, location:l, condition:c, area, status:s, toukiId:t});
+            createPolygonObject({id:newId, name:n, coords:pathData, color:'#d32f2f', location:l, condition:c, area, status:s, toukiId:t, isMarker:false}); 
 
             document.getElementById('modal').style.display = 'none';
             document.getElementById('btnViewMode').click(); 
-            customAlert(`新しい圃場を ${pathsToSave.length} 件一括で登録しました！`);
+            customAlert(`「${n}」として、結合した圃場を登録しました！`);
         } catch (e) {
             document.getElementById('modal').style.display = 'none'; 
             customAlert("エラーが発生: " + e.message);
