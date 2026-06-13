@@ -811,6 +811,21 @@
           map.setOptions({ draggable: true, draggableCursor: null }); 
       };
 
+// 🌟正しい「圃場ボタン」の処理
+document.getElementById('btnDrawMode').onclick=()=>{ 
+          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
+          document.getElementById('btnDrawMode').classList.add('active'); 
+          document.getElementById('drawArea').style.display='block'; 
+          
+          customDrawingMode = 'polygon';
+          clearCustomDrawing();
+          setFudeVisibility(false); 
+          
+          map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
+          customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「現在エリアの農地データを自動読込」を押して枠を取得してください。", "drawMode");
+      };
+
+      // 🌟正しい「看板ボタン」の処理
       document.getElementById('btnMarkerMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnMarkerMode').classList.add('active'); 
@@ -821,24 +836,8 @@
           setFudeVisibility(false); 
           
           map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
-          // 🌟 最後に "markerMode" という鍵を渡す
           customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。", "markerMode");
       };
-
-      document.getElementById('btnMarkerMode').onclick=()=>{ 
-          document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
-          document.getElementById('btnMarkerMode').classList.add('active'); 
-          document.getElementById('drawArea').style.display='none'; 
-          
-          customDrawingMode = 'marker';
-          clearCustomDrawing();
-          setFudeVisibility(false); // ★看板モードも青枠を隠す
-          
-          map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
-          customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。");
-      };
-
-// --- 「進む」「戻る」の処理も修正 ---
       
       // --- 「進む」「戻る」の処理も修正 ---
       let undoBtn = document.getElementById('undoDrawBtn');
