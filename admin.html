@@ -565,9 +565,10 @@
                   updateCustomDrawingVisuals();
                   fetchAddressHint(e.latLng);
                   
-                  // スムーズに入力フォームへ移行
-                  document.getElementById('drawStep1').style.display = 'none';
+                // スムーズに入力フォームへ移行
+                document.getElementById('drawStep1').style.display = 'none';
                   document.getElementById('drawStep2').style.display = 'block';
+                  setFudeVisibility(false); // ★ここを追加：入力中は青枠を消してスッキリさせる！
                   
                   customAlert("🤖 農地データを自動で読み込みました！\n必要であればピンをドラッグして形を微調整し、情報を入力してください。");
               }
@@ -756,6 +757,7 @@
           document.getElementById('drawArea').style.display='none'; 
           customDrawingMode = null;
           clearCustomDrawing();
+          setFudeVisibility(false); // ★閲覧モードは青枠を隠す
           map.setOptions({ draggable: true, draggableCursor: null }); 
       };
 
@@ -766,9 +768,10 @@
           
           customDrawingMode = 'polygon';
           clearCustomDrawing();
+          setFudeVisibility(false); // ★手動で打てるように一旦青枠を隠す
           
           map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
-          customAlert("【圃場作成モード】\n地図上をタップして頂点を打ってください。\n打ったピンはドラッグして移動できます。\n間違えたら「戻す」ボタンで1つ前の点を取り消せます。");
+          customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「現在エリアの農地データを自動読込」を押して枠を取得してください。");
       };
 
       document.getElementById('btnMarkerMode').onclick=()=>{ 
@@ -778,37 +781,38 @@
           
           customDrawingMode = 'marker';
           clearCustomDrawing();
+          setFudeVisibility(false); // ★看板モードも青枠を隠す
           
           map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
           customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。");
       };
 
-      let undoBtn = document.getElementById('undoDrawBtn');
-      if (undoBtn) {
-          undoBtn.onclick = () => {
-              if (customDrawingPath.length > 0) {
-                  customDrawingPath.pop();
-                  let m = customDrawingMarkers.pop();
-                  if (m) m.setMap(null);
-                  updateCustomDrawingVisuals(); 
-                  if (customDrawingPath.length < 3) document.getElementById('addressHint').style.display = 'none';
-              }
-          };
-      }
-
+      // --- 「進む」「戻る」の処理も修正 ---
       document.getElementById('step1SaveBtn').onclick = () => {
           document.getElementById('drawStep1').style.display = 'none';
           document.getElementById('drawStep2').style.display = 'block';
+          setFudeVisibility(false); // ★手動で次へ進んだ時も青枠を隠す
       };
 
       document.getElementById('backToStep1Btn').onclick = () => {
           document.getElementById('drawStep2').style.display = 'none';
           document.getElementById('drawStep1').style.display = 'block';
+          clearCustomDrawing(); // ★やり直すので描いていた赤い枠をリセット
+          if(window.loadedFudeRegion) setFudeVisibility(true); // ★読込済みなら青枠を再表示
       };
-// 🌟変更：現在表示している地図の県を自動判別してR2から読み込む完全版
-window.loadedFudeRegion = null; 
+// 🌟ここに追加：キャッシュ用変数と、青枠の表示・非表示を切り替える関数
+window.fudeCache = {}; 
+      window.loadedFudeRegion = null; 
+      window.setFudeVisibility = (isVisible) => {
+          if (!map || !map.data) return;
+          if (isVisible) {
+              map.data.setStyle({ fillColor: '#2196F3', fillOpacity: 0.15, strokeColor: '#2196F3', strokeWeight: 1, clickable: true, visible: true });
+          } else {
+              map.data.setStyle({ visible: false }); // 隠す！
+          }
+      };
 
-// ★県ごとのフォルダ名とファイル名のリスト（日本語の県名で判定します）
+// ★県ごとのフォルダ名とファイル名のリスト
 const fudeFiles = {
     "徳島県": {
         folder: "tokushima",
@@ -822,11 +826,10 @@ const fudeFiles = {
 
 document.getElementById('btnLoadFude').onclick = () => {
     const btn = document.getElementById('btnLoadFude');
-    const originalText = btn.innerHTML;
+    const originalText = "🗺️ 現在エリアの農地データを自動読込";
     btn.innerHTML = "🔍 エリアを判定中...";
     btn.disabled = true;
 
-    // ① 現在表示している地図の中心座標から都道府県を取得
     const center = map.getCenter();
     new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
         if (status !== 'OK' || results.length === 0) {
@@ -834,11 +837,10 @@ document.getElementById('btnLoadFude').onclick = () => {
             btn.innerHTML = originalText; btn.disabled = false; return;
         }
 
-        // ② 住所データの中から「都道府県名」を探し出す
         let prefName = null;
         for (let component of results[0].address_components) {
             if (component.types.includes("administrative_area_level_1")) {
-                prefName = component.long_name; // "徳島県" などを取得
+                prefName = component.long_name;
                 break;
             }
         }
@@ -851,40 +853,61 @@ document.getElementById('btnLoadFude').onclick = () => {
         const regionData = fudeFiles[prefName];
         
         if (window.loadedFudeRegion === prefName) {
-            customAlert(`すでに ${prefName} のデータは読み込み済みです。\n地図上の青い枠をタップしてください。`);
-            btn.innerHTML = originalText; btn.disabled = false; return;
+            // ★すでに読み込み済みなら、フェッチ通信を飛ばして瞬時に表示！
+            setFudeVisibility(true);
+            btn.innerHTML = originalText; btn.disabled = false; 
+            return;
         }
 
-        // ③ 違う県に移動した場合は、前のデータを消去してスマホのフリーズを防ぐ
+        // 違う県の場合は前データを消す
         if (window.loadedFudeRegion !== null) {
             map.data.forEach(function(feature) { map.data.remove(feature); });
         }
 
         btn.innerHTML = `⏳ ${prefName}のデータを読込中...`;
 
-        // ④ Cloudflare R2 からデータを読み込む
         const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev"; 
         let loadedCount = 0;
         
         regionData.files.forEach(fileName => {
-            map.data.loadGeoJson(`${R2_BASE_URL}/${regionData.folder}/${fileName}`, null, function() {
+            // ★キャッシュをチェック！あれば一瞬で追加、なければR2からダウンロード
+            if (window.fudeCache[fileName]) {
+                map.data.addGeoJson(window.fudeCache[fileName]);
                 loadedCount++;
-                if (loadedCount === regionData.files.length) {
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                    window.loadedFudeRegion = prefName;
-                    customAlert(`${prefName}の農地データを読み込みました！\n地図上の青い枠をタップしてください。`);
-                }
-            });
+                checkComplete();
+            } else {
+                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
+                    .then(res => res.json())
+                    .then(geoJson => {
+                        window.fudeCache[fileName] = geoJson; // ★ここでデータをキャッシュ（一時記憶）する
+                        map.data.addGeoJson(geoJson);
+                        loadedCount++;
+                        checkComplete();
+                    })
+                    .catch(err => {
+                        console.error("読込エラー", err);
+                        loadedCount++; 
+                        checkComplete();
+                    });
+            }
         });
 
-        // 万が一通信が詰まっても5秒後にボタンを復活させる安全装置
+        function checkComplete() {
+            if (loadedCount === regionData.files.length) {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                window.loadedFudeRegion = prefName;
+                setFudeVisibility(true); // ★表示をONにする
+                customAlert(`${prefName}の農地データを表示しました！\n地図上の青い枠をタップしてください。`);
+            }
+        }
+
+        // 万が一通信が詰まっても8秒後にボタンを復活させる安全装置
         setTimeout(() => {
             if (btn.disabled) {
-                btn.innerHTML = originalText; btn.disabled = false; window.loadedFudeRegion = prefName;
-                customAlert("読込処理が完了しました。\n（※青い枠が出ない場合はR2のURLやファイル名を確認してください）");
+                btn.innerHTML = originalText; btn.disabled = false; window.loadedFudeRegion = prefName; setFudeVisibility(true);
             }
-        }, 5000);
+        }, 8000);
     });
 };
 
