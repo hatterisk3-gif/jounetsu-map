@@ -111,6 +111,8 @@
       </div>
       <div id="drawArea" class="action-bar" style="display:none;">
         <div id="drawStep1">
+          <button id="btnLoadFude" style="width:100%; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px; margin-bottom:8px;">🗺️ 筆ポリゴン（農地枠）から自動読込</button>
+          
           <div style="display:flex; gap:8px;">
             <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>↩️ 1つ戻す</button>
             <button id="step1SaveBtn" style="background:#4CAF50; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>形を決定（次へ）</button>
@@ -513,34 +515,53 @@
               styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] 
           });
           infoWindow = new google.maps.InfoWindow(); 
-          
           google.maps.event.addListener(map, 'click', () => infoWindow.close());
 
+          // 🌟追加：筆ポリゴン（下敷き）のデザインとクリックした時の処理
+          map.data.setStyle({ fillColor: '#2196F3', fillOpacity: 0.15, strokeColor: '#2196F3', strokeWeight: 1, clickable: true });
+
+          map.data.addListener('click', (e) => {
+              if (customDrawingMode !== 'polygon') return;
+              
+              // 枠をクリックした時に、通常の「手動打点」が発動しないようにガードする
+              window.ignoreNextMapClick = true;
+              setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
+
+              let geom = e.feature.getGeometry();
+              clearCustomDrawing();
+              customDrawingMode = 'polygon';
+
+              if (geom.getType() === 'Polygon') {
+                  geom.getAt(0).getArray().forEach(latLng => {
+                      customDrawingPath.push(latLng);
+                      let dotMarker = new google.maps.Marker({
+                          position: latLng, map: map,
+                          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
+                          zIndex: 10000, draggable: true, cursor: 'move'
+                      });
+                      google.maps.event.addListener(dotMarker, 'drag', (evt) => {
+                          let idx = customDrawingMarkers.indexOf(dotMarker);
+                          if (idx !== -1) { customDrawingPath[idx] = evt.latLng; updateCustomDrawingVisuals(); }
+                      });
+                      customDrawingMarkers.push(dotMarker);
+                  });
+                  
+                  updateCustomDrawingVisuals();
+                  fetchAddressHint(e.latLng);
+                  
+                  document.getElementById('drawStep1').style.display = 'none';
+                  document.getElementById('drawStep2').style.display = 'block';
+                  
+                  customAlert("農地データを自動で読み込みました！\n必要であればピンをドラッグして形を微調整し、情報を入力してください。");
+              }
+          });
+
+          // 🌟既存のクリック処理（ガードを1行追加）
           map.addListener('click', (e) => {
+              if (window.ignoreNextMapClick) return; // ★追加：筆ポリゴンをタップした時は無視する
               if (!customDrawingMode) return;
               
               if (customDrawingMode === 'marker') {
-                  if (currentMarker) currentMarker.setMap(null);
-                  currentMarker = new google.maps.Marker({ position: e.latLng, map: map });
-                  openMarkerForm(currentMarker);
-                  customDrawingMode = null; 
-                  map.setOptions({ draggable: true, draggableCursor: null });
-                  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
-                  document.getElementById('btnViewMode').classList.add('active');
-              } 
-              else if (customDrawingMode === 'polygon') {
-                  if (document.getElementById('drawStep2').style.display === 'block') return;
-
-                  customDrawingPath.push(e.latLng);
-                  
-                  let dotMarker = new google.maps.Marker({
-                      position: e.latLng,
-                      map: map,
-                      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
-                      zIndex: 10000,
-                      draggable: true,
-                      cursor: 'move'
-                  });
                   
                   google.maps.event.addListener(dotMarker, 'drag', (evt) => {
                       let idx = customDrawingMarkers.indexOf(dotMarker);
@@ -743,6 +764,16 @@
       document.getElementById('backToStep1Btn').onclick = () => {
           document.getElementById('drawStep2').style.display = 'none';
           document.getElementById('drawStep1').style.display = 'block';
+      };
+      // 🌟追加：筆ポリゴン読込ボタンを押した時の処理
+      document.getElementById('btnLoadFude').onclick = () => {
+          if (!window.fudeLoaded) {
+              customAlert("農地データを読み込んでいます...\n地図上に青い枠が表示されたら、対象の畑をタップしてください。");
+              map.data.loadGeoJson('/fude.geojson'); // ★アップロードしたGeoJSONを読み込む
+              window.fudeLoaded = true;
+          } else {
+              customAlert("すでに読み込み済みです。\n地図上の青い枠をタップしてください。");
+          }
       };
 
       document.getElementById('finalSaveBtn').onclick = () => {
