@@ -11,35 +11,77 @@
     
     <style>
         body { font-family: sans-serif; background-color: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .container { text-align: center; background: #222; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 85%; max-width: 400px; }
-        h1 { color: #4CAF50; margin-bottom: 30px; font-size: 24px; }
-        .btn { display: block; width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 8px; font-size: 16px; font-weight: bold; text-decoration: none; color: white; box-sizing: border-box; transition: opacity 0.2s; }
+        .container { text-align: center; background: #222; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 85%; max-width: 400px; overflow-y: auto; max-height: 90vh; }
+        h1 { color: #4CAF50; margin-bottom: 20px; font-size: 24px; }
+        .btn { display: block; width: 100%; padding: 15px; margin-bottom: 10px; border-radius: 8px; font-size: 16px; font-weight: bold; text-decoration: none; color: white; box-sizing: border-box; transition: opacity 0.2s; }
         .btn:active { opacity: 0.7; }
         .btn-worker { background-color: #4CAF50; }
         .btn-schedule { background-color: #2196F3; }
         .btn-admin { background-color: #d32f2f; }
-        .hint { font-size: 13px; color: #aaa; margin-top: 25px; line-height: 1.6; text-align: left; background: #333; padding: 15px; border-radius: 8px;}
+        
+        /* LINE連携ブロックのデザイン */
+        .share-box { background: #333; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #444; }
+        .share-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; background: #222; color: #fff; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>情熱MAP 総合案内所</h1>
         
-        <a href="/worker.html" target="_blank" rel="noopener noreferrer" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
-        <a href="/schedule" target="_blank" rel="noopener noreferrer" class="btn btn-schedule">📅 予定 MAP を開く</a>
-        <a href="/admin" target="_blank" rel="noopener noreferrer" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
+        <a href="/worker.html" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
+        <a href="/schedule" class="btn btn-schedule">📅 予定 MAP を開く</a>
+        <a href="/admin.html" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
         
-        <div class="hint">
-            <b>💡 アプリのインストール（追加）方法</b><br>
-            1. 上のボタンを押すと、それぞれのアプリ画面がブラウザで開きます。<br>
-            2. 開いた先の画面で、スマホのメニューから<b>「ホーム画面に追加」</b>を行ってください。<br>
-            3. 3つのアプリを個別にインストールできます。
+        <div class="share-box">
+            <h3 style="margin-top:0; color:#4CAF50; font-size: 16px;">📍 LINEから地図を開く</h3>
+            
+            <div id="shareDirectMode" style="display:none;">
+                <p style="font-size:13px; color:#FF9800; font-weight:bold;">共有された場所情報を受け取りました！<br>どちらで開きますか？</p>
+            </div>
+
+            <div id="sharePasteMode">
+                <p style="font-size:11px; color:#aaa; margin-bottom: 5px;">iPhoneの場合はURLをコピーして貼ってください</p>
+                <input type="text" id="pastedUrl" class="share-input" placeholder="https://maps.app.goo.gl/...">
+            </div>
+
+            <div style="display:flex; gap:10px;">
+                <button onclick="forwardMap('admin')" style="flex:1; background:#d32f2f; color:white; padding:12px; border:none; border-radius:6px; font-weight:bold;">管理者で</button>
+                <button onclick="forwardMap('worker')" style="flex:1; background:#4CAF50; color:white; padding:12px; border:none; border-radius:6px; font-weight:bold;">作業者で</button>
+            </div>
         </div>
+        
     </div>
 
     <script>
+      // 🌟JavaScriptをすべてこの <script> の中にまとめました！
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=portal', { scope: '/' });
+      }
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const sharedText = urlParams.get('text') || urlParams.get('url');
+
+      if (sharedText) {
+        document.getElementById('shareDirectMode').style.display = 'block';
+        document.getElementById('sharePasteMode').style.display = 'none';
+      }
+
+      function forwardMap(mode) {
+        let finalParams = "";
+        
+        if (sharedText) {
+          finalParams = window.location.search;
+        } else {
+          const inputUrl = document.getElementById('pastedUrl').value;
+          if (!inputUrl) { alert("URLが貼り付けられていません！"); return; }
+          finalParams = "?text=" + encodeURIComponent(inputUrl);
+        }
+
+        if (mode === 'admin') {
+          window.location.href = '/admin.html' + finalParams;
+        } else {
+          window.location.href = '/worker.html' + finalParams; 
+        }
       }
     </script>
 </body>
