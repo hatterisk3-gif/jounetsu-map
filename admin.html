@@ -1759,14 +1759,14 @@ document.getElementById('btnLoadFude').onclick = () => {
               const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
               
               if (sharedText) {
-                  customAlert("🔍 URLを解析中です..."); // ★通信するので待機メッセージを出す
+                  customAlert("🔍 URLを解析中です...");
                   
-                  // 非同期関数で強力な解析を実行！
                   (async () => {
                       let shareLat = null, shareLng = null;
+                      let finalExpandedUrl = ""; // ★万が一失敗した時のために記録する
                       
-                      // ① まずは普通のテキスト（度分秒や直接の座標）から探す
-                      const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
+                      // 🌟変更：!3d と !4d のパターンを新たに追加！
+                      const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
                       const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
                       const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
 
@@ -1777,35 +1777,30 @@ document.getElementById('btnLoadFude').onclick = () => {
                       } 
                       else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
                       
-                     // ② 見つからなかった場合、自前のGASサーバーを使って安全にURLを展開する！！
-                  if (!shareLat || !shareLng) {
-                      const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
-                      if (shortUrlMatch) {
-                          try {
-                              const shortUrl = shortUrlMatch[0];
-                              
-                              // 🌟 変更：無料プロキシをやめて、自前のGAS関数を呼び出す！
-                              const expandedUrl = await callGAS('expandGoogleMapUrl', { url: shortUrl });
-                              
-                              if (expandedUrl) {
-                                  const finalUrlMatch = expandedUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
-                                  if (finalUrlMatch) { 
-                                      shareLat = parseFloat(finalUrlMatch[1]); 
-                                      shareLng = parseFloat(finalUrlMatch[2]); 
+                      if (!shareLat || !shareLng) {
+                          const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
+                          if (shortUrlMatch) {
+                              try {
+                                  const shortUrl = shortUrlMatch[0];
+                                  const expandedUrl = await callGAS('expandGoogleMapUrl', { url: shortUrl });
+                                  finalExpandedUrl = expandedUrl; // ★デバッグ用に記録
+                                  
+                                  if (expandedUrl) {
+                                      // 🌟変更：ここにも !3d と !4d を追加！
+                                      const finalUrlMatch = expandedUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+                                      if (finalUrlMatch) { 
+                                          shareLat = parseFloat(finalUrlMatch[1]); 
+                                          shareLng = parseFloat(finalUrlMatch[2]); 
+                                      }
                                   }
-                              }
-                          } catch(e) { console.warn("短縮URLの展開に失敗", e); }
+                              } catch(e) { console.warn("短縮URLの展開に失敗", e); }
+                          }
                       }
-                  }
                       
-                      // ③ 座標が見つかればピンを刺して自動モードへ！
                       if (shareLat && shareLng) {
-                          document.getElementById('customAlertModal').style.display = 'none'; // 解析メッセージを消す
-                          
+                          document.getElementById('customAlertModal').style.display = 'none';
                           const sharedPos = { lat: shareLat, lng: shareLng };
-                          map.setCenter(sharedPos);
-                          map.setZoom(18);
-                          
+                          map.setCenter(sharedPos); map.setZoom(18);
                           new google.maps.Marker({
                               position: sharedPos, map: map,
                               icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
@@ -1816,7 +1811,9 @@ document.getElementById('btnLoadFude').onclick = () => {
                               document.getElementById('btnDrawMode').click();
                           }
                       } else {
-                          customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。\nURL: " + sharedText);
+                          // ★変更：失敗した原因（URL）を表示するように変更！
+                          const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
+                          customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。" + debugText);
                       }
                   })();
               }

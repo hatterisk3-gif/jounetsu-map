@@ -1802,57 +1802,50 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開して座標入りの長いURLにする関数（人間偽装・突破版）
+// 🗺️ 短縮URLを展開して座標入りの長いURLにする関数（メタタグえぐり出し版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
     var url = params.url;
-    var maxRedirects = 5;
+    var tempUrl = url;
     
-    // 🌟超重要：私は普通のパソコンのブラウザ（Chrome）ですよ、と偽装するお面（ヘッダー）
-    var options = {
-      followRedirects: false,
-      muteHttpExceptions: true,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
-      }
-    };
-    
-    // ① リダイレクトを追いかける（偽装した状態で行く！）
-    for (var i = 0; i < maxRedirects; i++) {
-      var response = UrlFetchApp.fetch(url, options);
-      var code = response.getResponseCode();
-      if (code >= 300 && code < 400) {
-        var headers = response.getHeaders();
-        var nextUrl = headers['Location'] || headers['location'];
-        if (nextUrl) {
-          url = nextUrl;
-        } else {
-          break;
-        }
-      } else {
-        break; 
-      }
+    // ① リダイレクトを追いかける（人間のフリをして行く）
+    for (var i = 0; i < 5; i++) {
+      var res = UrlFetchApp.fetch(tempUrl, {
+        followRedirects: false, muteHttpExceptions: true,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+      });
+      var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
+      if (loc) { tempUrl = loc; } else { break; }
     }
     
-    // ② 最終URLに座標が含まれていれば返す
-    if (url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)) {
-      return url;
+    // 同意画面などに飛ばされた場合、本来のURLを救出する
+    if (tempUrl.indexOf('consent.google.com') !== -1) {
+      var match = tempUrl.match(/continue=([^&]+)/);
+      if (match) tempUrl = decodeURIComponent(match[1]);
     }
     
-    // ③ それでもダメならHTMLを覗き見する（ここも偽装してアクセス！）
-    options.followRedirects = true; // 今度は最後までページを読み込む
-    var finalResponse = UrlFetchApp.fetch(url, options);
-    var html = finalResponse.getContentText();
+    // ② URL自体に座標が入っているか確認（!3d !4d のパターンも追加）
+    if (tempUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)) {
+      return tempUrl;
+    }
     
-    var match = html.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/) || html.match(/ll=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
-    if (match) return "https://maps.google.com/?q=" + match[1] + "," + match[2];
+    // ③ URLに無い場合、HTMLの奥底にある「緯度経度メタタグ」を強制的にえぐり出す！
+    var htmlRes = UrlFetchApp.fetch(tempUrl, {
+      followRedirects: true, muteHttpExceptions: true,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+    });
+    var html = htmlRes.getContentText();
     
-    var matchArr = html.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
-    if(matchArr) return "https://maps.google.com/?q=" + matchArr[3] + "," + matchArr[4];
-
-    return url;
+    // itemprop="latitude" content="33.123" を探す
+    var latMatch = html.match(/itemprop="latitude"[^>]*content="(-?\d+\.\d+)"/i) || html.match(/content="(-?\d+\.\d+)"[^>]*itemprop="latitude"/i);
+    var lngMatch = html.match(/itemprop="longitude"[^>]*content="(-?\d+\.\d+)"/i) || html.match(/content="(-?\d+\.\d+)"[^>]*itemprop="longitude"/i);
+    
+    if (latMatch && lngMatch) {
+      return tempUrl + "?q=" + latMatch[1] + "," + lngMatch[1];
+    }
+    
+    return tempUrl;
   } catch(e) {
     return params.url;
   }
