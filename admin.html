@@ -1777,27 +1777,26 @@ document.getElementById('btnLoadFude').onclick = () => {
                       } 
                       else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
                       
-                      // ② 見つからなかった場合、無料プロキシを使って短縮URLの裏側を覗きに行く！！
-                      if (!shareLat || !shareLng) {
-                          const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
-                          if (shortUrlMatch) {
-                              try {
-                                  const shortUrl = shortUrlMatch[0];
-                                  const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(shortUrl)}`);
-                                  const data = await res.json();
-                                  
-                                  if (data.status && data.status.url) {
-                                      const finalUrlMatch = data.status.url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || data.status.url.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || data.status.url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
-                                      if (finalUrlMatch) { shareLat = parseFloat(finalUrlMatch[1]); shareLng = parseFloat(finalUrlMatch[2]); }
+                     // ② 見つからなかった場合、自前のGASサーバーを使って安全にURLを展開する！！
+                  if (!shareLat || !shareLng) {
+                      const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
+                      if (shortUrlMatch) {
+                          try {
+                              const shortUrl = shortUrlMatch[0];
+                              
+                              // 🌟 変更：無料プロキシをやめて、自前のGAS関数を呼び出す！
+                              const expandedUrl = await callGAS('expandGoogleMapUrl', { url: shortUrl });
+                              
+                              if (expandedUrl) {
+                                  const finalUrlMatch = expandedUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+                                  if (finalUrlMatch) { 
+                                      shareLat = parseFloat(finalUrlMatch[1]); 
+                                      shareLng = parseFloat(finalUrlMatch[2]); 
                                   }
-                                  if ((!shareLat || !shareLng) && data.contents) {
-                                      // htmlの中から画像や中心点の座標を強引に抜く
-                                      const centerMatch = data.contents.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/) || data.contents.match(/ll=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
-                                      if (centerMatch) { shareLat = parseFloat(centerMatch[1]); shareLng = parseFloat(centerMatch[2]); }
-                                  }
-                              } catch(e) { console.warn("短縮URLの展開に失敗", e); }
-                          }
+                              }
+                          } catch(e) { console.warn("短縮URLの展開に失敗", e); }
                       }
+                  }
                       
                       // ③ 座標が見つかればピンを刺して自動モードへ！
                       if (shareLat && shareLng) {

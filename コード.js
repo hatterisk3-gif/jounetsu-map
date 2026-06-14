@@ -45,6 +45,7 @@ function doPost(e) {
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
     else if (action === "deleteMachineFromMaster") result = deleteMachineFromMaster(params);
+    else if (action === "expandGoogleMapUrl") result = expandGoogleMapUrl(params);
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
@@ -1799,4 +1800,24 @@ function deleteMachineFromMaster(params) {
   
   sheet.deleteRow(targetRowIndex); // 行ごと削除
   return true;
+}
+// ==========================================
+// 🗺️ 短縮URLを展開して座標入りの長いURLにする関数
+// ==========================================
+function expandGoogleMapUrl(params) {
+  try {
+    var shortUrl = params.url;
+    
+    // リダイレクトを自動で追わず、ヘッダーから行き先（長いURL）を抜き出す
+    var response = UrlFetchApp.fetch(shortUrl, { followRedirects: false, muteHttpExceptions: true });
+    var headers = response.getHeaders();
+    
+    // Locationヘッダーに展開後の長いURLが入っている！
+    if (headers['Location']) {
+      return headers['Location'];
+    }
+    return shortUrl;
+  } catch(e) {
+    return params.url;
+  }
 }
