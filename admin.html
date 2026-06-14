@@ -1756,7 +1756,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               
            // 🌟ここから追加：共有されたURLやテキストを解析してピンを刺す！
            const urlParams = new URLSearchParams(window.location.search);
-              const sharedText = urlParams.get('text') || urlParams.get('url');
+              // 🌟修正：title に隠されている座標も取りこぼさないように、すべての情報を合体させる！
+              const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
               
               if (sharedText) {
                   let shareLat = null, shareLng = null;
@@ -1765,7 +1766,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
                   // ②LINEのプレビュー等に出る度分秒(DMS)形式: 33°52'32.1"N 134°36'19.2"E
                   const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
-                  // ③シンプルな緯度経度テキスト形式: 33.1234, 134.5678
+                  // ③Googleマップの共有タイトル等に入る緯度経度形式: 33.1234, 134.5678
                   const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
 
                   if (matchURL) {
@@ -1789,7 +1790,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                               zIndex: 9999, animation: google.maps.Animation.DROP
                           });
                           
-                          // 🌟変更：管理者の場合は、圃場登録するかどうかを聞いて、自動でモード移行する！
+                          // 管理者の場合は、圃場登録するかどうかを聞いて、自動でモード移行する！
                           if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
                               document.getElementById('btnDrawMode').click();
                           }

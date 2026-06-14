@@ -2808,10 +2808,10 @@ function createSignboardMarker(name, pos, icon, id) {
               
               document.getElementById('loginId').value = id; 
               document.getElementById('loginPw').value = pw; 
-              // 🌟🌟ここから追加：共有されたURLを解析してピンを刺す！🌟🌟
-             // 🌟🌟ここから追加：共有されたURLを解析してピンを刺す！🌟🌟
-             const urlParams = new URLSearchParams(window.location.search);
-              const sharedText = urlParams.get('text') || urlParams.get('url');
+            // 🌟🌟ここから追加：共有されたURLを解析してピンを刺す！🌟🌟
+            const urlParams = new URLSearchParams(window.location.search);
+              // 🌟修正：title に隠されている座標も取りこぼさないように、すべての情報を合体させる！
+              const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
               
               if (sharedText) {
                   let shareLat = null, shareLng = null;
@@ -2842,11 +2842,10 @@ function createSignboardMarker(name, pos, icon, id) {
                               zIndex: 9999, animation: google.maps.Animation.DROP
                           });
                           
-                          // 🌟変更：Workerの場合は、登録済みか判定してアクションを分ける！
+                          // Workerの場合は、登録済みか判定してアクションを分ける！
                           let matchedId = null;
                           for (let id in loadedPolygons) {
                               const p = loadedPolygons[id];
-                              // google.maps.geometryライブラリを使って、指定座標がポリゴンの中かチェック！
                               if (p.polygon && google.maps.geometry.poly.containsLocation(sharedLatLng, p.polygon)) {
                                   matchedId = id; break;
                               }
@@ -2861,18 +2860,16 @@ function createSignboardMarker(name, pos, icon, id) {
                           } else {
                               // 登録されていない空き地の場合
                               if (await customConfirm("⚠️ この場所には圃場が登録されていません。\n管理者用MAPを開いて新しく登録しますか？")) {
-                                  // URLのパラメータ(緯度経度データ)を引き継いだままAdminへジャンプ！
                                   window.location.href = '/admin.html' + window.location.search;
                               }
                           }
-                      }, 2500); // 描画を確実に待つために2.5秒に設定
+                      }, 2500); 
                   } else {
                       setTimeout(() => {
                           customAlert("📍 共有された場所情報を受け取りました。\n※短縮URLのみのため自動移動できませんでした。\nLINEから送られた場合は、座標(N E)の文字も含めてコピーしてください。");
                       }, 2000);
                   }
               }
-              
               // 🌟🌟追加ここまで🌟🌟
               
               // キャッシュがあれば先に0.1秒で地図を描画する！
