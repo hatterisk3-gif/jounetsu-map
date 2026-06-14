@@ -680,16 +680,20 @@
               } 
           });
           
-     // 🌟変更：地図をスクロールし終わった時にエリアを自動判定！
-     map.addListener('idle', () => { 
+  
+              // 🌟変更：地図をスクロールし終わって「1秒後」にだけ判定する（スマホの負担を激減させる！）
+          let idleTimer = null;
+          map.addListener('idle', () => { 
               let center = map.getCenter(); 
               localStorage.setItem('pMapAdminLastLat', center.lat()); 
               localStorage.setItem('pMapAdminLastLng', center.lng()); 
               localStorage.setItem('pMapAdminLastZoom', map.getZoom()); 
               
-              // ★追加：地図を動かして別の県に入ったら、前の県を消して処理を軽くする！
               if (typeof autoSwitchFudeRegion === 'function') {
-                  autoSwitchFudeRegion();
+                  clearTimeout(idleTimer);
+                  idleTimer = setTimeout(() => {
+                      autoSwitchFudeRegion();
+                  }, 1000);
               }
           });
           
@@ -1015,9 +1019,9 @@ const fudeFiles = {
         files: ["2026_282014.json", "2026_282103.json", "2026_282294.json"]
     }
 };
-// 🌟ここに追加：地図を移動した瞬間に、古い県を完全消去して新しい県を裏でロードする神関数！
+// 🌟修正：違う県に移動した瞬間に、古い県のデータを【完全に忘れて】スマホを軽くする！
 window.autoSwitchFudeRegion = () => {
-    if (window.isMapLoadingFude) return; // ボタンで読込中なら邪魔しない
+    if (window.isMapLoadingFude) return;
 
     const center = map.getCenter();
     new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
@@ -1031,50 +1035,43 @@ window.autoSwitchFudeRegion = () => {
             }
         }
 
-        if (!prefName || !fudeFiles[prefName]) return; // システムに未登録の県なら無視
-        if (window.loadedFudeRegion === prefName) return; // 今と同じ県なら無視
+        if (!prefName || !fudeFiles[prefName]) return; 
+        if (window.loadedFudeRegion === prefName) return; 
 
-        // 🌟違う県に入った！
         console.log(`🗺️ エリア移動を検知: ${window.loadedFudeRegion} -> ${prefName}`);
 
-        // 1. スマホが熱くならないように、前の県のデータを地図から【完全消去】してメモリを解放する！
+        // 1. スマホが熱くならないように、前の県のデータを地図から消去
         if (window.loadedFudeRegion !== null) {
             map.data.forEach(function(feature) { map.data.remove(feature); });
             
-            // もし前の県で赤枠を選んだまま移動してきたらリセットする
+            // ★超重要：裏側で溜め込んでいたデータ（キャッシュ）も空っぽにしてフリーズを防ぐ！
+            window.fudeCache = {}; 
+            
             if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
                 clearCustomDrawing();
                 customDrawingMode = 'polygon';
             }
         }
 
-        // 2. 新しい県に切り替え
         window.loadedFudeRegion = prefName; 
         const regionData = fudeFiles[prefName];
         const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev"; 
         
-        // 3. スクロールする直前に、ユーザーが「青枠（筆ポリ）」を見ていたかどうかを記憶
         let wasVisible = window.isFudeVisibleFlag; 
         
-        // 4. 新しい県のデータをロードして地図に乗せる
         regionData.files.forEach(fileName => {
-            if (window.fudeCache[fileName]) {
-                map.data.addGeoJson(window.fudeCache[fileName]);
-            } else {
-                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
-                    .then(res => res.json())
-                    .then(geoJson => {
-                        window.fudeCache[fileName] = geoJson; 
-                        // フェッチが終わった時にまだ同じ県を見ているなら追加
-                        if (window.loadedFudeRegion === prefName) {
-                            map.data.addGeoJson(geoJson);
-                        }
-                    })
-                    .catch(err => console.warn("自動切替スキップ", err));
-            }
+            // キャッシュは使わず、必要な時だけR2からサクッと読み込む
+            fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
+                .then(res => res.json())
+                .then(geoJson => {
+                    window.fudeCache[fileName] = geoJson; 
+                    if (window.loadedFudeRegion === prefName) {
+                        map.data.addGeoJson(geoJson);
+                    }
+                })
+                .catch(err => console.warn("自動切替スキップ", err));
         });
         
-        // 5. 最後に表示状態を復元（筆ポリモード中なら、新しい県の青枠が勝手に出てくる！）
         setFudeVisibility(wasVisible); 
     });
 };
@@ -1727,15 +1724,15 @@ document.getElementById('btnLoadFude').onclick = () => {
                       renderInitData(JSON.parse(cachedData)); 
                       setTimeout(() => { executeLogin(true); }, 1500);
                       
-                      // 🌟ここに追加①：キャッシュログイン成功時に全県先読みスタート
-                      if (typeof preloadAllFudeDataSlowly === 'function') preloadAllFudeDataSlowly();
+                      // 🌟ここにあった全県先読みスタートの行を【削除】または【//でコメントアウト】しました！
+                      // if (typeof preloadAllFudeDataSlowly === 'function') preloadAllFudeDataSlowly();
                   } catch(e) {
                       executeLogin(true);
                   }
               } else {
                   executeLogin(true);
-                  // 🌟ここに追加②：通常ログイン成功時に全県先読みスタート
-                  if (typeof preloadAllFudeDataSlowly === 'function') preloadAllFudeDataSlowly();
+                  // 🌟ここにあった全県先読みスタートの行も【削除】または【//でコメントアウト】しました！
+                  // if (typeof preloadAllFudeDataSlowly === 'function') preloadAllFudeDataSlowly();
               }
           }
       });
