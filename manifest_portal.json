@@ -1,13 +1,13 @@
 {
-    "id": "passion-map-portal",
-    "name": "情熱MAP 総合案内所",
-    "short_name": "情熱案内所",
-    "start_url": "/?app=portal",
-    "scope": "/",
-    "display": "standalone",
-    "background_color": "#1a1a1a",
-    "theme_color": "#4CAF50",
-    "icons": [
+  "id": "passion-map-portal",
+  "name": "情熱MAP 総合案内所",
+  "short_name": "情熱案内所",
+  "start_url": "/index.html",
+  "scope": "/index.html",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#4CAF50",
+  "icons": [
       {
         "src": "/icon_index.png",
         "sizes": "192x192",
@@ -20,11 +20,8 @@
       }
     ],
     "share_target": {
-    "action": "/portal.html",
-    "method": "GET",
-    "params": {
-      "title": "title",
-      "text": "text",
-      "url": "url"
-  }}
+      "action": "/index.html",
+      "method": "GET",
+      "params": { "title": "title", "text": "text", "url": "url" }
+    }
   }
