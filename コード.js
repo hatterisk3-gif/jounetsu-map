@@ -1802,51 +1802,54 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開して座標入りの長いURLにする関数（メタタグえぐり出し版）
+// 🗺️ 短縮URLを展開して座標入りのURLにする関数（最強のプレビュー画像解析版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
     var url = params.url;
-    var tempUrl = url;
-    
-    // ① リダイレクトを追いかける（人間のフリをして行く）
-    for (var i = 0; i < 5; i++) {
-      var res = UrlFetchApp.fetch(tempUrl, {
-        followRedirects: false, muteHttpExceptions: true,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-      });
-      var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
-      if (loc) { tempUrl = loc; } else { break; }
+
+    // ① Googleの転送に全て任せて、最終的なページのHTMLをごっそり取得する
+    var options = {
+      followRedirects: true, // 自動転送をONにしてパニックを防ぐ！
+      muteHttpExceptions: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
+      }
+    };
+
+    var response = UrlFetchApp.fetch(url, options);
+    var html = response.getContentText();
+
+    // ② 最強の抽出法：LINE等のプレビュー画像(og:image)から座標をえぐり出す！
+    var ogMatch = html.match(/property="og:image"[^>]*content="([^"]+)"/i) || html.match(/content="([^"]+)"[^>]*property="og:image"/i);
+    if (ogMatch) {
+      var imgUrl = decodeURIComponent(ogMatch[1]);
+      var cMatch = imgUrl.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
+      if (cMatch) {
+        // フロントエンド（HTML側）の解析プログラムが理解できる形で返す
+        return "https://google.com/maps?q=" + cMatch[1] + "," + cMatch[2];
+      }
     }
-    
-    // 同意画面などに飛ばされた場合、本来のURLを救出する
-    if (tempUrl.indexOf('consent.google.com') !== -1) {
-      var match = tempUrl.match(/continue=([^&]+)/);
-      if (match) tempUrl = decodeURIComponent(match[1]);
-    }
-    
-    // ② URL自体に座標が入っているか確認（!3d !4d のパターンも追加）
-    if (tempUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)) {
-      return tempUrl;
-    }
-    
-    // ③ URLに無い場合、HTMLの奥底にある「緯度経度メタタグ」を強制的にえぐり出す！
-    var htmlRes = UrlFetchApp.fetch(tempUrl, {
-      followRedirects: true, muteHttpExceptions: true,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-    });
-    var html = htmlRes.getContentText();
-    
-    // itemprop="latitude" content="33.123" を探す
+
+    // ③ サブ抽出法：メタタグの緯度経度データから取得
     var latMatch = html.match(/itemprop="latitude"[^>]*content="(-?\d+\.\d+)"/i) || html.match(/content="(-?\d+\.\d+)"[^>]*itemprop="latitude"/i);
     var lngMatch = html.match(/itemprop="longitude"[^>]*content="(-?\d+\.\d+)"/i) || html.match(/content="(-?\d+\.\d+)"[^>]*itemprop="longitude"/i);
-    
     if (latMatch && lngMatch) {
-      return tempUrl + "?q=" + latMatch[1] + "," + lngMatch[1];
+      return "https://google.com/maps?q=" + latMatch[1] + "," + lngMatch[1];
     }
-    
-    return tempUrl;
+
+    // ④ サブ抽出法：ページ内の内部データ配列から取得
+    var initMatch = html.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
+    if (initMatch) {
+      return "https://google.com/maps?q=" + initMatch[1] + "," + initMatch[2];
+    }
+
+    // どこにも見つからなかった場合は、エラー調査用にHTMLの最初を返す
+    return "ERROR_NOT_FOUND: " + html.substring(0, 150);
+
   } catch(e) {
-    return params.url;
+    // プログラムがクラッシュした場合は、エラー内容を返す
+    return "ERROR_EXCEPTION: " + e.toString();
   }
 }
