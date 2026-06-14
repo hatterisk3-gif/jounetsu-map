@@ -117,7 +117,10 @@
       </div>
       <div id="drawArea" class="action-bar" style="display:none;">
         <div id="drawStep1">
-          <button id="btnLoadFude" style="width:100%; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px; margin-bottom:8px;">🤖 筆ポリゴンから登録</button>
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <button id="btnManualDraw" style="flex:1; background:#00BCD4; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">👆 手動で描く</button>
+            <button id="btnLoadFude" style="flex:1; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">🤖 筆ポリから</button>
+          </div>
           
           <div style="display:flex; gap:8px;">
             <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>↩️ 1つ戻す</button>
@@ -677,11 +680,17 @@
               } 
           });
           
-          map.addListener('idle', () => { 
+     // 🌟変更：地図をスクロールし終わった時にエリアを自動判定！
+     map.addListener('idle', () => { 
               let center = map.getCenter(); 
               localStorage.setItem('pMapAdminLastLat', center.lat()); 
               localStorage.setItem('pMapAdminLastLng', center.lng()); 
               localStorage.setItem('pMapAdminLastZoom', map.getZoom()); 
+              
+              // ★追加：地図を動かして別の県に入ったら、前の県を消して処理を軽くする！
+              if (typeof autoSwitchFudeRegion === 'function') {
+                  autoSwitchFudeRegion();
+              }
           });
           
           document.getElementById('btnCurrentLocation').onclick = () => { 
@@ -871,6 +880,19 @@ document.getElementById('btnDrawMode').onclick=()=>{
               }
           };
       }
+      // 🌟ここに追加：手動で描くボタンの処理
+      document.getElementById('btnManualDraw').onclick = () => {
+          customDrawingMode = 'polygon';
+          setFudeVisibility(false); // 邪魔な青枠をスッと隠す！
+          
+          // もしすでに筆ポリゴンを選んで赤くなっていたら、一旦リセットする
+          if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
+              clearCustomDrawing();
+              customDrawingMode = 'polygon';
+          }
+          
+          map.setOptions({ draggableCursor: pinCursor });
+      };
 
      // 🌟修正：微細な隙間を無視して、複数の畑を美しく1つに結合する！
      document.getElementById('step1SaveBtn').onclick = () => {
@@ -968,11 +990,13 @@ document.getElementById('btnDrawMode').onclick=()=>{
           
           if(window.loadedFudeRegion) setFudeVisibility(true); 
       };
-// 🌟ここに追加：キャッシュ用変数と、青枠の表示・非表示を切り替える関数
+// 🌟変更：いま青枠が表示されているか記憶するフラグを追加！
 window.fudeCache = {}; 
       window.loadedFudeRegion = null; 
+      window.isFudeVisibleFlag = false; 
       window.setFudeVisibility = (isVisible) => {
           if (!map || !map.data) return;
+          window.isFudeVisibleFlag = isVisible; // ★状態を記録する
           if (isVisible) {
               map.data.setStyle({ fillColor: '#2196F3', fillOpacity: 0.15, strokeColor: '#2196F3', strokeWeight: 1, clickable: true, visible: true });
           } else {
@@ -991,7 +1015,69 @@ const fudeFiles = {
         files: ["2026_282014.json", "2026_282103.json", "2026_282294.json"]
     }
 };
+// 🌟ここに追加：地図を移動した瞬間に、古い県を完全消去して新しい県を裏でロードする神関数！
+window.autoSwitchFudeRegion = () => {
+    if (window.isMapLoadingFude) return; // ボタンで読込中なら邪魔しない
 
+    const center = map.getCenter();
+    new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
+        if (status !== 'OK' || results.length === 0) return;
+
+        let prefName = null;
+        for (let component of results[0].address_components) {
+            if (component.types.includes("administrative_area_level_1")) {
+                prefName = component.long_name;
+                break;
+            }
+        }
+
+        if (!prefName || !fudeFiles[prefName]) return; // システムに未登録の県なら無視
+        if (window.loadedFudeRegion === prefName) return; // 今と同じ県なら無視
+
+        // 🌟違う県に入った！
+        console.log(`🗺️ エリア移動を検知: ${window.loadedFudeRegion} -> ${prefName}`);
+
+        // 1. スマホが熱くならないように、前の県のデータを地図から【完全消去】してメモリを解放する！
+        if (window.loadedFudeRegion !== null) {
+            map.data.forEach(function(feature) { map.data.remove(feature); });
+            
+            // もし前の県で赤枠を選んだまま移動してきたらリセットする
+            if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
+                clearCustomDrawing();
+                customDrawingMode = 'polygon';
+            }
+        }
+
+        // 2. 新しい県に切り替え
+        window.loadedFudeRegion = prefName; 
+        const regionData = fudeFiles[prefName];
+        const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev"; 
+        
+        // 3. スクロールする直前に、ユーザーが「青枠（筆ポリ）」を見ていたかどうかを記憶
+        let wasVisible = window.isFudeVisibleFlag; 
+        
+        // 4. 新しい県のデータをロードして地図に乗せる
+        regionData.files.forEach(fileName => {
+            if (window.fudeCache[fileName]) {
+                map.data.addGeoJson(window.fudeCache[fileName]);
+            } else {
+                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
+                    .then(res => res.json())
+                    .then(geoJson => {
+                        window.fudeCache[fileName] = geoJson; 
+                        // フェッチが終わった時にまだ同じ県を見ているなら追加
+                        if (window.loadedFudeRegion === prefName) {
+                            map.data.addGeoJson(geoJson);
+                        }
+                    })
+                    .catch(err => console.warn("自動切替スキップ", err));
+            }
+        });
+        
+        // 5. 最後に表示状態を復元（筆ポリモード中なら、新しい県の青枠が勝手に出てくる！）
+        setFudeVisibility(wasVisible); 
+    });
+};
 // 🌟ここに追加：裏でこっそりダウンロードだけしておく魔法の関数！
 window.preloadFudeData = () => {
     const center = map.getCenter();
@@ -1065,16 +1151,15 @@ window.preloadAllFudeDataSlowly = () => {
     setTimeout(fetchNext, 5000);
 };
 
-// 🌟修正：先読みキャッシュを使って一瞬で表示する爆速読込ボタン
+// 🌟修正：先読みキャッシュを使って一瞬で表示する爆速読込ボタン（完全無音版）
 document.getElementById('btnLoadFude').onclick = () => {
     const btn = document.getElementById('btnLoadFude');
-    const originalText = "🤖 筆ポリゴンから登録";
+    const originalText = "🤖 筆ポリから"; // ★ボタンの文字を短いものに合わせました
     btn.innerHTML = "🔍 エリアを判定中...";
     btn.disabled = true;
     window.isMapLoadingFude = true;
 
-    // ★もし手動でピンを打っている途中で押したら、手動の線を消して筆ポリモードにする
-    if (customDrawingPath.length > 0) {
+    if (customDrawingPath.length > 0 && (!window.selectedFudePaths || window.selectedFudePaths.length === 0)) {
         clearCustomDrawing();
         customDrawingMode = 'polygon';
     }
@@ -1104,7 +1189,7 @@ document.getElementById('btnLoadFude').onclick = () => {
         if (window.loadedFudeRegion === prefName) {
             setFudeVisibility(true);
             btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false; 
-            customAlert(`${prefName}の農地データを表示しました！\n地図上の青い枠をタップしてください。`);
+            // 🌟ポップアップを削除しました！
             return;
         }
 
@@ -1120,12 +1205,10 @@ document.getElementById('btnLoadFude').onclick = () => {
         
         regionData.files.forEach(fileName => {
             if (window.fudeCache[fileName]) {
-                // ★裏で先読みが完了していれば、通信ゼロで一瞬で地図に追加される！
                 map.data.addGeoJson(window.fudeCache[fileName]);
                 loadedCount++;
                 checkComplete();
             } else {
-                // 万が一先読みが間に合わなかった場合だけダウンロードする
                 fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
                     .then(res => res.json())
                     .then(geoJson => {
@@ -1146,7 +1229,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                 map.setOptions({ draggableCursor: customDrawingMode ? pinCursor : null }); 
                 window.loadedFudeRegion = prefName;
                 setFudeVisibility(true); 
-                customAlert(`${prefName}の農地データを表示しました！\n地図上の青い枠をタップしてください。`);
+                // 🌟ポップアップを削除しました！
             }
         }
 
