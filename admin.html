@@ -830,8 +830,8 @@ document.getElementById('btnDrawMode').onclick=()=>{
           customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「🤖 筆ポリゴンから登録」を押して枠を取得してください。", "drawMode");
       };
 
-      // 🌟正しい「看板ボタン」の処理
-      document.getElementById('btnMarkerMode').onclick=()=>{ 
+  // 🌟正しい「看板ボタン」の処理
+  document.getElementById('btnMarkerMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnMarkerMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='none'; 
@@ -841,6 +841,10 @@ document.getElementById('btnDrawMode').onclick=()=>{
           setFudeVisibility(false); 
           
           map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
+
+          // 🌟ここに追加：看板モードにした時も、今見ているエリアのデータを優先して先読み！
+          if (typeof preloadFudeData === 'function') preloadFudeData();
+
           customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。", "markerMode");
       };
       
@@ -1013,6 +1017,52 @@ window.preloadFudeData = () => {
             }
         });
     });
+};
+// 🌟ここに追加：スマホをフリーズさせずに全県のデータを裏でゆっくり集めるステルス関数
+window.preloadAllFudeDataSlowly = () => {
+    const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev"; 
+    let allFiles = [];
+    
+    // 全県の全ファイルを1つのリストにまとめる
+    for (let pref in fudeFiles) {
+        let folder = fudeFiles[pref].folder;
+        fudeFiles[pref].files.forEach(fileName => {
+            allFiles.push({ folder, fileName });
+        });
+    }
+
+    let currentIndex = 0;
+
+    // 1つずつゆっくりフェッチするリレー形式の関数
+    function fetchNext() {
+        if (currentIndex >= allFiles.length) return; // 全部終わったら静かに終了
+        
+        let target = allFiles[currentIndex];
+        
+        // まだキャッシュに無ければダウンロード
+        if (!window.fudeCache[target.fileName]) {
+            fetch(`${R2_BASE_URL}/${target.folder}/${target.fileName}`)
+                .then(res => res.json())
+                .then(geoJson => {
+                    window.fudeCache[target.fileName] = geoJson;
+                    currentIndex++;
+                    // スマホが熱くならないように、3秒待ってから次のファイルをダウンロード
+                    setTimeout(fetchNext, 3000); 
+                })
+                .catch(err => {
+                    console.warn("全件先読みスキップ", err);
+                    currentIndex++;
+                    setTimeout(fetchNext, 3000);
+                });
+        } else {
+            // すでに先読み済みならすぐ次へ
+            currentIndex++;
+            fetchNext();
+        }
+    }
+    
+    // アプリの起動が完全に終わって落ち着いた「5秒後」にひっそりとスタート！
+    setTimeout(fetchNext, 5000);
 };
 
 // 🌟修正：先読みキャッシュを使って一瞬で表示する爆速読込ボタン
@@ -1593,11 +1643,16 @@ document.getElementById('btnLoadFude').onclick = () => {
                   try { 
                       renderInitData(JSON.parse(cachedData)); 
                       setTimeout(() => { executeLogin(true); }, 1500);
+                      
+                      // 🌟ここに追加①：キャッシュログイン成功時に全県先読みスタート
+                      if (typeof preloadAllFudeDataSlowly === 'function') preloadAllFudeDataSlowly();
                   } catch(e) {
                       executeLogin(true);
                   }
               } else {
                   executeLogin(true);
+                  // 🌟ここに追加②：通常ログイン成功時に全県先読みスタート
+                  if (typeof preloadAllFudeDataSlowly === 'function') preloadAllFudeDataSlowly();
               }
           }
       });
