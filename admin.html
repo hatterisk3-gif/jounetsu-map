@@ -1754,32 +1754,55 @@ document.getElementById('btnLoadFude').onclick = () => {
               // 🌟🌟ここまで🌟🌟
            
               
-           // 🌟ここから追加：共有されたURLやテキストを解析してピンを刺す！
-           const urlParams = new URLSearchParams(window.location.search);
-              // 🌟修正：title に隠されている座標も取りこぼさないように、すべての情報を合体させる！
+       // 🌟ここから追加：共有されたURLやテキストを解析してピンを刺す（短縮URL強制展開ハック！）
+       const urlParams = new URLSearchParams(window.location.search);
               const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
               
               if (sharedText) {
-                  let shareLat = null, shareLng = null;
+                  customAlert("🔍 URLを解析中です..."); // ★通信するので待機メッセージを出す
                   
-                  // ①URLのパラメータ形式
-                  const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
-                  // ②LINEのプレビュー等に出る度分秒(DMS)形式: 33°52'32.1"N 134°36'19.2"E
-                  const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
-                  // ③Googleマップの共有タイトル等に入る緯度経度形式: 33.1234, 134.5678
-                  const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+                  // 非同期関数で強力な解析を実行！
+                  (async () => {
+                      let shareLat = null, shareLng = null;
+                      
+                      // ① まずは普通のテキスト（度分秒や直接の座標）から探す
+                      const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
+                      const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
+                      const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
 
-                  if (matchURL) {
-                      shareLat = parseFloat(matchURL[1]); shareLng = parseFloat(matchURL[2]);
-                  } else if (matchDMS) {
-                      shareLat = parseInt(matchDMS[1]) + parseInt(matchDMS[2])/60 + parseFloat(matchDMS[3])/3600;
-                      shareLng = parseInt(matchDMS[4]) + parseInt(matchDMS[5])/60 + parseFloat(matchDMS[6])/3600;
-                  } else if (matchDec) {
-                      shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]);
-                  }
-                  
-                  if (shareLat && shareLng) {
-                      setTimeout(async () => {
+                      if (matchURL) { shareLat = parseFloat(matchURL[1]); shareLng = parseFloat(matchURL[2]); } 
+                      else if (matchDMS) {
+                          shareLat = parseInt(matchDMS[1]) + parseInt(matchDMS[2])/60 + parseFloat(matchDMS[3])/3600;
+                          shareLng = parseInt(matchDMS[4]) + parseInt(matchDMS[5])/60 + parseFloat(matchDMS[6])/3600;
+                      } 
+                      else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
+                      
+                      // ② 見つからなかった場合、無料プロキシを使って短縮URLの裏側を覗きに行く！！
+                      if (!shareLat || !shareLng) {
+                          const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
+                          if (shortUrlMatch) {
+                              try {
+                                  const shortUrl = shortUrlMatch[0];
+                                  const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(shortUrl)}`);
+                                  const data = await res.json();
+                                  
+                                  if (data.status && data.status.url) {
+                                      const finalUrlMatch = data.status.url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || data.status.url.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || data.status.url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+                                      if (finalUrlMatch) { shareLat = parseFloat(finalUrlMatch[1]); shareLng = parseFloat(finalUrlMatch[2]); }
+                                  }
+                                  if ((!shareLat || !shareLng) && data.contents) {
+                                      // htmlの中から画像や中心点の座標を強引に抜く
+                                      const centerMatch = data.contents.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/) || data.contents.match(/ll=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
+                                      if (centerMatch) { shareLat = parseFloat(centerMatch[1]); shareLng = parseFloat(centerMatch[2]); }
+                                  }
+                              } catch(e) { console.warn("短縮URLの展開に失敗", e); }
+                          }
+                      }
+                      
+                      // ③ 座標が見つかればピンを刺して自動モードへ！
+                      if (shareLat && shareLng) {
+                          document.getElementById('customAlertModal').style.display = 'none'; // 解析メッセージを消す
+                          
                           const sharedPos = { lat: shareLat, lng: shareLng };
                           map.setCenter(sharedPos);
                           map.setZoom(18);
@@ -1790,16 +1813,13 @@ document.getElementById('btnLoadFude').onclick = () => {
                               zIndex: 9999, animation: google.maps.Animation.DROP
                           });
                           
-                          // 管理者の場合は、圃場登録するかどうかを聞いて、自動でモード移行する！
                           if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
                               document.getElementById('btnDrawMode').click();
                           }
-                      }, 2500);
-                  } else {
-                      setTimeout(() => {
-                          customAlert("📍 共有された場所情報を受け取りました。\n※短縮URLのみのため自動移動できませんでした。\nLINEから送られた場合は、座標(N E)の文字も含めてコピーしてください。");
-                      }, 2000);
-                  }
+                      } else {
+                          customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。\nURL: " + sharedText);
+                      }
+                  })();
               }
               // 🌟追加ここまで🌟
               const cachedData = localStorage.getItem('pMapAdminInitData');
