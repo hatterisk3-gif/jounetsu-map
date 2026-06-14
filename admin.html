@@ -1759,8 +1759,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               const sharedText = urlParams.get('text') || urlParams.get('url');
               
               if (sharedText) {
-                  // GoogleマップのURLから緯度経度を無理やり抽出する（例: @33.91,134.66,15z のような形式）
-                  const latLngMatch = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+                  // 🌟変更：いろんなパターンのURLから緯度経度を無理やり抽出するように強化！
+                  const latLngMatch = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
                   if (latLngMatch) {
                       const shareLat = parseFloat(latLngMatch[1]);
                       const shareLng = parseFloat(latLngMatch[2]);

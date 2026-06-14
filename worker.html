@@ -2808,6 +2808,39 @@ function createSignboardMarker(name, pos, icon, id) {
               
               document.getElementById('loginId').value = id; 
               document.getElementById('loginPw').value = pw; 
+              // 🌟🌟ここから追加：共有されたURLを解析してピンを刺す！🌟🌟
+              const urlParams = new URLSearchParams(window.location.search);
+              const sharedText = urlParams.get('text') || urlParams.get('url');
+              
+              if (sharedText) {
+                  // いろんなパターンのURLから緯度経度を無理やり抽出する
+                  const latLngMatch = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
+                  
+                  if (latLngMatch) {
+                      const shareLat = parseFloat(latLngMatch[1]);
+                      const shareLng = parseFloat(latLngMatch[2]);
+                      
+                      setTimeout(() => {
+                          const sharedPos = { lat: shareLat, lng: shareLng };
+                          map.setCenter(sharedPos);
+                          map.setZoom(18);
+                          
+                          new google.maps.Marker({
+                              position: sharedPos,
+                              map: map,
+                              icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+                              zIndex: 9999,
+                              animation: google.maps.Animation.DROP
+                          });
+                          customAlert("📍 LINEから共有された場所に移動しました！");
+                      }, 2000);
+                  } else {
+                      setTimeout(() => {
+                          customAlert("📍 共有された場所情報を受け取りました。\n※短縮URLのため自動移動できません。以下のURLを開いて確認してください。\n" + sharedText);
+                      }, 2000);
+                  }
+              }
+              // 🌟🌟追加ここまで🌟🌟
               
               // キャッシュがあれば先に0.1秒で地図を描画する！
               const cachedData = localStorage.getItem('passionMapInitData');
