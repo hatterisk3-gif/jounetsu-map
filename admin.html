@@ -672,7 +672,8 @@
                   if(!p.marker) continue; 
                   if(p.isMarker){ 
                       p.marker.setVisible(z >= 17); 
-                      if(z < 17) p.marker.setLabel(null); 
+                      // 🌟修正：圃場モード中はズームしても文字を出さない！
+                      if(z < 17 || customDrawingMode === 'polygon') p.marker.setLabel(null); 
                       else if(p.labelConfig) p.marker.setLabel(p.labelConfig); 
                   } else {
                       p.marker.setVisible(z >= 14); 
@@ -814,18 +815,21 @@
           if(document.getElementById('fieldStatus')) document.getElementById('fieldStatus').value='';
       }
 
-      document.getElementById('btnViewMode').onclick=()=>{ 
+   // 🌟閲覧ボタン
+   document.getElementById('btnViewMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnViewMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='none'; 
           customDrawingMode = null;
           clearCustomDrawing();
-          setFudeVisibility(false); // ★閲覧モードは青枠を隠す
+          setFudeVisibility(false); 
           map.setOptions({ draggable: true, draggableCursor: null }); 
+          
+          if(typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加
       };
 
-// 🌟正しい「圃場ボタン」の処理
-document.getElementById('btnDrawMode').onclick=()=>{ 
+      // 🌟圃場ボタン
+      document.getElementById('btnDrawMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnDrawMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='block'; 
@@ -836,15 +840,14 @@ document.getElementById('btnDrawMode').onclick=()=>{
           
           map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
           
-          // 🌟ここに追加：圃場ボタンを押した瞬間に、裏でデータを先読み開始！
           if (typeof preloadFudeData === 'function') preloadFudeData();
+          if(typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加（ここで文字が消えます！）
 
-          // メッセージも「筆ポリゴンから登録」に合わせて変更
           customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「🤖 筆ポリゴンから登録」を押して枠を取得してください。", "drawMode");
       };
 
-  // 🌟正しい「看板ボタン」の処理
-  document.getElementById('btnMarkerMode').onclick=()=>{ 
+      // 🌟看板ボタン
+      document.getElementById('btnMarkerMode').onclick=()=>{ 
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnMarkerMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='none'; 
@@ -854,9 +857,9 @@ document.getElementById('btnDrawMode').onclick=()=>{
           setFudeVisibility(false); 
           
           map.setOptions({ draggable: true, draggableCursor: pinCursor }); 
-
-          // 🌟ここに追加：看板モードにした時も、今見ているエリアのデータを優先して先読み！
+          
           if (typeof preloadFudeData === 'function') preloadFudeData();
+          if(typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加
 
           customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。", "markerMode");
       };
@@ -1005,6 +1008,26 @@ window.fudeCache = {};
               map.data.setStyle({ fillColor: '#2196F3', fillOpacity: 0.15, strokeColor: '#2196F3', strokeWeight: 1, clickable: true, visible: true });
           } else {
               map.data.setStyle({ visible: false }); // 隠す！
+          }
+      };
+      // 🌟ここに追加：モードに応じて看板のラベル（文字）を隠す関数
+      window.updateMarkerLabels = () => {
+          const z = map ? map.getZoom() : 15;
+          for (let id in loadedPolygons) {
+              const p = loadedPolygons[id];
+              if (p.isMarker && p.marker) {
+                  // ★圃場モードのときはラベルを非表示にしてスッキリさせる！
+                  if (customDrawingMode === 'polygon') {
+                      p.marker.setLabel(null);
+                  } else {
+                      // 閲覧モードや看板モードのときは、ズームレベルに応じて再表示
+                      if (z >= 17 && p.labelConfig) {
+                          p.marker.setLabel(p.labelConfig);
+                      } else {
+                          p.marker.setLabel(null);
+                      }
+                  }
+              }
           }
       };
 
