@@ -1733,9 +1733,17 @@ document.getElementById('btnLoadFude').onclick = () => {
           const pw = localStorage.getItem('passionMapUserPw');
           const savedName = localStorage.getItem('pMapAdminName'); 
 
-          if(id && pw) { 
+  
+              if(id && pw) { 
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
+              
+              // 🌟🌟ここが消えていたので復活させます！🌟🌟
+              if(savedName) currentUser = savedName;
+              document.getElementById('loginId').value = id; 
+              document.getElementById('loginPw').value = pw; 
+              // 🌟🌟ここまで🌟🌟
+           
               
               // 🌟ここから追加：共有されたURLを解析してピンを刺す！
               const urlParams = new URLSearchParams(window.location.search);
