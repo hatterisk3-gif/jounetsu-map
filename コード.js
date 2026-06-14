@@ -1802,21 +1802,57 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開して座標入りの長いURLにする関数
+// 🗺️ 短縮URLを展開して座標入りの長いURLにする関数（人間偽装・突破版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
-    var shortUrl = params.url;
+    var url = params.url;
+    var maxRedirects = 5;
     
-    // リダイレクトを自動で追わず、ヘッダーから行き先（長いURL）を抜き出す
-    var response = UrlFetchApp.fetch(shortUrl, { followRedirects: false, muteHttpExceptions: true });
-    var headers = response.getHeaders();
+    // 🌟超重要：私は普通のパソコンのブラウザ（Chrome）ですよ、と偽装するお面（ヘッダー）
+    var options = {
+      followRedirects: false,
+      muteHttpExceptions: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
+      }
+    };
     
-    // Locationヘッダーに展開後の長いURLが入っている！
-    if (headers['Location']) {
-      return headers['Location'];
+    // ① リダイレクトを追いかける（偽装した状態で行く！）
+    for (var i = 0; i < maxRedirects; i++) {
+      var response = UrlFetchApp.fetch(url, options);
+      var code = response.getResponseCode();
+      if (code >= 300 && code < 400) {
+        var headers = response.getHeaders();
+        var nextUrl = headers['Location'] || headers['location'];
+        if (nextUrl) {
+          url = nextUrl;
+        } else {
+          break;
+        }
+      } else {
+        break; 
+      }
     }
-    return shortUrl;
+    
+    // ② 最終URLに座標が含まれていれば返す
+    if (url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)) {
+      return url;
+    }
+    
+    // ③ それでもダメならHTMLを覗き見する（ここも偽装してアクセス！）
+    options.followRedirects = true; // 今度は最後までページを読み込む
+    var finalResponse = UrlFetchApp.fetch(url, options);
+    var html = finalResponse.getContentText();
+    
+    var match = html.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/) || html.match(/ll=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
+    if (match) return "https://maps.google.com/?q=" + match[1] + "," + match[2];
+    
+    var matchArr = html.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
+    if(matchArr) return "https://maps.google.com/?q=" + matchArr[3] + "," + matchArr[4];
+
+    return url;
   } catch(e) {
     return params.url;
   }
