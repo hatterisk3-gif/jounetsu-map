@@ -135,6 +135,7 @@
         <button onclick="openGlobalHarvest()" style="background:#4CAF50; color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:12px;">🚜 収穫記録</button>
         <button onclick="openGlobalShipping()" style="background:#FF9800; color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:12px;">📦 出荷記録</button>
         <button onclick="openAllHistory()" style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📋 履歴</button>
+        <button onclick="promptLineUrl()" style="background:#fff; color:#00B900; border:1px solid #00B900; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">💬 LINE共有</button>
         <button onclick="openFeedback()" style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️ 連絡</button>
         <button onclick="executeLogout()" style="background:#F44336; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">ログアウト</button>
       </div>
@@ -187,6 +188,14 @@
           document.getElementById('customPromptOk').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(document.getElementById('customPromptInput').value); };
           document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); };
         });
+      };
+      // 🌟ここに追加：LINEのURLを手動で貼り付けて飛ぶ機能（iPhone用）
+      window.promptLineUrl = async () => {
+          const url = await customPrompt("LINEでコピーしたGoogleマップのURLを貼り付けてください");
+          if (url) {
+              // パラメータをつけて自分自身を再読み込みする（→ピンが刺さる処理が発動！）
+              window.location.href = window.location.pathname + "?text=" + encodeURIComponent(url);
+          }
       };
 
       async function callGAS(action, params = {}) {

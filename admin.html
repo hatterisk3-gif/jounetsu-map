@@ -106,6 +106,7 @@
           <input type="text" id="mapSearchInput" class="search-input" placeholder="🌍 住所・地域...">
         </div>
         <button id="btnCurrentLocation" class="gps-btn">🧭 現在地</button>
+        <button onclick="promptLineUrl()" style="background:#fff; color:#00B900; border:1px solid #00B900; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">💬 LINE共有</button>
         <button onclick="openFeedback()" style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️ 連絡</button>
         <button onclick="executeLogout()" style="background:#F44336; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">ログアウト</button>
       </div>
@@ -191,6 +192,14 @@
       };
       window.customPrompt = (msg, defaultValue = '') => { return new Promise(resolve => { document.getElementById('customPromptMessage').innerText = msg; document.getElementById('customPromptInput').value = defaultValue; document.getElementById('customPromptModal').style.display = 'flex'; document.getElementById('customPromptInput').focus(); document.getElementById('customPromptOk').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(document.getElementById('customPromptInput').value); }; document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); }; }); };
 
+      // 🌟ここに追加：LINEのURLを手動で貼り付けて飛ぶ機能（iPhone用）
+      window.promptLineUrl = async () => {
+          const url = await customPrompt("LINEでコピーしたGoogleマップのURLを貼り付けてください");
+          if (url) {
+              // パラメータをつけて自分自身を再読み込みする（→ピンが刺さる処理が発動！）
+              window.location.href = window.location.pathname + "?text=" + encodeURIComponent(url);
+          }
+      };
       const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場' };
 
       async function callGAS(action, params={}) { params.action=action; const res=await fetch(GAS_URL, {method:'POST',body:JSON.stringify(params)}); const j=await res.json(); if(j.status!=="success") throw new Error(j.message); return j.data; }
