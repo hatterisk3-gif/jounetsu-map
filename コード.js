@@ -1802,54 +1802,72 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開して座標入りのURLにする関数（最強のプレビュー画像解析版）
+// 🗺️ 短縮URLを展開して座標入りの文字列にする関数（V4：完全突破版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
     var url = params.url;
+    var html = "";
+    var tempUrl = url;
 
-    // ① Googleの転送に全て任せて、最終的なページのHTMLをごっそり取得する
-    var options = {
-      followRedirects: true, // 自動転送をONにしてパニックを防ぐ！
-      muteHttpExceptions: true,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
+    // ① リダイレクトを辿る（相対パスのクラッシュ対策済み）
+    for (var i = 0; i < 5; i++) {
+      var res = UrlFetchApp.fetch(tempUrl, {
+        followRedirects: false, muteHttpExceptions: true,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }
+      });
+      var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
+      
+      if (loc) {
+        // 🌟追加：/maps... などの省略URLで返ってきたら「https://...」を補ってクラッシュを防ぐ！
+        if (loc.indexOf('http') !== 0) {
+          var matchDomain = tempUrl.match(/^(https?:\/\/[^\/]+)/);
+          var domain = matchDomain ? matchDomain[1] : "https://www.google.com";
+          tempUrl = domain + loc;
+        } else {
+          tempUrl = loc;
+        }
+      } else {
+        html = res.getContentText(); 
+        break; 
       }
-    };
+    }
+    
+    // 同意ページをスキップする
+    if (tempUrl.indexOf('consent.google.com') !== -1) {
+      var matchC = tempUrl.match(/continue=([^&]+)/);
+      if (matchC) tempUrl = decodeURIComponent(matchC[1]);
+    }
 
-    var response = UrlFetchApp.fetch(url, options);
-    var html = response.getContentText();
+    // ② URLの中に座標があれば、アプリ専用フォーマット「@緯度,経度」で直接返す！
+    var urlMatch = tempUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    if (urlMatch) {
+      return "@" + urlMatch[1] + "," + urlMatch[2];
+    }
 
-    // ② 最強の抽出法：LINE等のプレビュー画像(og:image)から座標をえぐり出す！
+    // ③ なければHTMLのメタデータ（OGP画像や緯度経度タグ）から座標をえぐり出す
+    if (!html) {
+      var finalRes = UrlFetchApp.fetch(tempUrl, { followRedirects: true, muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }});
+      html = finalRes.getContentText();
+    }
+
     var ogMatch = html.match(/property="og:image"[^>]*content="([^"]+)"/i) || html.match(/content="([^"]+)"[^>]*property="og:image"/i);
     if (ogMatch) {
       var imgUrl = decodeURIComponent(ogMatch[1]);
       var cMatch = imgUrl.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
-      if (cMatch) {
-        // フロントエンド（HTML側）の解析プログラムが理解できる形で返す
-        return "https://google.com/maps?q=" + cMatch[1] + "," + cMatch[2];
-      }
+      if (cMatch) return "@" + cMatch[1] + "," + cMatch[2]; 
     }
 
-    // ③ サブ抽出法：メタタグの緯度経度データから取得
     var latMatch = html.match(/itemprop="latitude"[^>]*content="(-?\d+\.\d+)"/i) || html.match(/content="(-?\d+\.\d+)"[^>]*itemprop="latitude"/i);
     var lngMatch = html.match(/itemprop="longitude"[^>]*content="(-?\d+\.\d+)"/i) || html.match(/content="(-?\d+\.\d+)"[^>]*itemprop="longitude"/i);
-    if (latMatch && lngMatch) {
-      return "https://google.com/maps?q=" + latMatch[1] + "," + lngMatch[1];
-    }
+    if (latMatch && lngMatch) return "@" + latMatch[1] + "," + lngMatch[1];
 
-    // ④ サブ抽出法：ページ内の内部データ配列から取得
     var initMatch = html.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
-    if (initMatch) {
-      return "https://google.com/maps?q=" + initMatch[1] + "," + initMatch[2];
-    }
+    if (initMatch) return "@" + initMatch[1] + "," + initMatch[2];
 
-    // どこにも見つからなかった場合は、エラー調査用にHTMLの最初を返す
-    return "ERROR_NOT_FOUND: " + html.substring(0, 150);
+    return "V4_FAILED: " + tempUrl; 
 
   } catch(e) {
-    // プログラムがクラッシュした場合は、エラー内容を返す
-    return "ERROR_EXCEPTION: " + e.toString();
+    return "V4_ERROR: " + e.toString();
   }
 }
