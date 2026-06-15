@@ -1802,66 +1802,35 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開する関数（V11：URL合体バグの完全修正版）
+// 🗺️ 短縮URLを展開して座標を取得する関数（大成功したロジックを統合！）
 // ==========================================
 function expandGoogleMapUrl(params) {
+  let url = params.url;
+  let maxRedirects = 10;
+  let loopCount = 0;
+
   try {
-    var tempUrl = params.url.trim();
+    // リダイレクトを追跡
+    while (loopCount < maxRedirects) {
+      let response = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true });
+      let headers = response.getHeaders();
+      let responseCode = response.getResponseCode();
 
-    // 🛡️ 防御1：LINEなどでコピーした際に入る「不要な記号や日本語」を末尾から削ぎ落とす
-    tempUrl = tempUrl.replace(/[\]\)\}\>、。】」』\s]+$/, '');
-
-    for (var i = 0; i < 5; i++) {
-      // 🛡️ 防御2：URLのエンコード（日本語やスペースを安全な文字に変換）
-      var safeUrl = tempUrl;
-      try { safeUrl = encodeURI(decodeURI(tempUrl)); } catch(e) { safeUrl = encodeURI(tempUrl); }
-
-      var res = UrlFetchApp.fetch(safeUrl, { 
-        followRedirects: false, 
-        muteHttpExceptions: true,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }
-      });
-      
-      var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
-
-      if (loc) {
-        // アプリ起動用リンク（intent:// 等）はエラーになる前に追跡ストップ
-        if (loc.indexOf('intent://') === 0 || loc.indexOf('android-app://') === 0) break;
-
-        // 🌟🌟 今回のバグ修正：URLを正しく綺麗に合体させる！ 🌟🌟
-        if (loc.indexOf('http') === 0) {
-          tempUrl = loc;
-        } else if (loc.indexOf('//') === 0) {
-          tempUrl = 'https:' + loc; // プロトコル省略形への対応
-        } else if (loc.indexOf('/') === 0) {
-          var domainMatch = tempUrl.match(/^(https?:\/\/[^\/]+)/i);
-          var domain = domainMatch ? domainMatch[1] : "https://www.google.com";
-          tempUrl = domain + loc;
-        } else {
-          tempUrl = "https://www.google.com/" + loc;
-        }
-
-        // 🏁 ゴール判定：目的のURLに到達したら即座に返す！
-        if (tempUrl.indexOf('/maps/place/') !== -1 || tempUrl.indexOf('?q=') !== -1 || tempUrl.indexOf('/maps/search/') !== -1 || tempUrl.indexOf('@') !== -1) {
-          return "EXPANDED:" + tempUrl;
-        }
+      if (responseCode >= 300 && responseCode < 400 && headers['Location']) {
+        let nextUrl = headers['Location'];
+        if (nextUrl.startsWith('/')) { nextUrl = "https://www.google.com" + nextUrl; }
+        url = nextUrl;
+        loopCount++;
       } else {
-        // 転送が途切れたら、ダイナミックリンク(HTML)の奥底をこじ開ける
-        var html = res.getContentText();
-
-        var matchA = html.match(/(https:\/\/(?:www\.)?google\.com\/maps\/(?:place|search|dir|\?q=)[^"'\s<>\\]+)/i);
-        if (matchA) return "EXPANDED:" + matchA[1];
-
-        var matchB = html.match(/link=(https:\/\/(?:www\.)?google\.com\/maps\/[^"'\s<>\\]+)/i);
-        if (matchB) return "EXPANDED:" + decodeURIComponent(matchB[1]);
-
         break; 
       }
     }
 
-    return "EXPANDED:" + tempUrl;
+    // フロントエンド（HTML側）はURLさえ分かれば座標を抜ける最強の解析機能を持っているので、
+    // ここでは「最終的に展開された長いURL」をそのまま返してあげます！
+    return url;
 
-  } catch(e) {
-    return "V11_ERROR: " + e.message + " | URL: " + (typeof tempUrl === 'string' ? tempUrl : 'undefined');
+  } catch (e) {
+    return url; // エラー時は元のURLを返す
   }
 }
