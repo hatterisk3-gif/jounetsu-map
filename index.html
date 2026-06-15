@@ -18,10 +18,6 @@
         .btn-worker { background-color: #4CAF50; }
         .btn-schedule { background-color: #2196F3; }
         .btn-admin { background-color: #d32f2f; }
-        
-        /* LINE連携ブロックのデザイン */
-        .share-box { background: #333; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #444; }
-        .share-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; background: #222; color: #fff; }
     </style>
 </head>
 <body>
@@ -31,57 +27,12 @@
         <a href="/worker.html" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
         <a href="/schedule" class="btn btn-schedule">📅 予定 MAP を開く</a>
         <a href="/admin.html" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
-        
-        <div class="share-box">
-            <h3 style="margin-top:0; color:#4CAF50; font-size: 16px;">📍 LINEから地図を開く</h3>
-            
-            <div id="shareDirectMode" style="display:none;">
-                <p style="font-size:13px; color:#FF9800; font-weight:bold;">共有された場所情報を受け取りました！<br>どちらで開きますか？</p>
-            </div>
-
-            <div id="sharePasteMode">
-                <p style="font-size:11px; color:#aaa; margin-bottom: 5px;">iPhoneの場合はURLをコピーして貼ってください</p>
-                <input type="text" id="pastedUrl" class="share-input" placeholder="https://maps.app.goo.gl/...">
-            </div>
-
-            <div style="display:flex; gap:10px;">
-                <button onclick="forwardMap('admin')" style="flex:1; background:#d32f2f; color:white; padding:12px; border:none; border-radius:6px; font-weight:bold;">管理者で</button>
-                <button onclick="forwardMap('worker')" style="flex:1; background:#4CAF50; color:white; padding:12px; border:none; border-radius:6px; font-weight:bold;">作業者で</button>
-            </div>
-        </div>
-        
     </div>
 
     <script>
-      // 🌟JavaScriptをすべてこの <script> の中にまとめました！
+      // 🌟不要なルーティング処理を削除し、Service Workerの登録のみ残しました
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=portal', { scope: '/' });
-      }
-
-      const urlParams = new URLSearchParams(window.location.search);
-      const sharedText = urlParams.get('text') || urlParams.get('url');
-
-      if (sharedText) {
-        document.getElementById('shareDirectMode').style.display = 'block';
-        document.getElementById('sharePasteMode').style.display = 'none';
-      }
-
-      function forwardMap(mode) {
-        let finalParams = "";
-        
-        if (sharedText) {
-          finalParams = window.location.search;
-        } else {
-          const inputUrl = document.getElementById('pastedUrl').value;
-          if (!inputUrl) { alert("URLが貼り付けられていません！"); return; }
-          finalParams = "?text=" + encodeURIComponent(inputUrl);
-        }
-
-        if (mode === 'admin') {
-          window.location.href = '/admin.html' + finalParams;
-        } else {
-          window.location.href = '/worker.html' + finalParams; 
-        }
       }
     </script>
 </body>
