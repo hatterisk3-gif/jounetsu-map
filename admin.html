@@ -192,27 +192,65 @@
       };
       window.customPrompt = (msg, defaultValue = '') => { return new Promise(resolve => { document.getElementById('customPromptMessage').innerText = msg; document.getElementById('customPromptInput').value = defaultValue; document.getElementById('customPromptModal').style.display = 'flex'; document.getElementById('customPromptInput').focus(); document.getElementById('customPromptOk').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(document.getElementById('customPromptInput').value); }; document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); }; }); };
 
-  // 🌟ハイブリッド版：座標でも短縮URLでもOKな最強の入力窓
-  window.promptLineUrl = async () => {
+      window.promptLineUrl = async () => {
           const input = await customPrompt("📍 座標の数字、または短縮URLを貼り付けてください");
           if (!input) return;
 
-          let targetUrl = input;
+          let shareLat = null, shareLng = null;
 
-          // 入力されたのが「http」から始まる短縮URLだった場合、GASの成功ロジックを呼び出す！
-          if (input.indexOf('http') !== -1) {
+          // 1. まずは入力された文字の中に直接座標（数字）がないかチェック
+          const matchURL = input.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || input.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || input.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || input.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+          const matchDMS = input.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
+          const matchDec = input.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+
+          if (matchURL) { shareLat = parseFloat(matchURL[1]); shareLng = parseFloat(matchURL[2]); } 
+          else if (matchDMS) { shareLat = parseInt(matchDMS[1]) + parseInt(matchDMS[2])/60 + parseFloat(matchDMS[3])/3600; shareLng = parseInt(matchDMS[4]) + parseInt(matchDMS[5])/60 + parseFloat(matchDMS[6])/3600; } 
+          else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
+
+          // 2. もし直接の座標がなく、httpから始まるURLだったら、大成功したGASプログラムに投げる！
+          if (!shareLat && !shareLng && input.indexOf('http') !== -1) {
               const shortUrlMatch = input.match(/https?:\/\/[^\s]+/);
               if (shortUrlMatch) {
-                  customAlert("🔍 短縮URLを解析中です...");
+                  customAlert("🔍 URLを解析して座標を取得しています...");
                   try {
-                      // GASの新しい関数にURLを投げて、長いURLに変換してもらう
-                      targetUrl = await callGAS('expandGoogleMapUrl', { url: shortUrlMatch[0] });
+                      // スプレッドシートと同じようにGASに処理を依頼！
+                      const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
                       document.getElementById('customAlertModal').style.display = 'none';
+
+                      // A2の結果が返ってきたら処理を分岐
+                      if (result.success) {
+                          shareLat = result.lat;
+                          shareLng = result.lng;
+                      } else {
+                          // A2がエラーだった場合の表示（A3の展開後URLも一緒に表示します）
+                          customAlert(`📍 座標を取得できませんでした。\n理由: ${result.error}\n\n展開後: ${result.expandedUrl || "なし"}`);
+                          return; 
+                      }
                   } catch(e) {
-                      console.warn("GAS解析エラー", e);
+                      document.getElementById('customAlertModal').style.display = 'none';
+                      customAlert("通信エラーが発生しました。GASのデプロイが最新か確認してください。");
+                      return;
                   }
               }
           }
+
+          // 3. 座標が見つかったらピンを刺す！（A2出力の代わりのアクション）
+          if (shareLat && shareLng) {
+              const sharedPos = { lat: shareLat, lng: shareLng };
+              map.setCenter(sharedPos); map.setZoom(18);
+              new google.maps.Marker({
+                  position: sharedPos, map: map,
+                  icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+                  zIndex: 9999, animation: google.maps.Animation.DROP
+              });
+              
+              if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
+                  document.getElementById('btnDrawMode').click();
+              }
+          } else {
+              customAlert("📍 有効な座標やURLが見つかりませんでした。");
+          }
+      };
 
           // ① 座標の解析（GASから返ってきた長いURL、または直接入力された数字を調べる）
           let shareLat = null, shareLng = null;

@@ -46,6 +46,7 @@ function doPost(e) {
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
     else if (action === "deleteMachineFromMaster") result = deleteMachineFromMaster(params);
     else if (action === "expandGoogleMapUrl") result = expandGoogleMapUrl(params);
+   else if (action === 'getMapCoordinates') result = getMapCoordinates(params);
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
@@ -1832,5 +1833,57 @@ function expandGoogleMapUrl(params) {
 
   } catch (e) {
     return url; // エラー時は元のURLを返す
+  }
+}
+// ==========================================
+// 🗺️ 短縮URLを展開して座標を取得する関数（スプレッドシート成功版の移植）
+// ==========================================
+function getMapCoordinates(params) {
+  let url = params.url;
+  const maxRedirects = 10;
+  let loopCount = 0;
+  
+  try {
+    // リダイレクトを追跡
+    while (loopCount < maxRedirects) {
+      let response = UrlFetchApp.fetch(url, {
+        followRedirects: false, 
+        muteHttpExceptions: true
+      });
+      
+      let headers = response.getHeaders();
+      let responseCode = response.getResponseCode();
+      
+      if (responseCode >= 300 && responseCode < 400 && headers['Location']) {
+        let nextUrl = headers['Location'];
+        if (nextUrl.startsWith('/')) {
+          nextUrl = "https://www.google.com" + nextUrl;
+        }
+        url = nextUrl;
+        loopCount++;
+      } else {
+        break; 
+      }
+    }
+    
+    // 展開後URLから座標を探す（作成いただいた正規表現ロジック！）
+    let latitude, longitude;
+    const regexPin = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
+    const regexAt = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
+    const regexQ = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/;
+    const regexLl = /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/;
+
+    let match = url.match(regexPin) || url.match(regexAt) || url.match(regexQ) || url.match(regexLl);
+
+    if (match) {
+      // 成功時：A2に出力していた代わりに、緯度と経度の数字をスマホ側に返す！
+      return { success: true, lat: parseFloat(match[1]), lng: parseFloat(match[2]), expandedUrl: url };
+    } else {
+      // 失敗時：A2にエラーを出していた代わりに、エラー内容をスマホ側に返す！
+      return { success: false, error: "展開後のURLから座標が見つかりませんでした。", expandedUrl: url };
+    }
+    
+  } catch (e) {
+    return { success: false, error: "通信エラー: " + e.message };
   }
 }
