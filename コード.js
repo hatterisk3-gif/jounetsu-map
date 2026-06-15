@@ -1802,51 +1802,34 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開して座標or住所にする関数（V6：フロントエンド連携版）
+// 🗺️ 短縮URLを展開する関数（V7：極限シンプル・クラッシュ回避版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
-    var url = params.url;
-    var tempUrl = url;
-
-    // ① 同意画面を突破する魔法のクッキーを持たせて転送を追う
-    var options = {
-      followRedirects: false, muteHttpExceptions: true,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
-        'Cookie': 'CONSENT=YES+cb.20230101-01-p0.ja+FX+999;' // ★同意画面をスキップ！
-      }
-    };
-
-    for (var i = 0; i < 5; i++) {
-      var res = UrlFetchApp.fetch(tempUrl, options);
-      var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
-      if (loc) { tempUrl = (loc.indexOf('http') !== 0) ? "https://www.google.com" + (loc.indexOf('/') === 0 ? "" : "/") + loc : loc; } 
-      else { break; }
-    }
-
-    if (tempUrl.indexOf('consent.google.com') !== -1) {
-      var matchC = tempUrl.match(/continue=([^&]+)/);
-      if (matchC) tempUrl = decodeURIComponent(matchC[1]);
-    }
-
-    // ② URLの中に直接座標(数字)があれば、そのまま返す
-    var urlMatch = tempUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-    if (urlMatch) return "@" + urlMatch[1] + "," + urlMatch[2];
-
-    // ③ 🌟新アプローチ：URLが「場所の名前」や「住所」なら、文字を綺麗にしてフロントエンドにパスを出す！
-    var placeMatch = tempUrl.match(/\/maps\/place\/([^/?]+)/) || tempUrl.match(/\/maps\/search\/([^/?]+)/);
-    if (placeMatch) {
-      var addressStr = decodeURIComponent(placeMatch[1]);
-      // 二重暗号化されている場合はもう一度解読
-      if (addressStr.indexOf('%') !== -1) addressStr = decodeURIComponent(addressStr);
-      addressStr = addressStr.replace(/\+/g, ' '); // +をスペースに戻す
+    var tempUrl = params.url;
+    
+    // 偽装ヘッダーやCookieを一切やめ、純粋に転送(Location)だけを追いかける
+    for (var i = 0; i < 10; i++) {
+      var res = UrlFetchApp.fetch(tempUrl, {
+        followRedirects: false, 
+        muteHttpExceptions: true
+      });
       
-      return "ADDRESS:" + addressStr; // 「ADDRESS:徳島県...」という形でスマホに送る！
+      var code = res.getResponseCode();
+      if (code >= 300 && code < 400) {
+        var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
+        if (loc) {
+          tempUrl = (loc.indexOf('http') !== 0) ? "https://www.google.com" + (loc.indexOf('/') === 0 ? "" : "/") + loc : loc;
+        } else { break; }
+      } else {
+        break; // 転送がなければ終了
+      }
     }
-
-    return "V6_FAILED: " + tempUrl; 
+    
+    // 最終的にたどり着いたURLをそのままフロントエンドにパス出し！
+    return "EXPANDED:" + tempUrl; 
+    
   } catch(e) {
-    return "V6_ERROR: " + e.toString();
+    return "V7_ERROR: " + e.toString() + " | URL: " + params.url;
   }
 }

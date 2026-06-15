@@ -2819,7 +2819,7 @@ function createSignboardMarker(name, pos, icon, id) {
                       let shareLat = null, shareLng = null;
                       let finalExpandedUrl = "";
                       
-                      const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+                      const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
                       const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
                       const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
 
@@ -2838,11 +2838,23 @@ function createSignboardMarker(name, pos, icon, id) {
                                   const expandedUrl = await callGAS('expandGoogleMapUrl', { url: shortUrl });
                                   finalExpandedUrl = expandedUrl;
                                   
-                                  if (expandedUrl) {
-                                      // 🌟🌟 住所検索連携！🌟🌟
-                                      if (expandedUrl.startsWith("ADDRESS:")) {
-                                          const addressText = expandedUrl.replace("ADDRESS:", "");
-                                          document.getElementById('customAlertModal').querySelector('p').innerText = `🔍 住所「${addressText}」を検索中...`;
+                                  let targetUrl = expandedUrl;
+                                  if (expandedUrl.startsWith("EXPANDED:")) {
+                                      targetUrl = expandedUrl.replace("EXPANDED:", "");
+                                  }
+                                  
+                                  const finalUrlMatch = targetUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || targetUrl.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || targetUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || targetUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+                                  
+                                  if (finalUrlMatch) { 
+                                      shareLat = parseFloat(finalUrlMatch[1]); 
+                                      shareLng = parseFloat(finalUrlMatch[2]); 
+                                  } else {
+                                      const placeMatch = targetUrl.match(/\/maps\/place\/([^/?]+)/) || targetUrl.match(/\/maps\/search\/([^/?]+)/) || targetUrl.match(/\/maps\/\?q=([^&]+)/);
+                                      if (placeMatch) {
+                                          let addressText = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
+                                          if (addressText.indexOf('%') !== -1) addressText = decodeURIComponent(addressText);
+                                          
+                                          document.getElementById('customAlertModal').querySelector('p').innerText = `🔍 住所/施設名「${addressText}」を検索中...`;
                                           
                                           const loc = await new Promise(resolve => {
                                               new google.maps.Geocoder().geocode({ address: addressText }, (results, status) => {
@@ -2850,15 +2862,7 @@ function createSignboardMarker(name, pos, icon, id) {
                                               });
                                           });
                                           
-                                          if (loc) {
-                                              shareLat = loc.lat(); shareLng = loc.lng();
-                                          }
-                                      } else {
-                                          const finalUrlMatch = expandedUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-                                          if (finalUrlMatch) { 
-                                              shareLat = parseFloat(finalUrlMatch[1]); 
-                                              shareLng = parseFloat(finalUrlMatch[2]); 
-                                          }
+                                          if (loc) { shareLat = loc.lat(); shareLng = loc.lng(); }
                                       }
                                   }
                               } catch(e) { console.warn("短縮URLの展開に失敗", e); }
