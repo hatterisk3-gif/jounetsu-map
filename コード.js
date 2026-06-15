@@ -1802,7 +1802,7 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開して座標入りの文字列にする関数（V4：完全突破版）
+// 🗺️ 短縮URLを展開して座標入りの文字列にする関数（V5：最終奥義・メタ転送追跡版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
@@ -1810,42 +1810,54 @@ function expandGoogleMapUrl(params) {
     var html = "";
     var tempUrl = url;
 
-    // ① リダイレクトを辿る（相対パスのクラッシュ対策済み）
-    for (var i = 0; i < 5; i++) {
+    // ① リダイレクトを徹底的に辿る（HTTP、メタタグ、JSの全てのワープに対応！）
+    for (var i = 0; i < 7; i++) {
       var res = UrlFetchApp.fetch(tempUrl, {
         followRedirects: false, muteHttpExceptions: true,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
       });
+      
+      var code = res.getResponseCode();
       var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
       
-      if (loc) {
-        // 🌟追加：/maps... などの省略URLで返ってきたら「https://...」を補ってクラッシュを防ぐ！
-        if (loc.indexOf('http') !== 0) {
-          var matchDomain = tempUrl.match(/^(https?:\/\/[^\/]+)/);
-          var domain = matchDomain ? matchDomain[1] : "https://www.google.com";
-          tempUrl = domain + loc;
-        } else {
-          tempUrl = loc;
-        }
-      } else {
-        html = res.getContentText(); 
-        break; 
+      // パターンA：通常のHTTPワープ（301, 302）
+      if (code >= 300 && code < 400 && loc) {
+        tempUrl = (loc.indexOf('http') !== 0) ? "https://www.google.com" + (loc.indexOf('/') === 0 ? "" : "/") + loc : loc;
+        continue;
       }
+
+      html = res.getContentText();
+      
+      // パターンB：HTMLのメタタグによる強制ワープ (<meta http-equiv="refresh"...)
+      var metaMatch = html.match(/<meta[^>]*http-equiv="?refresh"?[^>]*content="?[^;]+;\s*url=['"]?([^'"]+)['"]?/i);
+      if (metaMatch) {
+        var mLoc = metaMatch[1].replace(/&amp;/g, '&');
+        tempUrl = (mLoc.indexOf('http') !== 0) ? "https://www.google.com" + (mLoc.indexOf('/') === 0 ? "" : "/") + mLoc : mLoc;
+        continue;
+      }
+      
+      // パターンC：JavaScriptによる強制ワープ (window.location.replace(...))
+      var jsMatch = html.match(/window\.location\.replace\(['"]([^'"]+)['"]\)/);
+      if (jsMatch) {
+        var jLoc = jsMatch[1].replace(/\\u0026/g, '&');
+        tempUrl = (jLoc.indexOf('http') !== 0) ? "https://www.google.com" + (jLoc.indexOf('/') === 0 ? "" : "/") + jLoc : jLoc;
+        continue;
+      }
+
+      break; // どのワープもなければ、ここが最終目的地！
     }
     
-    // 同意ページをスキップする
+    // 余計な同意ページ(EU等)を挟まれたらスキップして本来のURLを救出
     if (tempUrl.indexOf('consent.google.com') !== -1) {
       var matchC = tempUrl.match(/continue=([^&]+)/);
       if (matchC) tempUrl = decodeURIComponent(matchC[1]);
     }
 
-    // ② URLの中に座標があれば、アプリ専用フォーマット「@緯度,経度」で直接返す！
-    var urlMatch = tempUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-    if (urlMatch) {
-      return "@" + urlMatch[1] + "," + urlMatch[2];
-    }
+    // ② 最終目的地URLの中に座標があれば「@緯度,経度」で即返す！
+    var urlMatch = tempUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || tempUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || tempUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (urlMatch) return "@" + urlMatch[1] + "," + urlMatch[2];
 
-    // ③ なければHTMLのメタデータ（OGP画像や緯度経度タグ）から座標をえぐり出す
+    // ③ URLに無いなら、HTMLの奥底のプレビュー画像を狙い撃ち
     if (!html) {
       var finalRes = UrlFetchApp.fetch(tempUrl, { followRedirects: true, muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }});
       html = finalRes.getContentText();
@@ -1854,10 +1866,11 @@ function expandGoogleMapUrl(params) {
     var ogMatch = html.match(/property="og:image"[^>]*content="([^"]+)"/i) || html.match(/content="([^"]+)"[^>]*property="og:image"/i);
     if (ogMatch) {
       var imgUrl = decodeURIComponent(ogMatch[1]);
-      var cMatch = imgUrl.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
+      var cMatch = imgUrl.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/) || imgUrl.match(/ll=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
       if (cMatch) return "@" + cMatch[1] + "," + cMatch[2]; 
     }
 
+    // ④ それでもダメならメタタグと初期データを徹底捜索
     var latMatch = html.match(/itemprop="latitude"[^>]*content="(-?\d+\.\d+)"/i) || html.match(/content="(-?\d+\.\d+)"[^>]*itemprop="latitude"/i);
     var lngMatch = html.match(/itemprop="longitude"[^>]*content="(-?\d+\.\d+)"/i) || html.match(/content="(-?\d+\.\d+)"[^>]*itemprop="longitude"/i);
     if (latMatch && lngMatch) return "@" + latMatch[1] + "," + lngMatch[1];
@@ -1865,9 +1878,13 @@ function expandGoogleMapUrl(params) {
     var initMatch = html.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
     if (initMatch) return "@" + initMatch[1] + "," + initMatch[2];
 
-    return "V4_FAILED: " + tempUrl; 
+    // ⑤ 最終手段：画面のどこかにある座標らしき数字を強引に抜く
+    var genericMatch = html.match(/\[(-?\d{2}\.\d{4,}),(-?\d{3}\.\d{4,})\]/);
+    if (genericMatch) return "@" + genericMatch[1] + "," + genericMatch[2];
+
+    return "V5_FAILED: " + tempUrl; 
 
   } catch(e) {
-    return "V4_ERROR: " + e.toString();
+    return "V5_ERROR: " + e.toString();
   }
 }
