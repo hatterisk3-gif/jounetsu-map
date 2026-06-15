@@ -1763,9 +1763,8 @@ document.getElementById('btnLoadFude').onclick = () => {
                   
                   (async () => {
                       let shareLat = null, shareLng = null;
-                      let finalExpandedUrl = ""; // ★万が一失敗した時のために記録する
+                      let finalExpandedUrl = ""; 
                       
-                      // 🌟変更：!3d と !4d のパターンを新たに追加！
                       const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
                       const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
                       const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
@@ -1783,14 +1782,30 @@ document.getElementById('btnLoadFude').onclick = () => {
                               try {
                                   const shortUrl = shortUrlMatch[0];
                                   const expandedUrl = await callGAS('expandGoogleMapUrl', { url: shortUrl });
-                                  finalExpandedUrl = expandedUrl; // ★デバッグ用に記録
+                                  finalExpandedUrl = expandedUrl; 
                                   
                                   if (expandedUrl) {
-                                      // 🌟変更：ここにも !3d と !4d を追加！
-                                      const finalUrlMatch = expandedUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-                                      if (finalUrlMatch) { 
-                                          shareLat = parseFloat(finalUrlMatch[1]); 
-                                          shareLng = parseFloat(finalUrlMatch[2]); 
+                                      // 🌟🌟 アプローチ変更：住所が返ってきたら、公式の地図検索APIにバトンタッチ！🌟🌟
+                                      if (expandedUrl.startsWith("ADDRESS:")) {
+                                          const addressText = expandedUrl.replace("ADDRESS:", "");
+                                          document.getElementById('customAlertModal').querySelector('p').innerText = `🔍 住所「${addressText}」を検索中...`;
+                                          
+                                          // フロントエンドのGoogle公式システムで住所を座標に変換！
+                                          const loc = await new Promise(resolve => {
+                                              new google.maps.Geocoder().geocode({ address: addressText }, (results, status) => {
+                                                  resolve(status === 'OK' ? results[0].geometry.location : null);
+                                              });
+                                          });
+                                          
+                                          if (loc) {
+                                              shareLat = loc.lat(); shareLng = loc.lng();
+                                          }
+                                      } else {
+                                          const finalUrlMatch = expandedUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || expandedUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+                                          if (finalUrlMatch) { 
+                                              shareLat = parseFloat(finalUrlMatch[1]); 
+                                              shareLng = parseFloat(finalUrlMatch[2]); 
+                                          }
                                       }
                                   }
                               } catch(e) { console.warn("短縮URLの展開に失敗", e); }
@@ -1811,13 +1826,11 @@ document.getElementById('btnLoadFude').onclick = () => {
                               document.getElementById('btnDrawMode').click();
                           }
                       } else {
-                          // ★変更：失敗した原因（URL）を表示するように変更！
                           const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
                           customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。" + debugText);
                       }
                   })();
               }
-              // 🌟追加ここまで🌟
               const cachedData = localStorage.getItem('pMapAdminInitData');
               if (cachedData) {
                   try { 
