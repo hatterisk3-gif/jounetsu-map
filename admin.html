@@ -106,7 +106,7 @@
           <input type="text" id="mapSearchInput" class="search-input" placeholder="🌍 住所・地域...">
         </div>
         <button id="btnCurrentLocation" class="gps-btn">🧭 現在地</button>
-        <button onclick="promptLineUrl()" style="background:#fff; color:#00B900; border:1px solid #00B900; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">💬 LINE共有</button>
+        <button onclick="promptLineUrl()" style="background:#f3e5f5; color:#9C27B0; border:1px solid #9C27B0; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📍 座標打込</button>
         <button onclick="openFeedback()" style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️ 連絡</button>
         <button onclick="executeLogout()" style="background:#F44336; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">ログアウト</button>
       </div>
@@ -192,9 +192,9 @@
       };
       window.customPrompt = (msg, defaultValue = '') => { return new Promise(resolve => { document.getElementById('customPromptMessage').innerText = msg; document.getElementById('customPromptInput').value = defaultValue; document.getElementById('customPromptModal').style.display = 'flex'; document.getElementById('customPromptInput').focus(); document.getElementById('customPromptOk').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(document.getElementById('customPromptInput').value); }; document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); }; }); };
 
-      // 🌟ここに追加：LINEのURLを手動で貼り付けて飛ぶ機能（iPhone用）
+      // 🌟変更：名前はそのままですが、メッセージを「座標」に変更
       window.promptLineUrl = async () => {
-          const url = await customPrompt("LINEでコピーしたGoogleマップのURLを貼り付けてください");
+          const url = await customPrompt("コピーした座標の数字（またはURL）を貼り付けてください");
           if (url) {
               // パラメータをつけて自分自身を再読み込みする（→ピンが刺さる処理が発動！）
               window.location.href = window.location.pathname + "?text=" + encodeURIComponent(url);
