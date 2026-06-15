@@ -1,5 +1,5 @@
 {
- "id": "passion-map-admin",
+  "id": "passion-map-admin",
   "name": "情熱MAP [管理]",
   "short_name": "情熱MAP 管理",
   "start_url": "/admin.html",
@@ -25,4 +25,3 @@
     "params": { "title": "title", "text": "text", "url": "url" }
   }
 }
-
