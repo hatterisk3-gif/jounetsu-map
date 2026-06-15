@@ -1802,50 +1802,53 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開する関数（V9：ダイナミックリンク・HTML解読版）
+// 🗺️ 短縮URLを展開する関数（V10：ダイナミック解読 ＋ クラッシュ完全防御版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
     var tempUrl = params.url;
 
-    // 最大3回まで転送を追跡
-    for (var i = 0; i < 3; i++) {
-      var res = UrlFetchApp.fetch(tempUrl, { followRedirects: false, muteHttpExceptions: true });
+    for (var i = 0; i < 5; i++) {
+      // 🛡️ 防御1：URLを安全な文字に変換（日本語クラッシュ対策）
+      var safeUrl = tempUrl;
+      try { safeUrl = encodeURI(decodeURI(tempUrl)); } catch(e) {}
+
+      var res = UrlFetchApp.fetch(safeUrl, { 
+        followRedirects: false, 
+        muteHttpExceptions: true,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }
+      });
+      
       var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
 
       if (loc) {
-        tempUrl = loc;
-        // もし長いURL（/maps/place/など）に到達したらゴール！
-        if (tempUrl.indexOf('/maps/place/') !== -1 || tempUrl.indexOf('?q=') !== -1 || tempUrl.indexOf('/maps/search/') !== -1) {
+        // 🛡️ 防御2：アプリ起動用リンクに飛ばされたら追跡ストップ
+        if (loc.indexOf('intent://') === 0 || loc.indexOf('android-app://') === 0) break;
+
+        // 🛡️ 防御3：https:// が省略されたURL(相対パス)を補完（Invalid argument対策！）
+        tempUrl = (loc.indexOf('http') !== 0) ? "https://www.google.com" + (loc.indexOf('/') === 0 ? "" : "/") + loc : loc;
+
+        // 🏁 ゴール判定：目的のURLに到達したら即座に返す！
+        if (tempUrl.indexOf('/maps/place/') !== -1 || tempUrl.indexOf('?q=') !== -1 || tempUrl.indexOf('/maps/search/') !== -1 || tempUrl.indexOf('@') !== -1) {
           return "EXPANDED:" + tempUrl;
         }
       } else {
-        // 🌟 転送が途切れた＝ダイナミックリンクの「見えないWebページ（HTML）」が返ってきた！
+        // ⚔️ 攻撃：転送が途切れたら、ダイナミックリンク(HTML)の奥底をこじ開ける！
         var html = res.getContentText();
 
-        // 検索パターンA：HTMLの中に直接埋め込まれた「本当の地図URL」をえぐり出す
         var matchA = html.match(/(https:\/\/(?:www\.)?google\.com\/maps\/(?:place|search|dir|\?q=)[^"'\s<>\\]+)/i);
         if (matchA) return "EXPANDED:" + matchA[1];
 
-        // 検索パターンB：アプリ起動用プログラム（intent）に隠されたURLをえぐり出す
         var matchB = html.match(/link=(https:\/\/(?:www\.)?google\.com\/maps\/[^"'\s<>\\]+)/i);
         if (matchB) return "EXPANDED:" + decodeURIComponent(matchB[1]);
 
-        break; // 見つからなければループを抜ける
+        break; 
       }
-    }
-
-    // 🌟 万が一の最終手段（わざと最後まで転送させて、エラーログからURLを抜き取るハッキング手法）
-    try {
-       UrlFetchApp.fetch(params.url, { followRedirects: true, muteHttpExceptions: true });
-    } catch(e) {
-       var errMatch = e.toString().match(/(https:\/\/(?:www\.)?google\.com\/maps\/[^\s]+)/i);
-       if (errMatch) return "EXPANDED:" + errMatch[1];
     }
 
     return "EXPANDED:" + tempUrl;
 
   } catch(e) {
-    return "V9_ERROR: " + e.message;
+    return "V10_ERROR: " + e.message + " | URL: " + tempUrl;
   }
 }
