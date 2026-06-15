@@ -1802,34 +1802,45 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開する関数（V7：極限シンプル・クラッシュ回避版）
+// 🗺️ 短縮URLを展開する関数（V8：日本語クラッシュ回避・即時リターン版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
     var tempUrl = params.url;
     
-    // 偽装ヘッダーやCookieを一切やめ、純粋に転送(Location)だけを追いかける
-    for (var i = 0; i < 10; i++) {
-      var res = UrlFetchApp.fetch(tempUrl, {
+    for (var i = 0; i < 5; i++) {
+      // 🌟 クラッシュ防止：URLに日本語が含まれている場合は安全な暗号（エンコード）に変換
+      var safeUrl = tempUrl;
+      try { safeUrl = encodeURI(decodeURI(tempUrl)); } catch(e) {}
+      
+      var res = UrlFetchApp.fetch(safeUrl, {
         followRedirects: false, 
-        muteHttpExceptions: true
+        muteHttpExceptions: true,
+        // パソコンのフリをして、アプリ用リンクに飛ばされるのを防ぐ
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }
       });
       
-      var code = res.getResponseCode();
-      if (code >= 300 && code < 400) {
-        var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
-        if (loc) {
-          tempUrl = (loc.indexOf('http') !== 0) ? "https://www.google.com" + (loc.indexOf('/') === 0 ? "" : "/") + loc : loc;
-        } else { break; }
+      var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
+      
+      if (loc) {
+        // スマホ用アプリリンク（intent等）に飛ばされた場合はそこで追跡ストップ
+        if (loc.indexOf('intent://') === 0 || loc.indexOf('android-app://') === 0) break;
+        
+        tempUrl = (loc.indexOf('http') !== 0) ? "https://www.google.com" + (loc.indexOf('/') === 0 ? "" : "/") + loc : loc;
+        
+        // 🌟 ゴール判定：座標や住所が含まれるURLが出た時点で、それ以上追わずに即返す！（エラーの連鎖を断ち切る）
+        if (tempUrl.indexOf('/maps/place/') !== -1 || tempUrl.indexOf('/maps/search/') !== -1 || tempUrl.indexOf('@') !== -1 || tempUrl.indexOf('?q=') !== -1) {
+          return "EXPANDED:" + tempUrl;
+        }
       } else {
-        break; // 転送がなければ終了
+        break; // 転送が終わったらループ終了
       }
     }
     
-    // 最終的にたどり着いたURLをそのままフロントエンドにパス出し！
+    // 最終的にたどり着いたURLをフロントエンドにパス出し！
     return "EXPANDED:" + tempUrl; 
     
   } catch(e) {
-    return "V7_ERROR: " + e.toString() + " | URL: " + params.url;
+    return "V8_ERROR: " + e.message + " | URL: " + tempUrl;
   }
 }
