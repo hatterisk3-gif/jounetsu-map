@@ -1802,16 +1802,19 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開する関数（V10：ダイナミック解読 ＋ クラッシュ完全防御版）
+// 🗺️ 短縮URLを展開する関数（V11：URL合体バグの完全修正版）
 // ==========================================
 function expandGoogleMapUrl(params) {
   try {
-    var tempUrl = params.url;
+    var tempUrl = params.url.trim();
+
+    // 🛡️ 防御1：LINEなどでコピーした際に入る「不要な記号や日本語」を末尾から削ぎ落とす
+    tempUrl = tempUrl.replace(/[\]\)\}\>、。】」』\s]+$/, '');
 
     for (var i = 0; i < 5; i++) {
-      // 🛡️ 防御1：URLを安全な文字に変換（日本語クラッシュ対策）
+      // 🛡️ 防御2：URLのエンコード（日本語やスペースを安全な文字に変換）
       var safeUrl = tempUrl;
-      try { safeUrl = encodeURI(decodeURI(tempUrl)); } catch(e) {}
+      try { safeUrl = encodeURI(decodeURI(tempUrl)); } catch(e) { safeUrl = encodeURI(tempUrl); }
 
       var res = UrlFetchApp.fetch(safeUrl, { 
         followRedirects: false, 
@@ -1822,18 +1825,28 @@ function expandGoogleMapUrl(params) {
       var loc = res.getHeaders()['Location'] || res.getHeaders()['location'];
 
       if (loc) {
-        // 🛡️ 防御2：アプリ起動用リンクに飛ばされたら追跡ストップ
+        // アプリ起動用リンク（intent:// 等）はエラーになる前に追跡ストップ
         if (loc.indexOf('intent://') === 0 || loc.indexOf('android-app://') === 0) break;
 
-        // 🛡️ 防御3：https:// が省略されたURL(相対パス)を補完（Invalid argument対策！）
-        tempUrl = (loc.indexOf('http') !== 0) ? "https://www.google.com" + (loc.indexOf('/') === 0 ? "" : "/") + loc : loc;
+        // 🌟🌟 今回のバグ修正：URLを正しく綺麗に合体させる！ 🌟🌟
+        if (loc.indexOf('http') === 0) {
+          tempUrl = loc;
+        } else if (loc.indexOf('//') === 0) {
+          tempUrl = 'https:' + loc; // プロトコル省略形への対応
+        } else if (loc.indexOf('/') === 0) {
+          var domainMatch = tempUrl.match(/^(https?:\/\/[^\/]+)/i);
+          var domain = domainMatch ? domainMatch[1] : "https://www.google.com";
+          tempUrl = domain + loc;
+        } else {
+          tempUrl = "https://www.google.com/" + loc;
+        }
 
         // 🏁 ゴール判定：目的のURLに到達したら即座に返す！
         if (tempUrl.indexOf('/maps/place/') !== -1 || tempUrl.indexOf('?q=') !== -1 || tempUrl.indexOf('/maps/search/') !== -1 || tempUrl.indexOf('@') !== -1) {
           return "EXPANDED:" + tempUrl;
         }
       } else {
-        // ⚔️ 攻撃：転送が途切れたら、ダイナミックリンク(HTML)の奥底をこじ開ける！
+        // 転送が途切れたら、ダイナミックリンク(HTML)の奥底をこじ開ける
         var html = res.getContentText();
 
         var matchA = html.match(/(https:\/\/(?:www\.)?google\.com\/maps\/(?:place|search|dir|\?q=)[^"'\s<>\\]+)/i);
@@ -1849,6 +1862,6 @@ function expandGoogleMapUrl(params) {
     return "EXPANDED:" + tempUrl;
 
   } catch(e) {
-    return "V10_ERROR: " + e.message + " | URL: " + tempUrl;
+    return "V11_ERROR: " + e.message + " | URL: " + (typeof tempUrl === 'string' ? tempUrl : 'undefined');
   }
 }
