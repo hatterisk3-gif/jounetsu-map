@@ -106,7 +106,6 @@
           <input type="text" id="mapSearchInput" class="search-input" placeholder="🌍 住所・地域...">
         </div>
         <button id="btnCurrentLocation" class="gps-btn">🧭 現在地</button>
-        <button onclick="promptLineUrl()" style="background:#f3e5f5; color:#9C27B0; border:1px solid #9C27B0; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📍 座標打込</button>
         <button onclick="openFeedback()" style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️ 連絡</button>
         <button onclick="executeLogout()" style="background:#F44336; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">ログアウト</button>
       </div>
@@ -117,17 +116,23 @@
         <button onclick="openMasterModal()" style="background:#2196F3; color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️ マスタ</button>
       </div>
       <div id="drawArea" class="action-bar" style="display:none;">
-        <div id="drawStep1">
-          <div style="display:flex; gap:8px; margin-bottom:8px;">
-            <button id="btnManualDraw" style="flex:1; background:#00BCD4; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">👆 手動で描く</button>
-            <button id="btnLoadFude" style="flex:1; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">🤖 筆ポリから</button>
-          </div>
+        <div id="drawArea" class="action-bar" style="display:none;">
+            <div id="drawStep1">
+              <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <button id="btnManualDraw" style="flex:1; background:#00BCD4; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">👆 手動で描く</button>
+                <button id="btnLoadFude" style="flex:1; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">🤖 筆ポリから</button>
+              </div>
+              
+              <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <button onclick="promptLineUrl()" style="flex:1; background:#9C27B0; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">📍 短縮URLから場所を探す</button>
+              </div>
+              
+              <div style="display:flex; gap:8px;">
+                <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>↩️ 1つ戻す</button>
+                <button id="step1SaveBtn" style="background:#4CAF50; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>形を決定（次へ）</button>
+              </div>
+            </div>
           
-          <div style="display:flex; gap:8px;">
-            <button id="undoDrawBtn" style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>↩️ 1つ戻す</button>
-            <button id="step1SaveBtn" style="background:#4CAF50; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;" disabled>形を決定（次へ）</button>
-          </div>
-        </div>
   
         <div id="drawStep2" style="display:none;">
           <div id="addressHint" style="display:none; background:#222; padding:8px; border-radius:4px; margin-bottom:10px; line-height:1.4;"></div>
@@ -367,13 +372,31 @@
           loadedPolygons={};
 
           window.pdlSignLinks = data.pdl.signLinks || {};
+          // 🌟修正：スマホが固まらないように「50個ずつゆっくり」読み込む処理（チャンク処理）
           if(data.polygons){
-              data.polygons.forEach(f => {
-                  if(f.coords && f.coords.length === 1) f.linkedSigns = window.pdlSignLinks[f.id] || "";
-                  createPolygonObject(f);
-              });
+              const chunkSize = 50; // 1回に描画する数
+              let currentIndex = 0;
+
+              function renderChunk() {
+                  let end = Math.min(currentIndex + chunkSize, data.polygons.length);
+                  for (; currentIndex < end; currentIndex++) {
+                      let f = data.polygons[currentIndex];
+                      if(f.coords && f.coords.length === 1) f.linkedSigns = window.pdlSignLinks[f.id] || "";
+                      createPolygonObject(f);
+                  }
+                  
+                  if (currentIndex < data.polygons.length) {
+                      // まだ残っていたら、50ミリ秒だけ休んでから次を描画（これでスマホがフリーズしません！）
+                      setTimeout(renderChunk, 50); 
+                  } else {
+                      // 全部の描画が終わったら検索機能をセット
+                      if (typeof setupSearch === 'function') setupSearch();
+                  }
+              }
+              renderChunk(); // 最初の50個を描き始める
+          } else {
+              if (typeof setupSearch === 'function') setupSearch();
           }
-          if (typeof setupSearch === 'function') setupSearch();
       }
 
       window.openMasterModal = () => { renderMasterSection(); document.getElementById('masterModal').style.display = 'flex'; };
