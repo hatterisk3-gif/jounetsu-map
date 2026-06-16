@@ -1803,22 +1803,22 @@ function deleteMachineFromMaster(params) {
   return true;
 }
 // ==========================================
-// 🗺️ 短縮URLを展開して座標を取得する関数（大成功したロジックを統合！）
+// 🗺️ 短縮URLを展開して座標を取得する関数（スプレッドシート大成功版）
 // ==========================================
-function expandGoogleMapUrl(params) {
-  let url = params.url;
-  let maxRedirects = 10;
-  let loopCount = 0;
-
+function getMapCoordinates(params) {
+  var url = params.url;
+  var maxRedirects = 10;
+  var loopCount = 0;
+  
   try {
     // リダイレクトを追跡
     while (loopCount < maxRedirects) {
-      let response = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true });
-      let headers = response.getHeaders();
-      let responseCode = response.getResponseCode();
-
+      var response = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true });
+      var headers = response.getHeaders();
+      var responseCode = response.getResponseCode();
+      
       if (responseCode >= 300 && responseCode < 400 && headers['Location']) {
-        let nextUrl = headers['Location'];
+        var nextUrl = headers['Location'];
         if (nextUrl.startsWith('/')) { nextUrl = "https://www.google.com" + nextUrl; }
         url = nextUrl;
         loopCount++;
@@ -1826,60 +1826,33 @@ function expandGoogleMapUrl(params) {
         break; 
       }
     }
+    
+    // 展開された最終的なURLから座標を探す
+    var latitude, longitude;
+    var regexPin = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
+    var regexAt = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
+    var regexQ = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/;
+    var regexLl = /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/;
 
-    // フロントエンド（HTML側）はURLさえ分かれば座標を抜ける最強の解析機能を持っているので、
-    // ここでは「最終的に展開された長いURL」をそのまま返してあげます！
-    return url;
-
-  } catch (e) {
-    return url; // エラー時は元のURLを返す
-  }
-}
-// ==========================================
-// 🗺️ 短縮URLを展開して座標を取得する関数（スプレッドシート成功版の移植）
-// ==========================================
-function getMapCoordinates(params) {
-  let url = params.url;
-  const maxRedirects = 10;
-  let loopCount = 0;
-  
-  try {
-    // リダイレクトを追跡
-    while (loopCount < maxRedirects) {
-      let response = UrlFetchApp.fetch(url, {
-        followRedirects: false, 
-        muteHttpExceptions: true
-      });
-      
-      let headers = response.getHeaders();
-      let responseCode = response.getResponseCode();
-      
-      if (responseCode >= 300 && responseCode < 400 && headers['Location']) {
-        let nextUrl = headers['Location'];
-        if (nextUrl.startsWith('/')) {
-          nextUrl = "https://www.google.com" + nextUrl;
+    var match = url.match(regexPin);
+    if (match) { latitude = match[1]; longitude = match[2]; } 
+    else {
+      match = url.match(regexAt);
+      if (match) { latitude = match[1]; longitude = match[2]; } 
+      else {
+        match = url.match(regexQ);
+        if (match) { latitude = match[1]; longitude = match[2]; } 
+        else {
+          match = url.match(regexLl);
+          if (match) { latitude = match[1]; longitude = match[2]; }
         }
-        url = nextUrl;
-        loopCount++;
-      } else {
-        break; 
       }
     }
     
-    // 展開後URLから座標を探す（作成いただいた正規表現ロジック！）
-    let latitude, longitude;
-    const regexPin = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
-    const regexAt = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
-    const regexQ = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/;
-    const regexLl = /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/;
-
-    let match = url.match(regexPin) || url.match(regexAt) || url.match(regexQ) || url.match(regexLl);
-
-    if (match) {
-      // 成功時：A2に出力していた代わりに、緯度と経度の数字をスマホ側に返す！
-      return { success: true, lat: parseFloat(match[1]), lng: parseFloat(match[2]), expandedUrl: url };
+    // 【A2出力の代わり】Webアプリ側に緯度・経度のデータを返す！
+    if (latitude && longitude) {
+      return { success: true, lat: parseFloat(latitude), lng: parseFloat(longitude), expandedUrl: url };
     } else {
-      // 失敗時：A2にエラーを出していた代わりに、エラー内容をスマホ側に返す！
       return { success: false, error: "展開後のURLから座標が見つかりませんでした。", expandedUrl: url };
     }
     
