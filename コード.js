@@ -45,7 +45,6 @@ function doPost(e) {
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
     else if (action === "deleteMachineFromMaster") result = deleteMachineFromMaster(params);
-    else if (action === "expandGoogleMapUrl") result = expandGoogleMapUrl(params);
    else if (action === 'getMapCoordinates') result = getMapCoordinates(params);
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
