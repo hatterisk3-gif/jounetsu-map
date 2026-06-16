@@ -1802,63 +1802,38 @@ function deleteMachineFromMaster(params) {
   sheet.deleteRow(targetRowIndex); // 行ごと削除
   return true;
 }
-// ==========================================
-// 🗺️ 短縮URLを展開して座標を取得する関数（スプレッドシート大成功版）
-// ==========================================
 function getMapCoordinates(params) {
   var url = params.url;
   var maxRedirects = 10;
   var loopCount = 0;
   
   try {
-    // リダイレクトを追跡
+    // リダイレクト追跡
     while (loopCount < maxRedirects) {
       var response = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true });
       var headers = response.getHeaders();
-      var responseCode = response.getResponseCode();
-      
-      if (responseCode >= 300 && responseCode < 400 && headers['Location']) {
+      if (response.getResponseCode() >= 300 && response.getResponseCode() < 400 && headers['Location']) {
         var nextUrl = headers['Location'];
-        if (nextUrl.startsWith('/')) { nextUrl = "https://www.google.com" + nextUrl; }
-        url = nextUrl;
+        url = nextUrl.startsWith('/') ? "https://www.google.com" + nextUrl : nextUrl;
         loopCount++;
       } else {
         break; 
       }
     }
     
-    // 展開された最終的なURLから座標を探す
-    var latitude, longitude;
-    var regexPin = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
-    var regexAt = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
-    var regexQ = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/;
-    var regexLl = /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/;
+    // 座標の抽出
+    var match = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || 
+                url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || 
+                url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || 
+                url.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
 
-    var match = url.match(regexPin);
-    if (match) { latitude = match[1]; longitude = match[2]; } 
-    else {
-      match = url.match(regexAt);
-      if (match) { latitude = match[1]; longitude = match[2]; } 
-      else {
-        match = url.match(regexQ);
-        if (match) { latitude = match[1]; longitude = match[2]; } 
-        else {
-          match = url.match(regexLl);
-          if (match) { latitude = match[1]; longitude = match[2]; }
-        }
-      }
-    }
-    
-    // 【A2出力の代わり】Webアプリ側に緯度・経度のデータを返す！
-    if (latitude && longitude) {
-   
-        return { lat: parseFloat(latitude), lng: parseFloat(longitude) };
-  
+    if (match) {
+      // 成功時：[緯度, 経度] の数字だけを返す！
+      return [parseFloat(match[1]), parseFloat(match[2])];
     } else {
-      return { success: false, error: "展開後のURLから座標が見つかりませんでした。", expandedUrl: url };
+      return null; // 失敗時は空っぽを返す
     }
-    
   } catch (e) {
-    return { success: false, error: "通信エラー: " + e.message };
+    return null;
   }
 }

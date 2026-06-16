@@ -192,59 +192,54 @@
       };
       window.customPrompt = (msg, defaultValue = '') => { return new Promise(resolve => { document.getElementById('customPromptMessage').innerText = msg; document.getElementById('customPromptInput').value = defaultValue; document.getElementById('customPromptModal').style.display = 'flex'; document.getElementById('customPromptInput').focus(); document.getElementById('customPromptOk').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(document.getElementById('customPromptInput').value); }; document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); }; }); };
 
-    // 🌟短縮URL専用：不要な座標判定を削ぎ落とした最速版！
-window.promptLineUrl = async () => {
-    // メッセージも「短縮URL専用」に直しました
-    const input = await customPrompt("📍 LINE等でコピーした「短縮URL」を貼り付けてください");
+      window.promptLineUrl = async () => {
+    // 1. 入力を受け取る（前後の余計な空白は自動で削除）
+    const input = await customPrompt("📍 短縮URLを貼り付けてください");
     if (!input) return;
+    const targetUrl = input.trim();
 
-    let shareLat = null, shareLng = null;
-
-    // 入力の中に「http」があれば、問答無用でGASの解読プログラムに投げる！
-    if (input.indexOf('http') !== -1) {
-        const shortUrlMatch = input.match(/https?:\/\/[^\s]+/);
-        if (shortUrlMatch) {
-            customAlert("🔍 短縮URLを解析して座標を取得しています...");
-            try {
-                // GAS（大成功したプログラム）にURLをパス！
-                const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
-                document.getElementById('customAlertModal').style.display = 'none';
-
-                if (result && result.success) {
-                    shareLat = result.lat;
-                    shareLng = result.lng;
-                } else {
-                    customAlert(`📍 解析エラー\n理由: ${result.error}\n展開後URL: ${result.expandedUrl || "なし"}`);
-                    return; 
-                }
-            } catch(e) {
-                document.getElementById('customAlertModal').style.display = 'none';
-                customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
-                return;
-            }
-        }
+    // 2. 最低限のチェック（httpから始まっていなければ弾く）
+    if (!targetUrl.startsWith('http')) {
+        customAlert("📍 有効なURLを入力してください。");
+        return;
     }
 
-    // 座標が見つかったらピンを刺す！
-    if (shareLat && shareLng) {
-        const sharedPos = { lat: shareLat, lng: shareLng };
-        map.setCenter(sharedPos); 
-        map.setZoom(18);
-        
-        new google.maps.Marker({
-            position: sharedPos, 
-            map: map,
-            icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
-            zIndex: 9999, 
-            animation: google.maps.Animation.DROP
-        });
-        
-        if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
-            document.getElementById('btnDrawMode').click();
+    customAlert("🔍 短縮URLを解析して座標を取得しています...");
+
+    try {
+        // 3. GASへURLをそのまま投げる
+        const result = await callGAS('getMapCoordinates', { url: targetUrl });
+        document.getElementById('customAlertModal').style.display = 'none';
+
+        // 4. 解析成功 ＆ 座標が見つかった場合のみピンを刺す
+        if (result && result.success && result.lat && result.lng) {
+            const sharedPos = { lat: result.lat, lng: result.lng };
+            
+            map.setCenter(sharedPos); 
+            map.setZoom(18);
+            
+            new google.maps.Marker({
+                position: sharedPos, 
+                map: map,
+                icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+                zIndex: 9999, 
+                animation: google.maps.Animation.DROP
+            });
+            
+            // ピン刺し後の確認
+            if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
+                document.getElementById('btnDrawMode').click();
+            }
+            
+        } else {
+            // 5. GAS側でエラーになった（座標が見つからなかった）場合
+            const errorMsg = result && result.error ? `\n理由: ${result.error}` : "";
+            customAlert(`📍 解析エラー${errorMsg}`);
         }
-    } else {
-        // 座標入力の想定をなくしたので、エラーメッセージもシンプルに！
-        customAlert("📍 有効なURLが見つかりませんでした。");
+        
+    } catch(e) {
+        document.getElementById('customAlertModal').style.display = 'none';
+        customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
     }
 };
       const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場' };
