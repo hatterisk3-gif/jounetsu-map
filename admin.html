@@ -196,55 +196,69 @@
       window.customPrompt = (msg, defaultValue = '') => { return new Promise(resolve => { document.getElementById('customPromptMessage').innerText = msg; document.getElementById('customPromptInput').value = defaultValue; document.getElementById('customPromptModal').style.display = 'flex'; document.getElementById('customPromptInput').focus(); document.getElementById('customPromptOk').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(document.getElementById('customPromptInput').value); }; document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); }; }); };
       window.customConfirm = (msg) => { return new Promise(resolve => { document.getElementById('customConfirmMessage').innerText = msg; document.getElementById('customConfirmModal').style.display = 'flex'; document.getElementById('customConfirmOk').onclick = () => { document.getElementById('customConfirmModal').style.display = 'none'; resolve(true); }; document.getElementById('customConfirmCancel').onclick = () => { document.getElementById('customConfirmModal').style.display = 'none'; resolve(false); }; }); };
       window.promptLineUrl = async () => {
-    // 1. 入力を受け取る（前後の余計な空白は自動で削除）
-    const input = await customPrompt("📍 短縮URLを貼り付けてください");
-    if (!input) return;
-    const targetUrl = input.trim();
+          // 1. 入力を受け取る（前後の余計な空白は自動で削除）
+          const input = await customPrompt("📍 短縮URLを貼り付けてください");
+          if (!input) return;
+          const targetUrl = input.trim();
 
-    // 2. 最低限のチェック（httpから始まっていなければ弾く）
-    if (!targetUrl.startsWith('http')) {
-        customAlert("📍 有効なURLを入力してください。");
-        return;
-    }
+          // 2. 最低限のチェック（httpから始まっていなければ弾く）
+          if (!targetUrl.startsWith('http')) {
+              customAlert("📍 有効なURLを入力してください。");
+              return;
+          }
 
-    customAlert("🔍 短縮URLを解析して座標を取得しています...");
+          customAlert("🔍 短縮URLを解析して座標を取得しています...");
 
-    try {
-        // 3. GASへURLをそのまま投げる
-        const result = await callGAS('getMapCoordinates', { url: targetUrl });
-        document.getElementById('customAlertModal').style.display = 'none';
+          try {
+              // 3. GASへURLをそのまま投げる
+              const result = await callGAS('getMapCoordinates', { url: targetUrl });
+              document.getElementById('customAlertModal').style.display = 'none';
 
-        // 4. 解析成功 ＆ 座標が見つかった場合のみピンを刺す
-        if (result && result.success && result.lat && result.lng) {
-            const sharedPos = { lat: result.lat, lng: result.lng };
-            
-            map.setCenter(sharedPos); 
-            map.setZoom(18);
-            
-            new google.maps.Marker({
-                position: sharedPos, 
-                map: map,
-                icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
-                zIndex: 9999, 
-                animation: google.maps.Animation.DROP
-            });
-            
-            // ピン刺し後の確認
-            if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
-                document.getElementById('btnDrawMode').click();
-            }
-            
-        } else {
-            // 5. GAS側でエラーになった（座標が見つからなかった）場合
-            const errorMsg = result && result.error ? `\n理由: ${result.error}` : "";
-            customAlert(`📍 解析エラー${errorMsg}`);
-        }
-        
-    } catch(e) {
-        document.getElementById('customAlertModal').style.display = 'none';
-        customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
-    }
-};
+              // 4. 解析成功 ＆ 座標が見つかった場合のみピンを刺す
+              if (result && result.success && result.lat && result.lng) {
+                  const sharedPos = new google.maps.LatLng(result.lat, result.lng);
+                  map.setCenter(sharedPos); 
+                  map.setZoom(18);
+                  
+                  new google.maps.Marker({
+                      position: sharedPos, 
+                      map: map,
+                      icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+                      zIndex: 9999, 
+                      animation: google.maps.Animation.DROP
+                  });
+                  
+                  // 🌟ここが賢いポイント：既存の圃場か自動判定！
+                  let foundHojoId = null;
+                  if (google.maps.geometry && google.maps.geometry.poly) {
+                      for (let id in loadedPolygons) {
+                          const p = loadedPolygons[id];
+                          if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
+                              foundHojoId = id; break;
+                          }
+                      }
+                  }
+
+                  if (foundHojoId) {
+                      customAlert("📍 既存の圃場が見つかりました！");
+                      setTimeout(() => { openM(foundHojoId); }, 1000); // すぐに設定モーダルを開く！
+                  } else {
+                      if (await customConfirm("📍 ここには圃場登録がありません。\nこの場所に新しく圃場を登録しますか？")) {
+                          document.getElementById('btnDrawMode').click();
+                      }
+                  }
+                  
+              } else {
+                  // 5. GAS側でエラーになった（座標が見つからなかった）場合
+                  const errorMsg = result && result.error ? `\n理由: ${result.error}` : "";
+                  customAlert(`📍 解析エラー${errorMsg}`);
+              }
+              
+          } catch(e) {
+              document.getElementById('customAlertModal').style.display = 'none';
+              customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
+          }
+      };
       const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場' };
 
       async function callGAS(action, params={}) { params.action=action; const res=await fetch(GAS_URL, {method:'POST',body:JSON.stringify(params)}); const j=await res.json(); if(j.status!=="success") throw new Error(j.message); return j.data; }
@@ -1908,10 +1922,10 @@ document.getElementById('btnLoadFude').onclick = () => {
                       }
                   }
 
-                  // 最後にピンを刺す処理
-                  if (shareLat && shareLng) {
+                // 最後にピンを刺す処理
+                if (shareLat && shareLng) {
                       document.getElementById('customAlertModal').style.display = 'none';
-                      const sharedPos = { lat: shareLat, lng: shareLng };
+                      const sharedPos = new google.maps.LatLng(shareLat, shareLng);
                       map.setCenter(sharedPos); map.setZoom(18);
                       new google.maps.Marker({
                           position: sharedPos, map: map,
@@ -1919,8 +1933,24 @@ document.getElementById('btnLoadFude').onclick = () => {
                           zIndex: 9999, animation: google.maps.Animation.DROP
                       });
                       
-                      if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
-                          document.getElementById('btnDrawMode').click();
+                      // 🌟ここが賢いポイント：既存の圃場か自動判定！
+                      let foundHojoId = null;
+                      if (google.maps.geometry && google.maps.geometry.poly) {
+                          for (let id in loadedPolygons) {
+                              const p = loadedPolygons[id];
+                              if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
+                                  foundHojoId = id; break;
+                              }
+                          }
+                      }
+
+                      if (foundHojoId) {
+                          customAlert("📍 既存の圃場が見つかりました！");
+                          setTimeout(() => { openM(foundHojoId); }, 1000); // すぐに設定モーダルを開く！
+                      } else {
+                          if (await customConfirm("📍 ここには圃場登録がありません。\nこの場所に新しく圃場を登録しますか？")) {
+                              document.getElementById('btnDrawMode').click();
+                          }
                       }
                   } else {
                       const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
