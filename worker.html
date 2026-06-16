@@ -68,7 +68,7 @@
       </div>
     </div>
 
-<button id="btnGpsWorkRecord" onclick="findCurrentFieldAndOpenForm()" style="position: fixed; bottom: 158px; right: 10px; width: 50px; height: 50px; background: #FFC107; color: white; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: all 0.3s ease; padding: 0;">
+<button id="btnGpsWorkRecord" onclick="findCurrentFieldAndOpenForm()" style="position: fixed; bottom: 158px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: all 0.3s ease; padding: 0;">
         📝 
     </button>
 
@@ -2784,6 +2784,76 @@ function createSignboardMarker(name, pos, icon, id) {
           } else {
               // 🌟 どのポリゴンにも入っていなかった場合
               customAlert("⚠️ 現在地がどの圃場の範囲（ポリゴン）にも入っていません。\n\n※GPSの誤差で少し外にいる場合は、地図のポリゴンを直接タップしてください。");
+          }
+      };
+      // 🌟Worker用：座標から圃場を自動判定する超賢い入力窓
+      window.promptLineUrl = async () => {
+          // ※もしworkerに customPrompt や customConfirm が無ければ、adminと同じものをコピーして追加しておいてください！
+          const input = await customPrompt("📍 LINE等でコピーした「短縮URL」を貼り付けてください");
+          if (!input) return;
+
+          let shareLat = null, shareLng = null;
+
+          if (input.indexOf('http') !== -1) {
+              const shortUrlMatch = input.match(/https?:\/\/[^\s]+/);
+              if (shortUrlMatch) {
+                  customAlert("🔍 短縮URLを解析して座標を取得しています...");
+                  try {
+                      // GAS（大成功したプログラム）で展開
+                      const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
+                      document.getElementById('customAlertModal').style.display = 'none';
+
+                      if (result && result.success) {
+                          shareLat = result.lat;
+                          shareLng = result.lng;
+                      } else {
+                          customAlert(`📍 解析エラー\n理由: ${result.error}`);
+                          return; 
+                      }
+                  } catch(e) {
+                      document.getElementById('customAlertModal').style.display = 'none';
+                      customAlert("通信エラーが発生しました。");
+                      return;
+                  }
+              }
+          }
+
+          if (shareLat && shareLng) {
+              const sharedPos = new google.maps.LatLng(shareLat, shareLng);
+              map.setCenter(sharedPos); map.setZoom(18);
+              
+              new google.maps.Marker({
+                  position: sharedPos, map: map,
+                  icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+                  zIndex: 9999, animation: google.maps.Animation.DROP
+              });
+
+              // 🌟ここが最強の連携ポイント！刺さったピンが「既存の圃場」の中に入っているか判定！
+              let foundHojoId = null;
+              if (google.maps.geometry && google.maps.geometry.poly) {
+                  for (let id in loadedPolygons) {
+                      const p = loadedPolygons[id];
+                      // ピンの座標が、ポリゴン(図形)の境界線の内側に含まれているか計算する
+                      if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
+                          foundHojoId = id;
+                          break;
+                      }
+                  }
+              }
+
+              if (foundHojoId) {
+                  // ① 圃場の中だった場合：その圃場の詳細画面を自動で開く！
+                  customAlert("📍 既存の圃場が見つかりました！");
+                  setTimeout(() => { openM(foundHojoId); }, 1000);
+              } else {
+                  // ② 圃場の外だった場合：Adminへ飛ばすか確認する！
+                  if (await customConfirm("📍 ここには圃場登録がありません。\n管理者画面を開いて新しく登録しますか？")) {
+                      // URLに座標と「draw（描く）」という命令をくっつけてAdminを開く！
+                      window.location.href = `/admin.html?lat=${shareLat}&lng=${shareLng}&action=draw`;
+                  }
+              }
+          } else {
+              customAlert("📍 有効なURLが見つかりませんでした。");
           }
       };
 
