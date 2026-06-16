@@ -1851,7 +1851,9 @@ function getMapCoordinates(params) {
     
     // 【A2出力の代わり】Webアプリ側に緯度・経度のデータを返す！
     if (latitude && longitude) {
-      return { success: true, lat: parseFloat(latitude), lng: parseFloat(longitude), expandedUrl: url };
+   
+        return { lat: parseFloat(latitude), lng: parseFloat(longitude) };
+  
     } else {
       return { success: false, error: "展開後のURLから座標が見つかりませんでした。", expandedUrl: url };
     }
