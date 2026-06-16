@@ -903,6 +903,7 @@
 
    // 🌟閲覧ボタン
    document.getElementById('btnViewMode').onclick=()=>{ 
+    if (window.sharedLocationMarker) { window.sharedLocationMarker.setMap(null); window.sharedLocationMarker = null; }
           document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); 
           document.getElementById('btnViewMode').classList.add('active'); 
           document.getElementById('drawArea').style.display='none'; 
@@ -1832,7 +1833,7 @@ document.getElementById('btnLoadFude').onclick = () => {
            
               
    // 🌟共有されたURLやテキストを解析してピンを刺す、またはWorkerから引き継ぐ
-   const urlParams = new URLSearchParams(window.location.search);
+      const urlParams = new URLSearchParams(window.location.search);
       
       // Workerから飛んできたバトン（パラメータ）を取得
       const directLat = urlParams.get('lat');
@@ -1844,17 +1845,20 @@ document.getElementById('btnLoadFude').onclick = () => {
           const shareLat = parseFloat(directLat);
           const shareLng = parseFloat(directLng);
           
+          // 🌟🌟リロード地獄を防ぐ魔法：URLからパラメータ（?lat=...）を消し去る！🌟🌟
+          window.history.replaceState(null, null, window.location.pathname);
+          
           // ログイン処理や地図データの読み込みが終わるのを2.5秒だけ待ってから実行
           setTimeout(() => {
               const sharedPos = { lat: shareLat, lng: shareLng };
               map.setCenter(sharedPos); map.setZoom(18);
-              
-              new google.maps.Marker({
+     // 🌟前のピンを消してから、新しいピンを変数に記憶させる！
+     if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
+              window.sharedLocationMarker = new google.maps.Marker({
                   position: sharedPos, map: map,
                   icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
                   zIndex: 9999, animation: google.maps.Animation.DROP
               });
-              
               // workerから「draw（描いて！）」の指示が来ていたら、自動で圃場ボタンを押す！
               if (directAction === 'draw') {
                   document.getElementById('btnDrawMode').click(); 
@@ -1867,6 +1871,9 @@ document.getElementById('btnLoadFude').onclick = () => {
           const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
           
           if (sharedText) {
+              // 🌟🌟ここでも魔法を使う：URLから短縮URLの痕跡（?text=...）を消し去る！🌟🌟
+              window.history.replaceState(null, null, window.location.pathname);
+              
               customAlert("🔍 URLを解析中です...");
               
               (async () => {
@@ -1922,8 +1929,8 @@ document.getElementById('btnLoadFude').onclick = () => {
                       }
                   }
 
-                // 最後にピンを刺す処理
-                if (shareLat && shareLng) {
+                  // 最後にピンを刺す処理
+                  if (shareLat && shareLng) {
                       document.getElementById('customAlertModal').style.display = 'none';
                       const sharedPos = new google.maps.LatLng(shareLat, shareLng);
                       map.setCenter(sharedPos); map.setZoom(18);
@@ -1933,7 +1940,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                           zIndex: 9999, animation: google.maps.Animation.DROP
                       });
                       
-                      // 🌟ここが賢いポイント：既存の圃場か自動判定！
+                      // 既存の圃場か自動判定
                       let foundHojoId = null;
                       if (google.maps.geometry && google.maps.geometry.poly) {
                           for (let id in loadedPolygons) {
@@ -1946,7 +1953,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
                       if (foundHojoId) {
                           customAlert("📍 既存の圃場が見つかりました！");
-                          setTimeout(() => { openM(foundHojoId); }, 1000); // すぐに設定モーダルを開く！
+                          setTimeout(() => { openM(foundHojoId); }, 1000); 
                       } else {
                           if (await customConfirm("📍 ここには圃場登録がありません。\nこの場所に新しく圃場を登録しますか？")) {
                               document.getElementById('btnDrawMode').click();

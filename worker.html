@@ -225,7 +225,9 @@
               const sharedPos = new google.maps.LatLng(shareLat, shareLng);
               map.setCenter(sharedPos); map.setZoom(18);
               
-              new google.maps.Marker({
+// 🌟前のピンを消してから、新しいピンを変数に記憶させる！
+if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
+              window.sharedLocationMarker = new google.maps.Marker({
                   position: sharedPos, map: map,
                   icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
                   zIndex: 9999, animation: google.maps.Animation.DROP
@@ -1703,7 +1705,11 @@ function createSignboardMarker(name, pos, icon, id) {
       }
 
       function resizeImg(file) { return new Promise(res => { const r = new FileReader(); r.onload = e => { const img = new Image(); img.onload = () => { const cvs = document.createElement('canvas'); let w=img.width, h=img.height, max=1200; if(w>h && w>max){h*=max/w;w=max;}else if(h>max){w*=max/h;h=max;} cvs.width=w; cvs.height=h; cvs.getContext('2d').drawImage(img,0,0,w,h); res(cvs.toDataURL('image/jpeg',0.8)); }; img.src=e.target.result; }; r.readAsDataURL(file); }); }
-      function closeRightPanel() { document.getElementById('rightPanel').classList.remove('open'); }
+     // 🌟右パネルを閉じた時（作業終了時や地図の余白タップ時）に検索ピンも一緒に消し去る！
+     function closeRightPanel() { 
+          if (window.sharedLocationMarker) { window.sharedLocationMarker.setMap(null); window.sharedLocationMarker = null; }
+          document.getElementById('rightPanel').classList.remove('open'); 
+      }
       window.openLightbox = (u) => { document.getElementById('lightbox-img').src = u.replace('sz=w800','sz=w1600'); document.getElementById('lightbox').style.display = 'flex'; };
       // ==========================================
       // 農機の片づけ場所をマップから選ぶ機能
