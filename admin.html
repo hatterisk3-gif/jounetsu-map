@@ -1824,64 +1824,61 @@ document.getElementById('btnLoadFude').onclick = () => {
                       } 
                       else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
                       
-                      if (!shareLat || !shareLng) {
-                          const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
-                          if (shortUrlMatch) {
-                              try {
-                                  const shortUrl = shortUrlMatch[0];
-                                  const expandedUrl = await callGAS('getMapCoordinates', { url: shortUrl });
-                                  finalExpandedUrl = expandedUrl; 
-                                  
-                                  let targetUrl = expandedUrl;
-                                  if (expandedUrl.startsWith("EXPANDED:")) {
-                                      targetUrl = expandedUrl.replace("EXPANDED:", "");
-                                  }
-                                  
-                                  // 1. スマホ側で座標を直接探す
-                                  const finalUrlMatch = targetUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || targetUrl.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || targetUrl.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || targetUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-                                  
-                                  if (finalUrlMatch) { 
-                                      shareLat = parseFloat(finalUrlMatch[1]); 
-                                      shareLng = parseFloat(finalUrlMatch[2]); 
-                                  } else {
-                                      // 2. 座標がなければ住所・施設名を探してGoogle公式機能で検索！
-                                      const placeMatch = targetUrl.match(/\/maps\/place\/([^/?]+)/) || targetUrl.match(/\/maps\/search\/([^/?]+)/) || targetUrl.match(/\/maps\/\?q=([^&]+)/);
-                                      if (placeMatch) {
-                                          let addressText = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
-                                          if (addressText.indexOf('%') !== -1) addressText = decodeURIComponent(addressText);
-                                          
-                                          document.getElementById('customAlertModal').querySelector('p').innerText = `🔍 住所/施設名「${addressText}」を検索中...`;
-                                          
-                                          const loc = await new Promise(resolve => {
-                                              new google.maps.Geocoder().geocode({ address: addressText }, (results, status) => {
-                                                  resolve(status === 'OK' ? results[0].geometry.location : null);
-                                              });
-                                          });
-                                          
-                                          if (loc) { shareLat = loc.lat(); shareLng = loc.lng(); }
-                                      }
-                                  }
-                              } catch(e) { console.warn("短縮URLの展開に失敗", e); }
-                          }
-                      }
-                      
-                      if (shareLat && shareLng) {
-                          document.getElementById('customAlertModal').style.display = 'none';
-                          const sharedPos = { lat: shareLat, lng: shareLng };
-                          map.setCenter(sharedPos); map.setZoom(18);
-                          new google.maps.Marker({
-                              position: sharedPos, map: map,
-                              icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
-                              zIndex: 9999, animation: google.maps.Animation.DROP
-                          });
-                          
-                          if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
-                              document.getElementById('btnDrawMode').click();
-                          }
-                      } else {
-                          const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
-                          customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。" + debugText);
-                      }
+                     // ② 座標が直接見つからなかった場合、短縮URLを探してGASに投げる
+if (!shareLat || !shareLng) {
+    const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
+    if (shortUrlMatch) {
+        try {
+            const shortUrl = shortUrlMatch[0];
+            const result = await callGAS('getMapCoordinates', { url: shortUrl });
+            
+            if (result && result.success) {
+                // GAS側で座標の抽出まで成功した場合！
+                shareLat = result.lat;
+                shareLng = result.lng;
+            } else if (result && !result.success && result.expandedUrl) {
+                // 座標は見つからなかったが、URLの展開には成功した場合（住所検索などの場合）
+                const targetUrl = result.expandedUrl;
+                finalExpandedUrl = targetUrl;
+                
+                const placeMatch = targetUrl.match(/\/maps\/place\/([^/?]+)/) || targetUrl.match(/\/maps\/search\/([^/?]+)/) || targetUrl.match(/\/maps\/\?q=([^&]+)/);
+                if (placeMatch) {
+                    let addressText = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
+                    if (addressText.indexOf('%') !== -1) addressText = decodeURIComponent(addressText);
+                    
+                    document.getElementById('customAlertModal').querySelector('p').innerText = `🔍 住所/施設名「${addressText}」を検索中...`;
+                    
+                    const loc = await new Promise(resolve => {
+                        new google.maps.Geocoder().geocode({ address: addressText }, (results, status) => {
+                            resolve(status === 'OK' ? results[0].geometry.location : null);
+                        });
+                    });
+                    
+                    if (loc) { shareLat = loc.lat(); shareLng = loc.lng(); }
+                }
+            }
+        } catch(e) { console.warn("短縮URLの展開に失敗", e); }
+    }
+}
+
+// 最後にピンを刺す処理
+if (shareLat && shareLng) {
+    document.getElementById('customAlertModal').style.display = 'none';
+    const sharedPos = { lat: shareLat, lng: shareLng };
+    map.setCenter(sharedPos); map.setZoom(18);
+    new google.maps.Marker({
+        position: sharedPos, map: map,
+        icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+        zIndex: 9999, animation: google.maps.Animation.DROP
+    });
+    
+    if (await customConfirm("📍 共有された場所に移動しました！\nこの場所に新しく圃場を登録しますか？")) {
+        document.getElementById('btnDrawMode').click();
+    }
+} else {
+    const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
+    customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。" + debugText);
+}
                   })();
               }
               const cachedData = localStorage.getItem('pMapAdminInitData');
