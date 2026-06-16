@@ -189,7 +189,73 @@
           document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); };
         });
       };
-  
+  // 🌟Worker用：座標検索ボタンを押したときの処理（短縮URLを展開して圃場を判定！）
+  window.promptLineUrl = async () => {
+          const input = await customPrompt("📍 LINE等でコピーした「短縮URL」を貼り付けてください");
+          if (!input) return;
+
+          let shareLat = null, shareLng = null;
+
+          // 入力の中にhttpがあれば、GASの解読プログラムに投げる！
+          if (input.indexOf('http') !== -1) {
+              const shortUrlMatch = input.match(/https?:\/\/[^\s]+/);
+              if (shortUrlMatch) {
+                  customAlert("🔍 短縮URLを解析して座標を取得しています...");
+                  try {
+                      const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
+                      document.getElementById('customAlertModal').style.display = 'none';
+
+                      if (result && result.success) {
+                          shareLat = result.lat;
+                          shareLng = result.lng;
+                      } else {
+                          customAlert(`📍 解析エラー\n理由: ${result.error}\n展開後: ${result.expandedUrl || "なし"}`);
+                          return; 
+                      }
+                  } catch(e) {
+                      document.getElementById('customAlertModal').style.display = 'none';
+                      customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
+                      return;
+                  }
+              }
+          }
+
+          // 座標が見つかったらピンを刺して自動判定！
+          if (shareLat && shareLng) {
+              const sharedPos = new google.maps.LatLng(shareLat, shareLng);
+              map.setCenter(sharedPos); map.setZoom(18);
+              
+              new google.maps.Marker({
+                  position: sharedPos, map: map,
+                  icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+                  zIndex: 9999, animation: google.maps.Animation.DROP
+              });
+
+              // 🚀 Googleマップの機能で「図形（圃場）の内側か」を計算！
+              let foundHojoId = null;
+              if (google.maps.geometry && google.maps.geometry.poly) {
+                  for (let id in loadedPolygons) {
+                      const p = loadedPolygons[id];
+                      if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
+                          foundHojoId = id; break;
+                      }
+                  }
+              }
+
+              if (foundHojoId) {
+                  customAlert("📍 既存の圃場が見つかりました！");
+                  // 1秒後に詳細画面（作業記録モーダル）を自動で開く
+                  setTimeout(() => { focusAndOpen(foundHojoId); }, 1000);
+              } else {
+                  if (await customConfirm("📍 ここには圃場登録がありません。\n管理者画面を開いて新しく登録しますか？")) {
+                      // 「はい」ならAdminへパラメータを付けて飛ばす！
+                      window.location.href = `/admin.html?lat=${shareLat}&lng=${shareLng}&action=draw`;
+                  }
+              }
+          } else {
+              customAlert("📍 有効なURLが見つかりませんでした。");
+          }
+      };
 
       async function callGAS(action, params = {}) {
         params.action = action;
