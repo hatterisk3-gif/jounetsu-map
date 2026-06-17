@@ -56,43 +56,78 @@
         <div id="cadMap"></div>
         
         <div class="cad-panel">
-            <div style="display:flex; gap:10px; margin-bottom:10px;">
-              <div style="flex:1;">
-                <label style="font-size:12px; color:#aaa;">🧭 方角 <span onclick="cadAutoAngle()" style="cursor:pointer; color:#00BCD4; font-weight:bold; background:#333; padding:2px 4px; border-radius:4px; font-size:10px; float:right;">📐長辺に合わす</span></label>
-                <input type="number" id="cadAngle" value="0" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
-              </div>
-              <div style="flex:1;">
-                <label style="font-size:12px; color:#aaa;">📏 畝幅(cm)</label>
-                <input type="number" id="cadWidth" value="150" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
-              </div>
+            <div style="display:flex; gap:0; margin-bottom:15px; border-bottom:2px solid #555;">
+              <div id="cadTab1" onclick="switchCadTab(1)" style="flex:1; text-align:center; padding:10px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0;">① 生成モード</div>
+              <div id="cadTab2" onclick="switchCadTab(2)" style="flex:1; text-align:center; padding:10px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0;">② 編集・保存</div>
             </div>
     
-            <div style="display:flex; gap:10px; margin-bottom:15px;">
-              <div style="flex:1;">
-                <label style="font-size:12px; color:#aaa;">🚧 枕地(外周) cm</label>
-                <input type="number" id="cadMakura" value="0" placeholder="例: 200" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+            <div id="cadMode1">
+              <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                 <label style="font-size:12px; color:#aaa;">🧭 方角（度数）</label>
+                 <div style="display:flex; gap:5px;">
+                   <span onclick="cadAutoAngle()" style="cursor:pointer; color:#00BCD4; font-weight:bold; background:#333; padding:2px 6px; border-radius:4px; font-size:11px;">📐 長辺に合わす</span>
+                   <span onclick="cadAlignMapHeading()" style="cursor:pointer; color:#fff; font-weight:bold; background:#9C27B0; padding:2px 6px; border-radius:4px; font-size:11px;">🔄 地図を回す</span>
+                 </div>
               </div>
-              <div style="flex:1;">
-                <label style="font-size:12px; color:#aaa;">✂️ 中道(分割) cm</label>
-                <input type="number" id="cadNakamichi" value="0" placeholder="例: 100" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+              <input type="number" id="cadAngle" value="0" style="width:100%; padding:8px; border-radius:4px; border:none; margin-bottom:10px; box-sizing:border-box;" oninput="updateCadPreviewCount()">
+              
+              <label style="font-size:12px; color:#aaa;">📏 畝幅(cm)</label>
+              <input type="number" id="cadWidth" value="150" style="width:100%; padding:8px; border-radius:4px; border:none; margin-bottom:15px; box-sizing:border-box;" oninput="updateCadPreviewCount()">
+              
+              <div style="background:#333; padding:10px; border-radius:6px; text-align:center; margin-bottom:15px; border:1px solid #555;">
+                 <div style="font-size:11px; color:#aaa;">この設定で引ける推定畝数</div>
+                 <div id="cadPreviewCount" style="font-size:22px; font-weight:bold; color:#FF9800;">-- 畝</div>
+              </div>
+    
+              <button onclick="cadGenerateLines()" style="width:100%; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:16px;">🚜 畝ポリゴンを生成する</button>
+            </div>
+    
+            <div id="cadMode2" style="display:none;">
+              <div style="font-size:11px; color:#FF9800; margin-bottom:10px; background:#333; padding:8px; border-radius:4px;">💡 生成された畝（面）をタップすると、個別に「作物名」「品種」「定植日」を登録できます。</div>
+              <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <div style="flex:1;">
+                  <label style="font-size:12px; color:#aaa;">🚧 枕地(外周) cm</label>
+                  <input type="number" id="cadMakura" value="0" placeholder="例: 200" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+                </div>
+                <div style="flex:1;">
+                  <label style="font-size:12px; color:#aaa;">✂️ 中道(分割) cm</label>
+                  <input type="number" id="cadNakamichi" value="0" placeholder="例: 100" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+                </div>
+              </div>
+              <button onclick="cadGenerateLines()" style="width:100%; background:#8BC34A; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; margin-bottom:15px;">✂️ 枕・中道を適用して再カット</button>
+              
+              <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:1px solid #555;">
+                 <label style="font-size:12px; color:#aaa;">📍 設備ピンを配置</label>
+                 <div style="display:flex; gap:10px; margin-top:5px;">
+                   <button onclick="cadSetPinMode('water_in')" style="flex:1; background:#03A9F4; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold;">💧 吸水</button>
+                   <button onclick="cadSetPinMode('water_out')" style="flex:1; background:#8D6E63; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold;">🕳️ 排水</button>
+                 </div>
+                 <div id="cadPinModeMsg" style="font-size:11px; color:#ccc; margin-top:5px; text-align:center;">ボタンを押して地図をタップ</div>
+              </div>
+    
+              <div style="display:flex; gap:10px;">
+                <button onclick="saveUneSim()" style="flex:2; background:#2196F3; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px;">💾 設計を保存</button>
+                <button onclick="cadClearLines()" style="flex:1; background:#f44336; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">🗑️ クリア</button>
               </div>
             </div>
-            
-            <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:1px solid #555;">
-               <label style="font-size:12px; color:#aaa;">📍 設備ピンを配置</label>
-               <div style="display:flex; gap:10px; margin-top:5px;">
-                 <button onclick="cadSetPinMode('water_in')" style="flex:1; background:#03A9F4; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold;">💧 吸水</button>
-                 <button onclick="cadSetPinMode('water_out')" style="flex:1; background:#8D6E63; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold;">🕳️ 排水</button>
-               </div>
-               <div id="cadPinModeMsg" style="font-size:11px; color:#ccc; margin-top:5px; text-align:center;">ボタンを押してから地図をタップ</div>
-            </div>
-            <div style="display:flex; gap:10px;">
-                <button onclick="cadGenerateLines()" style="flex:1; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:16px;">🚜 畝を面として生成</button>
-                <button onclick="cadClearLines()" style="width:80px; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">🗑️ 消去</button>
+          </div>
+          <div id="cadAttrModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:999999; justify-content:center; align-items:center;">
+            <div style="background:#fff; color:#333; padding:20px; border-radius:8px; width:80%; max-width:300px;">
+              <h3 style="margin-top:0; color:#4CAF50;">🌱 畝の属性登録</h3>
+              <input type="hidden" id="cadAttrIndex">
+              <label class="form-label" style="text-align:left;">作物名</label>
+              <select id="cadAttrCrop" class="form-input" style="background:#fff; color:#000; border:1px solid #ccc;"></select>
+              <label class="form-label" style="text-align:left;">品種</label>
+              <input type="text" id="cadAttrVariety" class="form-input" placeholder="例: 桃太郎" style="background:#fff; color:#000; border:1px solid #ccc;">
+              <label class="form-label" style="text-align:left;">定植日</label>
+              <input type="date" id="cadAttrDate" class="form-input" style="background:#fff; color:#000; border:1px solid #ccc;">
+              <div style="display:flex; gap:10px; margin-top:15px;">
+                 <button onclick="saveCadUneAttr()" style="flex:1; background:#4CAF50; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold;">登録する</button>
+                 <button onclick="document.getElementById('cadAttrModal').style.display='none'" style="flex:1; background:#ccc; color:#333; border:none; padding:10px; border-radius:4px; font-weight:bold;">キャンセル</button>
               </div>
             </div>
-          </div> <div id="customAlertModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
-           
+          </div>
+
       <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
         <div id="customAlertMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;"></div>
         
@@ -1907,38 +1942,109 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
           window.cadTargetId = null;
       };
-
-  window.cadPins = []; // 設備ピン用
+      window.cadPins = []; 
       window.cadPinMode = null;
+      window.cadUneAttributes = {}; // 🌟個別の畝の属性を保存する箱
+
+      // 🌟地図の回転制限を突破する初期化ハック🌟
+      const originalOpenCADMode = window.openCADMode;
+      window.openCADMode = (id) => {
+          if (!window.cadMap) {
+              window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
+                  center: {lat: 33.91, lng: 134.66}, zoom: 20,
+                  mapTypeId: 'satellite', tilt: 0, heading: 0,
+                  mapId: 'DEMO_MAP_ID', // ★これでWebGLが強制発動し、衛星でも回転可能になる！
+                  maxZoom: 28, gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true
+              });
+          }
+          originalOpenCADMode(id);
+          switchCadTab(1); // 開いた時は生成モード
+          
+          // ★保存データの復元処理
+          const p = loadedPolygons[id];
+          if (p.uneSimData) {
+              try {
+                  const saved = JSON.parse(p.uneSimData);
+                  if (saved.angle !== undefined) document.getElementById('cadAngle').value = saved.angle;
+                  if (saved.width !== undefined) document.getElementById('cadWidth').value = saved.width;
+                  if (saved.makura !== undefined) document.getElementById('cadMakura').value = saved.makura;
+                  if (saved.nakamichi !== undefined) document.getElementById('cadNakamichi').value = saved.nakamichi;
+                  if (saved.attributes) window.cadUneAttributes = saved.attributes;
+                  
+                  if (saved.pins) {
+                      saved.pins.forEach(pin => {
+                          const mk = new google.maps.Marker({
+                              position: {lat: pin.lat, lng: pin.lng}, map: window.cadMap,
+                              label: { text: pin.type === 'water_in' ? '💧' : '🕳️', fontSize: '24px', className: 'polygon-label' },
+                              icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true
+                          });
+                          mk.cadPinType = pin.type;
+                          window.cadPins.push(mk);
+                      });
+                  }
+                  cadGenerateLines();
+                  switchCadTab(2); // データがあれば編集モードに移動
+              } catch(e) {}
+          } else {
+              window.cadUneAttributes = {};
+          }
+      };
+
+      // 🌟タブ切り替え処理
+      window.switchCadTab = (tab) => {
+          document.getElementById('cadMode1').style.display = tab === 1 ? 'block' : 'none';
+          document.getElementById('cadMode2').style.display = tab === 2 ? 'block' : 'none';
+          document.getElementById('cadTab1').style.background = tab === 1 ? '#FF9800' : '#222';
+          document.getElementById('cadTab1').style.color = tab === 1 ? '#fff' : '#aaa';
+          document.getElementById('cadTab2').style.background = tab === 2 ? '#2196F3' : '#222';
+          document.getElementById('cadTab2').style.color = tab === 2 ? '#fff' : '#aaa';
+      };
+
+      // 🌟地図の回転を畑に合わせる機能！
+      window.cadAlignMapHeading = () => {
+          if (!window.cadMap) return;
+          const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
+          window.cadMap.setHeading(angle - 90); 
+          customAlert(`地図を圃場の角度(${angle}度)に合わせて回転させました！\n※元に戻すには2本指で回すか、左上のコンパスを押してください。`);
+      };
+
+      // 🌟生成前の畝数シミュレーション
+      window.updateCadPreviewCount = () => {
+          if (!window.cadTargetId) return;
+          const widthCm = parseFloat(document.getElementById('cadWidth').value);
+          const p = loadedPolygons[window.cadTargetId];
+          if (!widthCm || widthCm <= 0 || !p || !p.coords) { document.getElementById('cadPreviewCount').innerText = "-- 畝"; return; }
+          const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
+          let coords = p.coords.map(pt => [pt.lng, pt.lat]); coords.push(coords[0]); 
+          const bbox = turf.bbox(turf.polygon([coords]));
+          const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
+          const numLines = Math.ceil((diagDist / (widthCm / 100)) / 2) * 2; 
+          document.getElementById('cadPreviewCount').innerText = `約 ${numLines} 畝`;
+      };
 
       window.cadClearLines = () => {
           window.cadUnePolygons.forEach(pl => pl.setMap(null));
           window.cadUnePolygons = [];
+          // ピンも消す場合は以下を有効化
+          // window.cadPins.forEach(mk => mk.setMap(null)); window.cadPins = [];
       };
 
-      // 🌟設備ピンの配置ロジック
       window.cadSetPinMode = (type) => {
           window.cadPinMode = type;
           const name = type === 'water_in' ? '💧 吸水ピン' : '🕳️ 排水ピン';
-          const msgEl = document.getElementById('cadPinModeMsg');
-          msgEl.innerText = `【${name}】を配置する場所をタップ！`;
-          msgEl.style.color = "#FF9800";
+          document.getElementById('cadPinModeMsg').innerText = `【${name}】を配置する場所をタップ！`;
+          document.getElementById('cadPinModeMsg').style.color = "#FF9800";
 
           if (!window.cadMapClickListener && typeof window.cadMap !== 'undefined') {
               window.cadMapClickListener = window.cadMap.addListener('click', (e) => {
                   if (document.getElementById('cadOverlay').style.display !== 'flex' || !window.cadPinMode) return;
                   const iconStr = window.cadPinMode === 'water_in' ? '💧' : '🕳️';
-                  const mk = new google.maps.Marker({
-                      position: e.latLng, map: window.cadMap,
-                      label: { text: iconStr, fontSize: '24px', className: 'polygon-label' },
-                      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
-                      zIndex: 5000, draggable: true // ドラッグで移動可能
-                  });
+                  const mk = new google.maps.Marker({ position: e.latLng, map: window.cadMap, label: { text: iconStr, fontSize: '24px', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true });
                   mk.cadPinType = window.cadPinMode;
                   window.cadPins.push(mk);
                   window.cadPinMode = null;
-                  msgEl.innerText = `配置完了！（ドラッグで微調整可能）`;
-                  msgEl.style.color = "#4CAF50";
+                  document.getElementById('cadPinModeMsg').innerText = `配置完了！（ドラッグで微調整可能）`;
+                  document.getElementById('cadPinModeMsg').style.color = "#4CAF50";
               });
           }
       };
@@ -1958,10 +2064,39 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
           }
           document.getElementById('cadAngle').value = bestAngle;
-          customAlert(`📐 畑の一番長い辺の角度【${bestAngle}度】にセットしました！`);
+          updateCadPreviewCount();
       };
 
-      // 🚜 畝（面）の生成 ＋ 枕地 ＋ 中道での分割！
+      // 🌟個別属性のモーダルを開く
+      window.openCadUneAttrModal = (index) => {
+          document.getElementById('cadAttrIndex').value = index;
+          const attr = window.cadUneAttributes[index] || { crop: '', variety: '', date: '' };
+          
+          let cropsOpts = '<option value="">未設定</option>' + (pdlCrops||[]).map(c => `<option value="${c.name}" ${c.name === attr.crop ? 'selected' : ''}>${c.name}</option>`).join('');
+          document.getElementById('cadAttrCrop').innerHTML = cropsOpts;
+          document.getElementById('cadAttrVariety').value = attr.variety || '';
+          document.getElementById('cadAttrDate').value = attr.date || '';
+          
+          document.getElementById('cadAttrModal').style.display = 'flex';
+      };
+
+      // 🌟属性を保存して色を変える
+      window.saveCadUneAttr = () => {
+          const idx = document.getElementById('cadAttrIndex').value;
+          const crop = document.getElementById('cadAttrCrop').value;
+          const variety = document.getElementById('cadAttrVariety').value;
+          const date = document.getElementById('cadAttrDate').value;
+          
+          window.cadUneAttributes[idx] = { crop, variety, date };
+          
+          const poly = window.cadUnePolygons.find(p => p.uneIndex == idx);
+          if (poly) {
+              poly.setOptions({ fillColor: crop ? '#4CAF50' : '#FF9800', strokeColor: crop ? '#388E3C' : '#E65100' });
+          }
+          document.getElementById('cadAttrModal').style.display = 'none';
+      };
+
+      // 🚜 畝（面）の生成・分割・イベント登録
       window.cadGenerateLines = () => {
           if (!window.cadTargetId) return;
           const angle = parseFloat(document.getElementById('cadAngle').value);
@@ -1973,11 +2108,9 @@ document.getElementById('btnLoadFude').onclick = () => {
           cadClearLines();
 
           const p = loadedPolygons[window.cadTargetId];
-          let coords = p.coords.map(pt => [pt.lng, pt.lat]);
-          coords.push(coords[0]); 
+          let coords = p.coords.map(pt => [pt.lng, pt.lat]); coords.push(coords[0]); 
           const tPoly = turf.polygon([coords]);
           
-          // 【1】枕地（縮小された枠）の計算
           let clipPoly = tPoly;
           if (makuraCm > 0) {
               try {
@@ -1986,8 +2119,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                       clipPoly = insetPoly;
                       if (insetPoly.geometry.type === "Polygon") {
                           const mPath = insetPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
-                          const mLine = new google.maps.Polygon({ paths: mPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2, fillOpacity: 0, map: window.cadMap, zIndex: 99, clickable: false });
-                          window.cadUnePolygons.push(mLine);
+                          window.cadUnePolygons.push(new google.maps.Polygon({ paths: mPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2, fillOpacity: 0, map: window.cadMap, zIndex: 99, clickable: false }));
                       }
                   } else { customAlert("⚠️ 枕地が広すぎて畑が潰れるため、枕地なしで計算しました。"); }
               } catch(e) {}
@@ -1997,21 +2129,16 @@ document.getElementById('btnLoadFude').onclick = () => {
           const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
           const center = turf.center(clipPoly);
 
-          // 【2】中道（分割通路）の計算
           let nakamichiPoly = null;
           if (nakamichiCm > 0) {
               try {
-                  const crossAngle = angle + 90; 
-                  const p1 = turf.destination(center, diagDist, crossAngle, {units: 'meters'});
-                  const p2 = turf.destination(center, diagDist, crossAngle + 180, {units: 'meters'});
+                  const p1 = turf.destination(center, diagDist, angle + 90, {units: 'meters'});
+                  const p2 = turf.destination(center, diagDist, angle + 270, {units: 'meters'});
                   const centerLine = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
-                  
                   nakamichiPoly = turf.buffer(centerLine, (nakamichiCm / 100) / 1000 / 2, {units: 'kilometers'});
-                  
                   if (nakamichiPoly.geometry.type === "Polygon") {
                       const nPath = nakamichiPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
-                      const nLine = new google.maps.Polygon({ paths: nPath, fillColor: '#8BC34A', fillOpacity: 0.3, strokeOpacity: 0, map: window.cadMap, zIndex: 98, clickable: false });
-                      window.cadUnePolygons.push(nLine);
+                      window.cadUnePolygons.push(new google.maps.Polygon({ paths: nPath, fillColor: '#8BC34A', fillOpacity: 0.3, strokeOpacity: 0, map: window.cadMap, zIndex: 98, clickable: false }));
                   }
               } catch(e) {}
           }
@@ -2020,62 +2147,82 @@ document.getElementById('btnLoadFude').onclick = () => {
           const widthM = widthCm / 100;
           const numLines = Math.ceil((diagDist / widthM) / 2) + 1; 
 
-          // 畝（面）を作る関数
           const createUneRect = (offsetDist, directionAngle) => {
               const offsetCenter = turf.destination(center, offsetDist, directionAngle, {units: 'meters'});
+              const pt1 = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
+              const pt2 = turf.destination(offsetCenter, lineLen/2, angle + 180, {units: 'meters'});
               const w = widthM * 0.9; 
-              const pt1Center = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
-              const pt2Center = turf.destination(offsetCenter, lineLen/2, angle + 180, {units: 'meters'});
-              const p1 = turf.destination(pt1Center, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
-              const p2 = turf.destination(pt1Center, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
-              const p3 = turf.destination(pt2Center, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
-              const p4 = turf.destination(pt2Center, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
+              const p1 = turf.destination(pt1, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
+              const p2 = turf.destination(pt1, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
+              const p3 = turf.destination(pt2, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
+              const p4 = turf.destination(pt2, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
               return turf.polygon([[p1, p2, p3, p4, p1]]);
           };
 
-          const rects = [];
-          rects.push(createUneRect(0, angle + 90)); 
+          const rects = [createUneRect(0, angle + 90)];
           for (let i = 1; i <= numLines; i++) {
               rects.push(createUneRect(i * widthM, angle + 90)); 
               rects.push(createUneRect(i * widthM, angle - 90)); 
           }
 
-          // 【3】畑の枠で切り抜き、さらに中道で「差分（くり抜き）」を取る！
-          let totalUneCount = 0;
+          let polyIndex = 0; // 個別管理用のID
           rects.forEach(rect => {
               try {
-                  // まず枕地込みの畑枠でクリッピング
                   let intersected = turf.intersect(clipPoly, rect);
-                  
                   if (intersected) {
-                      // もし中道があれば、その形を使って畝の面を「くり抜く（分割する）」
-                      if (nakamichiPoly) {
-                          intersected = turf.difference(intersected, nakamichiPoly);
-                      }
+                      if (nakamichiPoly) intersected = turf.difference(intersected, nakamichiPoly) || intersected;
                       
-                      if (intersected) {
-                          const drawPoly = (geom) => {
-                              if (geom.type === 'Polygon') {
-                                  const path = geom.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
-                                  const gPoly = new google.maps.Polygon({ paths: path, fillColor: '#FF9800', fillOpacity: 0.6, strokeColor: '#E65100', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, zIndex: 10, clickable: true });
-                                  window.cadUnePolygons.push(gPoly);
-                                  totalUneCount++;
-                              } else if (geom.type === 'MultiPolygon') {
-                                  geom.coordinates.forEach(coordsArray => {
-                                      const path = coordsArray[0].map(c => ({lng: c[0], lat: c[1]}));
-                                      const gPoly = new google.maps.Polygon({ paths: path, fillColor: '#FF9800', fillOpacity: 0.6, strokeColor: '#E65100', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, zIndex: 10, clickable: true });
-                                      window.cadUnePolygons.push(gPoly);
-                                      totalUneCount++;
-                                  });
-                              }
-                          };
-                          drawPoly(intersected.geometry);
-                      }
+                      const drawPoly = (geom) => {
+                          if (geom.type === 'Polygon') {
+                              createAndBindGPoly(geom.coordinates[0], polyIndex++);
+                          } else if (geom.type === 'MultiPolygon') {
+                              geom.coordinates.forEach(c => createAndBindGPoly(c[0], polyIndex++));
+                          }
+                      };
+                      drawPoly(intersected.geometry);
                   }
               } catch(e) {}
           });
+          
+          if(document.getElementById('cadMode1').style.display === 'block') switchCadTab(2); // 生成したら自動で編集モードへ
+      };
 
-          customAlert(`🚜 ${totalUneCount} 枚の畝（面）を生成しました！`);
+      function createAndBindGPoly(coordsArray, idx) {
+          const path = coordsArray.map(c => ({lng: c[0], lat: c[1]}));
+          const attr = window.cadUneAttributes[idx];
+          const hasCrop = attr && attr.crop;
+          
+          const gPoly = new google.maps.Polygon({ 
+              paths: path, 
+              fillColor: hasCrop ? '#4CAF50' : '#FF9800', fillOpacity: 0.6, 
+              strokeColor: hasCrop ? '#388E3C' : '#E65100', strokeOpacity: 0.9, 
+              strokeWeight: 2, map: window.cadMap, zIndex: 10, clickable: true 
+          });
+          
+          gPoly.uneIndex = idx;
+          google.maps.event.addListener(gPoly, 'click', () => window.openCadUneAttrModal(gPoly.uneIndex));
+          window.cadUnePolygons.push(gPoly);
+      }
+
+      // 💾 保存処理（属性データも保存する）
+      window.saveUneSim = () => {
+          if (!window.cadTargetId) return;
+          const p = loadedPolygons[window.cadTargetId];
+          
+          let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
+
+          const simDataStr = JSON.stringify({
+              angle: document.getElementById('cadAngle').value,
+              width: document.getElementById('cadWidth').value,
+              makura: document.getElementById('cadMakura').value,
+              nakamichi: document.getElementById('cadNakamichi').value,
+              pins: pins,
+              attributes: window.cadUneAttributes // ★畝ごとの情報も保存！
+          });
+
+          p.uneSimData = simDataStr; 
+          callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
+          customAlert("💾 設計と畝の属性情報を保存しました！");
       };
       
       document.addEventListener('DOMContentLoaded', () => {
