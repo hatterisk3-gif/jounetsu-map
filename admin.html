@@ -43,18 +43,23 @@
     <div id="loginScreen"><div class="login-box"><h2>情熱MAP [管理]</h2><div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div><input type="text" id="loginId" class="login-input" placeholder="スタッフID"><input type="password" id="loginPw" class="login-input" placeholder="パスワード"><button class="login-btn" id="loginBtn" onclick="executeLogin()">管理者としてログイン</button></div></div>
     
     <div id="uneSimPanel" style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(30,30,30,0.9); color:white; padding:15px; border-radius:12px; z-index:5000; width: 90%; max-width: 350px; box-shadow:0 4px 15px rgba(0,0,0,0.5);">
-        <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:15px; color:#FF9800;">🚜 畝ポリゴン生成 (フェーズ1)</div>
+        <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:15px; color:#FF9800;">🚜 畝ポリゴン生成 (フェーズ2)</div>
         <div style="font-size:12px; color:#ccc; margin-bottom:10px; text-align:center;" id="uneSimTargetName">対象: 未選択</div>
         
         <div style="display:flex; gap:10px; margin-bottom:10px;">
           <div style="flex:1;">
-            <label style="font-size:12px; color:#aaa;">🧭 方角（度数 0~360）</label>
+            <label style="font-size:12px; color:#aaa;">🧭 方角 <span onclick="autoSetUneAngle()" style="cursor:pointer; color:#00BCD4; font-weight:bold; background:#333; padding:2px 4px; border-radius:4px; font-size:10px; float:right;">📐長辺に合わせる</span></label>
             <input type="number" id="uneAngle" value="0" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
           </div>
           <div style="flex:1;">
             <label style="font-size:12px; color:#aaa;">📏 畝幅（cm）</label>
             <input type="number" id="uneWidth" value="150" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
           </div>
+        </div>
+  
+        <div style="margin-bottom:15px;">
+          <label style="font-size:12px; color:#aaa;">🚧 枕地・外周スペース（cm）</label>
+          <input type="number" id="uneMakura" value="0" placeholder="例: 200 (周囲2mを空ける)" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
         </div>
         
         <div style="display:flex; gap:10px;">
@@ -1864,11 +1869,38 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.unePolylines = [];
       };
 
-      // Turf.jsを使った「畝の自動生成＆切り抜き」計算！
+     // 🌟NEW: 畑の「一番長い辺」を見つけて、その角度を自動セットする関数
+     window.autoSetUneAngle = () => {
+          if (!window.uneSimTargetId) return;
+          const p = loadedPolygons[window.uneSimTargetId];
+          const coords = p.polygon.getPath().getArray();
+          let maxLen = 0;
+          let bestAngle = 0;
+
+          // すべての辺の長さを測り、一番長い辺の角度を計算する
+          for(let i=0; i<coords.length; i++) {
+              let pt1 = turf.point([coords[i].lng(), coords[i].lat()]);
+              let pt2 = turf.point([coords[(i+1)%coords.length].lng(), coords[(i+1)%coords.length].lat()]);
+              let dist = turf.distance(pt1, pt2, {units: 'meters'});
+              
+              if (dist > maxLen) {
+                  maxLen = dist;
+                  let bearing = turf.bearing(pt1, pt2);
+                  if (bearing < 0) bearing += 360;
+                  if (bearing >= 180) bearing -= 180; // 畝は往復なので0〜180度に収める
+                  bestAngle = Math.round(bearing);
+              }
+          }
+          document.getElementById('uneAngle').value = bestAngle;
+          customAlert(`📐 畑の一番長い辺を検知し、角度を【${bestAngle}度】にセットしました！`);
+      };
+
+      // Turf.jsを使った「畝の自動生成＆切り抜き」計算！（フェーズ2：枕地対応）
       window.executeUneSim = () => {
           if (!window.uneSimTargetId) return;
           const angle = parseFloat(document.getElementById('uneAngle').value);
           const widthCm = parseFloat(document.getElementById('uneWidth').value);
+          const makuraCm = parseFloat(document.getElementById('uneMakura').value) || 0; // 枕地の幅
           
           if (isNaN(angle) || isNaN(widthCm) || widthCm <= 0) {
               customAlert("正しい数値を入力してください。");
@@ -1880,23 +1912,45 @@ document.getElementById('btnLoadFude').onclick = () => {
           const p = loadedPolygons[window.uneSimTargetId];
           const path = p.polygon.getPath().getArray();
           
-          // Turf.js用のポリゴンデータを作成
           let coords = path.map(pt => [pt.lng(), pt.lat()]);
-          coords.push(coords[0]); // 始点と終点を繋いで閉じる
+          coords.push(coords[0]); // 閉じる
           const tPoly = turf.polygon([coords]);
           
-          // 畑の中心と大きさを計算
-          const bbox = turf.bbox(tPoly);
-          const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
-          const center = turf.center(tPoly);
+          let clipPoly = tPoly; // 基準となるポリゴン（デフォルトは畑の枠）
 
-          // 線を引く長さ（畑の対角線より少し長めにする）
+          // 🌟フェーズ2: 枕地（外枠の縮小）の計算
+          if (makuraCm > 0) {
+              try {
+                  // 畑の枠から指定cm分だけ「内側に縮小」したポリゴンを作る
+                  const insetPoly = turf.buffer(tPoly, -(makuraCm / 100) / 1000, {units: 'kilometers'});
+                  if (insetPoly && insetPoly.geometry && insetPoly.geometry.coordinates.length > 0) {
+                      clipPoly = insetPoly; // 縮小できた場合、切り抜き基準を内側の枠に変更
+
+                      // 枕地の境界線を水色で可視化する！
+                      if (insetPoly.geometry.type === "Polygon") {
+                          const makuraPath = insetPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
+                          const mLine = new google.maps.Polygon({
+                              paths: makuraPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2,
+                              fillOpacity: 0, map: map, zIndex: 99, clickable: false
+                          });
+                          window.unePolylines.push(mLine);
+                      }
+                  } else {
+                      customAlert("⚠️ 枕地が広すぎて畑が潰れてしまうため、枕地なしで計算しました。");
+                  }
+              } catch(e) { console.warn("枕地の計算エラー", e); }
+          }
+          
+          // 基準枠（clipPoly）の中心と大きさを計算
+          const bbox = turf.bbox(clipPoly);
+          const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
+          const center = turf.center(clipPoly);
+
           const lineLen = diagDist + 20; 
           const lines = [];
           const widthM = widthCm / 100;
-          const numLines = Math.ceil(diagDist / widthM); // 引く本数を計算
+          const numLines = Math.ceil(diagDist / widthM); 
 
-          // 指定方向に線を引いて、はみ出た部分を切り落とす関数
           const processLine = (offsetDist, directionAngle) => {
               const offsetCenter = turf.destination(center, offsetDist, directionAngle, {units: 'meters'});
               const p1 = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
@@ -1904,46 +1958,40 @@ document.getElementById('btnLoadFude').onclick = () => {
               const line = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
               
               try {
-                  // 畑の境界線で直線を真っ二つにカット！
-                  const splitFc = turf.lineSplit(line, tPoly);
+                  // 基準枠（畑 または 枕地の内側）で直線をカット！
+                  const splitFc = turf.lineSplit(line, clipPoly);
                   if (splitFc && splitFc.features.length > 0) {
                       splitFc.features.forEach(f => {
-                          // カットされた線の「真ん中」が畑の中にあるか判定
                           const mid = turf.midpoint(f.geometry.coordinates[0], f.geometry.coordinates[f.geometry.coordinates.length - 1]);
-                          if (turf.booleanPointInPolygon(mid, tPoly)) lines.push(f);
+                          if (turf.booleanPointInPolygon(mid, clipPoly)) lines.push(f);
                       });
                   } else {
-                      // 境界に触れていない場合（完全に中か外か）
                       const mid = turf.midpoint(p1, p2);
-                      if (turf.booleanPointInPolygon(mid, tPoly)) lines.push(line);
+                      if (turf.booleanPointInPolygon(mid, clipPoly)) lines.push(line);
                   }
-              } catch(e) { console.warn("線のカットに失敗", e); }
+              } catch(e) {}
           };
 
-          // 畑の中心から両サイドに向かって、指定した畝幅ずつズラしながら線を引いていく
           processLine(0, angle + 90);
           for (let i = 1; i <= numLines; i++) {
               const offset = i * widthM;
-              processLine(offset, angle + 90); // 右側へ
-              processLine(offset, angle - 90); // 左側へ
+              processLine(offset, angle + 90); 
+              processLine(offset, angle - 90); 
           }
 
-          // 生き残った線（畑の中の線）をGoogleマップ上にオレンジ色で描画
+          // 畝線をオレンジ色で描画
           lines.forEach(f => {
               const linePath = f.geometry.coordinates.map(c => ({lng: c[0], lat: c[1]}));
               const pl = new google.maps.Polyline({
-                  path: linePath,
-                  strokeColor: '#FF9800',
-                  strokeOpacity: 0.9,
-                  strokeWeight: 4,
-                  map: map,
-                  zIndex: 100
+                  path: linePath, strokeColor: '#FF9800', strokeOpacity: 0.9, strokeWeight: 4, map: map, zIndex: 100
               });
               window.unePolylines.push(pl);
           });
 
-          customAlert(`🚜 畝幅 ${widthCm}cm で、${lines.length} 本の畝線を生成しました！\n角度や幅を変えて「生成する」を押すと再計算されます。`);
+          customAlert(`🚜 ${lines.length} 本の畝線を生成しました！`);
       };
+
+      
       document.addEventListener('DOMContentLoaded', () => {
           function tryInitMap() {
               if (typeof google === 'object' && typeof google.maps === 'object') {
