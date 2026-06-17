@@ -38,8 +38,7 @@
 /* 🌟農業CAD専用スタイル🌟 */
 #cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; }
    #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; z-index: 100; }
-   #cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; }
-   #cadMap { position: absolute; top: 50%; left: 50%; width: 200vmax; height: 200vmax; transform: translate(-50%, -50%) rotate(0deg); transform-origin: center center; transition: transform 0.5s ease-in-out; }
+   #cadMap { flex: 1; width: 100%; background: #000; position: relative; }
    .cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; }
 
    </style>
@@ -50,74 +49,73 @@
     <div id="loginScreen"><div class="login-box"><h2>情熱MAP [管理]</h2><div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div><input type="text" id="loginId" class="login-input" placeholder="スタッフID"><input type="password" id="loginPw" class="login-input" placeholder="パスワード"><button class="login-btn" id="loginBtn" onclick="executeLogin()">管理者としてログイン</button></div></div>
     
     <div id="cadOverlay">
-      <div id="cadHeader">
-        <div style="font-weight:bold; font-size:16px;">🚜 農業CAD <span id="cadTargetName" style="font-size:12px; color:#aaa; margin-left:10px;"></span></div>
-        <button onclick="closeCADMode()" style="background:#f44336; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
-      </div>
-      
-      <div id="cadMapWrapper">
+        <div id="cadHeader">
+          <div style="font-weight:bold; font-size:16px;">🚜 農業CAD <span id="cadTargetName" style="font-size:12px; color:#aaa; margin-left:10px;"></span></div>
+          <button onclick="closeCADMode()" style="background:#f44336; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
+        </div>
+        
         <div id="cadMap"></div>
-      </div>
-      
-      <div class="cad-panel" style="padding: 8px 12px; max-height: 45vh; overflow-y: auto; padding-bottom: calc(15px + env(safe-area-inset-bottom));">
-        <div style="display:flex; gap:0; margin-bottom:8px; border-bottom:2px solid #555;">
-          <div id="cadTab1" onclick="switchCadTab(1)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0; font-size:12px;">① 生成モード</div>
-          <div id="cadTab2" onclick="switchCadTab(2)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:12px;">② 編集・保存</div>
-        </div>
-
-        <div id="cadMode1">
-          <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
-            <div style="flex:1;">
-              <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🧭 方角(度)</label>
-              <input type="number" id="cadAngle" value="0" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;" oninput="updateCadPreviewCount()">
-            </div>
-            <div style="flex:1;">
-              <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">📏 畝幅(cm)</label>
-              <input type="number" id="cadWidth" value="150" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;" oninput="updateCadPreviewCount()">
-            </div>
+        
+        <div class="cad-panel" style="padding: 8px 12px; max-height: 45vh; overflow-y: auto; padding-bottom: calc(15px + env(safe-area-inset-bottom));">
+          <div style="display:flex; gap:0; margin-bottom:8px; border-bottom:2px solid #555;">
+            <div id="cadTab1" onclick="switchCadTab(1)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0; font-size:12px;">① 生成モード</div>
+            <div id="cadTab2" onclick="switchCadTab(2)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:12px;">② 編集・保存</div>
           </div>
-          
-          <div style="display:flex; gap:5px; margin-bottom:10px;">
-             <button onclick="cadAutoAngle()" style="flex:1; background:#333; color:#00BCD4; border:1px solid #00BCD4; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">📐 長辺に合わす</button>
-             <button onclick="cadAlignMapHeading()" style="flex:1; background:#9C27B0; color:#fff; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">🔄 地図を回す</button>
-          </div>
-          
-          <div style="display:flex; gap:10px; align-items:center;">
-              <div style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
-                 <span style="font-size:11px; color:#aaa;">推定:</span>
-                 <span id="cadPreviewCount" style="font-size:16px; font-weight:bold; color:#FF9800;">-- 畝</span>
+  
+          <div id="cadMode1">
+            <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
+              <div style="flex:1;">
+                <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🧭 方角(度)</label>
+                <input type="number" id="cadAngle" value="0" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;" oninput="updateCadPreviewCount()">
               </div>
-              <button onclick="cadGenerateLines()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜 ポリゴン生成</button>
+              <div style="flex:1;">
+                <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">📏 畝幅(cm)</label>
+                <input type="number" id="cadWidth" value="150" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;" oninput="updateCadPreviewCount()">
+              </div>
+            </div>
+            
+            <div style="display:flex; gap:5px; margin-bottom:10px;">
+               <button onclick="cadAutoAngle()" style="flex:1; background:#333; color:#00BCD4; border:1px solid #00BCD4; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">📐 長辺に合わす</button>
+               <button onclick="cadAlignMapHeading()" style="flex:1; background:#9C27B0; color:#fff; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">🔄 地図を回す</button>
+            </div>
+            
+            <div style="display:flex; gap:10px; align-items:center;">
+                <div style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
+                   <span style="font-size:11px; color:#aaa;">推定:</span>
+                   <span id="cadPreviewCount" style="font-size:16px; font-weight:bold; color:#FF9800;">-- 畝</span>
+                </div>
+                <button onclick="cadGenerateLines()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜 ポリゴン生成</button>
+            </div>
+          </div>
+  
+          <div id="cadMode2" style="display:none;">
+            <div style="font-size:11px; color:#FF9800; margin-bottom:10px; background:#333; padding:8px; border-radius:4px;">💡 生成された畝をタップすると、個別に「作物名」「品種」「定植日」を登録できます。</div>
+            <div style="display:flex; gap:8px; margin-bottom:10px; align-items:flex-end;">
+              <div style="flex:1;">
+                <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚧 枕地(cm)</label>
+                <input type="number" id="cadMakura" value="0" placeholder="例:200" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px;">
+              </div>
+              <div style="flex:1;">
+                <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">✂️ 中道(cm)</label>
+                <input type="number" id="cadNakamichi" value="0" placeholder="例:100" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px;">
+              </div>
+              <button onclick="cadGenerateLines()" style="flex:1; background:#8BC34A; color:white; border:none; border-radius:4px; font-weight:bold; font-size:11px; padding:7px;">✂️ 再カット</button>
+            </div>
+            
+            <div style="margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #555; display:flex; gap:5px; align-items:center;">
+               <label style="font-size:11px; color:#aaa; margin:0; white-space:nowrap;">📍 ピン配置</label>
+               <button onclick="cadSetPinMode('water_in')" style="flex:1; background:#03A9F4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">💧 吸水</button>
+               <button onclick="cadSetPinMode('water_out')" style="flex:1; background:#8D6E63; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🕳️ 排水</button>
+               <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; flex:1.2; text-align:center; line-height:1.1;">👆ボタン押下後<br>地図をタップ</div>
+            </div>
+  
+            <div style="display:flex; gap:10px;">
+              <button onclick="saveUneSim()" style="flex:2; background:#2196F3; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:14px;">💾 設計を保存</button>
+              <button onclick="cadClearLines()" style="flex:1; background:#f44336; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:12px;">🗑️ クリア</button>
+            </div>
           </div>
         </div>
-
-        <div id="cadMode2" style="display:none;">
-          <div style="display:flex; gap:8px; margin-bottom:10px; align-items:flex-end;">
-            <div style="flex:1;">
-              <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚧 枕地(cm)</label>
-              <input type="number" id="cadMakura" value="0" placeholder="例:200" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px;">
-            </div>
-            <div style="flex:1;">
-              <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">✂️ 中道(cm)</label>
-              <input type="number" id="cadNakamichi" value="0" placeholder="例:100" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px;">
-            </div>
-            <button onclick="cadGenerateLines()" style="flex:1; background:#8BC34A; color:white; border:none; border-radius:4px; font-weight:bold; font-size:11px; padding:7px;">✂️ 再カット</button>
-          </div>
-          
-          <div style="margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #555; display:flex; gap:5px; align-items:center;">
-             <label style="font-size:11px; color:#aaa; margin:0; white-space:nowrap;">📍 ピン配置</label>
-             <button onclick="cadSetPinMode('water_in')" style="flex:1; background:#03A9F4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">💧 吸水</button>
-             <button onclick="cadSetPinMode('water_out')" style="flex:1; background:#8D6E63; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🕳️ 排水</button>
-             <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; flex:1.2; text-align:center; line-height:1.1;">👆ボタン押下後<br>地図をタップ</div>
-          </div>
-
-          <div style="display:flex; gap:10px;">
-            <button onclick="saveUneSim()" style="flex:2; background:#2196F3; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:14px;">💾 設計を保存</button>
-            <button onclick="cadClearLines()" style="flex:1; background:#f44336; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:12px;">🗑️ クリア</button>
-          </div>
-        </div>
-      </div>
-      <div id="cadAttrModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:999999; justify-content:center; align-items:center;">
+      </div> <div id="cadAttrModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:999999; justify-content:center; align-items:center;">
         <div style="background:#fff; color:#333; padding:20px; border-radius:8px; width:80%; max-width:300px;">
           <h3 style="margin-top:0; color:#4CAF50;">🌱 畝の属性登録</h3>
           <input type="hidden" id="cadAttrIndex">
@@ -1929,14 +1927,13 @@ document.getElementById('btnLoadFude').onclick = () => {
           document.getElementById('cadTargetName').innerText = p.name;
           document.getElementById('cadOverlay').style.display = 'flex';
           
-          // 🌟CSS回転ハックを初期化（開くたびに真っ直ぐに戻す）🌟
-          const mapDiv = document.getElementById('cadMap');
-          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(0deg)`;
-
           if (!window.cadMap) {
               window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
                   center: {lat: 33.91, lng: 134.66}, zoom: 20,
                   mapTypeId: 'satellite', tilt: 0, heading: 0,
+                  mapId: 'DEMO_MAP_ID', // ★これでWebGLが強制発動し、2本指回転可能になる！
+                  headingInteractionEnabled: true, // 回転操作を許可
+                  tiltInteractionEnabled: true, // 3D傾き操作を許可
                   maxZoom: 28, gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true
               });
           }
@@ -1954,7 +1951,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           cadClearLines();
           switchCadTab(1);
 
-          // 保存データの復元処理
           if (p.uneSimData) {
               try {
                   const saved = JSON.parse(p.uneSimData);
@@ -1976,14 +1972,13 @@ document.getElementById('btnLoadFude').onclick = () => {
                       });
                   }
                   cadGenerateLines();
-                  // データがあれば、前回の角度に合わせて自動で回転！
-                  if (saved.angle !== undefined) window.cadAlignMapHeading();
                   switchCadTab(2); 
               } catch(e) {}
           } else {
               window.cadUneAttributes = {};
           }
       };
+
       window.closeCADMode = () => {
           document.getElementById('cadOverlay').style.display = 'none';
           cadClearLines();
@@ -2000,12 +1995,12 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (tab2) { tab2.style.background = tab === 2 ? '#2196F3' : '#222'; tab2.style.color = tab === 2 ? '#fff' : '#aaa'; }
       };
 
-  // 🌟どんなスマホでも確実に回転する最強のCSSキャンバスハック🌟
-  window.cadAlignMapHeading = () => {
+      // 🌟地図の回転を正確に長辺に合わせる🌟
+      window.cadAlignMapHeading = () => {
+          if (!window.cadMap) return;
           const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
-          const mapDiv = document.getElementById('cadMap');
-          // translate(-50%, -50%) を維持したまま、中心を軸にして綺麗に回す！
-          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${angle - 90}deg)`; 
+          // ★ -90 をやめて、直接角度を入れることでピッタリ長辺が画面に平行になる！
+          window.cadMap.setHeading(angle); 
       };
 
       window.updateCadPreviewCount = () => {
@@ -2030,8 +2025,8 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadSetPinMode = (type) => {
           window.cadPinMode = type;
           const name = type === 'water_in' ? '💧 吸水ピン' : '🕳️ 排水ピン';
-          document.getElementById('cadPinModeMsg').innerText = `【${name}】を配置する場所をタップ！`;
-          document.getElementById('cadPinModeMsg').style.color = "#FF9800";
+          const msgEl = document.getElementById('cadPinModeMsg');
+          if(msgEl) { msgEl.innerText = `【${name}】を配置する場所をタップ！`; msgEl.style.color = "#FF9800"; }
 
           if (!window.cadMapClickListener && typeof window.cadMap !== 'undefined') {
               window.cadMapClickListener = window.cadMap.addListener('click', (e) => {
@@ -2041,8 +2036,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   mk.cadPinType = window.cadPinMode;
                   window.cadPins.push(mk);
                   window.cadPinMode = null;
-                  document.getElementById('cadPinModeMsg').innerText = `配置完了！（ドラッグで微調整可能）`;
-                  document.getElementById('cadPinModeMsg').style.color = "#4CAF50";
+                  if(msgEl) { msgEl.innerText = `配置完了！（ドラッグで微調整可能）`; msgEl.style.color = "#4CAF50"; }
               });
           }
       };
@@ -2063,7 +2057,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           }
           document.getElementById('cadAngle').value = bestAngle;
           updateCadPreviewCount();
-          // ★邪魔なアラートは消しました！
       };
 
       window.openCadUneAttrModal = (index) => {
@@ -2095,7 +2088,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           const nakamichiCm = parseFloat(document.getElementById('cadNakamichi').value) || 0;
 
           if (isNaN(angle) || isNaN(widthCm) || widthCm <= 0) return;
-          window.cadUnePolygons.forEach(pl => pl.setMap(null)); window.cadUnePolygons = []; // 線だけ消去
+          window.cadUnePolygons.forEach(pl => pl.setMap(null)); window.cadUnePolygons = []; 
 
           const p = loadedPolygons[window.cadTargetId];
           let coords = p.coords.map(pt => [pt.lng, pt.lat]); coords.push(coords[0]); 
@@ -2175,7 +2168,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           });
           
           if(document.getElementById('cadMode1').style.display === 'block') switchCadTab(2);
-          // ★邪魔なアラートは消しました！
       };
 
       function createAndBindGPoly(coordsArray, idx) {
@@ -2212,7 +2204,8 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           p.uneSimData = simDataStr; 
           callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
-          customAlert("💾 設計と畝の属性情報を保存しました！");
+          // ★ここでだけは保存完了を伝えるために小さな標準アラートを使います
+          alert("💾 設計と畝の属性情報を保存しました！");
       };
       
       document.addEventListener('DOMContentLoaded', () => {
