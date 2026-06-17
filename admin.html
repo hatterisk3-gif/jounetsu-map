@@ -1918,37 +1918,36 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.uneSimPins = [];
       };
 
-      // 🌟設備ピンの配置モード切り替え
-      window.setUnePinMode = (type) => {
+    // 🌟設備ピンの配置モード切り替え
+    window.setUnePinMode = (type) => {
           window.unePinMode = type;
           const name = type === 'water_in' ? '💧 吸水ピン' : '🕳️ 排水ピン';
           const msgEl = document.getElementById('unePinModeMsg');
           msgEl.innerText = `【${name}】を配置する場所をタップ！`;
           msgEl.style.color = "#FF9800";
-      };
 
-      // 地図タップ時のピン配置処理
-      if (!window.uneSimMapClickListener) {
-          window.uneSimMapClickListener = map.addListener('click', (e) => {
-              if (document.getElementById('uneSimPanel').style.display !== 'block' || !window.unePinMode) return;
+          // 🌟修正：地図がロードされる前にエラーにならないよう、ボタンを押した時にリスナーを登録する！
+          if (!window.uneSimMapClickListener && typeof map !== 'undefined') {
+              window.uneSimMapClickListener = map.addListener('click', (e) => {
+                  if (document.getElementById('uneSimPanel').style.display !== 'block' || !window.unePinMode) return;
 
-              const iconStr = window.unePinMode === 'water_in' ? '💧' : '🕳️';
-              const mk = new google.maps.Marker({
-                  position: e.latLng, map: map,
-                  label: { text: iconStr, fontSize: '24px', className: 'polygon-label' },
-                  icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
-                  zIndex: 5000, draggable: true // ドラッグで微調整可能！
+                  const iconStr = window.unePinMode === 'water_in' ? '💧' : '🕳️';
+                  const mk = new google.maps.Marker({
+                      position: e.latLng, map: map,
+                      label: { text: iconStr, fontSize: '24px', className: 'polygon-label' },
+                      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+                      zIndex: 5000, draggable: true // ドラッグで微調整可能！
+                  });
+                  mk.unePinType = window.unePinMode;
+                  window.uneSimPins.push(mk);
+
+                  window.unePinMode = null;
+                  const msgEl = document.getElementById('unePinModeMsg');
+                  msgEl.innerText = `配置完了！（微調整はドラッグ。追加はボタン）`;
+                  msgEl.style.color = "#4CAF50";
               });
-              mk.unePinType = window.unePinMode;
-              window.uneSimPins.push(mk);
-
-              window.unePinMode = null;
-              const msgEl = document.getElementById('unePinModeMsg');
-              msgEl.innerText = `配置完了！（微調整はドラッグ。追加はボタン）`;
-              msgEl.style.color = "#4CAF50";
-          });
-      }
-
+          }
+      };
       // 長辺自動計算
       window.autoSetUneAngle = () => {
           if (!window.uneSimTargetId) return;
@@ -2283,32 +2282,28 @@ document.getElementById('btnLoadFude').onclick = () => {
                               document.getElementById('btnDrawMode').click(); 
                           }, 1200);
                       }
-                  } else {
+                    } else {
                       const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
                       customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。" + debugText);
                   }
               })();
           }
       }
-              const cachedData = localStorage.getItem('pMapAdminInitData');
-              if (cachedData) {
-                  try { 
-                      renderInitData(JSON.parse(cachedData)); 
-                      setTimeout(() => { executeLogin(true); }, 1500);
-                      
-                      // 🌟ここにあった全県先読みスタートの行を【削除】または【//でコメントアウト】しました！
-                      // if (typeof preloadAllFudeDataSlowly === 'function') preloadAllFudeDataSlowly();
-                  } catch(e) {
-                      executeLogin(true);
-                  }
-              } else {
-                  executeLogin(true);
-                  // 🌟ここにあった全県先読みスタートの行も【削除】または【//でコメントアウト】しました！
-                  // if (typeof preloadAllFudeDataSlowly === 'function') preloadAllFudeDataSlowly();
-              }
+      } // 🌟🌟ここが重要！URL解析のブロックを正しく閉じる！🌟🌟
+
+      const cachedData = localStorage.getItem('pMapAdminInitData');
+      if (cachedData) {
+          try { 
+              renderInitData(JSON.parse(cachedData)); 
+              setTimeout(() => { executeLogin(true); }, 1500);
+          } catch(e) {
+              executeLogin(true);
           }
+      } else {
+          executeLogin(true);
+      }
+      // 🌟🌟一番下にあった余分な } は削除しました🌟🌟
       });
-      
     </script>
    <script>
     if ('serviceWorker' in navigator) {
