@@ -55,59 +55,61 @@
         
         <div id="cadMap"></div>
         
-        <div class="cad-panel">
-            <div style="display:flex; gap:0; margin-bottom:15px; border-bottom:2px solid #555;">
-              <div id="cadTab1" onclick="switchCadTab(1)" style="flex:1; text-align:center; padding:10px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0;">① 生成モード</div>
-              <div id="cadTab2" onclick="switchCadTab(2)" style="flex:1; text-align:center; padding:10px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0;">② 編集・保存</div>
+        <div class="cad-panel" style="padding: 8px 12px; max-height: 40vh; overflow-y: auto;">
+            <div style="display:flex; gap:0; margin-bottom:8px; border-bottom:2px solid #555;">
+              <div id="cadTab1" onclick="switchCadTab(1)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0; font-size:12px;">① 生成モード</div>
+              <div id="cadTab2" onclick="switchCadTab(2)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:12px;">② 編集・保存</div>
             </div>
     
             <div id="cadMode1">
-              <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                 <label style="font-size:12px; color:#aaa;">🧭 方角（度数）</label>
-                 <div style="display:flex; gap:5px;">
-                   <span onclick="cadAutoAngle()" style="cursor:pointer; color:#00BCD4; font-weight:bold; background:#333; padding:2px 6px; border-radius:4px; font-size:11px;">📐 長辺に合わす</span>
-                   <span onclick="cadAlignMapHeading()" style="cursor:pointer; color:#fff; font-weight:bold; background:#9C27B0; padding:2px 6px; border-radius:4px; font-size:11px;">🔄 地図を回す</span>
-                 </div>
+              <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
+                <div style="flex:1;">
+                  <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🧭 方角(度)</label>
+                  <input type="number" id="cadAngle" value="0" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;" oninput="updateCadPreviewCount()">
+                </div>
+                <div style="flex:1;">
+                  <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">📏 畝幅(cm)</label>
+                  <input type="number" id="cadWidth" value="150" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;" oninput="updateCadPreviewCount()">
+                </div>
               </div>
-              <input type="number" id="cadAngle" value="0" style="width:100%; padding:8px; border-radius:4px; border:none; margin-bottom:10px; box-sizing:border-box;" oninput="updateCadPreviewCount()">
               
-              <label style="font-size:12px; color:#aaa;">📏 畝幅(cm)</label>
-              <input type="number" id="cadWidth" value="150" style="width:100%; padding:8px; border-radius:4px; border:none; margin-bottom:15px; box-sizing:border-box;" oninput="updateCadPreviewCount()">
-              
-              <div style="background:#333; padding:10px; border-radius:6px; text-align:center; margin-bottom:15px; border:1px solid #555;">
-                 <div style="font-size:11px; color:#aaa;">この設定で引ける推定畝数</div>
-                 <div id="cadPreviewCount" style="font-size:22px; font-weight:bold; color:#FF9800;">-- 畝</div>
+              <div style="display:flex; gap:5px; margin-bottom:10px;">
+                 <button onclick="cadAutoAngle()" style="flex:1; background:#333; color:#00BCD4; border:1px solid #00BCD4; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">📐 長辺に合わす</button>
+                 <button onclick="cadAlignMapHeading()" style="flex:1; background:#9C27B0; color:#fff; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">🔄 地図を回す</button>
               </div>
-    
-              <button onclick="cadGenerateLines()" style="width:100%; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:16px;">🚜 畝ポリゴンを生成する</button>
+              
+              <div style="display:flex; gap:10px; align-items:center;">
+                  <div style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
+                     <span style="font-size:11px; color:#aaa;">推定:</span>
+                     <span id="cadPreviewCount" style="font-size:16px; font-weight:bold; color:#FF9800;">-- 畝</span>
+                  </div>
+                  <button onclick="cadGenerateLines()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜 ポリゴン生成</button>
+              </div>
             </div>
     
             <div id="cadMode2" style="display:none;">
-              <div style="font-size:11px; color:#FF9800; margin-bottom:10px; background:#333; padding:8px; border-radius:4px;">💡 生成された畝（面）をタップすると、個別に「作物名」「品種」「定植日」を登録できます。</div>
-              <div style="display:flex; gap:10px; margin-bottom:10px;">
+              <div style="display:flex; gap:8px; margin-bottom:10px; align-items:flex-end;">
                 <div style="flex:1;">
-                  <label style="font-size:12px; color:#aaa;">🚧 枕地(外周) cm</label>
-                  <input type="number" id="cadMakura" value="0" placeholder="例: 200" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+                  <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚧 枕地(cm)</label>
+                  <input type="number" id="cadMakura" value="0" placeholder="例:200" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px;">
                 </div>
                 <div style="flex:1;">
-                  <label style="font-size:12px; color:#aaa;">✂️ 中道(分割) cm</label>
-                  <input type="number" id="cadNakamichi" value="0" placeholder="例: 100" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+                  <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">✂️ 中道(cm)</label>
+                  <input type="number" id="cadNakamichi" value="0" placeholder="例:100" style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px;">
                 </div>
+                <button onclick="cadGenerateLines()" style="flex:1; background:#8BC34A; color:white; border:none; border-radius:4px; font-weight:bold; font-size:11px; padding:7px;">✂️ 再カット</button>
               </div>
-              <button onclick="cadGenerateLines()" style="width:100%; background:#8BC34A; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; margin-bottom:15px;">✂️ 枕・中道を適用して再カット</button>
               
-              <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:1px solid #555;">
-                 <label style="font-size:12px; color:#aaa;">📍 設備ピンを配置</label>
-                 <div style="display:flex; gap:10px; margin-top:5px;">
-                   <button onclick="cadSetPinMode('water_in')" style="flex:1; background:#03A9F4; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold;">💧 吸水</button>
-                   <button onclick="cadSetPinMode('water_out')" style="flex:1; background:#8D6E63; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold;">🕳️ 排水</button>
-                 </div>
-                 <div id="cadPinModeMsg" style="font-size:11px; color:#ccc; margin-top:5px; text-align:center;">ボタンを押して地図をタップ</div>
+              <div style="margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #555; display:flex; gap:5px; align-items:center;">
+                 <label style="font-size:11px; color:#aaa; margin:0; white-space:nowrap;">📍 ピン配置</label>
+                 <button onclick="cadSetPinMode('water_in')" style="flex:1; background:#03A9F4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">💧 吸水</button>
+                 <button onclick="cadSetPinMode('water_out')" style="flex:1; background:#8D6E63; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🕳️ 排水</button>
+                 <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; flex:1.2; text-align:center; line-height:1.1;">👆ボタン押下後<br>地図をタップ</div>
               </div>
     
               <div style="display:flex; gap:10px;">
-                <button onclick="saveUneSim()" style="flex:2; background:#2196F3; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px;">💾 設計を保存</button>
-                <button onclick="cadClearLines()" style="flex:1; background:#f44336; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">🗑️ クリア</button>
+                <button onclick="saveUneSim()" style="flex:2; background:#2196F3; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:14px;">💾 設計を保存</button>
+                <button onclick="cadClearLines()" style="flex:1; background:#f44336; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:12px;">🗑️ クリア</button>
               </div>
             </div>
           </div>
@@ -233,7 +235,7 @@
     <div id="map"></div>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly"></script>
    
     <script>
       const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8/exec";
