@@ -43,29 +43,45 @@
     <div id="loginScreen"><div class="login-box"><h2>情熱MAP [管理]</h2><div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div><input type="text" id="loginId" class="login-input" placeholder="スタッフID"><input type="password" id="loginPw" class="login-input" placeholder="パスワード"><button class="login-btn" id="loginBtn" onclick="executeLogin()">管理者としてログイン</button></div></div>
     
     <div id="uneSimPanel" style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(30,30,30,0.9); color:white; padding:15px; border-radius:12px; z-index:5000; width: 90%; max-width: 350px; box-shadow:0 4px 15px rgba(0,0,0,0.5);">
-        <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:15px; color:#FF9800;">🚜 畝ポリゴン生成 (フェーズ2)</div>
+        <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:15px; color:#FF9800;">🚜 畝ポリゴン生成 (フェーズ2 & 3)</div>
         <div style="font-size:12px; color:#ccc; margin-bottom:10px; text-align:center;" id="uneSimTargetName">対象: 未選択</div>
         
         <div style="display:flex; gap:10px; margin-bottom:10px;">
           <div style="flex:1;">
-            <label style="font-size:12px; color:#aaa;">🧭 方角 <span onclick="autoSetUneAngle()" style="cursor:pointer; color:#00BCD4; font-weight:bold; background:#333; padding:2px 4px; border-radius:4px; font-size:10px; float:right;">📐長辺に合わせる</span></label>
+            <label style="font-size:12px; color:#aaa;">🧭 方角 <span onclick="autoSetUneAngle()" style="cursor:pointer; color:#00BCD4; font-weight:bold; background:#333; padding:2px 4px; border-radius:4px; font-size:10px; float:right;">📐長辺に合わす</span></label>
             <input type="number" id="uneAngle" value="0" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
           </div>
           <div style="flex:1;">
-            <label style="font-size:12px; color:#aaa;">📏 畝幅（cm）</label>
+            <label style="font-size:12px; color:#aaa;">📏 畝幅(cm)</label>
             <input type="number" id="uneWidth" value="150" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
           </div>
         </div>
   
-        <div style="margin-bottom:15px;">
-          <label style="font-size:12px; color:#aaa;">🚧 枕地・外周スペース（cm）</label>
-          <input type="number" id="uneMakura" value="0" placeholder="例: 200 (周囲2mを空ける)" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+        <div style="display:flex; gap:10px; margin-bottom:15px;">
+          <div style="flex:1;">
+            <label style="font-size:12px; color:#aaa;">🚧 枕地(外周) cm</label>
+            <input type="number" id="uneMakura" value="0" placeholder="例: 200" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:12px; color:#aaa;">✂️ 中道(分割) cm</label>
+            <input type="number" id="uneNakamichi" value="0" placeholder="例: 100" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+          </div>
         </div>
         
-        <div style="display:flex; gap:10px;">
-          <button onclick="executeUneSim()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">生成する</button>
-          <button onclick="clearUneLines()" style="flex:1; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">クリア</button>
-          <button onclick="closeUneSimPanel()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">閉じる</button>
+        <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:1px solid #555;">
+           <label style="font-size:12px; color:#aaa;">📍 設備ピンを配置</label>
+           <div style="display:flex; gap:10px; margin-top:5px;">
+             <button onclick="setUnePinMode('water_in')" style="flex:1; background:#03A9F4; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold;">💧 吸水ピン</button>
+             <button onclick="setUnePinMode('water_out')" style="flex:1; background:#8D6E63; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold;">🕳️ 排水ピン</button>
+           </div>
+           <div style="font-size:11px; color:#ccc; margin-top:5px; text-align:center;" id="unePinModeMsg">ボタンを押してから地図上をタップ！</div>
+        </div>
+  
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button onclick="executeUneSim()" style="flex:1; min-width:45%; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">🚜 畝を生成</button>
+          <button onclick="saveUneSim()" style="flex:1; min-width:45%; background:#2196F3; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">💾 設定を保存</button>
+          <button onclick="clearUneSimAll()" style="flex:1; min-width:45%; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">🗑️ 全てクリア</button>
+          <button onclick="closeUneSimPanel()" style="flex:1; min-width:45%; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">❌ 閉じる</button>
         </div>
       </div>
     <div id="customAlertModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
@@ -1831,120 +1847,213 @@ document.getElementById('btnLoadFude').onclick = () => {
               document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生しました: " + e.message);
           }
       };
-
-   // ==========================================
-      // 🚜 畝立シミュレーター計算ロジック（フェーズ1）
+// ==========================================
+      // 🚜 畝立シミュレーター計算ロジック（完全版）
       // ==========================================
       window.unePolylines = [];
+      window.uneSimPins = []; // 配置した設備ピンの保存用
       window.uneSimTargetId = null;
+      window.unePinMode = null;
 
-      // 指定された圃場(id)を対象にパネルを開く
+      // パネルを開く＆保存データの復元
       window.openUneSimPanel = (id) => {
-          infoWindow.close(); // いったん元の詳細モーダルを閉じる
+          infoWindow.close(); 
           window.uneSimTargetId = id;
           const p = loadedPolygons[id];
           
           document.getElementById('uneSimTargetName').innerText = `対象圃場: ${p.name}`;
           document.getElementById('uneSimPanel').style.display = 'block';
           
-          // 選択された圃場が画面の真ん中に来るようにズーム！
           const b = new google.maps.LatLngBounds(); 
           p.polygon.getPath().forEach(pt => b.extend(pt)); 
           map.fitBounds(b);
+
+          // 🌟保存された設定があれば自動で復元する！
+          if (p.uneSimData) {
+              try {
+                  const saved = JSON.parse(p.uneSimData);
+                  if (saved.angle !== undefined) document.getElementById('uneAngle').value = saved.angle;
+                  if (saved.width !== undefined) document.getElementById('uneWidth').value = saved.width;
+                  if (saved.makura !== undefined) document.getElementById('uneMakura').value = saved.makura;
+                  if (saved.nakamichi !== undefined) document.getElementById('uneNakamichi').value = saved.nakamichi;
+                  
+                  // ピンの復元
+                  if (saved.pins) {
+                      saved.pins.forEach(pin => {
+                          const mk = new google.maps.Marker({
+                              position: {lat: pin.lat, lng: pin.lng}, map: map,
+                              label: { text: pin.type === 'water_in' ? '💧' : '🕳️', fontSize: '24px', className: 'polygon-label' },
+                              icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true
+                          });
+                          mk.unePinType = pin.type;
+                          window.uneSimPins.push(mk);
+                      });
+                  }
+                  // 設定値をもとに自動で畝を引く
+                  executeUneSim();
+              } catch(e) {}
+          }
       };
 
-      // パネルを閉じる（閉じたら元の詳細モーダルに戻る）
+      // パネルを閉じる
       window.closeUneSimPanel = () => {
           document.getElementById('uneSimPanel').style.display = 'none';
-          clearUneLines(); 
+          clearUneSimAll(); 
           if (window.uneSimTargetId) {
-              openM(window.uneSimTargetId); // 親切設計：元の画面に戻す
+              openM(window.uneSimTargetId);
               window.uneSimTargetId = null;
           }
       };
 
-      // 描画した線を消す
-      window.clearUneLines = () => {
+      // 畝線だけを消す（再計算用）
+      window.clearUneLinesOnly = () => {
           window.unePolylines.forEach(pl => pl.setMap(null));
           window.unePolylines = [];
       };
 
-     // 🌟NEW: 畑の「一番長い辺」を見つけて、その角度を自動セットする関数
-     window.autoSetUneAngle = () => {
+      // ピンも含めて全部消す
+      window.clearUneSimAll = () => {
+          clearUneLinesOnly();
+          window.uneSimPins.forEach(mk => mk.setMap(null));
+          window.uneSimPins = [];
+      };
+
+      // 🌟設備ピンの配置モード切り替え
+      window.setUnePinMode = (type) => {
+          window.unePinMode = type;
+          const name = type === 'water_in' ? '💧 吸水ピン' : '🕳️ 排水ピン';
+          const msgEl = document.getElementById('unePinModeMsg');
+          msgEl.innerText = `【${name}】を配置する場所をタップ！`;
+          msgEl.style.color = "#FF9800";
+      };
+
+      // 地図タップ時のピン配置処理
+      if (!window.uneSimMapClickListener) {
+          window.uneSimMapClickListener = map.addListener('click', (e) => {
+              if (document.getElementById('uneSimPanel').style.display !== 'block' || !window.unePinMode) return;
+
+              const iconStr = window.unePinMode === 'water_in' ? '💧' : '🕳️';
+              const mk = new google.maps.Marker({
+                  position: e.latLng, map: map,
+                  label: { text: iconStr, fontSize: '24px', className: 'polygon-label' },
+                  icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+                  zIndex: 5000, draggable: true // ドラッグで微調整可能！
+              });
+              mk.unePinType = window.unePinMode;
+              window.uneSimPins.push(mk);
+
+              window.unePinMode = null;
+              const msgEl = document.getElementById('unePinModeMsg');
+              msgEl.innerText = `配置完了！（微調整はドラッグ。追加はボタン）`;
+              msgEl.style.color = "#4CAF50";
+          });
+      }
+
+      // 長辺自動計算
+      window.autoSetUneAngle = () => {
           if (!window.uneSimTargetId) return;
           const p = loadedPolygons[window.uneSimTargetId];
           const coords = p.polygon.getPath().getArray();
-          let maxLen = 0;
-          let bestAngle = 0;
-
-          // すべての辺の長さを測り、一番長い辺の角度を計算する
+          let maxLen = 0, bestAngle = 0;
           for(let i=0; i<coords.length; i++) {
               let pt1 = turf.point([coords[i].lng(), coords[i].lat()]);
               let pt2 = turf.point([coords[(i+1)%coords.length].lng(), coords[(i+1)%coords.length].lat()]);
               let dist = turf.distance(pt1, pt2, {units: 'meters'});
-              
               if (dist > maxLen) {
                   maxLen = dist;
                   let bearing = turf.bearing(pt1, pt2);
                   if (bearing < 0) bearing += 360;
-                  if (bearing >= 180) bearing -= 180; // 畝は往復なので0〜180度に収める
+                  if (bearing >= 180) bearing -= 180;
                   bestAngle = Math.round(bearing);
               }
           }
           document.getElementById('uneAngle').value = bestAngle;
-          customAlert(`📐 畑の一番長い辺を検知し、角度を【${bestAngle}度】にセットしました！`);
+          customAlert(`📐 畑の一番長い辺の角度【${bestAngle}度】にセットしました！`);
       };
 
-      // Turf.jsを使った「畝の自動生成＆切り抜き」計算！（フェーズ2：枕地対応）
+      // 🌟設定をGAS（スプレッドシート）に保存する機能！
+      window.saveUneSim = () => {
+          if (!window.uneSimTargetId) return;
+          const p = loadedPolygons[window.uneSimTargetId];
+          
+          let pins = window.uneSimPins.map(mk => {
+              return { type: mk.unePinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() };
+          });
+
+          const simData = {
+              angle: document.getElementById('uneAngle').value,
+              width: document.getElementById('uneWidth').value,
+              makura: document.getElementById('uneMakura').value,
+              nakamichi: document.getElementById('uneNakamichi').value,
+              pins: pins
+          };
+
+          const simDataStr = JSON.stringify(simData);
+          p.uneSimData = simDataStr; // フロントエンド側に一時保存
+          
+          // 既存のupdatePolygonを経由してデータを保存
+          callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
+          customAlert("💾 シミュレーションの設定と設備ピンの位置を保存しました！\n（※次回起動時にも復元させるには、GASの updatePolygon と getInitData に uneSimData の保存・読み込み処理を追加する必要があります）");
+      };
+
+      // 🚜畝の自動生成＆切り抜き（フェーズ2：枕地と中道による分割）
       window.executeUneSim = () => {
           if (!window.uneSimTargetId) return;
           const angle = parseFloat(document.getElementById('uneAngle').value);
           const widthCm = parseFloat(document.getElementById('uneWidth').value);
-          const makuraCm = parseFloat(document.getElementById('uneMakura').value) || 0; // 枕地の幅
+          const makuraCm = parseFloat(document.getElementById('uneMakura').value) || 0; 
+          const nakamichiCm = parseFloat(document.getElementById('uneNakamichi').value) || 0; 
           
-          if (isNaN(angle) || isNaN(widthCm) || widthCm <= 0) {
-              customAlert("正しい数値を入力してください。");
-              return;
-          }
+          if (isNaN(angle) || isNaN(widthCm) || widthCm <= 0) { customAlert("正しい数値を入力してください。"); return; }
 
-          clearUneLines(); // 前の線をリセット
+          clearUneLinesOnly(); // 前の畝線だけリセット（ピンは残す）
 
           const p = loadedPolygons[window.uneSimTargetId];
           const path = p.polygon.getPath().getArray();
           
           let coords = path.map(pt => [pt.lng(), pt.lat()]);
-          coords.push(coords[0]); // 閉じる
+          coords.push(coords[0]); 
           const tPoly = turf.polygon([coords]);
-          
-          let clipPoly = tPoly; // 基準となるポリゴン（デフォルトは畑の枠）
+          let clipPoly = tPoly; 
 
-          // 🌟フェーズ2: 枕地（外枠の縮小）の計算
+          // 【1】 枕地の計算（外枠の縮小）
           if (makuraCm > 0) {
               try {
-                  // 畑の枠から指定cm分だけ「内側に縮小」したポリゴンを作る
                   const insetPoly = turf.buffer(tPoly, -(makuraCm / 100) / 1000, {units: 'kilometers'});
                   if (insetPoly && insetPoly.geometry && insetPoly.geometry.coordinates.length > 0) {
-                      clipPoly = insetPoly; // 縮小できた場合、切り抜き基準を内側の枠に変更
-
-                      // 枕地の境界線を水色で可視化する！
+                      clipPoly = insetPoly;
                       if (insetPoly.geometry.type === "Polygon") {
                           const makuraPath = insetPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
-                          const mLine = new google.maps.Polygon({
-                              paths: makuraPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2,
-                              fillOpacity: 0, map: map, zIndex: 99, clickable: false
-                          });
+                          const mLine = new google.maps.Polygon({ paths: makuraPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2, fillOpacity: 0, map: map, zIndex: 99, clickable: false });
                           window.unePolylines.push(mLine);
                       }
-                  } else {
-                      customAlert("⚠️ 枕地が広すぎて畑が潰れてしまうため、枕地なしで計算しました。");
-                  }
-              } catch(e) { console.warn("枕地の計算エラー", e); }
+                  } else { customAlert("⚠️ 枕地が広すぎて畑が潰れてしまうため、枕地なしで計算しました。"); }
+              } catch(e) {}
           }
           
-          // 基準枠（clipPoly）の中心と大きさを計算
           const bbox = turf.bbox(clipPoly);
           const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
           const center = turf.center(clipPoly);
+
+          // 【2】 中道（分割用通路）の計算
+          let nakamichiPoly = null;
+          if (nakamichiCm > 0) {
+              try {
+                  const crossAngle = angle + 90; // 畝と直交する角度
+                  const p1 = turf.destination(center, diagDist, crossAngle, {units: 'meters'});
+                  const p2 = turf.destination(center, diagDist, crossAngle + 180, {units: 'meters'});
+                  const centerLine = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
+                  
+                  // 直線を中道の幅（半分ずつ）で太らせてポリゴンにする
+                  nakamichiPoly = turf.buffer(centerLine, (nakamichiCm / 100) / 1000 / 2, {units: 'kilometers'});
+                  
+                  if (nakamichiPoly.geometry.type === "Polygon") {
+                      const nPath = nakamichiPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
+                      const nLine = new google.maps.Polygon({ paths: nPath, fillColor: '#8BC34A', fillOpacity: 0.3, strokeOpacity: 0, map: map, zIndex: 98, clickable: false });
+                      window.unePolylines.push(nLine);
+                  }
+              } catch(e) {}
+          }
 
           const lineLen = diagDist + 20; 
           const lines = [];
@@ -1958,17 +2067,39 @@ document.getElementById('btnLoadFude').onclick = () => {
               const line = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
               
               try {
-                  // 基準枠（畑 または 枕地の内側）で直線をカット！
+                  let partsToKeep = [];
+                  
+                  // まず基準枠（畑か枕地）でカットする
                   const splitFc = turf.lineSplit(line, clipPoly);
                   if (splitFc && splitFc.features.length > 0) {
                       splitFc.features.forEach(f => {
                           const mid = turf.midpoint(f.geometry.coordinates[0], f.geometry.coordinates[f.geometry.coordinates.length - 1]);
-                          if (turf.booleanPointInPolygon(mid, clipPoly)) lines.push(f);
+                          if (turf.booleanPointInPolygon(mid, clipPoly)) partsToKeep.push(f);
                       });
                   } else {
                       const mid = turf.midpoint(p1, p2);
-                      if (turf.booleanPointInPolygon(mid, clipPoly)) lines.push(line);
+                      if (turf.booleanPointInPolygon(mid, clipPoly)) partsToKeep.push(line);
                   }
+
+                  // 中道がある場合、残った線をさらに「中道」でカットして外側だけを残す（分割！）
+                  if (nakamichiPoly) {
+                      let finalParts = [];
+                      partsToKeep.forEach(partLine => {
+                          const splitNaka = turf.lineSplit(partLine, nakamichiPoly);
+                          if (splitNaka && splitNaka.features.length > 0) {
+                              splitNaka.features.forEach(nf => {
+                                  const mid = turf.midpoint(nf.geometry.coordinates[0], nf.geometry.coordinates[nf.geometry.coordinates.length - 1]);
+                                  if (!turf.booleanPointInPolygon(mid, nakamichiPoly)) finalParts.push(nf); // 中道の中じゃなければ残す
+                              });
+                          } else {
+                              const mid = turf.midpoint(partLine.geometry.coordinates[0], partLine.geometry.coordinates[partLine.geometry.coordinates.length - 1]);
+                              if (!turf.booleanPointInPolygon(mid, nakamichiPoly)) finalParts.push(partLine);
+                          }
+                      });
+                      partsToKeep = finalParts;
+                  }
+
+                  partsToKeep.forEach(part => lines.push(part));
               } catch(e) {}
           };
 
@@ -1982,9 +2113,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           // 畝線をオレンジ色で描画
           lines.forEach(f => {
               const linePath = f.geometry.coordinates.map(c => ({lng: c[0], lat: c[1]}));
-              const pl = new google.maps.Polyline({
-                  path: linePath, strokeColor: '#FF9800', strokeOpacity: 0.9, strokeWeight: 4, map: map, zIndex: 100
-              });
+              const pl = new google.maps.Polyline({ path: linePath, strokeColor: '#FF9800', strokeOpacity: 0.9, strokeWeight: 4, map: map, zIndex: 100 });
               window.unePolylines.push(pl);
           });
 
