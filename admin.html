@@ -36,10 +36,33 @@
       #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
       .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+</head>
   </head>
   <body>
     <div id="loginScreen"><div class="login-box"><h2>情熱MAP [管理]</h2><div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div><input type="text" id="loginId" class="login-input" placeholder="スタッフID"><input type="password" id="loginPw" class="login-input" placeholder="パスワード"><button class="login-btn" id="loginBtn" onclick="executeLogin()">管理者としてログイン</button></div></div>
     
+    <div id="uneSimPanel" style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(30,30,30,0.9); color:white; padding:15px; border-radius:12px; z-index:5000; width: 90%; max-width: 350px; box-shadow:0 4px 15px rgba(0,0,0,0.5);">
+        <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:15px; color:#FF9800;">🚜 畝ポリゴン生成 (フェーズ1)</div>
+        <div style="font-size:12px; color:#ccc; margin-bottom:10px; text-align:center;" id="uneSimTargetName">対象: 未選択</div>
+        
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+          <div style="flex:1;">
+            <label style="font-size:12px; color:#aaa;">🧭 方角（度数 0~360）</label>
+            <input type="number" id="uneAngle" value="0" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:12px; color:#aaa;">📏 畝幅（cm）</label>
+            <input type="number" id="uneWidth" value="150" style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box;">
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:10px;">
+          <button onclick="executeUneSim()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">生成する</button>
+          <button onclick="clearUneLines()" style="flex:1; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">クリア</button>
+          <button onclick="closeUneSimPanel()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold;">閉じる</button>
+        </div>
+      </div>
     <div id="customAlertModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
       <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
         <div id="customAlertMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;"></div>
@@ -1423,7 +1446,7 @@ document.getElementById('btnLoadFude').onclick = () => {
         
         if(!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="showToukiInfo('${id}')" style="background:#2196F3;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">📋登記情報</button><button onclick="openAddTouki('${id}')" style="background:#4CAF50;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">➕登記登録</button></div><div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="startMerge('${id}')" style="background:#FF9800;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜統合</button><button onclick="execDuplicate('${id}')" style="background:#9C27B0;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">✂️複製</button><button onclick="openAdvancedSplit('${id}')" style="background:#E91E63;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">✂️分割</button></div>`;
         h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button><button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">${p.isMarker?'ｱｲｺﾝ':'色'}変更</button></div>`;
-        if(!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openRidgeSim('${id}')" style="flex:1;background:#e3f2fd;color:#1976d2;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #90caf9;white-space:nowrap;cursor:pointer;">📏 畝立てシミュ</button></div>`;
+        if(!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openRidgeSim('${id}')" style="flex:1;background:#e3f2fd;color:#1976d2;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #90caf9;white-space:nowrap;cursor:pointer;">📏 畝立てシミュ</button><button onclick="openUneSimPanel('${id}')" style="flex:1;background:#FF9800;color:white;padding:8px 0;font-size:11px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜 畝ポリゴン生成</button></div>`;
         h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">範囲変更</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
         infoWindow.setContent(h); infoWindow.setPosition(p.isMarker?p.marker.getPosition():p.marker.getPosition()); infoWindow.open(map);
       };
@@ -1804,6 +1827,123 @@ document.getElementById('btnLoadFude').onclick = () => {
           }
       };
 
+   // ==========================================
+      // 🚜 畝立シミュレーター計算ロジック（フェーズ1）
+      // ==========================================
+      window.unePolylines = [];
+      window.uneSimTargetId = null;
+
+      // 指定された圃場(id)を対象にパネルを開く
+      window.openUneSimPanel = (id) => {
+          infoWindow.close(); // いったん元の詳細モーダルを閉じる
+          window.uneSimTargetId = id;
+          const p = loadedPolygons[id];
+          
+          document.getElementById('uneSimTargetName').innerText = `対象圃場: ${p.name}`;
+          document.getElementById('uneSimPanel').style.display = 'block';
+          
+          // 選択された圃場が画面の真ん中に来るようにズーム！
+          const b = new google.maps.LatLngBounds(); 
+          p.polygon.getPath().forEach(pt => b.extend(pt)); 
+          map.fitBounds(b);
+      };
+
+      // パネルを閉じる（閉じたら元の詳細モーダルに戻る）
+      window.closeUneSimPanel = () => {
+          document.getElementById('uneSimPanel').style.display = 'none';
+          clearUneLines(); 
+          if (window.uneSimTargetId) {
+              openM(window.uneSimTargetId); // 親切設計：元の画面に戻す
+              window.uneSimTargetId = null;
+          }
+      };
+
+      // 描画した線を消す
+      window.clearUneLines = () => {
+          window.unePolylines.forEach(pl => pl.setMap(null));
+          window.unePolylines = [];
+      };
+
+      // Turf.jsを使った「畝の自動生成＆切り抜き」計算！
+      window.executeUneSim = () => {
+          if (!window.uneSimTargetId) return;
+          const angle = parseFloat(document.getElementById('uneAngle').value);
+          const widthCm = parseFloat(document.getElementById('uneWidth').value);
+          
+          if (isNaN(angle) || isNaN(widthCm) || widthCm <= 0) {
+              customAlert("正しい数値を入力してください。");
+              return;
+          }
+
+          clearUneLines(); // 前の線をリセット
+
+          const p = loadedPolygons[window.uneSimTargetId];
+          const path = p.polygon.getPath().getArray();
+          
+          // Turf.js用のポリゴンデータを作成
+          let coords = path.map(pt => [pt.lng(), pt.lat()]);
+          coords.push(coords[0]); // 始点と終点を繋いで閉じる
+          const tPoly = turf.polygon([coords]);
+          
+          // 畑の中心と大きさを計算
+          const bbox = turf.bbox(tPoly);
+          const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
+          const center = turf.center(tPoly);
+
+          // 線を引く長さ（畑の対角線より少し長めにする）
+          const lineLen = diagDist + 20; 
+          const lines = [];
+          const widthM = widthCm / 100;
+          const numLines = Math.ceil(diagDist / widthM); // 引く本数を計算
+
+          // 指定方向に線を引いて、はみ出た部分を切り落とす関数
+          const processLine = (offsetDist, directionAngle) => {
+              const offsetCenter = turf.destination(center, offsetDist, directionAngle, {units: 'meters'});
+              const p1 = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
+              const p2 = turf.destination(offsetCenter, lineLen/2, angle + 180, {units: 'meters'});
+              const line = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
+              
+              try {
+                  // 畑の境界線で直線を真っ二つにカット！
+                  const splitFc = turf.lineSplit(line, tPoly);
+                  if (splitFc && splitFc.features.length > 0) {
+                      splitFc.features.forEach(f => {
+                          // カットされた線の「真ん中」が畑の中にあるか判定
+                          const mid = turf.midpoint(f.geometry.coordinates[0], f.geometry.coordinates[f.geometry.coordinates.length - 1]);
+                          if (turf.booleanPointInPolygon(mid, tPoly)) lines.push(f);
+                      });
+                  } else {
+                      // 境界に触れていない場合（完全に中か外か）
+                      const mid = turf.midpoint(p1, p2);
+                      if (turf.booleanPointInPolygon(mid, tPoly)) lines.push(line);
+                  }
+              } catch(e) { console.warn("線のカットに失敗", e); }
+          };
+
+          // 畑の中心から両サイドに向かって、指定した畝幅ずつズラしながら線を引いていく
+          processLine(0, angle + 90);
+          for (let i = 1; i <= numLines; i++) {
+              const offset = i * widthM;
+              processLine(offset, angle + 90); // 右側へ
+              processLine(offset, angle - 90); // 左側へ
+          }
+
+          // 生き残った線（畑の中の線）をGoogleマップ上にオレンジ色で描画
+          lines.forEach(f => {
+              const linePath = f.geometry.coordinates.map(c => ({lng: c[0], lat: c[1]}));
+              const pl = new google.maps.Polyline({
+                  path: linePath,
+                  strokeColor: '#FF9800',
+                  strokeOpacity: 0.9,
+                  strokeWeight: 4,
+                  map: map,
+                  zIndex: 100
+              });
+              window.unePolylines.push(pl);
+          });
+
+          customAlert(`🚜 畝幅 ${widthCm}cm で、${lines.length} 本の畝線を生成しました！\n角度や幅を変えて「生成する」を押すと再計算されます。`);
+      };
       document.addEventListener('DOMContentLoaded', () => {
           function tryInitMap() {
               if (typeof google === 'object' && typeof google.maps === 'object') {
@@ -1991,6 +2131,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
           }
       });
+      
     </script>
    <script>
     if ('serviceWorker' in navigator) {
