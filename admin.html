@@ -86,13 +86,13 @@
                </div>
                <div id="cadPinModeMsg" style="font-size:11px; color:#ccc; margin-top:5px; text-align:center;">ボタンを押してから地図をタップ</div>
             </div>
-    
             <div style="display:flex; gap:10px;">
-              <button onclick="cadGenerateLines()" style="flex:1; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:16px;">🚜 畝を面として生成</button>
-              <button onclick="cadClearLines()" style="width:80px; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">🗑️ 消去</button>
+                <button onclick="cadGenerateLines()" style="flex:1; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:16px;">🚜 畝を面として生成</button>
+                <button onclick="cadClearLines()" style="width:80px; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">🗑️ 消去</button>
+              </div>
             </div>
-          </div>
-    <div id="customAlertModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+          </div> <div id="customAlertModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+           
       <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
         <div id="customAlertMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;"></div>
         
@@ -1908,7 +1908,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadTargetId = null;
       };
 
-      window.cadPins = []; // 設備ピン用
+  window.cadPins = []; // 設備ピン用
       window.cadPinMode = null;
 
       window.cadClearLines = () => {
