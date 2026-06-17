@@ -35,11 +35,11 @@
       .search-input { width: 160px; padding: 8px 12px; border-radius: 20px; border: 1px solid #888; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); color: #333; background: #fff; }
       #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
       .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
-   /* 🌟追加：農業CAD専用の全画面スタイル🌟 */
-   #cadOverlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #fff; z-index: 99999; display: none; flex-direction: column; }
-      #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; }
-      #cadMap { flex: 1; width: 100%; background: #000; }
-      .cad-panel { background: #222; color: #fff; padding: 15px; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; }
+  /* 🌟追加：農業CAD専用の全画面スタイル🌟 */
+  #cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; }
+   #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; }
+   #cadMap { flex: 1; width: 100%; background: #000; position: relative; }
+   .cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; }
    </style>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 </head>
@@ -55,7 +55,7 @@
         
         <div id="cadMap"></div>
         
-        <div class="cad-panel" style="padding: 8px 12px; max-height: 40vh; overflow-y: auto;">
+        <div class="cad-panel" style="padding: 8px 12px; max-height: 45vh; overflow-y: auto; padding-bottom: calc(15px + env(safe-area-inset-bottom));">
             <div style="display:flex; gap:0; margin-bottom:8px; border-bottom:2px solid #555;">
               <div id="cadTab1" onclick="switchCadTab(1)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0; font-size:12px;">① 生成モード</div>
               <div id="cadTab2" onclick="switchCadTab(2)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:12px;">② 編集・保存</div>
@@ -2002,14 +2002,13 @@ document.getElementById('btnLoadFude').onclick = () => {
           document.getElementById('cadTab2').style.color = tab === 2 ? '#fff' : '#aaa';
       };
 
-      // 🌟地図の回転を畑に合わせる機能！
-      window.cadAlignMapHeading = () => {
+  // 🌟地図の回転を畑に合わせる機能！
+  window.cadAlignMapHeading = () => {
           if (!window.cadMap) return;
           const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
           window.cadMap.setHeading(angle - 90); 
-          customAlert(`地図を圃場の角度(${angle}度)に合わせて回転させました！\n※元に戻すには2本指で回すか、左上のコンパスを押してください。`);
+          // customAlert(`地図を圃場の角度(${angle}度)に合わせて回転させました！...`); ←★削除！
       };
-
       // 🌟生成前の畝数シミュレーション
       window.updateCadPreviewCount = () => {
           if (!window.cadTargetId) return;
@@ -2067,6 +2066,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           }
           document.getElementById('cadAngle').value = bestAngle;
           updateCadPreviewCount();
+          // customAlert(`📐 畑の一番長い辺の角度...`); ←★削除！
       };
 
       // 🌟個別属性のモーダルを開く
@@ -2167,7 +2167,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               rects.push(createUneRect(i * widthM, angle - 90)); 
           }
 
-          let polyIndex = 0; // 個別管理用のID
+         // ... (中略) ...
+         let polyIndex = 0; // 個別管理用のID
           rects.forEach(rect => {
               try {
                   let intersected = turf.intersect(clipPoly, rect);
@@ -2186,7 +2187,9 @@ document.getElementById('btnLoadFude').onclick = () => {
               } catch(e) {}
           });
           
-          if(document.getElementById('cadMode1').style.display === 'block') switchCadTab(2); // 生成したら自動で編集モードへ
+          if(document.getElementById('cadMode1').style.display === 'block') switchCadTab(2);
+          
+          // customAlert(`🚜 ${polyIndex} 枚の畝（面）を生成しました！`); ←★削除！
       };
 
       function createAndBindGPoly(coordsArray, idx) {
