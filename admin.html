@@ -36,12 +36,16 @@
       #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
       .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
 /* 🌟農業CAD専用スタイル🌟 */
-   #cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; }
+#cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; }
    #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; z-index: 100; }
    #cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; }
-   #cadMap { position: absolute; top: 50%; left: 50%; width: 150vmax; height: 150vmax; transform: translate(-50%, -50%) rotate(0deg); transition: transform 0.3s ease; }
+   
+   /* 🌟 カクつきの元凶だった「transition（アニメーション）」を削除！指に一瞬で吸い付きます！ */
+   #cadMap { position: absolute; top: 50%; left: 50%; width: 150vmax; height: 150vmax; transform: translate(-50%, -50%) rotate(0deg); }
    .cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; }
-
+   
+   /* 🌟 文字が分裂するバグを修正！フチの太さを「em」にして文字サイズに連動させます */
+   #cadMap .polygon-label { text-shadow: -0.08em -0.08em 0 #000, 0.08em -0.08em 0 #000, -0.08em 0.08em 0 #000, 0.08em 0.08em 0 #000 !important; }
    </style>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 </head>
@@ -1919,12 +1923,12 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadCurrentRotation = 0; 
       window.cadCurrentScale = 1; 
 
-      // 🌟 新機能1：数字ラベルのサイズをズームに合わせて自動調整し、常に見やすくする！
+      // 🌟 数字を少し「小さめ」に調整しました！
       window.updateCadLabelScale = () => {
           if (!window.cadUneLabels) return;
-          // スケールが大きくなるほど文字サイズを小さくし、画面上での見た目を一定に保つ
-          let newSize = 14 / window.cadCurrentScale;
-          let fontSizeStr = Math.max(1, newSize) + 'px'; // 最低でも1pxは確保
+          // 基準サイズを 14 から 11 に落としています
+          let newSize = 11 / (window.cadCurrentScale || 1);
+          let fontSizeStr = Math.max(0.5, newSize) + 'px'; 
           window.cadUneLabels.forEach(marker => {
               let lbl = marker.getLabel();
               if (lbl) {
@@ -1934,7 +1938,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           });
       };
 
-      // 🌟 新機能2：Googleマップの挙動を乗っ取り、スワイプ感度を完璧にするハック
       if (!window.cadTouchAdded) {
           const wrapper = document.getElementById('cadMapWrapper');
           let initialPinchDist = null;
@@ -1942,7 +1945,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           let startScale = 1;
           let startRotation = 0;
           
-          // 1本指での移動用変数
           let lastTouchX = null;
           let lastTouchY = null;
           let isDragging = false; 
@@ -1974,7 +1976,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   const dy = e.touches[0].pageY - e.touches[1].pageY;
                   
                   const currentDist = Math.hypot(dx, dy);
-                  window.cadCurrentScale = Math.min(Math.max(1, startScale * (currentDist / initialPinchDist)), 20); 
+                  window.cadCurrentScale = Math.min(Math.max(1, startScale * (currentDist / initialPinchDist)), 30); 
                   
                   const currentAngle = Math.atan2(dy, dx);
                   let angleDiff = (currentAngle - initialPinchAngle) * (180 / Math.PI);
@@ -1987,7 +1989,6 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (displayAngle < 0) displayAngle += 360;
                   document.getElementById('cadAngle').value = displayAngle;
                   
-                  // ズーム中に数字のサイズを小さく更新する！
                   window.updateCadLabelScale();
 
               } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
@@ -1996,19 +1997,16 @@ document.getElementById('btnLoadFude').onclick = () => {
                   const dx = currentX - lastTouchX;
                   const dy = currentY - lastTouchY;
                   
-                  // 少しでも動いたらドラッグと判定
-                  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
-                      isDragging = true;
-                  }
+                  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isDragging = true;
                   
                   if (isDragging) {
                       e.preventDefault(); 
 
-                      // 🌟 ここがスワイプ感度の特効薬！拡大率で割り算して移動量を抑える
-                      let mapDx = dx / window.cadCurrentScale;
-                      let mapDy = dy / window.cadCurrentScale;
+                      // 🌟 指の反応を抑える（鈍くする）係数。0.6倍の重みを持たせています！
+                      const DAMPING = 0.6;
+                      let mapDx = (dx * DAMPING) / window.cadCurrentScale;
+                      let mapDy = (dy * DAMPING) / window.cadCurrentScale;
 
-                      // 🌟 さらに、キャンバスが回転している分、指の動きを逆回転させて地図に伝える
                       const theta = window.cadCurrentRotation * Math.PI / 180;
                       const cosT = Math.cos(-theta);
                       const sinT = Math.sin(-theta);
@@ -2017,7 +2015,19 @@ document.getElementById('btnLoadFude').onclick = () => {
                       const finalDy = mapDx * sinT + mapDy * cosT;
 
                       if (window.cadMap) {
-                          window.cadMap.panBy(-finalDx, -finalDy); // ピタッと指に吸い付くように移動！
+                          // 🌟 カクつきの元凶だった「panBy（アニメーション移動）」をやめ、
+                          // 座標を直接書き換えることで、指に超滑らかに吸い付くようにしました！
+                          const proj = window.cadMap.getProjection();
+                          if (proj) {
+                              const zoom = window.cadMap.getZoom();
+                              const scale = Math.pow(2, zoom);
+                              const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
+                              centerPt.x -= finalDx / scale;
+                              centerPt.y -= finalDy / scale;
+                              window.cadMap.setCenter(proj.fromPointToLatLng(centerPt));
+                          } else {
+                              window.cadMap.panBy(-finalDx, -finalDy);
+                          }
                       }
                       
                       lastTouchX = currentX;
@@ -2058,7 +2068,6 @@ document.getElementById('btnLoadFude').onclick = () => {
                   center: {lat: 33.91, lng: 134.66}, zoom: 20,
                   mapTypeId: 'satellite', tilt: 0, heading: 0,
                   mapId: 'DEMO_MAP_ID', 
-                  // 🌟 Google純正の過敏な操作を完全に切り、自前のスワイプだけを有効にする！
                   gestureHandling: 'none', 
                   disableDefaultUI: true, zoomControl: true
               });
@@ -2384,8 +2393,8 @@ document.getElementById('btnLoadFude').onclick = () => {
           path.forEach(pt => bounds.extend(pt));
           const center = bounds.getCenter();
 
-          // 🌟 ズームに応じて最適なフォントサイズで描画！
-          const initialFontSize = Math.max(1, 14 / (window.cadCurrentScale || 1)) + 'px';
+          // 🌟 14から11に変更
+          const initialFontSize = Math.max(0.5, 11 / (window.cadCurrentScale || 1)) + 'px';
 
           const labelMarker = new google.maps.Marker({
               position: center,
