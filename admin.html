@@ -1923,10 +1923,8 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadCurrentRotation = 0; 
       window.cadCurrentScale = 1; 
 
-      // 🌟 数字を少し「小さめ」に調整しました！
       window.updateCadLabelScale = () => {
           if (!window.cadUneLabels) return;
-          // 基準サイズを 14 から 11 に落としています
           let newSize = 11 / (window.cadCurrentScale || 1);
           let fontSizeStr = Math.max(0.5, newSize) + 'px'; 
           window.cadUneLabels.forEach(marker => {
@@ -1938,6 +1936,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           });
       };
 
+      // 🌟 究極進化：拡大と回転の分離 ＆ 縮小時のカクつき完全解消！
       if (!window.cadTouchAdded) {
           const wrapper = document.getElementById('cadMapWrapper');
           let initialPinchDist = null;
@@ -1948,6 +1947,9 @@ document.getElementById('btnLoadFude').onclick = () => {
           let lastTouchX = null;
           let lastTouchY = null;
           let isDragging = false; 
+
+          // 🌟 追加：現在どちらの操作をしているか記憶するロック機能
+          let pinchMode = null; // 'zoom'（拡大縮小） または 'rotate'（回転）
 
           wrapper.addEventListener('touchstart', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
@@ -1960,6 +1962,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   initialPinchAngle = Math.atan2(dy, dx);
                   startScale = window.cadCurrentScale || 1;
                   startRotation = window.cadCurrentRotation || 0;
+                  pinchMode = null; // タッチ開始時にロックを解除
               } else if (e.touches.length === 1) {
                   lastTouchX = e.touches[0].pageX;
                   lastTouchY = e.touches[0].pageY;
@@ -1976,20 +1979,51 @@ document.getElementById('btnLoadFude').onclick = () => {
                   const dy = e.touches[0].pageY - e.touches[1].pageY;
                   
                   const currentDist = Math.hypot(dx, dy);
-                  window.cadCurrentScale = Math.min(Math.max(1, startScale * (currentDist / initialPinchDist)), 30); 
-                  
                   const currentAngle = Math.atan2(dy, dx);
                   let angleDiff = (currentAngle - initialPinchAngle) * (180 / Math.PI);
-                  window.cadCurrentRotation = startRotation + angleDiff;
                   
+                  if (angleDiff > 180) angleDiff -= 360;
+                  if (angleDiff < -180) angleDiff += 360;
+
+                  // 🌟 ここがスゴイ！指の動きから「拡大か回転か」を瞬時に判定してロック！
+                  if (!pinchMode) {
+                      const distRatio = currentDist / initialPinchDist;
+                      const angleAbs = Math.abs(angleDiff);
+                      
+                      // 距離が5%以上変わったら「ズーム専用モード」にロック
+                      if (Math.abs(distRatio - 1) > 0.05) {
+                          pinchMode = 'zoom';
+                      } 
+                      // 角度が4度以上変わったら「回転専用モード」にロック
+                      else if (angleAbs > 4) {
+                          pinchMode = 'rotate';
+                      }
+                  }
+
+                  // 🌟 ロックされた操作「だけ」を実行する！
+                  if (pinchMode === 'zoom') {
+                      let newScale = startScale * (currentDist / initialPinchDist);
+                      
+                      // 🌟 縮小時のカクつき特効薬！限界(1倍)で指が空回りしないように基準をリセット
+                      if (newScale <= 1) {
+                          newScale = 1;
+                          initialPinchDist = currentDist; // 次に広げた瞬間に即座に反応させる
+                          startScale = 1;
+                      }
+                      window.cadCurrentScale = Math.min(newScale, 30);
+                      window.updateCadLabelScale();
+
+                  } else if (pinchMode === 'rotate') {
+                      window.cadCurrentRotation = startRotation + angleDiff;
+                  }
+
+                  // 画面に適用
                   const mapDiv = document.getElementById('cadMap');
                   if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
 
                   let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
                   if (displayAngle < 0) displayAngle += 360;
                   document.getElementById('cadAngle').value = displayAngle;
-                  
-                  window.updateCadLabelScale();
 
               } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
                   const currentX = e.touches[0].pageX;
@@ -2001,8 +2035,6 @@ document.getElementById('btnLoadFude').onclick = () => {
                   
                   if (isDragging) {
                       e.preventDefault(); 
-
-                      // 🌟 指の反応を抑える（鈍くする）係数。0.6倍の重みを持たせています！
                       const DAMPING = 0.6;
                       let mapDx = (dx * DAMPING) / window.cadCurrentScale;
                       let mapDy = (dy * DAMPING) / window.cadCurrentScale;
@@ -2015,8 +2047,6 @@ document.getElementById('btnLoadFude').onclick = () => {
                       const finalDy = mapDx * sinT + mapDy * cosT;
 
                       if (window.cadMap) {
-                          // 🌟 カクつきの元凶だった「panBy（アニメーション移動）」をやめ、
-                          // 座標を直接書き換えることで、指に超滑らかに吸い付くようにしました！
                           const proj = window.cadMap.getProjection();
                           if (proj) {
                               const zoom = window.cadMap.getZoom();
