@@ -1897,7 +1897,8 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadPins = []; 
       window.cadPinMode = null;
       window.cadUneAttributes = {}; 
-      window.cadCurrentRotation = 0; // 現在の回転角度を保存する変数
+      window.cadCurrentRotation = 0; 
+      window.cadUneLabels = []; // 🌟追加：畝の番号（数字）を表示する箱
 
       window.openCADMode = (id) => {
           infoWindow.close();
@@ -1915,7 +1916,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
                   center: {lat: 33.91, lng: 134.66}, zoom: 20,
                   mapTypeId: 'satellite', tilt: 0, heading: 0,
-                  maxZoom: 28, gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true
+                  mapId: 'DEMO_MAP_ID', 
+                  headingInteractionEnabled: true,
+                  tiltInteractionEnabled: true,
+                  maxZoom: 40, // 🌟限界突破：28から「40（無制限級）」へ引き上げ！
+                  gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true
               });
           }
 
@@ -1976,16 +1981,13 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (tab2) { tab2.style.background = tab === 2 ? '#2196F3' : '#222'; tab2.style.color = tab === 2 ? '#fff' : '#aaa'; }
       };
 
-      // 🌟地図の回転を正確に長辺に合わせる（計算式の修正版）🌟
       window.cadAlignMapHeading = () => {
           const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
-          // 長辺の角度に合わせて「逆回転」させることで、画面にピッタリ平行になります！
           window.cadCurrentRotation = -angle; 
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
       };
 
-      // 🌟新機能：手動での微調整回転（二本指の代わり）🌟
       window.cadRotateMap = (deg) => {
           window.cadCurrentRotation += deg;
           const mapDiv = document.getElementById('cadMap');
@@ -2009,6 +2011,11 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadUnePolygons = [];
           window.cadPins.forEach(mk => mk.setMap(null));
           window.cadPins = [];
+          // 🌟番号（数字）のラベルも一緒に消す
+          if (window.cadUneLabels) {
+              window.cadUneLabels.forEach(lbl => lbl.setMap(null));
+              window.cadUneLabels = [];
+          }
       };
 
       window.cadSetPinMode = (type) => {
@@ -2069,12 +2076,11 @@ document.getElementById('btnLoadFude').onclick = () => {
           document.getElementById('cadAttrModal').style.display = 'none';
       };
 
-      // 🌟 超・防弾仕様のポリゴン生成関数（絶対エラーで止まらない！）
+      // 🌟 超・防弾仕様のポリゴン生成関数
       window.cadGenerateLines = () => {
           try {
               if (!window.cadTargetId) return;
               
-              // 🌟 画面の入力欄が見つからなくても「nullエラー」にならない安全な取得方法
               const angleEl = document.getElementById('cadAngle');
               const widthEl = document.getElementById('cadWidth');
               const makuraEl = document.getElementById('cadMakura');
@@ -2090,9 +2096,13 @@ document.getElementById('btnLoadFude').onclick = () => {
                   return;
               }
 
-              // 前の畝を消去
               window.cadUnePolygons.forEach(pl => pl.setMap(null)); 
               window.cadUnePolygons = []; 
+              // 🌟前の番号ラベルも消す
+              if (window.cadUneLabels) {
+                  window.cadUneLabels.forEach(lbl => lbl.setMap(null));
+                  window.cadUneLabels = [];
+              }
 
               const p = loadedPolygons[window.cadTargetId];
               if (!p || !p.coords || p.coords.length < 3) {
@@ -2100,14 +2110,12 @@ document.getElementById('btnLoadFude').onclick = () => {
                   return;
               }
               
-              // どんな座標データでも安全に数値に変換する防御処理
               let coords = p.coords.map(pt => {
                   let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
                   let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
                   return [lng, lat];
               });
               
-              // 始点と終点を確実に繋いでエラーを防ぐ
               if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
                   coords.push([coords[0][0], coords[0][1]]);
               }
@@ -2125,7 +2133,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                               window.cadUnePolygons.push(new google.maps.Polygon({ paths: mPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2, fillOpacity: 0, map: window.cadMap, zIndex: 99, clickable: false }));
                           }
                       }
-                  } catch(e) { console.warn("枕地計算スキップ", e); }
+                  } catch(e) {}
               }
               
               const bbox = turf.bbox(clipPoly);
@@ -2144,7 +2152,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                           const nPath = nakamichiPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
                           window.cadUnePolygons.push(new google.maps.Polygon({ paths: nPath, fillColor: '#8BC34A', fillOpacity: 0.3, strokeOpacity: 0, map: window.cadMap, zIndex: 98, clickable: false }));
                       }
-                  } catch(e) { console.warn("中道計算スキップ", e); }
+                  } catch(e) {}
               }
 
               const lineLen = diagDist + 40; 
@@ -2199,8 +2207,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
 
           } catch (globalError) {
-              // 🌟 万が一全く別のエラーが起きても無言にならず、何が悪いか画面に出す！
-              alert("❌ 処理中にエラーが発生しました:\\n" + globalError.message);
+              alert("❌ 処理中にエラーが発生しました:\n" + globalError.message);
           }
       };
 
@@ -2219,9 +2226,32 @@ document.getElementById('btnLoadFude').onclick = () => {
           gPoly.uneIndex = idx;
           google.maps.event.addListener(gPoly, 'click', () => window.openCadUneAttrModal(gPoly.uneIndex));
           window.cadUnePolygons.push(gPoly);
+
+          // 🌟🌟 畝のド真ん中に「数字（1, 2, 3...）」のラベルピンを配置する！
+          const bounds = new google.maps.LatLngBounds();
+          path.forEach(pt => bounds.extend(pt));
+          const center = bounds.getCenter();
+
+          const labelMarker = new google.maps.Marker({
+              position: center,
+              map: window.cadMap,
+              label: {
+                  text: String(idx + 1), // 1から順番に振る
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  className: 'polygon-label' // 白フチをつけて見やすく！
+              },
+              icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, // アイコン自体は透明
+              zIndex: 11
+          });
+
+          // 数字をタップしても属性入力が開くようにする
+          google.maps.event.addListener(labelMarker, 'click', () => window.openCadUneAttrModal(idx));
+          if (!window.cadUneLabels) window.cadUneLabels = [];
+          window.cadUneLabels.push(labelMarker);
       }
 
-      // 🌟 こちらも同じく安全に値を保存する防弾仕様
       window.saveUneSim = () => {
           if (!window.cadTargetId) return;
           const p = loadedPolygons[window.cadTargetId];
