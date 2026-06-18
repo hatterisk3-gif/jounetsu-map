@@ -2070,104 +2070,141 @@ document.getElementById('btnLoadFude').onclick = () => {
       };
 
       window.cadGenerateLines = () => {
-          if (!window.cadTargetId) return;
-          const angle = parseFloat(document.getElementById('cadAngle').value);
-          const widthCm = parseFloat(document.getElementById('cadWidth').value);
-          const makuraCm = parseFloat(document.getElementById('cadMakura').value) || 0;
-          const nakamichiCm = parseFloat(document.getElementById('cadNakamichi').value) || 0;
-
-          if (isNaN(angle) || isNaN(widthCm) || widthCm <= 0) return;
-          window.cadUnePolygons.forEach(pl => pl.setMap(null)); window.cadUnePolygons = []; 
-
-          const p = loadedPolygons[window.cadTargetId];
-          let coords = p.coords.map(pt => [pt.lng, pt.lat]); coords.push(coords[0]); 
-          
-          // ★エラーの元凶だった「turf.rewind」を削除し、純正の処理に戻しました！
-          const tPoly = turf.polygon([coords]);
-          
-          let clipPoly = tPoly;
-          if (makuraCm > 0) {
-              try {
-                  const insetPoly = turf.buffer(tPoly, -(makuraCm / 100) / 1000, {units: 'kilometers'});
-                  if (insetPoly && insetPoly.geometry && insetPoly.geometry.coordinates.length > 0) {
-                      clipPoly = insetPoly;
-                      if (clipPoly.geometry.type === "Polygon") {
-                          const mPath = clipPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
-                          window.cadUnePolygons.push(new google.maps.Polygon({ paths: mPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2, fillOpacity: 0, map: window.cadMap, zIndex: 99, clickable: false }));
-                      }
-                  }
-              } catch(e) {}
-          }
-          
-          const bbox = turf.bbox(clipPoly);
-          const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
-          const center = turf.center(clipPoly);
-
-          let nakamichiPoly = null;
-          if (nakamichiCm > 0) {
-              try {
-                  const p1 = turf.destination(center, diagDist, angle + 90, {units: 'meters'});
-                  const p2 = turf.destination(center, diagDist, angle + 270, {units: 'meters'});
-                  const centerLine = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
-                  let nPoly = turf.buffer(centerLine, (nakamichiCm / 100) / 1000 / 2, {units: 'kilometers'});
-                  if (nPoly.geometry.type === "Polygon") {
-                      nakamichiPoly = nPoly;
-                      const nPath = nakamichiPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
-                      window.cadUnePolygons.push(new google.maps.Polygon({ paths: nPath, fillColor: '#8BC34A', fillOpacity: 0.3, strokeOpacity: 0, map: window.cadMap, zIndex: 98, clickable: false }));
-                  }
-              } catch(e) {}
-          }
-
-          const lineLen = diagDist + 40; 
-          const widthM = widthCm / 100;
-          const numLines = Math.ceil((diagDist / widthM) / 2) + 1; 
-
-          const createUneRect = (offsetDist, directionAngle) => {
-              const offsetCenter = turf.destination(center, offsetDist, directionAngle, {units: 'meters'});
-              const pt1 = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
-              const pt2 = turf.destination(offsetCenter, lineLen/2, angle + 180, {units: 'meters'});
-              const w = widthM * 0.9; 
-              const p1 = turf.destination(pt1, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
-              const p2 = turf.destination(pt1, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
-              const p3 = turf.destination(pt2, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
-              const p4 = turf.destination(pt2, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
+          try {
+              if (!window.cadTargetId) return;
               
-              return turf.polygon([[p1, p2, p3, p4, p1]]);
-          };
+              // 入力値を取得
+              const angleVal = document.getElementById('cadAngle').value;
+              const widthVal = document.getElementById('cadWidth').value;
+              const makuraVal = document.getElementById('cadMakura').value;
+              const nakamichiVal = document.getElementById('cadNakamichi').value;
 
-          const rects = [createUneRect(0, angle + 90)];
-          for (let i = 1; i <= numLines; i++) {
-              rects.push(createUneRect(i * widthM, angle + 90)); 
-              rects.push(createUneRect(i * widthM, angle - 90)); 
-          }
+              // 数値に変換（空欄の場合は0にする防御）
+              const angle = parseFloat(angleVal) || 0;
+              const widthCm = parseFloat(widthVal);
+              const makuraCm = parseFloat(makuraVal) || 0;
+              const nakamichiCm = parseFloat(nakamichiVal) || 0;
 
-          let polyIndex = 0; 
-          let successCount = 0; 
-          
-          rects.forEach(rect => {
-              try {
-                  let intersected = turf.intersect(clipPoly, rect);
-                  if (intersected) {
-                      if (nakamichiPoly) intersected = turf.difference(intersected, nakamichiPoly) || intersected;
-                      
-                      const drawPoly = (geom) => {
-                          if (geom.type === 'Polygon') {
-                              createAndBindGPoly(geom.coordinates[0], polyIndex++);
-                              successCount++;
-                          } else if (geom.type === 'MultiPolygon') {
-                              geom.coordinates.forEach(c => { createAndBindGPoly(c[0], polyIndex++); successCount++; });
+              if (isNaN(widthCm) || widthCm <= 0) {
+                  alert("⚠️ 畝幅を正しく入力してください！");
+                  return;
+              }
+
+              // 前の畝を消去
+              window.cadUnePolygons.forEach(pl => pl.setMap(null)); 
+              window.cadUnePolygons = []; 
+
+              const p = loadedPolygons[window.cadTargetId];
+              if (!p || !p.coords || p.coords.length < 3) {
+                  alert("⚠️ 圃場の座標データが正しくありません！");
+                  return;
+              }
+              
+              // ★ どんな座標データでも安全に数値に変換する防御処理
+              let coords = p.coords.map(pt => {
+                  let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
+                  let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
+                  return [lng, lat];
+              });
+              
+              // 始点と終点を確実に繋いでエラーを防ぐ
+              if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+                  coords.push([coords[0][0], coords[0][1]]);
+              }
+              
+              const tPoly = turf.polygon([coords]);
+              
+              // 枕地の計算
+              let clipPoly = tPoly;
+              if (makuraCm > 0) {
+                  try {
+                      const insetPoly = turf.buffer(tPoly, -(makuraCm / 100) / 1000, {units: 'kilometers'});
+                      if (insetPoly && insetPoly.geometry && insetPoly.geometry.coordinates.length > 0) {
+                          clipPoly = insetPoly;
+                          if (clipPoly.geometry.type === "Polygon") {
+                              const mPath = clipPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
+                              window.cadUnePolygons.push(new google.maps.Polygon({ paths: mPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2, fillOpacity: 0, map: window.cadMap, zIndex: 99, clickable: false }));
                           }
-                      };
-                      drawPoly(intersected.geometry);
-                  }
-              } catch(e) { console.warn("Intersect Error", e); }
-          });
-          
-          // ★万が一生成に失敗した場合も、エラーで止まらずにアラートを出すようにしました
-          if (successCount === 0) {
-              alert("⚠️ 畝が生成できませんでした。\n畝幅の設定などを確認してください。");
-          } else if(document.getElementById('cadMode1').style.display === 'block') {
-              switchCadTab(2);
+                      }
+                  } catch(e) { console.warn("枕地計算スキップ", e); }
+              }
+              
+              const bbox = turf.bbox(clipPoly);
+              const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
+              const center = turf.center(clipPoly);
+
+              // 中道の計算
+              let nakamichiPoly = null;
+              if (nakamichiCm > 0) {
+                  try {
+                      const p1 = turf.destination(center, diagDist, angle + 90, {units: 'meters'});
+                      const p2 = turf.destination(center, diagDist, angle + 270, {units: 'meters'});
+                      const centerLine = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
+                      let nPoly = turf.buffer(centerLine, (nakamichiCm / 100) / 1000 / 2, {units: 'kilometers'});
+                      if (nPoly.geometry.type === "Polygon") {
+                          nakamichiPoly = nPoly;
+                          const nPath = nakamichiPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
+                          window.cadUnePolygons.push(new google.maps.Polygon({ paths: nPath, fillColor: '#8BC34A', fillOpacity: 0.3, strokeOpacity: 0, map: window.cadMap, zIndex: 98, clickable: false }));
+                      }
+                  } catch(e) { console.warn("中道計算スキップ", e); }
+              }
+
+              const lineLen = diagDist + 40; 
+              const widthM = widthCm / 100;
+              const numLines = Math.ceil((diagDist / widthM) / 2) + 1; 
+
+              // 畝のベースとなる長方形を作る関数
+              const createUneRect = (offsetDist, directionAngle) => {
+                  const offsetCenter = turf.destination(center, offsetDist, directionAngle, {units: 'meters'});
+                  const pt1 = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
+                  const pt2 = turf.destination(offsetCenter, lineLen/2, angle + 180, {units: 'meters'});
+                  const w = widthM * 0.9; 
+                  const p1 = turf.destination(pt1, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                  const p2 = turf.destination(pt1, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                  const p3 = turf.destination(pt2, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                  const p4 = turf.destination(pt2, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                  return turf.polygon([[p1, p2, p3, p4, p1]]);
+              };
+
+              const rects = [createUneRect(0, angle + 90)];
+              for (let i = 1; i <= numLines; i++) {
+                  rects.push(createUneRect(i * widthM, angle + 90)); 
+                  rects.push(createUneRect(i * widthM, angle - 90)); 
+              }
+
+              let polyIndex = 0; 
+              let successCount = 0; 
+              
+              // 畑の枠と畝の長方形を交差させて切り取る
+              rects.forEach(rect => {
+                  try {
+                      let intersected = turf.intersect(clipPoly, rect);
+                      if (intersected) {
+                          if (nakamichiPoly) intersected = turf.difference(intersected, nakamichiPoly) || intersected;
+                          
+                          const drawPoly = (geom) => {
+                              if (geom.type === 'Polygon') {
+                                  createAndBindGPoly(geom.coordinates[0], polyIndex++);
+                                  successCount++;
+                              } else if (geom.type === 'MultiPolygon') {
+                                  geom.coordinates.forEach(c => { createAndBindGPoly(c[0], polyIndex++); successCount++; });
+                              }
+                          };
+                          drawPoly(intersected.geometry);
+                      }
+                  } catch(e) { console.warn("交差エラー", e); }
+              });
+              
+              // 結果の判定とアラート表示
+              if (successCount === 0) {
+                  alert("⚠️ 畝が生成できませんでした。\n圃場に対して畝幅が大きすぎるか、形が複雑な可能性があります。");
+              } else if(document.getElementById('cadMode1').style.display === 'block') {
+                  switchCadTab(2); // 成功したらタブを切り替え
+              }
+
+          } catch (globalError) {
+              // ★無言でフリーズするのを防ぎ、エラーの正体を画面に出す！
+              alert("❌ プログラムエラーが発生しました:\n" + globalError.message);
           }
       };
 
