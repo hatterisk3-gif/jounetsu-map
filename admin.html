@@ -1937,9 +1937,12 @@ document.getElementById('btnLoadFude').onclick = () => {
           });
       };
 
-      // 🌟 究極進化：拡大と回転の分離 ＆ 縮小時のカクつき完全解消！
-      if (!window.cadTouchAdded) {
+      // 🌟 タッチ操作の初期化関数
+      window.initCadTouchEvents = () => {
+          if (window.cadTouchAdded) return;
           const wrapper = document.getElementById('cadMapWrapper');
+          if (!wrapper) return; 
+
           let initialPinchDist = null;
           let initialPinchAngle = null;
           let startScale = 1;
@@ -1948,9 +1951,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           let lastTouchX = null;
           let lastTouchY = null;
           let isDragging = false; 
-
-          // 🌟 追加：現在どちらの操作をしているか記憶するロック機能
-          let pinchMode = null; // 'zoom'（拡大縮小） または 'rotate'（回転）
+          let pinchMode = null; 
 
           wrapper.addEventListener('touchstart', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
@@ -1963,7 +1964,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   initialPinchAngle = Math.atan2(dy, dx);
                   startScale = window.cadCurrentScale || 1;
                   startRotation = window.cadCurrentRotation || 0;
-                  pinchMode = null; // タッチ開始時にロックを解除
+                  pinchMode = null; 
               } else if (e.touches.length === 1) {
                   lastTouchX = e.touches[0].pageX;
                   lastTouchY = e.touches[0].pageY;
@@ -1986,39 +1987,31 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (angleDiff > 180) angleDiff -= 360;
                   if (angleDiff < -180) angleDiff += 360;
 
-                  // 🌟 ここがスゴイ！指の動きから「拡大か回転か」を瞬時に判定してロック！
                   if (!pinchMode) {
                       const distRatio = currentDist / initialPinchDist;
                       const angleAbs = Math.abs(angleDiff);
-                      
-                      // 距離が5%以上変わったら「ズーム専用モード」にロック
-                      if (Math.abs(distRatio - 1) > 0.05) {
-                          pinchMode = 'zoom';
-                      } 
-                      // 角度が4度以上変わったら「回転専用モード」にロック
-                      else if (angleAbs > 4) {
-                          pinchMode = 'rotate';
-                      }
+                      if (Math.abs(distRatio - 1) > 0.05) pinchMode = 'zoom';
+                      else if (angleAbs > 4) pinchMode = 'rotate';
                   }
 
-                  // 🌟 ロックされた操作「だけ」を実行する！
                   if (pinchMode === 'zoom') {
                       let newScale = startScale * (currentDist / initialPinchDist);
-                      
-                      // 🌟 縮小時のカクつき特効薬！限界(1倍)で指が空回りしないように基準をリセット
-                      if (newScale <= 1) {
+                      // 🌟 カクつき特効薬：基準値のスムーズな書き換え
+                      if (newScale < 1) {
                           newScale = 1;
-                          initialPinchDist = currentDist; // 次に広げた瞬間に即座に反応させる
                           startScale = 1;
+                          initialPinchDist = currentDist; 
+                      } else if (newScale > 30) {
+                          newScale = 30;
+                          startScale = 30;
+                          initialPinchDist = currentDist;
                       }
-                      window.cadCurrentScale = Math.min(newScale, 30);
+                      window.cadCurrentScale = newScale;
                       window.updateCadLabelScale();
-
                   } else if (pinchMode === 'rotate') {
                       window.cadCurrentRotation = startRotation + angleDiff;
                   }
 
-                  // 画面に適用
                   const mapDiv = document.getElementById('cadMap');
                   if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
 
@@ -2068,18 +2061,19 @@ document.getElementById('btnLoadFude').onclick = () => {
           }, {passive: false});
 
           wrapper.addEventListener('touchend', (e) => {
-              if (e.touches.length < 2) {
-                  initialPinchDist = null;
-                  initialPinchAngle = null;
+              if (e.touches.length < 2) { 
+                  initialPinchDist = null; 
+                  initialPinchAngle = null; 
+                  pinchMode = null; // 指を離したらロックを解除する
               }
-              if (e.touches.length === 0) {
-                  lastTouchX = null;
-                  lastTouchY = null;
-                  setTimeout(() => { isDragging = false; }, 100);
+              if (e.touches.length === 0) { 
+                  lastTouchX = null; 
+                  lastTouchY = null; 
+                  setTimeout(() => { isDragging = false; }, 100); 
               }
           });
           window.cadTouchAdded = true;
-      }
+      };
 
       window.openCADMode = (id) => {
           infoWindow.close();
@@ -2094,6 +2088,8 @@ document.getElementById('btnLoadFude').onclick = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(0deg) scale(1)`;
 
+          window.initCadTouchEvents();
+
           if (!window.cadMap) {
               window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
                   center: {lat: 33.91, lng: 134.66}, zoom: 20,
@@ -2107,7 +2103,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
           const path = p.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
           
-          // 🌟変更：地図を隠すために、圃場の枠内を「不透明のダークカラー」で塗りつぶす！
           window.cadTargetPolygon = new google.maps.Polygon({
               paths: path, fillColor: '#1a1a1a', fillOpacity: 0.9, strokeColor: '#8BC34A', strokeOpacity: 1.0, strokeWeight: 3, map: window.cadMap, clickable: false
           });
@@ -2210,7 +2205,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           updateCadPreviewCount();
       };
 
-      // 🌟変更：圃場の「実際の幅」を正確に測り、推奨の畝数を入力欄にセットする
+      // 🌟 推定畝数の計算を、より正確な「Turf」の距離計算にアップグレード！
       window.updateCadPreviewCount = () => {
           if (!window.cadTargetId) return;
           const widthCm = parseFloat(document.getElementById('cadWidth').value);
@@ -2218,30 +2213,27 @@ document.getElementById('btnLoadFude').onclick = () => {
           const p = loadedPolygons[window.cadTargetId];
           if (!widthCm || widthCm <= 0 || !p || !p.coords) return;
 
-          let center = { lat: 0, lng: 0 };
-          p.coords.forEach(pt => { center.lat += (typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)); center.lng += (typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng)); });
-          center.lat /= p.coords.length; center.lng /= p.coords.length;
+          let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
+          coords.push(coords[0]);
+          const tPoly = turf.polygon([coords]);
+          const centerPt = turf.center(tPoly);
           
-          const cosLat = Math.cos(center.lat * Math.PI / 180);
-          const LAT_TO_METER = 111320;
-          const theta = angle * Math.PI / 180;
-          
-          let minVal = Infinity, maxVal = -Infinity;
-          p.coords.forEach(pt => {
-              let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
-              let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
-              let dx = (lng - center.lng) * cosLat * LAT_TO_METER;
-              let dy = (lat - center.lat) * LAT_TO_METER;
-              let ry = dx * Math.sin(theta) + dy * Math.cos(theta);
-              if(ry < minVal) minVal = ry;
-              if(ry > maxVal) maxVal = ry;
+          let maxPosDist = 0, maxNegDist = 0;
+          tPoly.geometry.coordinates[0].forEach(coord => {
+              const pt = turf.point(coord);
+              const dist = turf.distance(centerPt, pt, {units: 'meters'});
+              const bearing = turf.bearing(centerPt, pt);
+              const angleDiff = (bearing - (angle + 90)) * Math.PI / 180;
+              const projDist = dist * Math.cos(angleDiff);
+              if (projDist > maxPosDist) maxPosDist = projDist;
+              if (-projDist > maxNegDist) maxNegDist = -projDist;
           });
           
-          const totalWidth = maxVal - minVal;
-          const numLines = Math.floor(totalWidth / (widthCm / 100)); // 推奨される畝数
+          const totalWidth = maxPosDist + maxNegDist;
+          const numLines = Math.floor(totalWidth / (widthCm / 100)); 
           
           const countEl = document.getElementById('cadUneCount');
-          if (countEl) countEl.value = numLines;
+          if (countEl) countEl.value = numLines > 0 ? numLines : 1;
       };
 
       window.cadClearLines = () => {
@@ -2292,19 +2284,18 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadUneAttributes[idx] = { crop, variety, date };
           const poly = window.cadUnePolygons.find(p => p.uneIndex == idx);
           if (poly) { 
-              // 🌟 設定されたら濃い緑色に変える
               poly.setOptions({ fillColor: crop ? '#388E3C' : '#8BC34A', strokeColor: crop ? '#1B5E20' : '#558B2F' }); 
           }
           document.getElementById('cadAttrModal').style.display = 'none';
       };
 
-      // 🌟 変更：畝数で等分し、ゴミを除去する最強の生成エンジン
+      // 🌟 1点に重なるバグを修正！Turfを使って「幅方向」への移動を正確に計算します
       window.cadGenerateLines = () => {
           try {
               if (!window.cadTargetId) return;
               
               const angleEl = document.getElementById('cadAngle');
-              const countEl = document.getElementById('cadUneCount'); // 幅ではなく「数」を使う！
+              const countEl = document.getElementById('cadUneCount'); 
               const makuraEl = document.getElementById('cadMakura');
               const nakamichiEl = document.getElementById('cadNakamichi');
 
@@ -2350,28 +2341,22 @@ document.getElementById('btnLoadFude').onclick = () => {
                   } catch(e) {}
               }
               
-              // 圃場の中心と、指定された角度での実際の幅を計算
-              let centerObj = { lat: 0, lng: 0 };
-              p.coords.forEach(pt => { centerObj.lat += (typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)); centerObj.lng += (typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng)); });
-              centerObj.lat /= p.coords.length; centerObj.lng /= p.coords.length;
+              // 🌟 バグ修正：圃場の幅と中心を正確に計算する
+              const centerPt = turf.center(clipPoly);
+              let maxPosDist = 0, maxNegDist = 0;
               
-              const cosLat = Math.cos(centerObj.lat * Math.PI / 180);
-              const LAT_TO_METER = 111320;
-              const theta = angle * Math.PI / 180;
-              
-              let minVal = Infinity, maxVal = -Infinity;
-              p.coords.forEach(pt => {
-                  let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
-                  let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
-                  let dx = (lng - centerObj.lng) * cosLat * LAT_TO_METER;
-                  let dy = (lat - centerObj.lat) * LAT_TO_METER;
-                  let ry = dx * Math.sin(theta) + dy * Math.cos(theta);
-                  if(ry < minVal) minVal = ry;
-                  if(ry > maxVal) maxVal = ry;
+              clipPoly.geometry.coordinates[0].forEach(coord => {
+                  const pt = turf.point(coord);
+                  const dist = turf.distance(centerPt, pt, {units: 'meters'});
+                  const bearing = turf.bearing(centerPt, pt);
+                  // 畝の並ぶ方向 (angle + 90度) への距離を測る
+                  const angleDiff = (bearing - (angle + 90)) * Math.PI / 180;
+                  const projDist = dist * Math.cos(angleDiff);
+                  if (projDist > maxPosDist) maxPosDist = projDist;
+                  if (-projDist > maxNegDist) maxNegDist = -projDist;
               });
               
-              // 🌟幅を畝数で等分し、すべての畝を全く同じ太さにする！
-              const totalWidth = maxVal - minVal;
+              const totalWidth = maxPosDist + maxNegDist;
               const actualWidthM = totalWidth / uneCount;
               
               const bbox = turf.bbox(clipPoly);
@@ -2380,9 +2365,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               let nakamichiPoly = null;
               if (nakamichiCm > 0) {
                   try {
-                      const centerTurf = turf.center(clipPoly);
-                      const p1 = turf.destination(centerTurf, diagDist, angle + 90, {units: 'meters'});
-                      const p2 = turf.destination(centerTurf, diagDist, angle + 270, {units: 'meters'});
+                      const p1 = turf.destination(centerPt, diagDist, angle + 90, {units: 'meters'});
+                      const p2 = turf.destination(centerPt, diagDist, angle + 270, {units: 'meters'});
                       const centerLine = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
                       let nPoly = turf.buffer(centerLine, (nakamichiCm / 100) / 1000 / 2, {units: 'kilometers'});
                       if (nPoly.geometry.type === "Polygon") {
@@ -2395,19 +2379,17 @@ document.getElementById('btnLoadFude').onclick = () => {
 
               const lineLen = diagDist + 40; 
               let rects = [];
-              const startOffset = minVal + actualWidthM / 2;
+              
+              // 🌟 バグ修正：端から順番に、正しい方向(angle+90 または angle-90)に配置していく
+              const startOffset = -maxNegDist + actualWidthM / 2;
 
               for (let i = 0; i < uneCount; i++) {
                   let offset = startOffset + i * actualWidthM;
-                  let offsetDx = offset * Math.sin(theta);
-                  let offsetDy = offset * Math.cos(theta);
+                  // 中心点から幅方向に移動させた「畝の中心点」を作る
+                  let offsetCenter = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle + 90 : angle - 90, {units: 'meters'});
                   
-                  let oLng = centerObj.lng + offsetDx / (cosLat * LAT_TO_METER);
-                  let oLat = centerObj.lat + offsetDy / LAT_TO_METER;
-                  let oPt = turf.point([oLng, oLat]);
-                  
-                  let pt1 = turf.destination(oPt, lineLen/2, angle, {units: 'meters'});
-                  let pt2 = turf.destination(oPt, lineLen/2, angle + 180, {units: 'meters'});
+                  let pt1 = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
+                  let pt2 = turf.destination(offsetCenter, lineLen/2, angle + 180, {units: 'meters'});
                   let w = actualWidthM * 0.9; 
                   let p1 = turf.destination(pt1, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
                   let p2 = turf.destination(pt1, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
@@ -2426,7 +2408,6 @@ document.getElementById('btnLoadFude').onclick = () => {
                           if (nakamichiPoly) intersected = turf.difference(intersected, nakamichiPoly) || intersected;
                           
                           const drawPoly = (geom) => {
-                              // 🌟魔法のフィルター：面積が1平方メートル未満の極細の「ゴミポリゴン」は描画しない！
                               if (turf.area(geom) < 1) return; 
 
                               if (geom.type === 'Polygon') {
@@ -2458,7 +2439,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           const attr = window.cadUneAttributes[idx];
           const hasCrop = attr && attr.crop;
           
-          // 🌟 変更：グリーンベースに変更（設定済みは濃い緑、未設定は明るい緑）
           const fillColor = hasCrop ? '#388E3C' : '#8BC34A';
           const strokeColor = hasCrop ? '#1B5E20' : '#558B2F';
           
