@@ -36,7 +36,7 @@
       #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
       .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
 /* 🌟農業CAD専用スタイル🌟 */
-#cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; }
+   #cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; }
    #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; z-index: 100; }
    #cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; }
    #cadMap { position: absolute; top: 50%; left: 50%; width: 150vmax; height: 150vmax; transform: translate(-50%, -50%) rotate(0deg); transition: transform 0.3s ease; }
@@ -136,15 +136,6 @@
           <button id="customAlertOk" style="width: 100%; background: #2196F3; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
         </div>
       </div>
-
-      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-        <div id="customAlertMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;"></div>
-        
-        <div id="tutorialCheckboxWrapper" style="display: none; margin-bottom: 15px; text-align: center; font-size: 12px; color: #555;">
-          <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
-            <input type="checkbox" id="dontShowAgainCheckbox" style="transform: scale(1.2);"> 今後このメッセージを表示しない
-          </label>
-        </div>
 
         <button id="customAlertOk" style="width: 100%; background: #2196F3; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
       </div>
