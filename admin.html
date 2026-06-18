@@ -91,14 +91,15 @@
                  <button onclick="cadRotateMap(5)" style="flex:1; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↪️ 微調整</button>
               </div>
               
-              <div style="display:flex; gap:10px; align-items:center;">
-                <!-- 🌟 変更：推測ではなく、ユーザーが直接編集・確定できる「畝数」入力欄に進化！ -->
-                <div style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
-                   <span style="font-size:11px; color:#aaa;">確定畝数:</span>
-                   <input type="number" id="cadUneCount" value="0" style="width:50px; font-size:16px; font-weight:bold; color:#8BC34A; background:transparent; border:none; text-align:center;">
-                </div>
-                <button onclick="cadGenerateLines()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜 ポリゴン生成</button>
+             <div style="display:flex; gap:10px; align-items:center;">
+              <!-- 🌟 変更：推測ではなく、ユーザーが直接編集・確定できる「畝数」入力欄に進化！ -->
+              <div style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
+                 <span style="font-size:11px; color:#aaa;">確定畝数:</span>
+                 <input type="number" id="cadUneCount" value="0" style="width:50px; font-size:16px; font-weight:bold; color:#8BC34A; background:transparent; border:none; text-align:center;">
+              </div>
+              <button onclick="cadGenerateLines()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜 ポリゴン生成</button>
             </div>
+        </div>
     
             <div id="cadMode2" style="display:none;">
               <div style="font-size:11px; color:#FF9800; margin-bottom:10px; background:#333; padding:8px; border-radius:4px;">💡 畝の面や数字をタップすると、個別に「作物名」「品種」「定植日」を登録できます。</div>
@@ -1936,12 +1937,9 @@ document.getElementById('btnLoadFude').onclick = () => {
           });
       };
 
-      // 🌟 実行時エラーを完全に防ぐため、タッチ操作の準備を安全な関数で包みました！
-      window.initCadTouchEvents = () => {
-          if (window.cadTouchAdded) return;
+      // 🌟 究極進化：拡大と回転の分離 ＆ 縮小時のカクつき完全解消！
+      if (!window.cadTouchAdded) {
           const wrapper = document.getElementById('cadMapWrapper');
-          if (!wrapper) return; // 念のための絶対防御
-
           let initialPinchDist = null;
           let initialPinchAngle = null;
           let startScale = 1;
@@ -1950,7 +1948,9 @@ document.getElementById('btnLoadFude').onclick = () => {
           let lastTouchX = null;
           let lastTouchY = null;
           let isDragging = false; 
-          let pinchMode = null; 
+
+          // 🌟 追加：現在どちらの操作をしているか記憶するロック機能
+          let pinchMode = null; // 'zoom'（拡大縮小） または 'rotate'（回転）
 
           wrapper.addEventListener('touchstart', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
@@ -1963,7 +1963,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   initialPinchAngle = Math.atan2(dy, dx);
                   startScale = window.cadCurrentScale || 1;
                   startRotation = window.cadCurrentRotation || 0;
-                  pinchMode = null; 
+                  pinchMode = null; // タッチ開始時にロックを解除
               } else if (e.touches.length === 1) {
                   lastTouchX = e.touches[0].pageX;
                   lastTouchY = e.touches[0].pageY;
@@ -1986,26 +1986,39 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (angleDiff > 180) angleDiff -= 360;
                   if (angleDiff < -180) angleDiff += 360;
 
+                  // 🌟 ここがスゴイ！指の動きから「拡大か回転か」を瞬時に判定してロック！
                   if (!pinchMode) {
                       const distRatio = currentDist / initialPinchDist;
                       const angleAbs = Math.abs(angleDiff);
-                      if (Math.abs(distRatio - 1) > 0.05) pinchMode = 'zoom';
-                      else if (angleAbs > 4) pinchMode = 'rotate';
+                      
+                      // 距離が5%以上変わったら「ズーム専用モード」にロック
+                      if (Math.abs(distRatio - 1) > 0.05) {
+                          pinchMode = 'zoom';
+                      } 
+                      // 角度が4度以上変わったら「回転専用モード」にロック
+                      else if (angleAbs > 4) {
+                          pinchMode = 'rotate';
+                      }
                   }
 
+                  // 🌟 ロックされた操作「だけ」を実行する！
                   if (pinchMode === 'zoom') {
                       let newScale = startScale * (currentDist / initialPinchDist);
+                      
+                      // 🌟 縮小時のカクつき特効薬！限界(1倍)で指が空回りしないように基準をリセット
                       if (newScale <= 1) {
                           newScale = 1;
-                          initialPinchDist = currentDist; 
+                          initialPinchDist = currentDist; // 次に広げた瞬間に即座に反応させる
                           startScale = 1;
                       }
                       window.cadCurrentScale = Math.min(newScale, 30);
                       window.updateCadLabelScale();
+
                   } else if (pinchMode === 'rotate') {
                       window.cadCurrentRotation = startRotation + angleDiff;
                   }
 
+                  // 画面に適用
                   const mapDiv = document.getElementById('cadMap');
                   if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
 
@@ -2055,11 +2068,18 @@ document.getElementById('btnLoadFude').onclick = () => {
           }, {passive: false});
 
           wrapper.addEventListener('touchend', (e) => {
-              if (e.touches.length < 2) { initialPinchDist = null; initialPinchAngle = null; }
-              if (e.touches.length === 0) { lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; }, 100); }
+              if (e.touches.length < 2) {
+                  initialPinchDist = null;
+                  initialPinchAngle = null;
+              }
+              if (e.touches.length === 0) {
+                  lastTouchX = null;
+                  lastTouchY = null;
+                  setTimeout(() => { isDragging = false; }, 100);
+              }
           });
           window.cadTouchAdded = true;
-      };
+      }
 
       window.openCADMode = (id) => {
           infoWindow.close();
@@ -2074,9 +2094,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(0deg) scale(1)`;
 
-          // 🌟 ここで初めて安全にタッチイベントを起動する！
-          window.initCadTouchEvents();
-
           if (!window.cadMap) {
               window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
                   center: {lat: 33.91, lng: 134.66}, zoom: 20,
@@ -2090,6 +2107,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
           const path = p.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
           
+          // 🌟変更：地図を隠すために、圃場の枠内を「不透明のダークカラー」で塗りつぶす！
           window.cadTargetPolygon = new google.maps.Polygon({
               paths: path, fillColor: '#1a1a1a', fillOpacity: 0.9, strokeColor: '#8BC34A', strokeOpacity: 1.0, strokeWeight: 3, map: window.cadMap, clickable: false
           });
@@ -2192,6 +2210,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           updateCadPreviewCount();
       };
 
+      // 🌟変更：圃場の「実際の幅」を正確に測り、推奨の畝数を入力欄にセットする
       window.updateCadPreviewCount = () => {
           if (!window.cadTargetId) return;
           const widthCm = parseFloat(document.getElementById('cadWidth').value);
@@ -2219,7 +2238,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           });
           
           const totalWidth = maxVal - minVal;
-          const numLines = Math.floor(totalWidth / (widthCm / 100)); 
+          const numLines = Math.floor(totalWidth / (widthCm / 100)); // 推奨される畝数
           
           const countEl = document.getElementById('cadUneCount');
           if (countEl) countEl.value = numLines;
@@ -2273,17 +2292,19 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadUneAttributes[idx] = { crop, variety, date };
           const poly = window.cadUnePolygons.find(p => p.uneIndex == idx);
           if (poly) { 
+              // 🌟 設定されたら濃い緑色に変える
               poly.setOptions({ fillColor: crop ? '#388E3C' : '#8BC34A', strokeColor: crop ? '#1B5E20' : '#558B2F' }); 
           }
           document.getElementById('cadAttrModal').style.display = 'none';
       };
 
+      // 🌟 変更：畝数で等分し、ゴミを除去する最強の生成エンジン
       window.cadGenerateLines = () => {
           try {
               if (!window.cadTargetId) return;
               
               const angleEl = document.getElementById('cadAngle');
-              const countEl = document.getElementById('cadUneCount'); 
+              const countEl = document.getElementById('cadUneCount'); // 幅ではなく「数」を使う！
               const makuraEl = document.getElementById('cadMakura');
               const nakamichiEl = document.getElementById('cadNakamichi');
 
@@ -2329,6 +2350,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   } catch(e) {}
               }
               
+              // 圃場の中心と、指定された角度での実際の幅を計算
               let centerObj = { lat: 0, lng: 0 };
               p.coords.forEach(pt => { centerObj.lat += (typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)); centerObj.lng += (typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng)); });
               centerObj.lat /= p.coords.length; centerObj.lng /= p.coords.length;
@@ -2348,6 +2370,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if(ry > maxVal) maxVal = ry;
               });
               
+              // 🌟幅を畝数で等分し、すべての畝を全く同じ太さにする！
               const totalWidth = maxVal - minVal;
               const actualWidthM = totalWidth / uneCount;
               
@@ -2403,6 +2426,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                           if (nakamichiPoly) intersected = turf.difference(intersected, nakamichiPoly) || intersected;
                           
                           const drawPoly = (geom) => {
+                              // 🌟魔法のフィルター：面積が1平方メートル未満の極細の「ゴミポリゴン」は描画しない！
                               if (turf.area(geom) < 1) return; 
 
                               if (geom.type === 'Polygon') {
@@ -2434,6 +2458,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           const attr = window.cadUneAttributes[idx];
           const hasCrop = attr && attr.crop;
           
+          // 🌟 変更：グリーンベースに変更（設定済みは濃い緑、未設定は明るい緑）
           const fillColor = hasCrop ? '#388E3C' : '#8BC34A';
           const strokeColor = hasCrop ? '#1B5E20' : '#558B2F';
           
