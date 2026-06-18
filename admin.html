@@ -92,12 +92,12 @@
               </div>
               
               <div style="display:flex; gap:10px; align-items:center;">
-                  <div style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
-                     <span style="font-size:11px; color:#aaa;">推定:</span>
-                     <span id="cadPreviewCount" style="font-size:16px; font-weight:bold; color:#FF9800;">-- 畝</span>
-                  </div>
-                  <button onclick="cadGenerateLines()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜 ポリゴン生成</button>
-              </div>
+                <!-- 🌟 変更：推測ではなく、ユーザーが直接編集・確定できる「畝数」入力欄に進化！ -->
+                <div style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
+                   <span style="font-size:11px; color:#aaa;">確定畝数:</span>
+                   <input type="number" id="cadUneCount" value="0" style="width:50px; font-size:16px; font-weight:bold; color:#8BC34A; background:transparent; border:none; text-align:center;">
+                </div>
+                <button onclick="cadGenerateLines()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜 ポリゴン生成</button>
             </div>
     
             <div id="cadMode2" style="display:none;">
@@ -2105,8 +2105,10 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
           const path = p.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
+          
+          // 🌟変更：地図を隠すために、圃場の枠内を「不透明のダークカラー」で塗りつぶす！
           window.cadTargetPolygon = new google.maps.Polygon({
-              paths: path, fillColor: '#2196F3', fillOpacity: 0.1, strokeColor: '#2196F3', strokeOpacity: 1.0, strokeWeight: 3, map: window.cadMap, clickable: false
+              paths: path, fillColor: '#1a1a1a', fillOpacity: 0.9, strokeColor: '#8BC34A', strokeOpacity: 1.0, strokeWeight: 3, map: window.cadMap, clickable: false
           });
 
           const b = new google.maps.LatLngBounds();
@@ -2207,16 +2209,38 @@ document.getElementById('btnLoadFude').onclick = () => {
           updateCadPreviewCount();
       };
 
+      // 🌟変更：圃場の「実際の幅」を正確に測り、推奨の畝数を入力欄にセットする
       window.updateCadPreviewCount = () => {
           if (!window.cadTargetId) return;
           const widthCm = parseFloat(document.getElementById('cadWidth').value);
+          const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
           const p = loadedPolygons[window.cadTargetId];
-          if (!widthCm || widthCm <= 0 || !p || !p.coords) { document.getElementById('cadPreviewCount').innerText = "-- 畝"; return; }
-          let coords = p.coords.map(pt => [pt.lng, pt.lat]); coords.push(coords[0]); 
-          const bbox = turf.bbox(turf.polygon([coords]));
-          const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
-          const numLines = Math.ceil((diagDist / (widthCm / 100)) / 2) * 2; 
-          document.getElementById('cadPreviewCount').innerText = `約 ${numLines} 畝`;
+          if (!widthCm || widthCm <= 0 || !p || !p.coords) return;
+
+          let center = { lat: 0, lng: 0 };
+          p.coords.forEach(pt => { center.lat += (typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)); center.lng += (typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng)); });
+          center.lat /= p.coords.length; center.lng /= p.coords.length;
+          
+          const cosLat = Math.cos(center.lat * Math.PI / 180);
+          const LAT_TO_METER = 111320;
+          const theta = angle * Math.PI / 180;
+          
+          let minVal = Infinity, maxVal = -Infinity;
+          p.coords.forEach(pt => {
+              let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
+              let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
+              let dx = (lng - center.lng) * cosLat * LAT_TO_METER;
+              let dy = (lat - center.lat) * LAT_TO_METER;
+              let ry = dx * Math.sin(theta) + dy * Math.cos(theta);
+              if(ry < minVal) minVal = ry;
+              if(ry > maxVal) maxVal = ry;
+          });
+          
+          const totalWidth = maxVal - minVal;
+          const numLines = Math.floor(totalWidth / (widthCm / 100)); // 推奨される畝数
+          
+          const countEl = document.getElementById('cadUneCount');
+          if (countEl) countEl.value = numLines;
       };
 
       window.cadClearLines = () => {
@@ -2266,26 +2290,30 @@ document.getElementById('btnLoadFude').onclick = () => {
           const date = document.getElementById('cadAttrDate').value;
           window.cadUneAttributes[idx] = { crop, variety, date };
           const poly = window.cadUnePolygons.find(p => p.uneIndex == idx);
-          if (poly) { poly.setOptions({ fillColor: crop ? '#4CAF50' : '#FF9800', strokeColor: crop ? '#388E3C' : '#E65100' }); }
+          if (poly) { 
+              // 🌟 設定されたら濃い緑色に変える
+              poly.setOptions({ fillColor: crop ? '#388E3C' : '#8BC34A', strokeColor: crop ? '#1B5E20' : '#558B2F' }); 
+          }
           document.getElementById('cadAttrModal').style.display = 'none';
       };
 
+      // 🌟 変更：畝数で等分し、ゴミを除去する最強の生成エンジン
       window.cadGenerateLines = () => {
           try {
               if (!window.cadTargetId) return;
               
               const angleEl = document.getElementById('cadAngle');
-              const widthEl = document.getElementById('cadWidth');
+              const countEl = document.getElementById('cadUneCount'); // 幅ではなく「数」を使う！
               const makuraEl = document.getElementById('cadMakura');
               const nakamichiEl = document.getElementById('cadNakamichi');
 
               const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
-              const widthCm = widthEl && widthEl.value ? parseFloat(widthEl.value) : 150;
+              const uneCount = countEl && countEl.value ? parseInt(countEl.value) : 0;
               const makuraCm = makuraEl && makuraEl.value ? parseFloat(makuraEl.value) : 0;
               const nakamichiCm = nakamichiEl && nakamichiEl.value ? parseFloat(nakamichiEl.value) : 0;
 
-              if (isNaN(widthCm) || widthCm <= 0) {
-                  alert("⚠️ 畝幅を正しく入力してください！");
+              if (isNaN(uneCount) || uneCount <= 0) {
+                  alert("⚠️ 畝数を1以上で確定してください！");
                   return;
               }
 
@@ -2297,10 +2325,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
 
               const p = loadedPolygons[window.cadTargetId];
-              if (!p || !p.coords || p.coords.length < 3) {
-                  alert("⚠️ 圃場の座標データが正しくありません！");
-                  return;
-              }
+              if (!p || !p.coords || p.coords.length < 3) return;
               
               let coords = p.coords.map(pt => {
                   let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
@@ -2320,23 +2345,43 @@ document.getElementById('btnLoadFude').onclick = () => {
                       const insetPoly = turf.buffer(tPoly, -(makuraCm / 100) / 1000, {units: 'kilometers'});
                       if (insetPoly && insetPoly.geometry && insetPoly.geometry.coordinates.length > 0) {
                           clipPoly = insetPoly;
-                          if (clipPoly.geometry.type === "Polygon") {
-                              const mPath = clipPoly.geometry.coordinates[0].map(c => ({lng: c[0], lat: c[1]}));
-                              window.cadUnePolygons.push(new google.maps.Polygon({ paths: mPath, strokeColor: '#00BCD4', strokeOpacity: 0.8, strokeWeight: 2, fillOpacity: 0, map: window.cadMap, zIndex: 99, clickable: false }));
-                          }
                       }
                   } catch(e) {}
               }
               
+              // 圃場の中心と、指定された角度での実際の幅を計算
+              let centerObj = { lat: 0, lng: 0 };
+              p.coords.forEach(pt => { centerObj.lat += (typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)); centerObj.lng += (typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng)); });
+              centerObj.lat /= p.coords.length; centerObj.lng /= p.coords.length;
+              
+              const cosLat = Math.cos(centerObj.lat * Math.PI / 180);
+              const LAT_TO_METER = 111320;
+              const theta = angle * Math.PI / 180;
+              
+              let minVal = Infinity, maxVal = -Infinity;
+              p.coords.forEach(pt => {
+                  let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
+                  let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
+                  let dx = (lng - centerObj.lng) * cosLat * LAT_TO_METER;
+                  let dy = (lat - centerObj.lat) * LAT_TO_METER;
+                  let ry = dx * Math.sin(theta) + dy * Math.cos(theta);
+                  if(ry < minVal) minVal = ry;
+                  if(ry > maxVal) maxVal = ry;
+              });
+              
+              // 🌟幅を畝数で等分し、すべての畝を全く同じ太さにする！
+              const totalWidth = maxVal - minVal;
+              const actualWidthM = totalWidth / uneCount;
+              
               const bbox = turf.bbox(clipPoly);
               const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
-              const center = turf.center(clipPoly);
-
+              
               let nakamichiPoly = null;
               if (nakamichiCm > 0) {
                   try {
-                      const p1 = turf.destination(center, diagDist, angle + 90, {units: 'meters'});
-                      const p2 = turf.destination(center, diagDist, angle + 270, {units: 'meters'});
+                      const centerTurf = turf.center(clipPoly);
+                      const p1 = turf.destination(centerTurf, diagDist, angle + 90, {units: 'meters'});
+                      const p2 = turf.destination(centerTurf, diagDist, angle + 270, {units: 'meters'});
                       const centerLine = turf.lineString([p1.geometry.coordinates, p2.geometry.coordinates]);
                       let nPoly = turf.buffer(centerLine, (nakamichiCm / 100) / 1000 / 2, {units: 'kilometers'});
                       if (nPoly.geometry.type === "Polygon") {
@@ -2348,25 +2393,26 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
 
               const lineLen = diagDist + 40; 
-              const widthM = widthCm / 100;
-              const numLines = Math.ceil((diagDist / widthM) / 2) + 1; 
+              let rects = [];
+              const startOffset = minVal + actualWidthM / 2;
 
-              const createUneRect = (offsetDist, directionAngle) => {
-                  const offsetCenter = turf.destination(center, offsetDist, directionAngle, {units: 'meters'});
-                  const pt1 = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
-                  const pt2 = turf.destination(offsetCenter, lineLen/2, angle + 180, {units: 'meters'});
-                  const w = widthM * 0.9; 
-                  const p1 = turf.destination(pt1, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
-                  const p2 = turf.destination(pt1, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
-                  const p3 = turf.destination(pt2, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
-                  const p4 = turf.destination(pt2, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
-                  return turf.polygon([[p1, p2, p3, p4, p1]]);
-              };
-
-              const rects = [createUneRect(0, angle + 90)];
-              for (let i = 1; i <= numLines; i++) {
-                  rects.push(createUneRect(i * widthM, angle + 90)); 
-                  rects.push(createUneRect(i * widthM, angle - 90)); 
+              for (let i = 0; i < uneCount; i++) {
+                  let offset = startOffset + i * actualWidthM;
+                  let offsetDx = offset * Math.sin(theta);
+                  let offsetDy = offset * Math.cos(theta);
+                  
+                  let oLng = centerObj.lng + offsetDx / (cosLat * LAT_TO_METER);
+                  let oLat = centerObj.lat + offsetDy / LAT_TO_METER;
+                  let oPt = turf.point([oLng, oLat]);
+                  
+                  let pt1 = turf.destination(oPt, lineLen/2, angle, {units: 'meters'});
+                  let pt2 = turf.destination(oPt, lineLen/2, angle + 180, {units: 'meters'});
+                  let w = actualWidthM * 0.9; 
+                  let p1 = turf.destination(pt1, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                  let p2 = turf.destination(pt1, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                  let p3 = turf.destination(pt2, w/2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                  let p4 = turf.destination(pt2, w/2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                  rects.push(turf.polygon([[p1, p2, p3, p4, p1]]));
               }
 
               let polyIndex = 0; 
@@ -2379,6 +2425,9 @@ document.getElementById('btnLoadFude').onclick = () => {
                           if (nakamichiPoly) intersected = turf.difference(intersected, nakamichiPoly) || intersected;
                           
                           const drawPoly = (geom) => {
+                              // 🌟魔法のフィルター：面積が1平方メートル未満の極細の「ゴミポリゴン」は描画しない！
+                              if (turf.area(geom) < 1) return; 
+
                               if (geom.type === 'Polygon') {
                                   createAndBindGPoly(geom.coordinates[0], polyIndex++);
                                   successCount++;
@@ -2392,7 +2441,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               });
               
               if (successCount === 0) {
-                  alert("⚠️ 畝が生成できませんでした。畝幅の設定などを確認してください。");
+                  alert("⚠️ 畝が生成できませんでした。畝数の設定などを確認してください。");
               } else {
                   const mode1El = document.getElementById('cadMode1');
                   if(mode1El && mode1El.style.display === 'block') switchCadTab(2);
@@ -2408,10 +2457,14 @@ document.getElementById('btnLoadFude').onclick = () => {
           const attr = window.cadUneAttributes[idx];
           const hasCrop = attr && attr.crop;
           
+          // 🌟 変更：グリーンベースに変更（設定済みは濃い緑、未設定は明るい緑）
+          const fillColor = hasCrop ? '#388E3C' : '#8BC34A';
+          const strokeColor = hasCrop ? '#1B5E20' : '#558B2F';
+          
           const gPoly = new google.maps.Polygon({ 
               paths: path, 
-              fillColor: hasCrop ? '#4CAF50' : '#FF9800', fillOpacity: 0.6, 
-              strokeColor: hasCrop ? '#388E3C' : '#E65100', strokeOpacity: 0.9, 
+              fillColor: fillColor, fillOpacity: 0.7, 
+              strokeColor: strokeColor, strokeOpacity: 0.9, 
               strokeWeight: 2, map: window.cadMap, zIndex: 10, clickable: true 
           });
           
@@ -2423,7 +2476,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           path.forEach(pt => bounds.extend(pt));
           const center = bounds.getCenter();
 
-          // 🌟 14から11に変更
           const initialFontSize = Math.max(0.5, 11 / (window.cadCurrentScale || 1)) + 'px';
 
           const labelMarker = new google.maps.Marker({
