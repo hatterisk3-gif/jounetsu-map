@@ -65,13 +65,11 @@
               <div id="cadTab2" onclick="switchCadTab(2)" style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:12px;">② 編集・保存</div>
             </div>
     
-            <div style="display:flex; gap:5px; margin-bottom:10px; border-bottom:1px solid #555; padding-bottom:10px;">
-                 <span style="font-size:11px; color:#E91E63; display:flex; align-items:center; font-weight:bold;">🔎 限界突破:</span>
-                 <button onclick="cadChangeScale(0.5)" style="flex:1; background:#E91E63; color:#fff; border:none; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">➕ さらに拡大</button>
-                 <button onclick="cadChangeScale(-0.5)" style="flex:1; background:#555; color:#fff; border:none; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">➖ 縮小(戻す)</button>
-            </div>
-    
             <div id="cadMode1">
+              <div style="font-size:11px; color:#00BCD4; margin-bottom:8px; text-align:center; font-weight:bold;">
+                 ✌️ 2本指で自由に【限界拡大】＆【回転】ができます！
+              </div>
+    
               <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
                 <div style="flex:1;">
                   <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🧭 方角(度)</label>
@@ -84,10 +82,9 @@
               </div>
               
               <div style="display:flex; gap:5px; margin-bottom:10px;">
-                 <button onclick="cadAutoAngle()" style="flex:1; background:#333; color:#00BCD4; border:1px solid #00BCD4; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">📐 角度を検知</button>
-                 <button onclick="cadAlignMapHeading()" style="flex:1; background:#9C27B0; color:#fff; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">🔄 画面に平行化</button>
-                 <button onclick="cadRotateMap(-10)" style="width:40px; background:#555; color:#fff; border:none; border-radius:4px; font-size:14px; font-weight:bold;">↩️</button>
-                 <button onclick="cadRotateMap(10)" style="width:40px; background:#555; color:#fff; border:none; border-radius:4px; font-size:14px; font-weight:bold;">↪️</button>
+                 <button onclick="cadSnapAngle()" style="flex:2; background:#333; color:#FFC107; border:1px solid #FFC107; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">🧲 近くの直線にピタッと合わせる</button>
+                 <button onclick="cadRotateMap(-5)" style="flex:1; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↩️ 微調整</button>
+                 <button onclick="cadRotateMap(5)" style="flex:1; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↪️ 微調整</button>
               </div>
               
               <div style="display:flex; gap:10px; align-items:center;">
@@ -1919,9 +1916,64 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadUneAttributes = {}; 
       window.cadUneLabels = []; 
 
-      // 🌟 新たに追加された回転・拡大用の変数
       window.cadCurrentRotation = 0; 
       window.cadCurrentScale = 1; 
+
+      // 🌟🌟 新機能：2本指で「Googleマップの制限を無視」して拡大＆回転するハック！ 🌟🌟
+      if (!window.cadTouchAdded) {
+          const wrapper = document.getElementById('cadMapWrapper');
+          let initialPinchDist = null;
+          let initialPinchAngle = null;
+          let startScale = 1;
+          let startRotation = 0;
+
+          // 2本指が触れたら、Google標準の動きを止めてこちらの数値を記録する
+          wrapper.addEventListener('touchstart', (e) => {
+              if (e.touches.length === 2 && document.getElementById('cadOverlay').style.display === 'flex') {
+                  e.preventDefault(); 
+                  const dx = e.touches[0].pageX - e.touches[1].pageX;
+                  const dy = e.touches[0].pageY - e.touches[1].pageY;
+                  initialPinchDist = Math.hypot(dx, dy);
+                  initialPinchAngle = Math.atan2(dy, dx);
+                  startScale = window.cadCurrentScale || 1;
+                  startRotation = window.cadCurrentRotation || 0;
+              }
+          }, {passive: false});
+
+          // 指を動かしたときに、画面のキャンバス自体をグリグリと回し、ズームさせる！
+          wrapper.addEventListener('touchmove', (e) => {
+              if (e.touches.length === 2 && initialPinchDist !== null) {
+                  e.preventDefault(); 
+                  const dx = e.touches[0].pageX - e.touches[1].pageX;
+                  const dy = e.touches[0].pageY - e.touches[1].pageY;
+                  
+                  // 無制限ズームの適用（最大20倍まで！）
+                  const currentDist = Math.hypot(dx, dy);
+                  window.cadCurrentScale = Math.min(Math.max(1, startScale * (currentDist / initialPinchDist)), 20); 
+                  
+                  // 回転の適用
+                  const currentAngle = Math.atan2(dy, dx);
+                  let angleDiff = (currentAngle - initialPinchAngle) * (180 / Math.PI);
+                  window.cadCurrentRotation = startRotation + angleDiff;
+                  
+                  const mapDiv = document.getElementById('cadMap');
+                  if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
+
+                  // 角度をリアルタイムに数値パネルへ反映！
+                  let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
+                  if (displayAngle < 0) displayAngle += 360;
+                  document.getElementById('cadAngle').value = displayAngle;
+              }
+          }, {passive: false});
+
+          wrapper.addEventListener('touchend', (e) => {
+              if (e.touches.length < 2) {
+                  initialPinchDist = null;
+                  initialPinchAngle = null;
+              }
+          });
+          window.cadTouchAdded = true;
+      }
 
       window.openCADMode = (id) => {
           infoWindow.close();
@@ -1931,7 +1983,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           document.getElementById('cadTargetName').innerText = p.name;
           document.getElementById('cadOverlay').style.display = 'flex';
           
-          // 起動時に回転と拡大率をリセット
           window.cadCurrentRotation = 0;
           window.cadCurrentScale = 1;
           const mapDiv = document.getElementById('cadMap');
@@ -1941,11 +1992,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
                   center: {lat: 33.91, lng: 134.66}, zoom: 20,
                   mapTypeId: 'satellite', tilt: 0, heading: 0,
-                  mapId: 'DEMO_MAP_ID', 
-                  headingInteractionEnabled: true,
-                  tiltInteractionEnabled: true,
-                  maxZoom: 40, // APIの限界値
-                  gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true
+                  maxZoom: 28, gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true
               });
           }
 
@@ -2006,28 +2053,54 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (tab2) { tab2.style.background = tab === 2 ? '#2196F3' : '#222'; tab2.style.color = tab === 2 ? '#fff' : '#aaa'; }
       };
 
-      // 🌟 新機能：デジタルズーム（限界突破）🌟
-      window.cadChangeScale = (val) => {
-          window.cadCurrentScale += val;
-          if (window.cadCurrentScale < 1) window.cadCurrentScale = 1; // 元のサイズより小さくしない
-          if (window.cadCurrentScale > 10) window.cadCurrentScale = 10; // 最大10倍まで許可！
-          const mapDiv = document.getElementById('cadMap');
-          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
-      };
-
       window.cadAlignMapHeading = () => {
           const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
           window.cadCurrentRotation = -angle; 
           const mapDiv = document.getElementById('cadMap');
-          // 回転時も拡大率(scale)を維持する
           if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
       };
 
       window.cadRotateMap = (deg) => {
           window.cadCurrentRotation += deg;
           const mapDiv = document.getElementById('cadMap');
-          // 回転時も拡大率(scale)を維持する
           if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
+          let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
+          if (displayAngle < 0) displayAngle += 360;
+          document.getElementById('cadAngle').value = displayAngle;
+          updateCadPreviewCount();
+      };
+
+      // 🌟🌟 新機能：一番近い直線を探して、ピタッと真っ直ぐにするスマートスナップ！ 🌟🌟
+      window.cadSnapAngle = () => {
+          if (!window.cadTargetId) return;
+          const p = loadedPolygons[window.cadTargetId];
+          let currentAngle = parseFloat(document.getElementById('cadAngle').value) || 0;
+
+          let minDiff = Infinity;
+          let bestAngle = currentAngle;
+
+          for (let i = 0; i < p.coords.length; i++) {
+              let pt1 = turf.point([p.coords[i].lng, p.coords[i].lat]);
+              let pt2 = turf.point([p.coords[(i+1)%p.coords.length].lng, p.coords[(i+1)%p.coords.length].lat]);
+              let bearing = turf.bearing(pt1, pt2);
+
+              // 画面上の見え方の角度（0度=横, 90度=縦）
+              let screenAngle = bearing - currentAngle;
+              let mod90 = ((screenAngle % 90) + 90) % 90;
+              let diffTo90 = Math.min(mod90, 90 - mod90);
+
+              if (diffTo90 < minDiff) {
+                  minDiff = diffTo90;
+                  // 最も画面の縦・横に近い線を、完全にピッタリ縦横に合わせる角度を計算
+                  let perfectMultipleOf90 = Math.round(screenAngle / 90) * 90;
+                  bestAngle = bearing - perfectMultipleOf90;
+              }
+          }
+
+          bestAngle = Math.round(((bestAngle % 360) + 360) % 360);
+          document.getElementById('cadAngle').value = bestAngle;
+          window.cadAlignMapHeading(); // ピタッと計算後の角度に回す！
+          updateCadPreviewCount();
       };
 
       window.updateCadPreviewCount = () => {
