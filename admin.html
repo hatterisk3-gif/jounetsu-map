@@ -2069,21 +2069,21 @@ document.getElementById('btnLoadFude').onclick = () => {
           document.getElementById('cadAttrModal').style.display = 'none';
       };
 
+      // 🌟 超・防弾仕様のポリゴン生成関数（絶対エラーで止まらない！）
       window.cadGenerateLines = () => {
           try {
               if (!window.cadTargetId) return;
               
-              // 入力値を取得
-              const angleVal = document.getElementById('cadAngle').value;
-              const widthVal = document.getElementById('cadWidth').value;
-              const makuraVal = document.getElementById('cadMakura').value;
-              const nakamichiVal = document.getElementById('cadNakamichi').value;
+              // 🌟 画面の入力欄が見つからなくても「nullエラー」にならない安全な取得方法
+              const angleEl = document.getElementById('cadAngle');
+              const widthEl = document.getElementById('cadWidth');
+              const makuraEl = document.getElementById('cadMakura');
+              const nakamichiEl = document.getElementById('cadNakamichi');
 
-              // 数値に変換（空欄の場合は0にする防御）
-              const angle = parseFloat(angleVal) || 0;
-              const widthCm = parseFloat(widthVal);
-              const makuraCm = parseFloat(makuraVal) || 0;
-              const nakamichiCm = parseFloat(nakamichiVal) || 0;
+              const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+              const widthCm = widthEl && widthEl.value ? parseFloat(widthEl.value) : 150;
+              const makuraCm = makuraEl && makuraEl.value ? parseFloat(makuraEl.value) : 0;
+              const nakamichiCm = nakamichiEl && nakamichiEl.value ? parseFloat(nakamichiEl.value) : 0;
 
               if (isNaN(widthCm) || widthCm <= 0) {
                   alert("⚠️ 畝幅を正しく入力してください！");
@@ -2100,7 +2100,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   return;
               }
               
-              // ★ どんな座標データでも安全に数値に変換する防御処理
+              // どんな座標データでも安全に数値に変換する防御処理
               let coords = p.coords.map(pt => {
                   let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
                   let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
@@ -2114,7 +2114,6 @@ document.getElementById('btnLoadFude').onclick = () => {
               
               const tPoly = turf.polygon([coords]);
               
-              // 枕地の計算
               let clipPoly = tPoly;
               if (makuraCm > 0) {
                   try {
@@ -2133,7 +2132,6 @@ document.getElementById('btnLoadFude').onclick = () => {
               const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], {units: 'meters'});
               const center = turf.center(clipPoly);
 
-              // 中道の計算
               let nakamichiPoly = null;
               if (nakamichiCm > 0) {
                   try {
@@ -2153,7 +2151,6 @@ document.getElementById('btnLoadFude').onclick = () => {
               const widthM = widthCm / 100;
               const numLines = Math.ceil((diagDist / widthM) / 2) + 1; 
 
-              // 畝のベースとなる長方形を作る関数
               const createUneRect = (offsetDist, directionAngle) => {
                   const offsetCenter = turf.destination(center, offsetDist, directionAngle, {units: 'meters'});
                   const pt1 = turf.destination(offsetCenter, lineLen/2, angle, {units: 'meters'});
@@ -2175,7 +2172,6 @@ document.getElementById('btnLoadFude').onclick = () => {
               let polyIndex = 0; 
               let successCount = 0; 
               
-              // 畑の枠と畝の長方形を交差させて切り取る
               rects.forEach(rect => {
                   try {
                       let intersected = turf.intersect(clipPoly, rect);
@@ -2195,16 +2191,16 @@ document.getElementById('btnLoadFude').onclick = () => {
                   } catch(e) { console.warn("交差エラー", e); }
               });
               
-              // 結果の判定とアラート表示
               if (successCount === 0) {
-                  alert("⚠️ 畝が生成できませんでした。\n圃場に対して畝幅が大きすぎるか、形が複雑な可能性があります。");
-              } else if(document.getElementById('cadMode1').style.display === 'block') {
-                  switchCadTab(2); // 成功したらタブを切り替え
+                  alert("⚠️ 畝が生成できませんでした。畝幅の設定などを確認してください。");
+              } else {
+                  const mode1El = document.getElementById('cadMode1');
+                  if(mode1El && mode1El.style.display === 'block') switchCadTab(2);
               }
 
           } catch (globalError) {
-              // ★無言でフリーズするのを防ぎ、エラーの正体を画面に出す！
-              alert("❌ プログラムエラーが発生しました:\n" + globalError.message);
+              // 🌟 万が一全く別のエラーが起きても無言にならず、何が悪いか画面に出す！
+              alert("❌ 処理中にエラーが発生しました:\\n" + globalError.message);
           }
       };
 
@@ -2225,26 +2221,32 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadUnePolygons.push(gPoly);
       }
 
+      // 🌟 こちらも同じく安全に値を保存する防弾仕様
       window.saveUneSim = () => {
           if (!window.cadTargetId) return;
           const p = loadedPolygons[window.cadTargetId];
           
           let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
 
+          const angleEl = document.getElementById('cadAngle');
+          const widthEl = document.getElementById('cadWidth');
+          const makuraEl = document.getElementById('cadMakura');
+          const nakamichiEl = document.getElementById('cadNakamichi');
+
           const simDataStr = JSON.stringify({
-              angle: document.getElementById('cadAngle').value,
-              width: document.getElementById('cadWidth').value,
-              makura: document.getElementById('cadMakura').value,
-              nakamichi: document.getElementById('cadNakamichi').value,
+              angle: angleEl && angleEl.value ? angleEl.value : 0,
+              width: widthEl && widthEl.value ? widthEl.value : 150,
+              makura: makuraEl && makuraEl.value ? makuraEl.value : 0,
+              nakamichi: nakamichiEl && nakamichiEl.value ? nakamichiEl.value : 0,
               pins: pins,
               attributes: window.cadUneAttributes 
           });
 
           p.uneSimData = simDataStr; 
           callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
-          // ★ここでだけは保存完了を伝えるために小さな標準アラートを使います
           alert("💾 設計と畝の属性情報を保存しました！");
       };
+
       
       document.addEventListener('DOMContentLoaded', () => {
           function tryInitMap() {
