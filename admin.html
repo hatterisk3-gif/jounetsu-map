@@ -40,11 +40,10 @@
    #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; z-index: 100; }
    #cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; }
    
-   /* 🌟 カクつきの元凶だった「transition（アニメーション）」を削除！指に一瞬で吸い付きます！ */
-   #cadMap { position: absolute; top: 50%; left: 50%; width: 150vmax; height: 150vmax; transform: translate(-50%, -50%) rotate(0deg); }
+   /* 🌟 ぼやけ特効薬！キャンバスを2倍サイズ(300vmax)で作り、初期サイズを0.5倍にすることで超高解像度を維持します！ */
+   #cadMap { position: absolute; top: 50%; left: 50%; width: 300vmax; height: 300vmax; transform: translate(-50%, -50%) rotate(0deg) scale(0.5); transform-origin: center center; will-change: transform; }
    .cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; }
    
-   /* 🌟 文字が分裂するバグを修正！フチの太さを「em」にして文字サイズに連動させます */
    #cadMap .polygon-label { text-shadow: -0.08em -0.08em 0 #000, 0.08em -0.08em 0 #000, -0.08em 0.08em 0 #000, 0.08em 0.08em 0 #000 !important; }
    </style>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
@@ -125,25 +124,34 @@
           <h3 style="margin-top:0; margin-bottom:15px; font-size:15px; color:#1a1a1a; border-bottom:2px solid #8BC34A; padding-bottom:5px;">🛠️ ポリゴンの操作</h3>
           <input type="hidden" id="cadEditIndex">
           
-          <div style="display:flex; justify-content:space-between; margin-bottom:20px; align-items:center;">
+          <div style="font-size:11px; color:#555; margin-bottom:8px; font-weight:bold;">サイズと回転</div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;">
              <div style="flex:1; text-align:center;">
-               <div style="font-size:11px; color:#555; margin-bottom:8px; font-weight:bold;">サイズ変更</div>
-               <button onclick="cadResizePoly(1.1)" style="padding:10px 15px; background:#4CAF50; color:#fff; border:none; border-radius:4px; font-weight:bold; margin-bottom:8px; width:80%;">➕ 拡大</button><br>
-               <button onclick="cadResizePoly(0.9)" style="padding:10px 15px; background:#FF9800; color:#fff; border:none; border-radius:4px; font-weight:bold; width:80%;">➖ 縮小</button>
+               <button onclick="cadResizePoly(1.1)" style="padding:8px 10px; background:#4CAF50; color:#fff; border:none; border-radius:4px; font-weight:bold; margin-bottom:5px; width:90%;">➕ 拡大</button><br>
+               <button onclick="cadResizePoly(0.9)" style="padding:8px 10px; background:#FF9800; color:#fff; border:none; border-radius:4px; font-weight:bold; width:90%;">➖ 縮小</button>
              </div>
-             
-             <div style="flex:1;">
-               <div style="font-size:11px; color:#555; margin-bottom:8px; font-weight:bold;">移動 (10cmずつ)</div>
-               <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:3px; max-width:120px; margin:0 auto;">
-                  <div></div>
-                  <button onclick="cadMovePoly('up')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬆️</button>
-                  <div></div>
-                  <button onclick="cadMovePoly('left')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬅️</button>
-                  <button onclick="cadMovePoly('down')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬇️</button>
-                  <button onclick="cadMovePoly('right')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">➡️</button>
-               </div>
+             <div style="flex:1; text-align:center;">
+               <button onclick="cadRotatePoly(-5)" style="padding:8px 10px; background:#9C27B0; color:#fff; border:none; border-radius:4px; font-weight:bold; margin-bottom:5px; width:90%;">↩️ 左回転</button><br>
+               <button onclick="cadRotatePoly(5)" style="padding:8px 10px; background:#9C27B0; color:#fff; border:none; border-radius:4px; font-weight:bold; width:90%;">↪️ 右回転</button>
              </div>
           </div>
+          
+          <div style="font-size:11px; color:#555; margin-bottom:8px; font-weight:bold;">移動 (10cmずつ)</div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:3px; max-width:120px; margin:0 auto; margin-bottom:15px;">
+             <div></div>
+             <button onclick="cadMovePoly('up')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬆️</button>
+             <div></div>
+             <button onclick="cadMovePoly('left')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬅️</button>
+             <button onclick="cadMovePoly('down')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬇️</button>
+             <button onclick="cadMovePoly('right')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">➡️</button>
+          </div>
+          
+          <div style="display:flex; gap:10px;">
+             <button onclick="cadDeletePoly()" style="flex:1; background:#f44336; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold;">🗑️ 削除する</button>
+             <button onclick="document.getElementById('cadEditPolyModal').style.display='none'" style="flex:1; background:#ccc; color:#333; border:none; padding:12px; border-radius:4px; font-weight:bold;">閉じる</button>
+          </div>
+        </div>
+      </div>
           
           <div style="display:flex; gap:10px; margin-top:10px;">
              <button onclick="cadDeletePoly()" style="flex:1; background:#f44336; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold;">🗑️ 削除する</button>
@@ -1926,26 +1934,28 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadPins = []; 
       window.cadPinMode = null;
       window.cadUneLabels = []; 
-      
       window.cadNakamichiLines = []; 
       window.cadNakamichiMapPolygons = []; 
       window.cadCustomShapes = []; 
-      window.cadGridLines = []; // グリッド線用
+      window.cadGridLines = []; 
 
       window.cadCurrentRotation = 0; 
-      window.cadCurrentScale = 1; 
+      
+      // 🌟 超高解像度ハックのため、ベースのスケールを 0.5 に設定
+      const BASE_SCALE = 0.5;
+      window.cadCurrentScale = BASE_SCALE; 
 
       window.updateCadLabelScale = () => {
           if (!window.cadUneLabels) return;
-          let newSize = 11 / (window.cadCurrentScale || 1);
-          let fontSizeStr = Math.max(0.5, newSize) + 'px'; 
+          let apparentScale = window.cadCurrentScale / BASE_SCALE;
+          let newSize = 24 / apparentScale; // 解像度が倍なので文字サイズも大きく指定する
+          let fontSizeStr = Math.max(2, newSize) + 'px'; 
           window.cadUneLabels.forEach(marker => {
               let lbl = marker.getLabel();
               if (lbl) { lbl.fontSize = fontSizeStr; marker.setLabel(lbl); }
           });
       };
 
-      // 🌟 タッチ・マウスホイール対応の初期化関数
       window.initCadTouchEvents = () => {
           if (window.cadTouchAdded) return;
           const wrapper = document.getElementById('cadMapWrapper');
@@ -1953,22 +1963,22 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           let initialPinchDist = null;
           let initialPinchAngle = null;
-          let startScale = 1;
+          let startScale = BASE_SCALE;
           let startRotation = 0;
           let lastTouchX = null;
           let lastTouchY = null;
           let isDragging = false; 
           let pinchMode = null; 
+          let isMouseDown = false;
 
-          // 🌟 PCでのホイール拡大縮小に対応
           wrapper.addEventListener('wheel', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
-              let zoomSpeed = 0.5;
+              let zoomSpeed = 0.25;
               let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
               let newScale = window.cadCurrentScale + delta;
-              if (newScale < 1) newScale = 1;
-              if (newScale > 30) newScale = 30;
+              if (newScale < BASE_SCALE) newScale = BASE_SCALE;
+              if (newScale > BASE_SCALE * 30) newScale = BASE_SCALE * 30;
               window.cadCurrentScale = newScale;
               window.updateCadLabelScale();
 
@@ -1976,6 +1986,59 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
           }, {passive: false});
 
+          // 🌟 PCでのマウスドラッグ操作を追加！
+          wrapper.addEventListener('mousedown', (e) => {
+              if (document.getElementById('cadOverlay').style.display !== 'flex') return;
+              lastTouchX = e.pageX;
+              lastTouchY = e.pageY;
+              isMouseDown = true;
+              isDragging = false;
+          });
+
+          wrapper.addEventListener('mousemove', (e) => {
+              if (document.getElementById('cadOverlay').style.display !== 'flex') return;
+              if (!isMouseDown || lastTouchX === null || lastTouchY === null) return;
+              
+              const currentX = e.pageX;
+              const currentY = e.pageY;
+              const dx = currentX - lastTouchX;
+              const dy = currentY - lastTouchY;
+              
+              if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isDragging = true;
+              
+              if (isDragging) {
+                  const DAMPING = 0.6;
+                  let apparentScale = window.cadCurrentScale / BASE_SCALE;
+                  let mapDx = (dx * DAMPING) / apparentScale;
+                  let mapDy = (dy * DAMPING) / apparentScale;
+
+                  const theta = window.cadCurrentRotation * Math.PI / 180;
+                  const cosT = Math.cos(-theta);
+                  const sinT = Math.sin(-theta);
+                  
+                  const finalDx = mapDx * cosT - mapDy * sinT;
+                  const finalDy = mapDx * sinT + mapDy * cosT;
+
+                  if (window.cadMap) {
+                      const proj = window.cadMap.getProjection();
+                      if (proj) {
+                          const zoom = window.cadMap.getZoom();
+                          const scale = Math.pow(2, zoom);
+                          const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
+                          centerPt.x -= finalDx / scale;
+                          centerPt.y -= finalDy / scale;
+                          window.cadMap.setCenter(proj.fromPointToLatLng(centerPt));
+                      }
+                  }
+                  lastTouchX = currentX;
+                  lastTouchY = currentY;
+              }
+          });
+
+          wrapper.addEventListener('mouseup', () => { isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; }, 100); });
+          wrapper.addEventListener('mouseleave', () => { isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; }, 100); });
+
+          // スマホ用タッチイベント
           wrapper.addEventListener('touchstart', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               if (e.touches.length === 2) {
@@ -1984,7 +2047,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   const dy = e.touches[0].pageY - e.touches[1].pageY;
                   initialPinchDist = Math.hypot(dx, dy);
                   initialPinchAngle = Math.atan2(dy, dx);
-                  startScale = window.cadCurrentScale || 1;
+                  startScale = window.cadCurrentScale || BASE_SCALE;
                   startRotation = window.cadCurrentRotation || 0;
                   pinchMode = null; 
               } else if (e.touches.length === 1) {
@@ -2017,8 +2080,8 @@ document.getElementById('btnLoadFude').onclick = () => {
 
                   if (pinchMode === 'zoom') {
                       let newScale = startScale * (currentDist / initialPinchDist);
-                      if (newScale < 1) { newScale = 1; startScale = 1; initialPinchDist = currentDist; } 
-                      else if (newScale > 30) { newScale = 30; startScale = 30; initialPinchDist = currentDist; }
+                      if (newScale < BASE_SCALE) { newScale = BASE_SCALE; startScale = BASE_SCALE; initialPinchDist = currentDist; } 
+                      else if (newScale > BASE_SCALE * 30) { newScale = BASE_SCALE * 30; startScale = BASE_SCALE * 30; initialPinchDist = currentDist; }
                       window.cadCurrentScale = newScale;
                       window.updateCadLabelScale();
                   } else if (pinchMode === 'rotate') {
@@ -2043,8 +2106,9 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (isDragging) {
                       e.preventDefault(); 
                       const DAMPING = 0.6;
-                      let mapDx = (dx * DAMPING) / window.cadCurrentScale;
-                      let mapDy = (dy * DAMPING) / window.cadCurrentScale;
+                      let apparentScale = window.cadCurrentScale / BASE_SCALE;
+                      let mapDx = (dx * DAMPING) / apparentScale;
+                      let mapDy = (dy * DAMPING) / apparentScale;
 
                       const theta = window.cadCurrentRotation * Math.PI / 180;
                       const cosT = Math.cos(-theta);
@@ -2086,9 +2150,9 @@ document.getElementById('btnLoadFude').onclick = () => {
           document.getElementById('cadOverlay').style.display = 'flex';
           
           window.cadCurrentRotation = 0;
-          window.cadCurrentScale = 1;
+          window.cadCurrentScale = BASE_SCALE;
           const mapDiv = document.getElementById('cadMap');
-          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(0deg) scale(1)`;
+          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(0deg) scale(${BASE_SCALE})`;
 
           window.initCadTouchEvents();
 
@@ -2103,9 +2167,9 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
           const path = p.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
           
-          // 🌟 変更：背景を真っ白に塗りつぶし、地図を隠して図面を浮き立たせる！
+          // 🌟 背景を「薄い茶色」に変更！
           window.cadTargetPolygon = new google.maps.Polygon({
-              paths: path, fillColor: '#ffffff', fillOpacity: 0.95, strokeColor: '#8BC34A', strokeOpacity: 1.0, strokeWeight: 3, map: window.cadMap, clickable: false
+              paths: path, fillColor: '#D7CCC8', fillOpacity: 0.95, strokeColor: '#8BC34A', strokeOpacity: 1.0, strokeWeight: 3, map: window.cadMap, clickable: false
           });
 
           const b = new google.maps.LatLngBounds();
@@ -2140,7 +2204,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
                   if (saved.customShapes) {
                       saved.customShapes.forEach((cPath, idx) => {
-                          let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, zIndex: 10 });
+                          let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: true, zIndex: 10 });
                           gPoly.uneIndex = 'custom_' + idx;
                           google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                           window.cadCustomShapes.push(gPoly);
@@ -2216,7 +2280,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           updateCadPreviewCount();
       };
 
-      // 🌟 1mグリッド線の表示・非表示機能
+      // 🌟 グリッド線を濃く、見やすくしました
       window.cadToggleGrid = () => {
           if (window.cadGridLines && window.cadGridLines.length > 0) {
               window.cadGridLines.forEach(l => l.setMap(null));
@@ -2241,7 +2305,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               let p1_2 = turf.destination(oPt1, diagDist/2, angle + 180, {units: 'meters'}).geometry.coordinates;
               let line1 = new google.maps.Polyline({
                   path: [{lat: p1_1[1], lng: p1_1[0]}, {lat: p1_2[1], lng: p1_2[0]}],
-                  strokeColor: '#cccccc', strokeOpacity: 0.5, strokeWeight: 1, map: window.cadMap, clickable: false, zIndex: 1
+                  strokeColor: '#999999', strokeOpacity: 0.8, strokeWeight: 2, map: window.cadMap, clickable: false, zIndex: 1
               });
               window.cadGridLines.push(line1);
 
@@ -2250,7 +2314,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               let p2_2 = turf.destination(oPt2, diagDist/2, angle - 90, {units: 'meters'}).geometry.coordinates;
               let line2 = new google.maps.Polyline({
                   path: [{lat: p2_1[1], lng: p2_1[0]}, {lat: p2_2[1], lng: p2_2[0]}],
-                  strokeColor: '#cccccc', strokeOpacity: 0.5, strokeWeight: 1, map: window.cadMap, clickable: false, zIndex: 1
+                  strokeColor: '#999999', strokeOpacity: 0.8, strokeWeight: 2, map: window.cadMap, clickable: false, zIndex: 1
               });
               window.cadGridLines.push(line2);
           }
@@ -2348,29 +2412,31 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadNakamichiMapPolygons.push(line);
       };
 
-      // 🌟 自由畝の追加
+      // 🌟 四角畝が「画面に対して常に真っ直ぐ」配置され、頂点ドラッグで変形(editable)できるように進化！
       window.cadAddCustomShape = (type) => {
           let center = window.cadMap.getCenter();
           let centerPt = turf.point([center.lng(), center.lat()]);
           let poly;
           
           if (type === 'rect') {
-              let p1 = turf.destination(centerPt, 2, 45, {units: 'meters'}).geometry.coordinates;
-              let p2 = turf.destination(centerPt, 2, 135, {units: 'meters'}).geometry.coordinates;
-              let p3 = turf.destination(centerPt, 2, 225, {units: 'meters'}).geometry.coordinates;
-              let p4 = turf.destination(centerPt, 2, 315, {units: 'meters'}).geometry.coordinates;
+              // マップの回転を相殺して、画面に平行に配置する！
+              let baseAngle = -window.cadCurrentRotation;
+              let p1 = turf.destination(centerPt, 2, baseAngle + 45, {units: 'meters'}).geometry.coordinates;
+              let p2 = turf.destination(centerPt, 2, baseAngle + 135, {units: 'meters'}).geometry.coordinates;
+              let p3 = turf.destination(centerPt, 2, baseAngle + 225, {units: 'meters'}).geometry.coordinates;
+              let p4 = turf.destination(centerPt, 2, baseAngle + 315, {units: 'meters'}).geometry.coordinates;
               poly = turf.polygon([[p1, p2, p3, p4, p1]]);
           } else {
               poly = turf.circle(centerPt, 0.002, {steps: 16, units: 'kilometers'});
           }
 
           let paths = poly.geometry.coordinates[0].map(c => ({lat: c[1], lng: c[0]}));
+          // 🌟 editable と draggable を付与！パワーポイントのように引っ張って形を変えられます
           let gPoly = new google.maps.Polygon({
               paths: paths, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2,
-              map: window.cadMap, zIndex: 10
+              map: window.cadMap, editable: true, draggable: true, zIndex: 10
           });
           
-          // カスタムのIDをつけてクリック操作可能にする
           gPoly.uneIndex = 'custom_' + Date.now();
           google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
           
@@ -2378,7 +2444,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.reassignLabels(); 
       };
 
-      // 🌟 バグ修正版：1箇所にまとまらず、完璧に等間隔で敷き詰める計算エンジン
       window.cadGenerateLines = () => {
           try {
               if (!window.cadTargetId) return;
@@ -2432,7 +2497,6 @@ document.getElementById('btnLoadFude').onclick = () => {
 
               for (let i = 0; i < uneCount; i++) {
                   let offset = startOffset + i * actualWidthM;
-                  // 🌟 ここがバグ修正！Turfの純正機能で絶対座標のズレをなくす！
                   let direction = offset >= 0 ? angle + 90 : angle - 90;
                   let oPt = turf.destination(centerTurf, Math.abs(offset), direction, {units: 'meters'});
                   
@@ -2485,22 +2549,45 @@ document.getElementById('btnLoadFude').onclick = () => {
 
       function addUnePolygon(coordsArray, idx) {
           const path = coordsArray.map(c => ({lat: c[1], lng: c[0]}));
+          // 🌟 生成した畝も editable にすることで、後から指で引っ張って形を変えられる！
           const gPoly = new google.maps.Polygon({ 
               paths: path, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, 
-              strokeWeight: 2, map: window.cadMap, zIndex: 10, clickable: true 
+              strokeWeight: 2, map: window.cadMap, zIndex: 10, editable: true, draggable: true, clickable: true 
           });
           gPoly.uneIndex = 'une_' + idx;
           google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
           window.cadUnePolygons.push(gPoly);
       }
 
-      // 🌟 個別編集モーダルを開く
       window.openCadEditModal = (idx) => {
           document.getElementById('cadEditIndex').value = idx;
           document.getElementById('cadEditPolyModal').style.display = 'flex';
       };
 
-      // 🌟 10cmずつ移動させる機能！
+      // 🌟 新機能：ポリゴンを回転させる！
+      window.cadRotatePoly = (deg) => {
+          const idx = document.getElementById('cadEditIndex').value;
+          const isCustom = idx.startsWith('custom_');
+          const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
+          const poly = polyList.find(p => p.uneIndex === idx);
+          if (!poly) return;
+          
+          let path = poly.getPath();
+          let coords = [];
+          for (let i = 0; i < path.getLength(); i++) {
+              let pt = path.getAt(i);
+              coords.push([pt.lng(), pt.lat()]);
+          }
+          coords.push([path.getAt(0).lng(), path.getAt(0).lat()]);
+          let tPoly = turf.polygon([coords]);
+          
+          let rotatedPoly = turf.transformRotate(tPoly, deg);
+          let newCoords = rotatedPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
+          newCoords.pop();
+          poly.setPath(newCoords);
+          window.reassignLabels();
+      };
+
       window.cadMovePoly = (dir) => {
           const idx = document.getElementById('cadEditIndex').value;
           const isCustom = idx.startsWith('custom_');
@@ -2520,14 +2607,13 @@ document.getElementById('btnLoadFude').onclick = () => {
           for (let i = 0; i < path.getLength(); i++) {
               let pt = path.getAt(i);
               let tPt = turf.point([pt.lng(), pt.lat()]);
-              let moved = turf.destination(tPt, 0.1, bearingMap[dir], {units: 'meters'}); // 10cm移動
+              let moved = turf.destination(tPt, 0.1, bearingMap[dir], {units: 'meters'}); 
               newCoords.push(new google.maps.LatLng(moved.geometry.coordinates[1], moved.geometry.coordinates[0]));
           }
           poly.setPath(newCoords);
           window.reassignLabels();
       };
 
-      // 🌟 サイズを拡大縮小する機能！
       window.cadResizePoly = (scaleFactor) => {
           const idx = document.getElementById('cadEditIndex').value;
           const isCustom = idx.startsWith('custom_');
@@ -2551,7 +2637,6 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.reassignLabels();
       };
 
-      // 🌟 不要な図形を削除する機能！
       window.cadDeletePoly = () => {
           const idx = document.getElementById('cadEditIndex').value;
           const isCustom = idx.startsWith('custom_');
@@ -2569,7 +2654,8 @@ document.getElementById('btnLoadFude').onclick = () => {
 
       window.reassignLabels = () => {
           if (window.cadUneLabels) { window.cadUneLabels.forEach(lbl => lbl.setMap(null)); window.cadUneLabels = []; }
-          const initialFontSize = Math.max(0.5, 11 / (window.cadCurrentScale || 1)) + 'px';
+          let apparentScale = window.cadCurrentScale / BASE_SCALE;
+          const initialFontSize = Math.max(2, 24 / apparentScale) + 'px';
           let idx = 1;
 
           const createLbl = (poly) => {
@@ -2581,7 +2667,6 @@ document.getElementById('btnLoadFude').onclick = () => {
                   icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 11
               });
               
-              // 数字ラベルをタップしても編集モーダルが開くように連動！
               google.maps.event.addListener(labelMarker, 'click', () => window.openCadEditModal(poly.uneIndex));
               window.cadUneLabels.push(labelMarker);
           };
