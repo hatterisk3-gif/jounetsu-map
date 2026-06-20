@@ -1662,6 +1662,20 @@ document.getElementById('btnLoadFude').onclick = () => {
               document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生しました: " + e.message);
           }
       };
+      
+      window.updateCadLabelScale = () => {
+          if (!window.cadUneLabels || !window.cadMap) return;
+          let currentZoom = window.cadMap.getZoom() || 20;
+          let apparentScale = Math.pow(2, currentZoom - 20);
+          if (apparentScale < 0.25) apparentScale = 0.25;
+          let newSize = 24 / apparentScale; 
+          let fontSizeStr = Math.max(8, newSize) + 'px'; 
+          window.cadUneLabels.forEach(marker => {
+              let lbl = marker.getLabel();
+              if (lbl) { lbl.fontSize = fontSizeStr; marker.setLabel(lbl); }
+          });
+      };
+
 // ==========================================
       // 🚜 新・農業CADシステム（地形設計特化版）
       // ==========================================
@@ -1679,24 +1693,12 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.nakamichiTempMarker = null;
 
       window.cadCurrentRotation = 0; 
-      const BASE_SCALE = 0.5;
-      window.cadCurrentScale = BASE_SCALE; 
+      window.cadCurrentScale = 1; 
 
       // 🌟 新機能：履歴保存用のスタック
       window.cadHistory = [];
       window.cadHistoryIndex = -1;
       window.isHistoryNavigating = false;
-
-      window.updateCadLabelScale = () => {
-          if (!window.cadUneLabels) return;
-          let apparentScale = window.cadCurrentScale / BASE_SCALE;
-          let newSize = 24 / apparentScale; 
-          let fontSizeStr = Math.max(2, newSize) + 'px'; 
-          window.cadUneLabels.forEach(marker => {
-              let lbl = marker.getLabel();
-              if (lbl) { lbl.fontSize = fontSizeStr; marker.setLabel(lbl); }
-          });
-      };
 
       // 🌟 新機能：状態を保存していつでも「戻す/進む」できるようにする
       window.saveCadStateToHistory = () => {
@@ -1740,7 +1742,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.isHistoryNavigating = true;
           
           const state = JSON.parse(window.cadHistory[index]);
-          window.cadClearLines(true); // 内部クリア（履歴には残さない）
+          window.cadClearLines(true); 
 
           document.getElementById('cadAngle').value = state.angle || 0;
           document.getElementById('cadWidth').value = state.width || 150;
@@ -1819,8 +1821,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           const theta = -window.cadCurrentRotation * Math.PI / 180;
           const cosT = Math.cos(theta); const sinT = Math.sin(theta);
-          const unscaledDx = dx / window.cadCurrentScale; const unscaledDy = dy / window.cadCurrentScale;
-          const mapDx = unscaledDx * cosT - unscaledDy * sinT; const mapDy = unscaledDx * sinT + unscaledDy * cosT;
+          const mapDx = dx * cosT - dy * sinT; const mapDy = dx * sinT + dy * cosT;
           
           const proj = window.cadMap.getProjection();
           const scale = Math.pow(2, window.cadMap.getZoom());
@@ -1868,7 +1869,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (!wrapper) return; 
 
           let initialPinchDist = null; let initialPinchAngle = null;
-          let startScale = BASE_SCALE; let startRotation = 0;
+          let startRotation = 0;
           let lastTouchX = null; let lastTouchY = null;
           let startPageX = null; let startPageY = null;
           let isDragging = false; let pinchMode = null; 
@@ -1878,14 +1879,12 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
               let zoomSpeed = 0.25; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
-              let newScale = window.cadCurrentScale + delta;
-              if (newScale < BASE_SCALE) newScale = BASE_SCALE;
-              if (newScale > BASE_SCALE * 30) newScale = BASE_SCALE * 30;
-              window.cadCurrentScale = newScale;
-              window.updateCadLabelScale();
-
+              if (window.cadMap) window.cadMap.setZoom(window.cadMap.getZoom() + delta);
+              
               const mapDiv = document.getElementById('cadMap');
-              if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
+              if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
+              if (typeof window.updateCadLabelPositions === 'function') window.updateCadLabelPositions();
+              if (typeof window.updateCadLabelScale === 'function') window.updateCadLabelScale();
           }, {passive: false});
 
           wrapper.addEventListener('mousedown', (e) => {
@@ -1902,12 +1901,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               const currentX = e.pageX; const currentY = e.pageY;
               const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
               
-              // 🌟 バグ修正：判定を「5」に上げて少し鈍感にし、ピンを刺しやすくしました！
               if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true;
               
               if (isDragging) {
                   const DAMPING = 0.6;
-                  let apparentScale = window.cadCurrentScale / BASE_SCALE;
+                  let apparentScale = 1;
                   let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
 
                   const theta = window.cadCurrentRotation * Math.PI / 180;
@@ -2145,14 +2143,14 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadCurrentRotation = -angle; 
           document.documentElement.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg'); 
           const mapDiv = document.getElementById('cadMap');
-          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
+          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
       };
 
       window.cadRotateMap = (deg) => {
           window.cadCurrentRotation += deg;
           document.documentElement.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg'); 
           const mapDiv = document.getElementById('cadMap');
-          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
+          if (mapDiv) mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
           let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
           if (displayAngle < 0) displayAngle += 360;
           document.getElementById('cadAngle').value = displayAngle;
