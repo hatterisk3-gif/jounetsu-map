@@ -45,7 +45,7 @@ const autoDeployPrompt = "作業が完了したら、変更内容を分かりや
 const fullCommand = `${data.command}。 ${autoDeployPrompt}`;
 
 // 付け足したフルバージョンの指示でANTを起動する
-const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions`, { encoding: 'utf8' });
+const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
         console.log('✅ Antigravity の実行が完了しました！');
         console.log(output);
 

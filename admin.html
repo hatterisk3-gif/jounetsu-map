@@ -2038,7 +2038,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           
           if (state.customShapes) {
               state.customShapes.forEach((cPath, idx) => {
-                  let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: true, zIndex: 10 });
+                  let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
                   gPoly.uneIndex = 'custom_' + idx;
                   google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                   window.bindShapeHistoryEvents(gPoly);
@@ -2048,7 +2048,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           if (state.unePolygons) {
               state.unePolygons.forEach((uPath, idx) => {
-                  let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: true, zIndex: 10 });
+                  let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
                   gPoly.uneIndex = 'une_' + idx;
                   google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                   window.bindShapeHistoryEvents(gPoly);
@@ -2365,7 +2365,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
                   if (saved.customShapes) {
                       saved.customShapes.forEach((cPath, idx) => {
-                          let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: true, zIndex: 10 });
+                          let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
                           gPoly.uneIndex = 'custom_' + idx;
                           google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                           window.bindShapeHistoryEvents(gPoly);
@@ -2374,7 +2374,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
                   if (saved.unePolygons) {
                       saved.unePolygons.forEach((uPath, idx) => {
-                          let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: true, zIndex: 10 });
+                          let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
                           gPoly.uneIndex = 'une_' + idx;
                           google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                           window.bindShapeHistoryEvents(gPoly);
@@ -2569,7 +2569,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           }
 
           let paths = poly.geometry.coordinates[0].map(c => ({lat: c[1], lng: c[0]}));
-          let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: true, zIndex: 10 });
+          let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
           
           gPoly.uneIndex = 'custom_' + Date.now();
           google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
@@ -2669,7 +2669,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           const path = coordsArray.map(c => ({lat: c[1], lng: c[0]}));
           const gPoly = new google.maps.Polygon({ 
               paths: path, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, 
-              strokeWeight: 2, map: window.cadMap, zIndex: 10, editable: true, draggable: true, clickable: true 
+              strokeWeight: 2, map: window.cadMap, zIndex: 10, editable: true, draggable: false, clickable: true 
           });
           gPoly.uneIndex = 'une_' + idx;
           google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
