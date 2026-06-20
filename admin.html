@@ -277,6 +277,8 @@
       const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8/exec";
       let currentUser="", loadedPolygons={}, editingId=null, originalCoordsForEdit=[], pdlLocations=[], pdlConditions=[], pdlStatuses=[], toukiList=[], map, drawingManager, infoWindow, currentPolygon=null, currentMarker=null, isMergeMode=false, mergeBaseId=null, userLocationMarker=null;
       let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [];
+      let mapInitPromise, resolveMapInit;
+      mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
       let latestUserPos = null;
       let customDrawingMode = null; let customDrawingPath = []; let customDrawingPolyline = null; let customDrawingPolygon = null;
       let customDrawingMarkers = []; let customDrawingLabelMarker = null;
@@ -483,6 +485,10 @@
       }
 
       function renderInitData(data) {
+          if (!map) {
+              mapInitPromise.then(() => renderInitData(data));
+              return;
+          }
           if(!data || !data.pdl) return;
 
           window.pdlMachines = data.pdl.machines || [];
@@ -2785,11 +2791,7 @@ document.getElementById('btnLoadFude').onclick = () => {
       };
 
       
-      // 地図の初期化完了を待つPromiseとresolve用関数を準備
-      let resolveMapInit;
-      const mapInitPromise = new Promise((resolve) => {
-          resolveMapInit = resolve;
-      });
+      // 地図の初期化完了を待つPromiseは上部で定義済み
 
       document.addEventListener('DOMContentLoaded', () => {
           function tryInitMap() {
@@ -2962,14 +2964,18 @@ document.getElementById('btnLoadFude').onclick = () => {
               // 🌟自動ログイン＆キャッシュ読み込みは、ログイン情報がある場合のみ実行！🌟
               const cachedData = localStorage.getItem('pMapAdminInitData');
               if (cachedData) {
-                  try { 
-                      renderInitData(JSON.parse(cachedData)); 
-                      setTimeout(() => { executeLogin(true); }, 1500);
-                  } catch(e) {
-                      executeLogin(true);
-                  }
+                  mapInitPromise.then(() => {
+                      try { 
+                          renderInitData(JSON.parse(cachedData)); 
+                          setTimeout(() => { executeLogin(true); }, 1500);
+                      } catch(e) {
+                          executeLogin(true);
+                      }
+                  });
               } else {
-                  executeLogin(true);
+                  mapInitPromise.then(() => {
+                      executeLogin(true);
+                  });
               }
           } else {
               // ログイン情報がない場合は手動ログインを待機
