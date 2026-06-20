@@ -43,12 +43,11 @@ async function watch() {
 // ⚙️ 【重要】ステップ1で確認したデプロイIDを貼り付けてください
 const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
 
-// AIに「Git保存 → GAS上書き → バージョン作成 → 本番デプロイ更新」までを完璧に指示する裏コマンド
-const autoDeployPrompt = `作業が完了したら、以下の手順で完全なデプロイを行ってください：
+// バージョン番号の読み取りを完全に廃止した、超シンプルな裏コマンド
+const autoDeployPrompt = `作業が完了したら、以下の手順でデプロイを行ってください：
 1. 変更内容を要約して git commit と git push を実行する。
 2. \`clasp push\` を実行する。
-3. \`clasp version\` を実行し、その出力結果から新しく作成された「バージョン番号（数字）」を読み取る。
-4. \`clasp deploy -i ${DEPLOYMENT_ID} -V [読み取ったバージョン番号]\` を実行して、本番環境のURLを更新する。`;
+3. \`clasp deploy -i ${DEPLOYMENT_ID}\` を実行して、本番環境を更新する。`;
 
 const fullCommand = `${data.command}。 ${autoDeployPrompt}`;
 
