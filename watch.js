@@ -43,21 +43,17 @@ async function watch() {
 // ⚙️ 【重要】ステップ1で確認したデプロイIDを貼り付けてください
 const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
 
-// 【修正版】AIが絶対に迷わない裏コマンド
-const autoDeployPrompt = `コードの修正作業が完了したら、必ずBash（ターミナル）を使用して、以下の順番でコマンドを1つずつ実行してください：
-1. \`git add .\` (変更をすべて追加)
-2. \`git commit -m "変更内容の要約"\` (要約を書いてコミット)
-3. \`git push\` (GitHub等へプッシュ)
-4. \`clasp push\` (GASへプッシュ)
-5. \`clasp deploy -i ${DEPLOYMENT_ID}\` (本番環境を更新)`;
+// 【修正版】改行を一切なくし、ターミナルで千切れないようにした1行の裏コマンド
+const autoDeployPrompt = `コードの修正作業が完了したら必ずBashを使用して以下の順番でコマンドを実行してください。 1. \`git add .\`  2. \`git commit -m \\"変更完了\\"\`  3. \`git push\`  4. \`clasp push\`  5. \`clasp deploy -i ${DEPLOYMENT_ID}\``;
 
 // ★LINEからの指示に含まれる改行（\n）を、すべて「、」に自動で置き換える処理
-const cleanCommand = data.command.replace(/\r?\n/g, '、');
+// （※GAS側で対応済みの場合はそのままでも問題ありません）
+const cleanCommand = data.command.replace(/\r?\n/g, ' ');
 
 // 書き換えた cleanCommand を使って指示を組み立てる
 const fullCommand = `${cleanCommand}。 ${autoDeployPrompt}`;
 
-// タイムアウトを15分に延ばした完全版で起動（引数を fullCommand に）
+// タイムアウトを15分に延ばした完全版で起動
 const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
         console.log('✅ Antigravity の実行が完了しました！');
         console.log(output);
