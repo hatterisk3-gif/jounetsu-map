@@ -40,12 +40,11 @@ async function watch() {
       try {
         // パソコンのターミナルで「agy run "指示内容"」を自動実行する
         // ※インストールした環境に合わせて、コマンドが 'antigravity' か 'agy' か確認してください
-// ⚙️ 【重要】ステップ1で確認したデプロイIDを貼り付けてください
+// ⚙️ 【重要】ステップ1で確認したデプロイID
 const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
 
-// 【修正版】改行を一切なくし、ターミナルで千切れないようにした1行の裏コマンド
-const autoDeployPrompt = `コードの修正作業が完了したら必ずBashを使用して以下の順番でコマンドを実行してください。 1. \`git add .\`  2. \`git commit -m \\"変更完了\\"\`  3. \`git push\`  4. \`clasp push\`  5. \`clasp deploy -i ${DEPLOYMENT_ID}\``;
-
+// 【進化版】AIにコミットメッセージを要約させる1行裏コマンド
+const autoDeployPrompt = `コードの修正作業が完了したら必ずBashを使用して以下の順番でコマンドを実行してください。 1. \`git add .\`  2. 今回の変更内容を分かりやすく要約し、\`git commit -m \\"[ここに要約を記載]\\"\` の形式で実行する  3. \`git push\`  4. \`clasp push\`  5. \`clasp deploy -i ${DEPLOYMENT_ID}\``;
 // ★LINEからの指示に含まれる改行（\n）を、すべて「、」に自動で置き換える処理
 // （※GAS側で対応済みの場合はそのままでも問題ありません）
 const cleanCommand = data.command.replace(/\r?\n/g, ' ');
