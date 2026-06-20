@@ -40,11 +40,19 @@ async function watch() {
       try {
         // パソコンのターミナルで「agy run "指示内容"」を自動実行する
         // ※インストールした環境に合わせて、コマンドが 'antigravity' か 'agy' か確認してください
-      // LINEの指示のうしろに、絶対やってほしい「裏コマンド」を自動でくっつける
-const autoDeployPrompt = "作業が完了したら、変更内容を分かりやすく要約して git commit と git push を実行してください。その後、必ず clasp push を実行してGASに変更を反映させてください。";
+// ⚙️ 【重要】ステップ1で確認したデプロイIDを貼り付けてください
+const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
+
+// AIに「Git保存 → GAS上書き → バージョン作成 → 本番デプロイ更新」までを完璧に指示する裏コマンド
+const autoDeployPrompt = `作業が完了したら、以下の手順で完全なデプロイを行ってください：
+1. 変更内容を要約して git commit と git push を実行する。
+2. \`clasp push\` を実行する。
+3. \`clasp version\` を実行し、その出力結果から新しく作成された「バージョン番号（数字）」を読み取る。
+4. \`clasp deploy -i ${DEPLOYMENT_ID} -V [読み取ったバージョン番号]\` を実行して、本番環境のURLを更新する。`;
+
 const fullCommand = `${data.command}。 ${autoDeployPrompt}`;
 
-// 付け足したフルバージョンの指示でANTを起動する
+// タイムアウトを15分に延ばした完全版で起動
 const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
         console.log('✅ Antigravity の実行が完了しました！');
         console.log(output);
