@@ -33,57 +33,43 @@ async function watch() {
     }
 
     // --- 2. LINEからの指示の実行（Antigravityの起動） ---
-  // --- 2. LINEからの指示の実行（Antigravityの起動） ---
-  if (data.rowIndex && data.command) {
-    console.log(`🤖 LINEからのオリジナルの指示:\n${data.command}`);
-
-    // ★【超強力版】あらゆるパターンの改行（\r、\n）を「、」に変換する
-    const cleanCommand = data.command.replace(/[\r\n]+/g, '、');
-    
-    // ★ここで本当に1行に変換されたかターミナルに表示して確認します！
-    console.log(`🪄 AIに渡す1行変換後の指示: "${cleanCommand}"`);
-    console.log('🚀 Antigravity を起動して開発を開始します...');
-
-    try {
-      // 1. AIには「コードの修正だけ」をさせる（裏コマンドなし！）
-      // ※ cleanCommand を渡します
-      const output = execSync(`agy --print "${cleanCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
-      console.log('✅ Antigravity のコード修正が完了しました！');
-      console.log(output);
-
-      // 2. ここから番人（Node.js）が強制的にデプロイ作業を代行する！
-      console.log('🚀 GitとGASへの自動デプロイを開始します...');
-      
-      // Gitのコミットメッセージがエラーにならないよう、ダブルクォーテーションをエスケープ
-      const commitMessage = cleanCommand.replace(/"/g, '\\"'); 
+    if (data.rowIndex && data.command) {
+      console.log(`🤖 LINEからの指示を検知: "${data.command}"`);
+      console.log('🚀 Antigravity を起動して開発を開始します...');
 
       try {
-        execSync('git add .', { encoding: 'utf8' });
-        execSync(`git commit -m "${commitMessage}"`, { encoding: 'utf8' });
-        execSync('git push', { encoding: 'utf8' });
-        console.log('✅ GitへのPushが完了しました。');
-      } catch (e) {
-        console.log('⚠️ Gitコミット不要（変更なし）、またはエラー:', e.message);
+        // パソコンのターミナルで「agy run "指示内容"」を自動実行する
+        // ※インストールした環境に合わせて、コマンドが 'antigravity' か 'agy' か確認してください
+// ⚙️ 【重要】ステップ1で確認したデプロイIDを貼り付けてください
+const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
+
+// 【修正版】AIが絶対に迷わない裏コマンド
+const autoDeployPrompt = `コードの修正作業が完了したら、必ずBash（ターミナル）を使用して、以下の順番でコマンドを1つずつ実行してください：
+1. \`git add .\` (変更をすべて追加)
+2. \`git commit -m "変更内容の要約"\` (要約を書いてコミット)
+3. \`git push\` (GitHub等へプッシュ)
+4. \`clasp push\` (GASへプッシュ)
+5. \`clasp deploy -i ${DEPLOYMENT_ID}\` (本番環境を更新)`;
+
+// ★LINEからの指示に含まれる改行（\n）を、すべて「、」に自動で置き換える処理
+const cleanCommand = data.command.replace(/\r?\n/g, '、');
+
+// 書き換えた cleanCommand を使って指示を組み立てる
+const fullCommand = `${cleanCommand}。 ${autoDeployPrompt}`;
+
+// タイムアウトを15分に延ばした完全版で起動（引数を fullCommand に）
+const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
+        console.log('✅ Antigravity の実行が完了しました！');
+        console.log(output);
+
+        // 実行が完了したら、GASに「完了したよ」と伝える
+        await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
+        console.log('🔔 ステータスを「完了」に更新しました。');
+
+      } catch (cmdError) {
+        console.error('❌ Antigravity の実行中にエラーが発生しました:', cmdError.message);
       }
-
-      try {
-        execSync('clasp push', { encoding: 'utf8' });
-        // ⚙️ ご自身のデプロイID
-        const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
-        execSync(`clasp deploy -i ${DEPLOYMENT_ID}`, { encoding: 'utf8' });
-        console.log('✅ GAS本番環境へのデプロイが完了しました。');
-      } catch (e) {
-        console.log('❌ claspのエラー:', e.message);
-      }
-
-      // 3. 実行がすべて完了したら、GASに「完了したよ」と伝える
-      await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
-      console.log('🔔 ステータスを「完了」に更新しました。');
-
-    } catch (cmdError) {
-      console.error('❌ 実行中にエラーが発生しました:', cmdError.message);
     }
-  }
 
   } catch (error) {
     // 通信エラーなどは一時的なものとして無視してループを続ける

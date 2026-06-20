@@ -1969,8 +1969,8 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.updateCadMapTransform = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) {
-              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
-              mapDiv.style.setProperty('--cad-scale', window.cadCurrentScale);
+              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
+              mapDiv.style.setProperty('--cad-scale', 1);
           }
           if (typeof window.updateCadLabelPositions === 'function') {
               window.updateCadLabelPositions();
@@ -2053,12 +2053,9 @@ document.getElementById('btnLoadFude').onclick = () => {
 
       window.updateCadLabelScale = () => {
           if (!window.cadUneLabels) return;
-          let apparentScale = window.cadCurrentScale / BASE_SCALE;
-          let newSize = 24 / apparentScale; 
-          let fontSizeStr = Math.max(2, newSize) + 'px'; 
           window.cadUneLabels.forEach(marker => {
               let lbl = marker.getLabel();
-              if (lbl) { lbl.fontSize = fontSizeStr; marker.setLabel(lbl); }
+              if (lbl) { lbl.fontSize = '24px'; marker.setLabel(lbl); }
           });
       };
 
@@ -2183,7 +2180,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           const theta = -window.cadCurrentRotation * Math.PI / 180;
           const cosT = Math.cos(theta); const sinT = Math.sin(theta);
-          const unscaledDx = dx / window.cadCurrentScale; const unscaledDy = dy / window.cadCurrentScale;
+          const unscaledDx = dx; const unscaledDy = dy;
           const mapDx = unscaledDx * cosT - unscaledDy * sinT; const mapDy = unscaledDx * sinT + unscaledDy * cosT;
           
           const proj = window.cadMap.getProjection();
@@ -2242,18 +2239,18 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
               let zoomSpeed = 0.25; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
-              let newScale = window.cadCurrentScale + delta;
-              if (newScale < BASE_SCALE * 0.2) newScale = BASE_SCALE * 0.2;
-              if (newScale > BASE_SCALE * 30) newScale = BASE_SCALE * 30;
-              window.cadCurrentScale = newScale;
-              window.updateCadLabelScale();
-              window.updateCadMapTransform();
+              if (window.cadMap) {
+                  window.cadMap.setZoom(window.cadMap.getZoom() + delta);
+              }
           }, {passive: false});
 
           wrapper.addEventListener('mousedown', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
+              let compStyle = window.getComputedStyle(e.target);
+              let cursor = compStyle.cursor || '';
+              let isInteractiveCursor = ['pointer', 'move', 'crosshair', 'grab', 'grabbing'].includes(cursor) || cursor.includes('resize');
               let targetStyle = (e.target.getAttribute('style') || '').toLowerCase();
-              ignoreDrag = targetStyle.includes('cursor: pointer') || targetStyle.includes('cursor: move') || targetStyle.includes('cursor: crosshair') || targetStyle.includes('resize') || e.target.tagName.toLowerCase() === 'img' || e.target.tagName.toLowerCase() === 'shape';
+              ignoreDrag = isInteractiveCursor || targetStyle.includes('cursor:') || e.target.tagName.toLowerCase() === 'img' || e.target.tagName.toLowerCase() === 'shape';
               lastTouchX = e.pageX; lastTouchY = e.pageY; startPageX = e.pageX; startPageY = e.pageY;
               isMouseDown = true; isDragging = false;
           });
@@ -2269,7 +2266,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               
               if (isDragging) {
                   const DAMPING = 0.6;
-                  let apparentScale = window.cadCurrentScale / BASE_SCALE;
+                  let apparentScale = 1;
                   let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
 
                   const theta = window.cadCurrentRotation * Math.PI / 180;
@@ -2299,14 +2296,17 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           wrapper.addEventListener('touchstart', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
+              let compStyle = window.getComputedStyle(e.target);
+              let cursor = compStyle.cursor || '';
+              let isInteractiveCursor = ['pointer', 'move', 'crosshair', 'grab', 'grabbing'].includes(cursor) || cursor.includes('resize');
               let targetStyle = (e.target.getAttribute('style') || '').toLowerCase();
-              ignoreDrag = targetStyle.includes('cursor: pointer') || targetStyle.includes('cursor: move') || targetStyle.includes('cursor: crosshair') || targetStyle.includes('resize') || e.target.tagName.toLowerCase() === 'img' || e.target.tagName.toLowerCase() === 'shape';
+              ignoreDrag = isInteractiveCursor || targetStyle.includes('cursor:') || e.target.tagName.toLowerCase() === 'img' || e.target.tagName.toLowerCase() === 'shape';
 
               if (e.touches.length === 2) {
                   e.preventDefault(); 
                   const dx = e.touches[0].pageX - e.touches[1].pageX; const dy = e.touches[0].pageY - e.touches[1].pageY;
                   initialPinchDist = Math.hypot(dx, dy); initialPinchAngle = Math.atan2(dy, dx);
-                  startScale = window.cadCurrentScale || BASE_SCALE; startRotation = window.cadCurrentRotation || 0;
+                  window.startZoom = window.cadMap ? window.cadMap.getZoom() : 20; startRotation = window.cadCurrentRotation || 0;
                   pinchMode = null; 
               } else if (e.touches.length === 1) {
                   lastTouchX = e.touches[0].pageX; lastTouchY = e.touches[0].pageY;
@@ -2333,10 +2333,10 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
 
                   if (pinchMode === 'zoom') {
-                      let newScale = startScale * (currentDist / initialPinchDist);
-                      if (newScale < BASE_SCALE * 0.2) { newScale = BASE_SCALE * 0.2; startScale = BASE_SCALE * 0.2; initialPinchDist = currentDist; } 
-                      else if (newScale > BASE_SCALE * 30) { newScale = BASE_SCALE * 30; startScale = BASE_SCALE * 30; initialPinchDist = currentDist; }
-                      window.cadCurrentScale = newScale; window.updateCadLabelScale();
+                      if (window.cadMap) {
+                          let zoomDiff = Math.log2(currentDist / initialPinchDist);
+                          window.cadMap.setZoom(window.startZoom + zoomDiff);
+                      }
                   } else if (pinchMode === 'rotate') {
                       window.cadCurrentRotation = startRotation + angleDiff;
                       document.documentElement.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg'); 
@@ -2357,7 +2357,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (isDragging) {
                       e.preventDefault(); 
                       const DAMPING = 0.6;
-                      let apparentScale = window.cadCurrentScale / BASE_SCALE;
+                      let apparentScale = 1;
                       let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
 
                       const theta = window.cadCurrentRotation * Math.PI / 180;
@@ -2839,8 +2839,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
       window.reassignLabels = () => {
           if (window.cadUneLabels) { window.cadUneLabels.forEach(lbl => lbl.setMap(null)); window.cadUneLabels = []; }
-          let apparentScale = window.cadCurrentScale / BASE_SCALE;
-          const initialFontSize = Math.max(2, 24 / apparentScale) + 'px';
+          const initialFontSize = '24px';
           let idx = 1;
 
           const createLbl = (poly) => {
