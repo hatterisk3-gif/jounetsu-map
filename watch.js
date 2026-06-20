@@ -1,0 +1,64 @@
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+// ⚙️ 設定（あなたの環境に合わせて書き換えてください）
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
+
+// 1秒ごとにGASを見に行くメイン関数
+async function watch() {
+  try {
+    // GASからデータを取得
+    const response = await fetch(GAS_WEBAPP_URL);
+    if (!response.ok) return;
+    
+    const data = await response.json();
+
+    // --- 1. README.md の自動更新 ---
+    if (data.readmeContent) {
+      const readmePath = path.join(__dirname, 'README.md');
+      // 現在のREADME.mdの内容を読み込む（ファイルがない場合は空）
+      let currentContent = '';
+      if (fs.existsSync(readmePath)) {
+        currentContent = fs.readFileSync(readmePath, 'utf8');
+      }
+
+      // スプレッドシートの構造が変わっていたら自動上書き
+      // ※手動で書いた部分を消さないよう、今回は最上部に追記、または丸ごと更新
+      // （※運用に合わせて調整可能ですが、一旦丸ごと最新化します）
+      if (currentContent !== data.readmeContent) {
+        fs.writeFileSync(readmePath, data.readmeContent, 'utf8');
+        console.log('📝 スプレッドシートの変更を検知：README.md を自動更新しました！');
+      }
+    }
+
+    // --- 2. LINEからの指示の実行（Antigravityの起動） ---
+    if (data.rowIndex && data.command) {
+      console.log(`🤖 LINEからの指示を検知: "${data.command}"`);
+      console.log('🚀 Antigravity を起動して開発を開始します...');
+
+      try {
+        // パソコンのターミナルで「agy run "指示内容"」を自動実行する
+        // ※インストールした環境に合わせて、コマンドが 'antigravity' か 'agy' か確認してください
+        const output = execSync(`agy run "${data.command}"`, { encoding: 'utf8' });
+        console.log('✅ Antigravity の実行が完了しました！');
+        console.log(output);
+
+        // 実行が完了したら、GASに「完了したよ」と伝える
+        await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
+        console.log('🔔 ステータスを「完了」に更新しました。');
+
+      } catch (cmdError) {
+        console.error('❌ Antigravity の実行中にエラーが発生しました:', cmdError.message);
+      }
+    }
+
+  } catch (error) {
+    // 通信エラーなどは一時的なものとして無視してループを続ける
+    // console.error('エラー:', error.message);
+  }
+}
+
+// 1秒（1000ミリ秒）ごとにwatch関数を繰り返し実行する
+console.log('👀 LINEからの指示とスプレッドシートの監視を開始しました...（終了するには Ctrl + C）');
+setInterval(watch, 1000);
