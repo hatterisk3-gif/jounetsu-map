@@ -2390,8 +2390,11 @@ document.getElementById('btnLoadFude').onclick = () => {
           wrapper.addEventListener('wheel', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
-              let zoomSpeed = 0.25; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
-              if (window.cadMap) window.cadMap.setZoom(window.cadMap.getZoom() + delta);
+              let zoomSpeed = 1; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
+              if (window.cadMap) {
+                  let nextZoom = Math.round(window.cadMap.getZoom() + delta);
+                  window.cadMap.setZoom(nextZoom);
+              }
               window.updateCadMapTransform();
           }, {passive: false});
 
