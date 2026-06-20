@@ -53,7 +53,9 @@
    
    /* 🌟 地図拡大時に変形用の白い丸マーカーを逆スケールして巨大化を防ぐ */
    #cadMap div:has(> img[src*="undo_poly"]),
-   #cadMap div:has(> img[src*="cb_direction"]) {
+   #cadMap div:has(> img[src*="cb_direction"]),
+   #cadMap div[style*="cursor: pointer"] img[src*="undo_poly"],
+   #cadMap div[style*="cursor: pointer"] img[src*="cb_direction"] {
        transform: scale(calc(1.0 / var(--cad-scale, 1.0))) !important;
        transform-origin: center !important;
    }
@@ -1970,25 +1972,56 @@ document.getElementById('btnLoadFude').onclick = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) {
               mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
+              
               let currentZoom = window.cadMap ? window.cadMap.getZoom() : 20;
               let apparentScale = Math.pow(2, currentZoom - 20);
               if (apparentScale < 1) apparentScale = 1;
               mapDiv.style.setProperty('--cad-scale', apparentScale);
+              
+              // 🌟 Google Mapsの実際の拡大率（コンテナの transform matrix）を検出して
+              // スケールに反映し、つまみと数字ラベルの巨大化を防ぐ
+              setTimeout(() => {
+                  let realScale = apparentScale;
+                  const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
+                  if (vertexImg) {
+                      let curr = vertexImg.parentElement;
+                      while (curr && curr.id !== 'cadMap') {
+                          const transform = window.getComputedStyle(curr).transform || curr.style.transform || '';
+                          if (transform && transform !== 'none') {
+                              const matrixMatch = transform.match(/matrix\(([\d.-]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
+                              if (matrixMatch) {
+                                  const a = parseFloat(matrixMatch[1]);
+                                  const b = parseFloat(matrixMatch[2]);
+                                  const scaleVal = Math.hypot(a, b);
+                                  if (scaleVal > 0.1) {
+                                      realScale = scaleVal;
+                                      break;
+                                  }
+                              }
+                          }
+                          curr = curr.parentElement;
+                      }
+                  }
+                  mapDiv.style.setProperty('--cad-scale', realScale);
+                  if (typeof window.updateCadLabelScale === 'function') {
+                      window.updateCadLabelScale(realScale);
+                  }
+              }, 50);
           }
           if (typeof window.updateCadLabelPositions === 'function') {
               window.updateCadLabelPositions();
           }
-          if (typeof window.updateCadLabelScale === 'function') {
-              window.updateCadLabelScale();
-          }
       };
 
-      window.updateCadLabelScale = () => {
+      window.updateCadLabelScale = (detectedScale) => {
           if (!window.cadUneLabels || !window.cadMap) return;
-          let currentZoom = window.cadMap.getZoom() || 20;
-          let apparentScale = Math.pow(2, currentZoom - 20);
-          if (apparentScale < 0.25) apparentScale = 0.25;
-          let newSize = 24 / apparentScale; 
+          let scale = detectedScale;
+          if (scale === undefined) {
+              let currentZoom = window.cadMap.getZoom() || 20;
+              scale = Math.pow(2, currentZoom - 20);
+          }
+          if (scale < 0.25) scale = 0.25;
+          let newSize = 24 / scale; 
           let fontSizeStr = Math.max(8, newSize) + 'px'; 
           window.cadUneLabels.forEach(marker => {
               let lbl = marker.getLabel();
@@ -2070,13 +2103,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           });
       };
 
-      window.updateCadLabelScale = () => {
-          if (!window.cadUneLabels) return;
-          window.cadUneLabels.forEach(marker => {
-              let lbl = marker.getLabel();
-              if (lbl) { lbl.fontSize = '24px'; marker.setLabel(lbl); }
-          });
-      };
+      // 重複定義を削除
 
       // 🌟 新機能：状態を保存していつでも「戻す/進む」できるようにする
       window.saveCadStateToHistory = () => {
@@ -2247,6 +2274,35 @@ document.getElementById('btnLoadFude').onclick = () => {
           const wrapper = document.getElementById('cadMapWrapper');
           if (!wrapper) return; 
 
+          // 🌟 つまみやピンをドラッグしたときに地図全体のドラッグ（独自スクロール）が競合するのを防ぐ
+          const checkIgnoreDrag = (target) => {
+              if (!target) return false;
+              let compStyle = window.getComputedStyle(target);
+              let cursor = compStyle.cursor || '';
+              let isInteractiveCursor = ['pointer', 'move', 'crosshair', 'grab', 'grabbing'].includes(cursor) || cursor.includes('resize');
+              let targetStyle = (target.getAttribute('style') || '').toLowerCase();
+              let isBasic = isInteractiveCursor || targetStyle.includes('cursor:') || target.tagName.toLowerCase() === 'img' || target.tagName.toLowerCase() === 'shape';
+              if (isBasic) return true;
+
+              let currEl = target;
+              while (currEl && currEl !== wrapper) {
+                  if (currEl.tagName.toLowerCase() === 'img') {
+                      let src = currEl.getAttribute('src') || '';
+                      if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out')) {
+                          return true;
+                      }
+                  }
+                  if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"]')) {
+                      return true;
+                  }
+                  if (currEl.getAttribute('draggable') === 'true' || (currEl.className && typeof currEl.className === 'string' && currEl.className.includes('gmnoprint'))) {
+                      return true;
+                  }
+                  currEl = currEl.parentElement;
+              }
+              return false;
+          };
+
           let initialPinchDist = null; let initialPinchAngle = null;
           let startScale = BASE_SCALE; let startRotation = 0;
           let lastTouchX = null; let lastTouchY = null;
@@ -2264,11 +2320,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           wrapper.addEventListener('mousedown', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
-              let compStyle = window.getComputedStyle(e.target);
-              let cursor = compStyle.cursor || '';
-              let isInteractiveCursor = ['pointer', 'move', 'crosshair', 'grab', 'grabbing'].includes(cursor) || cursor.includes('resize');
-              let targetStyle = (e.target.getAttribute('style') || '').toLowerCase();
-              ignoreDrag = isInteractiveCursor || targetStyle.includes('cursor:') || e.target.tagName.toLowerCase() === 'img' || e.target.tagName.toLowerCase() === 'shape';
+              ignoreDrag = checkIgnoreDrag(e.target);
               lastTouchX = e.pageX; lastTouchY = e.pageY; startPageX = e.pageX; startPageY = e.pageY;
               isMouseDown = true; isDragging = false;
           });
@@ -2310,15 +2362,17 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
           });
+          wrapper.addEventListener('mouseup', (e) => { 
+              if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
+                  window.handleMapClick(e.pageX, e.pageY);
+              }
+              isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
+          });
           wrapper.addEventListener('mouseleave', () => { isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); });
 
           wrapper.addEventListener('touchstart', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
-              let compStyle = window.getComputedStyle(e.target);
-              let cursor = compStyle.cursor || '';
-              let isInteractiveCursor = ['pointer', 'move', 'crosshair', 'grab', 'grabbing'].includes(cursor) || cursor.includes('resize');
-              let targetStyle = (e.target.getAttribute('style') || '').toLowerCase();
-              ignoreDrag = isInteractiveCursor || targetStyle.includes('cursor:') || e.target.tagName.toLowerCase() === 'img' || e.target.tagName.toLowerCase() === 'shape';
+              ignoreDrag = checkIgnoreDrag(e.target);
 
               if (e.touches.length === 2) {
                   e.preventDefault(); 
