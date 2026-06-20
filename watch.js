@@ -40,7 +40,12 @@ async function watch() {
       try {
         // パソコンのターミナルで「agy run "指示内容"」を自動実行する
         // ※インストールした環境に合わせて、コマンドが 'antigravity' か 'agy' か確認してください
-        const output = execSync(`agy --print "${data.command}" --model gemini-3.1-pro --dangerously-skip-permissions`, { encoding: 'utf8' });
+      // LINEの指示のうしろに、絶対やってほしい「裏コマンド」を自動でくっつける
+const autoDeployPrompt = "作業が完了したら、変更内容を分かりやすく要約して git commit と git push を実行してください。その後、必ず clasp push を実行してGASに変更を反映させてください。";
+const fullCommand = `${data.command}。 ${autoDeployPrompt}`;
+
+// 付け足したフルバージョンの指示でANTを起動する
+const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions`, { encoding: 'utf8' });
         console.log('✅ Antigravity の実行が完了しました！');
         console.log(output);
 
@@ -59,6 +64,17 @@ async function watch() {
   }
 }
 
-// 1秒（1000ミリ秒）ごとにwatch関数を繰り返し実行する
+// 作業中かどうかを覚えるフラグ
+let isProcessing = false;
+
+async function loop() {
+  if (!isProcessing) {
+    isProcessing = true;
+    await watch(); // ANTの作業が完全に終わるまでここでしっかり待つ
+    isProcessing = false;
+  }
+  setTimeout(loop, 1000); // すべて終わってから1秒後に次を確認する
+}
+
 console.log('👀 LINEからの指示とスプレッドシートの監視を開始しました...（終了するには Ctrl + C）');
-setInterval(watch, 1000);
+loop();

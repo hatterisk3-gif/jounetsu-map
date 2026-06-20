@@ -2785,13 +2785,21 @@ document.getElementById('btnLoadFude').onclick = () => {
       };
 
       
+      // 地図の初期化完了を待つPromiseとresolve用関数を準備
+      let resolveMapInit;
+      const mapInitPromise = new Promise((resolve) => {
+          resolveMapInit = resolve;
+      });
+
       document.addEventListener('DOMContentLoaded', () => {
           function tryInitMap() {
               if (typeof google === 'object' && typeof google.maps === 'object') {
                   try { 
                       initMap(); 
+                      resolveMapInit();
                   } catch(err) {
                       console.warn("地図の初期化エラー:", err);
+                      resolveMapInit(); // エラーが起きても次に進めるようにresolveする
                   }
               } else {
                   setTimeout(tryInitMap, 100);
@@ -2799,175 +2807,174 @@ document.getElementById('btnLoadFude').onclick = () => {
           }
           tryInitMap();
 
+          // ログイン処理やキャッシュ読み込みは即座に実行（地図の初期化を待たない）
           const id = localStorage.getItem('passionMapUserId');
           const pw = localStorage.getItem('passionMapUserPw');
           const savedName = localStorage.getItem('pMapAdminName'); 
 
-  
-              if(id && pw) { 
+          if (id && pw) { 
               const loginScreen = document.getElementById('loginScreen');
-              if(loginScreen) loginScreen.style.display = 'none';
+              if (loginScreen) loginScreen.style.display = 'none';
               
-              // 🌟🌟ここが消えていたので復活させます！🌟🌟
-              if(savedName) currentUser = savedName;
+              if (savedName) currentUser = savedName;
               document.getElementById('loginId').value = id; 
               document.getElementById('loginPw').value = pw; 
-              // 🌟🌟ここまで🌟🌟
-           
               
-   // 🌟共有されたURLやテキストを解析してピンを刺す、またはWorkerから引き継ぐ
-      const urlParams = new URLSearchParams(window.location.search);
-      
-      // Workerから飛んできたバトン（パラメータ）を取得
-      const directLat = urlParams.get('lat');
-      const directLng = urlParams.get('lng');
-      const directAction = urlParams.get('action');
-
-      if (directLat && directLng) {
-          // 🚀【パターンA】Workerから「登録しますか？→はい」で飛んできた場合
-          const shareLat = parseFloat(directLat);
-          const shareLng = parseFloat(directLng);
-          
-          // 🌟🌟リロード地獄を防ぐ魔法：URLからパラメータ（?lat=...）を消し去る！🌟🌟
-          window.history.replaceState(null, null, window.location.pathname);
-          
-          // ログイン処理や地図データの読み込みが終わるのを2.5秒だけ待ってから実行
-          setTimeout(() => {
-              const sharedPos = { lat: shareLat, lng: shareLng };
-              map.setCenter(sharedPos); map.setZoom(18);
-     // 🌟前のピンを消してから、新しいピンを変数に記憶させる！
-     if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
-              window.sharedLocationMarker = new google.maps.Marker({
-                  position: sharedPos, map: map,
-                  icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
-                  zIndex: 9999, animation: google.maps.Animation.DROP
-              });
-              // workerから「draw（描いて！）」の指示が来ていたら、自動で圃場ボタンを押す！
-              if (directAction === 'draw') {
-                  document.getElementById('btnDrawMode').click(); 
-                  customAlert("📍 作業員からの引き継ぎが完了しました。\n圃場を描画して登録してください。");
-              }
-          }, 2500);
-
-      } else {
-          // 📱【パターンB】これまでの共有テキスト（LINEから直接共有など）の場合
-          const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
-          
-          if (sharedText) {
-              // 🌟🌟ここでも魔法を使う：URLから短縮URLの痕跡（?text=...）を消し去る！🌟🌟
-              window.history.replaceState(null, null, window.location.pathname);
-              
-              customAlert("🔍 URLを解析中です...");
-              
-              (async () => {
-                  let shareLat = null, shareLng = null;
-                  let finalExpandedUrl = ""; 
+              // 🌟共有されたURLやテキストを解析してピンを刺す、またはWorkerから引き継ぐ
+              // （これは地図オブジェクト `map` を操作するため、地図の初期化完了を待って実行）
+              mapInitPromise.then(() => {
+                  const urlParams = new URLSearchParams(window.location.search);
                   
-                  // ① パターン強化版：query= や ll= にも対応！
-                  const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-                  const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
-                  const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+                  // Workerから飛んできたバトン（パラメータ）を取得
+                  const directLat = urlParams.get('lat');
+                  const directLng = urlParams.get('lng');
+                  const directAction = urlParams.get('action');
 
-                  if (matchURL) { shareLat = parseFloat(matchURL[1]); shareLng = parseFloat(matchURL[2]); } 
-                  else if (matchDMS) {
-                      shareLat = parseInt(matchDMS[1]) + parseInt(matchDMS[2])/60 + parseFloat(matchDMS[3])/3600;
-                      shareLng = parseInt(matchDMS[4]) + parseInt(matchDMS[5])/60 + parseFloat(matchDMS[6])/3600;
-                  } 
-                  else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
-                  
-                  // ② 座標が直接見つからなかった場合、短縮URLを探してGASに投げる
-                  if (!shareLat || !shareLng) {
-                      const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
-                      if (shortUrlMatch) {
-                          try {
-                              const shortUrl = shortUrlMatch[0];
-                              const result = await callGAS('getMapCoordinates', { url: shortUrl });
+                  if (directLat && directLng) {
+                      // 🚀【パターンA】Workerから「登録しますか？→はい」で飛んできた場合
+                      const shareLat = parseFloat(directLat);
+                      const shareLng = parseFloat(directLng);
+                      
+                      // 🌟🌟リロード地獄を防ぐ魔法：URLからパラメータ（?lat=...）を消し去る！🌟🌟
+                      window.history.replaceState(null, null, window.location.pathname);
+                      
+                      // ログイン処理や地図データの読み込みが終わるのを2.5秒だけ待ってから実行
+                      setTimeout(() => {
+                          const sharedPos = { lat: shareLat, lng: shareLng };
+                          map.setCenter(sharedPos); map.setZoom(18);
+                          // 🌟前のピンを消してから、新しいピンを変数に記憶させる！
+                          if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
+                          window.sharedLocationMarker = new google.maps.Marker({
+                              position: sharedPos, map: map,
+                              icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+                              zIndex: 9999, animation: google.maps.Animation.DROP
+                          });
+                          // workerから「draw（描いて！）」の指示が来ていたら、自動で圃場ボタンを押す！
+                          if (directAction === 'draw') {
+                              document.getElementById('btnDrawMode').click(); 
+                              customAlert("📍 作業員からの引き継ぎが完了しました。\n圃場を描画して登録してください。");
+                          }
+                      }, 2500);
+
+                  } else {
+                      // 📱【パターンB】これまでの共有テキスト（LINEから直接共有など）の場合
+                      const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
+                      
+                      if (sharedText) {
+                          // 🌟🌟ここでも魔法を使う：URLから短縮URLの痕跡（?text=...）を消し去る！🌟🌟
+                          window.history.replaceState(null, null, window.location.pathname);
+                          
+                          customAlert("🔍 URLを解析中です...");
+                          
+                          (async () => {
+                              let shareLat = null, shareLng = null;
+                              let finalExpandedUrl = ""; 
                               
-                              if (result && result.success) {
-                                  // GAS側で座標の抽出まで成功した場合！
-                                  shareLat = result.lat;
-                                  shareLng = result.lng;
-                              } else if (result && !result.success && result.expandedUrl) {
-                                  // 座標は見つからなかったが、URLの展開には成功した場合（住所検索などの場合）
-                                  const targetUrl = result.expandedUrl;
-                                  finalExpandedUrl = targetUrl;
-                                  
-                                  const placeMatch = targetUrl.match(/\/maps\/place\/([^/?]+)/) || targetUrl.match(/\/maps\/search\/([^/?]+)/) || targetUrl.match(/\/maps\/\?q=([^&]+)/);
-                                  if (placeMatch) {
-                                      let addressText = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
-                                      if (addressText.indexOf('%') !== -1) addressText = decodeURIComponent(addressText);
-                                      
-                                      document.getElementById('customAlertModal').querySelector('p').innerText = `🔍 住所/施設名「${addressText}」を検索中...`;
-                                      
-                                      const loc = await new Promise(resolve => {
-                                          new google.maps.Geocoder().geocode({ address: addressText }, (results, status) => {
-                                              resolve(status === 'OK' ? results[0].geometry.location : null);
-                                          });
-                                      });
-                                      
-                                      if (loc) { shareLat = loc.lat(); shareLng = loc.lng(); }
+                              // ① パターン強化版：query= や ll= にも対応！
+                              const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+                              const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
+                              const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+
+                              if (matchURL) { shareLat = parseFloat(matchURL[1]); shareLng = parseFloat(matchURL[2]); } 
+                              else if (matchDMS) {
+                                  shareLat = parseInt(matchDMS[1]) + parseInt(matchDMS[2])/60 + parseFloat(matchDMS[3])/3600;
+                                  shareLng = parseInt(matchDMS[4]) + parseInt(matchDMS[5])/60 + parseFloat(matchDMS[6])/3600;
+                              } 
+                              else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
+                              
+                              // ② 座標が直接見つからなかった場合、短縮URLを探してGASに投げる
+                              if (!shareLat || !shareLng) {
+                                  const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
+                                  if (shortUrlMatch) {
+                                      try {
+                                          const shortUrl = shortUrlMatch[0];
+                                          const result = await callGAS('getMapCoordinates', { url: shortUrl });
+                                          
+                                          if (result && result.success) {
+                                              shareLat = result.lat;
+                                              shareLng = result.lng;
+                                          } else if (result && !result.success && result.expandedUrl) {
+                                              const targetUrl = result.expandedUrl;
+                                              finalExpandedUrl = targetUrl;
+                                              
+                                              const placeMatch = targetUrl.match(/\/maps\/place\/([^/?]+)/) || targetUrl.match(/\/maps\/search\/([^/?]+)/) || targetUrl.match(/\/maps\/\?q=([^&]+)/);
+                                              if (placeMatch) {
+                                                  let addressText = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
+                                                  if (addressText.indexOf('%') !== -1) addressText = decodeURIComponent(addressText);
+                                                  
+                                                  document.getElementById('customAlertModal').querySelector('p').innerText = `🔍 住所/施設名「${addressText}」を検索中...`;
+                                                  
+                                                  const loc = await new Promise(resolve => {
+                                                      new google.maps.Geocoder().geocode({ address: addressText }, (results, status) => {
+                                                          resolve(status === 'OK' ? results[0].geometry.location : null);
+                                                      });
+                                                  });
+                                                  
+                                                  if (loc) { shareLat = loc.lat(); shareLng = loc.lng(); }
+                                              }
+                                          }
+                                      } catch(e) { console.warn("短縮URLの展開に失敗", e); }
                                   }
                               }
-                          } catch(e) { console.warn("短縮URLの展開に失敗", e); }
-                      }
-                  }
 
-                  // 最後にピンを刺す処理
-                  if (shareLat && shareLng) {
-                      document.getElementById('customAlertModal').style.display = 'none';
-                      const sharedPos = new google.maps.LatLng(shareLat, shareLng);
-                      map.setCenter(sharedPos); map.setZoom(18);
-                      new google.maps.Marker({
-                          position: sharedPos, map: map,
-                          icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
-                          zIndex: 9999, animation: google.maps.Animation.DROP
-                      });
-                      
-                      // 既存の圃場か自動判定
-                      let foundHojoId = null;
-                      if (google.maps.geometry && google.maps.geometry.poly) {
-                          for (let id in loadedPolygons) {
-                              const p = loadedPolygons[id];
-                              if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
-                                  foundHojoId = id; break;
+                              // 最後にピンを刺す処理
+                              if (shareLat && shareLng) {
+                                  document.getElementById('customAlertModal').style.display = 'none';
+                                  const sharedPos = new google.maps.LatLng(shareLat, shareLng);
+                                  map.setCenter(sharedPos); map.setZoom(18);
+                                  new google.maps.Marker({
+                                      position: sharedPos, map: map,
+                                      icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+                                      zIndex: 9999, animation: google.maps.Animation.DROP
+                                  });
+                                  
+                                  // 既存の圃場か自動判定
+                                  let foundHojoId = null;
+                                  if (google.maps.geometry && google.maps.geometry.poly) {
+                                      for (let id in loadedPolygons) {
+                                          const p = loadedPolygons[id];
+                                          if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
+                                              foundHojoId = id; break;
+                                          }
+                                      }
+                                  }
+                                  if (foundHojoId) {
+                                      customAlert("📍 既存の圃場が見つかりました！");
+                                      setTimeout(() => { 
+                                          document.getElementById('btnViewMode').click(); 
+                                          openM(foundHojoId); 
+                                      }, 1000); 
+                                  } else {
+                                      customAlert("📍 ここには圃場登録がありません。\n新規登録モードに切り替えます。");
+                                      setTimeout(() => { 
+                                          document.getElementById('btnDrawMode').click(); 
+                                      }, 1200);
+                                  }
+                              } else {
+                                  const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
+                                  customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。" + debugText);
                               }
-                          }
+                          })();
                       }
-                      if (foundHojoId) {
-                          // 🌟あった場合：自動で「閲覧モード」にして詳細を開く！
-                          customAlert("📍 既存の圃場が見つかりました！");
-                          setTimeout(() => { 
-                              document.getElementById('btnViewMode').click(); // 閲覧モードのボタンを押す
-                              openM(foundHojoId); // モーダルを開く
-                          }, 1000); 
-                      } else {
-                          // 🌟なかった場合：質問せずに自動で「圃場登録モード」にする！
-                          customAlert("📍 ここには圃場登録がありません。\n新規登録モードに切り替えます。");
-                          setTimeout(() => { 
-                              document.getElementById('btnDrawMode').click(); 
-                          }, 1200);
-                      }
-                    } else {
-                      const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
-                      customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。" + debugText);
                   }
-              })();
-          }
-      }
-      } // 🌟🌟ここが重要！URL解析のブロックを正しく閉じる！🌟🌟
+              });
 
-      const cachedData = localStorage.getItem('pMapAdminInitData');
-      if (cachedData) {
-          try { 
-              renderInitData(JSON.parse(cachedData)); 
-              setTimeout(() => { executeLogin(true); }, 1500);
-          } catch(e) {
-              executeLogin(true);
+              // 🌟自動ログイン＆キャッシュ読み込みは、ログイン情報がある場合のみ実行！🌟
+              const cachedData = localStorage.getItem('pMapAdminInitData');
+              if (cachedData) {
+                  try { 
+                      renderInitData(JSON.parse(cachedData)); 
+                      setTimeout(() => { executeLogin(true); }, 1500);
+                  } catch(e) {
+                      executeLogin(true);
+                  }
+              } else {
+                  executeLogin(true);
+              }
+          } else {
+              // ログイン情報がない場合は手動ログインを待機
+              console.log("ログイン情報がないため、手動ログインを待機します");
           }
-      } else {
-          executeLogin(true);
-      }
-      // 🌟🌟一番下にあった余分な } は削除しました🌟🌟
       });
     </script>
    <script>
