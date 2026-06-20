@@ -2235,12 +2235,24 @@ document.getElementById('btnLoadFude').onclick = () => {
           let isDragging = false; let pinchMode = null; 
           let isMouseDown = false; let ignoreDrag = false;
 
+          let targetZoom = null;
+          let zoomTimeout = null;
+
           wrapper.addEventListener('wheel', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
               let zoomSpeed = 0.25; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
               if (window.cadMap) {
-                  window.cadMap.setZoom(window.cadMap.getZoom() + delta);
+                  if (targetZoom === null) {
+                      targetZoom = window.cadMap.getZoom();
+                  }
+                  targetZoom += delta;
+                  window.cadMap.setZoom(targetZoom);
+
+                  if (zoomTimeout) clearTimeout(zoomTimeout);
+                  zoomTimeout = setTimeout(() => {
+                      targetZoom = null;
+                  }, 400);
               }
           }, {passive: false});
 
@@ -2407,7 +2419,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           if (!window.cadMap) {
               window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
-                  center: {lat: 33.91, lng: 134.66}, zoom: 20,
+                  center: {lat: 33.91, lng: 134.66}, zoom: 20, maxZoom: 30,
                   mapTypeId: 'satellite', tilt: 0, heading: 0,
                   mapId: 'DEMO_MAP_ID', gestureHandling: 'none', disableDefaultUI: true, zoomControl: true, isFractionalZoomEnabled: true
               });
