@@ -38,30 +38,44 @@ async function watch() {
       console.log('🚀 Antigravity を起動して開発を開始します...');
 
       try {
-        // パソコンのターミナルで「agy run "指示内容"」を自動実行する
-        // ※インストールした環境に合わせて、コマンドが 'antigravity' か 'agy' か確認してください
-// ⚙️ 【重要】ステップ1で確認したデプロイIDを貼り付けてください
-const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
-
-// バージョン番号の読み取りを完全に廃止した、超シンプルな裏コマンド
-const autoDeployPrompt = `作業が完了したら、以下の手順でデプロイを行ってください：
-1. 変更内容を要約して git commit と git push を実行する。
-2. \`clasp push\` を実行する。
-3. \`clasp deploy -i ${DEPLOYMENT_ID}\` を実行して、更新する。`;
-
-const fullCommand = `${data.command}。 ${autoDeployPrompt}`;
-
-// タイムアウトを15分に延ばした完全版で起動
-const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
-        console.log('✅ Antigravity の実行が完了しました！');
+        // ★LINEからの指示に含まれる改行（\n）を、すべて「、」に自動で置き換える処理
+        const cleanCommand = data.command.replace(/\r?\n/g, '、');
+      
+        // パソコンのターミナルで実行（引数を cleanCommand に変更）
+        const output = execSync(`agy --print "${cleanCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
+        console.log('✅ Antigravity のコード修正が完了しました！');
         console.log(output);
 
-        // 実行が完了したら、GASに「完了したよ」と伝える
+        // 2. ここから番人（Node.js）が強制的にデプロイ作業を代行する！
+        console.log('🚀 GitとGASへの自動デプロイを開始します...');
+        
+        // LINEの指示内容をそのままコミットメッセージにする（賢い！）
+        const commitMessage = data.command.replace(/"/g, '\"'); 
+
+        try {
+          execSync('git add .', { encoding: 'utf8' });
+          execSync(`git commit -m "${commitMessage}"`, { encoding: 'utf8' });
+          execSync('git push', { encoding: 'utf8' });
+          console.log('✅ GitへのPushが完了しました。');
+        } catch (e) {
+          console.log('⚠️ Gitコミット不要（変更なし）、またはエラー:', e.message);
+        }
+
+        try {
+          execSync('clasp push', { encoding: 'utf8' });
+          const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
+          execSync(`clasp deploy -i ${DEPLOYMENT_ID}`, { encoding: 'utf8' });
+          console.log('✅ GAS本番環境へのデプロイが完了しました。');
+        } catch (e) {
+          console.log('❌ claspのエラー:', e.message);
+        }
+
+        // 3. 実行がすべて完了したら、GASに「完了したよ」と伝える
         await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
         console.log('🔔 ステータスを「完了」に更新しました。');
 
       } catch (cmdError) {
-        console.error('❌ Antigravity の実行中にエラーが発生しました:', cmdError.message);
+        console.error('❌ 実行中にエラーが発生しました:', cmdError.message);
       }
     }
 
