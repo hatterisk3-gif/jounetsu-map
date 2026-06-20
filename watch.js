@@ -40,7 +40,7 @@ async function watch() {
       try {
         // パソコンのターミナルで「agy run "指示内容"」を自動実行する
         // ※インストールした環境に合わせて、コマンドが 'antigravity' か 'agy' か確認してください
-        const output = execSync(`agy run "${data.command}" --model pro`, { encoding: 'utf8' });
+        const output = execSync(`agy --print "${data.command}" --model gemini-3.1-pro --dangerously-skip-permissions`, { encoding: 'utf8' });
         console.log('✅ Antigravity の実行が完了しました！');
         console.log(output);
 
