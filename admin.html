@@ -50,6 +50,13 @@
        transform-origin: center center;
        display: inline-block;
    }
+   
+   /* 🌟 地図拡大時に変形用の白い丸マーカーを逆スケールして巨大化を防ぐ */
+   #cadMap div:has(> img[src*="undo_poly"]),
+   #cadMap div:has(> img[src*="cb_direction"]) {
+       transform: scale(calc(1.0 / var(--cad-scale, 1.0))) !important;
+       transform-origin: center !important;
+   }
    </style>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
   </head>
@@ -1962,7 +1969,8 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.updateCadMapTransform = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) {
-              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
+              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
+              mapDiv.style.setProperty('--cad-scale', window.cadCurrentScale);
           }
           if (typeof window.updateCadLabelPositions === 'function') {
               window.updateCadLabelPositions();
@@ -2234,7 +2242,10 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
               let zoomSpeed = 0.25; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
-              if (window.cadMap) window.cadMap.setZoom(window.cadMap.getZoom() + delta);
+              let newScale = window.cadCurrentScale + delta;
+              if (newScale < BASE_SCALE) newScale = BASE_SCALE;
+              if (newScale > BASE_SCALE * 30) newScale = BASE_SCALE * 30;
+              window.cadCurrentScale = newScale;
               window.updateCadLabelScale();
               window.updateCadMapTransform();
           }, {passive: false});
@@ -2295,7 +2306,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   e.preventDefault(); 
                   const dx = e.touches[0].pageX - e.touches[1].pageX; const dy = e.touches[0].pageY - e.touches[1].pageY;
                   initialPinchDist = Math.hypot(dx, dy); initialPinchAngle = Math.atan2(dy, dx);
-                  startScale = window.cadMap ? window.cadMap.getZoom() : 20; startRotation = window.cadCurrentRotation || 0;
+                  startScale = window.cadCurrentScale || BASE_SCALE; startRotation = window.cadCurrentRotation || 0;
                   pinchMode = null; 
               } else if (e.touches.length === 1) {
                   lastTouchX = e.touches[0].pageX; lastTouchY = e.touches[0].pageY;
@@ -2322,11 +2333,10 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
 
                   if (pinchMode === 'zoom') {
-                      if (window.cadMap) {
-                          let newZoom = startScale + Math.log2(currentDist / initialPinchDist);
-                          window.cadMap.setZoom(newZoom);
-                      }
-                      window.updateCadLabelScale();
+                      let newScale = startScale * (currentDist / initialPinchDist);
+                      if (newScale < BASE_SCALE) { newScale = BASE_SCALE; startScale = BASE_SCALE; initialPinchDist = currentDist; } 
+                      else if (newScale > BASE_SCALE * 30) { newScale = BASE_SCALE * 30; startScale = BASE_SCALE * 30; initialPinchDist = currentDist; }
+                      window.cadCurrentScale = newScale; window.updateCadLabelScale();
                   } else if (pinchMode === 'rotate') {
                       window.cadCurrentRotation = startRotation + angleDiff;
                       document.documentElement.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg'); 
