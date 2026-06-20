@@ -57,7 +57,21 @@ const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --d
         console.log('✅ Antigravity の実行が完了しました！');
         console.log(output);
 
-        // 実行が完了したら、GASに「完了したよ」と伝える
+        // 実行が完了したら、GASに「完了したよ」と伝える// 実行が完了したら、GASに「完了したよ」と伝える（失敗しても3回まで粘る！）
+        let retries = 3;
+        while (retries > 0) {
+          try {
+            await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
+            console.log('🔔 ステータスを「完了」に更新しました。');
+            break; // 成功したらループを抜け出す
+          } catch (e) {
+            retries--;
+            console.log(`⚠️ GASへの完了通知で通信エラー。残りリトライ回数: ${retries}`);
+            if (retries === 0) throw new Error("GASへの通信に完全に失敗しました");
+            // 2秒待ってからもう一度通信を試す
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
         await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
         console.log('🔔 ステータスを「完了」に更新しました。');
 
