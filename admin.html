@@ -2277,12 +2277,36 @@ document.getElementById('btnLoadFude').onclick = () => {
           // 🌟 つまみやピンをドラッグしたときに地図全体のドラッグ（独自スクロール）が競合するのを防ぐ
           const checkIgnoreDrag = (target) => {
               if (!target) return false;
-              let compStyle = window.getComputedStyle(target);
-              let cursor = compStyle.cursor || '';
-              let isInteractiveCursor = ['pointer', 'move', 'crosshair', 'grab', 'grabbing'].includes(cursor) || cursor.includes('resize');
-              let targetStyle = (target.getAttribute('style') || '').toLowerCase();
-              let isBasic = isInteractiveCursor || targetStyle.includes('cursor:') || target.tagName.toLowerCase() === 'img' || target.tagName.toLowerCase() === 'shape';
-              if (isBasic) return true;
+
+              // 1. Google Mapsの地図タイル画像（衛星写真等）は絶対にドラッグ無視しない
+              if (target.tagName.toLowerCase() === 'img') {
+                  let src = target.getAttribute('src') || '';
+                  if (src.includes('googleapis.com') || src.includes('google.com') || src.includes('gstatic.com') || src.includes('khms') || src.includes('kh?')) {
+                      return false;
+                  }
+              }
+
+              // 2. ポリゴン（SVG path要素）自体や、畝番号の数字ラベル（.ridge-label）はドラッグ無視しない
+              let skipInteractive = false;
+              if (target.tagName.toLowerCase() === 'path') {
+                  skipInteractive = true;
+              }
+              if (target.className && typeof target.className === 'string' && target.className.includes('ridge-label')) {
+                  skipInteractive = true;
+              }
+
+              if (!skipInteractive) {
+                  let compStyle = window.getComputedStyle(target);
+                  let cursor = compStyle.cursor || '';
+                  // grab, grabbing や、Googleマップが使用する openhand/closedhand などのカーソルは無視しない
+                  // pointer, move, resize などのインタラクティブなカーソルの場合のみ無視する
+                  let isInteractiveCursor = ['pointer', 'move', 'crosshair'].includes(cursor) || cursor.includes('resize');
+                  if (isInteractiveCursor) {
+                      if (!cursor.includes('grab') && !cursor.includes('hand')) {
+                          return true;
+                      }
+                  }
+              }
 
               let currEl = target;
               while (currEl && currEl !== wrapper) {
