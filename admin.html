@@ -1969,11 +1969,8 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.updateCadMapTransform = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) {
-              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
-              mapDiv.style.setProperty('--cad-scale', 1.0);
-              if (window.cadMap) {
-                  window.cadMap.setZoom(20 + Math.log2(window.cadCurrentScale));
-              }
+              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${window.cadCurrentScale})`;
+              mapDiv.style.setProperty('--cad-scale', window.cadCurrentScale);
           }
           if (typeof window.updateCadLabelPositions === 'function') {
               window.updateCadLabelPositions();
@@ -2056,7 +2053,9 @@ document.getElementById('btnLoadFude').onclick = () => {
 
       window.updateCadLabelScale = () => {
           if (!window.cadUneLabels) return;
-          let fontSizeStr = '24px'; 
+          let apparentScale = window.cadCurrentScale / BASE_SCALE;
+          let newSize = 24 / apparentScale; 
+          let fontSizeStr = Math.max(2, newSize) + 'px'; 
           window.cadUneLabels.forEach(marker => {
               let lbl = marker.getLabel();
               if (lbl) { lbl.fontSize = fontSizeStr; marker.setLabel(lbl); }
@@ -2244,7 +2243,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               e.preventDefault(); 
               let zoomSpeed = 0.25; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
               let newScale = window.cadCurrentScale + delta;
-              if (newScale < BASE_SCALE) newScale = BASE_SCALE;
+              if (newScale < BASE_SCALE * 0.2) newScale = BASE_SCALE * 0.2;
               if (newScale > BASE_SCALE * 30) newScale = BASE_SCALE * 30;
               window.cadCurrentScale = newScale;
               window.updateCadLabelScale();
@@ -2270,7 +2269,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               
               if (isDragging) {
                   const DAMPING = 0.6;
-                  let apparentScale = 1.0;
+                  let apparentScale = window.cadCurrentScale / BASE_SCALE;
                   let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
 
                   const theta = window.cadCurrentRotation * Math.PI / 180;
@@ -2335,7 +2334,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
                   if (pinchMode === 'zoom') {
                       let newScale = startScale * (currentDist / initialPinchDist);
-                      if (newScale < BASE_SCALE) { newScale = BASE_SCALE; startScale = BASE_SCALE; initialPinchDist = currentDist; } 
+                      if (newScale < BASE_SCALE * 0.2) { newScale = BASE_SCALE * 0.2; startScale = BASE_SCALE * 0.2; initialPinchDist = currentDist; } 
                       else if (newScale > BASE_SCALE * 30) { newScale = BASE_SCALE * 30; startScale = BASE_SCALE * 30; initialPinchDist = currentDist; }
                       window.cadCurrentScale = newScale; window.updateCadLabelScale();
                   } else if (pinchMode === 'rotate') {
@@ -2358,7 +2357,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (isDragging) {
                       e.preventDefault(); 
                       const DAMPING = 0.6;
-                      let apparentScale = 1.0;
+                      let apparentScale = window.cadCurrentScale / BASE_SCALE;
                       let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
 
                       const theta = window.cadCurrentRotation * Math.PI / 180;
@@ -2840,8 +2839,8 @@ document.getElementById('btnLoadFude').onclick = () => {
 
       window.reassignLabels = () => {
           if (window.cadUneLabels) { window.cadUneLabels.forEach(lbl => lbl.setMap(null)); window.cadUneLabels = []; }
-          let apparentScale = 1.0;
-          const initialFontSize = '24px';
+          let apparentScale = window.cadCurrentScale / BASE_SCALE;
+          const initialFontSize = Math.max(2, 24 / apparentScale) + 'px';
           let idx = 1;
 
           const createLbl = (poly) => {

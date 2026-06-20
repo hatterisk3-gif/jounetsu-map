@@ -47,7 +47,7 @@ const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mN
 const autoDeployPrompt = `作業が完了したら、以下の手順でデプロイを行ってください：
 1. 変更内容を要約して git commit と git push を実行する。
 2. \`clasp push\` を実行する。
-3. \`clasp deploy -i ${DEPLOYMENT_ID}\` を実行して、本番環境を更新する。`;
+3. \`clasp deploy -i ${DEPLOYMENT_ID}\` を実行して、更新する。`;
 
 const fullCommand = `${data.command}。 ${autoDeployPrompt}`;
 
