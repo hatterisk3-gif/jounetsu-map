@@ -1971,6 +1971,34 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadHistoryIndex = -1;
       window.isHistoryNavigating = false;
 
+      // 🌟 最適化用のタイマーと状態変数
+      let realScaleTimeout = null;
+      let labelPositionsTimeout = null;
+      let lastLabelPositionsTime = 0;
+
+      // 🌟 ラベル位置更新のスロットリング用関数
+      window.updateCadLabelPositionsThrottled = () => {
+          const now = performance.now();
+          const limit = 100; // 100msに1回制限
+          
+          if (now - lastLabelPositionsTime >= limit) {
+              if (labelPositionsTimeout) {
+                  clearTimeout(labelPositionsTimeout);
+                  labelPositionsTimeout = null;
+              }
+              window.updateCadLabelPositions();
+              lastLabelPositionsTime = now;
+          } else {
+              if (!labelPositionsTimeout) {
+                  labelPositionsTimeout = setTimeout(() => {
+                      window.updateCadLabelPositions();
+                      lastLabelPositionsTime = performance.now();
+                      labelPositionsTimeout = null;
+                  }, limit - (now - lastLabelPositionsTime));
+              }
+          }
+      };
+
       window.updateCadMapTransform = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) {
@@ -1983,7 +2011,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               
               // 🌟 Google Mapsの実際の拡大率（コンテナの transform matrix）を検出して
               // スケールに反映し、つまみと数字ラベルの巨大化を防ぐ
-              setTimeout(() => {
+              // 重い処理なのでデバウンス（60ms）して実行頻度を抑える
+              if (realScaleTimeout) {
+                  clearTimeout(realScaleTimeout);
+              }
+              realScaleTimeout = setTimeout(() => {
                   let realScale = apparentScale;
                   const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
                   if (vertexImg) {
@@ -2018,10 +2050,12 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (visualSize > 20) visualSize = 20;
                   let labelScale = visualSize / (24 * realScale);
                   mapDiv.style.setProperty('--cad-label-scale', labelScale);
-              }, 50);
+                  
+                  realScaleTimeout = null;
+              }, 60);
           }
-          if (typeof window.updateCadLabelPositions === 'function') {
-              window.updateCadLabelPositions();
+          if (typeof window.updateCadLabelPositionsThrottled === 'function') {
+              window.updateCadLabelPositionsThrottled();
           }
       };
 
@@ -2489,7 +2523,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
                   isDragging = false;
               }
-          }, {passive: false});
+          }, {capture: true, passive: false});
 
           wrapper.addEventListener('touchmove', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex' || ignoreDrag) return; 
@@ -2550,7 +2584,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                       lastTouchX = currentX; lastTouchY = currentY;
                   }
               }
-          }, {passive: false});
+          }, {capture: true, passive: false});
 
           wrapper.addEventListener('touchend', (e) => {
               if (e.touches.length < 2) { initialPinchDist = null; initialPinchAngle = null; pinchMode = null; }
@@ -2560,7 +2594,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
                   lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
               }
-          });
+          }, {capture: true});
           window.cadTouchAdded = true;
       };
 
@@ -2586,7 +2620,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   mapId: 'DEMO_MAP_ID', gestureHandling: 'none', disableDefaultUI: true, zoomControl: true, isFractionalZoomEnabled: true
               });
               window.cadMap.addListener('center_changed', () => {
-                  if (typeof window.updateCadLabelPositions === 'function') window.updateCadLabelPositions();
+                  if (typeof window.updateCadLabelPositionsThrottled === 'function') window.updateCadLabelPositionsThrottled();
               });
               window.cadMap.addListener('zoom_changed', () => {
                   window.updateCadMapTransform();
