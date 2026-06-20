@@ -33,51 +33,57 @@ async function watch() {
     }
 
     // --- 2. LINEからの指示の実行（Antigravityの起動） ---
-    if (data.rowIndex && data.command) {
-      console.log(`🤖 LINEからの指示を検知: "${data.command}"`);
-      console.log('🚀 Antigravity を起動して開発を開始します...');
+  // --- 2. LINEからの指示の実行（Antigravityの起動） ---
+  if (data.rowIndex && data.command) {
+    console.log(`🤖 LINEからのオリジナルの指示:\n${data.command}`);
+
+    // ★【超強力版】あらゆるパターンの改行（\r、\n）を「、」に変換する
+    const cleanCommand = data.command.replace(/[\r\n]+/g, '、');
+    
+    // ★ここで本当に1行に変換されたかターミナルに表示して確認します！
+    console.log(`🪄 AIに渡す1行変換後の指示: "${cleanCommand}"`);
+    console.log('🚀 Antigravity を起動して開発を開始します...');
+
+    try {
+      // 1. AIには「コードの修正だけ」をさせる（裏コマンドなし！）
+      // ※ cleanCommand を渡します
+      const output = execSync(`agy --print "${cleanCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
+      console.log('✅ Antigravity のコード修正が完了しました！');
+      console.log(output);
+
+      // 2. ここから番人（Node.js）が強制的にデプロイ作業を代行する！
+      console.log('🚀 GitとGASへの自動デプロイを開始します...');
+      
+      // Gitのコミットメッセージがエラーにならないよう、ダブルクォーテーションをエスケープ
+      const commitMessage = cleanCommand.replace(/"/g, '\\"'); 
 
       try {
-        // ★LINEからの指示に含まれる改行（\n）を、すべて「、」に自動で置き換える処理
-        const cleanCommand = data.command.replace(/\r?\n/g, '、');
-      
-        // パソコンのターミナルで実行（引数を cleanCommand に変更）
-        const output = execSync(`agy --print "${cleanCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
-        console.log('✅ Antigravity のコード修正が完了しました！');
-        console.log(output);
-
-        // 2. ここから番人（Node.js）が強制的にデプロイ作業を代行する！
-        console.log('🚀 GitとGASへの自動デプロイを開始します...');
-        
-        // LINEの指示内容をそのままコミットメッセージにする（賢い！）
-        const commitMessage = data.command.replace(/"/g, '\"'); 
-
-        try {
-          execSync('git add .', { encoding: 'utf8' });
-          execSync(`git commit -m "${commitMessage}"`, { encoding: 'utf8' });
-          execSync('git push', { encoding: 'utf8' });
-          console.log('✅ GitへのPushが完了しました。');
-        } catch (e) {
-          console.log('⚠️ Gitコミット不要（変更なし）、またはエラー:', e.message);
-        }
-
-        try {
-          execSync('clasp push', { encoding: 'utf8' });
-          const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
-          execSync(`clasp deploy -i ${DEPLOYMENT_ID}`, { encoding: 'utf8' });
-          console.log('✅ GAS本番環境へのデプロイが完了しました。');
-        } catch (e) {
-          console.log('❌ claspのエラー:', e.message);
-        }
-
-        // 3. 実行がすべて完了したら、GASに「完了したよ」と伝える
-        await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
-        console.log('🔔 ステータスを「完了」に更新しました。');
-
-      } catch (cmdError) {
-        console.error('❌ 実行中にエラーが発生しました:', cmdError.message);
+        execSync('git add .', { encoding: 'utf8' });
+        execSync(`git commit -m "${commitMessage}"`, { encoding: 'utf8' });
+        execSync('git push', { encoding: 'utf8' });
+        console.log('✅ GitへのPushが完了しました。');
+      } catch (e) {
+        console.log('⚠️ Gitコミット不要（変更なし）、またはエラー:', e.message);
       }
+
+      try {
+        execSync('clasp push', { encoding: 'utf8' });
+        // ⚙️ ご自身のデプロイID
+        const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
+        execSync(`clasp deploy -i ${DEPLOYMENT_ID}`, { encoding: 'utf8' });
+        console.log('✅ GAS本番環境へのデプロイが完了しました。');
+      } catch (e) {
+        console.log('❌ claspのエラー:', e.message);
+      }
+
+      // 3. 実行がすべて完了したら、GASに「完了したよ」と伝える
+      await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
+      console.log('🔔 ステータスを「完了」に更新しました。');
+
+    } catch (cmdError) {
+      console.error('❌ 実行中にエラーが発生しました:', cmdError.message);
     }
+  }
 
   } catch (error) {
     // 通信エラーなどは一時的なものとして無視してループを続ける
