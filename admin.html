@@ -2029,18 +2029,19 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadVirtualZoom = zoom;
           
           let realZoom = Math.min(zoom, 20);
+          let intZoom = Math.round(realZoom);
           if (window.cadMap) {
-              if (window.cadMap.getZoom() !== realZoom) {
+              if (window.cadMap.getZoom() !== intZoom) {
                   window.cadIsSettingZoom = true;
+                  window.cadLastSetZoomTime = Date.now();
                   try {
-                      window.cadMap.setZoom(realZoom);
+                      window.cadMap.setZoom(intZoom);
                   } finally {
-                      setTimeout(() => { window.cadIsSettingZoom = false; }, 0);
+                      setTimeout(() => { window.cadIsSettingZoom = false; }, 100);
                   }
-              } else {
-                  window.updateCadMapTransform();
               }
           }
+          window.updateCadMapTransform();
       };
 
       window.updateCadMapTransform = () => {
@@ -2049,7 +2050,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               let currentZoom = window.getCadZoom();
               let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
               let apparentScale = Math.pow(2, currentZoom - realZoom);
-              if (apparentScale < 1) apparentScale = 1;
+              if (apparentScale < 0.25) apparentScale = 0.25;
 
               mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
               mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
@@ -2767,7 +2768,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               });
               window.cadMap.addListener('zoom_changed', () => {
                   let realZoom = window.cadMap.getZoom();
-                  if (!window.cadIsSettingZoom) {
+                  let timeSinceLastSet = Date.now() - (window.cadLastSetZoomTime || 0);
+                  if (!window.cadIsSettingZoom && timeSinceLastSet > 300) {
                       window.cadVirtualZoom = realZoom;
                   }
                   window.updateCadMapTransform();
