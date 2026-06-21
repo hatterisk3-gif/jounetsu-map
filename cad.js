@@ -765,32 +765,12 @@
                       const finalDy = e.pageY - startPageY;
                       finalizeDragCenter(finalDx, finalDy);
                       
-                      let currentZoom = window.getCadZoom();
-                      let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
-                      let apparentScale = Math.pow(2, currentZoom - realZoom);
-                      if (apparentScale < 0.25) apparentScale = 0.25;
-
-                      window.cadDragRawDx = finalDx;
-                      window.cadDragRawDy = finalDy;
-                      window.cadDragDx = finalDx / apparentScale;
-                      window.cadDragDy = finalDy / apparentScale;
-                      
-                      let resetDone = false;
-                      const resetOffsets = () => {
-                          if (resetDone) return;
-                          resetDone = true;
-                          window.cadDragDx = 0;
-                          window.cadDragDy = 0;
-                          window.cadDragRawDx = 0;
-                          window.cadDragRawDy = 0;
-                          window.updateCadMapTransform();
-                      };
-                      
-                      const idleListener = google.maps.event.addListenerOnce(window.cadMap, 'idle', resetOffsets);
-                      setTimeout(() => {
-                          google.maps.event.removeListener(idleListener);
-                          resetOffsets();
-                      }, 150);
+                      // 🌟 バグ修正：指を離した瞬間に即座にCSSの移動をリセットし、二重移動（ワープ）を防ぐ
+                      window.cadDragDx = 0;
+                      window.cadDragDy = 0;
+                      window.cadDragRawDx = 0;
+                      window.cadDragRawDy = 0;
+                      window.updateCadMapTransform();
                   }
               } else {
                   window.cadDragDx = 0;
@@ -935,32 +915,12 @@
                           const finalDy = window.cadDragRawDy || 0;
                           finalizeDragCenter(finalDx, finalDy);
                       
-                          let currentZoom = window.getCadZoom();
-                          let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
-                          let apparentScale = Math.pow(2, currentZoom - realZoom);
-                          if (apparentScale < 0.25) apparentScale = 0.25;
-
-                          window.cadDragRawDx = finalDx;
-                          window.cadDragRawDy = finalDy;
-                          window.cadDragDx = finalDx / apparentScale;
-                          window.cadDragDy = finalDy / apparentScale;
-                      
-                          let resetDone = false;
-                          const resetOffsets = () => {
-                              if (resetDone) return;
-                              resetDone = true;
-                              window.cadDragDx = 0;
-                              window.cadDragDy = 0;
-                              window.cadDragRawDx = 0;
-                              window.cadDragRawDy = 0;
-                              window.updateCadMapTransform();
-                          };
-                      
-                          const idleListener = google.maps.event.addListenerOnce(window.cadMap, 'idle', resetOffsets);
-                          setTimeout(() => {
-                              google.maps.event.removeListener(idleListener);
-                              resetOffsets();
-                          }, 150);
+                          // 🌟 バグ修正：指を離した瞬間に即座にCSSの移動をリセットし、二重移動（ワープ）を防ぐ
+                          window.cadDragDx = 0;
+                          window.cadDragDy = 0;
+                          window.cadDragRawDx = 0;
+                          window.cadDragRawDy = 0;
+                          window.updateCadMapTransform();
                       }
                   } else {
                       window.cadDragDx = 0;
