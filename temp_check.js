@@ -2219,7 +2219,13 @@ document.getElementById('btnLoadFude').onclick = () => {
                   isDraggingHandle = false;
                   return;
               }
-              const scale = Math.max(window.cadCurrentScale || 1.0, 0.01);
+              // Calculate apparent scale dynamically based on virtual zoom and real zoom
+              let currentZoom = window.getCadZoom();
+              let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+              let apparentScale = Math.pow(2, currentZoom - realZoom);
+              if (apparentScale < 0.25) apparentScale = 0.25;
+
+              const scale = apparentScale;
               const coords = getEventCoords(e);
               const dx = coords.x - handleDragStartX;
               const dy = coords.y - handleDragStartY;
