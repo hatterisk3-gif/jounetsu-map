@@ -45,14 +45,17 @@ const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mN
 
 // 【進化版】AIにコミットメッセージを要約させる1行裏コマンド
 const autoDeployPrompt = `コードの修正作業が完了したら必ずBashを使用して以下の順番でコマンドを実行してください。 1. \`git add .\`  2. 今回の変更内容を分かりやすく要約し、\`git commit -m \\"[ここに要約を記載]\\"\` の形式で実行する  3. \`git push\`  4. \`clasp push\`  5. \`clasp deploy -i ${DEPLOYMENT_ID}\``;
-// ★LINEからの指示に含まれる改行（\n）を、すべて「、」に自動で置き換える処理
-// （※GAS側で対応済みの場合はそのままでも問題ありません）
-const cleanCommand = data.command.replace(/\r?\n/g, ' ');
 
-// 書き換えた cleanCommand を使って指示を組み立てる
-const fullCommand = `${cleanCommand}。 ${autoDeployPrompt}`;
+// ★LINEからの指示に含まれる改行（\n）を「、」に変換
+const cleanCommand = data.command.replace(/\r?\n/g, '、');
 
-// タイムアウトを15分に延ばした完全版で起動
+// ★【最強の喝】AIに「絶対にコードを直せ」と強制する命令
+const forceActionPrompt = `あなたは「情熱MAP」の専属エンジニアです。以下の依頼内容に基づき、必ずワークスペース内の該当ファイルを検索・特定し、実際にコードを書き換えて修正を完了させてください。質問や会話で終わらせず、必ずファイル修正を実行してください。依頼内容：【 ${cleanCommand} 】`;
+
+// 「喝」と「裏コマンド」を合体させて、逃げ道をなくす！
+const fullCommand = `${forceActionPrompt}。 ${autoDeployPrompt}`;
+
+// タイムアウトを15分に延ばした完全版で起動（引数を fullCommand に）
 const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
         console.log('✅ Antigravity の実行が完了しました！');
         console.log(output);
