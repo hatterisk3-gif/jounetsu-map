@@ -2465,10 +2465,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               });
               window.cadMap.addListener('zoom_changed', () => {
                   let realZoom = window.cadMap.getZoom();
-                  if (realZoom < 20) {
+                  if (!window.cadIsSettingZoom) {
                       window.cadVirtualZoom = realZoom;
-                  } else if (window.cadVirtualZoom === undefined || window.cadVirtualZoom === null || window.cadVirtualZoom < 20) {
-                      window.cadVirtualZoom = 20;
                   }
                   window.updateCadMapTransform();
               });
