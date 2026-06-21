@@ -1,0 +1,53 @@
+html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; overflow: hidden; background-color: #f8f9fa; color: #fff; }
+#loginScreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.65); z-index: 3000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
+.login-box { background: #fff; padding: 30px; border-radius: 12px; width: 85%; max-width: 320px; text-align: center; color: #333; }
+.login-input { width: 90%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; background: #fff; color: #333; }
+.login-btn { background: #d32f2f; color: white; border: none; padding: 14px; width: 90%; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; }
+.control-panel { padding: 10px; background: #222; border-bottom: 2px solid #d32f2f; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.control-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; width: 100%; align-items: center; }
+#map { flex-grow: 1; width: 100%; }
+input[type="text"], select, input[type="number"] { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; background: #fff; color: #333; box-sizing: border-box; }
+::placeholder { color: #888; }
+#drawArea input[type="text"], #drawArea select { background: #333; color: #fff; border: 1px solid #666; }
+button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; font-size: 13px; }
+.mode-btn { background: #444; color: #fff; } .mode-btn.active { background: #d32f2f; color: #fff; }
+.gps-btn { background-color: #fff; color: #4285F4; border: 1px solid #4285F4; font-weight: bold; }
+.polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
+.signboard-label { background: rgba(255,255,255,0.95); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 11px; font-weight: bold; margin-top: 5px; color: #000; }
+.signboard-label.selected { background-color: #FFEB3B !important; border: 2px solid #F57F17 !important; color: #000 !important; z-index: 1000; }
+#modal, #masterModal, #feedbackModal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 4000; justify-content: center; align-items: center; }
+.modal-content { background: #fff; color: #333; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; max-height: 85vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+.form-label { display: block; font-size: 12px; color: #666; margin-bottom: 2px; font-weight: bold; text-align: left; }
+.form-input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; background: #fff !important; color: #333 !important; }
+
+.search-container { position: relative; display: flex; align-items: center; }
+.search-input { width: 160px; padding: 8px 12px; border-radius: 20px; border: 1px solid #888; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); color: #333; background: #fff; }
+#searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
+.suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
+/* 🌟農業CAD専用スタイル🌟 */
+#cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; touch-action: none; overscroll-behavior: none; }
+#cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; z-index: 100; }
+#cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+#cadMapWrapper, #cadMapWrapper * { touch-action: none !important; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+#cadMap { position: absolute; top: 50%; left: 50%; width: 300vmax; height: 300vmax; transform: translate(-50%, -50%) rotate(0deg); transform-origin: center center; will-change: transform; touch-action: none; }
+.cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; touch-action: pan-y; }
+
+/* 🌟 畝番号が常に真っ直ぐになるジャイロ機能！ & 拡大時の逆スケール */
+#cadMap .polygon-label { 
+    text-shadow: -0.08em -0.08em 0 #000, 0.08em -0.08em 0 #000, -0.08em 0.08em 0 #000, 0.08em 0.08em 0 #000 !important; 
+    transform: rotate(var(--label-rot, 0deg)) scale(calc(1.0 / var(--cad-scale, 1.0))) !important;
+    transform-origin: center center;
+    display: inline-block;
+}
+#cadMap .ridge-label {
+    transform: rotate(var(--label-rot, 0deg)) scale(var(--cad-label-scale, 1.0)) !important;
+}
+
+/* 🌟 地図拡大時に変形用の白い丸マーカーを逆スケールして巨大化を防ぐ */
+#cadMap div:has(> img[src*="undo_poly"]),
+#cadMap div:has(> img[src*="cb_direction"]),
+#cadMap div[style*="cursor: pointer"] img[src*="undo_poly"],
+#cadMap div[style*="cursor: pointer"] img[src*="cb_direction"] {
+    transform: scale(calc(1.0 / var(--cad-scale, 1.0))) !important;
+    transform-origin: center !important;
+}
