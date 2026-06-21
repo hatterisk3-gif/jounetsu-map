@@ -2442,7 +2442,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               // 2. つまみやピンの親要素や、ドラッグ防止対象の要素かを再帰的にチェック
               let currEl = target;
               let depth = 0;
-              while (currEl && currEl !== wrapper) {
+              // 探索の深さは最大3程度で十分（親要素にマーカー画像が含まれるかを querySelector で探索する重くてバグだらけの処理は廃止し、タップされた要素自身または直接の親だけをチェックする）
+              while (currEl && currEl !== wrapper && depth < 4) {
                   const currTagName = currEl.tagName.toLowerCase();
                   if (['button', 'input', 'select', 'textarea'].includes(currTagName)) {
                       return true;
@@ -2450,11 +2451,6 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (currTagName === 'img') {
                       let src = currEl.getAttribute('src') || '';
                       if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out') || src.includes('nakamichi')) {
-                          return true;
-                      }
-                  }
-                  if (depth <= 1 && currEl.id !== 'cadMap' && currEl.id !== 'cadMapWrapper' && (!currEl.className || typeof currEl.className !== 'string' || !currEl.className.includes('gm-style'))) {
-                      if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"], img[src*="water_in"], img[src*="water_out"], img[src*="nakamichi"]')) {
                           return true;
                       }
                   }
@@ -2710,7 +2706,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   window.cadDragRawDy = currentY - startPageY;
                   window.cadDragDx = window.cadDragRawDx / apparentScale;
                   window.cadDragDy = window.cadDragRawDy / apparentScale;
-                  scheduleMapUpdate(null, null, false, true);
+                  window.updateCadMapTransform();
               }
           }, {capture: true});
 
@@ -2725,24 +2721,11 @@ document.getElementById('btnLoadFude').onclick = () => {
                       const finalDy = e.pageY - startPageY;
                       finalizeDragCenter(finalDx, finalDy);
                       
-                      let currentZoom = window.getCadZoom();
-                      let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
-                      let apparentScale = Math.pow(2, currentZoom - realZoom);
-                      if (apparentScale < 0.25) apparentScale = 0.25;
-
-                      window.cadDragRawDx = finalDx;
-                      window.cadDragRawDy = finalDy;
-                      window.cadDragDx = finalDx / apparentScale;
-                      window.cadDragDy = finalDy / apparentScale;
-                      requestAnimationFrame(() => {
-                          requestAnimationFrame(() => {
-                              window.cadDragDx = 0;
-                              window.cadDragDy = 0;
-                              window.cadDragRawDx = 0;
-                              window.cadDragRawDy = 0;
-                              window.updateCadMapTransform();
-                          });
-                      });
+                      window.cadDragDx = 0;
+                      window.cadDragDy = 0;
+                      window.cadDragRawDx = 0;
+                      window.cadDragRawDy = 0;
+                      window.updateCadMapTransform();
                   }
               } else {
                   window.cadDragDx = 0;
@@ -2759,15 +2742,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
                   finalizeDragCenter(window.cadDragRawDx || 0, window.cadDragRawDy || 0);
                   
-                  requestAnimationFrame(() => {
-                      requestAnimationFrame(() => {
-                          window.cadDragDx = 0;
-                          window.cadDragDy = 0;
-                          window.cadDragRawDx = 0;
-                          window.cadDragRawDy = 0;
-                          window.updateCadMapTransform();
-                      });
-                  });
+                  window.cadDragDx = 0;
+                  window.cadDragDy = 0;
+                  window.cadDragRawDx = 0;
+                  window.cadDragRawDy = 0;
+                  window.updateCadMapTransform();
               } else {
                   window.cadDragDx = 0;
                   window.cadDragDy = 0;
@@ -2873,7 +2852,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                       window.cadDragRawDy = currentY - startPageY;
                       window.cadDragDx = window.cadDragRawDx / apparentScale;
                       window.cadDragDy = window.cadDragRawDy / apparentScale;
-                      scheduleMapUpdate(null, null, false, true);
+                      window.updateCadMapTransform();
                   }
               }
           }, {capture: true, passive: false});
@@ -2891,15 +2870,11 @@ document.getElementById('btnLoadFude').onclick = () => {
                           const finalDy = window.cadDragRawDy || 0;
                           finalizeDragCenter(finalDx, finalDy);
                           
-                          requestAnimationFrame(() => {
-                              requestAnimationFrame(() => {
-                                  window.cadDragDx = 0;
-                                  window.cadDragDy = 0;
-                                  window.cadDragRawDx = 0;
-                                  window.cadDragRawDy = 0;
-                                  window.updateCadMapTransform();
-                              });
-                          });
+                          window.cadDragDx = 0;
+                          window.cadDragDy = 0;
+                          window.cadDragRawDx = 0;
+                          window.cadDragRawDy = 0;
+                          window.updateCadMapTransform();
                       }
                   } else {
                       window.cadDragDx = 0;
