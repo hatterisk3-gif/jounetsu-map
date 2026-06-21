@@ -29,11 +29,9 @@
 
       // 🌟 ラベル位置更新のスロットリング用関数
       window.updateCadLabelPositionsThrottled = () => {
-          if (window.cadDragDx || window.cadDragDy) {
-              return; // ドラッグ中は再計算をスキップしてパフォーマンスを最大化
-          }
-          const now = performance.now();
-          const limit = 100; // 100msに1回制限
+        // 🌟 修正：ドラッグ中のスキップを廃止し、常に追従させる
+        const now = performance.now();
+        const limit = 60; // 🌟 より滑らかに追従させるため60msに変更
           
           if (now - lastLabelPositionsTime >= limit) {
               if (labelPositionsTimeout) {
@@ -199,6 +197,16 @@
           if (!proj) return null;
           const scale = Math.pow(2, window.getCadZoom());
           const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
+          
+          // 🌟 追加：ドラッグ中の見かけ上のズレを計算の中心に反映させる
+          if (window.cadDragRawDx || window.cadDragRawDy) {
+              const dragDx = window.cadDragRawDx || 0;
+              const dragDy = window.cadDragRawDy || 0;
+              const finalDx = dragDx * cosT - dragDy * sinT;
+              const finalDy = dragDx * sinT + dragDy * cosT;
+              centerPt.x -= finalDx / scale;
+              centerPt.y -= finalDy / scale;
+          }
           
           const pts = corners.map(corner => {
               const dx = corner.x - cx;
@@ -748,8 +756,9 @@
 
                   window.cadDragRawDx = currentX - startPageX;
                   window.cadDragRawDy = currentY - startPageY;
-                  window.cadDragDx = window.cadDragRawDx / apparentScale;
-                  window.cadDragDy = window.cadDragRawDy / apparentScale;
+                  // 🌟 修正：割り算をなくし、指の動きと地図の動きを完全に一致させる
+                  window.cadDragDx = window.cadDragRawDx;
+                  window.cadDragDy = window.cadDragRawDy;
                   window.updateCadMapTransform();
               }
           }, {capture: true});
