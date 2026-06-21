@@ -2681,7 +2681,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               
               const currentX = e.pageX; const currentY = e.pageY;
               
-              if (Math.abs(currentX - startPageX) > 5 || Math.abs(currentY - startPageY) > 5) isDragging = true;
+              if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
               
               if (isDragging) {
                   window.cadDragDx = currentX - startPageX;
@@ -2698,10 +2698,21 @@ document.getElementById('btnLoadFude').onclick = () => {
                   const finalDx = e.pageX - startPageX;
                   const finalDy = e.pageY - startPageY;
                   finalizeDragCenter(finalDx, finalDy);
+                  
+                  window.cadDragDx = finalDx;
+                  window.cadDragDy = finalDy;
+                  requestAnimationFrame(() => {
+                      requestAnimationFrame(() => {
+                          window.cadDragDx = 0;
+                          window.cadDragDy = 0;
+                          window.updateCadMapTransform();
+                      });
+                  });
+              } else {
+                  window.cadDragDx = 0;
+                  window.cadDragDy = 0;
+                  window.updateCadMapTransform();
               }
-              window.cadDragDx = 0;
-              window.cadDragDy = 0;
-              window.updateCadMapTransform();
               window.cadDragStartCenter = null;
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
           }, {capture: true});
@@ -2709,10 +2720,21 @@ document.getElementById('btnLoadFude').onclick = () => {
           wrapper.addEventListener('mouseleave', () => { 
               if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
                   finalizeDragCenter(window.cadDragDx, window.cadDragDy);
+                  
+                  const dxToReset = window.cadDragDx;
+                  const dyToReset = window.cadDragDy;
+                  requestAnimationFrame(() => {
+                      requestAnimationFrame(() => {
+                          window.cadDragDx = 0;
+                          window.cadDragDy = 0;
+                          window.updateCadMapTransform();
+                      });
+                  });
+              } else {
+                  window.cadDragDx = 0;
+                  window.cadDragDy = 0;
+                  window.updateCadMapTransform();
               }
-              window.cadDragDx = 0;
-              window.cadDragDy = 0;
-              window.updateCadMapTransform();
               window.cadDragStartCenter = null;
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
           });
@@ -2782,7 +2804,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   e.preventDefault(); 
                   const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
                   
-                  if (Math.abs(currentX - startPageX) > 5 || Math.abs(currentY - startPageY) > 5) isDragging = true;
+                  if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
                   
                   if (isDragging) {
                       window.cadDragDx = currentX - startPageX;
@@ -2800,10 +2822,21 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
                   if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
                       finalizeDragCenter(window.cadDragDx, window.cadDragDy);
+                      
+                      const dxToReset = window.cadDragDx;
+                      const dyToReset = window.cadDragDy;
+                      requestAnimationFrame(() => {
+                          requestAnimationFrame(() => {
+                              window.cadDragDx = 0;
+                              window.cadDragDy = 0;
+                              window.updateCadMapTransform();
+                          });
+                      });
+                  } else {
+                      window.cadDragDx = 0;
+                      window.cadDragDy = 0;
+                      window.updateCadMapTransform();
                   }
-                  window.cadDragDx = 0;
-                  window.cadDragDy = 0;
-                  window.updateCadMapTransform();
                   window.cadDragStartCenter = null;
                   lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
               }
