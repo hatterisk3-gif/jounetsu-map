@@ -39,7 +39,7 @@
 #cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; touch-action: none; overscroll-behavior: none; }
    #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; z-index: 100; }
    #cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; touch-action: none; overscroll-behavior: none; }
-   #cadMapWrapper, #cadMapWrapper * { touch-action: none !important; }
+   #cadMapWrapper, #cadMapWrapper * { touch-action: none !important; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
    #cadMap { position: absolute; top: 50%; left: 50%; width: 300vmax; height: 300vmax; transform: translate(-50%, -50%) rotate(0deg); transform-origin: center center; will-change: transform; touch-action: none; }
    .cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; touch-action: pan-y; }
    
@@ -2670,6 +2670,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               pendingCenter = null;
               pendingZoom = null;
               if (!ignoreDrag) {
+                  e.stopPropagation();
                   window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
                   window.cadDragDx = 0;
                   window.cadDragDy = 0;
@@ -2678,7 +2679,9 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           wrapper.addEventListener('mousemove', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex' || ignoreDrag || !isMouseDown || lastTouchX === null || lastTouchY === null) return;
-              
+              if (!ignoreDrag) {
+                  e.stopPropagation();
+              }
               const currentX = e.pageX; const currentY = e.pageY;
               
               if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
@@ -2694,20 +2697,23 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
                   window.handleMapClick(e.pageX, e.pageY);
               }
-              if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
-                  const finalDx = e.pageX - startPageX;
-                  const finalDy = e.pageY - startPageY;
-                  finalizeDragCenter(finalDx, finalDy);
-                  
-                  window.cadDragDx = finalDx;
-                  window.cadDragDy = finalDy;
-                  requestAnimationFrame(() => {
+              if (isDragging && !ignoreDrag) {
+                  e.stopPropagation();
+                  if (window.cadDragStartCenter) {
+                      const finalDx = e.pageX - startPageX;
+                      const finalDy = e.pageY - startPageY;
+                      finalizeDragCenter(finalDx, finalDy);
+                      
+                      window.cadDragDx = finalDx;
+                      window.cadDragDy = finalDy;
                       requestAnimationFrame(() => {
-                          window.cadDragDx = 0;
-                          window.cadDragDy = 0;
-                          window.updateCadMapTransform();
+                          requestAnimationFrame(() => {
+                              window.cadDragDx = 0;
+                              window.cadDragDy = 0;
+                              window.updateCadMapTransform();
+                          });
                       });
-                  });
+                  }
               } else {
                   window.cadDragDx = 0;
                   window.cadDragDy = 0;
@@ -2744,7 +2750,10 @@ document.getElementById('btnLoadFude').onclick = () => {
               ignoreDrag = checkIgnoreDrag(e.target);
 
               if (e.touches.length === 2) {
-                  e.preventDefault(); 
+                  if (e.cancelable) {
+                      e.preventDefault(); 
+                  }
+                  e.stopPropagation();
                   const dx = e.touches[0].pageX - e.touches[1].pageX; const dy = e.touches[0].pageY - e.touches[1].pageY;
                   initialPinchDist = Math.hypot(dx, dy); initialPinchAngle = Math.atan2(dy, dx);
                   startScale = window.getCadZoom(); startRotation = window.cadCurrentRotation || 0;
@@ -2758,6 +2767,10 @@ document.getElementById('btnLoadFude').onclick = () => {
                   startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
                   isDragging = false;
                   if (!ignoreDrag) {
+                      if (e.cancelable) {
+                          e.preventDefault();
+                      }
+                      e.stopPropagation();
                       window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
                       window.cadDragDx = 0;
                       window.cadDragDy = 0;
@@ -2771,7 +2784,10 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return; 
               
               if (e.touches.length === 2 && initialPinchDist !== null) {
-                  e.preventDefault(); 
+                  if (e.cancelable) {
+                      e.preventDefault(); 
+                  }
+                  e.stopPropagation();
                   const dx = e.touches[0].pageX - e.touches[1].pageX; const dy = e.touches[0].pageY - e.touches[1].pageY;
                   const currentDist = Math.hypot(dx, dy); const currentAngle = Math.atan2(dy, dx);
                   let angleDiff = (currentAngle - initialPinchAngle) * (180 / Math.PI);
@@ -2801,7 +2817,10 @@ document.getElementById('btnLoadFude').onclick = () => {
 
               } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
                   if (ignoreDrag) return;
-                  e.preventDefault(); 
+                  if (e.cancelable) {
+                      e.preventDefault(); 
+                  }
+                  e.stopPropagation();
                   const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
                   
                   if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
@@ -2814,24 +2833,27 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
           }, {capture: true, passive: false});
 
-          wrapper.addEventListener('touchend', (e) => {
+          const handleTouchEndOrCancel = (e) => {
               if (e.touches.length < 2) { initialPinchDist = null; initialPinchAngle = null; pinchMode = null; }
               if (e.touches.length === 0) { 
                   if (!isDragging && startPageX !== null && startPageY !== null && !ignoreDrag) {
                       window.handleMapClick(startPageX, startPageY);
                   }
-                  if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
-                      finalizeDragCenter(window.cadDragDx, window.cadDragDy);
-                      
-                      const dxToReset = window.cadDragDx;
-                      const dyToReset = window.cadDragDy;
-                      requestAnimationFrame(() => {
+                  if (isDragging && !ignoreDrag) {
+                      e.stopPropagation();
+                      if (window.cadDragStartCenter) {
+                          const finalDx = window.cadDragDx;
+                          const finalDy = window.cadDragDy;
+                          finalizeDragCenter(finalDx, finalDy);
+                          
                           requestAnimationFrame(() => {
-                              window.cadDragDx = 0;
-                              window.cadDragDy = 0;
-                              window.updateCadMapTransform();
+                              requestAnimationFrame(() => {
+                                  window.cadDragDx = 0;
+                                  window.cadDragDy = 0;
+                                  window.updateCadMapTransform();
+                              });
                           });
-                      });
+                      }
                   } else {
                       window.cadDragDx = 0;
                       window.cadDragDy = 0;
@@ -2840,7 +2862,9 @@ document.getElementById('btnLoadFude').onclick = () => {
                   window.cadDragStartCenter = null;
                   lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
               }
-          }, {capture: true});
+          };
+          wrapper.addEventListener('touchend', handleTouchEndOrCancel, {capture: true});
+          wrapper.addEventListener('touchcancel', handleTouchEndOrCancel, {capture: true});
           window.cadTouchAdded = true;
       };
 
