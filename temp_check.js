@@ -2131,7 +2131,10 @@ document.getElementById('btnLoadFude').onclick = () => {
           const checkIgnoreDrag = (target) => {
               if (!target) return false;
 
-              // 1. Google Mapsの地図タイル画像（衛星写真等）は絶対にドラッグ無視しない
+              // 1. Google Mapsの地図タイル画像（衛星写真等）やキャンバスは絶対にドラッグ無視しない
+              if (target.tagName.toLowerCase() === 'canvas') {
+                  return false;
+              }
               if (target.tagName.toLowerCase() === 'img') {
                   let src = target.getAttribute('src') || '';
                   if (src.includes('googleapis.com') || src.includes('google.com') || src.includes('gstatic.com') || src.includes('khms') || src.includes('kh?')) {
@@ -2170,7 +2173,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                           return true;
                       }
                   }
-                  if (depth <= 2 && currEl.id !== 'cadMap' && currEl.id !== 'cadMapWrapper' && (!currEl.className || typeof currEl.className !== 'string' || !currEl.className.includes('gm-style'))) {
+                  if (depth <= 1 && currEl.id !== 'cadMap' && currEl.id !== 'cadMapWrapper' && (!currEl.className || typeof currEl.className !== 'string' || !currEl.className.includes('gm-style'))) {
                       if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"]')) {
                           return true;
                       }
