@@ -2686,6 +2686,8 @@ document.getElementById('btnLoadFude').onclick = () => {
                   window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
                   window.cadDragDx = 0;
                   window.cadDragDy = 0;
+                  window.cadDragRawDx = 0;
+                  window.cadDragRawDy = 0;
               }
           }, {capture: true});
 
@@ -2699,8 +2701,15 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
               
               if (isDragging) {
-                  window.cadDragDx = currentX - startPageX;
-                  window.cadDragDy = currentY - startPageY;
+                  let currentZoom = window.getCadZoom();
+                  let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+                  let apparentScale = Math.pow(2, currentZoom - realZoom);
+                  if (apparentScale < 0.25) apparentScale = 0.25;
+
+                  window.cadDragRawDx = currentX - startPageX;
+                  window.cadDragRawDy = currentY - startPageY;
+                  window.cadDragDx = window.cadDragRawDx / apparentScale;
+                  window.cadDragDy = window.cadDragRawDy / apparentScale;
                   scheduleMapUpdate(null, null, false, true);
               }
           }, {capture: true});
@@ -2716,12 +2725,21 @@ document.getElementById('btnLoadFude').onclick = () => {
                       const finalDy = e.pageY - startPageY;
                       finalizeDragCenter(finalDx, finalDy);
                       
-                      window.cadDragDx = finalDx;
-                      window.cadDragDy = finalDy;
+                      let currentZoom = window.getCadZoom();
+                      let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+                      let apparentScale = Math.pow(2, currentZoom - realZoom);
+                      if (apparentScale < 0.25) apparentScale = 0.25;
+
+                      window.cadDragRawDx = finalDx;
+                      window.cadDragRawDy = finalDy;
+                      window.cadDragDx = finalDx / apparentScale;
+                      window.cadDragDy = finalDy / apparentScale;
                       requestAnimationFrame(() => {
                           requestAnimationFrame(() => {
                               window.cadDragDx = 0;
                               window.cadDragDy = 0;
+                              window.cadDragRawDx = 0;
+                              window.cadDragRawDy = 0;
                               window.updateCadMapTransform();
                           });
                       });
@@ -2729,6 +2747,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               } else {
                   window.cadDragDx = 0;
                   window.cadDragDy = 0;
+                  window.cadDragRawDx = 0;
+                  window.cadDragRawDy = 0;
                   window.updateCadMapTransform();
               }
               window.cadDragStartCenter = null;
@@ -2737,20 +2757,22 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           wrapper.addEventListener('mouseleave', () => { 
               if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
-                  finalizeDragCenter(window.cadDragDx, window.cadDragDy);
+                  finalizeDragCenter(window.cadDragRawDx || 0, window.cadDragRawDy || 0);
                   
-                  const dxToReset = window.cadDragDx;
-                  const dyToReset = window.cadDragDy;
                   requestAnimationFrame(() => {
                       requestAnimationFrame(() => {
                           window.cadDragDx = 0;
                           window.cadDragDy = 0;
+                          window.cadDragRawDx = 0;
+                          window.cadDragRawDy = 0;
                           window.updateCadMapTransform();
                       });
                   });
               } else {
                   window.cadDragDx = 0;
                   window.cadDragDy = 0;
+                  window.cadDragRawDx = 0;
+                  window.cadDragRawDy = 0;
                   window.updateCadMapTransform();
               }
               window.cadDragStartCenter = null;
@@ -2773,6 +2795,8 @@ document.getElementById('btnLoadFude').onclick = () => {
                   isDragging = false;
                   window.cadDragDx = 0;
                   window.cadDragDy = 0;
+                  window.cadDragRawDx = 0;
+                  window.cadDragRawDy = 0;
                   window.cadDragStartCenter = null;
               } else if (e.touches.length === 1) {
                   lastTouchX = e.touches[0].pageX; lastTouchY = e.touches[0].pageY;
@@ -2786,6 +2810,8 @@ document.getElementById('btnLoadFude').onclick = () => {
                       window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
                       window.cadDragDx = 0;
                       window.cadDragDy = 0;
+                      window.cadDragRawDx = 0;
+                      window.cadDragRawDy = 0;
                   }
               }
               pendingCenter = null;
@@ -2838,8 +2864,15 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
                   
                   if (isDragging) {
-                      window.cadDragDx = currentX - startPageX;
-                      window.cadDragDy = currentY - startPageY;
+                      let currentZoom = window.getCadZoom();
+                      let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+                      let apparentScale = Math.pow(2, currentZoom - realZoom);
+                      if (apparentScale < 0.25) apparentScale = 0.25;
+
+                      window.cadDragRawDx = currentX - startPageX;
+                      window.cadDragRawDy = currentY - startPageY;
+                      window.cadDragDx = window.cadDragRawDx / apparentScale;
+                      window.cadDragDy = window.cadDragRawDy / apparentScale;
                       scheduleMapUpdate(null, null, false, true);
                   }
               }
@@ -2854,14 +2887,16 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (isDragging && !ignoreDrag) {
                       e.stopPropagation();
                       if (window.cadDragStartCenter) {
-                          const finalDx = window.cadDragDx;
-                          const finalDy = window.cadDragDy;
+                          const finalDx = window.cadDragRawDx || 0;
+                          const finalDy = window.cadDragRawDy || 0;
                           finalizeDragCenter(finalDx, finalDy);
                           
                           requestAnimationFrame(() => {
                               requestAnimationFrame(() => {
                                   window.cadDragDx = 0;
                                   window.cadDragDy = 0;
+                                  window.cadDragRawDx = 0;
+                                  window.cadDragRawDy = 0;
                                   window.updateCadMapTransform();
                               });
                           });
@@ -2869,6 +2904,8 @@ document.getElementById('btnLoadFude').onclick = () => {
                   } else {
                       window.cadDragDx = 0;
                       window.cadDragDy = 0;
+                      window.cadDragRawDx = 0;
+                      window.cadDragRawDy = 0;
                       window.updateCadMapTransform();
                   }
                   window.cadDragStartCenter = null;
