@@ -1983,6 +1983,9 @@ document.getElementById('btnLoadFude').onclick = () => {
 
       // 🌟 ラベル位置更新のスロットリング用関数
       window.updateCadLabelPositionsThrottled = () => {
+          if (window.cadDragDx || window.cadDragDy) {
+              return; // ドラッグ中は再計算をスキップしてパフォーマンスを最大化
+          }
           const now = performance.now();
           const limit = 100; // 100msに1回制限
           
@@ -2060,61 +2063,63 @@ document.getElementById('btnLoadFude').onclick = () => {
               
               // 🌟 Google Mapsの実際の拡大率（コンテナの transform matrix）を検出して
               // スケールに反映し、つまみと数字ラベルの巨大化を防ぐ
-              // 重い処理なのでデバウンス（60ms）して実行頻度を抑える
-              if (realScaleTimeout) {
-                  clearTimeout(realScaleTimeout);
-              }
-              realScaleTimeout = setTimeout(() => {
-                  let scaleVal = 1.0;
-                  
-                  // Validate cached transform div
-                  if (window.cadTransformDiv && !document.body.contains(window.cadTransformDiv)) {
-                      window.cadTransformDiv = null;
+              // 重い処理なのでドラッグ中はスキップし、デバウンス（60ms）して実行頻度を抑える
+              if (!window.cadDragDx && !window.cadDragDy) {
+                  if (realScaleTimeout) {
+                      clearTimeout(realScaleTimeout);
                   }
-                  
-                  if (!window.cadTransformDiv) {
-                      const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
-                      if (vertexImg) {
-                          let curr = vertexImg.parentElement;
-                          while (curr && curr.id !== 'cadMap') {
-                              const transform = window.getComputedStyle(curr).transform || curr.style.transform || '';
-                              if (transform && transform !== 'none' && transform.includes('matrix')) {
-                                  window.cadTransformDiv = curr;
-                                  break;
+                  realScaleTimeout = setTimeout(() => {
+                      let scaleVal = 1.0;
+                      
+                      // Validate cached transform div
+                      if (window.cadTransformDiv && !document.body.contains(window.cadTransformDiv)) {
+                          window.cadTransformDiv = null;
+                      }
+                      
+                      if (!window.cadTransformDiv) {
+                          const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
+                          if (vertexImg) {
+                              let curr = vertexImg.parentElement;
+                              while (curr && curr.id !== 'cadMap') {
+                                  const transform = window.getComputedStyle(curr).transform || curr.style.transform || '';
+                                  if (transform && transform !== 'none' && transform.includes('matrix')) {
+                                      window.cadTransformDiv = curr;
+                                      break;
+                                  }
+                                  curr = curr.parentElement;
                               }
-                              curr = curr.parentElement;
                           }
                       }
-                  }
-                  
-                  if (window.cadTransformDiv) {
-                      const transform = window.getComputedStyle(window.cadTransformDiv).transform || window.cadTransformDiv.style.transform || '';
-                      const matrixMatch = transform.match(/matrix\(([\d.-]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
-                      if (matrixMatch) {
-                          const a = parseFloat(matrixMatch[1]);
-                          const b = parseFloat(matrixMatch[2]);
-                          const val = Math.hypot(a, b);
-                          if (val > 0.1) {
-                              scaleVal = val;
+                      
+                      if (window.cadTransformDiv) {
+                          const transform = window.getComputedStyle(window.cadTransformDiv).transform || window.cadTransformDiv.style.transform || '';
+                          const matrixMatch = transform.match(/matrix\(([\d.-]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
+                          if (matrixMatch) {
+                              const a = parseFloat(matrixMatch[1]);
+                              const b = parseFloat(matrixMatch[2]);
+                              const val = Math.hypot(a, b);
+                              if (val > 0.1) {
+                                  scaleVal = val;
+                              }
                           }
                       }
-                  }
-                  
-                  // Overall physical scale is the product of Google Maps scale and apparentScale
-                  let realScale = scaleVal * apparentScale;
-                  
-                  window.cadCurrentScale = realScale;
-                  mapDiv.style.setProperty('--cad-scale', realScale);
+                      
+                      // Overall physical scale is the product of Google Maps scale and apparentScale
+                      let realScale = scaleVal * apparentScale;
+                      
+                      window.cadCurrentScale = realScale;
+                      mapDiv.style.setProperty('--cad-scale', realScale);
 
-                  // 🌟 畝番号の数字ラベルが地図拡大時に一緒に小さくなるようにスケールを計算する
-                  let visualSize = 20 - (currentZoom - 20) * 1.5;
-                  if (visualSize < 8) visualSize = 8;
-                  if (visualSize > 20) visualSize = 20;
-                  let labelScale = visualSize / (24 * realScale);
-                  mapDiv.style.setProperty('--cad-label-scale', labelScale);
-                  
-                  realScaleTimeout = null;
-              }, 60);
+                      // 🌟 畝番号の数字ラベルが地図拡大時に一緒に小さくなるようにスケールを計算する
+                      let visualSize = 20 - (currentZoom - 20) * 1.5;
+                      if (visualSize < 8) visualSize = 8;
+                      if (visualSize > 20) visualSize = 20;
+                      let labelScale = visualSize / (24 * realScale);
+                      mapDiv.style.setProperty('--cad-label-scale', labelScale);
+                      
+                      realScaleTimeout = null;
+                  }, 60);
+              }
           }
           if (typeof window.updateCadLabelPositionsThrottled === 'function') {
               window.updateCadLabelPositionsThrottled();
