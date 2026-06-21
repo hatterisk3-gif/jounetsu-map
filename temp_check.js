@@ -2219,28 +2219,36 @@ document.getElementById('btnLoadFude').onclick = () => {
                   isDraggingHandle = false;
                   return;
               }
-              const scale = window.cadCurrentScale || 1.0;
-              if (scale > 1.001) {
-                  const coords = getEventCoords(e);
-                  const dx = coords.x - handleDragStartX;
-                  const dy = coords.y - handleDragStartY;
-                  const targetX = handleDragStartX + dx / scale;
-                  const targetY = handleDragStartY + dy / scale;
+              const scale = Math.max(window.cadCurrentScale || 1.0, 0.01);
+              const coords = getEventCoords(e);
+              const dx = coords.x - handleDragStartX;
+              const dy = coords.y - handleDragStartY;
 
-                  if (e.touches && e.touches.length > 0) {
-                      for (let i = 0; i < e.touches.length; i++) {
-                          const t = e.touches[i];
-                          Object.defineProperty(t, 'clientX', { value: targetX, configurable: true });
-                          Object.defineProperty(t, 'clientY', { value: targetY, configurable: true });
-                          Object.defineProperty(t, 'pageX', { value: targetX + window.scrollX, configurable: true });
-                          Object.defineProperty(t, 'pageY', { value: targetY + window.scrollY, configurable: true });
-                      }
-                  } else {
-                      Object.defineProperty(e, 'clientX', { value: targetX, configurable: true });
-                      Object.defineProperty(e, 'clientY', { value: targetY, configurable: true });
-                      Object.defineProperty(e, 'pageX', { value: targetX + window.scrollX, configurable: true });
-                      Object.defineProperty(e, 'pageY', { value: targetY + window.scrollY, configurable: true });
+              // 🌟 ドラッグ移動のバグ修正：地図の回転と拡大率を考慮した正確な座標逆変換
+              // マップは window.cadCurrentRotation 度回転し、scale 倍に拡大されているため、
+              // 画面上のドラッグ量 (dx, dy) をマップ内のローカル座標系における移動量 (localDx, localDy) に変換します。
+              const theta = (window.cadCurrentRotation || 0) * Math.PI / 180;
+              const cosT = Math.cos(theta);
+              const sinT = Math.sin(theta);
+              const localDx = (dx * cosT + dy * sinT) / scale;
+              const localDy = (-dx * sinT + dy * cosT) / scale;
+
+              const targetX = handleDragStartX + localDx;
+              const targetY = handleDragStartY + localDy;
+
+              if (e.touches && e.touches.length > 0) {
+                  for (let i = 0; i < e.touches.length; i++) {
+                      const t = e.touches[i];
+                      Object.defineProperty(t, 'clientX', { value: targetX, configurable: true });
+                      Object.defineProperty(t, 'clientY', { value: targetY, configurable: true });
+                      Object.defineProperty(t, 'pageX', { value: targetX + window.scrollX, configurable: true });
+                      Object.defineProperty(t, 'pageY', { value: targetY + window.scrollY, configurable: true });
                   }
+              } else {
+                  Object.defineProperty(e, 'clientX', { value: targetX, configurable: true });
+                  Object.defineProperty(e, 'clientY', { value: targetY, configurable: true });
+                  Object.defineProperty(e, 'pageX', { value: targetX + window.scrollX, configurable: true });
+                  Object.defineProperty(e, 'pageY', { value: targetY + window.scrollY, configurable: true });
               }
           };
 
