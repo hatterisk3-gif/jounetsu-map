@@ -2499,22 +2499,59 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.addEventListener('pointerup', onDragEnd, true);
           window.addEventListener('pointercancel', onDragEnd, true);
 
-          let initialPinchDist = null; let initialPinchAngle = null;
+                    let initialPinchDist = null; let initialPinchAngle = null;
           let startScale = BASE_SCALE; let startRotation = 0;
           let lastTouchX = null; let lastTouchY = null;
           let startPageX = null; let startPageY = null;
           let isDragging = false; let pinchMode = null; 
           let isMouseDown = false; let ignoreDrag = false;
 
+          let pendingCenter = null;
+          let pendingZoom = null;
+          let rAFActive = false;
+
+          const applyMapUpdates = () => {
+              if (!window.cadMap) {
+                  rAFActive = false;
+                  return;
+              }
+              let updated = false;
+              if (pendingZoom !== null) {
+                  window.cadMap.setZoom(pendingZoom);
+                  pendingZoom = null;
+                  updated = true;
+              }
+              if (pendingCenter !== null) {
+                  window.cadMap.setCenter(pendingCenter);
+                  pendingCenter = null;
+                  updated = true;
+              }
+              if (updated) {
+                  window.updateCadMapTransform();
+              }
+              rAFActive = false;
+          };
+
+          const scheduleMapUpdate = (center, zoom) => {
+              if (center !== null) pendingCenter = center;
+              if (zoom !== null) pendingZoom = zoom;
+              if (!rAFActive) {
+                  rAFActive = true;
+                  requestAnimationFrame(applyMapUpdates);
+              }
+          };
+
           wrapper.addEventListener('wheel', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
-              let zoomSpeed = 1; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
               if (window.cadMap) {
-                  let nextZoom = Math.round(window.cadMap.getZoom() + delta);
-                  window.cadMap.setZoom(nextZoom);
+                  let currentZoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                  let delta = -e.deltaY * 0.0015;
+                  let nextZoom = currentZoom + delta;
+                  if (nextZoom < 10) nextZoom = 10;
+                  if (nextZoom > 28) nextZoom = 28;
+                  scheduleMapUpdate(null, nextZoom);
               }
-              window.updateCadMapTransform();
           }, {passive: false});
 
           wrapper.addEventListener('mousedown', (e) => {
@@ -2522,6 +2559,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               ignoreDrag = checkIgnoreDrag(e.target);
               lastTouchX = e.pageX; lastTouchY = e.pageY; startPageX = e.pageX; startPageY = e.pageY;
               isMouseDown = true; isDragging = false;
+              pendingCenter = null;
+              pendingZoom = null;
           });
 
           wrapper.addEventListener('mousemove', (e) => {
@@ -2530,25 +2569,22 @@ document.getElementById('btnLoadFude').onclick = () => {
               const currentX = e.pageX; const currentY = e.pageY;
               const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
               
-              // 🌟 バグ修正：判定を「5」に上げて少し鈍感にし、ピンを刺しやすくしました！
               if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true;
               
               if (isDragging) {
-                  const DAMPING = 0.6;
-                  let apparentScale = window.cadMap ? Math.pow(2, Math.max(0, window.cadMap.getZoom() - 20)) : 1;
-                  let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
-
                   const theta = window.cadCurrentRotation * Math.PI / 180;
                   const cosT = Math.cos(-theta); const sinT = Math.sin(-theta);
-                  const finalDx = mapDx * cosT - mapDy * sinT; const finalDy = mapDx * sinT + mapDy * cosT;
+                  const finalDx = dx * cosT - dy * sinT; const finalDy = dx * sinT + dy * cosT;
 
                   if (window.cadMap) {
                       const proj = window.cadMap.getProjection();
                       if (proj) {
-                          const zoom = window.cadMap.getZoom(); const scale = Math.pow(2, zoom);
-                          const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
+                          const zoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                          const scale = Math.pow(2, zoom);
+                          let currentCenter = pendingCenter || window.cadMap.getCenter();
+                          const centerPt = proj.fromLatLngToPoint(currentCenter);
                           centerPt.x -= finalDx / scale; centerPt.y -= finalDy / scale;
-                          window.cadMap.setCenter(proj.fromPointToLatLng(centerPt));
+                          scheduleMapUpdate(proj.fromPointToLatLng(centerPt), null);
                       }
                   }
                   lastTouchX = currentX; lastTouchY = currentY;
@@ -2561,12 +2597,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
           });
-          wrapper.addEventListener('mouseup', (e) => { 
-              if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
-                  window.handleMapClick(e.pageX, e.pageY);
-              }
-              isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
-          });
+
           wrapper.addEventListener('mouseleave', () => { isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); });
 
           wrapper.addEventListener('touchstart', (e) => {
@@ -2584,6 +2615,8 @@ document.getElementById('btnLoadFude').onclick = () => {
                   startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
                   isDragging = false;
               }
+              pendingCenter = null;
+              pendingZoom = null;
           }, {capture: true, passive: false});
 
           wrapper.addEventListener('touchmove', (e) => {
@@ -2605,12 +2638,14 @@ document.getElementById('btnLoadFude').onclick = () => {
 
                   if (pinchMode === 'zoom') {
                       let zoomDiff = Math.log2(currentDist / initialPinchDist);
-                      if (window.cadMap) window.cadMap.setZoom(startScale + zoomDiff);
+                      let nextZoom = startScale + zoomDiff;
+                      if (nextZoom < 10) nextZoom = 10;
+                      if (nextZoom > 28) nextZoom = 28;
+                      scheduleMapUpdate(null, nextZoom);
                   } else if (pinchMode === 'rotate') {
                       window.cadCurrentRotation = startRotation + angleDiff;
+                      scheduleMapUpdate(null, null);
                   }
-
-                  window.updateCadMapTransform();
 
                   let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
                   if (displayAngle < 0) displayAngle += 360;
@@ -2624,21 +2659,19 @@ document.getElementById('btnLoadFude').onclick = () => {
                   
                   if (isDragging) {
                       e.preventDefault(); 
-                      const DAMPING = 0.6;
-                      let apparentScale = window.cadMap ? Math.pow(2, Math.max(0, window.cadMap.getZoom() - 20)) : 1;
-                      let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
-
                       const theta = window.cadCurrentRotation * Math.PI / 180;
                       const cosT = Math.cos(-theta); const sinT = Math.sin(-theta);
-                      const finalDx = mapDx * cosT - mapDy * sinT; const finalDy = mapDx * sinT + mapDy * cosT;
+                      const finalDx = dx * cosT - dy * sinT; const finalDy = dx * sinT + dy * cosT;
 
                       if (window.cadMap) {
                           const proj = window.cadMap.getProjection();
                           if (proj) {
-                              const zoom = window.cadMap.getZoom(); const scale = Math.pow(2, zoom);
-                              const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
+                              const zoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                              const scale = Math.pow(2, zoom);
+                              let currentCenter = pendingCenter || window.cadMap.getCenter();
+                              const centerPt = proj.fromLatLngToPoint(currentCenter);
                               centerPt.x -= finalDx / scale; centerPt.y -= finalDy / scale;
-                              window.cadMap.setCenter(proj.fromPointToLatLng(centerPt));
+                              scheduleMapUpdate(proj.fromPointToLatLng(centerPt), null);
                           }
                       }
                       lastTouchX = currentX; lastTouchY = currentY;

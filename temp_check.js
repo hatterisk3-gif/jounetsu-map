@@ -1687,10 +1687,39 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadHistoryIndex = -1;
       window.isHistoryNavigating = false;
 
+      // 🌟 最適化用のタイマーと状態変数
+      let realScaleTimeout = null;
+      let labelPositionsTimeout = null;
+      let lastLabelPositionsTime = 0;
+
+      // 🌟 ラベル位置更新のスロットリング用関数
+      window.updateCadLabelPositionsThrottled = () => {
+          const now = performance.now();
+          const limit = 100; // 100msに1回制限
+          
+          if (now - lastLabelPositionsTime >= limit) {
+              if (labelPositionsTimeout) {
+                  clearTimeout(labelPositionsTimeout);
+                  labelPositionsTimeout = null;
+              }
+              window.updateCadLabelPositions();
+              lastLabelPositionsTime = now;
+          } else {
+              if (!labelPositionsTimeout) {
+                  labelPositionsTimeout = setTimeout(() => {
+                      window.updateCadLabelPositions();
+                      lastLabelPositionsTime = performance.now();
+                      labelPositionsTimeout = null;
+                  }, limit - (now - lastLabelPositionsTime));
+              }
+          }
+      };
+
       window.updateCadMapTransform = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) {
               mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
+              mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
               
               let currentZoom = window.cadMap ? window.cadMap.getZoom() : 20;
               let apparentScale = Math.pow(2, currentZoom - 20);
@@ -1699,33 +1728,47 @@ document.getElementById('btnLoadFude').onclick = () => {
               
               // 🌟 Google Mapsの実際の拡大率（コンテナの transform matrix）を検出して
               // スケールに反映し、つまみと数字ラベルの巨大化を防ぐ
-              setTimeout(() => {
+              // 重い処理なのでデバウンス（60ms）して実行頻度を抑える
+              if (realScaleTimeout) {
+                  clearTimeout(realScaleTimeout);
+              }
+              realScaleTimeout = setTimeout(() => {
                   let realScale = apparentScale;
-                  const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
-                  if (vertexImg) {
-                      let curr = vertexImg.parentElement;
-                      let totalScale = 1.0;
-                      let foundTransform = false;
-                      while (curr && curr.id !== 'cadMap') {
-                          const transform = window.getComputedStyle(curr).transform || curr.style.transform || '';
-                          if (transform && transform !== 'none') {
-                              const matrixMatch = transform.match(/matrix\(([\d.-]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
-                              if (matrixMatch) {
-                                  const a = parseFloat(matrixMatch[1]);
-                                  const b = parseFloat(matrixMatch[2]);
-                                  const scaleVal = Math.hypot(a, b);
-                                  if (scaleVal > 0.1) {
-                                      totalScale *= scaleVal;
-                                      foundTransform = true;
-                                  }
+                  
+                  // Validate cached transform div
+                  if (window.cadTransformDiv && !document.body.contains(window.cadTransformDiv)) {
+                      window.cadTransformDiv = null;
+                  }
+                  
+                  if (!window.cadTransformDiv) {
+                      const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
+                      if (vertexImg) {
+                          let curr = vertexImg.parentElement;
+                          while (curr && curr.id !== 'cadMap') {
+                              const transform = window.getComputedStyle(curr).transform || curr.style.transform || '';
+                              if (transform && transform !== 'none' && transform.includes('matrix')) {
+                                  window.cadTransformDiv = curr;
+                                  break;
                               }
+                              curr = curr.parentElement;
                           }
-                          curr = curr.parentElement;
-                      }
-                      if (foundTransform) {
-                          realScale = totalScale;
                       }
                   }
+                  
+                  if (window.cadTransformDiv) {
+                      const transform = window.getComputedStyle(window.cadTransformDiv).transform || window.cadTransformDiv.style.transform || '';
+                      const matrixMatch = transform.match(/matrix\(([\d.-]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
+                      if (matrixMatch) {
+                          const a = parseFloat(matrixMatch[1]);
+                          const b = parseFloat(matrixMatch[2]);
+                          const scaleVal = Math.hypot(a, b);
+                          if (scaleVal > 0.1) {
+                              realScale = scaleVal;
+                          }
+                      }
+                  }
+                  
+                  window.cadCurrentScale = realScale;
                   mapDiv.style.setProperty('--cad-scale', realScale);
 
                   // 🌟 畝番号の数字ラベルが地図拡大時に一緒に小さくなるようにスケールを計算する
@@ -1734,10 +1777,12 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (visualSize > 20) visualSize = 20;
                   let labelScale = visualSize / (24 * realScale);
                   mapDiv.style.setProperty('--cad-label-scale', labelScale);
-              }, 50);
+                  
+                  realScaleTimeout = null;
+              }, 60);
           }
-          if (typeof window.updateCadLabelPositions === 'function') {
-              window.updateCadLabelPositions();
+          if (typeof window.updateCadLabelPositionsThrottled === 'function') {
+              window.updateCadLabelPositionsThrottled();
           }
       };
 
@@ -1789,32 +1834,58 @@ document.getElementById('btnLoadFude').onclick = () => {
           const viewPoly = window.getCadVisibleBoundsPolygon();
           if (!viewPoly) return;
           
+          const viewBbox = turf.bbox(viewPoly);
+          
           window.cadUneLabels.forEach(marker => {
               const poly = marker.associatedPoly;
               if (!poly) return;
               
+              const path = poly.getPath();
+              const len = path.getLength();
+              if (len === 0) return;
+              
+              let minLng = Infinity, maxLng = -Infinity;
+              let minLat = Infinity, maxLat = -Infinity;
+              for (let i = 0; i < len; i++) {
+                  const pt = path.getAt(i);
+                  const lat = pt.lat();
+                  const lng = pt.lng();
+                  if (lat < minLat) minLat = lat;
+                  if (lat > maxLat) maxLat = lat;
+                  if (lng < minLng) minLng = lng;
+                  if (lng > maxLng) maxLng = lng;
+              }
+              
               let targetPos = null;
-              try {
-                  let polyCoords = poly.getPath().getArray().map(pt => [pt.lng(), pt.lat()]);
-                  polyCoords.push(polyCoords[0]);
-                  const tPoly = turf.polygon([polyCoords]);
-                  
-                  const intersected = turf.intersect(tPoly, viewPoly);
-                  if (intersected) {
-                      const center = turf.center(intersected);
-                      targetPos = new google.maps.LatLng(center.geometry.coordinates[1], center.geometry.coordinates[0]);
+              if (minLng >= viewBbox[0] && maxLng <= viewBbox[2] && minLat >= viewBbox[1] && maxLat <= viewBbox[3]) {
+                  // Fully inside view bounding box: use quick center
+                  targetPos = new google.maps.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+              } else {
+                  // Intersects or outside: calculate using Turf
+                  try {
+                      let polyCoords = [];
+                      for (let i = 0; i < len; i++) {
+                          const pt = path.getAt(i);
+                          polyCoords.push([pt.lng(), pt.lat()]);
+                      }
+                      polyCoords.push(polyCoords[0]);
+                      const tPoly = turf.polygon([polyCoords]);
+                      
+                      const intersected = turf.intersect(tPoly, viewPoly);
+                      if (intersected) {
+                          const center = turf.center(intersected);
+                          targetPos = new google.maps.LatLng(center.geometry.coordinates[1], center.geometry.coordinates[0]);
+                      }
+                  } catch (e) {
+                      // Fallback
                   }
-              } catch (e) {
-                  // 交差しない、または計算エラーの場合は元の重心へ戻す
               }
               
               if (targetPos) {
                   marker.setPosition(targetPos);
                   marker.setVisible(true);
               } else {
-                  const bounds = new google.maps.LatLngBounds();
-                  poly.getPath().forEach(pt => bounds.extend(pt));
-                  marker.setPosition(bounds.getCenter());
+                  marker.setPosition(new google.maps.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2));
               }
           });
       };
@@ -1916,16 +1987,41 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadRedoAction = () => { if (window.cadHistoryIndex < window.cadHistory.length - 1) window.loadCadStateFromHistory(++window.cadHistoryIndex); window.updateUndoRedoUI(); };
 
       // 🌟 新機能：ドラッグ時にも数字ラベルが「リアルタイム」でついてくる！
+      window.updateSingleLabelPosition = (poly) => {
+          if (!window.cadUneLabels) return;
+          const marker = window.cadUneLabels.find(lbl => lbl.associatedPoly === poly);
+          if (marker) {
+              const path = poly.getPath();
+              const len = path.getLength();
+              if (len === 0) return;
+              let minLng = Infinity, maxLng = -Infinity;
+              let minLat = Infinity, maxLat = -Infinity;
+              for (let i = 0; i < len; i++) {
+                  const pt = path.getAt(i);
+                  const lat = pt.lat();
+                  const lng = pt.lng();
+                  if (lat < minLat) minLat = lat;
+                  if (lat > maxLat) maxLat = lat;
+                  if (lng < minLng) minLng = lng;
+                  if (lng > maxLng) maxLng = lng;
+              }
+              marker.setPosition(new google.maps.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2));
+          }
+      };
+
       window.bindShapeHistoryEvents = (poly) => {
-          google.maps.event.addListener(poly, 'drag', () => window.reassignLabels());
+          google.maps.event.addListener(poly, 'drag', () => window.updateSingleLabelPosition(poly));
           google.maps.event.addListener(poly, 'dragend', () => { window.reassignLabels(); window.saveCadStateToHistory(); });
           
           let editTimeout = null;
           ['set_at', 'insert_at', 'remove_at'].forEach(eventName => {
               google.maps.event.addListener(poly.getPath(), eventName, () => {
-                  window.reassignLabels(); // 変形時にもリアルタイム追従
+                  window.updateSingleLabelPosition(poly); // 変形時にもリアルタイム追従
                   clearTimeout(editTimeout);
-                  editTimeout = setTimeout(() => window.saveCadStateToHistory(), 500); // 履歴保存は少し待つ
+                  editTimeout = setTimeout(() => {
+                      window.reassignLabels();
+                      window.saveCadStateToHistory();
+                  }, 500); // 履歴保存は少し待つ
               });
           });
       };
@@ -2075,8 +2171,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   isDraggingHandle = false;
                   return;
               }
-              const mapDiv = document.getElementById('cadMap');
-              const scale = mapDiv ? parseFloat(mapDiv.style.getPropertyValue('--cad-scale')) || 1.0 : 1.0;
+              const scale = window.cadCurrentScale || 1.0;
               if (scale > 1.001) {
                   const coords = getEventCoords(e);
                   const dx = coords.x - handleDragStartX;
@@ -2120,22 +2215,59 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.addEventListener('pointerup', onDragEnd, true);
           window.addEventListener('pointercancel', onDragEnd, true);
 
-          let initialPinchDist = null; let initialPinchAngle = null;
+                    let initialPinchDist = null; let initialPinchAngle = null;
           let startScale = BASE_SCALE; let startRotation = 0;
           let lastTouchX = null; let lastTouchY = null;
           let startPageX = null; let startPageY = null;
           let isDragging = false; let pinchMode = null; 
           let isMouseDown = false; let ignoreDrag = false;
 
+          let pendingCenter = null;
+          let pendingZoom = null;
+          let rAFActive = false;
+
+          const applyMapUpdates = () => {
+              if (!window.cadMap) {
+                  rAFActive = false;
+                  return;
+              }
+              let updated = false;
+              if (pendingZoom !== null) {
+                  window.cadMap.setZoom(pendingZoom);
+                  pendingZoom = null;
+                  updated = true;
+              }
+              if (pendingCenter !== null) {
+                  window.cadMap.setCenter(pendingCenter);
+                  pendingCenter = null;
+                  updated = true;
+              }
+              if (updated) {
+                  window.updateCadMapTransform();
+              }
+              rAFActive = false;
+          };
+
+          const scheduleMapUpdate = (center, zoom) => {
+              if (center !== null) pendingCenter = center;
+              if (zoom !== null) pendingZoom = zoom;
+              if (!rAFActive) {
+                  rAFActive = true;
+                  requestAnimationFrame(applyMapUpdates);
+              }
+          };
+
           wrapper.addEventListener('wheel', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
-              let zoomSpeed = 1; let delta = e.deltaY < 0 ? zoomSpeed : -zoomSpeed; 
               if (window.cadMap) {
-                  let nextZoom = Math.round(window.cadMap.getZoom() + delta);
-                  window.cadMap.setZoom(nextZoom);
+                  let currentZoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                  let delta = -e.deltaY * 0.0015;
+                  let nextZoom = currentZoom + delta;
+                  if (nextZoom < 10) nextZoom = 10;
+                  if (nextZoom > 28) nextZoom = 28;
+                  scheduleMapUpdate(null, nextZoom);
               }
-              window.updateCadMapTransform();
           }, {passive: false});
 
           wrapper.addEventListener('mousedown', (e) => {
@@ -2143,6 +2275,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               ignoreDrag = checkIgnoreDrag(e.target);
               lastTouchX = e.pageX; lastTouchY = e.pageY; startPageX = e.pageX; startPageY = e.pageY;
               isMouseDown = true; isDragging = false;
+              pendingCenter = null;
+              pendingZoom = null;
           });
 
           wrapper.addEventListener('mousemove', (e) => {
@@ -2151,25 +2285,22 @@ document.getElementById('btnLoadFude').onclick = () => {
               const currentX = e.pageX; const currentY = e.pageY;
               const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
               
-              // 🌟 バグ修正：判定を「5」に上げて少し鈍感にし、ピンを刺しやすくしました！
               if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true;
               
               if (isDragging) {
-                  const DAMPING = 0.6;
-                  let apparentScale = window.cadMap ? Math.pow(2, Math.max(0, window.cadMap.getZoom() - 20)) : 1;
-                  let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
-
                   const theta = window.cadCurrentRotation * Math.PI / 180;
                   const cosT = Math.cos(-theta); const sinT = Math.sin(-theta);
-                  const finalDx = mapDx * cosT - mapDy * sinT; const finalDy = mapDx * sinT + mapDy * cosT;
+                  const finalDx = dx * cosT - dy * sinT; const finalDy = dx * sinT + dy * cosT;
 
                   if (window.cadMap) {
                       const proj = window.cadMap.getProjection();
                       if (proj) {
-                          const zoom = window.cadMap.getZoom(); const scale = Math.pow(2, zoom);
-                          const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
+                          const zoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                          const scale = Math.pow(2, zoom);
+                          let currentCenter = pendingCenter || window.cadMap.getCenter();
+                          const centerPt = proj.fromLatLngToPoint(currentCenter);
                           centerPt.x -= finalDx / scale; centerPt.y -= finalDy / scale;
-                          window.cadMap.setCenter(proj.fromPointToLatLng(centerPt));
+                          scheduleMapUpdate(proj.fromPointToLatLng(centerPt), null);
                       }
                   }
                   lastTouchX = currentX; lastTouchY = currentY;
@@ -2182,12 +2313,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
           });
-          wrapper.addEventListener('mouseup', (e) => { 
-              if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
-                  window.handleMapClick(e.pageX, e.pageY);
-              }
-              isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
-          });
+
           wrapper.addEventListener('mouseleave', () => { isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); });
 
           wrapper.addEventListener('touchstart', (e) => {
@@ -2205,7 +2331,9 @@ document.getElementById('btnLoadFude').onclick = () => {
                   startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
                   isDragging = false;
               }
-          }, {passive: false});
+              pendingCenter = null;
+              pendingZoom = null;
+          }, {capture: true, passive: false});
 
           wrapper.addEventListener('touchmove', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex' || ignoreDrag) return; 
@@ -2226,13 +2354,14 @@ document.getElementById('btnLoadFude').onclick = () => {
 
                   if (pinchMode === 'zoom') {
                       let zoomDiff = Math.log2(currentDist / initialPinchDist);
-                      if (window.cadMap) window.cadMap.setZoom(startScale + zoomDiff);
+                      let nextZoom = startScale + zoomDiff;
+                      if (nextZoom < 10) nextZoom = 10;
+                      if (nextZoom > 28) nextZoom = 28;
+                      scheduleMapUpdate(null, nextZoom);
                   } else if (pinchMode === 'rotate') {
                       window.cadCurrentRotation = startRotation + angleDiff;
-                      document.documentElement.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg'); 
+                      scheduleMapUpdate(null, null);
                   }
-
-                  window.updateCadMapTransform();
 
                   let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
                   if (displayAngle < 0) displayAngle += 360;
@@ -2246,27 +2375,25 @@ document.getElementById('btnLoadFude').onclick = () => {
                   
                   if (isDragging) {
                       e.preventDefault(); 
-                      const DAMPING = 0.6;
-                      let apparentScale = window.cadMap ? Math.pow(2, Math.max(0, window.cadMap.getZoom() - 20)) : 1;
-                      let mapDx = (dx * DAMPING) / apparentScale; let mapDy = (dy * DAMPING) / apparentScale;
-
                       const theta = window.cadCurrentRotation * Math.PI / 180;
                       const cosT = Math.cos(-theta); const sinT = Math.sin(-theta);
-                      const finalDx = mapDx * cosT - mapDy * sinT; const finalDy = mapDx * sinT + mapDy * cosT;
+                      const finalDx = dx * cosT - dy * sinT; const finalDy = dx * sinT + dy * cosT;
 
                       if (window.cadMap) {
                           const proj = window.cadMap.getProjection();
                           if (proj) {
-                              const zoom = window.cadMap.getZoom(); const scale = Math.pow(2, zoom);
-                              const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
+                              const zoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                              const scale = Math.pow(2, zoom);
+                              let currentCenter = pendingCenter || window.cadMap.getCenter();
+                              const centerPt = proj.fromLatLngToPoint(currentCenter);
                               centerPt.x -= finalDx / scale; centerPt.y -= finalDy / scale;
-                              window.cadMap.setCenter(proj.fromPointToLatLng(centerPt));
+                              scheduleMapUpdate(proj.fromPointToLatLng(centerPt), null);
                           }
                       }
                       lastTouchX = currentX; lastTouchY = currentY;
                   }
               }
-          }, {passive: false});
+          }, {capture: true, passive: false});
 
           wrapper.addEventListener('touchend', (e) => {
               if (e.touches.length < 2) { initialPinchDist = null; initialPinchAngle = null; pinchMode = null; }
@@ -2276,7 +2403,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
                   lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
               }
-          });
+          }, {capture: true});
           window.cadTouchAdded = true;
       };
 
@@ -2289,8 +2416,8 @@ document.getElementById('btnLoadFude').onclick = () => {
           document.getElementById('cadOverlay').style.display = 'flex';
           
           window.cadCurrentRotation = 0;
-          document.documentElement.style.setProperty('--label-rot', '0deg');
           window.cadCurrentScale = BASE_SCALE;
+          window.cadTransformDiv = null;
           window.updateCadMapTransform();
 
           window.initCadTouchEvents();
@@ -2302,7 +2429,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   mapId: 'DEMO_MAP_ID', gestureHandling: 'none', disableDefaultUI: true, zoomControl: true, isFractionalZoomEnabled: true
               });
               window.cadMap.addListener('center_changed', () => {
-                  if (typeof window.updateCadLabelPositions === 'function') window.updateCadLabelPositions();
+                  if (typeof window.updateCadLabelPositionsThrottled === 'function') window.updateCadLabelPositionsThrottled();
               });
               window.cadMap.addListener('zoom_changed', () => {
                   window.updateCadMapTransform();
@@ -2399,13 +2526,11 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadAlignMapHeading = () => {
           const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
           window.cadCurrentRotation = -angle; 
-          document.documentElement.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg'); 
           window.updateCadMapTransform();
       };
 
       window.cadRotateMap = (deg) => {
           window.cadCurrentRotation += deg;
-          document.documentElement.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg'); 
           window.updateCadMapTransform();
           let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
           if (displayAngle < 0) displayAngle += 360;
@@ -2728,26 +2853,48 @@ document.getElementById('btnLoadFude').onclick = () => {
       };
 
       window.reassignLabels = () => {
-          if (window.cadUneLabels) { window.cadUneLabels.forEach(lbl => lbl.setMap(null)); window.cadUneLabels = []; }
+          const totalPolygons = [...window.cadUnePolygons, ...window.cadCustomShapes];
           const initialFontSize = '24px';
-          let idx = 1;
-
-          const createLbl = (poly) => {
+          
+          if (!window.cadUneLabels) window.cadUneLabels = [];
+          
+          while (window.cadUneLabels.length > totalPolygons.length) {
+              const lbl = window.cadUneLabels.pop();
+              if (lbl) lbl.setMap(null);
+          }
+          
+          while (window.cadUneLabels.length < totalPolygons.length) {
+              const labelMarker = new google.maps.Marker({
+                  map: window.cadMap,
+                  icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+                  zIndex: 11
+              });
+              window.cadUneLabels.push(labelMarker);
+          }
+          
+          totalPolygons.forEach((poly, index) => {
+              const marker = window.cadUneLabels[index];
+              const idxStr = String(index + 1);
+              
+              marker.associatedPoly = poly;
+              
+              google.maps.event.clearListeners(marker, 'click');
+              google.maps.event.addListener(marker, 'click', () => window.openCadEditModal(poly.uneIndex));
+              
               const bounds = new google.maps.LatLngBounds();
               poly.getPath().forEach(pt => bounds.extend(pt));
-              const labelMarker = new google.maps.Marker({
-                  position: bounds.getCenter(), map: window.cadMap,
-                  label: { text: String(idx++), color: '#ffffff', fontSize: initialFontSize, fontWeight: 'bold', className: 'polygon-label ridge-label' },
-                  icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 11
-              });
-              labelMarker.associatedPoly = poly;
+              marker.setPosition(bounds.getCenter());
               
-              google.maps.event.addListener(labelMarker, 'click', () => window.openCadEditModal(poly.uneIndex));
-              window.cadUneLabels.push(labelMarker);
-          };
-          window.cadUnePolygons.forEach(createLbl); window.cadCustomShapes.forEach(createLbl);
+              marker.setLabel({
+                  text: idxStr,
+                  color: '#ffffff',
+                  fontSize: initialFontSize,
+                  fontWeight: 'bold',
+                  className: 'polygon-label ridge-label'
+              });
+          });
           
-          window.updateCadLabelPositions();
+          window.updateCadLabelPositionsThrottled();
       };
 
       window.saveUneSim = () => {
