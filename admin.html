@@ -36,10 +36,10 @@
       #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
       .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
 /* 🌟農業CAD専用スタイル🌟 */
-#cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; touch-action: auto; }
+#cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; touch-action: none; overscroll-behavior: none; }
    #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; z-index: 100; }
-   #cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; touch-action: none; }
-   
+   #cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+   #cadMapWrapper, #cadMapWrapper * { touch-action: none !important; }
    #cadMap { position: absolute; top: 50%; left: 50%; width: 300vmax; height: 300vmax; transform: translate(-50%, -50%) rotate(0deg); transform-origin: center center; will-change: transform; touch-action: none; }
    .cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; touch-action: pan-y; }
    
@@ -2427,11 +2427,12 @@ document.getElementById('btnLoadFude').onclick = () => {
           const checkIgnoreDrag = (target) => {
               if (!target) return false;
 
-              // 1. Google Mapsの地図タイル画像（衛星写真等）やキャンバスは絶対にドラッグ無視しない
-              if (target.tagName.toLowerCase() === 'canvas') {
+              // 1. Google Mapsの地図タイル画像（衛星写真等）、キャンバス、ポリゴン本体(path/svg)は絶対にドラッグ無視しない
+              const tagName = target.tagName.toLowerCase();
+              if (tagName === 'canvas' || tagName === 'path' || tagName === 'svg') {
                   return false;
               }
-              if (target.tagName.toLowerCase() === 'img') {
+              if (tagName === 'img') {
                   let src = target.getAttribute('src') || '';
                   if (src.includes('googleapis.com') || src.includes('google.com') || src.includes('gstatic.com') || src.includes('khms') || src.includes('kh?')) {
                       return false;
@@ -2442,7 +2443,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               let currEl = target;
               let depth = 0;
               while (currEl && currEl !== wrapper) {
-                  if (currEl.tagName.toLowerCase() === 'img') {
+                  const currTagName = currEl.tagName.toLowerCase();
+                  if (['button', 'input', 'select', 'textarea'].includes(currTagName)) {
+                      return true;
+                  }
+                  if (currTagName === 'img') {
                       let src = currEl.getAttribute('src') || '';
                       if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out') || src.includes('nakamichi')) {
                           return true;
@@ -2453,7 +2458,9 @@ document.getElementById('btnLoadFude').onclick = () => {
                           return true;
                       }
                   }
-                  if (currEl.getAttribute('draggable') === 'true' || (currEl.className && typeof currEl.className === 'string' && currEl.className.includes('gmnoprint'))) {
+                  if (currEl.getAttribute('draggable') === 'true' || 
+                      (currEl.className && typeof currEl.className === 'string' && 
+                       (currEl.className.includes('gmnoprint') || currEl.className.includes('gm-style-cc') || currEl.className.includes('gm-control-active')))) {
                       return true;
                   }
                   currEl = currEl.parentElement;
@@ -2482,6 +2489,9 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
               isDraggingHandle = checkIgnoreDrag(e.target);
               if (isDraggingHandle) {
+                  if (e.cancelable) {
+                      e.preventDefault();
+                  }
                   const coords = getEventCoords(e);
                   handleDragStartX = coords.x;
                   handleDragStartY = coords.y;
@@ -2493,6 +2503,9 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (e.touches && e.touches.length > 1) {
                   isDraggingHandle = false;
                   return;
+              }
+              if (e.cancelable) {
+                  e.preventDefault();
               }
               // Calculate apparent scale dynamically based on virtual zoom and real zoom
               let currentZoom = window.getCadZoom();
