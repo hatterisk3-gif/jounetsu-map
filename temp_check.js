@@ -1722,24 +1722,37 @@ document.getElementById('btnLoadFude').onclick = () => {
           return window.cadVirtualZoom;
       };
 
+      window.cadZoomIn = () => {
+          if (!window.cadMap) return;
+          let currentZoom = window.getCadZoom();
+          window.setCadZoom(currentZoom + 1);
+      };
+
+      window.cadZoomOut = () => {
+          if (!window.cadMap) return;
+          let currentZoom = window.getCadZoom();
+          window.setCadZoom(currentZoom - 1);
+      };
+
       window.setCadZoom = (zoom) => {
           if (zoom < 10) zoom = 10;
           if (zoom > 45) zoom = 45;
           window.cadVirtualZoom = zoom;
           
           let realZoom = Math.min(zoom, 20);
+          let intZoom = Math.round(realZoom);
           if (window.cadMap) {
-              if (window.cadMap.getZoom() !== realZoom) {
+              if (window.cadMap.getZoom() !== intZoom) {
                   window.cadIsSettingZoom = true;
+                  window.cadLastSetZoomTime = Date.now();
                   try {
-                      window.cadMap.setZoom(realZoom);
+                      window.cadMap.setZoom(intZoom);
                   } finally {
-                      setTimeout(() => { window.cadIsSettingZoom = false; }, 0);
+                      setTimeout(() => { window.cadIsSettingZoom = false; }, 100);
                   }
-              } else {
-                  window.updateCadMapTransform();
               }
           }
+          window.updateCadMapTransform();
       };
 
       window.updateCadMapTransform = () => {
@@ -1748,7 +1761,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               let currentZoom = window.getCadZoom();
               let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
               let apparentScale = Math.pow(2, currentZoom - realZoom);
-              if (apparentScale < 1) apparentScale = 1;
+              if (apparentScale < 0.25) apparentScale = 0.25;
 
               mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
               mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
@@ -2367,7 +2380,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           }, {capture: true, passive: false});
 
           wrapper.addEventListener('touchmove', (e) => {
-              if (document.getElementById('cadOverlay').style.display !== 'flex' || ignoreDrag) return; 
+              if (document.getElementById('cadOverlay').style.display !== 'flex') return; 
               
               if (e.touches.length === 2 && initialPinchDist !== null) {
                   e.preventDefault(); 
@@ -2399,6 +2412,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   document.getElementById('cadAngle').value = displayAngle;
 
               } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
+                  if (ignoreDrag) return;
                   e.preventDefault(); 
                   const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
                   const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
@@ -2465,7 +2479,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               });
               window.cadMap.addListener('zoom_changed', () => {
                   let realZoom = window.cadMap.getZoom();
-                  if (!window.cadIsSettingZoom) {
+                  let timeSinceLastSet = Date.now() - (window.cadLastSetZoomTime || 0);
+                  if (!window.cadIsSettingZoom && timeSinceLastSet > 300) {
                       window.cadVirtualZoom = realZoom;
                   }
                   window.updateCadMapTransform();
