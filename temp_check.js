@@ -2330,6 +2330,9 @@ document.getElementById('btnLoadFude').onclick = () => {
                   lastTouchX = e.touches[0].pageX; lastTouchY = e.touches[0].pageY;
                   startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
                   isDragging = false;
+                  if (!ignoreDrag) {
+                      e.preventDefault();
+                  }
               }
               pendingCenter = null;
               pendingZoom = null;
@@ -2368,13 +2371,13 @@ document.getElementById('btnLoadFude').onclick = () => {
                   document.getElementById('cadAngle').value = displayAngle;
 
               } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
+                  e.preventDefault(); 
                   const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
                   const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
                   
                   if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true;
                   
                   if (isDragging) {
-                      e.preventDefault(); 
                       const theta = window.cadCurrentRotation * Math.PI / 180;
                       const cosT = Math.cos(-theta); const sinT = Math.sin(-theta);
                       const finalDx = dx * cosT - dy * sinT; const finalDy = dx * sinT + dy * cosT;
