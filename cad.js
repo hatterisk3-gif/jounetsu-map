@@ -1,3 +1,4 @@
+// 🚜 農業CAD専用JavaScript（admin.htmlから切り出し）
       // 🚜 新・農業CADシステム（地形設計特化版）
       window.cadMap = null;
       window.cadTargetId = null;
