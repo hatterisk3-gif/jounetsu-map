@@ -2458,8 +2458,10 @@ document.getElementById('btnLoadFude').onclick = () => {
                           return true;
                       }
                   }
-                  if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"]')) {
-                      return true;
+                  if (currEl.id !== 'cadMap' && currEl.id !== 'cadMapWrapper' && (!currEl.className || typeof currEl.className !== 'string' || !currEl.className.includes('gm-style'))) {
+                      if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"]')) {
+                          return true;
+                      }
                   }
                   if (currEl.getAttribute('draggable') === 'true' || (currEl.className && typeof currEl.className === 'string' && currEl.className.includes('gmnoprint'))) {
                       return true;
