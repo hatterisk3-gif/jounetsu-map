@@ -1694,6 +1694,9 @@ document.getElementById('btnLoadFude').onclick = () => {
 
       // 🌟 ラベル位置更新のスロットリング用関数
       window.updateCadLabelPositionsThrottled = () => {
+          if (window.cadDragDx || window.cadDragDy) {
+              return; // ドラッグ中は再計算をスキップしてパフォーマンスを最大化
+          }
           const now = performance.now();
           const limit = 100; // 100msに1回制限
           
@@ -1771,61 +1774,63 @@ document.getElementById('btnLoadFude').onclick = () => {
               
               // 🌟 Google Mapsの実際の拡大率（コンテナの transform matrix）を検出して
               // スケールに反映し、つまみと数字ラベルの巨大化を防ぐ
-              // 重い処理なのでデバウンス（60ms）して実行頻度を抑える
-              if (realScaleTimeout) {
-                  clearTimeout(realScaleTimeout);
-              }
-              realScaleTimeout = setTimeout(() => {
-                  let scaleVal = 1.0;
-                  
-                  // Validate cached transform div
-                  if (window.cadTransformDiv && !document.body.contains(window.cadTransformDiv)) {
-                      window.cadTransformDiv = null;
+              // 重い処理なのでドラッグ中はスキップし、デバウンス（60ms）して実行頻度を抑える
+              if (!window.cadDragDx && !window.cadDragDy) {
+                  if (realScaleTimeout) {
+                      clearTimeout(realScaleTimeout);
                   }
-                  
-                  if (!window.cadTransformDiv) {
-                      const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
-                      if (vertexImg) {
-                          let curr = vertexImg.parentElement;
-                          while (curr && curr.id !== 'cadMap') {
-                              const transform = window.getComputedStyle(curr).transform || curr.style.transform || '';
-                              if (transform && transform !== 'none' && transform.includes('matrix')) {
-                                  window.cadTransformDiv = curr;
-                                  break;
+                  realScaleTimeout = setTimeout(() => {
+                      let scaleVal = 1.0;
+                      
+                      // Validate cached transform div
+                      if (window.cadTransformDiv && !document.body.contains(window.cadTransformDiv)) {
+                          window.cadTransformDiv = null;
+                      }
+                      
+                      if (!window.cadTransformDiv) {
+                          const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
+                          if (vertexImg) {
+                              let curr = vertexImg.parentElement;
+                              while (curr && curr.id !== 'cadMap') {
+                                  const transform = window.getComputedStyle(curr).transform || curr.style.transform || '';
+                                  if (transform && transform !== 'none' && transform.includes('matrix')) {
+                                      window.cadTransformDiv = curr;
+                                      break;
+                                  }
+                                  curr = curr.parentElement;
                               }
-                              curr = curr.parentElement;
                           }
                       }
-                  }
-                  
-                  if (window.cadTransformDiv) {
-                      const transform = window.getComputedStyle(window.cadTransformDiv).transform || window.cadTransformDiv.style.transform || '';
-                      const matrixMatch = transform.match(/matrix\(([\d.-]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
-                      if (matrixMatch) {
-                          const a = parseFloat(matrixMatch[1]);
-                          const b = parseFloat(matrixMatch[2]);
-                          const val = Math.hypot(a, b);
-                          if (val > 0.1) {
-                              scaleVal = val;
+                      
+                      if (window.cadTransformDiv) {
+                          const transform = window.getComputedStyle(window.cadTransformDiv).transform || window.cadTransformDiv.style.transform || '';
+                          const matrixMatch = transform.match(/matrix\(([\d.-]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
+                          if (matrixMatch) {
+                              const a = parseFloat(matrixMatch[1]);
+                              const b = parseFloat(matrixMatch[2]);
+                              const val = Math.hypot(a, b);
+                              if (val > 0.1) {
+                                  scaleVal = val;
+                              }
                           }
                       }
-                  }
-                  
-                  // Overall physical scale is the product of Google Maps scale and apparentScale
-                  let realScale = scaleVal * apparentScale;
-                  
-                  window.cadCurrentScale = realScale;
-                  mapDiv.style.setProperty('--cad-scale', realScale);
+                      
+                      // Overall physical scale is the product of Google Maps scale and apparentScale
+                      let realScale = scaleVal * apparentScale;
+                      
+                      window.cadCurrentScale = realScale;
+                      mapDiv.style.setProperty('--cad-scale', realScale);
 
-                  // 🌟 畝番号の数字ラベルが地図拡大時に一緒に小さくなるようにスケールを計算する
-                  let visualSize = 20 - (currentZoom - 20) * 1.5;
-                  if (visualSize < 8) visualSize = 8;
-                  if (visualSize > 20) visualSize = 20;
-                  let labelScale = visualSize / (24 * realScale);
-                  mapDiv.style.setProperty('--cad-label-scale', labelScale);
-                  
-                  realScaleTimeout = null;
-              }, 60);
+                      // 🌟 畝番号の数字ラベルが地図拡大時に一緒に小さくなるようにスケールを計算する
+                      let visualSize = 20 - (currentZoom - 20) * 1.5;
+                      if (visualSize < 8) visualSize = 8;
+                      if (visualSize > 20) visualSize = 20;
+                      let labelScale = visualSize / (24 * realScale);
+                      mapDiv.style.setProperty('--cad-label-scale', labelScale);
+                      
+                      realScaleTimeout = null;
+                  }, 60);
+              }
           }
           if (typeof window.updateCadLabelPositionsThrottled === 'function') {
               window.updateCadLabelPositionsThrottled();
@@ -2133,54 +2138,40 @@ document.getElementById('btnLoadFude').onclick = () => {
           const checkIgnoreDrag = (target) => {
               if (!target) return false;
 
-              // 1. Google Mapsの地図タイル画像（衛星写真等）やキャンバスは絶対にドラッグ無視しない
-              if (target.tagName.toLowerCase() === 'canvas') {
+              // 1. Google Mapsの地図タイル画像（衛星写真等）、キャンバス、ポリゴン本体(path/svg)は絶対にドラッグ無視しない
+              const tagName = target.tagName.toLowerCase();
+              if (tagName === 'canvas' || tagName === 'path' || tagName === 'svg') {
                   return false;
               }
-              if (target.tagName.toLowerCase() === 'img') {
+              if (tagName === 'img') {
                   let src = target.getAttribute('src') || '';
                   if (src.includes('googleapis.com') || src.includes('google.com') || src.includes('gstatic.com') || src.includes('khms') || src.includes('kh?')) {
                       return false;
                   }
               }
 
-              // 2. ポリゴン（SVG path要素）自体や、畝番号の数字ラベル（.ridge-label）はドラッグ無視しない
-              let skipInteractive = false;
-              if (target.tagName.toLowerCase() === 'path') {
-                  skipInteractive = true;
-              }
-              if (target.className && typeof target.className === 'string' && target.className.includes('ridge-label')) {
-                  skipInteractive = true;
-              }
-
-              if (!skipInteractive) {
-                  let compStyle = window.getComputedStyle(target);
-                  let cursor = compStyle.cursor || '';
-                  // grab, grabbing や、Googleマップが使用する openhand/closedhand などのカーソルは無視しない
-                  // pointer, move, resize などのインタラクティブなカーソルの場合のみ無視する
-                  let isInteractiveCursor = ['pointer', 'move', 'crosshair'].includes(cursor) || cursor.includes('resize');
-                  if (isInteractiveCursor) {
-                      if (!cursor.includes('grab') && !cursor.includes('hand')) {
-                          return true;
-                      }
-                  }
-              }
-
+              // 2. つまみやピンの親要素や、ドラッグ防止対象の要素かを再帰的にチェック
               let currEl = target;
               let depth = 0;
               while (currEl && currEl !== wrapper) {
-                  if (currEl.tagName.toLowerCase() === 'img') {
+                  const currTagName = currEl.tagName.toLowerCase();
+                  if (['button', 'input', 'select', 'textarea'].includes(currTagName)) {
+                      return true;
+                  }
+                  if (currTagName === 'img') {
                       let src = currEl.getAttribute('src') || '';
-                      if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out')) {
+                      if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out') || src.includes('nakamichi')) {
                           return true;
                       }
                   }
                   if (depth <= 1 && currEl.id !== 'cadMap' && currEl.id !== 'cadMapWrapper' && (!currEl.className || typeof currEl.className !== 'string' || !currEl.className.includes('gm-style'))) {
-                      if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"]')) {
+                      if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"], img[src*="water_in"], img[src*="water_out"], img[src*="nakamichi"]')) {
                           return true;
                       }
                   }
-                  if (currEl.getAttribute('draggable') === 'true' || (currEl.className && typeof currEl.className === 'string' && currEl.className.includes('gmnoprint'))) {
+                  if (currEl.getAttribute('draggable') === 'true' || 
+                      (currEl.className && typeof currEl.className === 'string' && 
+                       (currEl.className.includes('gmnoprint') || currEl.className.includes('gm-style-cc') || currEl.className.includes('gm-control-active')))) {
                       return true;
                   }
                   currEl = currEl.parentElement;
@@ -2209,6 +2200,9 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
               isDraggingHandle = checkIgnoreDrag(e.target);
               if (isDraggingHandle) {
+                  if (e.cancelable) {
+                      e.preventDefault();
+                  }
                   const coords = getEventCoords(e);
                   handleDragStartX = coords.x;
                   handleDragStartY = coords.y;
@@ -2220,6 +2214,9 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (e.touches && e.touches.length > 1) {
                   isDraggingHandle = false;
                   return;
+              }
+              if (e.cancelable) {
+                  e.preventDefault();
               }
               // Calculate apparent scale dynamically based on virtual zoom and real zoom
               let currentZoom = window.getCadZoom();
@@ -2293,6 +2290,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           let pendingCenter = null;
           let pendingZoom = null;
           let pendingRotationChanged = false;
+          let pendingDragChanged = false;
           let rAFActive = false;
 
           const applyMapUpdates = () => {
@@ -2319,6 +2317,11 @@ document.getElementById('btnLoadFude').onclick = () => {
                   updated = true;
                   needsTransform = true;
               }
+              if (pendingDragChanged) {
+                  pendingDragChanged = false;
+                  updated = true;
+                  needsTransform = true;
+              }
 
               if (updated && needsTransform) {
                   window.updateCadMapTransform();
@@ -2326,10 +2329,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               rAFActive = false;
           };
 
-          const scheduleMapUpdate = (center, zoom, rotationChanged = false) => {
+          const scheduleMapUpdate = (center, zoom, rotationChanged = false, dragChanged = false) => {
               if (center !== null) pendingCenter = center;
               if (zoom !== null) pendingZoom = zoom;
               if (rotationChanged) pendingRotationChanged = true;
+              if (dragChanged) pendingDragChanged = true;
               if (!rAFActive) {
                   rAFActive = true;
                   requestAnimationFrame(applyMapUpdates);
@@ -2377,6 +2381,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               pendingCenter = null;
               pendingZoom = null;
               if (!ignoreDrag) {
+                  e.stopPropagation();
                   window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
                   window.cadDragDx = 0;
                   window.cadDragDy = 0;
@@ -2385,16 +2390,17 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           wrapper.addEventListener('mousemove', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex' || ignoreDrag || !isMouseDown || lastTouchX === null || lastTouchY === null) return;
-              
+              if (!ignoreDrag) {
+                  e.stopPropagation();
+              }
               const currentX = e.pageX; const currentY = e.pageY;
-              const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
               
-              if (Math.abs(currentX - startPageX) > 5 || Math.abs(currentY - startPageY) > 5) isDragging = true;
+              if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
               
               if (isDragging) {
                   window.cadDragDx = currentX - startPageX;
                   window.cadDragDy = currentY - startPageY;
-                  window.updateCadMapTransform();
+                  scheduleMapUpdate(null, null, false, true);
               }
           }, {capture: true});
 
@@ -2402,14 +2408,28 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
                   window.handleMapClick(e.pageX, e.pageY);
               }
-              if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
-                  const finalDx = e.pageX - startPageX;
-                  const finalDy = e.pageY - startPageY;
-                  finalizeDragCenter(finalDx, finalDy);
+              if (isDragging && !ignoreDrag) {
+                  e.stopPropagation();
+                  if (window.cadDragStartCenter) {
+                      const finalDx = e.pageX - startPageX;
+                      const finalDy = e.pageY - startPageY;
+                      finalizeDragCenter(finalDx, finalDy);
+                      
+                      window.cadDragDx = finalDx;
+                      window.cadDragDy = finalDy;
+                      requestAnimationFrame(() => {
+                          requestAnimationFrame(() => {
+                              window.cadDragDx = 0;
+                              window.cadDragDy = 0;
+                              window.updateCadMapTransform();
+                          });
+                      });
+                  }
+              } else {
+                  window.cadDragDx = 0;
+                  window.cadDragDy = 0;
+                  window.updateCadMapTransform();
               }
-              window.cadDragDx = 0;
-              window.cadDragDy = 0;
-              window.updateCadMapTransform();
               window.cadDragStartCenter = null;
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
           }, {capture: true});
@@ -2417,10 +2437,21 @@ document.getElementById('btnLoadFude').onclick = () => {
           wrapper.addEventListener('mouseleave', () => { 
               if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
                   finalizeDragCenter(window.cadDragDx, window.cadDragDy);
+                  
+                  const dxToReset = window.cadDragDx;
+                  const dyToReset = window.cadDragDy;
+                  requestAnimationFrame(() => {
+                      requestAnimationFrame(() => {
+                          window.cadDragDx = 0;
+                          window.cadDragDy = 0;
+                          window.updateCadMapTransform();
+                      });
+                  });
+              } else {
+                  window.cadDragDx = 0;
+                  window.cadDragDy = 0;
+                  window.updateCadMapTransform();
               }
-              window.cadDragDx = 0;
-              window.cadDragDy = 0;
-              window.updateCadMapTransform();
               window.cadDragStartCenter = null;
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
           });
@@ -2430,7 +2461,10 @@ document.getElementById('btnLoadFude').onclick = () => {
               ignoreDrag = checkIgnoreDrag(e.target);
 
               if (e.touches.length === 2) {
-                  e.preventDefault(); 
+                  if (e.cancelable) {
+                      e.preventDefault(); 
+                  }
+                  e.stopPropagation();
                   const dx = e.touches[0].pageX - e.touches[1].pageX; const dy = e.touches[0].pageY - e.touches[1].pageY;
                   initialPinchDist = Math.hypot(dx, dy); initialPinchAngle = Math.atan2(dy, dx);
                   startScale = window.getCadZoom(); startRotation = window.cadCurrentRotation || 0;
@@ -2444,7 +2478,10 @@ document.getElementById('btnLoadFude').onclick = () => {
                   startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
                   isDragging = false;
                   if (!ignoreDrag) {
-                      e.preventDefault();
+                      if (e.cancelable) {
+                          e.preventDefault();
+                      }
+                      e.stopPropagation();
                       window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
                       window.cadDragDx = 0;
                       window.cadDragDy = 0;
@@ -2458,7 +2495,10 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return; 
               
               if (e.touches.length === 2 && initialPinchDist !== null) {
-                  e.preventDefault(); 
+                  if (e.cancelable) {
+                      e.preventDefault(); 
+                  }
+                  e.stopPropagation();
                   const dx = e.touches[0].pageX - e.touches[1].pageX; const dy = e.touches[0].pageY - e.touches[1].pageY;
                   const currentDist = Math.hypot(dx, dy); const currentAngle = Math.atan2(dy, dx);
                   let angleDiff = (currentAngle - initialPinchAngle) * (180 / Math.PI);
@@ -2488,36 +2528,54 @@ document.getElementById('btnLoadFude').onclick = () => {
 
               } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
                   if (ignoreDrag) return;
-                  e.preventDefault(); 
+                  if (e.cancelable) {
+                      e.preventDefault(); 
+                  }
+                  e.stopPropagation();
                   const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
-                  const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
                   
-                  if (Math.abs(currentX - startPageX) > 5 || Math.abs(currentY - startPageY) > 5) isDragging = true;
+                  if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
                   
                   if (isDragging) {
                       window.cadDragDx = currentX - startPageX;
                       window.cadDragDy = currentY - startPageY;
-                      window.updateCadMapTransform();
+                      scheduleMapUpdate(null, null, false, true);
                   }
               }
           }, {capture: true, passive: false});
 
-          wrapper.addEventListener('touchend', (e) => {
+          const handleTouchEndOrCancel = (e) => {
               if (e.touches.length < 2) { initialPinchDist = null; initialPinchAngle = null; pinchMode = null; }
               if (e.touches.length === 0) { 
                   if (!isDragging && startPageX !== null && startPageY !== null && !ignoreDrag) {
                       window.handleMapClick(startPageX, startPageY);
                   }
-                  if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
-                      finalizeDragCenter(window.cadDragDx, window.cadDragDy);
+                  if (isDragging && !ignoreDrag) {
+                      e.stopPropagation();
+                      if (window.cadDragStartCenter) {
+                          const finalDx = window.cadDragDx;
+                          const finalDy = window.cadDragDy;
+                          finalizeDragCenter(finalDx, finalDy);
+                          
+                          requestAnimationFrame(() => {
+                              requestAnimationFrame(() => {
+                                  window.cadDragDx = 0;
+                                  window.cadDragDy = 0;
+                                  window.updateCadMapTransform();
+                              });
+                          });
+                      }
+                  } else {
+                      window.cadDragDx = 0;
+                      window.cadDragDy = 0;
+                      window.updateCadMapTransform();
                   }
-                  window.cadDragDx = 0;
-                  window.cadDragDy = 0;
-                  window.updateCadMapTransform();
                   window.cadDragStartCenter = null;
                   lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
               }
-          }, {capture: true});
+          };
+          wrapper.addEventListener('touchend', handleTouchEndOrCancel, {capture: true});
+          wrapper.addEventListener('touchcancel', handleTouchEndOrCancel, {capture: true});
           window.cadTouchAdded = true;
       };
 
@@ -2661,14 +2719,20 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadSnapAngle = () => {
           if (!window.cadTargetId) return;
           const p = loadedPolygons[window.cadTargetId];
+          if (!p || !p.coords || p.coords.length === 0) return;
           let currentAngle = parseFloat(document.getElementById('cadAngle').value) || 0;
+
+          let coords = p.coords.map(pt => [
+              typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+              typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+          ]);
 
           let minDiff = Infinity;
           let bestAngle = currentAngle;
 
-          for (let i = 0; i < p.coords.length; i++) {
-              let pt1 = turf.point([p.coords[i].lng, p.coords[i].lat]);
-              let pt2 = turf.point([p.coords[(i+1)%p.coords.length].lng, p.coords[(i+1)%p.coords.length].lat]);
+          for (let i = 0; i < coords.length; i++) {
+              let pt1 = turf.point(coords[i]);
+              let pt2 = turf.point(coords[(i+1)%coords.length]);
               let bearing = turf.bearing(pt1, pt2);
 
               let screenAngle = bearing - currentAngle;

@@ -3008,14 +3008,20 @@ document.getElementById('btnLoadFude').onclick = () => {
       window.cadSnapAngle = () => {
           if (!window.cadTargetId) return;
           const p = loadedPolygons[window.cadTargetId];
+          if (!p || !p.coords || p.coords.length === 0) return;
           let currentAngle = parseFloat(document.getElementById('cadAngle').value) || 0;
+
+          let coords = p.coords.map(pt => [
+              typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+              typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+          ]);
 
           let minDiff = Infinity;
           let bestAngle = currentAngle;
 
-          for (let i = 0; i < p.coords.length; i++) {
-              let pt1 = turf.point([p.coords[i].lng, p.coords[i].lat]);
-              let pt2 = turf.point([p.coords[(i+1)%p.coords.length].lng, p.coords[(i+1)%p.coords.length].lat]);
+          for (let i = 0; i < coords.length; i++) {
+              let pt1 = turf.point(coords[i]);
+              let pt2 = turf.point(coords[(i+1)%coords.length]);
               let bearing = turf.bearing(pt1, pt2);
 
               let screenAngle = bearing - currentAngle;
