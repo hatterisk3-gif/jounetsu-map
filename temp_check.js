@@ -1731,8 +1731,11 @@ document.getElementById('btnLoadFude').onclick = () => {
           if (window.cadMap) {
               if (window.cadMap.getZoom() !== realZoom) {
                   window.cadIsSettingZoom = true;
-                  window.cadMap.setZoom(realZoom);
-                  window.cadIsSettingZoom = false;
+                  try {
+                      window.cadMap.setZoom(realZoom);
+                  } finally {
+                      setTimeout(() => { window.cadIsSettingZoom = false; }, 0);
+                  }
               } else {
                   window.updateCadMapTransform();
               }
@@ -1743,7 +1746,8 @@ document.getElementById('btnLoadFude').onclick = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) {
               let currentZoom = window.getCadZoom();
-              let apparentScale = Math.pow(2, currentZoom - 20);
+              let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+              let apparentScale = Math.pow(2, currentZoom - realZoom);
               if (apparentScale < 1) apparentScale = 1;
 
               mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
@@ -2460,12 +2464,12 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (typeof window.updateCadLabelPositionsThrottled === 'function') window.updateCadLabelPositionsThrottled();
               });
               window.cadMap.addListener('zoom_changed', () => {
-                  if (window.cadIsSettingZoom) {
-                      window.updateCadMapTransform();
-                      return;
-                  }
                   let realZoom = window.cadMap.getZoom();
-                  window.cadVirtualZoom = realZoom;
+                  if (realZoom < 20) {
+                      window.cadVirtualZoom = realZoom;
+                  } else if (window.cadVirtualZoom === undefined || window.cadVirtualZoom === null || window.cadVirtualZoom < 20) {
+                      window.cadVirtualZoom = 20;
+                  }
                   window.updateCadMapTransform();
               });
           }
