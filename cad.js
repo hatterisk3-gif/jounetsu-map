@@ -104,6 +104,17 @@
               mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
               mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
               mapDiv.style.setProperty('--cad-scale', apparentScale);
+              // 👇👇👇 ここから下のブロックを新しく追加してください 👇👇👇
+              // 🌟 【新規追加】拡大スケールに合わせて、ポリゴンの線を極細に自動調整する！
+              let polyWeight = Math.max(0.3, 2.0 / apparentScale); 
+              let targetWeight = Math.max(0.5, 3.0 / apparentScale);
+              let nakaWeight = Math.max(1.0, 6.0 / apparentScale);
+              
+              if (window.cadUnePolygons) window.cadUnePolygons.forEach(p => p.setOptions({ strokeWeight: polyWeight }));
+              if (window.cadCustomShapes) window.cadCustomShapes.forEach(p => p.setOptions({ strokeWeight: polyWeight }));
+              if (window.cadTargetPolygon) window.cadTargetPolygon.setOptions({ strokeWeight: targetWeight });
+              if (window.cadNakamichiMapPolygons) window.cadNakamichiMapPolygons.forEach(p => p.setOptions({ strokeWeight: nakaWeight }));
+              // 👆👆👆 追加ここまで 👆👆👆
               
               // 🌟 Google Mapsの実際の拡大率（コンテナの transform matrix）を検出して
               // スケールに反映し、つまみと数字ラベルの巨大化を防ぐ
@@ -500,6 +511,18 @@
                   if (['button', 'input', 'select', 'textarea'].includes(currTagName)) {
                       return true;
                   }
+                  // 👇👇👇 ここから下のブロックを新しく追加してください 👇👇👇
+                  // 🌟 修正：ポリゴン変形のつまみ（DIV要素）を触った時は、地図の移動をストップする！
+                  if (currTagName === 'div' && currEl.style && currEl.style.cursor) {
+                    const cursor = currEl.style.cursor;
+                    if (cursor.includes('pointer') || cursor.includes('move') || cursor.includes('crosshair')) {
+                        // ラベル類は除外
+                        if (!currEl.className || (typeof currEl.className === 'string' && !currEl.className.includes('polygon-label'))) {
+                            return true; // 地図ドラッグを無視して、変形操作を優先！
+                        }
+                    }
+                }
+
                   if (currTagName === 'img') {
                       let src = currEl.getAttribute('src') || '';
                       if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out') || src.includes('nakamichi')) {
