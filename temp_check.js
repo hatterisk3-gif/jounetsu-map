@@ -2325,7 +2325,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               isMouseDown = true; isDragging = false;
               pendingCenter = null;
               pendingZoom = null;
-          });
+          }, {capture: true});
 
           wrapper.addEventListener('mousemove', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex' || ignoreDrag || !isMouseDown || lastTouchX === null || lastTouchY === null) return;
@@ -2353,14 +2353,14 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
                   lastTouchX = currentX; lastTouchY = currentY;
               }
-          });
+          }, {capture: true});
 
           wrapper.addEventListener('mouseup', (e) => { 
               if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
                   window.handleMapClick(e.pageX, e.pageY);
               }
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
-          });
+          }, {capture: true});
 
           wrapper.addEventListener('mouseleave', () => { isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); });
 
