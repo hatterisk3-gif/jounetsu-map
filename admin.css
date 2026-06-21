@@ -44,11 +44,9 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
     transform: rotate(var(--label-rot, 0deg)) scale(var(--cad-label-scale, 1.0)) !important;
 }
 
-/* 🌟 地図拡大時に変形用の白い丸マーカーを逆スケールして巨大化を防ぐ */
-#cadMap div:has(> img[src*="undo_poly"]),
-#cadMap div:has(> img[src*="cb_direction"]),
-#cadMap div[style*="cursor: pointer"] img[src*="undo_poly"],
-#cadMap div[style*="cursor: pointer"] img[src*="cb_direction"] {
-    transform: scale(calc(1.0 / var(--cad-scale, 1.0))) !important;
-    transform-origin: center !important;
+/* 🌟 農業CAD：地図拡大時に変形用の「つまみ」を一定サイズに保つ（座標ズレ防止版） */
+#cadMap div[style*="cursor: pointer"]:has(img[src*="poly"]),
+#cadMap div[style*="cursor: pointer"]:has(img[src*="cb_direction"]) {
+    scale: calc(1 / var(--cad-scale, 1)) !important;
+    transform-origin: center center !important;
 }
