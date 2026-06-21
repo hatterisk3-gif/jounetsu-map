@@ -36,12 +36,12 @@
       #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
       .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
 /* 🌟農業CAD専用スタイル🌟 */
-#cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; touch-action: none; }
+#cadOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 99999; display: none; flex-direction: column; touch-action: auto; }
    #cadHeader { background: #1a1a1a; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #FF9800; z-index: 100; }
    #cadMapWrapper { flex: 1; width: 100%; background: #000; position: relative; overflow: hidden; touch-action: none; }
    
    #cadMap { position: absolute; top: 50%; left: 50%; width: 300vmax; height: 300vmax; transform: translate(-50%, -50%) rotate(0deg); transform-origin: center center; will-change: transform; touch-action: none; }
-   .cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; }
+   .cad-panel { background: #222; color: #fff; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); z-index: 10; touch-action: pan-y; }
    
    /* 🌟 畝番号が常に真っ直ぐになるジャイロ機能！ & 拡大時の逆スケール */
    #cadMap .polygon-label { 
@@ -2438,39 +2438,18 @@ document.getElementById('btnLoadFude').onclick = () => {
                   }
               }
 
-              // 2. ポリゴン（SVG path要素）自体や、畝番号の数字ラベル（.ridge-label）はドラッグ無視しない
-              let skipInteractive = false;
-              if (target.tagName.toLowerCase() === 'path') {
-                  skipInteractive = true;
-              }
-              if (target.className && typeof target.className === 'string' && target.className.includes('ridge-label')) {
-                  skipInteractive = true;
-              }
-
-              if (!skipInteractive) {
-                  let compStyle = window.getComputedStyle(target);
-                  let cursor = compStyle.cursor || '';
-                  // grab, grabbing や、Googleマップが使用する openhand/closedhand などのカーソルは無視しない
-                  // pointer, move, resize などのインタラクティブなカーソルの場合のみ無視する
-                  let isInteractiveCursor = ['pointer', 'move', 'crosshair'].includes(cursor) || cursor.includes('resize');
-                  if (isInteractiveCursor) {
-                      if (!cursor.includes('grab') && !cursor.includes('hand')) {
-                          return true;
-                      }
-                  }
-              }
-
+              // 2. つまみやピンの親要素や、ドラッグ防止対象の要素かを再帰的にチェック
               let currEl = target;
               let depth = 0;
               while (currEl && currEl !== wrapper) {
                   if (currEl.tagName.toLowerCase() === 'img') {
                       let src = currEl.getAttribute('src') || '';
-                      if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out')) {
+                      if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out') || src.includes('nakamichi')) {
                           return true;
                       }
                   }
                   if (depth <= 1 && currEl.id !== 'cadMap' && currEl.id !== 'cadMapWrapper' && (!currEl.className || typeof currEl.className !== 'string' || !currEl.className.includes('gm-style'))) {
-                      if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"]')) {
+                      if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"], img[src*="water_in"], img[src*="water_out"], img[src*="nakamichi"]')) {
                           return true;
                       }
                   }
@@ -2587,6 +2566,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           let pendingCenter = null;
           let pendingZoom = null;
           let pendingRotationChanged = false;
+          let pendingDragChanged = false;
           let rAFActive = false;
 
           const applyMapUpdates = () => {
@@ -2613,6 +2593,11 @@ document.getElementById('btnLoadFude').onclick = () => {
                   updated = true;
                   needsTransform = true;
               }
+              if (pendingDragChanged) {
+                  pendingDragChanged = false;
+                  updated = true;
+                  needsTransform = true;
+              }
 
               if (updated && needsTransform) {
                   window.updateCadMapTransform();
@@ -2620,10 +2605,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               rAFActive = false;
           };
 
-          const scheduleMapUpdate = (center, zoom, rotationChanged = false) => {
+          const scheduleMapUpdate = (center, zoom, rotationChanged = false, dragChanged = false) => {
               if (center !== null) pendingCenter = center;
               if (zoom !== null) pendingZoom = zoom;
               if (rotationChanged) pendingRotationChanged = true;
+              if (dragChanged) pendingDragChanged = true;
               if (!rAFActive) {
                   rAFActive = true;
                   requestAnimationFrame(applyMapUpdates);
@@ -2681,14 +2667,13 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display !== 'flex' || ignoreDrag || !isMouseDown || lastTouchX === null || lastTouchY === null) return;
               
               const currentX = e.pageX; const currentY = e.pageY;
-              const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
               
               if (Math.abs(currentX - startPageX) > 5 || Math.abs(currentY - startPageY) > 5) isDragging = true;
               
               if (isDragging) {
                   window.cadDragDx = currentX - startPageX;
                   window.cadDragDy = currentY - startPageY;
-                  window.updateCadMapTransform();
+                  scheduleMapUpdate(null, null, false, true);
               }
           }, {capture: true});
 
@@ -2738,7 +2723,6 @@ document.getElementById('btnLoadFude').onclick = () => {
                   startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
                   isDragging = false;
                   if (!ignoreDrag) {
-                      e.preventDefault();
                       window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
                       window.cadDragDx = 0;
                       window.cadDragDy = 0;
@@ -2784,14 +2768,13 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (ignoreDrag) return;
                   e.preventDefault(); 
                   const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
-                  const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
                   
                   if (Math.abs(currentX - startPageX) > 5 || Math.abs(currentY - startPageY) > 5) isDragging = true;
                   
                   if (isDragging) {
                       window.cadDragDx = currentX - startPageX;
                       window.cadDragDy = currentY - startPageY;
-                      window.updateCadMapTransform();
+                      scheduleMapUpdate(null, null, false, true);
                   }
               }
           }, {capture: true, passive: false});
