@@ -2162,6 +2162,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
 
               let currEl = target;
+              let depth = 0;
               while (currEl && currEl !== wrapper) {
                   if (currEl.tagName.toLowerCase() === 'img') {
                       let src = currEl.getAttribute('src') || '';
@@ -2169,7 +2170,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                           return true;
                       }
                   }
-                  if (currEl.id !== 'cadMap' && currEl.id !== 'cadMapWrapper' && (!currEl.className || typeof currEl.className !== 'string' || !currEl.className.includes('gm-style'))) {
+                  if (depth <= 2 && currEl.id !== 'cadMap' && currEl.id !== 'cadMapWrapper' && (!currEl.className || typeof currEl.className !== 'string' || !currEl.className.includes('gm-style'))) {
                       if (currEl.querySelector && currEl.querySelector('img[src*="undo_poly"], img[src*="cb_direction"]')) {
                           return true;
                       }
@@ -2178,6 +2179,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                       return true;
                   }
                   currEl = currEl.parentElement;
+                  depth++;
               }
               return false;
           };
