@@ -2694,7 +2694,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
               const currentX = e.pageX; const currentY = e.pageY;
               
-              if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
+              if (Math.abs(currentX - startPageX) > 6 || Math.abs(currentY - startPageY) > 6) isDragging = true;
               
               if (isDragging) {
                   let currentZoom = window.getCadZoom();
@@ -2721,11 +2721,38 @@ document.getElementById('btnLoadFude').onclick = () => {
                       const finalDy = e.pageY - startPageY;
                       finalizeDragCenter(finalDx, finalDy);
                       
-                      window.cadDragDx = 0;
-                      window.cadDragDy = 0;
-                      window.cadDragRawDx = 0;
-                      window.cadDragRawDy = 0;
-                      window.updateCadMapTransform();
+                      let currentZoom = window.getCadZoom();
+                      let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+                      let apparentScale = Math.pow(2, currentZoom - realZoom);
+                      if (apparentScale < 0.25) apparentScale = 0.25;
+
+                      window.cadDragRawDx = finalDx;
+                      window.cadDragRawDy = finalDy;
+                      window.cadDragDx = finalDx / apparentScale;
+                      window.cadDragDy = finalDy / apparentScale;
+                      
+                      let resetDone = false;
+                      const resetOffsets = () => {
+                          if (resetDone) return;
+                          resetDone = true;
+                          window.cadDragDx = 0;
+                          window.cadDragDy = 0;
+                          window.cadDragRawDx = 0;
+                          window.cadDragRawDy = 0;
+                          window.updateCadMapTransform();
+                      };
+                      
+                      const idleListener = google.maps.event.addListenerOnce(window.cadMap, 'idle', resetOffsets);
+                      setTimeout(() => {
+                          google.maps.event.removeListener(idleListener);
+                          resetOffsets();
+                      }, 150);
+                      
+                      // window.cadDragDx = 0;
+                      // window.cadDragDy = 0;
+                      // window.cadDragRawDx = 0;
+                      // window.cadDragRawDy = 0;
+                      // window.updateCadMapTransform();
                   }
               } else {
                   window.cadDragDx = 0;
@@ -2840,7 +2867,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   e.stopPropagation();
                   const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
                   
-                  if (Math.abs(currentX - startPageX) > 2 || Math.abs(currentY - startPageY) > 2) isDragging = true;
+                  if (Math.abs(currentX - startPageX) > 6 || Math.abs(currentY - startPageY) > 6) isDragging = true;
                   
                   if (isDragging) {
                       let currentZoom = window.getCadZoom();
@@ -2869,12 +2896,39 @@ document.getElementById('btnLoadFude').onclick = () => {
                           const finalDx = window.cadDragRawDx || 0;
                           const finalDy = window.cadDragRawDy || 0;
                           finalizeDragCenter(finalDx, finalDy);
-                          
+                      
+                      let currentZoom = window.getCadZoom();
+                      let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+                      let apparentScale = Math.pow(2, currentZoom - realZoom);
+                      if (apparentScale < 0.25) apparentScale = 0.25;
+
+                      window.cadDragRawDx = finalDx;
+                      window.cadDragRawDy = finalDy;
+                      window.cadDragDx = finalDx / apparentScale;
+                      window.cadDragDy = finalDy / apparentScale;
+                      
+                      let resetDone = false;
+                      const resetOffsets = () => {
+                          if (resetDone) return;
+                          resetDone = true;
                           window.cadDragDx = 0;
                           window.cadDragDy = 0;
                           window.cadDragRawDx = 0;
                           window.cadDragRawDy = 0;
                           window.updateCadMapTransform();
+                      };
+                      
+                      const idleListener = google.maps.event.addListenerOnce(window.cadMap, 'idle', resetOffsets);
+                      setTimeout(() => {
+                          google.maps.event.removeListener(idleListener);
+                          resetOffsets();
+                      }, 150);
+                          
+                          // window.cadDragDx = 0;
+                          // window.cadDragDy = 0;
+                          // window.cadDragRawDx = 0;
+                          // window.cadDragRawDy = 0;
+                          // window.updateCadMapTransform();
                       }
                   } else {
                       window.cadDragDx = 0;
