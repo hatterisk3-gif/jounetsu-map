@@ -1763,7 +1763,9 @@ document.getElementById('btnLoadFude').onclick = () => {
               let apparentScale = Math.pow(2, currentZoom - realZoom);
               if (apparentScale < 0.25) apparentScale = 0.25;
 
-              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
+              let offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
+              let offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
+              mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
               mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
               mapDiv.style.setProperty('--cad-scale', apparentScale);
               
@@ -2290,6 +2292,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           let pendingCenter = null;
           let pendingZoom = null;
+          let pendingRotationChanged = false;
           let rAFActive = false;
 
           const applyMapUpdates = () => {
@@ -2298,25 +2301,35 @@ document.getElementById('btnLoadFude').onclick = () => {
                   return;
               }
               let updated = false;
+              let needsTransform = false;
+
               if (pendingZoom !== null) {
                   window.setCadZoom(pendingZoom);
                   pendingZoom = null;
                   updated = true;
+                  needsTransform = true;
               }
               if (pendingCenter !== null) {
                   window.cadMap.setCenter(pendingCenter);
                   pendingCenter = null;
                   updated = true;
               }
-              if (updated) {
+              if (pendingRotationChanged) {
+                  pendingRotationChanged = false;
+                  updated = true;
+                  needsTransform = true;
+              }
+
+              if (updated && needsTransform) {
                   window.updateCadMapTransform();
               }
               rAFActive = false;
           };
 
-          const scheduleMapUpdate = (center, zoom) => {
+          const scheduleMapUpdate = (center, zoom, rotationChanged = false) => {
               if (center !== null) pendingCenter = center;
               if (zoom !== null) pendingZoom = zoom;
+              if (rotationChanged) pendingRotationChanged = true;
               if (!rAFActive) {
                   rAFActive = true;
                   requestAnimationFrame(applyMapUpdates);
@@ -2336,6 +2349,26 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
           }, {passive: false});
 
+          const finalizeDragCenter = (dragDx, dragDy) => {
+              if (!window.cadMap || !window.cadDragStartCenter) return;
+              const proj = window.cadMap.getProjection();
+              if (proj) {
+                  const theta = (window.cadCurrentRotation || 0) * Math.PI / 180;
+                  const cosT = Math.cos(-theta); const sinT = Math.sin(-theta);
+                  const finalDx = dragDx * cosT - dragDy * sinT;
+                  const finalDy = dragDx * sinT + dragDy * cosT;
+
+                  const zoom = window.getCadZoom();
+                  const scale = Math.pow(2, zoom);
+                  const centerPt = proj.fromLatLngToPoint(window.cadDragStartCenter);
+                  centerPt.x -= finalDx / scale;
+                  centerPt.y -= finalDy / scale;
+                  
+                  const newCenter = proj.fromPointToLatLng(centerPt);
+                  window.cadMap.setCenter(newCenter);
+              }
+          };
+
           wrapper.addEventListener('mousedown', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               ignoreDrag = checkIgnoreDrag(e.target);
@@ -2343,6 +2376,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               isMouseDown = true; isDragging = false;
               pendingCenter = null;
               pendingZoom = null;
+              if (!ignoreDrag) {
+                  window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
+                  window.cadDragDx = 0;
+                  window.cadDragDy = 0;
+              }
           }, {capture: true});
 
           wrapper.addEventListener('mousemove', (e) => {
@@ -2351,25 +2389,12 @@ document.getElementById('btnLoadFude').onclick = () => {
               const currentX = e.pageX; const currentY = e.pageY;
               const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
               
-              if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true;
+              if (Math.abs(currentX - startPageX) > 5 || Math.abs(currentY - startPageY) > 5) isDragging = true;
               
               if (isDragging) {
-                  const theta = window.cadCurrentRotation * Math.PI / 180;
-                  const cosT = Math.cos(-theta); const sinT = Math.sin(-theta);
-                  const finalDx = dx * cosT - dy * sinT; const finalDy = dx * sinT + dy * cosT;
-
-                  if (window.cadMap) {
-                      const proj = window.cadMap.getProjection();
-                      if (proj) {
-                          const zoom = pendingZoom !== null ? pendingZoom : window.getCadZoom();
-                          const scale = Math.pow(2, zoom);
-                          let currentCenter = pendingCenter || window.cadMap.getCenter();
-                          const centerPt = proj.fromLatLngToPoint(currentCenter);
-                          centerPt.x -= finalDx / scale; centerPt.y -= finalDy / scale;
-                          scheduleMapUpdate(proj.fromPointToLatLng(centerPt), null);
-                      }
-                  }
-                  lastTouchX = currentX; lastTouchY = currentY;
+                  window.cadDragDx = currentX - startPageX;
+                  window.cadDragDy = currentY - startPageY;
+                  window.updateCadMapTransform();
               }
           }, {capture: true});
 
@@ -2377,10 +2402,28 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
                   window.handleMapClick(e.pageX, e.pageY);
               }
+              if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
+                  const finalDx = e.pageX - startPageX;
+                  const finalDy = e.pageY - startPageY;
+                  finalizeDragCenter(finalDx, finalDy);
+              }
+              window.cadDragDx = 0;
+              window.cadDragDy = 0;
+              window.updateCadMapTransform();
+              window.cadDragStartCenter = null;
               isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
           }, {capture: true});
 
-          wrapper.addEventListener('mouseleave', () => { isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); });
+          wrapper.addEventListener('mouseleave', () => { 
+              if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
+                  finalizeDragCenter(window.cadDragDx, window.cadDragDy);
+              }
+              window.cadDragDx = 0;
+              window.cadDragDy = 0;
+              window.updateCadMapTransform();
+              window.cadDragStartCenter = null;
+              isMouseDown = false; lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
+          });
 
           wrapper.addEventListener('touchstart', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
@@ -2392,12 +2435,19 @@ document.getElementById('btnLoadFude').onclick = () => {
                   initialPinchDist = Math.hypot(dx, dy); initialPinchAngle = Math.atan2(dy, dx);
                   startScale = window.getCadZoom(); startRotation = window.cadCurrentRotation || 0;
                   pinchMode = null; 
+                  isDragging = false;
+                  window.cadDragDx = 0;
+                  window.cadDragDy = 0;
+                  window.cadDragStartCenter = null;
               } else if (e.touches.length === 1) {
                   lastTouchX = e.touches[0].pageX; lastTouchY = e.touches[0].pageY;
                   startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
                   isDragging = false;
                   if (!ignoreDrag) {
                       e.preventDefault();
+                      window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
+                      window.cadDragDx = 0;
+                      window.cadDragDy = 0;
                   }
               }
               pendingCenter = null;
@@ -2442,25 +2492,12 @@ document.getElementById('btnLoadFude').onclick = () => {
                   const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
                   const dx = currentX - lastTouchX; const dy = currentY - lastTouchY;
                   
-                  if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true;
+                  if (Math.abs(currentX - startPageX) > 5 || Math.abs(currentY - startPageY) > 5) isDragging = true;
                   
                   if (isDragging) {
-                      const theta = window.cadCurrentRotation * Math.PI / 180;
-                      const cosT = Math.cos(-theta); const sinT = Math.sin(-theta);
-                      const finalDx = dx * cosT - dy * sinT; const finalDy = dx * sinT + dy * cosT;
-
-                      if (window.cadMap) {
-                          const proj = window.cadMap.getProjection();
-                          if (proj) {
-                              const zoom = pendingZoom !== null ? pendingZoom : window.getCadZoom();
-                              const scale = Math.pow(2, zoom);
-                              let currentCenter = pendingCenter || window.cadMap.getCenter();
-                              const centerPt = proj.fromLatLngToPoint(currentCenter);
-                              centerPt.x -= finalDx / scale; centerPt.y -= finalDy / scale;
-                              scheduleMapUpdate(proj.fromPointToLatLng(centerPt), null);
-                          }
-                      }
-                      lastTouchX = currentX; lastTouchY = currentY;
+                      window.cadDragDx = currentX - startPageX;
+                      window.cadDragDy = currentY - startPageY;
+                      window.updateCadMapTransform();
                   }
               }
           }, {capture: true, passive: false});
@@ -2471,6 +2508,13 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (!isDragging && startPageX !== null && startPageY !== null && !ignoreDrag) {
                       window.handleMapClick(startPageX, startPageY);
                   }
+                  if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
+                      finalizeDragCenter(window.cadDragDx, window.cadDragDy);
+                  }
+                  window.cadDragDx = 0;
+                  window.cadDragDy = 0;
+                  window.updateCadMapTransform();
+                  window.cadDragStartCenter = null;
                   lastTouchX = null; lastTouchY = null; setTimeout(() => { isDragging = false; ignoreDrag = false; }, 100); 
               }
           }, {capture: true});
