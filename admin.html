@@ -2014,7 +2014,9 @@ document.getElementById('btnLoadFude').onclick = () => {
           let realZoom = Math.min(zoom, 20);
           if (window.cadMap) {
               if (window.cadMap.getZoom() !== realZoom) {
+                  window.cadIsSettingZoom = true;
                   window.cadMap.setZoom(realZoom);
+                  window.cadIsSettingZoom = false;
               } else {
                   window.updateCadMapTransform();
               }
@@ -2742,12 +2744,12 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (typeof window.updateCadLabelPositionsThrottled === 'function') window.updateCadLabelPositionsThrottled();
               });
               window.cadMap.addListener('zoom_changed', () => {
-                  let realZoom = window.cadMap.getZoom();
-                  if (realZoom < 20) {
-                      window.cadVirtualZoom = realZoom;
-                  } else if (window.cadVirtualZoom === undefined || window.cadVirtualZoom === null || window.cadVirtualZoom < 20) {
-                      window.cadVirtualZoom = 20;
+                  if (window.cadIsSettingZoom) {
+                      window.updateCadMapTransform();
+                      return;
                   }
+                  let realZoom = window.cadMap.getZoom();
+                  window.cadVirtualZoom = realZoom;
                   window.updateCadMapTransform();
               });
           }

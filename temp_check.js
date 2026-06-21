@@ -1715,15 +1715,39 @@ document.getElementById('btnLoadFude').onclick = () => {
           }
       };
 
+      window.getCadZoom = () => {
+          if (window.cadVirtualZoom === undefined || window.cadVirtualZoom === null) {
+              window.cadVirtualZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+          }
+          return window.cadVirtualZoom;
+      };
+
+      window.setCadZoom = (zoom) => {
+          if (zoom < 10) zoom = 10;
+          if (zoom > 45) zoom = 45;
+          window.cadVirtualZoom = zoom;
+          
+          let realZoom = Math.min(zoom, 20);
+          if (window.cadMap) {
+              if (window.cadMap.getZoom() !== realZoom) {
+                  window.cadIsSettingZoom = true;
+                  window.cadMap.setZoom(realZoom);
+                  window.cadIsSettingZoom = false;
+              } else {
+                  window.updateCadMapTransform();
+              }
+          }
+      };
+
       window.updateCadMapTransform = () => {
           const mapDiv = document.getElementById('cadMap');
           if (mapDiv) {
-              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg)`;
-              mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
-              
-              let currentZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+              let currentZoom = window.getCadZoom();
               let apparentScale = Math.pow(2, currentZoom - 20);
               if (apparentScale < 1) apparentScale = 1;
+
+              mapDiv.style.transform = `translate(-50%, -50%) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
+              mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
               mapDiv.style.setProperty('--cad-scale', apparentScale);
               
               // 🌟 Google Mapsの実際の拡大率（コンテナの transform matrix）を検出して
@@ -1733,7 +1757,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   clearTimeout(realScaleTimeout);
               }
               realScaleTimeout = setTimeout(() => {
-                  let realScale = apparentScale;
+                  let scaleVal = 1.0;
                   
                   // Validate cached transform div
                   if (window.cadTransformDiv && !document.body.contains(window.cadTransformDiv)) {
@@ -1761,12 +1785,15 @@ document.getElementById('btnLoadFude').onclick = () => {
                       if (matrixMatch) {
                           const a = parseFloat(matrixMatch[1]);
                           const b = parseFloat(matrixMatch[2]);
-                          const scaleVal = Math.hypot(a, b);
-                          if (scaleVal > 0.1) {
-                              realScale = scaleVal;
+                          const val = Math.hypot(a, b);
+                          if (val > 0.1) {
+                              scaleVal = val;
                           }
                       }
                   }
+                  
+                  // Overall physical scale is the product of Google Maps scale and apparentScale
+                  let realScale = scaleVal * apparentScale;
                   
                   window.cadCurrentScale = realScale;
                   mapDiv.style.setProperty('--cad-scale', realScale);
@@ -1811,16 +1838,14 @@ document.getElementById('btnLoadFude').onclick = () => {
           
           const proj = window.cadMap.getProjection();
           if (!proj) return null;
-          const scale = Math.pow(2, window.cadMap.getZoom());
+          const scale = Math.pow(2, window.getCadZoom());
           const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
           
           const pts = corners.map(corner => {
               const dx = corner.x - cx;
               const dy = corner.y - cy;
-              const unscaledDx = dx;
-              const unscaledDy = dy;
-              const mapDx = unscaledDx * cosT - unscaledDy * sinT;
-              const mapDy = unscaledDx * sinT + unscaledDy * cosT;
+              const mapDx = dx * cosT - dy * sinT;
+              const mapDy = dx * sinT + dy * cosT;
               const latLng = proj.fromPointToLatLng(new google.maps.Point(centerPt.x + mapDx / scale, centerPt.y + mapDy / scale));
               return [latLng.lng(), latLng.lat()];
           });
@@ -2038,11 +2063,10 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           const theta = -window.cadCurrentRotation * Math.PI / 180;
           const cosT = Math.cos(theta); const sinT = Math.sin(theta);
-          const unscaledDx = dx; const unscaledDy = dy;
-          const mapDx = unscaledDx * cosT - unscaledDy * sinT; const mapDy = unscaledDx * sinT + unscaledDy * cosT;
+          const mapDx = dx * cosT - dy * sinT; const mapDy = dx * sinT + dy * cosT;
           
           const proj = window.cadMap.getProjection();
-          const scale = Math.pow(2, window.cadMap.getZoom());
+          const scale = Math.pow(2, window.getCadZoom());
           const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
           const latLng = proj.fromPointToLatLng(new google.maps.Point(centerPt.x + mapDx / scale, centerPt.y + mapDy / scale));
 
@@ -2233,7 +2257,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               }
               let updated = false;
               if (pendingZoom !== null) {
-                  window.cadMap.setZoom(pendingZoom);
+                  window.setCadZoom(pendingZoom);
                   pendingZoom = null;
                   updated = true;
               }
@@ -2261,11 +2285,11 @@ document.getElementById('btnLoadFude').onclick = () => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
               if (window.cadMap) {
-                  let currentZoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                  let currentZoom = pendingZoom !== null ? pendingZoom : window.getCadZoom();
                   let delta = -e.deltaY * 0.0015;
                   let nextZoom = currentZoom + delta;
                   if (nextZoom < 10) nextZoom = 10;
-                  if (nextZoom > 28) nextZoom = 28;
+                  if (nextZoom > 45) nextZoom = 45;
                   scheduleMapUpdate(null, nextZoom);
               }
           }, {passive: false});
@@ -2295,7 +2319,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (window.cadMap) {
                       const proj = window.cadMap.getProjection();
                       if (proj) {
-                          const zoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                          const zoom = pendingZoom !== null ? pendingZoom : window.getCadZoom();
                           const scale = Math.pow(2, zoom);
                           let currentCenter = pendingCenter || window.cadMap.getCenter();
                           const centerPt = proj.fromLatLngToPoint(currentCenter);
@@ -2324,7 +2348,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                   e.preventDefault(); 
                   const dx = e.touches[0].pageX - e.touches[1].pageX; const dy = e.touches[0].pageY - e.touches[1].pageY;
                   initialPinchDist = Math.hypot(dx, dy); initialPinchAngle = Math.atan2(dy, dx);
-                  startScale = window.cadMap ? window.cadMap.getZoom() : 20; startRotation = window.cadCurrentRotation || 0;
+                  startScale = window.getCadZoom(); startRotation = window.cadCurrentRotation || 0;
                   pinchMode = null; 
               } else if (e.touches.length === 1) {
                   lastTouchX = e.touches[0].pageX; lastTouchY = e.touches[0].pageY;
@@ -2359,7 +2383,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                       let zoomDiff = Math.log2(currentDist / initialPinchDist);
                       let nextZoom = startScale + zoomDiff;
                       if (nextZoom < 10) nextZoom = 10;
-                      if (nextZoom > 28) nextZoom = 28;
+                      if (nextZoom > 45) nextZoom = 45;
                       scheduleMapUpdate(null, nextZoom);
                   } else if (pinchMode === 'rotate') {
                       window.cadCurrentRotation = startRotation + angleDiff;
@@ -2385,7 +2409,7 @@ document.getElementById('btnLoadFude').onclick = () => {
                       if (window.cadMap) {
                           const proj = window.cadMap.getProjection();
                           if (proj) {
-                              const zoom = pendingZoom !== null ? pendingZoom : window.cadMap.getZoom();
+                              const zoom = pendingZoom !== null ? pendingZoom : window.getCadZoom();
                               const scale = Math.pow(2, zoom);
                               let currentCenter = pendingCenter || window.cadMap.getCenter();
                               const centerPt = proj.fromLatLngToPoint(currentCenter);
@@ -2421,6 +2445,7 @@ document.getElementById('btnLoadFude').onclick = () => {
           window.cadCurrentRotation = 0;
           window.cadCurrentScale = BASE_SCALE;
           window.cadTransformDiv = null;
+          window.cadVirtualZoom = null;
           window.updateCadMapTransform();
 
           window.initCadTouchEvents();
@@ -2435,6 +2460,12 @@ document.getElementById('btnLoadFude').onclick = () => {
                   if (typeof window.updateCadLabelPositionsThrottled === 'function') window.updateCadLabelPositionsThrottled();
               });
               window.cadMap.addListener('zoom_changed', () => {
+                  if (window.cadIsSettingZoom) {
+                      window.updateCadMapTransform();
+                      return;
+                  }
+                  let realZoom = window.cadMap.getZoom();
+                  window.cadVirtualZoom = realZoom;
                   window.updateCadMapTransform();
               });
           }
