@@ -2519,8 +2519,12 @@ document.getElementById('btnLoadFude').onclick = () => {
               const theta = (window.cadCurrentRotation || 0) * Math.PI / 180;
               const cosT = Math.cos(theta);
               const sinT = Math.sin(theta);
-              const localDx = (dx * cosT + dy * sinT) / scale;
-              const localDy = (-dx * sinT + dy * cosT) / scale;
+              
+              // 🌟 ユーザーの「大きめに動いてしまうので少なめに」という要望に応え、
+              // ドラッグ感度（sensitivity = 0.5）を適用して微細な変形操作をやりやすくします。
+              const sensitivity = 0.5;
+              const localDx = ((dx * cosT + dy * sinT) / scale) * sensitivity;
+              const localDy = ((-dx * sinT + dy * cosT) / scale) * sensitivity;
 
               const targetX = handleDragStartX + localDx;
               const targetY = handleDragStartY + localDy;
