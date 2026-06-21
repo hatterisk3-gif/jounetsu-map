@@ -2458,9 +2458,15 @@ document.getElementById('btnLoadFude').onclick = () => {
                           return true;
                       }
                   }
-                  if (currEl.getAttribute('draggable') === 'true' || 
-                      (currEl.className && typeof currEl.className === 'string' && 
-                       (currEl.className.includes('gmnoprint') || currEl.className.includes('gm-style-cc') || currEl.className.includes('gm-control-active')))) {
+                  if (currEl.className && typeof currEl.className === 'string') {
+                      // gm-style-cc (コピーライト) や gm-control-active (UI) はドラッグ無視で良いが、gmnoprint(文字ラベル)は削る！
+                      if (currEl.className.includes('gm-style-cc') || currEl.className.includes('gm-control-active')) {
+                          return true;
+                      }
+                  }
+                  
+                  // 💧(吸水) と 🕳️(排水) のピンだけはドラッグできるようにする
+                  if (currEl.innerText && (currEl.innerText.includes('💧') || currEl.innerText.includes('🕳️'))) {
                       return true;
                   }
                   currEl = currEl.parentElement;
@@ -2483,10 +2489,16 @@ document.getElementById('btnLoadFude').onclick = () => {
 
           const onDragStart = (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
+              
+              // ★追加：タッチした場所が地図エリア（wrapper）の外なら、ドラッグ処理を中止してボタンのクリックを優先する！
+              const wrapper = document.getElementById('cadMapWrapper');
+              if (wrapper && !wrapper.contains(e.target)) return;
+
               if (e.touches && e.touches.length > 1) {
                   isDraggingHandle = false;
                   return;
               }
+              // ...（これ以降は元のコードのまま）
               isDraggingHandle = checkIgnoreDrag(e.target);
               if (isDraggingHandle) {
                   if (e.cancelable) {
