@@ -12,50 +12,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-   <style>
-      html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; overflow: hidden; background-color: #f8f9fa; }
-      
-      #loginScreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.85); z-index: 3000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
-      .login-box { background: white; padding: 30px 20px; border-radius: 12px; width: 85%; max-width: 320px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-      .login-input { width: 90%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
-      .login-btn { background: #4CAF50; color: white; border: none; padding: 14px; width: 90%; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
-
-      .control-panel { padding: 10px; background-color: #f8f9fa; border-bottom: 1px solid #ccc; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-      .control-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; align-items: center; width: 100%; }
-      
-      #map { flex-grow: 1; width: 100%; }
-      input[type="text"], select, input[type="number"], input[type="date"], input[type="time"], textarea { padding: 8px; font-size: 16px; border-radius: 5px; border: 1px solid #aaa; box-sizing: border-box; }
-      ::placeholder { color: #bbb !important; opacity: 1; }
-      button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; box-sizing: border-box;}
-      .gps-btn { background-color: white; color: #4285F4; border-color: #4285F4; font-weight: bold; }
-      
-      .search-container { position: relative; display: flex; align-items: center; }
-      #searchInput { width: 220px; padding: 8px 12px; border-radius: 20px; border: 1px solid #888; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
-      #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; }
-      .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
-      
-      .polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
-      .signboard-label { background-color: rgba(255,255,255,0.9); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 12px; font-weight: bold; margin-top: 10px; }
-      .signboard-label.selected { background-color: #FFEB3B !important; border: 2px solid #F57F17 !important; color: #000 !important; z-index: 1000; }
-      
-      #rightPanel { position: fixed; top: 0; right: -100%; width: 35%; min-width: 340px; height: 100%; background-color: #f4f6f8; box-shadow: -5px 0 15px rgba(0,0,0,0.3); transition: right 0.3s; z-index: 1000; display: flex; flex-direction: column; }
-      @media (max-width: 600px) { #rightPanel { width: 100%; } }
-      #rightPanel.open { right: 0; } 
-      .panel-header { background-color: #4CAF50; color: white; padding: 12px 15px; font-size: 16px; display: flex; justify-content: space-between; align-items: center; font-weight:bold; }
-      .panel-content { flex-grow: 1; padding: 15px; overflow-y: auto; }
-      .panel-footer { padding: 15px; background: white; border-top: 1px solid #ddd; }
-      
-      .form-label { display: block; font-size: 14px; color: #555; margin-bottom: 5px; font-weight: bold; }
-      .form-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
-      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-      .checkbox-label { display: flex; align-items: center; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; cursor: pointer;}
-      .checkbox-label input { margin-right: 8px; transform: scale(1.2); }
-      
-      #modal, #lightbox, #feedbackModal { display: none; position: fixed; z-index: 9999; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); justify-content: center; align-items: center; }
-      .modal-content { background: #fff; color: #333; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; max-height: 85vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-      #lightbox img { max-width: 95%; max-height: 90%; border-radius: 4px; }
-      .lot-section { background: #e3f2fd; border: 1px solid #90caf9; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
-    </style>
+    <link rel="stylesheet" href="worker.css">
   </head>
   <body>
     <div id="loginScreen">
