@@ -43,10 +43,8 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
 #cadMap .ridge-label {
     transform: rotate(var(--label-rot, 0deg)) scale(var(--cad-label-scale, 1.0)) !important;
 }
-
-/* 🌟 農業CAD：地図拡大時に変形用の「つまみ」を一定サイズに保つ（座標ズレ防止版） */
-#cadMap div[style*="cursor: pointer"]:has(img[src*="poly"]),
-#cadMap div[style*="cursor: pointer"]:has(img[src*="cb_direction"]) {
+/* 🌟 農業CAD：地図拡大時に変形用の「つまみ」を一定サイズに保つ（最新API完全対応版） */
+#cadMap div[style*="cursor"]:not(.gmnoprint):not(.gm-control-active):not(:has(.polygon-label)):not(:has(canvas)) {
     scale: calc(1 / var(--cad-scale, 1)) !important;
     transform-origin: center center !important;
 }
