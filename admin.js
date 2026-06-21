@@ -1851,3 +1851,7 @@ document.getElementById('btnLoadFude').onclick = () => {
               console.log("ログイン情報がないため、手動ログインを待機します");
           }
       });
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js?v=admin', { scope: '/admin' });
+}
