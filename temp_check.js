@@ -2232,8 +2232,8 @@ document.getElementById('btnLoadFude').onclick = () => {
               const sinT = Math.sin(theta);
               
               // 🌟 ユーザーの「大きめに動いてしまうので少なめに」という要望に応え、
-              // ドラッグ感度（sensitivity = 0.5）を適用して微細な変形操作をやりやすくします。
-              const sensitivity = 0.5;
+              // ドラッグ感度（sensitivity = 0.3）を適用して微細な変形操作をやりやすくします。
+              const sensitivity = 0.3;
               const localDx = ((dx * cosT + dy * sinT) / scale) * sensitivity;
               const localDy = ((-dx * sinT + dy * cosT) / scale) * sensitivity;
 
