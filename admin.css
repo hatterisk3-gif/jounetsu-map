@@ -4,9 +4,12 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
 .login-box { background: #fff; padding: 30px; border-radius: 12px; width: 85%; max-width: 320px; text-align: center; color: #333; }
 .login-input { width: 90%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; background: #fff; color: #333; }
 .login-btn { background: #d32f2f; color: white; border: none; padding: 14px; width: 90%; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; }
-.control-panel { padding: 10px; background: #222; border-bottom: 2px solid #d32f2f; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.control-panel { padding: 10px; background: transparent; border-bottom: none; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 8px; position: absolute; top: 0; width: 100%; box-sizing: border-box; pointer-events: none; }
+.control-panel > * { pointer-events: auto; }
 .control-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; width: 100%; align-items: center; }
-#map { flex-grow: 1; width: 100%; }
+.control-panel button, .control-panel input, .control-panel select { opacity: 0.8; transition: opacity 0.2s; }
+.control-panel button:hover, .control-panel input:hover, .control-panel select:hover, .control-panel input:focus, .control-panel select:focus { opacity: 1; }
+#map { flex-grow: 1; width: 100%; height: 100%; }
 input[type="text"], select, input[type="number"] { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; background: #fff; color: #333; box-sizing: border-box; }
 ::placeholder { color: #888; }
 #drawArea input[type="text"], #drawArea select { background: #333; color: #fff; border: 1px solid #666; }
