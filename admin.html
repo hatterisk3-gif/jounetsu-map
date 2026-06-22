@@ -91,40 +91,17 @@
             </div>
           </div>
       
-      <div id="cadEditPolyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999999; justify-content:center; align-items:center;">
-        <div style="background:#fff; color:#333; padding:15px; border-radius:8px; width:85%; max-width:280px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.5);">
-          <h3 style="margin-top:0; margin-bottom:15px; font-size:15px; color:#1a1a1a; border-bottom:2px solid #8BC34A; padding-bottom:5px;">🛠️ ポリゴンの操作</h3>
-          <input type="hidden" id="cadEditIndex">
-          
-          <div style="font-size:11px; color:#555; margin-bottom:8px; font-weight:bold;">サイズと回転</div>
-          <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;">
-             <div style="flex:1; text-align:center;">
-               <button onclick="cadResizePoly(1.1)" style="padding:8px 10px; background:#4CAF50; color:#fff; border:none; border-radius:4px; font-weight:bold; margin-bottom:5px; width:90%;">➕ 拡大</button><br>
-               <button onclick="cadResizePoly(0.9)" style="padding:8px 10px; background:#FF9800; color:#fff; border:none; border-radius:4px; font-weight:bold; width:90%;">➖ 縮小</button>
-             </div>
-             <div style="flex:1; text-align:center;">
-               <button onclick="cadRotatePoly(-5)" style="padding:8px 10px; background:#9C27B0; color:#fff; border:none; border-radius:4px; font-weight:bold; margin-bottom:5px; width:90%;">↩️ 左回転</button><br>
-               <button onclick="cadRotatePoly(5)" style="padding:8px 10px; background:#9C27B0; color:#fff; border:none; border-radius:4px; font-weight:bold; width:90%;">↪️ 右回転</button>
-             </div>
-          </div>
-          
-          <div style="font-size:11px; color:#555; margin-bottom:8px; font-weight:bold;">移動 (10cmずつ)</div>
-          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:3px; max-width:120px; margin:0 auto; margin-bottom:15px;">
-             <div></div>
-             <button onclick="cadMovePoly('up')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬆️</button>
-             <div></div>
-             <button onclick="cadMovePoly('left')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬅️</button>
-             <button onclick="cadMovePoly('down')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">⬇️</button>
-             <button onclick="cadMovePoly('right')" style="padding:10px; background:#e0e0e0; border:none; border-radius:4px; font-size:14px;">➡️</button>
-          </div>
-          
-          <div style="display:flex; gap:10px;">
-             <button onclick="cadDeletePoly()" style="flex:1; background:#f44336; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold;">🗑️ 削除する</button>
-             <button onclick="document.getElementById('cadEditPolyModal').style.display='none'" style="flex:1; background:#ccc; color:#333; border:none; padding:12px; border-radius:4px; font-weight:bold;">閉じる</button>
-          </div>
+          <div id="cadEditPolyModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:999999; justify-content:center; align-items:center;">
+            <div style="background:#fff; color:#333; padding:20px; border-radius:12px; width:90%; max-width:300px; text-align:center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                <h3 style="margin-top:0; border-bottom:2px solid #8BC34A; padding-bottom:10px;">🛠 ポリゴンの操作</h3>
+                <input type="hidden" id="cadEditIndex">
+                
+                <div style="display:flex; gap:10px; margin-top:20px;">
+                    <button onclick="window.cadDeletePoly()" style="flex:1; background:#F44336; color:white; padding:14px; border-radius:8px; font-size:16px; font-weight:bold; border:none; cursor:pointer;">🗑 削除する</button>
+                    <button onclick="document.getElementById('cadEditPolyModal').style.display='none'" style="flex:1; background:#ccc; color:#333; padding:14px; border-radius:8px; font-size:16px; font-weight:bold; border:none; cursor:pointer;">閉じる</button>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
           
           
       <div id="customAlertModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">

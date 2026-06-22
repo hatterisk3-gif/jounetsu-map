@@ -71,115 +71,40 @@
       };
 
       window.setCadZoom = (zoom) => {
-          if (zoom < 10) zoom = 10;
-          if (zoom > 45) zoom = 45;
-          window.cadVirtualZoom = zoom;
-          
-          let realZoom = Math.min(zoom, 20);
-          let intZoom = Math.round(realZoom);
-          if (window.cadMap) {
-              if (window.cadMap.getZoom() !== intZoom) {
-                  window.cadIsSettingZoom = true;
-                  window.cadLastSetZoomTime = Date.now();
-                  try {
-                      window.cadMap.setZoom(intZoom);
-                  } finally {
-                      setTimeout(() => { window.cadIsSettingZoom = false; }, 100);
-                  }
-              }
-          }
-          window.updateCadMapTransform();
-      };
+        if (zoom < 10) zoom = 10;
+        if (zoom > 45) zoom = 45;
+        window.cadVirtualZoom = zoom;
+        
+        if (window.cadMap) {
+            window.cadIsSettingZoom = true;
+            window.cadLastSetZoomTime = Date.now();
+            try {
+                // 🌟 修正：ズーム上限20のキャップを外し、Google Mapsネイティブの滑らかな拡大に任せる！
+                window.cadMap.setZoom(zoom);
+            } finally {
+                setTimeout(() => { window.cadIsSettingZoom = false; }, 100);
+            }
+        }
+        window.updateCadMapTransform();
+    };
 
-      window.updateCadMapTransform = () => {
-          const mapDiv = document.getElementById('cadMap');
-          if (mapDiv) {
-              let currentZoom = window.getCadZoom();
-              let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
-              let apparentScale = Math.pow(2, currentZoom - realZoom);
-              if (apparentScale < 0.25) apparentScale = 0.25;
-
-              let offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
-              let offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
-              mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
-              mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
-              mapDiv.style.setProperty('--cad-scale', apparentScale);
-              // 👇👇👇 ここから下のブロックを新しく追加してください 👇👇👇
-              // 🌟 【新規追加】拡大スケールに合わせて、ポリゴンの線を極細に自動調整する！
-              let polyWeight = Math.max(0.3, 2.0 / apparentScale); 
-              let targetWeight = Math.max(0.5, 3.0 / apparentScale);
-              let nakaWeight = Math.max(1.0, 6.0 / apparentScale);
-              
-              if (window.cadUnePolygons) window.cadUnePolygons.forEach(p => p.setOptions({ strokeWeight: polyWeight }));
-              if (window.cadCustomShapes) window.cadCustomShapes.forEach(p => p.setOptions({ strokeWeight: polyWeight }));
-              if (window.cadTargetPolygon) window.cadTargetPolygon.setOptions({ strokeWeight: targetWeight });
-              if (window.cadNakamichiMapPolygons) window.cadNakamichiMapPolygons.forEach(p => p.setOptions({ strokeWeight: nakaWeight }));
-              // 👆👆👆 追加ここまで 👆👆👆
-              
-              // 🌟 Google Mapsの実際の拡大率（コンテナの transform matrix）を検出して
-              // スケールに反映し、つまみと数字ラベルの巨大化を防ぐ
-              // 重い処理なのでドラッグ中はスキップし、デバウンス（60ms）して実行頻度を抑える
-              if (!window.cadDragDx && !window.cadDragDy) {
-                  if (realScaleTimeout) {
-                      clearTimeout(realScaleTimeout);
-                  }
-                  realScaleTimeout = setTimeout(() => {
-                      let scaleVal = 1.0;
-                      
-                      // Validate cached transform div
-                      if (window.cadTransformDiv && !document.body.contains(window.cadTransformDiv)) {
-                          window.cadTransformDiv = null;
-                      }
-                      
-                      if (!window.cadTransformDiv) {
-                          const vertexImg = document.querySelector('#cadMap img[src*="undo_poly"], #cadMap img[src*="cb_direction"]');
-                          if (vertexImg) {
-                              let curr = vertexImg.parentElement;
-                              while (curr && curr.id !== 'cadMap') {
-                                  const transform = window.getComputedStyle(curr).transform || curr.style.transform || '';
-                                  if (transform && transform !== 'none' && transform.includes('matrix')) {
-                                      window.cadTransformDiv = curr;
-                                      break;
-                                  }
-                                  curr = curr.parentElement;
-                              }
-                          }
-                      }
-                      
-                      if (window.cadTransformDiv) {
-                          const transform = window.getComputedStyle(window.cadTransformDiv).transform || window.cadTransformDiv.style.transform || '';
-                          const matrixMatch = transform.match(/matrix\(([\d.-]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
-                          if (matrixMatch) {
-                              const a = parseFloat(matrixMatch[1]);
-                              const b = parseFloat(matrixMatch[2]);
-                              const val = Math.hypot(a, b);
-                              if (val > 0.1) {
-                                  scaleVal = val;
-                              }
-                          }
-                      }
-                      
-                      // Overall physical scale is the product of Google Maps scale and apparentScale
-                      let realScale = scaleVal * apparentScale;
-                      
-                      window.cadCurrentScale = realScale;
-                      mapDiv.style.setProperty('--cad-scale', realScale);
-
-                      // 🌟 畝番号の数字ラベルが地図拡大時に一緒に小さくなるようにスケールを計算する
-                      let visualSize = 20 - (currentZoom - 20) * 1.5;
-                      if (visualSize < 8) visualSize = 8;
-                      if (visualSize > 20) visualSize = 20;
-                      let labelScale = visualSize / (24 * realScale);
-                      mapDiv.style.setProperty('--cad-label-scale', labelScale);
-                      
-                      realScaleTimeout = null;
-                  }, 60);
-              }
-          }
-          if (typeof window.updateCadLabelPositionsThrottled === 'function') {
-              window.updateCadLabelPositionsThrottled();
-          }
-      };
+    window.updateCadMapTransform = () => {
+        const mapDiv = document.getElementById('cadMap');
+        if (mapDiv) {
+            let offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
+            let offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
+            
+            // 🌟 修正：CSSでの無理な拡大（ぼやけの原因）をやめ、常に等倍(1.0)にしてクッキリ画質を保つ！
+            mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(1.0)`;
+            mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
+            mapDiv.style.setProperty('--cad-scale', 1.0);
+            mapDiv.style.setProperty('--cad-label-scale', 1.0);
+            window.cadCurrentScale = 1.0;
+        }
+        if (typeof window.updateCadLabelPositionsThrottled === 'function') {
+            window.updateCadLabelPositionsThrottled();
+        }
+    };
 
       window.updateCadLabelScale = (detectedScale) => {
           // CSSのカスタムプロパティ（--cad-label-scale）によるスケールで一括制御するため、JSでの個別のフォントサイズ変更は行いません（パフォーマンスとCSS競合回避のため）
@@ -546,111 +471,7 @@
               return false;
           };
 
-          // 🌟 つまみドラッグ時の倍速バグ修正：拡大率に応じてドラッグ移動量をスケールダウンしてカーソルに追従させる
-          let handleDragStartX = 0;
-          let handleDragStartY = 0;
-          let isDraggingHandle = false;
-
-          const getEventCoords = (e) => {
-              if (e.touches && e.touches.length > 0) {
-                  return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-              }
-              return { x: e.clientX, y: e.clientY };
-          };
-
-          const onDragStart = (e) => {
-              if (document.getElementById('cadOverlay').style.display !== 'flex') return;
-              
-              // ★追加：タッチした場所が地図エリア（wrapper）の外なら、ドラッグ処理を中止してボタンのクリックを優先する！
-              const wrapper = document.getElementById('cadMapWrapper');
-              if (wrapper && !wrapper.contains(e.target)) return;
-
-              if (e.touches && e.touches.length > 1) {
-                  isDraggingHandle = false;
-                  return;
-              }
-              // ...（これ以降は元のコードのまま）
-              isDraggingHandle = checkIgnoreDrag(e.target);
-              if (isDraggingHandle) {
-                  if (e.cancelable) {
-                      e.preventDefault();
-                  }
-                  const coords = getEventCoords(e);
-                  handleDragStartX = coords.x;
-                  handleDragStartY = coords.y;
-              }
-          };
-
-          const onDragMove = (e) => {
-              if (!isDraggingHandle) return;
-              if (e.touches && e.touches.length > 1) {
-                  isDraggingHandle = false;
-                  return;
-              }
-              if (e.cancelable) {
-                  e.preventDefault();
-              }
-              // Calculate apparent scale dynamically based on virtual zoom and real zoom
-              let currentZoom = window.getCadZoom();
-              let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
-              let apparentScale = Math.pow(2, currentZoom - realZoom);
-              if (apparentScale < 0.25) apparentScale = 0.25;
-
-              const scale = apparentScale;
-              const coords = getEventCoords(e);
-              const dx = coords.x - handleDragStartX;
-              const dy = coords.y - handleDragStartY;
-
-              // 🌟 ドラッグ移動のバグ修正：地図の回転と拡大率を考慮した正確な座標逆変換
-              // マップは window.cadCurrentRotation 度回転し、scale 倍に拡大されているため、
-              // 画面上のドラッグ量 (dx, dy) をマップ内のローカル座標系における移動量 (localDx, localDy) に変換します。
-              const theta = (window.cadCurrentRotation || 0) * Math.PI / 180;
-              const cosT = Math.cos(theta);
-              const sinT = Math.sin(theta);
-              
-              // 🌟 ユーザーの「大きめに動いてしまうので少なめに」という要望に応え、
-              // ドラッグ感度（sensitivity = 0.3）を適用して微細な変形操作をやりやすくします。
-              const sensitivity = 0.3;
-              const localDx = ((dx * cosT + dy * sinT) / scale) * sensitivity;
-              const localDy = ((-dx * sinT + dy * cosT) / scale) * sensitivity;
-
-              const targetX = handleDragStartX + localDx;
-              const targetY = handleDragStartY + localDy;
-
-              if (e.touches && e.touches.length > 0) {
-                  for (let i = 0; i < e.touches.length; i++) {
-                      const t = e.touches[i];
-                      Object.defineProperty(t, 'clientX', { value: targetX, configurable: true });
-                      Object.defineProperty(t, 'clientY', { value: targetY, configurable: true });
-                      Object.defineProperty(t, 'pageX', { value: targetX + window.scrollX, configurable: true });
-                      Object.defineProperty(t, 'pageY', { value: targetY + window.scrollY, configurable: true });
-                  }
-              } else {
-                  Object.defineProperty(e, 'clientX', { value: targetX, configurable: true });
-                  Object.defineProperty(e, 'clientY', { value: targetY, configurable: true });
-                  Object.defineProperty(e, 'pageX', { value: targetX + window.scrollX, configurable: true });
-                  Object.defineProperty(e, 'pageY', { value: targetY + window.scrollY, configurable: true });
-              }
-          };
-
-          const onDragEnd = () => {
-              isDraggingHandle = false;
-          };
-
-          window.addEventListener('mousedown', onDragStart, true);
-          window.addEventListener('mousemove', onDragMove, true);
-          window.addEventListener('mouseup', onDragEnd, true);
-          window.addEventListener('mouseleave', onDragEnd, true);
-
-          window.addEventListener('touchstart', onDragStart, { capture: true, passive: false });
-          window.addEventListener('touchmove', onDragMove, { capture: true, passive: false });
-          window.addEventListener('touchend', onDragEnd, { capture: true });
-          window.addEventListener('touchcancel', onDragEnd, { capture: true });
-
-          window.addEventListener('pointerdown', onDragStart, true);
-          window.addEventListener('pointermove', onDragMove, true);
-          window.addEventListener('pointerup', onDragEnd, true);
-          window.addEventListener('pointercancel', onDragEnd, true);
+        
 
           let initialPinchDist = null; let initialPinchAngle = null;
           let startScale = BASE_SCALE; let startRotation = 0;
