@@ -85,13 +85,13 @@
               </div>
     
               <div style="display:flex; gap:10px;">
-                <button onclick="saveUneSim()" style="flex:2; background:#2196F3; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:14px;">💾 描画図面を保存</button>
-                <button onclick="cadUserClearLines()" style="flex:1; background:#f44336; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:12px;">🗑️ クリア</button>
+                <div style="display:flex; gap:10px;">
+                  <button onclick="saveUneSim()" style="flex:2; background:#2196F3; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:14px;">💾 描画図面を保存</button>
+                  <button onclick="cadUserClearLines()" style="flex:1; background:#f44336; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:12px;">🗑️ クリア</button>
+                </div>
               </div>
             </div>
-          </div>
-      
-          <div id="cadEditPolyModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:999999; justify-content:center; align-items:center;">
+          </div> <div id="cadEditPolyModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:999999; justify-content:center; align-items:center;">
             <div style="background:#fff; color:#333; padding:20px; border-radius:12px; width:90%; max-width:300px; text-align:center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
                 <h3 style="margin-top:0; border-bottom:2px solid #8BC34A; padding-bottom:10px;">🛠 ポリゴンの操作</h3>
                 <input type="hidden" id="cadEditIndex">
