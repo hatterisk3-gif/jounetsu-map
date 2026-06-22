@@ -533,18 +533,24 @@
               }
           };
 
+          let wheelAccumulator = 0;
           wrapper.addEventListener('wheel', (e) => {
               if (document.getElementById('cadOverlay').style.display !== 'flex') return;
               e.preventDefault(); 
+              e.stopPropagation();
               if (window.cadMap) {
-                  let currentZoom = pendingZoom !== null ? pendingZoom : window.getCadZoom();
-                  let delta = -e.deltaY * 0.0015;
-                  let nextZoom = currentZoom + delta;
-                  if (nextZoom < 10) nextZoom = 10;
-                  if (nextZoom > 45) nextZoom = 45;
-                  scheduleMapUpdate(null, nextZoom);
+                  wheelAccumulator += e.deltaY;
+                  if (Math.abs(wheelAccumulator) >= 50) {
+                      let currentZoom = pendingZoom !== null ? pendingZoom : Math.round(window.getCadZoom());
+                      let delta = wheelAccumulator > 0 ? -1 : 1;
+                      let nextZoom = currentZoom + delta;
+                      if (nextZoom < 10) nextZoom = 10;
+                      if (nextZoom > 45) nextZoom = 45;
+                      scheduleMapUpdate(null, nextZoom);
+                      wheelAccumulator = 0;
+                  }
               }
-          }, {passive: false});
+          }, {capture: true, passive: false});
 
           const finalizeDragCenter = (dragDx, dragDy) => {
               if (!window.cadMap || !window.cadDragStartCenter) return;
