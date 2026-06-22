@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 // ⚙️ 設定（あなたの環境に合わせて書き換えてください）
 const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
@@ -24,66 +23,58 @@ async function watch() {
       }
 
       // スプレッドシートの構造が変わっていたら自動上書き
-      // ※手動で書いた部分を消さないよう、今回は最上部に追記、または丸ごと更新
-      // （※運用に合わせて調整可能ですが、一旦丸ごと最新化します）
       if (currentContent !== data.readmeContent) {
         fs.writeFileSync(readmePath, data.readmeContent, 'utf8');
         console.log('📝 スプレッドシートの変更を検知：README.md を自動更新しました！');
       }
     }
 
-    // --- 2. LINEからの指示の実行（Antigravityの起動） ---
+    // --- 2. LINEからの指示の実行（ファイル保存へ進化！） ---
     if (data.rowIndex && data.command) {
       console.log(`🤖 LINEからの指示を検知: "${data.command}"`);
-      console.log('🚀 Antigravity を起動して開発を開始します...');
 
       try {
-        // パソコンのターミナルで「agy run "指示内容"」を自動実行する
-        // ※インストールした環境に合わせて、コマンドが 'antigravity' か 'agy' か確認してください
-        // ⚙️ 【重要】ステップ1で確認したデプロイID
-        const DEPLOYMENT_ID = "AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8";
+        const filePath = path.join(__dirname, 'line_instruction.txt');
 
-        // 【進化版】AIにコミットメッセージを要約させる1行裏コマンド
-        const autoDeployPrompt = `コードの修正作業が完了したら必ずBashを使用して以下の順番でコマンドを実行してください。 1. \`git add .\`  2. 今回の変更内容を分かりやすく要約し、\`git commit -m \\"[ここに要約を記載]\\"\` の形式で実行する  3. \`git push\`  4. \`clasp push\`  5. \`clasp deploy -i ${DEPLOYMENT_ID}\``;
-
-        // ★LINEからの指示に含まれる改行（\n）を「、」に変換し、ダブルクォーテーションを全角に変換
+        // LINEからの指示に含まれる改行（\n）などを整える
         const cleanCommand = data.command.replace(/\r?\n/g, '、').replace(/"/g, '”');
 
-        // ★【AIへの作業指示】AIが迷わないように自然なタスクとして指示する（改行によるコマンド途切れも防止）
-        const forceActionPrompt = `あなたは「情熱MAP」の専属エンジニアです。質問や会話は一切不要です。以下の【依頼内容】を解決するために、ワークスペース内の必要なファイルを検索・確認し、適切にコードを修正してください。修正が完了したら、必ず以下のデプロイ手順を実行してください。依頼内容：【 ${cleanCommand} 】`;
-        
-        // 「喝」と「裏コマンド」を合体させて、逃げ道をなくす！
-        const fullCommand = `${forceActionPrompt} ${autoDeployPrompt}`;
+        // IDEのAIエージェントに読ませるための「丁寧な指示書フォーマット」を作成
+        const instructionText = `
+【現場からの開発・修正指示】
+以下の依頼内容を解決するために、必要なファイルを検索・確認し、適切にコードを修正してください。
 
-        // タイムアウトを15分に延ばした完全版で起動（引数を fullCommand に）
-        const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
-        console.log('✅ Antigravity の実行が完了しました！');
-        console.log(output);
+依頼内容：
+${cleanCommand}
 
-        // 実行が完了したら、GASに「完了したよ」と伝える// 実行が完了したら、GASに「完了したよ」と伝える（失敗しても3回まで粘る！）
+※修正が完了したら、レビュー画面を提示してください。
+`;
+        // ファイルに上書き保存する（これがAIへの着火スイッチになります）
+        fs.writeFileSync(filePath, instructionText.trim(), 'utf8');
+        console.log(`✅ LINE指示をファイルに保存しました（line_instruction.txt）`);
+
+        // ファイル保存ができたら、GASに「受付完了したよ」と伝える（失敗しても3回まで粘る！）
         let retries = 3;
         while (retries > 0) {
           try {
             await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
-            console.log('🔔 ステータスを「完了」に更新しました。');
+            console.log('🔔 ステータスを「完了（受付済）」に更新しました。');
             break; // 成功したらループを抜け出す
           } catch (e) {
             retries--;
             console.log(`⚠️ GASへの完了通知で通信エラー。残りリトライ回数: ${retries}`);
             if (retries === 0) throw new Error("GASへの通信に完全に失敗しました");
-            // 2秒待ってからもう一度通信を試す
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
 
       } catch (cmdError) {
-        console.error('❌ Antigravity の実行中にエラーが発生しました:', cmdError.message);
+        console.error('❌ ファイルの保存処理中にエラーが発生しました:', cmdError.message);
       }
     }
 
   } catch (error) {
     // 通信エラーなどは一時的なものとして無視してループを続ける
-    // console.error('エラー:', error.message);
   }
 }
 
@@ -93,11 +84,11 @@ let isProcessing = false;
 async function loop() {
   if (!isProcessing) {
     isProcessing = true;
-    await watch(); // ANTの作業が完全に終わるまでここでしっかり待つ
+    await watch();
     isProcessing = false;
   }
-  setTimeout(loop, 1000); // すべて終わってから1秒後に次を確認する
+  setTimeout(loop, 1000);
 }
 
-console.log('👀 LINEからの指示とスプレッドシートの監視を開始しました...（終了するには Ctrl + C）');
+console.log('👀 基地システム起動：LINEからの指示を待機しています...（終了は Ctrl + C）');
 loop();
