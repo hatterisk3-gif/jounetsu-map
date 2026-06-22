@@ -46,18 +46,14 @@ async function watch() {
         // 【進化版】AIにコミットメッセージを要約させる1行裏コマンド
         const autoDeployPrompt = `コードの修正作業が完了したら必ずBashを使用して以下の順番でコマンドを実行してください。 1. \`git add .\`  2. 今回の変更内容を分かりやすく要約し、\`git commit -m \\"[ここに要約を記載]\\"\` の形式で実行する  3. \`git push\`  4. \`clasp push\`  5. \`clasp deploy -i ${DEPLOYMENT_ID}\``;
 
-        // ★LINEからの指示に含まれる改行（\n）を「、」に変換
-        const cleanCommand = data.command.replace(/\r?\n/g, '、');
+        // ★LINEからの指示に含まれる改行（\n）を「、」に変換し、ダブルクォーテーションを全角に変換
+        const cleanCommand = data.command.replace(/\r?\n/g, '、').replace(/"/g, '”');
 
-        // ★【絶対服従マニュアル】AIに作業手順を細かく強制す
-        const forceActionPrompt = `あなたは「情熱MAP」の専属エンジニアです。質問や会話は一切不要です。以下の【手順1】〜【手順4】を必ず順番通りに実行してください。
-【手順1】依頼内容に関連するファイルをワークスペース内から検索して特定する。
-【手順2】該当ファイルを読み込み、修正すべきコードの箇所を特定する。
-【手順3】ファイル編集機能を使って、実際にコードを書き換える。
-【手順4】コードの書き換えが完了したことを見届けたら、以下のデプロイ手順を実行する。
-依頼内容：【 ${cleanCommand} 】`;
+        // ★【AIへの作業指示】AIが迷わないように自然なタスクとして指示する（改行によるコマンド途切れも防止）
+        const forceActionPrompt = `あなたは「情熱MAP」の専属エンジニアです。質問や会話は一切不要です。以下の【依頼内容】を解決するために、ワークスペース内の必要なファイルを検索・確認し、適切にコードを修正してください。修正が完了したら、必ず以下のデプロイ手順を実行してください。依頼内容：【 ${cleanCommand} 】`;
+        
         // 「喝」と「裏コマンド」を合体させて、逃げ道をなくす！
-        const fullCommand = `${forceActionPrompt}。 ${autoDeployPrompt}`;
+        const fullCommand = `${forceActionPrompt} ${autoDeployPrompt}`;
 
         // タイムアウトを15分に延ばした完全版で起動（引数を fullCommand に）
         const output = execSync(`agy --print "${fullCommand}" --model gemini-3.1-pro --dangerously-skip-permissions --print-timeout 15m`, { encoding: 'utf8' });
@@ -79,8 +75,6 @@ async function watch() {
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
-        await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
-        console.log('🔔 ステータスを「完了」に更新しました。');
 
       } catch (cmdError) {
         console.error('❌ Antigravity の実行中にエラーが発生しました:', cmdError.message);
