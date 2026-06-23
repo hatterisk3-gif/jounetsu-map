@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        .container {
+            width: 500px;
+            height: 500px;
+            border: 1px solid black;
+            position: relative;
+            overflow: hidden;
+        }
+        .box1 {
+            width: 100px;
+            height: 100px;
+            background: rgba(255, 0, 0, 0.5);
+            position: absolute;
+            top: 200px;
+            left: 200px;
+            transform-origin: center center;
+            transform: translate(100px, 0) scale(4);
+        }
+        .box2 {
+            width: 100px;
+            height: 100px;
+            background: rgba(0, 0, 255, 0.5);
+            position: absolute;
+            top: 200px;
+            left: 200px;
+            transform-origin: center center;
+            transform: scale(4) translate(100px, 0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Red box: translate then scale -->
+        <div class="box1">Red</div>
+        <!-- Blue box: scale then translate -->
+        <div class="box2">Blue</div>
+    </div>
+</body>
+</html>
