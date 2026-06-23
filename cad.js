@@ -835,6 +835,16 @@ window.openCADMode = (id) => {
             mapTypeId: 'satellite', tilt: 0, heading: 0,
             mapId: 'DEMO_MAP_ID', gestureHandling: 'none', disableDefaultUI: true, zoomControl: true, isFractionalZoomEnabled: true
         });
+        
+        // 🌟 修正：衛星写真マップタイプのmaxZoomを上書きし、ネイティブで30までズームできるようにする
+        // これにより、CSSのscaleによる引き伸ばし（ギザギザ化）を防ぎ、ポリゴンの解像度を保つ
+        google.maps.event.addListenerOnce(window.cadMap, 'idle', () => {
+            const satType = window.cadMap.mapTypes.get('satellite');
+            if (satType) satType.maxZoom = 30;
+            const hybType = window.cadMap.mapTypes.get('hybrid');
+            if (hybType) hybType.maxZoom = 30;
+        });
+
         window.cadMap.addListener('center_changed', () => {
             if (typeof window.updateCadLabelPositionsThrottled === 'function') window.updateCadLabelPositionsThrottled();
         });
