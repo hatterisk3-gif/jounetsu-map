@@ -2,9 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// ⚠️ URLは藤田さんの現在の最新のものをそのまま使っています
 const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
 
-// 🌟 【新規追加】画像URLを一時的に記憶しておくための変数
+// 🌟 画像URLとIDを一時的に記憶しておくための変数
 let pendingImageUrl = "";
 let pendingImageId = "";
 
@@ -28,20 +29,19 @@ async function watch() {
       const rawCommand = data.command;
       let summaryForLine = "✅ 処理完了";
 
+      // 変数を一番外側に出すことで、最後の通信処理までIDを生き残らせる！
+      let usedImageId = "";
+
       try {
-        // 📸 【画像モード】ダウンロードせず、URLを記憶するだけ！
         // 📸 【画像モード】
         if (rawCommand.startsWith('[IMAGE_URL:')) {
           const urlMatch = rawCommand.match(/\[IMAGE_URL:\s*(.*?)\]/);
           if (urlMatch && urlMatch[1]) {
             pendingImageUrl = urlMatch[1];
-
-            // 🌟 【追加】URLから「id=〇〇」の部分だけを抜き出して記憶する
             const idMatch = pendingImageUrl.match(/id=([^&]+)/);
             if (idMatch && idMatch[1]) {
               pendingImageId = idMatch[1];
             }
-
             console.log(`📸 画像URLとIDをメモリに保持しました。`);
             summaryForLine = "✅ 画像のURLを基地にセットしました！AIがいつでも見れる状態です。続けてテキストで指示をお願いします。";
           }
@@ -49,13 +49,11 @@ async function watch() {
         // 💬 【通常モード】フルオート修正開始
         else {
           const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
-
           let imageContext = "";
-          let usedImageId = "";
 
           if (pendingImageUrl !== "") {
             imageContext = `【重要】以下のURLにアクセスして画像を視覚的に確認し、それを絶対的な参考資料として以下の指示を実行してください。参考画像URL: ${pendingImageUrl} 。 `;
-            usedImageId = pendingImageId;
+            usedImageId = pendingImageId; // ここで捨てるIDをセット！
             pendingImageUrl = "";
             pendingImageId = "";
           }
@@ -69,41 +67,49 @@ async function watch() {
           let isSuccess = false;
 
           try {
-            // 🌟 【改善1】タイムアウトを「15分」に大幅延長！（--print-timeout 15m を追加）
-            const rawOutput = execSync(`agy --print-timeout 15m --prompt "${magicalPrompt}"`, {
+            // コマンドの末尾に「 2>&1 」を追加し、AIの解説（裏チャンネルの文字）もすべて強制的に捕獲する！
+            const rawOutput = execSync(`agy --print-timeout 15m --prompt "${magicalPrompt}" 2>&1`, {
               env: { ...process.env, AGY_TIMEOUT: '900000' },
               encoding: 'utf-8'
             });
 
-            console.log(rawOutput); // 基地局の黒い画面に表示
+            console.log(rawOutput);
             aiOutput = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
             isSuccess = true;
 
           } catch (e) {
             console.error('\n⚠️ AIの処理中にエラーまたはタイムアウトが発生しました！');
-
-            // エラー内容を解析
             const errorLog = (e.stdout ? e.stdout.toString() : "") + (e.stderr ? e.stderr.toString() : "") + e.message;
+
             if (errorLog.includes('timed out')) {
               aiOutput = "⏳ AIの思考時間が上限（15分）を超えたため、処理を強制終了しました。指示を少し分割して再度お試しください。";
             } else {
               aiOutput = "⚠️ 予期せぬシステムエラーが発生しました。\n" + errorLog.substring(0, 200);
             }
 
-            // 🛑 【改善2】ファイル破損防止（ロールバック）
             console.log('🔄 ファイルの中途半端な破損を防ぐため、変更をリセット（ロールバック）します...');
             try {
-              // Gitの機能を使って、変更されたファイルを全て「最後のコミット状態」に強制的に戻す
               execSync('git reset --hard HEAD', { stdio: 'ignore' });
               execSync('git clean -fd', { stdio: 'ignore' });
               console.log('✅ ロールバック完了。ファイルは安全な状態に復元されました。');
-            } catch (gitErr) {
-              console.error('⚠️ ロールバックに失敗しました。手動で確認してください。');
-            }
+            } catch (gitErr) { }
           }
 
-          // 🌟 【改善3】成功時のみプッシュし、失敗時はLINEにエラーを通知する
+          // 処理が成功した場合のみアップロードする
           if (isSuccess) {
+            // Gitへ上げる直前に、agyが勝手にダウンロードした画像を消し去る（お掃除機能）
+            console.log('🧹 agyが分析用に残した一時画像を削除中...');
+            const files = fs.readdirSync(__dirname);
+            files.forEach(file => {
+              const lowerFile = file.toLowerCase();
+              if (lowerFile.endsWith('.jpg') || lowerFile.endsWith('.jpeg') || lowerFile.endsWith('.png')) {
+                try {
+                  fs.unlinkSync(path.join(__dirname, file));
+                  console.log(`🗑️ 一時ファイル ${file} を削除しました`);
+                } catch (e) { }
+              }
+            });
+
             console.log('☁️ claspでGASへ反映中...');
             try { execSync('clasp push -f', { stdio: 'inherit' }); } catch (e) { }
 
@@ -117,32 +123,39 @@ async function watch() {
                 const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
                 const commitMessage = `Auto: ${shortCommand} [変更: ${changedFiles}]`;
 
-                const shortAiOutput = aiOutput.length > 800 ? aiOutput.substring(0, 800) + '\n...（以下省略）' : aiOutput;
+                // AIの出力は「最後の方」に結論が書かれることが多いので、後ろから800文字を切り取る
+                const shortAiOutput = aiOutput.length > 800 ? '...（前略）\n' + aiOutput.slice(-800) : aiOutput;
                 summaryForLine = `✅ デプロイ完了\n${commitMessage}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
 
                 execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
                 execSync('git push', { stdio: 'inherit' });
               } else {
-                summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput}`;
+                summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput.slice(-800)}`;
               }
             } catch (e) { }
           } else {
-            // 失敗した場合はGASやGitHubへの反映（push）を完全にスキップ！
             summaryForLine = `❌ 処理失敗（安全のため変更はリセットされました）\n\n💡 原因:\n${aiOutput}`;
           }
         }
 
-        // 🌟 【変更】完了通知のURLに、捨てる画像のIDをくっつける！
+        // 🌟 最終的なLINEへの通知と、Drive上の画像削除のお願い（URLの合体）
         let updateUrl = `${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}&summary=${encodeURIComponent(summaryForLine)}`;
-        if (typeof usedImageId !== 'undefined' && usedImageId !== "") {
+
+        // テキスト処理が終わった後なら、usedImageId にIDが入っているので、ここで合体される！
+        if (usedImageId !== "") {
           updateUrl += `&fileId=${usedImageId}`;
         }
 
         let retries = 3;
         while (retries > 0) {
           try {
-            await fetch(updateUrl); // 🌟 ここも updateUrl に変更
-            console.log('🔔 LINEへ通知を送信（および画像のお掃除）が完了しました。');
+            await fetch(updateUrl);
+            // ログの出力も正確に分岐
+            if (usedImageId !== "") {
+              console.log('🔔 LINEへ通知を送信し、Drive上の使用済み画像をゴミ箱へ移動しました。');
+            } else {
+              console.log('🔔 LINEへ通知を送信しました。');
+            }
             break;
           } catch (e) {
             retries--;
@@ -154,8 +167,12 @@ async function watch() {
         console.error('❌ 予期せぬエラー:', cmdError.message);
       }
     }
-  } catch (error) { }
+    // 🌟 ここが消えていました！ ------------------
+  } catch (error) {
+    // ネットワークエラーなどを無視
+  }
 }
+// ---------------------------------------------
 
 let isProcessing = false;
 async function loop() {
