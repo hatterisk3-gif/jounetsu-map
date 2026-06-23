@@ -94,12 +94,16 @@ window.updateCadMapTransform = () => {
         let offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
         let offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
 
-        // 🌟 修正：CSSでの無理な拡大（ぼやけの原因）をやめ、常に等倍(1.0)にしてクッキリ画質を保つ！
-        mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(1.0)`;
+        let currentZoom = window.getCadZoom();
+        let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+        let apparentScale = Math.pow(2, currentZoom - realZoom);
+        if (apparentScale < 0.25) apparentScale = 0.25;
+
+        mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
         mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
-        mapDiv.style.setProperty('--cad-scale', 1.0);
+        mapDiv.style.setProperty('--cad-scale', apparentScale);
         mapDiv.style.setProperty('--cad-label-scale', 1.0);
-        window.cadCurrentScale = 1.0;
+        window.cadCurrentScale = apparentScale;
     }
     if (typeof window.updateCadLabelPositionsThrottled === 'function') {
         window.updateCadLabelPositionsThrottled();
