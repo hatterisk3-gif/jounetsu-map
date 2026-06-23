@@ -34,7 +34,7 @@ async function watch() {
           if (urlMatch && urlMatch[1]) {
             pendingImageUrl = urlMatch[1]; // URLをメモリに保存
             console.log(`📸 画像URLをメモリに保持しました: ${pendingImageUrl}`);
-            summaryForLine = "✅ 画像のURLを基地にセットしました！AIがいつでも見れる状態です。続けてテキストで指示をお願いします。";
+            summaryForLine = "✅ 画像のURLを基地にセットしました!AIがいつでも見れる状態です。続けてテキストで指示をお願いします。";
           }
         }
         // 💬 【通常モード】フルオート修正開始
@@ -57,7 +57,11 @@ async function watch() {
           console.log('🧠 AIがコードを修正中...');
 
           try {
-            execSync(`AGY_TIMEOUT=600000 agy --prompt "${magicalPrompt}"`, { stdio: 'inherit' });
+            // 🌟 Windows環境でも確実にタイムアウトを延長する書き方に変更
+            execSync(`agy --prompt "${magicalPrompt}"`, {
+              stdio: 'inherit',
+              env: { ...process.env, AGY_TIMEOUT: '600000' } // 環境変数をここで渡す
+            });
           } catch (e) {
             console.error('⚠️ AIの処理中にエラーが発生しましたが、後続処理を試みます。');
           }
