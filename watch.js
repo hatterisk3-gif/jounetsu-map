@@ -6,6 +6,7 @@ const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu
 
 // 🌟 【新規追加】画像URLを一時的に記憶しておくための変数
 let pendingImageUrl = "";
+let pendingImageId = "";
 
 async function watch() {
   try {
@@ -29,23 +30,36 @@ async function watch() {
 
       try {
         // 📸 【画像モード】ダウンロードせず、URLを記憶するだけ！
+        // 📸 【画像モード】
         if (rawCommand.startsWith('[IMAGE_URL:')) {
           const urlMatch = rawCommand.match(/\[IMAGE_URL:\s*(.*?)\]/);
           if (urlMatch && urlMatch[1]) {
-            pendingImageUrl = urlMatch[1]; // URLをメモリに保存
-            console.log(`📸 画像URLをメモリに保持しました: ${pendingImageUrl}`);
-            summaryForLine = "✅ 画像のURLを基地にセットしました!AIがいつでも見れる状態です。続けてテキストで指示をお願いします。";
+            pendingImageUrl = urlMatch[1];
+
+            // 🌟 【追加】URLから「id=〇〇」の部分だけを抜き出して記憶する
+            const idMatch = pendingImageUrl.match(/id=([^&]+)/);
+            if (idMatch && idMatch[1]) {
+              pendingImageId = idMatch[1];
+            }
+
+            console.log(`📸 画像URLとIDをメモリに保持しました。`);
+            summaryForLine = "✅ 画像のURLを基地にセットしました！AIがいつでも見れる状態です。続けてテキストで指示をお願いします。";
           }
         }
-        // 💬 【通常モード】フルオート修正開始
+        // 💬 【通常モード】
         else {
           const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
 
           let imageContext = "";
+          let usedImageId = ""; // 🌟 【追加】今回の作業で捨てる予定のID
+
           if (pendingImageUrl !== "") {
             imageContext = `【重要】以下のURLにアクセスして画像を視覚的に確認し、それを絶対的な参考資料として以下の指示を実行してください。参考画像URL: ${pendingImageUrl} 。 `;
             console.log('🖼️ 保持していた画像URLをプロンプトに結合します。');
+
+            usedImageId = pendingImageId; // 捨てるためにIDを移す
             pendingImageUrl = "";
+            pendingImageId = ""; // 次の指示に影響しないようリセット
           }
 
           const magicalPrompt = `${imageContext}${cleanCommand} 。※重要事項：このタスクは複雑な可能性があります。一度の出力で全ファイルを修正しようとせず、ステップ・バイ・ステップで段階的に作業を進めてください。`;
@@ -105,11 +119,17 @@ async function watch() {
           } catch (e) { }
         }
 
+        // 🌟 【変更】完了通知のURLに、捨てる画像のIDをくっつける！
+        let updateUrl = `${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}&summary=${encodeURIComponent(summaryForLine)}`;
+        if (typeof usedImageId !== 'undefined' && usedImageId !== "") {
+          updateUrl += `&fileId=${usedImageId}`;
+        }
+
         let retries = 3;
         while (retries > 0) {
           try {
-            await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}&summary=${encodeURIComponent(summaryForLine)}`);
-            console.log('🔔 LINEへ通知を送信しました。');
+            await fetch(updateUrl); // 🌟 ここも updateUrl に変更
+            console.log('🔔 LINEへ通知を送信（および画像のお掃除）が完了しました。');
             break;
           } catch (e) {
             retries--;
