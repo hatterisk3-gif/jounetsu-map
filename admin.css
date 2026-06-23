@@ -52,3 +52,8 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
     scale: min(1, calc(2.2 / var(--cad-scale, 1))) !important;
     transform-origin: center center !important;
 }
+
+/* 🌟 農業CAD：ポリゴン編集時の巨大化するundo矢印を非表示にする */
+#cadMap img[src*="undo_poly"] {
+    display: none !important;
+}
