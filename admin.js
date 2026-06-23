@@ -491,6 +491,7 @@
               zoom: zoomLevel, 
               mapTypeId: 'hybrid', 
               gestureHandling: 'greedy', 
+              mapTypeControl: false,
               styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] 
           });
           infoWindow = new google.maps.InfoWindow(); 

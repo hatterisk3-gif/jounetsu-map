@@ -7,15 +7,15 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
 .control-panel { padding: 10px; background: transparent; border-bottom: none; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 8px; position: absolute; top: 0; width: 100%; box-sizing: border-box; pointer-events: none; }
 .control-panel > * { pointer-events: auto; }
 .control-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; width: 100%; align-items: center; }
-.control-panel button, .control-panel input, .control-panel select { opacity: 0.8; transition: opacity 0.2s; }
-.control-panel button:hover, .control-panel input:hover, .control-panel select:hover, .control-panel input:focus, .control-panel select:focus { opacity: 1; }
+.control-panel button, .control-panel input, .control-panel select { transition: background-color 0.2s, filter 0.2s; }
+.control-panel button:hover, .control-panel input:hover, .control-panel select:hover, .control-panel input:focus, .control-panel select:focus { filter: brightness(1.1); }
 #map { flex-grow: 1; width: 100%; height: 100%; }
 input[type="text"], select, input[type="number"] { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; background: #fff; color: #333; box-sizing: border-box; }
 ::placeholder { color: #888; }
 #drawArea input[type="text"], #drawArea select { background: #333; color: #fff; border: 1px solid #666; }
 button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; font-size: 13px; }
-.mode-btn { background: #444; color: #fff; } .mode-btn.active { background: #d32f2f; color: #fff; }
-.gps-btn { background-color: #fff; color: #4285F4; border: 1px solid #4285F4; font-weight: bold; }
+.mode-btn { background: rgba(68, 68, 68, 0.8); color: #fff; } .mode-btn.active { background: rgba(211, 47, 47, 0.8); color: #fff; }
+.gps-btn { background-color: rgba(255, 255, 255, 0.8); color: #4285F4; border: 1px solid #4285F4; font-weight: bold; }
 .polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
 .signboard-label { background: rgba(255,255,255,0.95); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 11px; font-weight: bold; margin-top: 5px; color: #000; }
 .signboard-label.selected { background-color: #FFEB3B !important; border: 2px solid #F57F17 !important; color: #000 !important; z-index: 1000; }
@@ -25,7 +25,7 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
 .form-input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; background: #fff !important; color: #333 !important; }
 
 .search-container { position: relative; display: flex; align-items: center; }
-.search-input { width: 160px; padding: 8px 12px; border-radius: 20px; border: 1px solid #888; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); color: #333; background: #fff; }
+.search-input { width: 160px; padding: 8px 12px; border-radius: 20px; border: 1px solid #888; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); color: #333; background: rgba(255, 255, 255, 0.85); }
 #searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; color: #333; }
 .suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
 /* 🌟農業CAD専用スタイル🌟 */
