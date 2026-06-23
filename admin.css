@@ -44,7 +44,7 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
     display: inline-block;
 }
 #cadMap .ridge-label {
-    transform: rotate(var(--label-rot, 0deg)) scale(var(--cad-label-scale, 1.0)) !important;
+    transform: rotate(var(--label-rot, 0deg)) scale(calc(1.0 / var(--cad-scale, 1.0))) !important;
 }
 /* 🌟 農業CAD：地図拡大時に変形用の「つまみ」を程よいサイズに保つ */
 #cadMap div[style*="cursor"]:not(.gmnoprint):not(.gm-control-active):not(:has(.polygon-label)):not(:has(canvas)) {

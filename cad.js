@@ -102,7 +102,6 @@ window.updateCadMapTransform = () => {
         mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
         mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
         mapDiv.style.setProperty('--cad-scale', apparentScale);
-        mapDiv.style.setProperty('--cad-label-scale', 1.0);
         window.cadCurrentScale = apparentScale;
     }
     if (typeof window.updateCadLabelPositionsThrottled === 'function') {
