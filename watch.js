@@ -46,77 +46,90 @@ async function watch() {
             summaryForLine = "✅ 画像のURLを基地にセットしました！AIがいつでも見れる状態です。続けてテキストで指示をお願いします。";
           }
         }
-        // 💬 【通常モード】
+        // 💬 【通常モード】フルオート修正開始
         else {
           const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
 
           let imageContext = "";
-          let usedImageId = ""; // 🌟 【追加】今回の作業で捨てる予定のID
+          let usedImageId = "";
 
           if (pendingImageUrl !== "") {
             imageContext = `【重要】以下のURLにアクセスして画像を視覚的に確認し、それを絶対的な参考資料として以下の指示を実行してください。参考画像URL: ${pendingImageUrl} 。 `;
-            console.log('🖼️ 保持していた画像URLをプロンプトに結合します。');
-
-            usedImageId = pendingImageId; // 捨てるためにIDを移す
+            usedImageId = pendingImageId;
             pendingImageUrl = "";
-            pendingImageId = ""; // 次の指示に影響しないようリセット
+            pendingImageId = "";
           }
 
           const magicalPrompt = `${imageContext}${cleanCommand} 。※重要事項：このタスクは複雑な可能性があります。一度の出力で全ファイルを修正しようとせず、ステップ・バイ・ステップで段階的に作業を進めてください。`;
 
           console.log('⚙️ 完全自動パイプラインを起動します...');
-          console.log('🧠 AIがコードを修正中...');
+          console.log('🧠 AIがコードを修正中...（最大15分待機します）');
 
-          // 🌟 【追加】AIの解説文を記憶する箱を用意
           let aiOutput = "AIからの応答テキストを取得できませんでした。";
+          let isSuccess = false;
 
           try {
-            // 🌟 【変更】画面に出すだけでなく、結果を変数（rawOutput）にキャプチャする！
-            const rawOutput = execSync(`agy --prompt "${magicalPrompt}"`, {
-              env: { ...process.env, AGY_TIMEOUT: '600000' },
-              encoding: 'utf-8' // ← これで文字データとして受け取れます
+            // 🌟 【改善1】タイムアウトを「15分」に大幅延長！（--print-timeout 15m を追加）
+            const rawOutput = execSync(`agy --print-timeout 15m --prompt "${magicalPrompt}"`, {
+              env: { ...process.env, AGY_TIMEOUT: '900000' },
+              encoding: 'utf-8'
             });
 
-            console.log(rawOutput); // 基地局の黒い画面にも今まで通り表示
-
-            // 🌟 ターミナル特有の「色付け用の文字化けコード」を綺麗に掃除する
+            console.log(rawOutput); // 基地局の黒い画面に表示
             aiOutput = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+            isSuccess = true;
 
           } catch (e) {
-            console.error('⚠️ AIの処理中にエラーが発生しましたが、後続処理を試みます。');
-            if (e.stdout) {
-              aiOutput = e.stdout.toString().replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+            console.error('\n⚠️ AIの処理中にエラーまたはタイムアウトが発生しました！');
+
+            // エラー内容を解析
+            const errorLog = (e.stdout ? e.stdout.toString() : "") + (e.stderr ? e.stderr.toString() : "") + e.message;
+            if (errorLog.includes('timed out')) {
+              aiOutput = "⏳ AIの思考時間が上限（15分）を超えたため、処理を強制終了しました。指示を少し分割して再度お試しください。";
+            } else {
+              aiOutput = "⚠️ 予期せぬシステムエラーが発生しました。\n" + errorLog.substring(0, 200);
+            }
+
+            // 🛑 【改善2】ファイル破損防止（ロールバック）
+            console.log('🔄 ファイルの中途半端な破損を防ぐため、変更をリセット（ロールバック）します...');
+            try {
+              // Gitの機能を使って、変更されたファイルを全て「最後のコミット状態」に強制的に戻す
+              execSync('git reset --hard HEAD', { stdio: 'ignore' });
+              execSync('git clean -fd', { stdio: 'ignore' });
+              console.log('✅ ロールバック完了。ファイルは安全な状態に復元されました。');
+            } catch (gitErr) {
+              console.error('⚠️ ロールバックに失敗しました。手動で確認してください。');
             }
           }
 
-          console.log('☁️ claspでGASへ反映中...');
-          try {
-            execSync('clasp push -f', { stdio: 'inherit' });
-          } catch (e) { }
+          // 🌟 【改善3】成功時のみプッシュし、失敗時はLINEにエラーを通知する
+          if (isSuccess) {
+            console.log('☁️ claspでGASへ反映中...');
+            try { execSync('clasp push -f', { stdio: 'inherit' }); } catch (e) { }
 
-          console.log('🐙 GitHubへプッシュ中...');
-          try {
-            execSync('git add .');
-            let changedFiles = '';
-            try { changedFiles = execSync('git diff --name-only --cached').toString().trim().replace(/\n/g, ', '); } catch (e) { }
+            console.log('🐙 GitHubへプッシュ中...');
+            try {
+              execSync('git add .');
+              let changedFiles = '';
+              try { changedFiles = execSync('git diff --name-only --cached').toString().trim().replace(/\n/g, ', '); } catch (e) { }
 
-            if (changedFiles) {
-              const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
-              const commitMessage = `Auto: ${shortCommand} [変更: ${changedFiles}]`;
+              if (changedFiles) {
+                const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
+                const commitMessage = `Auto: ${shortCommand} [変更: ${changedFiles}]`;
 
-              // 🌟 【変更】LINEに送るメッセージにAIの解説を合体！
-              // LINEが長文でエラーにならないよう、最大800文字でカットします
-              const shortAiOutput = aiOutput.length > 800 ? aiOutput.substring(0, 800) + '\n...（以下省略）' : aiOutput;
+                const shortAiOutput = aiOutput.length > 800 ? aiOutput.substring(0, 800) + '\n...（以下省略）' : aiOutput;
+                summaryForLine = `✅ デプロイ完了\n${commitMessage}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
 
-              summaryForLine = `✅ デプロイ完了\n${commitMessage}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
-
-              execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
-              execSync('git push', { stdio: 'inherit' });
-            } else {
-              // 変更がなかった場合も、AIの言い訳（理由）をLINEに送る
-              summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput}`;
-            }
-          } catch (e) { }
+                execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
+                execSync('git push', { stdio: 'inherit' });
+              } else {
+                summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput}`;
+              }
+            } catch (e) { }
+          } else {
+            // 失敗した場合はGASやGitHubへの反映（push）を完全にスキップ！
+            summaryForLine = `❌ 処理失敗（安全のため変更はリセットされました）\n\n💡 原因:\n${aiOutput}`;
+          }
         }
 
         // 🌟 【変更】完了通知のURLに、捨てる画像のIDをくっつける！
