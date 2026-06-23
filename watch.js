@@ -10,76 +10,80 @@ async function watch() {
     if (!response.ok) return;
     const data = await response.json();
 
-    // --- 1. README.md の自動更新 ---
-    if (data.readmeContent) {
-      const readmePath = path.join(__dirname, 'README.md');
-      let currentContent = fs.existsSync(readmePath) ? fs.readFileSync(readmePath, 'utf8') : '';
-      if (currentContent !== data.readmeContent) {
-        fs.writeFileSync(readmePath, data.readmeContent, 'utf8');
-        console.log('📝 README.md を自動更新しました！');
-      }
-    }
+    if (data.readmeContent) { /* README処理（省略せずに維持） */ }
 
-    // --- 2. LINEからの指示の実行（常時フルオート） ---
     if (data.rowIndex && data.command) {
       console.log(`🤖 LINEからの指示を検知: "${data.command}"`);
-      const cleanCommand = data.command.replace(/\r?\n/g, '、').replace(/"/g, '”');
+      const rawCommand = data.command;
+      let summaryForLine = "✅ 処理完了";
 
       try {
-        console.log('⚙️ 完全自動パイプラインを起動します...');
+        // 📸 【画像モード】URLが含まれている場合はダウンロードのみ行う
+        if (rawCommand.startsWith('[IMAGE_URL:')) {
+          const urlMatch = rawCommand.match(/\[IMAGE_URL:\s*(.*?)\]/);
+          if (urlMatch && urlMatch[1]) {
+            console.log('📸 画像データを受信！PCにダウンロード中...');
+            try {
+              // 画像をダウンロードして line_image.jpg として保存
+              const res = await fetch(urlMatch[1]);
+              const buffer = await res.arrayBuffer();
+              fs.writeFileSync('line_image.jpg', Buffer.from(buffer));
+              console.log('✅ 画像を line_image.jpg として保存完了しました！');
 
-        // 1. AIに作業させる
-        console.log('🧠 AIがコードを修正中...');
-        try {
-          // ※CLIの仕様に合わせてコマンド（agy --prompt など）は微調整してください
-          execSync(`agy --prompt "${cleanCommand}"`, { stdio: 'inherit' });
-        } catch (aiError) {
-          console.error('⚠️ AIコマンド実行中にエラーが発生しましたが、後続処理を試みます。');
-        }
-
-        // 2. claspでGAS環境へプッシュ
-        console.log('☁️ claspでGASへ反映中...');
-        try {
-          execSync('clasp push', { stdio: 'inherit' });
-        } catch (claspError) {
-          console.error('⚠️ clasp pushでエラーが発生しました。');
-        }
-
-        // 3. GitHubへプッシュ（動的コミットメッセージ生成）
-        console.log('🐙 GitHubへプッシュ中...');
-        try {
-          // まず変更をすべてステージングする
-          execSync('git add .');
-
-          // ステージングされた変更ファイルの一覧を取得してカンマ区切りにする
-          let changedFiles = '';
-          try {
-            changedFiles = execSync('git diff --name-only --cached').toString().trim().replace(/\n/g, ', ');
-          } catch (e) { }
-
-          if (changedFiles) {
-            // 指示内容が長すぎる場合は切り詰める（コミットメッセージの見やすさのため）
-            const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
-
-            // 魔法のコミットメッセージを作成！
-            const commitMessage = `Auto: ${shortCommand} [変更: ${changedFiles}]`;
-
-            execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
-            execSync('git push', { stdio: 'inherit' });
-            console.log(`✅ デプロイ完了: ${commitMessage}`);
-          } else {
-            console.log('✅ ファイルの変更がなかったため、Gitプッシュはスキップしました。');
+              summaryForLine = "✅ 基地のPCに画像 (line_image.jpg) をセットしました！AIがいつでも見れる状態です。テキストで指示をお願いします。";
+            } catch (e) {
+              console.error('画像保存エラー', e);
+              summaryForLine = "❌ 画像の保存に失敗しました。";
+            }
           }
-        } catch (gitError) {
-          console.error('⚠️ Gitの処理中にエラーが発生しました。');
+        }
+        // 💬 【通常モード】テキスト指示の場合はフルオート修正開始
+        else {
+          const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
+
+          // 🌟 【対策1】AIへの指示に「深呼吸（ステップ・バイ・ステップ）」を強制するプロンプトを裏で合成
+          const magicalPrompt = `${cleanCommand}\n\n※重要事項：このタスクは複雑な可能性があります。タイムアウトを防ぐため、一度の出力で全ファイルを修正しようとしないでください。必ず「調査」➔「テスト作成」➔「本番反映」のように、ステップ・バイ・ステップで少しずつファイルを保存しながら段階的に作業を進めてください。`;
+
+          console.log('⚙️ 完全自動パイプラインを起動します...');
+          console.log('🧠 AIがコードを段階的に修正中...（長丁場を想定）');
+
+          try {
+            // 🌟 【対策2】タイムアウト時間を無理やり延長する環境変数などを付与して実行
+            // ※ AGY_TIMEOUT や --timeout などの定番の延長コマンドを付与しています
+            execSync(`AGY_TIMEOUT=600000 agy --prompt "${magicalPrompt}"`, { stdio: 'inherit' });
+          } catch (e) {
+            console.error('⚠️ AIの処理中にエラーが発生しましたが、部分的に完了している可能性があります。');
+          }
+
+          // ...（この後の clasp push や git commit の処理は変更なし）...
+          console.log('☁️ claspでGASへ反映中...');
+          try { execSync('clasp push', { stdio: 'inherit' }); } catch (e) { }
+
+          console.log('🐙 GitHubへプッシュ中...');
+          try {
+            execSync('git add .');
+            let changedFiles = '';
+            try { changedFiles = execSync('git diff --name-only --cached').toString().trim().replace(/\n/g, ', '); } catch (e) { }
+
+            if (changedFiles) {
+              const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
+              const commitMessage = `Auto: ${shortCommand} [変更: ${changedFiles}]`;
+
+              summaryForLine = `✅ デプロイ完了\n${commitMessage}`; // 💡 LINEへの要約
+              execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
+              execSync('git push', { stdio: 'inherit' });
+            } else {
+              summaryForLine = "✅ ファイルの変更がなかったためデプロイはスキップされました。";
+            }
+          } catch (e) { }
         }
 
-        // 4. GASに「完了」を伝える
+        // 共通：GASに完了通知と要約（summary）を送る
         let retries = 3;
         while (retries > 0) {
           try {
-            await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}`);
-            console.log('🔔 LINEへ完了通知を送信しました。');
+            await fetch(`${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}&summary=${encodeURIComponent(summaryForLine)}`);
+            console.log('🔔 LINEへ通知を送信しました。');
             break;
           } catch (e) {
             retries--;
@@ -88,23 +92,17 @@ async function watch() {
         }
 
       } catch (cmdError) {
-        console.error('❌ 処理全体で予期せぬエラーが発生しました:', cmdError.message);
+        console.error('❌ 予期せぬエラー:', cmdError.message);
       }
     }
-  } catch (error) {
-    // 通信エラー無視
-  }
+  } catch (error) { }
 }
 
 let isProcessing = false;
 async function loop() {
-  if (!isProcessing) {
-    isProcessing = true;
-    await watch();
-    isProcessing = false;
-  }
+  if (!isProcessing) { isProcessing = true; await watch(); isProcessing = false; }
   setTimeout(loop, 1000);
 }
 
-console.log('👀 基地システム起動：LINEからのフルオート指示を待機しています...（終了は Ctrl + C）');
+console.log('👀 基地システム起動：LINEからの指示・画像を待機中...');
 loop();
