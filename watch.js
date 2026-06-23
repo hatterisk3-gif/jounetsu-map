@@ -41,33 +41,35 @@ async function watch() {
         else {
           const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
 
-          // 🌟 【URLインジェクション】記憶しているURLがあればプロンプトに結合！
+          // 🌟 【修正1】Windowsで途切れないよう、改行(\n)を無くして1行の文章にする！
           let imageContext = "";
           if (pendingImageUrl !== "") {
-            imageContext = `【重要】以下のURLにアクセスして画像を視覚的に確認し、それを絶対的な参考資料として以下の指示を実行してください。\n参考画像URL: ${pendingImageUrl}\n\n`;
+            imageContext = `【重要】以下のURLにアクセスして画像を視覚的に確認し、それを絶対的な参考資料として以下の指示を実行してください。参考画像URL: ${pendingImageUrl} 。 `;
             console.log('🖼️ 保持していた画像URLをプロンプトに結合します。');
-
-            // 一度使ったURLはリセット（次回の誤作動防止）
             pendingImageUrl = "";
           }
 
-          const magicalPrompt = `${imageContext}${cleanCommand}\n\n※重要事項：このタスクは複雑な可能性があります。タイムアウトを防ぐため、一度の出力で全ファイルを修正しようとしないでください。必ず「調査」➔「テスト作成」➔「本番反映」のように、ステップ・バイ・ステップで少しずつファイルを保存しながら段階的に作業を進めてください。`;
+          // 🌟 ここも改行(\n)を無くす
+          const magicalPrompt = `${imageContext}${cleanCommand} 。※重要事項：このタスクは複雑な可能性があります。一度の出力で全ファイルを修正しようとせず、ステップ・バイ・ステップで段階的に作業を進めてください。`;
 
           console.log('⚙️ 完全自動パイプラインを起動します...');
           console.log('🧠 AIがコードを修正中...');
 
           try {
-            // 🌟 Windows環境でも確実にタイムアウトを延長する書き方に変更
+            // 🌟 Windows用のタイムアウト延長設定
             execSync(`agy --prompt "${magicalPrompt}"`, {
               stdio: 'inherit',
-              env: { ...process.env, AGY_TIMEOUT: '600000' } // 環境変数をここで渡す
+              env: { ...process.env, AGY_TIMEOUT: '600000' }
             });
           } catch (e) {
             console.error('⚠️ AIの処理中にエラーが発生しましたが、後続処理を試みます。');
           }
 
           console.log('☁️ claspでGASへ反映中...');
-          try { execSync('clasp push', { stdio: 'inherit' }); } catch (e) { }
+          try {
+            // 🌟 【修正2】「(y/N)」で止まらないように -f (強制上書きオプション) を追加！
+            execSync('clasp push -f', { stdio: 'inherit' });
+          } catch (e) { }
 
           console.log('🐙 GitHubへプッシュ中...');
           try {
