@@ -88,6 +88,15 @@ window.setCadZoom = (zoom) => {
     window.updateCadMapTransform();
 };
 
+window.updateCadStrokeWeights = (scale) => {
+    if (!scale || scale <= 0) scale = 1.0;
+    if (window.cadTargetPolygon) window.cadTargetPolygon.setOptions({ strokeWeight: Math.max(0.5, 3 / scale) });
+    if (window.cadUnePolygons) window.cadUnePolygons.forEach(p => p.setOptions({ strokeWeight: Math.max(0.5, 2 / scale) }));
+    if (window.cadCustomShapes) window.cadCustomShapes.forEach(p => p.setOptions({ strokeWeight: Math.max(0.5, 2 / scale) }));
+    if (window.cadNakamichiMapPolygons) window.cadNakamichiMapPolygons.forEach(l => l.setOptions({ strokeWeight: Math.max(0.5, 6 / scale) }));
+    if (window.cadGridLines) window.cadGridLines.forEach(l => l.setOptions({ strokeWeight: Math.max(0.5, 2 / scale) }));
+};
+
 window.updateCadMapTransform = () => {
     const mapDiv = document.getElementById('cadMap');
     if (mapDiv) {
@@ -103,6 +112,11 @@ window.updateCadMapTransform = () => {
         mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
         mapDiv.style.setProperty('--cad-scale', apparentScale);
         window.cadCurrentScale = apparentScale;
+
+        // 🌟 追加：線の太さを拡大率の逆数で補正する
+        if (typeof window.updateCadStrokeWeights === 'function') {
+            window.updateCadStrokeWeights(apparentScale);
+        }
     }
     if (typeof window.updateCadLabelPositionsThrottled === 'function') {
         window.updateCadLabelPositionsThrottled();
@@ -289,7 +303,7 @@ window.loadCadStateFromHistory = (index) => {
 
     if (state.customShapes) {
         state.customShapes.forEach((cPath, idx) => {
-            let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+            let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
             gPoly.uneIndex = 'custom_' + idx;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
@@ -299,7 +313,7 @@ window.loadCadStateFromHistory = (index) => {
 
     if (state.unePolygons) {
         state.unePolygons.forEach((uPath, idx) => {
-            let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+            let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
             gPoly.uneIndex = 'une_' + idx;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
@@ -382,7 +396,7 @@ window.handleMapClick = (pageX, pageY) => {
             // 🌟 バグ修正：1回目のタップを赤いポッチで視覚的に確認できるように！
             window.nakamichiTempMarker = new google.maps.Marker({
                 position: latLng, map: window.cadMap,
-                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#E91E63', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 }, zIndex: 9999
+                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#E91E63', fillOpacity: 1, strokeColor: 'white', strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)) }, zIndex: 9999
             });
             if (msgEl) { msgEl.innerText = `【中道ライン】終点をタップして線を引いてください`; msgEl.style.color = "#E91E63"; }
         } else {
@@ -838,7 +852,7 @@ window.openCADMode = (id) => {
     const path = p.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
 
     window.cadTargetPolygon = new google.maps.Polygon({
-        paths: path, fillColor: '#D7CCC8', fillOpacity: 0.95, strokeColor: '#8BC34A', strokeOpacity: 1.0, strokeWeight: 3, map: window.cadMap, clickable: false
+        paths: path, fillColor: '#D7CCC8', fillOpacity: 0.95, strokeColor: '#8BC34A', strokeOpacity: 1.0, strokeWeight: Math.max(0.5, 3 / (window.cadCurrentScale || 1.0)), map: window.cadMap, clickable: false
     });
 
     const b = new google.maps.LatLngBounds();
@@ -874,7 +888,7 @@ window.openCADMode = (id) => {
             }
             if (saved.customShapes) {
                 saved.customShapes.forEach((cPath, idx) => {
-                    let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+                    let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
                     gPoly.uneIndex = 'custom_' + idx;
                     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                     window.bindShapeHistoryEvents(gPoly);
@@ -883,7 +897,7 @@ window.openCADMode = (id) => {
             }
             if (saved.unePolygons) {
                 saved.unePolygons.forEach((uPath, idx) => {
-                    let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+                    let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
                     gPoly.uneIndex = 'une_' + idx;
                     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                     window.bindShapeHistoryEvents(gPoly);
@@ -1015,13 +1029,13 @@ window.cadToggleGrid = () => {
         let oPt1 = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle + 90 : angle - 90, { units: 'meters' });
         let p1_1 = turf.destination(oPt1, diagDist / 2, angle, { units: 'meters' }).geometry.coordinates;
         let p1_2 = turf.destination(oPt1, diagDist / 2, angle + 180, { units: 'meters' }).geometry.coordinates;
-        let line1 = new google.maps.Polyline({ path: [{ lat: p1_1[1], lng: p1_1[0] }, { lat: p1_2[1], lng: p1_2[0] }], strokeColor: '#999999', strokeOpacity: 0.8, strokeWeight: 2, map: window.cadMap, clickable: false, zIndex: 1 });
+        let line1 = new google.maps.Polyline({ path: [{ lat: p1_1[1], lng: p1_1[0] }, { lat: p1_2[1], lng: p1_2[0] }], strokeColor: '#999999', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, clickable: false, zIndex: 1 });
         window.cadGridLines.push(line1);
 
         let oPt2 = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle : angle + 180, { units: 'meters' });
         let p2_1 = turf.destination(oPt2, diagDist / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
         let p2_2 = turf.destination(oPt2, diagDist / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
-        let line2 = new google.maps.Polyline({ path: [{ lat: p2_1[1], lng: p2_1[0] }, { lat: p2_2[1], lng: p2_2[0] }], strokeColor: '#999999', strokeOpacity: 0.8, strokeWeight: 2, map: window.cadMap, clickable: false, zIndex: 1 });
+        let line2 = new google.maps.Polyline({ path: [{ lat: p2_1[1], lng: p2_1[0] }, { lat: p2_2[1], lng: p2_2[0] }], strokeColor: '#999999', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, clickable: false, zIndex: 1 });
         window.cadGridLines.push(line2);
     }
 };
@@ -1086,7 +1100,7 @@ window.cadSetPinMode = (type) => {
 };
 
 window.drawNakamichiVisual = (path) => {
-    let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.5, strokeWeight: 6, map: window.cadMap, zIndex: 9 });
+    let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.5, strokeWeight: Math.max(0.5, 6 / (window.cadCurrentScale || 1.0)), map: window.cadMap, zIndex: 9 });
     window.cadNakamichiMapPolygons.push(line);
 };
 
@@ -1105,7 +1119,7 @@ window.cadAddCustomShape = (type) => {
     }
 
     let paths = poly.geometry.coordinates[0].map(c => ({ lat: c[1], lng: c[0] }));
-    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: 2, map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
 
     gPoly.uneIndex = 'custom_' + Date.now();
     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
@@ -1205,7 +1219,7 @@ function addUnePolygon(coordsArray, idx) {
     const path = coordsArray.map(c => ({ lat: c[1], lng: c[0] }));
     const gPoly = new google.maps.Polygon({
         paths: path, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9,
-        strokeWeight: 2, map: window.cadMap, zIndex: 10, editable: true, draggable: false, clickable: true
+        strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, zIndex: 10, editable: true, draggable: false, clickable: true
     });
     gPoly.uneIndex = 'une_' + idx;
     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
