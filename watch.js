@@ -41,7 +41,6 @@ async function watch() {
         else {
           const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
 
-          // 🌟 【修正1】Windowsで途切れないよう、改行(\n)を無くして1行の文章にする！
           let imageContext = "";
           if (pendingImageUrl !== "") {
             imageContext = `【重要】以下のURLにアクセスして画像を視覚的に確認し、それを絶対的な参考資料として以下の指示を実行してください。参考画像URL: ${pendingImageUrl} 。 `;
@@ -49,25 +48,35 @@ async function watch() {
             pendingImageUrl = "";
           }
 
-          // 🌟 ここも改行(\n)を無くす
           const magicalPrompt = `${imageContext}${cleanCommand} 。※重要事項：このタスクは複雑な可能性があります。一度の出力で全ファイルを修正しようとせず、ステップ・バイ・ステップで段階的に作業を進めてください。`;
 
           console.log('⚙️ 完全自動パイプラインを起動します...');
           console.log('🧠 AIがコードを修正中...');
 
+          // 🌟 【追加】AIの解説文を記憶する箱を用意
+          let aiOutput = "AIからの応答テキストを取得できませんでした。";
+
           try {
-            // 🌟 Windows用のタイムアウト延長設定
-            execSync(`agy --prompt "${magicalPrompt}"`, {
-              stdio: 'inherit',
-              env: { ...process.env, AGY_TIMEOUT: '600000' }
+            // 🌟 【変更】画面に出すだけでなく、結果を変数（rawOutput）にキャプチャする！
+            const rawOutput = execSync(`agy --prompt "${magicalPrompt}"`, {
+              env: { ...process.env, AGY_TIMEOUT: '600000' },
+              encoding: 'utf-8' // ← これで文字データとして受け取れます
             });
+
+            console.log(rawOutput); // 基地局の黒い画面にも今まで通り表示
+
+            // 🌟 ターミナル特有の「色付け用の文字化けコード」を綺麗に掃除する
+            aiOutput = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+
           } catch (e) {
             console.error('⚠️ AIの処理中にエラーが発生しましたが、後続処理を試みます。');
+            if (e.stdout) {
+              aiOutput = e.stdout.toString().replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+            }
           }
 
           console.log('☁️ claspでGASへ反映中...');
           try {
-            // 🌟 【修正2】「(y/N)」で止まらないように -f (強制上書きオプション) を追加！
             execSync('clasp push -f', { stdio: 'inherit' });
           } catch (e) { }
 
@@ -81,11 +90,17 @@ async function watch() {
               const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
               const commitMessage = `Auto: ${shortCommand} [変更: ${changedFiles}]`;
 
-              summaryForLine = `✅ デプロイ完了\n${commitMessage}`;
+              // 🌟 【変更】LINEに送るメッセージにAIの解説を合体！
+              // LINEが長文でエラーにならないよう、最大800文字でカットします
+              const shortAiOutput = aiOutput.length > 800 ? aiOutput.substring(0, 800) + '\n...（以下省略）' : aiOutput;
+
+              summaryForLine = `✅ デプロイ完了\n${commitMessage}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
+
               execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
               execSync('git push', { stdio: 'inherit' });
             } else {
-              summaryForLine = "✅ ファイルの変更がなかったためデプロイはスキップされました。";
+              // 変更がなかった場合も、AIの言い訳（理由）をLINEに送る
+              summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput}`;
             }
           } catch (e) { }
         }
