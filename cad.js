@@ -609,9 +609,8 @@ window.initCadTouchEvents = () => {
 
             window.cadDragRawDx = currentX - startPageX;
             window.cadDragRawDy = currentY - startPageY;
-            // 🌟 修正：割り算をなくし、指の動きと地図の動きを完全に一致させる
-            window.cadDragDx = window.cadDragRawDx;
-            window.cadDragDy = window.cadDragRawDy;
+            window.cadDragDx = window.cadDragRawDx / apparentScale;
+            window.cadDragDy = window.cadDragRawDy / apparentScale;
             window.updateCadMapTransform();
         }
     }, { capture: true });
@@ -623,8 +622,8 @@ window.initCadTouchEvents = () => {
         if (isDragging && !ignoreDrag) {
             e.stopPropagation();
             if (window.cadDragStartCenter) {
-                const finalDx = e.pageX - startPageX;
-                const finalDy = e.pageY - startPageY;
+                const finalDx = (e.pageX - startPageX) / (window.cadCurrentScale || 1.0);
+                const finalDy = (e.pageY - startPageY) / (window.cadCurrentScale || 1.0);
                 finalizeDragCenter(finalDx, finalDy);
 
                 // 🌟 バグ修正：指を離した瞬間に即座にCSSの移動をリセットし、二重移動（ワープ）を防ぐ
@@ -647,7 +646,7 @@ window.initCadTouchEvents = () => {
 
     wrapper.addEventListener('mouseleave', () => {
         if (isDragging && !ignoreDrag && window.cadDragStartCenter) {
-            finalizeDragCenter(window.cadDragRawDx || 0, window.cadDragRawDy || 0);
+            finalizeDragCenter((window.cadDragRawDx || 0) / (window.cadCurrentScale || 1.0), (window.cadDragRawDy || 0) / (window.cadCurrentScale || 1.0));
 
             window.cadDragDx = 0;
             window.cadDragDy = 0;
@@ -773,8 +772,8 @@ window.initCadTouchEvents = () => {
             if (isDragging && !ignoreDrag) {
                 e.stopPropagation();
                 if (window.cadDragStartCenter) {
-                    const finalDx = window.cadDragRawDx || 0;
-                    const finalDy = window.cadDragRawDy || 0;
+                    const finalDx = (window.cadDragRawDx || 0) / (window.cadCurrentScale || 1.0);
+                    const finalDy = (window.cadDragRawDy || 0) / (window.cadCurrentScale || 1.0);
                     finalizeDragCenter(finalDx, finalDy);
 
                     // 🌟 バグ修正：指を離した瞬間に即座にCSSの移動をリセットし、二重移動（ワープ）を防ぐ
