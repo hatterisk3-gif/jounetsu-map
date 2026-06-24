@@ -101,10 +101,13 @@ async function watch() {
             const files = fs.readdirSync(__dirname);
             files.forEach(file => {
               const lowerFile = file.toLowerCase();
-              if (lowerFile.endsWith('.jpg') || lowerFile.endsWith('.jpeg') || lowerFile.endsWith('.png')) {
+              // 🌟 【修正】すべての画像ではなく、AIが勝手に作る「特定の名前」の画像だけを狙い撃ちする！
+              if (lowerFile.startsWith('reference_') ||
+                lowerFile.startsWith('downloaded_') ||
+                lowerFile.startsWith('line_image_')) {
                 try {
                   fs.unlinkSync(path.join(__dirname, file));
-                  console.log(`🗑️ 一時ファイル ${file} を削除しました`);
+                  console.log(`🗑️ AIの一時ファイル ${file} を削除しました`);
                 } catch (e) { }
               }
             });
