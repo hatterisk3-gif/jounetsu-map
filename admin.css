@@ -60,10 +60,4 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
     display: none !important;
 }
 
-/* 🌟 農業CAD：極限拡大時のアンチエイリアス（ぼやけ）対策 */
-#cadMap canvas, #cadMap div, #cadMap {
-    image-rendering: -moz-crisp-edges !important;
-    image-rendering: -webkit-optimize-contrast !important;
-    image-rendering: crisp-edges !important;
-    image-rendering: pixelated !important;
-}
+/* 🌟 農業CAD：畝ポリゴンがギザギザになるのを防ぐため、極限拡大時のアンチエイリアス無効化（pixelated）は削除しました */
