@@ -336,6 +336,27 @@ window.updateCadSvgOverlay = () => {
         if (window.cadCustomShapes) window.cadCustomShapes.forEach(p => createHandlesForPoly(p));
     }
     
+    if (window.cadTargetPolygon) {
+        if (!window.cadTargetPolygon._svgPathNode) {
+            window.cadTargetPolygon._svgPathNode = createPathNode('#D7CCC8', '#8BC34A');
+            window.cadTargetPolygon._svgPathNode.setAttribute('fill-opacity', '0.95');
+            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-opacity', '1.0');
+            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-width', '3');
+            pathsGroup.appendChild(window.cadTargetPolygon._svgPathNode);
+        }
+    }
+    
+    if (window.cadGridLines) {
+        window.cadGridLines.forEach(l => {
+            if (!l._svgPathNode) {
+                l._svgPathNode = createPathNode('none', '#999999', true);
+                l._svgPathNode.setAttribute('stroke-opacity', '0.8');
+                l._svgPathNode.setAttribute('stroke-width', '2');
+                pathsGroup.appendChild(l._svgPathNode);
+            }
+        });
+    }
+
     const updatePathD = (poly, isLine = false) => {
         let path = poly.getPath();
         if (!path || path.getLength() === 0) return '';
@@ -349,6 +370,14 @@ window.updateCadSvgOverlay = () => {
         return d;
     };
 
+    if (window.cadTargetPolygon && window.cadTargetPolygon._svgPathNode) {
+        window.cadTargetPolygon._svgPathNode.setAttribute('d', updatePathD(window.cadTargetPolygon));
+    }
+    if (window.cadGridLines) {
+        window.cadGridLines.forEach(l => {
+            if (l._svgPathNode) l._svgPathNode.setAttribute('d', updatePathD(l, true));
+        });
+    }
     if (window.cadUnePolygons) {
         window.cadUnePolygons.forEach((p, idx) => {
             if (p._svgPathNode) p._svgPathNode.setAttribute('d', updatePathD(p));
@@ -1141,7 +1170,7 @@ window.openCADMode = (id) => {
     const path = p.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
 
     window.cadTargetPolygon = new google.maps.Polygon({
-        paths: path, fillColor: '#D7CCC8', fillOpacity: 0.95, strokeColor: '#8BC34A', strokeOpacity: 1.0, strokeWeight: Math.max(0.5, 3), map: window.cadMap, clickable: false
+        paths: path, fillColor: '#D7CCC8', fillOpacity: 0.01, strokeColor: '#8BC34A', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 3), map: window.cadMap, clickable: false
     });
 
     const b = new google.maps.LatLngBounds();
@@ -1302,7 +1331,9 @@ window.cadSnapAngle = () => {
 
 window.cadToggleGrid = () => {
     if (window.cadGridLines && window.cadGridLines.length > 0) {
-        window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; return;
+        window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; 
+        window.cadSvgNeedsRebuild = true; if(window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+        return;
     }
     if (!window.cadTargetId) return;
     const p = loadedPolygons[window.cadTargetId];
@@ -1318,15 +1349,17 @@ window.cadToggleGrid = () => {
         let oPt1 = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle + 90 : angle - 90, { units: 'meters' });
         let p1_1 = turf.destination(oPt1, diagDist / 2, angle, { units: 'meters' }).geometry.coordinates;
         let p1_2 = turf.destination(oPt1, diagDist / 2, angle + 180, { units: 'meters' }).geometry.coordinates;
-        let line1 = new google.maps.Polyline({ path: [{ lat: p1_1[1], lng: p1_1[0] }, { lat: p1_2[1], lng: p1_2[0] }], strokeColor: '#999999', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, clickable: false, zIndex: 1 });
+        let line1 = new google.maps.Polyline({ path: [{ lat: p1_1[1], lng: p1_1[0] }, { lat: p1_2[1], lng: p1_2[0] }], strokeColor: '#999999', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, clickable: false, zIndex: 1 });
         window.cadGridLines.push(line1);
 
         let oPt2 = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle : angle + 180, { units: 'meters' });
         let p2_1 = turf.destination(oPt2, diagDist / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
         let p2_2 = turf.destination(oPt2, diagDist / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
-        let line2 = new google.maps.Polyline({ path: [{ lat: p2_1[1], lng: p2_1[0] }, { lat: p2_2[1], lng: p2_2[0] }], strokeColor: '#999999', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, clickable: false, zIndex: 1 });
+        let line2 = new google.maps.Polyline({ path: [{ lat: p2_1[1], lng: p2_1[0] }, { lat: p2_2[1], lng: p2_2[0] }], strokeColor: '#999999', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, clickable: false, zIndex: 1 });
         window.cadGridLines.push(line2);
     }
+    window.cadSvgNeedsRebuild = true; 
+    if(window.updateCadSvgOverlay) window.updateCadSvgOverlay();
 };
 
 window.updateCadPreviewCount = () => {
