@@ -1648,6 +1648,7 @@ window.cadRotatePoly = (deg, isContinuous = false) => {
     let rotatedPoly = turf.transformRotate(tPoly, deg);
     let newCoords = rotatedPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
     newCoords.pop(); poly.setPath(newCoords); window.updateSinglePolyLabel(idx);
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (!isContinuous) window.saveCadStateToHistory();
 };
 
@@ -1667,6 +1668,7 @@ window.cadMovePoly = (dir, isContinuous = false) => {
         newCoords.push(new google.maps.LatLng(moved.geometry.coordinates[1], moved.geometry.coordinates[0]));
     }
     poly.setPath(newCoords); window.updateSinglePolyLabel(idx);
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (!isContinuous) window.saveCadStateToHistory();
 };
 
@@ -1684,6 +1686,7 @@ window.cadResizePoly = (scaleFactor, isContinuous = false) => {
     let scaledPoly = turf.transformScale(tPoly, scaleFactor);
     let newCoords = scaledPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
     newCoords.pop(); poly.setPath(newCoords); window.updateSinglePolyLabel(idx);
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (!isContinuous) window.saveCadStateToHistory();
 };
 
