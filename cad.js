@@ -164,13 +164,68 @@ window.latLngToScreenPixel = (lat, lng) => {
     return { x: cx + dxRotated, y: cy + dyRotated };
 };
 
+window.cadSvgNeedsRebuild = true;
+
 window.updateCadSvgOverlay = () => {
     let svg = document.getElementById('cadSvgOverlay');
     if (!svg) return;
     
-    let html = '';
+    let currentPolysLength = (window.cadUnePolygons ? window.cadUnePolygons.length : 0) + 
+                             (window.cadCustomShapes ? window.cadCustomShapes.length : 0) + 
+                             (window.cadNakamichiMapPolygons ? window.cadNakamichiMapPolygons.length : 0);
+                             
+    if (window.cadSvgNeedsRebuild || !svg.querySelector('#cadSvgPaths') || svg._lastPolysLength !== currentPolysLength) {
+        svg._lastPolysLength = currentPolysLength;
+        let html = '<g id="cadSvgPaths"></g><g id="cadSvgTexts"></g>';
+        svg.innerHTML = html;
+        let pathsGroup = svg.querySelector('#cadSvgPaths');
+        let textsGroup = svg.querySelector('#cadSvgTexts');
+        
+        const createPathNode = (fillColor, strokeColor, isLine = false) => {
+            let pathNode = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            pathNode.setAttribute('fill', isLine ? 'none' : fillColor);
+            pathNode.setAttribute('fill-opacity', '0.7');
+            pathNode.setAttribute('stroke', strokeColor);
+            pathNode.setAttribute('stroke-opacity', '0.9');
+            pathNode.setAttribute('stroke-width', isLine ? '6' : '2');
+            pathNode.setAttribute('stroke-linejoin', 'round');
+            return pathNode;
+        };
+        
+        if (window.cadUnePolygons) {
+            window.cadUnePolygons.forEach((p, idx) => {
+                p._svgPathNode = createPathNode('#8BC34A', '#558B2F');
+                pathsGroup.appendChild(p._svgPathNode);
+                
+                let textNode = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                textNode.setAttribute('fill', '#ffffff');
+                textNode.setAttribute('font-size', '24');
+                textNode.setAttribute('font-weight', 'bold');
+                textNode.setAttribute('font-family', 'sans-serif');
+                textNode.setAttribute('text-anchor', 'middle');
+                textNode.setAttribute('dominant-baseline', 'central');
+                textNode.setAttribute('style', 'paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
+                textNode.textContent = String(idx + 1);
+                p._svgTextNode = textNode;
+                textsGroup.appendChild(textNode);
+            });
+        }
+        if (window.cadCustomShapes) {
+            window.cadCustomShapes.forEach(p => {
+                p._svgPathNode = createPathNode('#8BC34A', '#558B2F');
+                pathsGroup.appendChild(p._svgPathNode);
+            });
+        }
+        if (window.cadNakamichiMapPolygons) {
+            window.cadNakamichiMapPolygons.forEach(p => {
+                p._svgPathNode = createPathNode('none', '#E91E63', true);
+                pathsGroup.appendChild(p._svgPathNode);
+            });
+        }
+        window.cadSvgNeedsRebuild = false;
+    }
     
-    const createPathHtml = (poly, fillColor, strokeColor, isLine = false) => {
+    const updatePathD = (poly, isLine = false) => {
         let path = poly.getPath();
         if (!path || path.getLength() === 0) return '';
         let d = '';
@@ -180,36 +235,41 @@ window.updateCadSvgOverlay = () => {
             d += (i === 0 ? 'M' : 'L') + screenPt.x + ',' + screenPt.y + ' ';
         }
         if (!isLine) d += 'Z';
-        
-        let fw = isLine ? 6 : 2;
-        return `<path d="${d}" fill="${isLine ? 'none' : fillColor}" fill-opacity="0.7" stroke="${strokeColor}" stroke-opacity="0.9" stroke-width="${fw}" stroke-linejoin="round" />`;
+        return d;
     };
 
     if (window.cadUnePolygons) {
         window.cadUnePolygons.forEach((p, idx) => {
-            html += createPathHtml(p, '#8BC34A', '#558B2F');
-            let path = p.getPath();
-            if(path && path.getLength() > 0) {
-                let bounds = new google.maps.LatLngBounds();
-                path.forEach(pt => bounds.extend(pt));
-                let center = bounds.getCenter();
-                let screenPt = window.latLngToScreenPixel(center.lat(), center.lng());
-                html += `<text x="${screenPt.x}" y="${screenPt.y}" fill="#ffffff" font-size="24" font-weight="bold" font-family="sans-serif" text-anchor="middle" dominant-baseline="central" style="paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;">${idx + 1}</text>`;
+            if (p._svgPathNode) p._svgPathNode.setAttribute('d', updatePathD(p));
+            if (p._svgTextNode) {
+                let marker = window.cadUneLabels && window.cadUneLabels[idx];
+                let latLng = marker ? marker.getPosition() : null;
+                if (!latLng) {
+                    let path = p.getPath();
+                    if(path && path.getLength() > 0) {
+                        let bounds = new google.maps.LatLngBounds();
+                        path.forEach(pt => bounds.extend(pt));
+                        latLng = bounds.getCenter();
+                    }
+                }
+                if (latLng) {
+                    let screenPt = window.latLngToScreenPixel(latLng.lat(), latLng.lng());
+                    p._svgTextNode.setAttribute('x', screenPt.x);
+                    p._svgTextNode.setAttribute('y', screenPt.y);
+                }
             }
         });
     }
     if (window.cadCustomShapes) {
         window.cadCustomShapes.forEach(p => {
-            html += createPathHtml(p, '#8BC34A', '#558B2F');
+            if (p._svgPathNode) p._svgPathNode.setAttribute('d', updatePathD(p));
         });
     }
     if (window.cadNakamichiMapPolygons) {
         window.cadNakamichiMapPolygons.forEach(p => {
-            html += createPathHtml(p, 'none', '#E91E63', true);
+            if (p._svgPathNode) p._svgPathNode.setAttribute('d', updatePathD(p, true));
         });
     }
-    
-    svg.innerHTML = html;
 };
 
 window.updateCadLabelScale = (detectedScale) => {
