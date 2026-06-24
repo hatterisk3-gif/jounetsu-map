@@ -1169,6 +1169,7 @@ window.openCADMode = (id) => {
     window.cadTargetPolygon = new google.maps.Polygon({
         paths: path, fillColor: '#D7CCC8', fillOpacity: 0.01, strokeColor: '#8BC34A', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 3), map: window.cadMap, clickable: false
     });
+    window.cadSvgNeedsRebuild = true;
 
     const b = new google.maps.LatLngBounds();
     path.forEach(pt => b.extend(pt));
