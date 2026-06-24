@@ -628,7 +628,7 @@ window.loadCadStateFromHistory = (index) => {
 
     if (state.customShapes) {
         state.customShapes.forEach((cPath, idx) => {
-            let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, zIndex: 10 });
+            let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
             gPoly.uneIndex = 'custom_' + idx;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
@@ -638,7 +638,7 @@ window.loadCadStateFromHistory = (index) => {
 
     if (state.unePolygons) {
         state.unePolygons.forEach((uPath, idx) => {
-            let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, zIndex: 10 });
+            let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
             gPoly.uneIndex = 'une_' + idx;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
@@ -1226,7 +1226,7 @@ window.openCADMode = (id) => {
             }
             if (saved.customShapes) {
                 saved.customShapes.forEach((cPath, idx) => {
-                    let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, zIndex: 10 });
+                    let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
                     gPoly.uneIndex = 'custom_' + idx;
                     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                     window.bindShapeHistoryEvents(gPoly);
@@ -1235,7 +1235,7 @@ window.openCADMode = (id) => {
             }
             if (saved.unePolygons) {
                 saved.unePolygons.forEach((uPath, idx) => {
-                    let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, zIndex: 10 });
+                    let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
                     gPoly.uneIndex = 'une_' + idx;
                     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                     window.bindShapeHistoryEvents(gPoly);
@@ -1461,7 +1461,7 @@ window.cadAddCustomShape = (type) => {
     }
 
     let paths = poly.geometry.coordinates[0].map(c => ({ lat: c[1], lng: c[0] }));
-    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, zIndex: 10 });
+    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
 
     gPoly.uneIndex = 'custom_' + Date.now();
     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
@@ -1560,7 +1560,7 @@ window.cadGenerateLines = () => {
 function addUnePolygon(coordsArray, idx) {
     const path = coordsArray.map(c => ({ lat: c[1], lng: c[0] }));
     const gPoly = new google.maps.Polygon({
-        paths: path, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01,
+        paths: path, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8,
         strokeWeight: Math.max(0.5, 2), map: window.cadMap, zIndex: 10, editable: false, draggable: false, clickable: true
     });
     gPoly.uneIndex = 'une_' + idx;
