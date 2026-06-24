@@ -1597,7 +1597,43 @@ window.openCadEditModal = (idx) => {
     document.getElementById('cadEditPolyModal').style.display = 'flex';
 };
 
-window.cadRotatePoly = (deg) => {
+window.cadActionInterval = null;
+window.cadActionTimeout = null;
+
+window.startCadContinuousAction = (action, param) => {
+    window.stopCadContinuousAction();
+    const execute = () => {
+        if (action === 'move') window.cadMovePoly(param, true);
+        else if (action === 'rotate') window.cadRotatePoly(param, true);
+        else if (action === 'resize') window.cadResizePoly(param, true);
+    };
+    execute(); // Execute once immediately
+    window.cadActionTimeout = setTimeout(() => {
+        window.cadActionInterval = setInterval(execute, 50); // Repeat every 50ms
+    }, 300); // 300ms initial delay like key-repeat
+};
+
+window.stopCadContinuousAction = () => {
+    if (window.cadActionTimeout) clearTimeout(window.cadActionTimeout);
+    if (window.cadActionInterval) clearInterval(window.cadActionInterval);
+    window.cadActionTimeout = null;
+    window.cadActionInterval = null;
+    window.saveCadStateToHistory();
+};
+
+window.updateSinglePolyLabel = (idx) => {
+    const totalPolygons = [...window.cadUnePolygons, ...window.cadCustomShapes];
+    const polyIndex = totalPolygons.findIndex(p => p.uneIndex === idx);
+    if (polyIndex > -1 && window.cadUneLabels && window.cadUneLabels[polyIndex]) {
+        const poly = totalPolygons[polyIndex];
+        const marker = window.cadUneLabels[polyIndex];
+        const bounds = new google.maps.LatLngBounds();
+        poly.getPath().forEach(pt => bounds.extend(pt));
+        marker.setPosition(bounds.getCenter());
+    }
+};
+
+window.cadRotatePoly = (deg, isContinuous = false) => {
     const idx = document.getElementById('cadEditIndex').value;
     const isCustom = idx.startsWith('custom_');
     const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
@@ -1611,10 +1647,11 @@ window.cadRotatePoly = (deg) => {
 
     let rotatedPoly = turf.transformRotate(tPoly, deg);
     let newCoords = rotatedPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
-    newCoords.pop(); poly.setPath(newCoords); window.reassignLabels(); window.saveCadStateToHistory();
+    newCoords.pop(); poly.setPath(newCoords); window.updateSinglePolyLabel(idx);
+    if (!isContinuous) window.saveCadStateToHistory();
 };
 
-window.cadMovePoly = (dir) => {
+window.cadMovePoly = (dir, isContinuous = false) => {
     const idx = document.getElementById('cadEditIndex').value;
     const isCustom = idx.startsWith('custom_');
     const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
@@ -1629,10 +1666,11 @@ window.cadMovePoly = (dir) => {
         let moved = turf.destination(tPt, 0.1, bearingMap[dir], { units: 'meters' });
         newCoords.push(new google.maps.LatLng(moved.geometry.coordinates[1], moved.geometry.coordinates[0]));
     }
-    poly.setPath(newCoords); window.reassignLabels(); window.saveCadStateToHistory();
+    poly.setPath(newCoords); window.updateSinglePolyLabel(idx);
+    if (!isContinuous) window.saveCadStateToHistory();
 };
 
-window.cadResizePoly = (scaleFactor) => {
+window.cadResizePoly = (scaleFactor, isContinuous = false) => {
     const idx = document.getElementById('cadEditIndex').value;
     const isCustom = idx.startsWith('custom_');
     const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
@@ -1645,7 +1683,8 @@ window.cadResizePoly = (scaleFactor) => {
 
     let scaledPoly = turf.transformScale(tPoly, scaleFactor);
     let newCoords = scaledPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
-    newCoords.pop(); poly.setPath(newCoords); window.reassignLabels(); window.saveCadStateToHistory();
+    newCoords.pop(); poly.setPath(newCoords); window.updateSinglePolyLabel(idx);
+    if (!isContinuous) window.saveCadStateToHistory();
 };
 
 window.cadDeletePoly = () => {
