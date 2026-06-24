@@ -1592,9 +1592,41 @@ function addUnePolygon(coordsArray, idx) {
     window.cadUnePolygons.push(gPoly);
 }
 
+window.cadEditOriginalPath = null;
 window.openCadEditModal = (idx) => {
     document.getElementById('cadEditIndex').value = idx;
+    
+    const isCustom = idx.startsWith('custom_');
+    const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
+    const poly = polyList.find(p => p.uneIndex === idx);
+    if (poly) {
+        let path = poly.getPath();
+        window.cadEditOriginalPath = [];
+        for (let i = 0; i < path.getLength(); i++) {
+            let pt = path.getAt(i);
+            window.cadEditOriginalPath.push(new google.maps.LatLng(pt.lat(), pt.lng()));
+        }
+    }
+    
     document.getElementById('cadEditPolyModal').style.display = 'flex';
+};
+
+window.cadCancelEditPoly = () => {
+    const idx = document.getElementById('cadEditIndex').value;
+    if (idx && window.cadEditOriginalPath) {
+        const isCustom = idx.startsWith('custom_');
+        const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
+        const poly = polyList.find(p => p.uneIndex === idx);
+        if (poly) {
+            poly.setPath(window.cadEditOriginalPath);
+            if (typeof window.updateSinglePolyLabel === 'function') window.updateSinglePolyLabel(idx);
+            if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+            if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+        }
+    }
+    document.getElementById('cadEditPolyModal').style.display = 'none';
+    document.getElementById('cadEditIndex').value = '';
+    window.cadEditOriginalPath = null;
 };
 
 window.cadActionInterval = null;
