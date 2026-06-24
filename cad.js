@@ -831,18 +831,18 @@ window.openCADMode = (id) => {
 
     if (!window.cadMap) {
         window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
-            center: { lat: 33.91, lng: 134.66 }, zoom: 20, maxZoom: 30,
+            center: { lat: 33.91, lng: 134.66 }, zoom: 20, maxZoom: 45,
             mapTypeId: 'satellite', tilt: 0, heading: 0,
             mapId: 'DEMO_MAP_ID', gestureHandling: 'none', disableDefaultUI: true, zoomControl: true, isFractionalZoomEnabled: true
         });
         
-        // 🌟 修正：衛星写真マップタイプのmaxZoomを上書きし、ネイティブで30までズームできるようにする
-        // これにより、CSSのscaleによる引き伸ばし（ギザギザ化）を防ぎ、ポリゴンの解像度を保つ
+        // 🌟 修正：衛星写真マップタイプのmaxZoomを上書きし、ネイティブで45までズームできるようにする
+        // これにより、CSSのscaleによる引き伸ばし（ギザギザ・ぼやけ化）を防ぎ、ポリゴンの解像度を保つ
         google.maps.event.addListenerOnce(window.cadMap, 'idle', () => {
             const satType = window.cadMap.mapTypes.get('satellite');
-            if (satType) satType.maxZoom = 30;
+            if (satType) satType.maxZoom = 45;
             const hybType = window.cadMap.mapTypes.get('hybrid');
-            if (hybType) hybType.maxZoom = 30;
+            if (hybType) hybType.maxZoom = 45;
         });
 
         window.cadMap.addListener('center_changed', () => {
