@@ -68,7 +68,7 @@ async function watch() {
 
           try {
             // コマンドの末尾に「 2>&1 」を追加し、AIの解説（裏チャンネルの文字）もすべて強制的に捕獲する！
-            const rawOutput = execSync(`agy --print-timeout 15m --prompt "${magicalPrompt}" 2>&1`, {
+            const rawOutput = execSync(`agy --print-timeout 15m --dangerously-skip-permissions --prompt "${magicalPrompt}" 2>&1`, {
               env: { ...process.env, AGY_TIMEOUT: '900000' },
               encoding: 'utf-8'
             });
