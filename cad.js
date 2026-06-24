@@ -696,7 +696,6 @@ window.bindShapeHistoryEvents = (poly) => {
 };
 
 window.handleMapClick = (pageX, pageY) => {
-    if (!window.cadPinMode) return;
     if (document.getElementById('cadOverlay').style.display !== 'flex') return;
 
     const wrapper = document.getElementById('cadMapWrapper');
@@ -713,6 +712,30 @@ window.handleMapClick = (pageX, pageY) => {
     const scale = Math.pow(2, window.getCadZoom());
     const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
     const latLng = proj.fromPointToLatLng(new google.maps.Point(centerPt.x + mapDx / scale, centerPt.y + mapDy / scale));
+
+    if (!window.cadPinMode) {
+        if (google.maps.geometry && google.maps.geometry.poly) {
+            if (window.cadCustomShapes) {
+                for (let i = window.cadCustomShapes.length - 1; i >= 0; i--) {
+                    let poly = window.cadCustomShapes[i];
+                    if (google.maps.geometry.poly.containsLocation(latLng, poly)) {
+                        window.openCadEditModal(poly.uneIndex);
+                        return;
+                    }
+                }
+            }
+            if (window.cadUnePolygons) {
+                for (let i = window.cadUnePolygons.length - 1; i >= 0; i--) {
+                    let poly = window.cadUnePolygons[i];
+                    if (google.maps.geometry.poly.containsLocation(latLng, poly)) {
+                        window.openCadEditModal(poly.uneIndex);
+                        return;
+                    }
+                }
+            }
+        }
+        return;
+    }
 
     const msgEl = document.getElementById('cadPinModeMsg');
 
