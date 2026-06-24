@@ -267,6 +267,7 @@ window.updateCadSvgOverlay = () => {
             });
         }
         if (window.cadCustomShapes) {
+            let baseIdx = window.cadUnePolygons ? window.cadUnePolygons.length : 0;
             window.cadCustomShapes.forEach((p, idx) => {
                 p._svgPathNode = createPathNode('#8BC34A', '#558B2F');
                 p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer;');
@@ -284,7 +285,7 @@ window.updateCadSvgOverlay = () => {
                 textNode.setAttribute('text-anchor', 'middle');
                 textNode.setAttribute('dominant-baseline', 'central');
                 textNode.setAttribute('style', 'pointer-events: none; paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
-                textNode.textContent = '⚙️';
+                textNode.textContent = String(baseIdx + idx + 1);
                 p._svgTextNode = textNode;
                 textsGroup.appendChild(textNode);
             });
@@ -420,8 +421,27 @@ window.updateCadSvgOverlay = () => {
         });
     }
     if (window.cadCustomShapes) {
-        window.cadCustomShapes.forEach(p => {
+        let baseIdx = window.cadUnePolygons ? window.cadUnePolygons.length : 0;
+        window.cadCustomShapes.forEach((p, idx) => {
             if (p._svgPathNode) p._svgPathNode.setAttribute('d', updatePathD(p));
+            if (p._svgTextNode) {
+                let markerIdx = baseIdx + idx;
+                let marker = window.cadUneLabels && window.cadUneLabels[markerIdx];
+                let latLng = marker ? marker.getPosition() : null;
+                if (!latLng) {
+                    let path = p.getPath();
+                    if(path && path.getLength() > 0) {
+                        let bounds = new google.maps.LatLngBounds();
+                        path.forEach(pt => bounds.extend(pt));
+                        latLng = bounds.getCenter();
+                    }
+                }
+                if (latLng) {
+                    let screenPt = window.latLngToScreenPixel(latLng.lat(), latLng.lng());
+                    p._svgTextNode.setAttribute('x', screenPt.x);
+                    p._svgTextNode.setAttribute('y', screenPt.y);
+                }
+            }
         });
     }
     if (window.cadNakamichiMapPolygons) {
