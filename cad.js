@@ -265,6 +265,24 @@ window.updateCadSvgOverlay = () => {
                 pathsGroup.appendChild(p._svgPathNode);
             });
         }
+
+        if (window.cadTargetPolygon) {
+            window.cadTargetPolygon._svgPathNode = createPathNode('#D7CCC8', '#8BC34A');
+            window.cadTargetPolygon._svgPathNode.setAttribute('fill-opacity', '0.95');
+            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-opacity', '1.0');
+            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-width', '3');
+            pathsGroup.appendChild(window.cadTargetPolygon._svgPathNode);
+        }
+        
+        if (window.cadGridLines) {
+            window.cadGridLines.forEach(l => {
+                l._svgPathNode = createPathNode('none', '#999999', true);
+                l._svgPathNode.setAttribute('stroke-opacity', '0.8');
+                l._svgPathNode.setAttribute('stroke-width', '2');
+                pathsGroup.appendChild(l._svgPathNode);
+            });
+        }
+
         window.cadSvgNeedsRebuild = false;
     }
     
@@ -336,27 +354,6 @@ window.updateCadSvgOverlay = () => {
         if (window.cadCustomShapes) window.cadCustomShapes.forEach(p => createHandlesForPoly(p));
     }
     
-    if (window.cadTargetPolygon) {
-        if (!window.cadTargetPolygon._svgPathNode) {
-            window.cadTargetPolygon._svgPathNode = createPathNode('#D7CCC8', '#8BC34A');
-            window.cadTargetPolygon._svgPathNode.setAttribute('fill-opacity', '0.95');
-            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-opacity', '1.0');
-            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-width', '3');
-            pathsGroup.appendChild(window.cadTargetPolygon._svgPathNode);
-        }
-    }
-    
-    if (window.cadGridLines) {
-        window.cadGridLines.forEach(l => {
-            if (!l._svgPathNode) {
-                l._svgPathNode = createPathNode('none', '#999999', true);
-                l._svgPathNode.setAttribute('stroke-opacity', '0.8');
-                l._svgPathNode.setAttribute('stroke-width', '2');
-                pathsGroup.appendChild(l._svgPathNode);
-            }
-        });
-    }
-
     const updatePathD = (poly, isLine = false) => {
         let path = poly.getPath();
         if (!path || path.getLength() === 0) return '';
