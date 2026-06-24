@@ -164,6 +164,47 @@ window.latLngToScreenPixel = (lat, lng) => {
     return { x: cx + dxRotated, y: cy + dyRotated };
 };
 
+window.screenPixelToLatLng = (x, y) => {
+    if (!window.cadMap) return null;
+    const proj = window.cadMap.getProjection();
+    if (!proj) return null;
+
+    const wrapper = document.getElementById('cadMapWrapper');
+    const rect = wrapper.getBoundingClientRect();
+    let localX = x - rect.left;
+    let localY = y - rect.top;
+
+    const offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
+    const offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
+    const cx = wrapper.offsetWidth / 2 + offsetX;
+    const cy = wrapper.offsetHeight / 2 + offsetY;
+
+    let dxRotated = localX - cx;
+    let dyRotated = localY - cy;
+
+    let rad = -(window.cadCurrentRotation || 0) * Math.PI / 180;
+    let cosT = Math.cos(rad);
+    let sinT = Math.sin(rad);
+
+    let dxScaled = dxRotated * cosT - dyRotated * sinT;
+    let dyScaled = dxRotated * sinT + dyRotated * cosT;
+
+    let apparentScale = window.cadCurrentScale || 1.0;
+    let dxMap = dxScaled / apparentScale;
+    let dyMap = dyScaled / apparentScale;
+
+    const realZoom = window.cadMap.getZoom();
+    const scaleToRealZoom = Math.pow(2, realZoom);
+    let dxWorld = dxMap / scaleToRealZoom;
+    let dyWorld = dyMap / scaleToRealZoom;
+
+    const centerWorldPoint = proj.fromLatLngToPoint(window.cadMap.getCenter());
+    let worldX = centerWorldPoint.x + dxWorld;
+    let worldY = centerWorldPoint.y + dyWorld;
+
+    return proj.fromPointToLatLng(new google.maps.Point(worldX, worldY));
+};
+
 window.cadSvgNeedsRebuild = true;
 
 window.updateCadSvgOverlay = () => {
@@ -251,6 +292,7 @@ window.updateCadSvgOverlay = () => {
                 let isDraggingHandle = false;
                 
                 const onMove = (ev) => {
+                    if (ev.cancelable) ev.preventDefault();
                     if (!isDraggingHandle) return;
                     let clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
                     let clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
