@@ -235,6 +235,14 @@ window.updateCadSvgOverlay = () => {
             return pathNode;
         };
         
+        if (window.cadTargetPolygon) {
+            window.cadTargetPolygon._svgPathNode = createPathNode('#D7CCC8', '#8BC34A');
+            window.cadTargetPolygon._svgPathNode.setAttribute('fill-opacity', '0.95');
+            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-opacity', '1.0');
+            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-width', '3');
+            pathsGroup.appendChild(window.cadTargetPolygon._svgPathNode);
+        }
+        
         if (window.cadUnePolygons) {
             window.cadUnePolygons.forEach((p, idx) => {
                 p._svgPathNode = createPathNode('#8BC34A', '#558B2F');
@@ -266,14 +274,6 @@ window.updateCadSvgOverlay = () => {
             });
         }
 
-        if (window.cadTargetPolygon) {
-            window.cadTargetPolygon._svgPathNode = createPathNode('#D7CCC8', '#8BC34A');
-            window.cadTargetPolygon._svgPathNode.setAttribute('fill-opacity', '0.95');
-            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-opacity', '1.0');
-            window.cadTargetPolygon._svgPathNode.setAttribute('stroke-width', '3');
-            pathsGroup.appendChild(window.cadTargetPolygon._svgPathNode);
-        }
-        
         if (window.cadGridLines) {
             window.cadGridLines.forEach(l => {
                 l._svgPathNode = createPathNode('none', '#999999', true);
