@@ -148,18 +148,18 @@
     </div>
   </div>
   <div id="cadEditPolyModal"
-    style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:999999; justify-content:center; align-items:center;">
+    style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); width:90%; max-width:300px; z-index:999999;">
     <div
-      style="background:#fff; color:#333; padding:20px; border-radius:12px; width:90%; max-width:300px; text-align:center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-      <h3 style="margin-top:0; border-bottom:2px solid #8BC34A; padding-bottom:10px;">🛠 ポリゴンの操作</h3>
+      style="background:#fff; color:#333; padding:15px; border-radius:12px; text-align:center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+      <h3 style="margin-top:0; border-bottom:2px solid #8BC34A; padding-bottom:10px; font-size:16px;">🛠 ポリゴンの操作</h3>
       <input type="hidden" id="cadEditIndex">
-
-      <div style="display:flex; gap:10px; margin-top:20px;">
+      <div style="font-size:12px; margin-bottom:15px; color:#666;">画面をドラッグしてポリゴンを移動できます</div>
+      <div style="display:flex; gap:10px;">
         <button onclick="window.cadDeletePoly()"
-          style="flex:1; background:#F44336; color:white; padding:14px; border-radius:8px; font-size:16px; font-weight:bold; border:none; cursor:pointer;">🗑
-          削除する</button>
-        <button onclick="document.getElementById('cadEditPolyModal').style.display='none'"
-          style="flex:1; background:#ccc; color:#333; padding:14px; border-radius:8px; font-size:16px; font-weight:bold; border:none; cursor:pointer;">閉じる</button>
+          style="flex:1; background:#F44336; color:white; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">🗑
+          削除</button>
+        <button onclick="document.getElementById('cadEditPolyModal').style.display='none'; document.getElementById('cadEditIndex').value='';"
+          style="flex:1; background:#ccc; color:#333; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">完了</button>
       </div>
     </div>
   </div>

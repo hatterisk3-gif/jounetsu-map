@@ -246,6 +246,11 @@ window.updateCadSvgOverlay = () => {
         if (window.cadUnePolygons) {
             window.cadUnePolygons.forEach((p, idx) => {
                 p._svgPathNode = createPathNode('#8BC34A', '#558B2F');
+                p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer;');
+                p._svgPathNode.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (window.openCadEditModal && p.uneIndex) window.openCadEditModal(p.uneIndex);
+                });
                 pathsGroup.appendChild(p._svgPathNode);
                 
                 let textNode = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -262,9 +267,26 @@ window.updateCadSvgOverlay = () => {
             });
         }
         if (window.cadCustomShapes) {
-            window.cadCustomShapes.forEach(p => {
+            window.cadCustomShapes.forEach((p, idx) => {
                 p._svgPathNode = createPathNode('#8BC34A', '#558B2F');
+                p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer;');
+                p._svgPathNode.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (window.openCadEditModal && p.uneIndex) window.openCadEditModal(p.uneIndex);
+                });
                 pathsGroup.appendChild(p._svgPathNode);
+
+                let textNode = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                textNode.setAttribute('fill', '#ffffff');
+                textNode.setAttribute('font-size', '24');
+                textNode.setAttribute('font-weight', 'bold');
+                textNode.setAttribute('font-family', 'sans-serif');
+                textNode.setAttribute('text-anchor', 'middle');
+                textNode.setAttribute('dominant-baseline', 'central');
+                textNode.setAttribute('style', 'pointer-events: none; paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
+                textNode.textContent = '⚙️';
+                p._svgTextNode = textNode;
+                textsGroup.appendChild(textNode);
             });
         }
         if (window.cadNakamichiMapPolygons) {
