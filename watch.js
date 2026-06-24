@@ -53,12 +53,13 @@ async function watch() {
 
           if (pendingImageUrl !== "") {
             imageContext = `【重要】以下のURLにアクセスして画像を視覚的に確認し、それを絶対的な参考資料として以下の指示を実行してください。参考画像URL: ${pendingImageUrl} 。 `;
-            usedImageId = pendingImageId; // ここで捨てるIDをセット！
+            usedImageId = pendingImageId;
             pendingImageUrl = "";
             pendingImageId = "";
           }
 
-          const magicalPrompt = `${imageContext}${cleanCommand} 。※重要事項：このタスクは複雑な可能性があります。一度の出力で全ファイルを修正しようとせず、ステップ・バイ・ステップで段階的に作業を進めてください。`;
+          // 🌟 【大変更1】プロンプトで「ai_report.txt」に解説を書くように強制する！
+          const magicalPrompt = `${imageContext}${cleanCommand} 。※重要事項：このタスクは複雑な可能性があります。段階的に作業を進めてください。作業が全て完了したら、最後に必ず今回の修正内容の解説（日本語で簡潔に）を「ai_report.txt」というファイルに書き出して保存してください。`;
 
           console.log('⚙️ 完全自動パイプラインを起動します...');
           console.log('🧠 AIがコードを修正中...（最大15分待機します）');
@@ -67,25 +68,15 @@ async function watch() {
           let isSuccess = false;
 
           try {
-            // コマンドの末尾に「 2>&1 」を追加し、AIの解説（裏チャンネルの文字）もすべて強制的に捕獲する！
-            const rawOutput = execSync(`agy --print-timeout 15m --dangerously-skip-permissions --prompt "${magicalPrompt}" 2>&1`, {
+            // 🌟 【大変更2】ターミナルの裏取りをやめて、普通に画面に表示（inherit）させる
+            execSync(`agy --print-timeout 15m --prompt "${magicalPrompt}"`, {
               env: { ...process.env, AGY_TIMEOUT: '900000' },
-              encoding: 'utf-8'
+              stdio: 'inherit'
             });
-
-            console.log(rawOutput);
-            aiOutput = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
             isSuccess = true;
-
           } catch (e) {
             console.error('\n⚠️ AIの処理中にエラーまたはタイムアウトが発生しました！');
-            const errorLog = (e.stdout ? e.stdout.toString() : "") + (e.stderr ? e.stderr.toString() : "") + e.message;
-
-            if (errorLog.includes('timed out')) {
-              aiOutput = "⏳ AIの思考時間が上限（15分）を超えたため、処理を強制終了しました。指示を少し分割して再度お試しください。";
-            } else {
-              aiOutput = "⚠️ 予期せぬシステムエラーが発生しました。\n" + errorLog.substring(0, 200);
-            }
+            aiOutput = "⚠️ AIの処理中にエラーが発生したか、タイムアウトしました。";
 
             console.log('🔄 ファイルの中途半端な破損を防ぐため、変更をリセット（ロールバック）します...');
             try {
@@ -97,7 +88,15 @@ async function watch() {
 
           // 処理が成功した場合のみアップロードする
           if (isSuccess) {
-            // Gitへ上げる直前に、agyが勝手にダウンロードした画像を消し去る（お掃除機能）
+            // 🌟 【大変更3】AIが書いてくれたレポートファイルを読み込み、Gitに入る前にすぐ捨てる
+            const reportPath = path.join(__dirname, 'ai_report.txt');
+            if (fs.existsSync(reportPath)) {
+              aiOutput = fs.readFileSync(reportPath, 'utf8').trim();
+              try { fs.unlinkSync(reportPath); } catch (e) { } // 読み終わったら即削除
+            } else {
+              aiOutput = "（コードの修正は完了しましたが、解説レポートは省略されました）";
+            }
+
             console.log('🧹 agyが分析用に残した一時画像を削除中...');
             const files = fs.readdirSync(__dirname);
             files.forEach(file => {
@@ -123,14 +122,14 @@ async function watch() {
                 const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
                 const commitMessage = `Auto: ${shortCommand} [変更: ${changedFiles}]`;
 
-                // AIの出力は「最後の方」に結論が書かれることが多いので、後ろから800文字を切り取る
-                const shortAiOutput = aiOutput.length > 800 ? '...（前略）\n' + aiOutput.slice(-800) : aiOutput;
+                // レポートが長すぎる場合のみカット
+                const shortAiOutput = aiOutput.length > 800 ? aiOutput.slice(0, 800) + '\n...（以下省略）' : aiOutput;
                 summaryForLine = `✅ デプロイ完了\n${commitMessage}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
 
                 execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
                 execSync('git push', { stdio: 'inherit' });
               } else {
-                summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput.slice(-800)}`;
+                summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput.slice(0, 800)}`;
               }
             } catch (e) { }
           } else {
