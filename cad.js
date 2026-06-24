@@ -186,8 +186,16 @@ window.updateCadSvgOverlay = () => {
     };
 
     if (window.cadUnePolygons) {
-        window.cadUnePolygons.forEach(p => {
+        window.cadUnePolygons.forEach((p, idx) => {
             html += createPathHtml(p, '#8BC34A', '#558B2F');
+            let path = p.getPath();
+            if(path && path.getLength() > 0) {
+                let bounds = new google.maps.LatLngBounds();
+                path.forEach(pt => bounds.extend(pt));
+                let center = bounds.getCenter();
+                let screenPt = window.latLngToScreenPixel(center.lat(), center.lng());
+                html += `<text x="${screenPt.x}" y="${screenPt.y}" fill="#ffffff" font-size="24" font-weight="bold" font-family="sans-serif" text-anchor="middle" dominant-baseline="central" style="paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;">${idx + 1}</text>`;
+            }
         });
     }
     if (window.cadCustomShapes) {
