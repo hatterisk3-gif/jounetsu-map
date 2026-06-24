@@ -2655,7 +2655,7 @@ function createSignboardMarker(name, pos, icon, id) {
               accDiv.style.display = 'none';
           }
       };
-// 🌟 現在地からポリゴンを判定して直接フォームを開く処理 🌟
+// 🌟 現在地から最も近いポリゴンを判定して直接フォームを開く処理 🌟
       window.findCurrentFieldAndOpenForm = () => {
           // すでに取得している現在地(latestUserPos)を利用する
           if (!latestUserPos) {
@@ -2667,19 +2667,38 @@ function createSignboardMarker(name, pos, icon, id) {
           const currentLatLng = new google.maps.LatLng(latestUserPos.lat, latestUserPos.lng);
           let matchedId = null;
           let matchedName = "";
+          let minDistance = Infinity;
+          let closestId = null;
 
           // 地図上のすべてのポリゴンをループして、現在地が「中に入っているか」をチェック
+          // 中に入っていない場合は「最も近い」ポリゴンを記録しておく
           for (let id in loadedPolygons) {
               const p = loadedPolygons[id];
               // ポリゴン（面）が存在する場合のみ判定
-              if (p.polygon) {
+              if (p.polygon && !p.isMarker) {
                   // google.maps.geometryライブラリを使って内外判定！
                   if (google.maps.geometry.poly.containsLocation(currentLatLng, p.polygon)) {
                       matchedId = id;
                       matchedName = p.name;
                       break; // 見つかったらループ終了
                   }
+                  
+                  // 内外判定に漏れた場合のために、ポリゴンの中心との距離を計算
+                  if (p.marker) {
+                      const centerLatLng = p.marker.getPosition();
+                      const dist = google.maps.geometry.spherical.computeDistanceBetween(currentLatLng, centerLatLng);
+                      if (dist < minDistance) {
+                          minDistance = dist;
+                          closestId = id;
+                      }
+                  }
               }
+          }
+
+          // もし中に入っているポリゴンが見つからなかったら、一番近いものを採用
+          if (!matchedId && closestId) {
+              matchedId = closestId;
+              matchedName = loadedPolygons[closestId].name;
           }
 
           if (matchedId) {
@@ -2697,8 +2716,8 @@ function createSignboardMarker(name, pos, icon, id) {
                   openMainMenu(matchedId); 
               }
           } else {
-              // 🌟 どのポリゴンにも入っていなかった場合
-              customAlert("⚠️ 現在地がどの圃場の範囲（ポリゴン）にも入っていません。\n\n※GPSの誤差で少し外にいる場合は、地図のポリゴンを直接タップしてください。");
+              // 🌟 ポリゴンが1つも存在しない場合
+              customAlert("⚠️ 圃場データがまだ読み込まれていないか、一つも登録されていません。");
           }
       };
     // 🌟ここから上書き：共有されたURLを開いた瞬間に「全自動」で解析＆判定する！🌟
