@@ -121,6 +121,87 @@ window.updateCadMapTransform = () => {
     if (typeof window.updateCadLabelPositionsThrottled === 'function') {
         window.updateCadLabelPositionsThrottled();
     }
+    if (typeof window.updateCadSvgOverlay === 'function') {
+        window.updateCadSvgOverlay();
+    }
+};
+
+window.latLngToScreenPixel = (lat, lng) => {
+    if (!window.cadMap) return {x: 0, y: 0};
+    const proj = window.cadMap.getProjection();
+    if (!proj) return {x: 0, y: 0};
+    
+    const worldPoint = proj.fromLatLngToPoint(new google.maps.LatLng(lat, lng));
+    const centerWorldPoint = proj.fromLatLngToPoint(window.cadMap.getCenter());
+    
+    const dxWorld = worldPoint.x - centerWorldPoint.x;
+    let dyWorld = worldPoint.y - centerWorldPoint.y;
+    
+    const realZoom = window.cadMap.getZoom();
+    const scaleToRealZoom = Math.pow(2, realZoom);
+    
+    let dxMap = dxWorld * scaleToRealZoom;
+    let dyMap = dyWorld * scaleToRealZoom;
+    
+    let apparentScale = window.cadCurrentScale || 1.0;
+    let dxScaled = dxMap * apparentScale;
+    let dyScaled = dyMap * apparentScale;
+    
+    const theta = (window.cadCurrentRotation || 0) * Math.PI / 180;
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+    
+    let dxRotated = dxScaled * cosT - dyScaled * sinT;
+    let dyRotated = dxScaled * sinT + dyScaled * cosT;
+    
+    const wrapper = document.getElementById('cadMapWrapper');
+    const offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
+    const offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
+    
+    const cx = wrapper.offsetWidth / 2 + offsetX;
+    const cy = wrapper.offsetHeight / 2 + offsetY;
+    
+    return { x: cx + dxRotated, y: cy + dyRotated };
+};
+
+window.updateCadSvgOverlay = () => {
+    let svg = document.getElementById('cadSvgOverlay');
+    if (!svg) return;
+    
+    let html = '';
+    
+    const createPathHtml = (poly, fillColor, strokeColor, isLine = false) => {
+        let path = poly.getPath();
+        if (!path || path.getLength() === 0) return '';
+        let d = '';
+        for (let i = 0; i < path.getLength(); i++) {
+            let pt = path.getAt(i);
+            let screenPt = window.latLngToScreenPixel(pt.lat(), pt.lng());
+            d += (i === 0 ? 'M' : 'L') + screenPt.x + ',' + screenPt.y + ' ';
+        }
+        if (!isLine) d += 'Z';
+        
+        let fw = isLine ? 6 : 2;
+        return `<path d="${d}" fill="${isLine ? 'none' : fillColor}" fill-opacity="0.7" stroke="${strokeColor}" stroke-opacity="0.9" stroke-width="${fw}" stroke-linejoin="round" />`;
+    };
+
+    if (window.cadUnePolygons) {
+        window.cadUnePolygons.forEach(p => {
+            html += createPathHtml(p, '#8BC34A', '#558B2F');
+        });
+    }
+    if (window.cadCustomShapes) {
+        window.cadCustomShapes.forEach(p => {
+            html += createPathHtml(p, '#8BC34A', '#558B2F');
+        });
+    }
+    if (window.cadNakamichiMapPolygons) {
+        window.cadNakamichiMapPolygons.forEach(p => {
+            html += createPathHtml(p, 'none', '#E91E63', true);
+        });
+    }
+    
+    svg.innerHTML = html;
 };
 
 window.updateCadLabelScale = (detectedScale) => {
@@ -303,7 +384,7 @@ window.loadCadStateFromHistory = (index) => {
 
     if (state.customShapes) {
         state.customShapes.forEach((cPath, idx) => {
-            let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+            let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
             gPoly.uneIndex = 'custom_' + idx;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
@@ -313,7 +394,7 @@ window.loadCadStateFromHistory = (index) => {
 
     if (state.unePolygons) {
         state.unePolygons.forEach((uPath, idx) => {
-            let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+            let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
             gPoly.uneIndex = 'une_' + idx;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
@@ -353,13 +434,14 @@ window.updateSingleLabelPosition = (poly) => {
 };
 
 window.bindShapeHistoryEvents = (poly) => {
-    google.maps.event.addListener(poly, 'drag', () => window.updateSingleLabelPosition(poly));
-    google.maps.event.addListener(poly, 'dragend', () => { window.reassignLabels(); window.saveCadStateToHistory(); });
+    google.maps.event.addListener(poly, 'drag', () => { window.updateSingleLabelPosition(poly); if(window.updateCadSvgOverlay) window.updateCadSvgOverlay(); });
+    google.maps.event.addListener(poly, 'dragend', () => { window.reassignLabels(); window.saveCadStateToHistory(); if(window.updateCadSvgOverlay) window.updateCadSvgOverlay(); });
 
     let editTimeout = null;
     ['set_at', 'insert_at', 'remove_at'].forEach(eventName => {
         google.maps.event.addListener(poly.getPath(), eventName, () => {
             window.updateSingleLabelPosition(poly); // 変形時にもリアルタイム追従
+            if(window.updateCadSvgOverlay) window.updateCadSvgOverlay();
             clearTimeout(editTimeout);
             editTimeout = setTimeout(() => {
                 window.reassignLabels();
@@ -898,7 +980,7 @@ window.openCADMode = (id) => {
             }
             if (saved.customShapes) {
                 saved.customShapes.forEach((cPath, idx) => {
-                    let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+                    let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
                     gPoly.uneIndex = 'custom_' + idx;
                     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                     window.bindShapeHistoryEvents(gPoly);
@@ -907,7 +989,7 @@ window.openCADMode = (id) => {
             }
             if (saved.unePolygons) {
                 saved.unePolygons.forEach((uPath, idx) => {
-                    let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+                    let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
                     gPoly.uneIndex = 'une_' + idx;
                     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
                     window.bindShapeHistoryEvents(gPoly);
@@ -1110,7 +1192,7 @@ window.cadSetPinMode = (type) => {
 };
 
 window.drawNakamichiVisual = (path) => {
-    let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.5, strokeWeight: Math.max(0.5, 6 / (window.cadCurrentScale || 1.0)), map: window.cadMap, zIndex: 9 });
+    let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 6 / (window.cadCurrentScale || 1.0)), map: window.cadMap, zIndex: 9 });
     window.cadNakamichiMapPolygons.push(line);
 };
 
@@ -1129,7 +1211,7 @@ window.cadAddCustomShape = (type) => {
     }
 
     let paths = poly.geometry.coordinates[0].map(c => ({ lat: c[1], lng: c[0] }));
-    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
+    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, editable: true, draggable: false, zIndex: 10 });
 
     gPoly.uneIndex = 'custom_' + Date.now();
     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
@@ -1228,7 +1310,7 @@ window.cadGenerateLines = () => {
 function addUnePolygon(coordsArray, idx) {
     const path = coordsArray.map(c => ({ lat: c[1], lng: c[0] }));
     const gPoly = new google.maps.Polygon({
-        paths: path, fillColor: '#8BC34A', fillOpacity: 0.7, strokeColor: '#558B2F', strokeOpacity: 0.9,
+        paths: path, fillColor: '#8BC34A', fillOpacity: 0.01, strokeColor: '#558B2F', strokeOpacity: 0.01,
         strokeWeight: Math.max(0.5, 2 / (window.cadCurrentScale || 1.0)), map: window.cadMap, zIndex: 10, editable: true, draggable: false, clickable: true
     });
     gPoly.uneIndex = 'une_' + idx;
