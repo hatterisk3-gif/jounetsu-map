@@ -227,29 +227,25 @@ window.updateCadSvgOverlay = () => {
         window.cadSvgNeedsRebuild = false;
     }
     
-    let currentEditIndex = document.getElementById('cadEditIndex') ? document.getElementById('cadEditIndex').value : null;
-    let activePoly = null;
-    if (currentEditIndex && currentEditIndex !== '') {
-        const isCustom = currentEditIndex.startsWith('custom_');
-        const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
-        activePoly = polyList ? polyList.find(p => p.uneIndex === currentEditIndex) : null;
-    }
-    
-    let currentPolyLength = activePoly && activePoly.getPath() ? activePoly.getPath().getLength() : 0;
-    let handleStateId = currentEditIndex + '_' + currentPolyLength;
+    let handleStateId = '';
+    if (window.cadUnePolygons) window.cadUnePolygons.forEach(p => { handleStateId += (p.getPath() ? p.getPath().getLength() : 0) + '_'; });
+    if (window.cadCustomShapes) window.cadCustomShapes.forEach(p => { handleStateId += (p.getPath() ? p.getPath().getLength() : 0) + '_'; });
 
     let handlesGroup = svg.querySelector('#cadSvgHandles');
     if (handlesGroup && svg._lastHandleStateId !== handleStateId) {
         svg._lastHandleStateId = handleStateId;
         handlesGroup.innerHTML = '';
-        if (activePoly && activePoly.getPath()) {
-            let path = activePoly.getPath();
+        
+        const createHandlesForPoly = (poly) => {
+            let path = poly.getPath();
+            if (!path) return;
+            poly._svgHandlesNodes = [];
             for (let i = 0; i < path.getLength(); i++) {
                 let circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                circle.setAttribute('r', '10');
+                circle.setAttribute('r', '8');
                 circle.setAttribute('fill', '#ffffff');
                 circle.setAttribute('stroke', '#558B2F');
-                circle.setAttribute('stroke-width', '3');
+                circle.setAttribute('stroke-width', '2');
                 circle.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
                 
                 let isDraggingHandle = false;
@@ -272,7 +268,7 @@ window.updateCadSvgOverlay = () => {
                     window.removeEventListener('mouseup', onEnd);
                     window.removeEventListener('touchmove', onMove);
                     window.removeEventListener('touchend', onEnd);
-                    if (typeof window.updateSingleLabelPosition === 'function') window.updateSingleLabelPosition(activePoly);
+                    if (typeof window.updateSingleLabelPosition === 'function') window.updateSingleLabelPosition(poly);
                     if (typeof window.reassignLabels === 'function') window.reassignLabels();
                     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
                 };
@@ -290,9 +286,12 @@ window.updateCadSvgOverlay = () => {
                 }, {passive: false});
                 
                 handlesGroup.appendChild(circle);
+                poly._svgHandlesNodes.push(circle);
             }
-            activePoly._svgHandlesNodes = Array.from(handlesGroup.children);
-        }
+        };
+
+        if (window.cadUnePolygons) window.cadUnePolygons.forEach(p => createHandlesForPoly(p));
+        if (window.cadCustomShapes) window.cadCustomShapes.forEach(p => createHandlesForPoly(p));
     }
     
     const updatePathD = (poly, isLine = false) => {
@@ -341,18 +340,22 @@ window.updateCadSvgOverlay = () => {
         });
     }
     
-    if (activePoly && activePoly._svgHandlesNodes) {
-        let path = activePoly.getPath();
-        for (let i = 0; i < path.getLength(); i++) {
-            let pt = path.getAt(i);
-            let screenPt = window.latLngToScreenPixel(pt.lat(), pt.lng());
-            let circle = activePoly._svgHandlesNodes[i];
-            if (circle) {
-                circle.setAttribute('cx', screenPt.x);
-                circle.setAttribute('cy', screenPt.y);
+    const updateHandlesPosition = (poly) => {
+        if (poly && poly._svgHandlesNodes) {
+            let path = poly.getPath();
+            for (let i = 0; i < path.getLength(); i++) {
+                let pt = path.getAt(i);
+                let screenPt = window.latLngToScreenPixel(pt.lat(), pt.lng());
+                let circle = poly._svgHandlesNodes[i];
+                if (circle) {
+                    circle.setAttribute('cx', screenPt.x);
+                    circle.setAttribute('cy', screenPt.y);
+                }
             }
         }
-    }
+    };
+    if (window.cadUnePolygons) window.cadUnePolygons.forEach(updateHandlesPosition);
+    if (window.cadCustomShapes) window.cadCustomShapes.forEach(updateHandlesPosition);
 };
 
 window.updateCadLabelScale = (detectedScale) => {
