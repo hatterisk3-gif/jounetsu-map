@@ -114,20 +114,45 @@ async function watch() {
 
             console.log('☁️ claspでGASへ反映中...');
             try { execSync('clasp push -f', { stdio: 'inherit' }); } catch (e) { }
-
             console.log('🐙 GitHubへプッシュ中...');
             try {
               execSync('git add .');
-              let changedFiles = '';
-              try { changedFiles = execSync('git diff --name-only --cached').toString().trim().replace(/\n/g, ', '); } catch (e) { }
 
-              if (changedFiles) {
+              // 🌟 【変更1】ファイル名だけでなく「状態（追加・削除・変更）」を取得する
+              let gitStatusOutput = '';
+              try { gitStatusOutput = execSync('git diff --name-status --cached').toString().trim(); } catch (e) { }
+
+              if (gitStatusOutput) {
+                let modified = [];
+                let added = [];
+                let deleted = [];
+
+                // 取得したリストを「追加」「削除」「変更」の3つの箱に仕分ける
+                gitStatusOutput.split('\n').forEach(line => {
+                  const parts = line.split(/\s+/);
+                  if (parts.length >= 2) {
+                    const status = parts[0].charAt(0);
+                    const file = parts[parts.length - 1]; // ファイル名を抽出
+                    if (status === 'A') added.push(file);
+                    else if (status === 'D') deleted.push(file);
+                    else modified.push(file);
+                  }
+                });
+
+                // 🌟 【変更2】LINEで見やすいようにアイコン付きのテキストを作る
+                let fileChangesText = "";
+                if (modified.length > 0) fileChangesText += `\n📝 変更: ${modified.join(', ')}`;
+                if (added.length > 0) fileChangesText += `\n✨ 追加: ${added.join(', ')}`;
+                if (deleted.length > 0) fileChangesText += `\n🗑️ 削除: ${deleted.join(', ')}`;
+
                 const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
-                const commitMessage = `Auto: ${shortCommand} [変更: ${changedFiles}]`;
+                const allFiles = modified.concat(added).concat(deleted).join(', ');
+                const commitMessage = `Auto: ${shortCommand} [変更: ${allFiles}]`;
 
-                // レポートが長すぎる場合のみカット
                 const shortAiOutput = aiOutput.length > 800 ? aiOutput.slice(0, 800) + '\n...（以下省略）' : aiOutput;
-                summaryForLine = `✅ デプロイ完了\n${commitMessage}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
+
+                // 🌟 【変更3】LINEの通知文に分かりやすく合体させる
+                summaryForLine = `✅ デプロイ完了\nAuto: ${shortCommand}\n${fileChangesText}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
 
                 execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
                 execSync('git push', { stdio: 'inherit' });
