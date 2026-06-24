@@ -173,7 +173,7 @@ async function executeLogin(isAuto = false) {
             startLocationWatch();
         } else {
             document.getElementById('loginScreen').style.display = 'flex';
-            if (err) err.innerText = "⚠️ 通信エラー";
+            if (err) err.innerText = "⚠️ 通信エラー: " + e.message;
             if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
         }
     }

@@ -140,7 +140,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               }
           } catch(e) { 
               document.getElementById('loginScreen').style.display = 'flex';
-              document.getElementById('loginError').innerText = "通信エラー"; 
+              document.getElementById('loginError').innerText = "通信エラー: " + e.message; 
               if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
           }
       }
