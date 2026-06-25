@@ -25,7 +25,7 @@
       </div>
     </div>
 
-<button id="btnGpsWorkRecord" onclick="findCurrentFieldAndOpenForm()" style="position: fixed; bottom: 158px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: all 0.3s ease; padding: 0;">
+<button id="btnGpsWorkRecord" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" style="position: fixed; bottom: 158px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: all 0.3s ease; padding: 0;">
         📝 
     </button>
 
@@ -57,6 +57,17 @@
         <div style="display: flex; gap: 10px;">
           <button id="customPromptOk" style="flex: 1; background: #4CAF50; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
           <button id="customPromptCancel" style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">キャンセル</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="recordTypeSelectModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div style="margin-bottom: 20px; font-size: 16px; font-weight: bold; line-height: 1.5;">記録する種類を選んでください</div>
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+          <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'; findCurrentFieldAndOpenForm('growth')" style="background: #4CAF50; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🌱 圃場の生育記録</button>
+          <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'; findCurrentFieldAndOpenForm('work')" style="background: #FF9800; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜 作業記録</button>
+          <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'" style="background: #ccc; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 5px;">キャンセル</button>
         </div>
       </div>
     </div>

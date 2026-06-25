@@ -2658,12 +2658,12 @@ function createSignboardMarker(name, pos, icon, id) {
           }
       };
 // 🌟 現在地から最も近いポリゴンを判定して直接フォームを開く処理 🌟
-      window.findCurrentFieldAndOpenForm = () => {
+      window.findCurrentFieldAndOpenForm = (recordType = 'work') => {
           // すでに取得している現在地(latestUserPos)を利用する
           if (!latestUserPos) {
               // GPSがまだの場合も空欄で開く
               if (typeof directOpenForm === 'function') {
-                  directOpenForm(null, 'work');
+                  directOpenForm(null, recordType);
               } else {
                   customAlert("📍 まだ現在地を取得できていません。数秒待ってからもう一度お試しください。");
               }
@@ -2721,7 +2721,7 @@ function createSignboardMarker(name, pos, icon, id) {
               
               // 藤田さんの既存関数「directOpenForm」を使って、作業記録フォームをいきなり開く！
               if (typeof directOpenForm === 'function') {
-                  directOpenForm(matchedId, 'work');
+                  directOpenForm(matchedId, recordType);
               } else {
                   // 万が一 directOpenForm が無い場合はメニューを開く
                   activePolyId = matchedId;
@@ -2730,7 +2730,7 @@ function createSignboardMarker(name, pos, icon, id) {
           } else {
               // 🌟 圃場が見つからない、または10m以上離れている場合 -> 空欄で開く
               if (typeof directOpenForm === 'function') {
-                  directOpenForm(null, 'work');
+                  directOpenForm(null, recordType);
               } else {
                   customAlert("⚠️ 近くに圃場が見つかりませんでした。");
               }
