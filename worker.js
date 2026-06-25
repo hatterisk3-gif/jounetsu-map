@@ -2945,15 +2945,47 @@ window.parseAutoRecord = (text) => {
     return result;
 };
 
-window.executeAutoRecord = () => {
+window.executeAutoRecord = async () => {
     const inputEl = document.getElementById('autoRecordInput');
     if (!inputEl || !inputEl.value.trim()) {
         if(typeof customAlert !== 'undefined') customAlert('作業内容を入力してください。');
         return;
     }
     const text = inputEl.value.trim();
-    const data = parseAutoRecord(text);
     
+    // UIをローディング中にする
+    const btnEl = inputEl.nextElementSibling;
+    const originalBtnText = btnEl ? btnEl.innerText : '✨ 解析して開く';
+    if (btnEl) {
+        btnEl.innerText = '✨ AI解析中...';
+        btnEl.style.opacity = '0.7';
+        btnEl.disabled = true;
+    }
+
+    let data = null;
+    
+    try {
+        // AIパース（GAS）を呼び出す
+        const payload = {
+            text: text,
+            workNames: typeof pdlWorkMaster !== 'undefined' ? pdlWorkMaster.map(w => w.name) : [],
+            cropNames: typeof pdlCrops !== 'undefined' ? pdlCrops.map(c => c.name) : [],
+            fieldNames: Object.keys(loadedPolygons).map(id => ({id: id, name: loadedPolygons[id].name}))
+        };
+        data = await callGAS('parseWithGemini', payload);
+    } catch (e) {
+        console.warn('Gemini AI 解析失敗。ローカル解析にフォールバックします', e);
+        // フォールバック: ローカルの簡易解析
+        data = parseAutoRecord(text);
+    }
+    
+    // ボタンのテキストを戻す
+    if (btnEl) {
+        btnEl.innerText = originalBtnText;
+        btnEl.style.opacity = '1';
+        btnEl.disabled = false;
+    }
+
     // モーダルを開く処理
     window.autoRecordData = data;
     

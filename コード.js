@@ -46,10 +46,93 @@ function doPost(e) {
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
     else if (action === "deleteMachineFromMaster") result = deleteMachineFromMaster(params);
    else if (action === 'getMapCoordinates') result = getMapCoordinates(params);
+    else if (action === 'parseWithGemini') result = parseWithGemini(params);
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
     return ContentService.createTextOutput(JSON.stringify({status: "error", message: err.toString()})).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function parseWithGemini(params) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY が設定されていません。GASのスクリプトプロパティを確認してください。');
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  const prompt = `
+以下の自由記述テキストから、作業記録に必要な情報を抽出・推測し、必ず提供されたリストの中にある名前に変換してください。
+
+【ユーザーの入力テキスト】
+"${params.text}"
+
+【マスターデータ（この中から選ぶ）】
+- 作業名リスト: ${JSON.stringify(params.workNames)}
+- 作物名リスト: ${JSON.stringify(params.cropNames)}
+- 圃場名リスト: ${JSON.stringify(params.fieldNames)}
+
+【抽出ルール】
+1. workName: 作業名リストの中で最も意味が近いものを1つ選ぶ。該当がなければ null
+2. cropName: 作物名リストの中で最も意味が近いものを1つ選ぶ。該当がなければ null
+3. polyId: 圃場名リストの中で最も意味が近いものを選び、その id を返す。該当がなければ null
+4. startTime / endTime: "10時から2時間"などの表現から開始時間と終了時間（HH:mm形式）を推測する。終了時間が指定されていない「2時間」のような場合は、現在時刻を終了とし、そこから逆算して開始時間を出す。抽出できなければ null
+
+【現在時刻】
+${Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss")}
+
+【出力フォーマット】
+以下のJSONフォーマットのみを出力してください（マークダウンのコードブロックは不要です）。
+{
+  "workName": "該当する作業名",
+  "cropName": "該当する作物名",
+  "polyId": "該当する圃場ID",
+  "startTime": "HH:mm",
+  "endTime": "HH:mm"
+}
+`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [{ text: prompt }]
+      }
+    ]
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const response = UrlFetchApp.fetch(url, options);
+  const responseCode = response.getResponseCode();
+  const responseBody = response.getContentText();
+
+  if (responseCode !== 200) {
+    throw new Error(`Gemini API Error: ${responseCode} - ${responseBody}`);
+  }
+
+  const json = JSON.parse(responseBody);
+  if (!json.candidates || json.candidates.length === 0) {
+    throw new Error('Geminiから有効な回答が得られませんでした。');
+  }
+
+  let text = json.candidates[0].content.parts[0].text.trim();
+  // マークダウンの \`\`\`json が含まれている場合は除去する
+  if (text.startsWith('\`\`\`json')) {
+    text = text.replace(/^\`\`\`json/, '').replace(/\`\`\`$/, '').trim();
+  } else if (text.startsWith('\`\`\`')) {
+    text = text.replace(/^\`\`\`/, '').replace(/\`\`\`$/, '').trim();
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error('Geminiの出力がJSON形式ではありませんでした: ' + text);
   }
 }
 
