@@ -483,7 +483,8 @@ function getSavedPolygons() {
         status: data[i][10],
         toukiId: data[i][11],
         ridgeDir: data[i][13],
-        ridgeWidth: data[i][14]
+        ridgeWidth: data[i][14],
+        uneSimData: data[i][15]
       });
     }
   }
@@ -555,7 +556,8 @@ function savePolygon(params) {
       params.toukiId || "",      // L列: 登記ID
       "",                        // M列: 親ID (新規作成時は空欄)
       params.ridgeDir || "",     // N列以降（畝方向などの予備）
-      params.ridgeWidth || ""
+      params.ridgeWidth || "",
+      params.uneSimData || ""    // P列: 畝シミュレーションデータ
     ]);
   }
   
@@ -651,6 +653,7 @@ function updatePolygon(params) {
     
     if (params.ridgeDir !== undefined) sheet.getRange(targetRow, 14).setValue(params.ridgeDir); // N列(あれば)
     if (params.ridgeWidth !== undefined) sheet.getRange(targetRow, 15).setValue(params.ridgeWidth); // O列(あれば)
+    if (params.uneSimData !== undefined) sheet.getRange(targetRow, 16).setValue(params.uneSimData); // P列(畝データ)
     
     sheet.getRange(targetRow, historyCol).setValue(JSON.stringify(newPhotos)); // J列: 履歴
   }
@@ -701,7 +704,8 @@ function splitField(params) {
     targetRowData[11] || "",      // L: 登記ID
     targetRowData[0],             // M: 親ID (分割元のIDを記録)
     targetRowData[13] || "",      // N: 畝方向
-    targetRowData[14] || ""       // O: 畝幅
+    targetRowData[14] || "",      // O: 畝幅
+    targetRowData[15] || ""       // P: 畝データ
   ];
   
   // 元の圃場の「上」に新しい行を挿入してデータをセット
