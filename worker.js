@@ -273,15 +273,6 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         };
         setupSearch();
       }
-      
-      window.toggleMapType = () => {
-        if (!map) return;
-        if (map.getMapTypeId() === 'hybrid') {
-          map.setMapTypeId('roadmap');
-        } else {
-          map.setMapTypeId('hybrid');
-        }
-      };
 
       function updateMarkersVisibility() {
         const zoom = map.getZoom(), far = 15, close = 17;
