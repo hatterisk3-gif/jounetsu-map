@@ -2957,29 +2957,30 @@ window.executeAutoRecord = async () => {
     const btnEl = inputEl.nextElementSibling;
     const originalBtnText = btnEl ? btnEl.innerText : '✨ 解析して開く';
     if (btnEl) {
-        btnEl.innerText = '✨ AI解析中...';
+        btnEl.innerText = '✨ 瞬速解析中...';
         btnEl.style.opacity = '0.7';
         btnEl.disabled = true;
     }
 
-    let data = null;
+    // 🌟 AI通信を待たずにローカルで瞬速解析 🌟
+    let data = parseAutoRecord(text);
     
-    try {
-        // AIパース（GAS）を呼び出す
-        const payload = {
-            text: text,
-            workNames: typeof pdlWorkMaster !== 'undefined' ? pdlWorkMaster.map(w => w.name) : [],
-            cropNames: typeof pdlCrops !== 'undefined' ? pdlCrops.map(c => c.name) : [],
-            fieldNames: Object.keys(loadedPolygons).map(id => ({id: id, name: loadedPolygons[id].name}))
-        };
-        data = await callGAS('parseWithGemini', payload);
-    } catch (e) {
-        console.warn('Gemini AI 解析失敗。ローカル解析にフォールバックします', e);
-        // フォールバック: ローカルの簡易解析
-        data = parseAutoRecord(text);
+    // 該当する作業がない場合、入力文から残りの単語を抽出して新しい作業名とする
+    if (!data.workName) {
+        let remaining = text;
+        if (data.polyId && loadedPolygons[data.polyId]) remaining = remaining.replace(loadedPolygons[data.polyId].name, '');
+        if (data.cropName) remaining = remaining.replace(data.cropName, '');
+        remaining = remaining.replace(/(\d{1,2})[:時](\d{1,2})?(?:分|半)?/g, '');
+        remaining = remaining.replace(/(\d+(?:\.\d+)?)時間/g, '');
+        remaining = remaining.replace(/(\d+)分/g, '');
+        // 助詞や空白を削除して一番最初の単語を抽出
+        remaining = remaining.replace(/[でからまでをにの]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (remaining) {
+            data.workName = remaining.split(' ')[0]; // 新しい作業名候補
+            data.isNewWork = true; // 新規追加フラグ
+        }
     }
-    
-    // ボタンのテキストを戻す
+
     if (btnEl) {
         btnEl.innerText = originalBtnText;
         btnEl.style.opacity = '1';
@@ -3017,7 +3018,16 @@ window.executeAutoRecord = async () => {
             let changed = false;
             
             if (d.workName && document.getElementById('rec_work_name')) {
-                document.getElementById('rec_work_name').value = d.workName;
+                const selectEl = document.getElementById('rec_work_name');
+                // 新しい作業名の場合、選択肢に動的に追加する
+                let optionExists = Array.from(selectEl.options).some(opt => opt.value === d.workName);
+                if (!optionExists) {
+                    const newOption = document.createElement('option');
+                    newOption.value = d.workName;
+                    newOption.text = d.workName + " (新規追加)";
+                    selectEl.appendChild(newOption);
+                }
+                selectEl.value = d.workName;
                 if (typeof handleWorkNameChange === 'function') handleWorkNameChange();
                 changed = true;
             }
@@ -3041,7 +3051,13 @@ window.executeAutoRecord = async () => {
             inputEl.value = ''; // 入力欄をクリア
             window.autoRecordData = null; // リセット
             
-            if(typeof customAlert !== 'undefined') customAlert('✨ AIが自動で項目を選択しました！内容を確認して保存してください。');
+            if(typeof customAlert !== 'undefined') {
+                if (d.isNewWork) {
+                    customAlert('✨ 解析が完了しました！\n新しい作業「' + d.workName + '」をリストに追加しました。\n内容を確認して保存してください。');
+                } else {
+                    customAlert('✨ 解析が完了しました！\n内容を確認して保存してください。');
+                }
+            }
         }
     }, 300); // フォーム描画の完了を少し待つ
 };
