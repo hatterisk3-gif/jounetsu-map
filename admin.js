@@ -1072,8 +1072,12 @@ window.autoSwitchFudeRegion = () => {
 
         let wasVisible = window.isFudeVisibleFlag;
 
-        regionData.files.forEach(fileName => {
-            // キャッシュは使わず、必要な時だけR2からサクッと読み込む
+        let currentIndex = 0;
+        function loadNextFile() {
+            if (currentIndex >= regionData.files.length) return;
+            if (window.loadedFudeRegion !== prefName) return; // 別の県に移動した場合は中止
+
+            let fileName = regionData.files[currentIndex];
             fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
                 .then(res => res.json())
                 .then(geoJson => {
@@ -1082,8 +1086,13 @@ window.autoSwitchFudeRegion = () => {
                         map.data.addGeoJson(geoJson);
                     }
                 })
-                .catch(err => console.warn("自動切替スキップ", err));
-        });
+                .catch(err => console.warn("自動切替スキップ", err))
+                .finally(() => {
+                    currentIndex++;
+                    setTimeout(loadNextFile, 500); // 500ms待ってから次を読み込む
+                });
+        }
+        loadNextFile();
 
         setFudeVisibility(wasVisible);
     });
@@ -1103,15 +1112,21 @@ window.preloadFudeData = () => {
         const regionData = fudeFiles[prefName];
         const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev";
 
-        // 地図にはまだ表示せず、キャッシュ(fudeCache)にデータをストックするだけ！
-        regionData.files.forEach(fileName => {
-            if (!window.fudeCache[fileName]) {
-                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
-                    .then(res => res.json())
-                    .then(geoJson => { window.fudeCache[fileName] = geoJson; })
-                    .catch(err => { console.warn("先読みスキップ", err); });
-            }
-        });
+        let filesToLoad = regionData.files.filter(fileName => !window.fudeCache[fileName]);
+        let currentIndex = 0;
+        function preloadNext() {
+            if (currentIndex >= filesToLoad.length) return;
+            let fileName = filesToLoad[currentIndex];
+            fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
+                .then(res => res.json())
+                .then(geoJson => { window.fudeCache[fileName] = geoJson; })
+                .catch(err => { console.warn("先読みスキップ", err); })
+                .finally(() => {
+                    currentIndex++;
+                    setTimeout(preloadNext, 1000); // 1秒間隔でゆっくり
+                });
+        }
+        preloadNext();
     });
 };
 // 🌟ここに追加：スマホをフリーズさせずに全県のデータを裏でゆっくり集めるステルス関数
