@@ -25,6 +25,10 @@
     </div>
   </div>
 
+  <button id="btnCurrentLocation" style="position: fixed; bottom: 230px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
+      📍
+  </button>
+
   <div id="cadOverlay">
     <div id="cadHeader">
       <div style="font-weight:bold; font-size:16px;">🚜 農業CAD <span id="cadTargetName"
@@ -286,7 +290,6 @@
       <button onclick="forceUpdateApp()"
         style="background:#4CAF50; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
         最新に更新</button>
-      <button id="btnCurrentLocation" class="gps-btn">🧭 現在地</button>
       <button onclick="openFeedback()"
         style="background:rgba(68, 68, 68, 0.8); color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️
         連絡</button>
