@@ -211,18 +211,66 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   // ★修正：f.location や f.signFunction など、元の変数名に完全一致させました！
                   createPolygonObject(f.id, f.name, f.coords, f.color, f.photos, f.author, f.location, f.condition, f.area, f.status, f.signFunction, linkedSigns);
               });
+              updateWorkerLegend();
           }
       }
           
 
 // ★修正後：
+      const cropColors = {}; const cropPalette = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#00BCD4', '#8BC34A', '#795548', '#3F51B5', '#9C27B0', '#F44336']; let cropColorIdx = 0;
+      function getCropColor(cropName) { if (!cropName) return '#8D6E63'; if (cropColors[cropName]) return cropColors[cropName]; const color = cropPalette[cropColorIdx % cropPalette.length]; cropColors[cropName] = color; cropColorIdx++; return color; }
+
+      function getCurrentCrop(photos) {
+          if (!photos || photos.length === 0) return null;
+          let sorted = [...photos].sort((a, b) => {
+              const dA = new Date(((a.data && a.data.workDate) || a.date || "").replace(/\//g, '-'));
+              const dB = new Date(((b.data && b.data.workDate) || b.date || "").replace(/\//g, '-'));
+              return dB - dA;
+          });
+          for (let ph of sorted) {
+              if (ph.data && ph.data.workName) {
+                  if (ph.data.workName.includes('定植')) return ph.data.crop || '不明な作物';
+                  if (ph.data.workName.includes('チッパー') || ph.data.workName.includes('畝つぶし')) return null;
+              }
+          }
+          return null;
+      }
+
+      function updateWorkerLegend() {
+          let legendDiv = document.getElementById('workerLegendUI');
+          if (!legendDiv) {
+              legendDiv = document.createElement('div');
+              legendDiv.id = 'workerLegendUI';
+              legendDiv.style.cssText = 'position:absolute; bottom:20px; left:20px; background:rgba(255,255,255,0.9); padding:10px; border-radius:8px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.2); max-height: 200px; overflow-y: auto; font-size:12px; pointer-events:none;';
+              document.getElementById('map').appendChild(legendDiv);
+          }
+          let html = '<div style="font-weight:bold; margin-bottom:5px; font-size:13px; color:#333;">🌾 作物色分け</div>';
+          html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#8D6E63; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">未定植</span></div>`;
+          for (let crop in cropColors) {
+              html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:${cropColors[crop]}; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">${crop}</span></div>`;
+          }
+          legendDiv.innerHTML = html;
+      }
+
+      function updatePolygonColor(id) {
+          const p = loadedPolygons[id];
+          if (!p || p.isMarker || !p.polygon) return;
+          const isUnused = (p.status === '未使用（返却）' || p.status === '未使用');
+          let currentCrop = getCurrentCrop(p.photos);
+          let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
+          p.polygon.setOptions({ fillColor: dispColor, strokeColor: dispColor });
+          updateWorkerLegend();
+      }
+
     function createPolygonObject(id, name, coords, color, photos, author, loc, cond, area, status, signFunc, linkedSigns) { 
         if (coords.length === 1) {
           const marker = createSignboardMarker(name, new google.maps.LatLng(coords[0].lat, coords[0].lng), color, id);
           loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, labelConfig: { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
         } else {
-          const isUnused = (status === '未使用（返却）' || status === '未使用'), dispColor = isUnused ? '#999999' : color;
-          const polygon = new google.maps.Polygon({ paths: coords, map, fillColor: dispColor, fillOpacity: isUnused?0.5:0.3, strokeColor: dispColor, strokeOpacity: 1, strokeWeight: 3 });
+          const isUnused = (status === '未使用（返却）' || status === '未使用');
+          let currentCrop = getCurrentCrop(photos);
+          let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
+          const polygon = new google.maps.Polygon({ paths: coords, map, fillColor: dispColor, fillOpacity: isUnused?0.5:0.5, strokeColor: dispColor, strokeOpacity: 1, strokeWeight: 3 });
           const marker = createLabelMarker(name, coords, color, area);
           
           google.maps.event.addListener(polygon, 'click', (e) => { 
@@ -1410,6 +1458,7 @@ function createSignboardMarker(name, pos, icon, id) {
             // 【編集モード】まず元の圃場の記録を更新する
             let updated = await callGAS('updateRecordItem', {id: activePolyId, recordId: currentEditRecordId, recordType: currentRecordType, data, photos, keptUrls, userName: currentUser});
             loadedPolygons[activePolyId].photos = updated;
+            updatePolygonColor(activePolyId);
 
             // ★追加機能：編集時に後から追加された「他の圃場」があれば、それらには新規作成としてデータを送る
             const newlyAddedIds = selectedPolyIds.filter(id => id !== activePolyId);
@@ -1420,6 +1469,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 for (let pid of newlyAddedIds) {
                     if (!loadedPolygons[pid].photos) loadedPolygons[pid].photos = [];
                     loadedPolygons[pid].photos.push(newItem);
+                    updatePolygonColor(pid);
                 }
             }
         } else {
@@ -1433,7 +1483,11 @@ function createSignboardMarker(name, pos, icon, id) {
                     if (!loadedPolygons[pid].photos) loadedPolygons[pid].photos = [];
                     loadedPolygons[pid].photos.push(newItem); 
                 }
+                updatePolygonColor(pid);
             }
+        }
+        if (currentEditRecordId && activePolyId && !selectedPolyIds.includes(activePolyId)) {
+            updatePolygonColor(activePolyId);
         }
         customAlert("記録を保存しました！"); closeRightPanel();
         } catch(e) { customAlert("エラーが発生しました: " + e.message); btn.disabled=false; btn.innerText="保存する"; }

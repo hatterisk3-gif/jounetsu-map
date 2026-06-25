@@ -259,6 +259,7 @@ function renderInitData(data) {
                 setTimeout(renderChunk, 50);
             } else {
                 // 全部の描画が終わったら検索機能をセット
+                updateAdminLegend();
                 if (typeof setupSearch === 'function') setupSearch();
             }
         }
@@ -266,6 +267,22 @@ function renderInitData(data) {
     } else {
         if (typeof setupSearch === 'function') setupSearch();
     }
+}
+
+function updateAdminLegend() {
+    let legendDiv = document.getElementById('adminLegendUI');
+    if (!legendDiv) {
+        legendDiv = document.createElement('div');
+        legendDiv.id = 'adminLegendUI';
+        legendDiv.style.cssText = 'position:absolute; bottom:20px; left:20px; background:rgba(255,255,255,0.9); padding:10px; border-radius:8px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.2); max-height: 200px; overflow-y: auto; font-size:12px; pointer-events:none;';
+        document.getElementById('map').appendChild(legendDiv);
+    }
+    let html = '<div style="font-weight:bold; margin-bottom:5px; font-size:13px; color:#333;">🚜 稼働状況</div>';
+    html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#9E9E9E; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">未使用</span></div>`;
+    for (let status in adminStatusColors) {
+        html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:${adminStatusColors[status]}; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">${status}</span></div>`;
+    }
+    legendDiv.innerHTML = html;
 }
 
 window.openMasterModal = () => { renderMasterSection(); document.getElementById('masterModal').style.display = 'flex'; };
@@ -368,6 +385,7 @@ function execAttr(id) {
         const isU = (s === '未使用（返却）' || s === '未使用'), col = getAdminColor(s);
         p.polygon.setOptions({ fillColor: col, strokeColor: col, fillOpacity: isU ? 0.5 : 0.3 }); p.marker.setMap(null); p.marker = createLabelMarker(n, p.polygon.getPath().getArray(), col, p.area);
         callGAS('updatePolygon', { id, name: n, location: l, condition: c, status: s, toukiId: t, ridgeDir: p.ridgeDir || '', ridgeWidth: p.ridgeWidth || '', userName: currentUser });
+        updateAdminLegend();
     }
     infoWindow.close();
 }
