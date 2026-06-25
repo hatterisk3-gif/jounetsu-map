@@ -247,7 +247,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         let centerPos = (savedLat && savedLng) ? {lat: parseFloat(savedLat), lng: parseFloat(savedLng)} : {lat: 33.91, lng: 134.66};
         let zoomLevel = savedZoom ? parseInt(savedZoom) : 15;
 
-        map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, mapTypeId: 'hybrid', gestureHandling: 'greedy', styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
+        map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, mapTypeId: 'hybrid', gestureHandling: 'greedy', mapTypeControl: false, fullscreenControl: false, styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
         infoWindow = new google.maps.InfoWindow();
         google.maps.event.addListener(map, 'click', () => { if(isMapSelecting) return; infoWindow.close(); closeRightPanel(); document.getElementById('searchSuggestions').style.display='none';});
         map.addListener('zoom_changed', updateMarkersVisibility);
