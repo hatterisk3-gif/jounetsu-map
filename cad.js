@@ -595,7 +595,8 @@ window.saveCadStateToHistory = () => {
         pins: pins,
         nakamichiLines: JSON.parse(JSON.stringify(window.cadNakamichiLines)),
         customShapes: customShapesData,
-        unePolygons: unePolygonsData
+        unePolygons: unePolygonsData,
+        frontBaseline: window.cadFrontBaseline ? JSON.parse(JSON.stringify(window.cadFrontBaseline)) : null
     };
 
     const stateStr = JSON.stringify(state);
@@ -642,11 +643,18 @@ window.loadCadStateFromHistory = (index) => {
     }
 
     if (state.nakamichiLines) {
-        window.cadNakamichiLines = state.nakamichiLines;
+        window.cadNakamichiLines = state.nakamichiLines || [];
         window.cadNakamichiLines.forEach(line => window.drawNakamichiVisual(line));
-    }
 
-    if (state.customShapes) {
+        if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
+        window.cadFrontBaseline = state.frontBaseline || null;
+        if (window.cadFrontBaseline) {
+            window.cadFrontBaselineVisual = new google.maps.Polyline({
+                path: window.cadFrontBaseline, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 4, map: window.cadMap, zIndex: 8
+            });
+        }
+
+        if (state.customShapes) {
         state.customShapes.forEach((cPath, idx) => {
             let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
             gPoly.uneIndex = 'custom_' + idx;
@@ -759,29 +767,52 @@ window.handleMapClick = (pageX, pageY) => {
 
     const msgEl = document.getElementById('cadPinModeMsg');
 
-    if (window.cadPinMode === 'nakamichi') {
-        if (!window.nakamichiTempPt) {
-            window.nakamichiTempPt = latLng;
-            // 🌟 バグ修正：1回目のタップを赤いポッチで視覚的に確認できるように！
-            window.nakamichiTempMarker = new google.maps.Marker({
+    if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'front_baseline') {
+        let tempPtVar = window.cadPinMode === 'nakamichi' ? 'nakamichiTempPt' : 'frontBaselineTempPt';
+        let tempMarkerVar = window.cadPinMode === 'nakamichi' ? 'nakamichiTempMarker' : 'frontBaselineTempMarker';
+        let lineName = window.cadPinMode === 'nakamichi' ? '中道ライン' : '畝の正面（基準線）';
+
+        if (!window[tempPtVar]) {
+            window[tempPtVar] = latLng;
+            // 🌟 1回目のタップを視覚的に確認できるように！
+            window[tempMarkerVar] = new google.maps.Marker({
                 position: latLng, map: window.cadMap,
                 icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#E91E63', fillOpacity: 1, strokeColor: 'white', strokeWeight: Math.max(0.5, 2) }, zIndex: 9999
             });
-            if (msgEl) { msgEl.innerText = `【中道ライン】終点をタップして線を引いてください`; msgEl.style.color = "#E91E63"; }
+            if (msgEl) { msgEl.innerText = `【${lineName}】終点をタップして線を引いてください`; msgEl.style.color = "#E91E63"; }
         } else {
-            let p1 = window.nakamichiTempPt; let p2 = latLng;
-            window.nakamichiTempPt = null; window.cadPinMode = null;
-            if (window.nakamichiTempMarker) { window.nakamichiTempMarker.setMap(null); window.nakamichiTempMarker = null; }
+            let p1 = window[tempPtVar]; let p2 = latLng;
+            window[tempPtVar] = null; 
+            let currentMode = window.cadPinMode;
+            window.cadPinMode = null;
+            if (window[tempMarkerVar]) { window[tempMarkerVar].setMap(null); window[tempMarkerVar] = null; }
             if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
 
             let path = [{ lat: p1.lat(), lng: p1.lng() }, { lat: p2.lat(), lng: p2.lng() }];
-            window.cadNakamichiLines.push(path);
-            window.drawNakamichiVisual(path);
-            if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
-            else window.saveCadStateToHistory();
+            
+            if (currentMode === 'nakamichi') {
+                window.cadNakamichiLines.push(path);
+                window.drawNakamichiVisual(path);
+                if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
+                else window.saveCadStateToHistory();
+            } else if (currentMode === 'front_baseline') {
+                window.cadFrontBaseline = path;
+                let bearing = turf.bearing(turf.point([p1.lng(), p1.lat()]), turf.point([p2.lng(), p2.lat()]));
+                if (bearing < 0) bearing += 360;
+                document.getElementById('cadAngle').value = Math.round(bearing);
+                window.updateCadPreviewCount();
+
+                if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
+                window.cadFrontBaselineVisual = new google.maps.Polyline({
+                    path: path, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 4, map: window.cadMap, zIndex: 8
+                });
+
+                if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
+                else window.saveCadStateToHistory();
+            }
         }
     } else {
-        const iconStr = window.cadPinMode === 'water_in' ? '💧' : '🕳️';
+        const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : '🚜';
         const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, label: { text: iconStr, fontSize: '24px', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true });
         mk.cadPinType = window.cadPinMode;
         google.maps.event.addListener(mk, 'dragend', () => window.saveCadStateToHistory());
@@ -1267,6 +1298,12 @@ window.openCADMode = (id) => {
                 window.cadNakamichiLines = saved.nakamichiLines;
                 window.cadNakamichiLines.forEach(line => window.drawNakamichiVisual(line));
             }
+            if (saved.frontBaseline) {
+                window.cadFrontBaseline = saved.frontBaseline;
+                window.cadFrontBaselineVisual = new google.maps.Polyline({
+                    path: window.cadFrontBaseline, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 4, map: window.cadMap, zIndex: 8
+                });
+            }
             if (saved.customShapes) {
                 saved.customShapes.forEach((cPath, idx) => {
                     let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
@@ -1462,6 +1499,9 @@ window.cadClearLines = (skipHistory = false) => {
     if (window.cadGridLines) { window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; }
     if (window.cadUneLabels) { window.cadUneLabels.forEach(lbl => lbl.setMap(null)); window.cadUneLabels = []; }
     if (window.nakamichiTempMarker) { window.nakamichiTempMarker.setMap(null); window.nakamichiTempMarker = null; }
+    if (window.frontBaselineTempMarker) { window.frontBaselineTempMarker.setMap(null); window.frontBaselineTempMarker = null; }
+    if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
+    window.cadFrontBaseline = null;
     const msgEl = document.getElementById('cadPinModeMsg'); if (msgEl) msgEl.innerText = "💡 畝を直接タップすると、十字キーで移動や変形ができます。";
 };
 
@@ -1478,8 +1518,11 @@ window.cadSetPinMode = (type) => {
     if (type === 'nakamichi') {
         window.nakamichiTempPt = null;
         if (msgEl) { msgEl.innerText = `【中道ライン】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
+    } else if (type === 'front_baseline') {
+        window.frontBaselineTempPt = null;
+        if (msgEl) { msgEl.innerText = `【畝の正面】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
     } else {
-        const name = type === 'water_in' ? '💧 吸水ピン' : '🕳️ 排水ピン';
+        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
     }
 };
@@ -1538,16 +1581,47 @@ window.cadGenerateLines = () => {
         const centerTurf = turf.center(tPoly);
         let maxPosDist = 0, maxNegDist = 0;
 
-        tPoly.geometry.coordinates[0].forEach(coord => {
-            const pt = turf.point(coord); const dist = turf.distance(centerTurf, pt, { units: 'meters' });
-            const bearing = turf.bearing(centerTurf, pt); const angleDiff = (bearing - (angle + 90)) * Math.PI / 180;
-            const projDist = dist * Math.cos(angleDiff);
-            if (projDist > maxPosDist) maxPosDist = projDist;
-            if (-projDist > maxNegDist) maxNegDist = -projDist;
-        });
+        let baseOrigin = centerTurf;
+        let useFrontBaseline = false;
+        let growDirection = angle + 90;
+        let actualWidthM = 0;
+        let startOffset = 0;
 
-        const totalWidth = maxPosDist + maxNegDist;
-        const actualWidthM = totalWidth / uneCount;
+        if (window.cadFrontBaseline && window.cadFrontBaseline.length === 2) {
+            useFrontBaseline = true;
+            let p1 = turf.point([window.cadFrontBaseline[0].lng, window.cadFrontBaseline[0].lat]);
+            let p2 = turf.point([window.cadFrontBaseline[1].lng, window.cadFrontBaseline[1].lat]);
+            baseOrigin = turf.midpoint(p1, p2);
+            
+            let centerBearing = turf.bearing(baseOrigin, centerTurf);
+            let diffPlus = (centerBearing - (angle + 90)) * Math.PI / 180;
+            let diffMinus = (centerBearing - (angle - 90)) * Math.PI / 180;
+            growDirection = Math.cos(diffPlus) > Math.cos(diffMinus) ? angle + 90 : angle - 90;
+
+            let maxDist = 0;
+            tPoly.geometry.coordinates[0].forEach(coord => {
+                const pt = turf.point(coord);
+                const dist = turf.distance(baseOrigin, pt, { units: 'meters' });
+                const bearing = turf.bearing(baseOrigin, pt);
+                const angleDiff = (bearing - growDirection) * Math.PI / 180;
+                const projDist = dist * Math.cos(angleDiff);
+                if (projDist > maxDist) maxDist = projDist;
+            });
+            
+            actualWidthM = maxDist / uneCount;
+            startOffset = actualWidthM / 2;
+        } else {
+            tPoly.geometry.coordinates[0].forEach(coord => {
+                const pt = turf.point(coord); const dist = turf.distance(centerTurf, pt, { units: 'meters' });
+                const bearing = turf.bearing(centerTurf, pt); const angleDiff = (bearing - (angle + 90)) * Math.PI / 180;
+                const projDist = dist * Math.cos(angleDiff);
+                if (projDist > maxPosDist) maxPosDist = projDist;
+                if (-projDist > maxNegDist) maxNegDist = -projDist;
+            });
+            const totalWidth = maxPosDist + maxNegDist;
+            actualWidthM = totalWidth / uneCount;
+            startOffset = -maxNegDist + actualWidthM / 2;
+        }
 
         const bbox = turf.bbox(tPoly);
         const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' });
@@ -1559,12 +1633,12 @@ window.cadGenerateLines = () => {
 
         const lineLen = diagDist + 40;
         let rects = [];
-        const startOffset = -maxNegDist + actualWidthM / 2;
 
         for (let i = 0; i < uneCount; i++) {
             let offset = startOffset + i * actualWidthM;
-            let direction = offset >= 0 ? angle + 90 : angle - 90;
-            let oPt = turf.destination(centerTurf, Math.abs(offset), direction, { units: 'meters' });
+            let direction = useFrontBaseline ? growDirection : (offset >= 0 ? angle + 90 : angle - 90);
+            let absOffset = useFrontBaseline ? offset : Math.abs(offset);
+            let oPt = turf.destination(baseOrigin, absOffset, direction, { units: 'meters' });
 
             let pt1 = turf.destination(oPt, lineLen / 2, angle, { units: 'meters' }); let pt2 = turf.destination(oPt, lineLen / 2, angle + 180, { units: 'meters' });
             let w = actualWidthM * 0.8;
@@ -1815,7 +1889,8 @@ window.saveUneSim = () => {
         pins: pins,
         nakamichiLines: window.cadNakamichiLines,
         customShapes: customShapesData,
-        unePolygons: unePolygonsData
+        unePolygons: unePolygonsData,
+        frontBaseline: window.cadFrontBaseline || null
     });
 
     p.uneSimData = simDataStr;

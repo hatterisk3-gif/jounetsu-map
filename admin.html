@@ -77,6 +77,11 @@
           </div>
         </div>
 
+        <div style="display:flex; gap:5px; margin-bottom:5px;">
+          <button onclick="cadSetPinMode('front_baseline')"
+            style="flex:1; background:#E91E63; color:white; border:none; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">📐
+            畝の正面（基準線）を引く</button>
+        </div>
         <div style="display:flex; gap:5px; margin-bottom:10px;">
           <button onclick="cadSnapAngle()"
             style="flex:2; background:#333; color:#FFC107; border:1px solid #FFC107; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">🧲
@@ -105,13 +110,16 @@
         <div style="display:flex; gap:5px; margin-bottom:10px;">
           <button onclick="cadSetPinMode('water_in')"
             style="flex:1; background:#03A9F4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">💧
-            吸水ピン</button>
+            吸水</button>
           <button onclick="cadSetPinMode('water_out')"
             style="flex:1; background:#8D6E63; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🕳️
-            排水ピン</button>
+            排水</button>
+          <button onclick="cadSetPinMode('machine_entry')"
+            style="flex:1; background:#FF5722; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🚜
+            侵入口</button>
           <button onclick="cadToggleGrid()"
             style="flex:1; background:#FF9800; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📏
-            1mグリッド</button>
+            1m</button>
         </div>
 
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 地形・自由畝の追加 (タップで移動/変形可能)</div>
