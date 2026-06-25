@@ -62,12 +62,19 @@
     </div>
 
     <div id="recordTypeSelectModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
-      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-        <div style="margin-bottom: 20px; font-size: 16px; font-weight: bold; line-height: 1.5;">記録する種類を選んでください</div>
-        <div style="display: flex; flex-direction: column; gap: 15px;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 320px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div style="margin-bottom: 15px; font-size: 16px; font-weight: bold; line-height: 1.5;">記録方法を選んでください</div>
+        
+        <div style="background: #E0F7FA; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #00BCD4; text-align: left;">
+          <div style="font-size: 13px; font-weight: bold; color: #00838F; margin-bottom: 8px;">🤖 AIオート作業記録</div>
+          <input type="text" id="autoRecordInput" placeholder="自由記述 (例: 第1で草刈り 2時間)" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; margin-bottom: 10px; font-size: 14px;" onkeydown="if(event.key==='Enter') { document.getElementById('recordTypeSelectModal').style.display='none'; executeAutoRecord(); }">
+          <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'; executeAutoRecord()" style="width: 100%; background: #00BCD4; color: white; padding: 12px; border-radius: 6px; border: none; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">✨ 解析して開く</button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
           <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'; findCurrentFieldAndOpenForm('growth')" style="background: #4CAF50; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🌱 圃場の生育記録</button>
-          <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'; findCurrentFieldAndOpenForm('work')" style="background: #FF9800; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜 作業記録</button>
-          <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'" style="background: #ccc; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 5px;">キャンセル</button>
+          <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'; findCurrentFieldAndOpenForm('work')" style="background: #FF9800; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜 現在地で作業記録</button>
+          <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'" style="background: #eee; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 5px;">キャンセル</button>
         </div>
       </div>
     </div>

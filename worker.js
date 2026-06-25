@@ -2859,6 +2859,161 @@ function createSignboardMarker(name, pos, icon, id) {
               })();
           }, 2000); // 読み込み待機2秒
       }
+// 🌟 オート作業記録（自由記述からの自動抽出機能）🌟
+window.autoRecordData = null;
+
+window.parseAutoRecord = (text) => {
+    let result = {
+        workName: null,
+        cropName: null,
+        polyId: null,
+        startTime: null,
+        endTime: null
+    };
+
+    if (!text) return result;
+
+    // 1. 場所（圃場・看板名）の抽出
+    for (let id in loadedPolygons) {
+        if (loadedPolygons[id].name && text.includes(loadedPolygons[id].name)) {
+            result.polyId = id;
+            break;
+        }
+    }
+
+    // 2. 作業名の抽出
+    if (typeof pdlWorkMaster !== 'undefined') {
+        for (let w of pdlWorkMaster) {
+            if (w.name && text.includes(w.name)) {
+                result.workName = w.name;
+                break;
+            }
+        }
+    }
+
+    // 3. 作物名の抽出
+    if (typeof pdlCrops !== 'undefined') {
+        for (let c of pdlCrops) {
+            if (c.name && text.includes(c.name)) {
+                result.cropName = c.name;
+                break;
+            }
+        }
+    }
+
+    // 4. 時間の抽出
+    // 時間帯 (例: "10:30", "14時", "9時半")
+    const timeRegex = /(\d{1,2})[:時](\d{1,2})?(?:分|半)?/g;
+    let times = [];
+    let match;
+    while ((match = timeRegex.exec(text)) !== null) {
+        let hour = match[1].padStart(2, '0');
+        let minStr = match[2];
+        if (!minStr && match[0].includes('半')) minStr = '30';
+        let minute = (minStr || '00').padStart(2, '0');
+        times.push(`${hour}:${minute}`);
+    }
+    
+    // 時間長 (例: "2時間", "1.5時間", "30分")
+    let durationMins = 0;
+    const durationHourMatch = text.match(/(\d+(?:\.\d+)?)時間/);
+    if (durationHourMatch) durationMins += parseFloat(durationHourMatch[1]) * 60;
+    const durationMinMatch = text.match(/(\d+)分/);
+    if (durationMinMatch && !text.includes('時' + durationMinMatch[1] + '分')) {
+        // "10時30分" のような時刻表現でない場合のみ加算
+        durationMins += parseInt(durationMinMatch[1]);
+    }
+
+    if (times.length >= 2) {
+        // "10時から12時"
+        result.startTime = times[0];
+        result.endTime = times[times.length - 1];
+    } else if (times.length === 1 && durationMins > 0) {
+        // "10時から2時間"
+        result.startTime = times[0];
+        let d = new Date(`2000-01-01T${times[0]}:00`);
+        d.setMinutes(d.getMinutes() + durationMins);
+        result.endTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    } else if (durationMins > 0) {
+        // "2時間" (終了を現在時刻とする)
+        let now = new Date();
+        result.endTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        now.setMinutes(now.getMinutes() - durationMins);
+        result.startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+
+    return result;
+};
+
+window.executeAutoRecord = () => {
+    const inputEl = document.getElementById('autoRecordInput');
+    if (!inputEl || !inputEl.value.trim()) {
+        if(typeof customAlert !== 'undefined') customAlert('作業内容を入力してください。');
+        return;
+    }
+    const text = inputEl.value.trim();
+    const data = parseAutoRecord(text);
+    
+    // モーダルを開く処理
+    window.autoRecordData = data;
+    
+    if (data.polyId) {
+        if (typeof directOpenForm === 'function') {
+            directOpenForm(data.polyId, 'work');
+        } else {
+            activePolyId = data.polyId;
+            currentRecordType = 'work';
+            renderRecordForm();
+            document.getElementById('rightPanel').classList.add('open');
+        }
+    } else {
+        // 圃場が見つからない場合は空欄で開く
+        if (typeof directOpenForm === 'function') {
+            directOpenForm(null, 'work');
+        } else {
+            activePolyId = null;
+            currentRecordType = 'work';
+            renderRecordForm();
+            document.getElementById('rightPanel').classList.add('open');
+        }
+    }
+    
+    // フォームが開かれた直後に値を注入する
+    setTimeout(() => {
+        if (window.autoRecordData) {
+            const d = window.autoRecordData;
+            let changed = false;
+            
+            if (d.workName && document.getElementById('rec_work_name')) {
+                document.getElementById('rec_work_name').value = d.workName;
+                if (typeof handleWorkNameChange === 'function') handleWorkNameChange();
+                changed = true;
+            }
+            if (d.cropName && document.getElementById('rec_work_crop')) {
+                document.getElementById('rec_work_crop').value = d.cropName;
+                changed = true;
+            }
+            if (d.startTime && document.getElementById('rec_start_time')) {
+                document.getElementById('rec_start_time').value = d.startTime;
+                changed = true;
+            }
+            if (d.endTime && document.getElementById('rec_end_time')) {
+                document.getElementById('rec_end_time').value = d.endTime;
+                changed = true;
+            }
+            
+            if (changed && typeof calcTotalTime === 'function') {
+                calcTotalTime();
+            }
+            
+            inputEl.value = ''; // 入力欄をクリア
+            window.autoRecordData = null; // リセット
+            
+            if(typeof customAlert !== 'undefined') customAlert('✨ AIが自動で項目を選択しました！内容を確認して保存してください。');
+        }
+    }, 300); // フォーム描画の完了を少し待つ
+};
+
 // 🌟 4. アプリ起動時の爆速処理（window.onloadをやめる！） 🌟
       document.addEventListener('DOMContentLoaded', () => {
           initMap();
