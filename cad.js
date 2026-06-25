@@ -651,7 +651,7 @@ window.loadCadStateFromHistory = (index) => {
         window.cadFrontBaseline = state.frontBaseline || null;
         if (window.cadFrontBaseline) {
             window.cadFrontBaselineVisual = new google.maps.Polyline({
-                path: window.cadFrontBaseline, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 4, map: window.cadMap, zIndex: 8
+                path: window.cadFrontBaseline, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 15, map: window.cadMap, zIndex: 8, strokeLinecap: 'round', strokeLinejoin: 'round'
             });
         }
 
@@ -768,10 +768,36 @@ window.handleMapClick = (pageX, pageY) => {
 
     const msgEl = document.getElementById('cadPinModeMsg');
 
-    if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'front_baseline') {
-        let tempPtVar = window.cadPinMode === 'nakamichi' ? 'nakamichiTempPt' : 'frontBaselineTempPt';
-        let tempMarkerVar = window.cadPinMode === 'nakamichi' ? 'nakamichiTempMarker' : 'frontBaselineTempMarker';
-        let lineName = window.cadPinMode === 'nakamichi' ? '中道ライン' : '畝の正面（バーを設置）';
+    if (window.cadPinMode === 'front_baseline') {
+        window.cadPinMode = null;
+        if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+        
+        let angleEl = document.getElementById('cadAngle');
+        let angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+        
+        let centerPtTurf = turf.point([latLng.lng(), latLng.lat()]);
+        let p1Turf = turf.destination(centerPtTurf, 5 / 1000, angle, {units: 'kilometers'});
+        let p2Turf = turf.destination(centerPtTurf, 5 / 1000, angle + 180, {units: 'kilometers'});
+        
+        let path = [
+            { lat: p1Turf.geometry.coordinates[1], lng: p1Turf.geometry.coordinates[0] },
+            { lat: p2Turf.geometry.coordinates[1], lng: p2Turf.geometry.coordinates[0] }
+        ];
+        
+        window.cadFrontBaseline = path;
+        
+        if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
+        window.cadFrontBaselineVisual = new google.maps.Polyline({
+            path: path, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 15, map: window.cadMap, zIndex: 8, strokeLinecap: 'round', strokeLinejoin: 'round'
+        });
+
+        if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
+        else window.saveCadStateToHistory();
+
+    } else if (window.cadPinMode === 'nakamichi') {
+        let tempPtVar = 'nakamichiTempPt';
+        let tempMarkerVar = 'nakamichiTempMarker';
+        let lineName = '中道ライン';
 
         if (!window[tempPtVar]) {
             window[tempPtVar] = latLng;
@@ -781,39 +807,22 @@ window.handleMapClick = (pageX, pageY) => {
                 icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#E91E63', fillOpacity: 1, strokeColor: 'white', strokeWeight: Math.max(0.5, 2) }, zIndex: 9999
             });
             if (msgEl) {
-                msgEl.innerText = window.cadPinMode === 'nakamichi' ? `【${lineName}】終点をタップして線を引いてください` : `【${lineName}】バーの終点をタップして設置してください`;
+                msgEl.innerText = `【${lineName}】終点をタップして線を引いてください`;
                 msgEl.style.color = "#E91E63";
             }
         } else {
             let p1 = window[tempPtVar]; let p2 = latLng;
             window[tempPtVar] = null; 
-            let currentMode = window.cadPinMode;
             window.cadPinMode = null;
             if (window[tempMarkerVar]) { window[tempMarkerVar].setMap(null); window[tempMarkerVar] = null; }
             if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
 
             let path = [{ lat: p1.lat(), lng: p1.lng() }, { lat: p2.lat(), lng: p2.lng() }];
             
-            if (currentMode === 'nakamichi') {
-                window.cadNakamichiLines.push(path);
-                window.drawNakamichiVisual(path);
-                if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
-                else window.saveCadStateToHistory();
-            } else if (currentMode === 'front_baseline') {
-                window.cadFrontBaseline = path;
-                let bearing = turf.bearing(turf.point([p1.lng(), p1.lat()]), turf.point([p2.lng(), p2.lat()]));
-                if (bearing < 0) bearing += 360;
-                document.getElementById('cadAngle').value = Math.round(bearing);
-                window.updateCadPreviewCount();
-
-                if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
-                window.cadFrontBaselineVisual = new google.maps.Polyline({
-                    path: path, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 4, map: window.cadMap, zIndex: 8
-                });
-
-                if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
-                else window.saveCadStateToHistory();
-            }
+            window.cadNakamichiLines.push(path);
+            window.drawNakamichiVisual(path);
+            if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
+            else window.saveCadStateToHistory();
         }
     } else {
         const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : '🚧';
@@ -1305,7 +1314,7 @@ window.openCADMode = (id) => {
             if (saved.frontBaseline) {
                 window.cadFrontBaseline = saved.frontBaseline;
                 window.cadFrontBaselineVisual = new google.maps.Polyline({
-                    path: window.cadFrontBaseline, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 4, map: window.cadMap, zIndex: 8
+                    path: window.cadFrontBaseline, strokeColor: '#FF5722', strokeOpacity: 0.8, strokeWeight: 15, map: window.cadMap, zIndex: 8, strokeLinecap: 'round', strokeLinejoin: 'round'
                 });
             }
             if (saved.customShapes) {
@@ -1524,7 +1533,7 @@ window.cadSetPinMode = (type) => {
         if (msgEl) { msgEl.innerText = `【中道ライン】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
     } else if (type === 'front_baseline') {
         window.frontBaselineTempPt = null;
-        if (msgEl) { msgEl.innerText = `【畝の正面】バーの始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
+        if (msgEl) { msgEl.innerText = `【畝の正面】バーを設置したい場所をタップしてください`; msgEl.style.color = "#E91E63"; }
     } else {
         const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : '🚧 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
