@@ -113,7 +113,7 @@ async function watch() {
                 aiOutput = fs.readFileSync(reportPath, 'utf8').trim();
                 try { fs.unlinkSync(reportPath); } catch (e) { }
               } else {
-                aiOutput = "（コードの修正は完了しましたが、解説レポートは省略されました）";
+                aiOutput = "（レポートは省略されましたが、処理は完了しました！）";
               }
 
               console.log('🧹 agyが分析用に残した一時画像を削除中...');
