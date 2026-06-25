@@ -1121,8 +1121,9 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.renderRecordForm = () => {
-        const p = loadedPolygons[activePolyId], isEdit = !!currentEditRecordId;
-        selectedPolyIds = [activePolyId]; pendingFiles = []; 
+        const p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [], area: 0 };
+        const isEdit = !!currentEditRecordId;
+        selectedPolyIds = activePolyId ? [activePolyId] : []; pendingFiles = []; 
         const addBtnStyle = ''; // ★変更：編集時もボタンを常に表示する！
         let tgt = null; existingUrlsInEdit = [];
         if(isEdit){ tgt = p.photos.find(ph => ph.id===currentEditRecordId || ph.url===currentEditRecordId); if(tgt) existingUrlsInEdit=tgt.urls?[...tgt.urls]:(tgt.url?[tgt.url]:[]); }
@@ -1305,8 +1306,9 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       async function submitRecord() {
+        if (selectedPolyIds.length === 0) { customAlert("⚠️ 記録対象の圃場を1つ以上選択してください。"); return; }
         if (currentRecordType === 'work') { const prog = document.getElementById('rec_progress_status').value; if (!prog) { customAlert("進捗状況は必須項目です。選択してください。"); return; } }
-        const btn = document.getElementById('submitBtn'), p = loadedPolygons[activePolyId];
+        const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
         const files = pendingFiles;
         btn.disabled = true; btn.innerText = "通信中...";
         let photos = []; for(let f of files) { const b64 = await resizeImg(f); photos.push({filename:f.name, base64:b64}); }
@@ -2659,7 +2661,12 @@ function createSignboardMarker(name, pos, icon, id) {
       window.findCurrentFieldAndOpenForm = () => {
           // すでに取得している現在地(latestUserPos)を利用する
           if (!latestUserPos) {
-              customAlert("📍 まだ現在地を取得できていません。数秒待ってからもう一度お試しください。");
+              // GPSがまだの場合も空欄で開く
+              if (typeof directOpenForm === 'function') {
+                  directOpenForm(null, 'work');
+              } else {
+                  customAlert("📍 まだ現在地を取得できていません。数秒待ってからもう一度お試しください。");
+              }
               return;
           }
 
@@ -2697,8 +2704,13 @@ function createSignboardMarker(name, pos, icon, id) {
 
           // もし中に入っているポリゴンが見つからなかったら、一番近いものを採用
           if (!matchedId && closestId) {
-              matchedId = closestId;
-              matchedName = loadedPolygons[closestId].name;
+              // 10m以内なら自動選択、それ以上離れていたら空欄(null)
+              if (minDistance < 10) {
+                  matchedId = closestId;
+                  matchedName = loadedPolygons[closestId].name;
+              } else {
+                  matchedId = null;
+              }
           }
 
           if (matchedId) {
@@ -2716,8 +2728,12 @@ function createSignboardMarker(name, pos, icon, id) {
                   openMainMenu(matchedId); 
               }
           } else {
-              // 🌟 ポリゴンが1つも存在しない場合
-              customAlert("⚠️ 圃場データがまだ読み込まれていないか、一つも登録されていません。");
+              // 🌟 圃場が見つからない、または10m以上離れている場合 -> 空欄で開く
+              if (typeof directOpenForm === 'function') {
+                  directOpenForm(null, 'work');
+              } else {
+                  customAlert("⚠️ 近くに圃場が見つかりませんでした。");
+              }
           }
       };
     // 🌟ここから上書き：共有されたURLを開いた瞬間に「全自動」で解析＆判定する！🌟
