@@ -771,7 +771,7 @@ window.handleMapClick = (pageX, pageY) => {
     if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'front_baseline') {
         let tempPtVar = window.cadPinMode === 'nakamichi' ? 'nakamichiTempPt' : 'frontBaselineTempPt';
         let tempMarkerVar = window.cadPinMode === 'nakamichi' ? 'nakamichiTempMarker' : 'frontBaselineTempMarker';
-        let lineName = window.cadPinMode === 'nakamichi' ? '中道ライン' : '畝の正面（基準線）';
+        let lineName = window.cadPinMode === 'nakamichi' ? '中道ライン' : '畝の正面（バーを設置）';
 
         if (!window[tempPtVar]) {
             window[tempPtVar] = latLng;
@@ -780,7 +780,10 @@ window.handleMapClick = (pageX, pageY) => {
                 position: latLng, map: window.cadMap,
                 icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#E91E63', fillOpacity: 1, strokeColor: 'white', strokeWeight: Math.max(0.5, 2) }, zIndex: 9999
             });
-            if (msgEl) { msgEl.innerText = `【${lineName}】終点をタップして線を引いてください`; msgEl.style.color = "#E91E63"; }
+            if (msgEl) {
+                msgEl.innerText = window.cadPinMode === 'nakamichi' ? `【${lineName}】終点をタップして線を引いてください` : `【${lineName}】バーの終点をタップして設置してください`;
+                msgEl.style.color = "#E91E63";
+            }
         } else {
             let p1 = window[tempPtVar]; let p2 = latLng;
             window[tempPtVar] = null; 
@@ -813,7 +816,7 @@ window.handleMapClick = (pageX, pageY) => {
             }
         }
     } else {
-        const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : '🚜';
+        const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : '🚧';
         const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, label: { text: iconStr, fontSize: '24px', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true });
         mk.cadPinType = window.cadPinMode;
         google.maps.event.addListener(mk, 'dragend', () => window.saveCadStateToHistory());
@@ -1521,9 +1524,9 @@ window.cadSetPinMode = (type) => {
         if (msgEl) { msgEl.innerText = `【中道ライン】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
     } else if (type === 'front_baseline') {
         window.frontBaselineTempPt = null;
-        if (msgEl) { msgEl.innerText = `【畝の正面】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
+        if (msgEl) { msgEl.innerText = `【畝の正面】バーの始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
     } else {
-        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : '🚜 機械侵入口';
+        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : '🚧 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
     }
 };

@@ -112,7 +112,7 @@ window.promptLineUrl = async () => {
         customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
     }
 };
-const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場' };
+const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場', '🚙': '駐車場（軽トラ）' };
 
 async function callGAS(action, params = {}) { params.action = action; const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) }); const j = await res.json(); if (j.status !== "success") throw new Error(j.message); return j.data; }
 
@@ -395,7 +395,7 @@ window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').
 function openCol(id) {
     const p = loadedPolygons[id]; let h;
     if (p.isMarker) {
-        const ic = ['🪧', '📦', '🚚', '🚜', '🚗', '🚲', '🏠', '🏢', '🚻', '🚰', '🚮', '🅿️', '🧰', '🔧', '🔨', '⛏️', '🪓', '🔪', '✂️', '🧪', '🧴', '💊', '💧', '⛽', '⚡', '❄️', '🧊', '🌡️', '🔥', '🌱', '🌿', '⛲', '🚿', '🌀', '🪚', '🧹', '🔬', '🏭', '🛻', '🏪', '⛽', '🛠️', '🏢', '⚠️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '⛰️', '🗑️'];
+        const ic = ['🪧', '📦', '🚚', '🚜', '🚗', '🚲', '🏠', '🏢', '🚻', '🚰', '🚮', '🅿️', '🚙', '🧰', '🔧', '🔨', '⛏️', '🪓', '🔪', '✂️', '🧪', '🧴', '💊', '💧', '⛽', '⚡', '❄️', '🧊', '🌡️', '🔥', '🌱', '🌿', '⛲', '🚿', '🌀', '🪚', '🧹', '🔬', '🏭', '🛻', '🏪', '⛽', '🛠️', '🏢', '⚠️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '⛰️', '🗑️'];
         h = `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;font-size:24px;">${ic.map(i => `<span onclick="applyCol('${id}','${i}')" style="cursor:pointer;">${i}</span>`).join('')}</div>`;
     } else {
         const cl = ['#FF0000', '#FF6600', '#FFFF00', '#00FF00', '#556B2F', '#00CCFF', '#0033FF', '#9900FF', '#d32f2f'];
@@ -730,7 +730,7 @@ function openMarkerForm(markerObj) {
             else mFunc.value = '機能なし';
         }
     };
-    const icons = ['🪧', '🚻', '🚰', '⛲', '🚿', '🌀', '⛏️', '🪚', '✂️', '🧹', '🔬', '📦', '🏭', '🚚', '🛻', '🏪', '⛽', '🛠️', '🏢', '⚠️', '🅿️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '🚜', '💩', '⛰️', '🗑️'];
+    const icons = ['🪧', '🚻', '🚰', '⛲', '🚿', '🌀', '⛏️', '🪚', '✂️', '🧹', '🔬', '📦', '🏭', '🚚', '🛻', '🚙', '🏪', '⛽', '🛠️', '🏢', '⚠️', '🅿️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '🚜', '💩', '⛰️', '🗑️'];
     const funcOpts = `<option value="機能なし">機能なし</option>` + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join('');
     infoWindow.setContent(`
             <div style="width:260px;max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
