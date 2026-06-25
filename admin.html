@@ -346,15 +346,21 @@
     </div>
   </div>
   <div id="editShapePanel"
-    style="display:none; background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center;">⚠️ 形状変更中
-    <button id="editLoadFudeBtn" style="background:#673AB7; color:white; margin:0 10px; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">🤖 筆ポリから</button>
-    <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 10px; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">確定</button>
-    <button id="cancelShapeBtn" style="background:#666; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">戻す</button>
+    style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:400px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
+    ⚠️ 形状変更中
+    <div style="margin-top:10px;">
+      <button id="editLoadFudeBtn" style="background:#673AB7; color:white; margin:0 5px; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">🤖 筆ポリから</button>
+      <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 5px; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">確定</button>
+      <button id="cancelShapeBtn" style="background:#666; color:#fff; border:none; margin:0 5px; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">戻す</button>
+    </div>
   </div>
   <div id="mergeModePanel"
-    style="display:none; background:#FF9800; color:#fff; padding:10px; font-weight:bold; text-align:center; z-index:10;">
-    🚜 統合モード中：もう一つの圃場をクリックして統合 <button onclick="cancelMerge()"
-      style="background:#666; color:#fff; border:none; padding:6px 15px; border-radius:4px; margin-left:15px; font-weight:bold; cursor:pointer;">キャンセル</button>
+    style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#FF9800; color:#fff; padding:10px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:400px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
+    🚜 統合モード中：もう一つの圃場をクリックして統合
+    <div style="margin-top:10px;">
+      <button onclick="cancelMerge()"
+        style="background:#666; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">キャンセル</button>
+    </div>
   </div>
   <div id="map"></div>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
