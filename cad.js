@@ -1821,4 +1821,5 @@ window.saveUneSim = () => {
     p.uneSimData = simDataStr;
     callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
     alert("💾 描画した地形とピンをすべて保存しました！");
+    window.closeCADMode();
 };

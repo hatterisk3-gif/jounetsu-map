@@ -653,7 +653,45 @@ function updatePolygon(params) {
     
     if (params.ridgeDir !== undefined) sheet.getRange(targetRow, 14).setValue(params.ridgeDir); // N列(あれば)
     if (params.ridgeWidth !== undefined) sheet.getRange(targetRow, 15).setValue(params.ridgeWidth); // O列(あれば)
-    if (params.uneSimData !== undefined) sheet.getRange(targetRow, 16).setValue(params.uneSimData); // P列(畝データ)
+    if (params.uneSimData !== undefined) {
+      sheet.getRange(targetRow, 16).setValue(params.uneSimData); // P列(畝データ)
+      
+      // 畝シートにも保存
+      try {
+        let uneSheet = ss.getSheetByName('畝');
+        if (!uneSheet) {
+          uneSheet = ss.insertSheet('畝');
+          uneSheet.appendRow(['圃場ID', '圃場名', '畝番号', '更新日時']);
+        }
+        
+        let uneData = uneSheet.getDataRange().getValues();
+        let newUneData = [];
+        let header = uneData.length > 0 ? uneData[0] : ['圃場ID', '圃場名', '畝番号', '更新日時'];
+        newUneData.push(header);
+        
+        // 既存の同じ圃場IDの畝データを除外
+        for (let i = 1; i < uneData.length; i++) {
+          if (uneData[i][0] !== id) {
+            newUneData.push(uneData[i]);
+          }
+        }
+        
+        let simDataObj = JSON.parse(params.uneSimData);
+        if (simDataObj.unePolygons && simDataObj.unePolygons.length > 0) {
+          let timestamp = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
+          for (let i = 0; i < simDataObj.unePolygons.length; i++) {
+            newUneData.push([id, newName, i + 1, timestamp]);
+          }
+        }
+        
+        uneSheet.clearContents();
+        if (newUneData.length > 0) {
+          uneSheet.getRange(1, 1, newUneData.length, newUneData[0].length).setValues(newUneData);
+        }
+      } catch (e) {
+        console.error("畝シートの更新に失敗しました: " + e.message);
+      }
+    }
     
     sheet.getRange(targetRow, historyCol).setValue(JSON.stringify(newPhotos)); // J列: 履歴
   }
