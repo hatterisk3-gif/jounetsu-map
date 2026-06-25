@@ -645,8 +645,9 @@ window.loadCadStateFromHistory = (index) => {
     if (state.nakamichiLines) {
         window.cadNakamichiLines = state.nakamichiLines || [];
         window.cadNakamichiLines.forEach(line => window.drawNakamichiVisual(line));
+    }
 
-        if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
+    if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
         window.cadFrontBaseline = state.frontBaseline || null;
         if (window.cadFrontBaseline) {
             window.cadFrontBaselineVisual = new google.maps.Polyline({
