@@ -511,6 +511,31 @@ function initMap() {
     // 🌟修正：読込中のブロックと、もう一度タップでの選択解除
     map.data.addListener('click', (e) => {
         if (window.isMapLoadingFude) return; // ★読込中バリア
+
+        // ★ 形状変更中の筆ポリゴン適用
+        if (window.isEditingFude && editingId && document.getElementById('editShapePanel').style.display === 'block') {
+            let geom = e.feature.getGeometry();
+            let targetArray = null;
+            if (geom.getType() === 'Polygon') {
+                targetArray = geom.getAt(0).getArray();
+            } else if (geom.getType() === 'MultiPolygon') {
+                targetArray = geom.getAt(0).getAt(0).getArray();
+            }
+
+            if (targetArray) {
+                let path = [];
+                targetArray.forEach(latLng => path.push(latLng));
+                
+                if (loadedPolygons[editingId] && loadedPolygons[editingId].polygon) {
+                    loadedPolygons[editingId].polygon.setPath(path);
+                    customAlert("筆ポリゴンの形状を適用しました。「確定」ボタンで保存してください。");
+                    setFudeVisibility(false);
+                    window.isEditingFude = false;
+                }
+            }
+            return;
+        }
+
         if (customDrawingMode !== 'polygon') return;
         if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
 
@@ -1249,7 +1274,94 @@ window.saveM = () => {
     callGAS('savePolygon', { name: n, coords: JSON.stringify(coords), color: ic, signFunction: funcType, userName: currentUser }).then(id => { infoWindow.close(); createPolygonObject({ id, name: n, coords, color: ic, signFunction: funcType, isMarker: true }); document.getElementById('btnViewMode').click(); });
 };
 
+document.getElementById('editLoadFudeBtn').onclick = () => {
+    const btn = document.getElementById('editLoadFudeBtn');
+    const originalText = "🤖 筆ポリから";
+    btn.innerHTML = "🔍 読込中...";
+    btn.disabled = true;
+    window.isMapLoadingFude = true;
+    window.isEditingFude = true;
+
+    const center = map.getCenter();
+    new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
+        if (status !== 'OK' || results.length === 0) {
+            customAlert("現在のエリアの住所を取得できませんでした。");
+            btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false; window.isEditingFude = false; return;
+        }
+
+        let prefName = null;
+        for (let component of results[0].address_components) {
+            if (component.types.includes("administrative_area_level_1")) {
+                prefName = component.long_name;
+                break;
+            }
+        }
+
+        if (!prefName || !fudeFiles[prefName]) {
+            customAlert(`現在のエリア（${prefName || '不明'}）の農地データはシステムに登録されていません。`);
+            btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false; window.isEditingFude = false; return;
+        }
+
+        const regionData = fudeFiles[prefName];
+
+        if (window.loadedFudeRegion === prefName) {
+            setFudeVisibility(true);
+            btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false;
+            return;
+        }
+
+        if (window.loadedFudeRegion !== null) {
+            map.data.forEach(function (feature) { map.data.remove(feature); });
+        }
+
+        btn.innerHTML = `⏳ 読込中...`;
+        map.setOptions({ draggableCursor: 'wait' });
+
+        const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev";
+        let loadedCount = 0;
+
+        regionData.files.forEach(fileName => {
+            if (window.fudeCache[fileName]) {
+                map.data.addGeoJson(window.fudeCache[fileName]);
+                loadedCount++;
+                checkComplete();
+            } else {
+                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
+                    .then(res => res.json())
+                    .then(geoJson => {
+                        window.fudeCache[fileName] = geoJson;
+                        map.data.addGeoJson(geoJson);
+                        loadedCount++;
+                        checkComplete();
+                    })
+                    .catch(err => { console.error("読込エラー", err); loadedCount++; checkComplete(); });
+            }
+        });
+
+        function checkComplete() {
+            if (loadedCount === regionData.files.length) {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                window.isMapLoadingFude = false;
+                map.setOptions({ draggableCursor: null });
+                window.loadedFudeRegion = prefName;
+                setFudeVisibility(true);
+            }
+        }
+
+        setTimeout(() => {
+            if (btn.disabled) {
+                btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false;
+                map.setOptions({ draggableCursor: null });
+                window.loadedFudeRegion = prefName; setFudeVisibility(true);
+            }
+        }, 8000);
+    });
+};
+
 document.getElementById('saveShapeBtn').onclick = () => {
+    window.isEditingFude = false;
+    setFudeVisibility(false);
     const p = loadedPolygons[editingId];
     if (p.isMarker) {
         const pos = p.marker.getPosition(); p.marker.setDraggable(false);
@@ -1268,7 +1380,7 @@ document.getElementById('saveShapeBtn').onclick = () => {
     }
     document.getElementById('editShapePanel').style.display = 'none'; editingId = null;
 };
-document.getElementById('cancelShapeBtn').onclick = () => { const p = loadedPolygons[editingId]; if (p.isMarker) { p.marker.setDraggable(false); p.marker.setPosition(originalCoordsForEdit[0]); } else { p.polygon.setEditable(false); p.polygon.setPath(originalCoordsForEdit); } document.getElementById('editShapePanel').style.display = 'none'; editingId = null; };
+document.getElementById('cancelShapeBtn').onclick = () => { window.isEditingFude = false; setFudeVisibility(false); const p = loadedPolygons[editingId]; if (p.isMarker) { p.marker.setDraggable(false); p.marker.setPosition(originalCoordsForEdit[0]); } else { p.polygon.setEditable(false); p.polygon.setPath(originalCoordsForEdit); } document.getElementById('editShapePanel').style.display = 'none'; editingId = null; };
 
 window.executeNavigation = (id) => { const p = loadedPolygons[id]; let lat, lng; if (p.isMarker) { lat = p.marker.getPosition().lat(); lng = p.marker.getPosition().lng(); } else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); lat = b.getCenter().lat(); lng = b.getCenter().lng(); } window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank'); };
 
