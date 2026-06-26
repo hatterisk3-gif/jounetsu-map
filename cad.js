@@ -1719,6 +1719,9 @@ window.cadGenerateLines = () => {
         window.reassignLabels();
         window.saveCadStateToHistory();
 
+        window.cadSvgNeedsRebuild = true;
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+
         if (successCount === 0) alert("⚠️ 畝が生成できませんでした。畝数の設定などを確認してください。");
         else { const mode1El = document.getElementById('cadMode1'); if (mode1El && mode1El.style.display === 'block') switchCadTab(2); }
 
