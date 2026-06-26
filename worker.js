@@ -738,6 +738,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (item.type === 'work' && item.data) {
                  const workLabel = p.isMarker ? "作業登録" : "作業記録";
                  h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
+                 if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
                  if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
                  
                  if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
@@ -818,6 +819,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (item.type === 'work' && item.data) {
                  const workLabel = item.isMarker ? "作業登録" : "作業記録";
                  h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
+                 if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
                  if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
 
                  if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
@@ -1226,6 +1228,17 @@ function createSignboardMarker(name, pos, icon, id) {
 
         let html = '';
         if (currentRecordType === 'work') {
+          let lastNextRidge = "";
+          if (!isEdit && p.photos) {
+             const pastWorks = p.photos.filter(ph => ph.type === 'work' && ph.data && ph.data.nextRidge).sort((a,b) => {
+                 const da = new Date(a.date.replace(/\//g,'-') + 'T' + (a.time||'00:00') + ':00');
+                 const db = new Date(b.date.replace(/\//g,'-') + 'T' + (b.time||'00:00') + ':00');
+                 return db - da;
+             });
+             if (pastWorks.length > 0) lastNextRidge = pastWorks[0].data.nextRidge;
+          }
+          let ridgeUI = p.isMarker ? '' : `<div style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #80deea;"><label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗 (伝達事項)</label><div style="display:flex; gap:10px;"><div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" id="rec_worked_ridges" class="form-input" placeholder="例: 1-5" style="margin-bottom:0;"></div><div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" id="rec_next_ridge" class="form-input" placeholder="例: 6" value="${lastNextRidge}" style="margin-bottom:0;"></div></div></div>`;
+          
           let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster.filter(w => w.displayPlace === '圃場');
           let wNames = '<option value="">選択してください</option>' + availableWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
           let wStats = '<option value="">選択してください</option>' + pdlWorkStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -1267,7 +1280,7 @@ function createSignboardMarker(name, pos, icon, id) {
           html = `${targetSection}<label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;"><label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}">
                   <label class="form-label">🚜 作業名</label><select id="rec_work_name" class="form-input" onchange="handleWorkNameChange()">${wNames}</select>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
-                  ${cropSection}<div id="used_items_section"></div><div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div><div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>${timeUI}${workTimeUI}<label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label><select id="rec_progress_status" class="form-input">${wStats}</select>${exPhotos}${photoUI}`;
+                  ${cropSection}${ridgeUI}<div id="used_items_section"></div><div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div><div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>${timeUI}${workTimeUI}<label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label><select id="rec_progress_status" class="form-input">${wStats}</select>${exPhotos}${photoUI}`;
         } else if (p.isMarker) {
           html = `${targetSection}${timeUI}${exPhotos}${photoUI}`;
         } else {
@@ -1286,6 +1299,8 @@ function createSignboardMarker(name, pos, icon, id) {
           const d = tgt.data;
           if (currentRecordType === 'work') {
             document.getElementById('rec_work_date').value = d.workDate || ''; document.getElementById('rec_work_name').value = d.workName || ''; if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value = d.crop || ''; if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || ''; document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
+            if(document.getElementById('rec_worked_ridges')) document.getElementById('rec_worked_ridges').value = d.workedRidges || '';
+            if(document.getElementById('rec_next_ridge')) document.getElementById('rec_next_ridge').value = d.nextRidge || '';
             
             handleWorkNameChange();
             
@@ -1386,7 +1401,9 @@ function createSignboardMarker(name, pos, icon, id) {
             startTime: sTime, endTime: eTime, totalTime: totalTimeStr, 
             progressStatus: document.getElementById('rec_progress_status').value,
             usedTools: "", 
-            usedMaterials: usedItemsText 
+            usedMaterials: usedItemsText,
+            workedRidges: document.getElementById('rec_worked_ridges') ? document.getElementById('rec_worked_ridges').value : "",
+            nextRidge: document.getElementById('rec_next_ridge') ? document.getElementById('rec_next_ridge').value : ""
           };
 
          if ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")) {
