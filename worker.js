@@ -353,6 +353,46 @@ function createSignboardMarker(name, pos, icon, id) {
         c.forEach(pt=>b.extend(pt)); 
         return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=16, /* ← ★ここの「14」を変更 */ label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); 
       }
+      window.openFieldWorkRecordSelect = (id) => {
+          const p = loadedPolygons[id];
+          let html = `
+            <div style="text-align:center; padding: 10px;">
+               <div style="margin-bottom: 15px; font-size: 16px; font-weight: bold; line-height: 1.5; color: #333;">記録方法を選んでください</div>
+               
+               <div style="background: #E0F7FA; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #00BCD4; text-align: left;">
+                  <div style="font-size: 13px; font-weight: bold; color: #00838F; margin-bottom: 8px;">🤖 AIオート作業記録</div>
+                  <input type="text" id="autoRecordInput_${id}" placeholder="自由記述 (例: 草刈り 2時間)" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; margin-bottom: 10px; font-size: 14px;" onkeydown="if(event.key==='Enter') { executeFieldAutoRecord('${id}'); }">
+                  <button onclick="executeFieldAutoRecord('${id}')" style="width: 100%; background: #00BCD4; color: white; padding: 12px; border-radius: 6px; border: none; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">✨ 解析して開く</button>
+               </div>
+               
+               <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <button onclick="document.getElementById('modal').style.display='none'; actionManagePhotos('${id}', 'work')" style="width: 100%; background: #FF9800; color: white; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜 通常の作業記録</button>
+                  <button onclick="document.getElementById('modal').style.display='none'" style="width: 100%; background: #eee; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer;">キャンセル</button>
+               </div>
+            </div>
+          `;
+          document.getElementById('modalBody').innerHTML = html;
+          document.getElementById('modal').style.display = 'flex';
+      };
+
+      window.executeFieldAutoRecord = (id) => {
+          const text = document.getElementById('autoRecordInput_' + id).value;
+          if(!text) { if(typeof customAlert !== 'undefined') customAlert('作業内容を入力してください。'); return; }
+          document.getElementById('modal').style.display = 'none';
+          
+          const p = loadedPolygons[id];
+          const globalInput = document.getElementById('autoRecordInput');
+          if (globalInput) {
+              globalInput.value = (p.name || '') + " " + text;
+              executeAutoRecord();
+          } else {
+              activePolyId = id;
+              currentRecordType = 'work';
+              renderRecordForm();
+              document.getElementById('rightPanel').classList.add('open');
+          }
+      };
+
       window.openMainMenu = (id) => {
         const p = loadedPolygons[id], isU = (p.status === '未使用（返却）' || p.status === '未使用');
         const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">🚗 ナビ開始</button>`;
@@ -375,7 +415,7 @@ function createSignboardMarker(name, pos, icon, id) {
         let actions = `<div style="display:flex; gap:4px; width:100%; margin-bottom:6px;">`;
         if (hasWork) {
             actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#4CAF50; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${growthIcon} ${growthText} (${growthCount})</button>
-                        <button onclick="actionManagePhotos('${id}', 'work')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#FF9800; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${workIcon} ${workText} (${workCount})</button>`;
+                        <button onclick="openFieldWorkRecordSelect('${id}')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#FF9800; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${workIcon} ${workText} (${workCount})</button>`;
         } else {
             actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#4CAF50; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${growthIcon} ${growthText} (${growthCount})</button>`;
         }
@@ -1237,7 +1277,14 @@ function createSignboardMarker(name, pos, icon, id) {
              });
              if (pastWorks.length > 0) lastNextRidge = pastWorks[0].data.nextRidge;
           }
-          let ridgeUI = p.isMarker ? '' : `<div style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #80deea;"><label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗 (伝達事項)</label><div style="display:flex; gap:10px;"><div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" id="rec_worked_ridges" class="form-input" placeholder="例: 1-5" style="margin-bottom:0;"></div><div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" id="rec_next_ridge" class="form-input" placeholder="例: 6" value="${lastNextRidge}" style="margin-bottom:0;"></div></div></div>`;
+          let currentUneCount = 0;
+          if (!p.isMarker && p.uneSimData) {
+              try {
+                  const savedCad = JSON.parse(p.uneSimData);
+                  if (savedCad.uneCount) currentUneCount = parseInt(savedCad.uneCount) || 0;
+              } catch(e) {}
+          }
+          let ridgeUI = p.isMarker ? '' : `<div style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #80deea;"><label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗 (伝達事項)</label><div style="font-size:12px; color:#00695c; margin-bottom:8px;">📌 現在の畝数: <b>${currentUneCount}</b></div><div style="display:flex; gap:10px;"><div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" id="rec_worked_ridges" class="form-input" placeholder="例: 1-5" style="margin-bottom:0;"></div><div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" id="rec_next_ridge" class="form-input" placeholder="例: 6" value="${lastNextRidge}" style="margin-bottom:0;"></div></div></div>`;
           
           let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster.filter(w => w.displayPlace === '圃場');
           let wNames = '<option value="">選択してください</option>' + availableWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
