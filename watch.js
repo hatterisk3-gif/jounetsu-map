@@ -182,17 +182,17 @@ async function watch() {
                   // 🌟 【変更箇所1】上限を800文字から一気に2000文字へ！
                   const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...（以下省略）' : aiOutput;
 
-                  summaryForLine = `✅ デプロイ完了\nAuto: ${shortCommand}\n${fileChangesText}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
+                  summaryForLine = `【デプロイ完了】\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
 
                   execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
                   execSync('git push', { stdio: 'inherit' });
                 } else {
                   // 🌟 【変更箇所2】こちらも2000文字へ！
-                  summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput.slice(0, 2000)}`;
+                  summaryForLine = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント】:\n${aiOutput.slice(0, 2000)}`;
                 }
               } catch (e) { }
             } else {
-              summaryForLine = `❌ 処理失敗（安全のため変更はリセットされました）\n\n💡 原因:\n${aiOutput}`;
+              summaryForLine = `【処理失敗】（安全のため変更はリセットされました）\n\n【原因】:\n${aiOutput}`;
             }
           }
         }
