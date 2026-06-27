@@ -130,19 +130,29 @@ async function watch() {
                 aiOutput = "（レポートは省略されましたが、処理は完了しました！）";
               }
 
+              // ----------------------------------------------------
+              // 🌟 修正ポイント1：スクラッチフォルダのお掃除機能を追加
+              // ----------------------------------------------------
               console.log('🧹 agyが分析用に残した一時画像を削除中...');
               const files = fs.readdirSync(__dirname);
               files.forEach(file => {
                 const lowerFile = file.toLowerCase();
-                if (lowerFile.startsWith('reference_') ||
-                  lowerFile.startsWith('downloaded_') ||
-                  lowerFile.startsWith('line_image_')) {
-                  try {
-                    fs.unlinkSync(path.join(__dirname, file));
-                    console.log(`🗑️ AIの一時ファイル ${file} を削除しました`);
-                  } catch (e) { }
+                if (lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_')) {
+                  try { fs.unlinkSync(path.join(__dirname, file)); } catch (e) { }
                 }
               });
+
+              // 👇ここから追加：スクラッチフォルダの中身も自動削除！
+              try {
+                const os = require('os');
+                const scratchDir = path.join(os.homedir(), '.gemini', 'antigravity-cli', 'scratch');
+                if (fs.existsSync(scratchDir)) {
+                  const scratchFiles = fs.readdirSync(scratchDir);
+                  scratchFiles.forEach(f => fs.unlinkSync(path.join(scratchDir, f)));
+                  console.log('✨ scratchフォルダの迷子ファイルも綺麗にお掃除しました！');
+                }
+              } catch (e) { }
+              // 👆ここまで追加
 
               console.log('☁️ claspでGASへ反映中...');
               try { execSync('clasp push -f', { stdio: 'inherit' }); } catch (e) { }
@@ -205,12 +215,23 @@ async function watch() {
           }
         }
 
-        // 🌟 【変更箇所3】文字数無制限のPOST通信に切り替え！
+        // ----------------------------------------------------
+        // 🌟 修正ポイント2：GASへ送るデータに「完全版」を追加
+        // ----------------------------------------------------
+        // ※これより上にある summaryForLine はそのまま残してください
+
         const updatePayload = {
           action: "update",
           row: data.rowIndex,
-          summary: summaryForLine
+          summary: summaryForLine,
+          // 👇ここを追加：カットしていない全文テキスト（メール用）も一緒に送る！
+          fullSummary: `【デプロイ完了】\nAuto: ${cleanCommand.substring(0, 30)}...\n\n【AIの修正報告(全文)】:\n${aiOutput}`
         };
+
+        if (usedImageId !== "") {
+          updatePayload.fileId = usedImageId;
+        }
+        // ※これより下の fetch 処理はそのまま
 
         if (usedImageId !== "") {
           updatePayload.fileId = usedImageId;
