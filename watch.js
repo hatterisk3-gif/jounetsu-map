@@ -90,14 +90,7 @@ async function watch() {
                 .join(', ');
             } catch (e) { }
 
-            // 🌟 変更箇所：プロンプトの末尾をより具体的に！
-            const magicalPrompt = `${imageContext}${cleanCommand} 。
-            ※【最重要指令】現在、このプロジェクト内には以下の主要ファイルが存在します： [ ${availableFiles} ]。
-            ユーザーからの指示に具体的な対象ファイル名が含まれていない「ざっくりとした指示」であっても、指示の文脈からあなたが修正すべきファイルを自ら推測し、対象となるファイルを直接編集してください。
-            ※【サボり防止の絶対ルール】
-            提案や解説だけで回答を終えることはシステムエラーとみなし固く禁じます。必ずツールのファイル編集機能を用いて、既存のコード（.html, .js, .cssなど）を実際に書き換えてください。
-            【重要】コードの書き換えがすべて完了した後、必ずその足で「ai_report.txt」というファイルをカレントディレクトリ直下に新規作成し、今回の修正内容の解説（日本語で簡潔に）を書き込んで保存してからタスクを終了してください。`;
-            console.log('⚙️ 完全自動パイプラインを起動します...');
+            const magicalPrompt = `${imageContext}${cleanCommand} 。作業が完了したら、今回の内容の解説を「ai_report.txt」に書き出して保存してください。※修正はこのファイル群にある既存のファイルを直接修正し、ai_report.txt もこのファイル群にUTF-8で保存してください。`;
             console.log('🧠 AIがコードを修正中...（最大15分待機します）');
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
@@ -215,11 +208,14 @@ async function watch() {
             const res = await fetch(GAS_WEBAPP_URL, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(updatePayload)
+              body: JSON.stringify(updatePayload),
+              redirect: 'manual' // 🌟 GAS特有の302リダイレクトによるエラーを回避！
             });
 
-            // GASがエラーを返した場合はターミナルに表示してやり直す
-            if (!res.ok) throw new Error("GAS HTTPエラー: " + res.status);
+            // redirect: 'manual' の場合、正常完了時は 0 (opaqueredirect) または 302 が返ります
+            if (res.status !== 200 && res.status !== 302 && res.type !== 'opaqueredirect') {
+              throw new Error("GAS HTTPエラー: " + res.status);
+            }
 
             if (usedImageId !== "") {
               console.log('🔔 完了通知をGASへ送信し、Drive上の画像を削除しました。');
