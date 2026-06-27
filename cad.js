@@ -476,94 +476,64 @@ window.updateCadSvgOverlay = () => {
     let frontBarGroup = svg ? svg.querySelector('#front-bar') : null;
     if (frontBarGroup) {
         if (window.cadFrontBaseline) {
+            let pLat, pLng;
+            if (Array.isArray(window.cadFrontBaseline) && window.cadFrontBaseline.length === 2) {
+                pLat = (window.cadFrontBaseline[0].lat + window.cadFrontBaseline[1].lat) / 2;
+                pLng = (window.cadFrontBaseline[0].lng + window.cadFrontBaseline[1].lng) / 2;
+            } else {
+                pLat = window.cadFrontBaseline.lat;
+                pLng = window.cadFrontBaseline.lng;
+            }
+
             let fo = frontBarGroup.querySelector('foreignObject');
             if (!fo) {
+                frontBarGroup.innerHTML = ''; // 古い線とハンドルをクリア
                 fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
                 fo.setAttribute('width', '100');
                 fo.setAttribute('height', '40');
                 fo.setAttribute('style', 'overflow:visible; pointer-events:none;');
                 let div = document.createElement('div');
                 div.className = 'front-bar-label';
-                div.style.cssText = 'color:#ffffff; font-size:14px; font-weight:bold; text-align:center; white-space:nowrap; transform:translate(-50%, -50%); position:absolute; left:50%; top:50%; pointer-events:auto;';
+                div.style.cssText = 'color:#ffffff; background:#FF5722; padding:4px 8px; border-radius:4px; font-size:14px; font-weight:bold; text-align:center; white-space:nowrap; transform:translate(-50%, -50%); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5);';
                 div.innerText = '畝の正面';
                 fo.appendChild(div);
                 frontBarGroup.appendChild(fo);
-            }
-            let pt1 = window.latLngToScreenPixel(window.cadFrontBaseline[0].lat, window.cadFrontBaseline[0].lng);
-            let pt2 = window.latLngToScreenPixel(window.cadFrontBaseline[1].lat, window.cadFrontBaseline[1].lng);
-            
-            let lineNode = frontBarGroup.querySelector('line');
-            if (!lineNode) {
-                lineNode = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                lineNode.setAttribute('stroke', '#FF5722');
-                lineNode.setAttribute('stroke-width', '4');
-                lineNode.setAttribute('stroke-dasharray', '8,4');
-                lineNode.setAttribute('style', 'pointer-events: none;');
-                frontBarGroup.insertBefore(lineNode, fo);
-            }
-            lineNode.setAttribute('x1', pt1.x);
-            lineNode.setAttribute('y1', pt1.y);
-            lineNode.setAttribute('x2', pt2.x);
-            lineNode.setAttribute('y2', pt2.y);
 
-            let h1 = frontBarGroup.querySelector('.front-handle-1');
-            let h2 = frontBarGroup.querySelector('.front-handle-2');
-            if (!h1) {
-                const createHandle = (idx, cls) => {
-                    let circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    circle.setAttribute('class', cls);
-                    circle.setAttribute('r', '10');
-                    circle.setAttribute('fill', '#FF5722');
-                    circle.setAttribute('stroke', '#ffffff');
-                    circle.setAttribute('stroke-width', '2');
-                    circle.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
-                    let isDragging = false;
-                    const onMove = (ev) => {
-                        if (ev.cancelable) ev.preventDefault();
-                        if (!isDragging) return;
-                        let cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
-                        let cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
-                        let newLatLng = window.screenPixelToLatLng(cx, cy);
-                        if (newLatLng) {
-                            window.cadFrontBaseline[idx] = {lat: newLatLng.lat(), lng: newLatLng.lng()};
-                            window.updateCadSvgOverlay();
-                        }
-                    };
-                    const onEnd = () => {
-                        if (!isDragging) return;
-                        isDragging = false;
-                        window.removeEventListener('mousemove', onMove);
-                        window.removeEventListener('mouseup', onEnd);
-                        window.removeEventListener('touchmove', onMove);
-                        window.removeEventListener('touchend', onEnd);
-                        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
-                    };
-                    circle.addEventListener('mousedown', (e) => {
-                        isDragging = true; e.stopPropagation();
-                        window.addEventListener('mousemove', onMove);
-                        window.addEventListener('mouseup', onEnd);
-                    });
-                    circle.addEventListener('touchstart', (e) => {
-                        isDragging = true; e.stopPropagation();
-                        window.addEventListener('touchmove', onMove, {passive: false});
-                        window.addEventListener('touchend', onEnd);
-                    }, {passive: false});
-                    return circle;
+                let isDragging = false;
+                const onMove = (ev) => {
+                    if (ev.cancelable) ev.preventDefault();
+                    if (!isDragging) return;
+                    let cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+                    let cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                    let newLatLng = window.screenPixelToLatLng(cx, cy);
+                    if (newLatLng) {
+                        window.cadFrontBaseline = {lat: newLatLng.lat(), lng: newLatLng.lng()};
+                        window.updateCadSvgOverlay();
+                    }
                 };
-                h1 = createHandle(0, 'front-handle-1');
-                h2 = createHandle(1, 'front-handle-2');
-                frontBarGroup.appendChild(h1);
-                frontBarGroup.appendChild(h2);
+                const onEnd = () => {
+                    if (!isDragging) return;
+                    isDragging = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onEnd);
+                    window.removeEventListener('touchmove', onMove);
+                    window.removeEventListener('touchend', onEnd);
+                    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                };
+                div.addEventListener('mousedown', (e) => {
+                    isDragging = true; e.stopPropagation();
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onEnd);
+                });
+                div.addEventListener('touchstart', (e) => {
+                    isDragging = true; e.stopPropagation();
+                    window.addEventListener('touchmove', onMove, {passive: false});
+                    window.addEventListener('touchend', onEnd);
+                }, {passive: false});
             }
-            h1.setAttribute('cx', pt1.x);
-            h1.setAttribute('cy', pt1.y);
-            h2.setAttribute('cx', pt2.x);
-            h2.setAttribute('cy', pt2.y);
-            
-            let midX = (pt1.x + pt2.x) / 2;
-            let midY = (pt1.y + pt2.y) / 2;
-            fo.setAttribute('x', midX - 50);
-            fo.setAttribute('y', midY - 20);
+            let pt = window.latLngToScreenPixel(pLat, pLng);
+            fo.setAttribute('x', pt.x - 50);
+            fo.setAttribute('y', pt.y - 20);
         } else {
             frontBarGroup.innerHTML = '';
         }
@@ -965,8 +935,8 @@ window.initCadTouchEvents = () => {
                 }
             }
 
-            // 💧(吸水) と 🕳️(排水) のピンだけはドラッグできるようにする
-            if (currEl.innerText && (currEl.innerText.includes('💧') || currEl.innerText.includes('🕳️'))) {
+            // 設備ピン（💧, 🕳️, 🛻, 🚜など）はドラッグできるようにする
+            if (currEl.innerText && (currEl.innerText.includes('💧') || currEl.innerText.includes('🕳️') || currEl.innerText.includes('🛻') || currEl.innerText.includes('🚜'))) {
                 return true;
             }
             currEl = currEl.parentElement;
@@ -1625,18 +1595,18 @@ window.cadSetFrontBar = (position) => {
     const bbox = turf.bbox(tPoly); // [minLng, minLat, maxLng, maxLat]
     const minLng = bbox[0], minLat = bbox[1], maxLng = bbox[2], maxLat = bbox[3];
 
-    let p1, p2;
+    let p;
     switch(position) {
-        case 'top':    p1 = {lat: maxLat, lng: minLng}; p2 = {lat: maxLat, lng: maxLng}; break;
-        case 'bottom': p1 = {lat: minLat, lng: minLng}; p2 = {lat: minLat, lng: maxLng}; break;
-        case 'left':   p1 = {lat: minLat, lng: minLng}; p2 = {lat: maxLat, lng: minLng}; break;
-        case 'right':  p1 = {lat: minLat, lng: maxLng}; p2 = {lat: maxLat, lng: maxLng}; break;
+        case 'top':    p = {lat: maxLat, lng: (minLng + maxLng) / 2}; break;
+        case 'bottom': p = {lat: minLat, lng: (minLng + maxLng) / 2}; break;
+        case 'left':   p = {lat: (minLat + maxLat) / 2, lng: minLng}; break;
+        case 'right':  p = {lat: (minLat + maxLat) / 2, lng: maxLng}; break;
     }
 
-    let path = [p1, p2];
+    let path = p;
     window.cadFrontBaseline = path;
 
-    let bearing = turf.bearing(turf.point([p1.lng, p1.lat]), turf.point([p2.lng, p2.lat]));
+    let bearing = -window.cadCurrentRotation || 0;
     if (bearing < 0) bearing += 360;
     
     // 畝の正面バー設置時に畝の角度を変えたり、ポリゴンを再生成したりしない
@@ -1707,11 +1677,15 @@ window.cadGenerateLines = () => {
         let actualWidthM = 0;
         let startOffset = 0;
 
-        if (window.cadFrontBaseline && window.cadFrontBaseline.length === 2) {
+        if (window.cadFrontBaseline) {
             useFrontBaseline = true;
-            let p1 = turf.point([window.cadFrontBaseline[0].lng, window.cadFrontBaseline[0].lat]);
-            let p2 = turf.point([window.cadFrontBaseline[1].lng, window.cadFrontBaseline[1].lat]);
-            baseOrigin = turf.midpoint(p1, p2);
+            if (Array.isArray(window.cadFrontBaseline) && window.cadFrontBaseline.length === 2) {
+                let p1 = turf.point([window.cadFrontBaseline[0].lng, window.cadFrontBaseline[0].lat]);
+                let p2 = turf.point([window.cadFrontBaseline[1].lng, window.cadFrontBaseline[1].lat]);
+                baseOrigin = turf.midpoint(p1, p2);
+            } else {
+                baseOrigin = turf.point([window.cadFrontBaseline.lng, window.cadFrontBaseline.lat]);
+            }
             
             let centerBearing = turf.bearing(baseOrigin, centerTurf);
             let diffPlus = (centerBearing - (angle + 90)) * Math.PI / 180;
