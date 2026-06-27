@@ -31,7 +31,8 @@ async function watch() {
 
       // 変数を一番外側に出すことで、最後の通信処理までIDを生き残らせる！
       let usedImageId = "";
-
+      // 👇 🌟 追加：メール用の全文テキストを入れる箱をここで準備する！
+      let fullSummaryForEmail = "";
       try {
         // 📸 【画像モード】
         if (rawCommand.startsWith('[IMAGE_URL:')) {
@@ -198,11 +199,14 @@ async function watch() {
 
                   // 🌟 修正ポイント：プッシュまで「成功した直後」にLINE用のメッセージを作る！
                   summaryForLine = `【デプロイ完了】\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
-                  console.log('✅ GitHubへのプッシュが完了しました！');
+                  fullSummaryForEmail = `【デプロイ完了】\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
+                  // ----------------------------------------------------
 
+                  execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
+                  execSync('git push', { stdio: 'inherit' });
                 } else {
                   summaryForLine = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント】:\n${aiOutput.slice(0, 2000)}`;
-                  console.log('⏭️ 変更がないためプッシュをスキップしました。');
+                  fullSummaryForEmail = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント(全文)】:\n${aiOutput}`;
                 }
               } catch (e) {
                 // 🌟 修正ポイント：ここでエラーを握り潰さずに出力し、LINEにも通知する！
@@ -220,12 +224,13 @@ async function watch() {
         // ----------------------------------------------------
         // ※これより上にある summaryForLine はそのまま残してください
 
+        // 🌟 文字数無制限のPOST通信に切り替え！
         const updatePayload = {
           action: "update",
           row: data.rowIndex,
           summary: summaryForLine,
-          // 👇ここを追加：カットしていない全文テキスト（メール用）も一緒に送る！
-          fullSummary: `【デプロイ完了】\nAuto: ${cleanCommand.substring(0, 30)}...\n\n【AIの修正報告(全文)】:\n${aiOutput}`
+          // 👇 🌟 修正：ここで直接計算せず、上で作った変数を入れるだけにする
+          fullSummary: fullSummaryForEmail || summaryForLine
         };
 
         if (usedImageId !== "") {
