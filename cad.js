@@ -487,16 +487,34 @@ window.updateCadSvgOverlay = () => {
                 
                 let div = document.createElement('div');
                 const iconStr = mk.cadPinType === 'water_in' ? '💧' : mk.cadPinType === 'water_out' ? '🕳️' : mk.cadPinType === 'parking_truck' ? '🛻' : '🚜';
-                div.innerHTML = iconStr;
-                div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                
+                let iconSpan = document.createElement('span');
+                iconSpan.innerHTML = iconStr;
+                div.appendChild(iconSpan);
+                
+                div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)) scale(calc(1 / var(--cad-scale))); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                 fo.appendChild(div);
+
+                let delBtn = document.createElement('div');
+                delBtn.innerHTML = '✕';
+                delBtn.className = 'cad-pin-del-btn';
+                delBtn.style.cssText = 'position:absolute; top:-15px; right:-15px; width:24px; height:24px; background:#f44336; color:white; font-size:14px; line-height:24px; text-align:center; border-radius:50%; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5); display:none; border: 2px solid white;';
+                div.appendChild(delBtn);
                 
                 let isDraggingPin = false;
+                let dragDistance = 0;
+                let dragStartX = 0;
+                let dragStartY = 0;
+
                 const onMove = (ev) => {
                     if (ev.cancelable) ev.preventDefault();
                     if (!isDraggingPin) return;
                     let clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
                     let clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                    dragDistance += Math.abs(clientX - dragStartX) + Math.abs(clientY - dragStartY);
+                    dragStartX = clientX;
+                    dragStartY = clientY;
+
                     let newLatLng = window.screenPixelToLatLng(clientX, clientY);
                     if (newLatLng) {
                         mk.setPosition(newLatLng);
@@ -511,20 +529,50 @@ window.updateCadSvgOverlay = () => {
                     window.removeEventListener('mouseup', onEnd);
                     window.removeEventListener('touchmove', onMove);
                     window.removeEventListener('touchend', onEnd);
+                    
+                    if (dragDistance < 10) {
+                        let allDelBtns = document.querySelectorAll('.cad-pin-del-btn');
+                        allDelBtns.forEach(btn => { if(btn !== delBtn) btn.style.display = 'none'; });
+                        delBtn.style.display = delBtn.style.display === 'none' ? 'block' : 'none';
+                    }
+
                     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
                 };
                 
                 div.addEventListener('mousedown', (e) => {
-                    isDraggingPin = true; e.stopPropagation();
+                    isDraggingPin = true; 
+                    dragDistance = 0; 
+                    dragStartX = e.clientX;
+                    dragStartY = e.clientY;
+                    e.stopPropagation();
                     window.addEventListener('mousemove', onMove);
                     window.addEventListener('mouseup', onEnd);
                 });
                 
                 div.addEventListener('touchstart', (e) => {
-                    isDraggingPin = true; e.stopPropagation();
+                    isDraggingPin = true; 
+                    dragDistance = 0;
+                    dragStartX = e.touches[0].clientX;
+                    dragStartY = e.touches[0].clientY;
+                    e.stopPropagation();
                     window.addEventListener('touchmove', onMove, {passive: false});
                     window.addEventListener('touchend', onEnd);
                 }, {passive: false});
+
+                const onDelete = (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if(confirm('この設備ピンを削除しますか？')) {
+                        window.cadPins = window.cadPins.filter(p => p !== mk);
+                        if (mk.setMap) mk.setMap(null);
+                        window.cadSvgNeedsRebuild = true;
+                        window.updateCadSvgOverlay();
+                        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                    }
+                };
+
+                delBtn.addEventListener('mousedown', onDelete);
+                delBtn.addEventListener('touchstart', onDelete, {passive: false});
                 
                 pinsGroup.appendChild(fo);
                 mk._svgFoNode = fo;
