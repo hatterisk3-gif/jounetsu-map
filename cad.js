@@ -217,7 +217,8 @@ window.updateCadSvgOverlay = () => {
                              
     if (window.cadSvgNeedsRebuild || !svg.querySelector('#cadSvgPaths') || svg._lastPolysLength !== currentPolysLength) {
         svg._lastPolysLength = currentPolysLength;
-        let html = '<g id="cadSvgPaths"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g>';
+        let html = '<defs><filter id="hover-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/></filter></defs>' +
+                   '<g id="cadSvgPaths"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
         svg.innerHTML = html;
         let pathsGroup = svg.querySelector('#cadSvgPaths');
         let textsGroup = svg.querySelector('#cadSvgTexts');
@@ -246,7 +247,9 @@ window.updateCadSvgOverlay = () => {
         if (window.cadUnePolygons) {
             window.cadUnePolygons.forEach((p, idx) => {
                 p._svgPathNode = createPathNode('#8BC34A', '#558B2F');
-                p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer;');
+                p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer; transition: filter 0.2s;');
+                p._svgPathNode.addEventListener('mouseover', () => p._svgPathNode.setAttribute('filter', 'url(#hover-shadow)'));
+                p._svgPathNode.addEventListener('mouseout', () => p._svgPathNode.removeAttribute('filter'));
                 p._svgPathNode.addEventListener('click', (e) => {
                     e.stopPropagation();
                     if (window.openCadEditModal && p.uneIndex) window.openCadEditModal(p.uneIndex);
@@ -270,7 +273,9 @@ window.updateCadSvgOverlay = () => {
             let baseIdx = window.cadUnePolygons ? window.cadUnePolygons.length : 0;
             window.cadCustomShapes.forEach((p, idx) => {
                 p._svgPathNode = createPathNode('#8BC34A', '#558B2F');
-                p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer;');
+                p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer; transition: filter 0.2s;');
+                p._svgPathNode.addEventListener('mouseover', () => p._svgPathNode.setAttribute('filter', 'url(#hover-shadow)'));
+                p._svgPathNode.addEventListener('mouseout', () => p._svgPathNode.removeAttribute('filter'));
                 p._svgPathNode.addEventListener('click', (e) => {
                     e.stopPropagation();
                     if (window.openCadEditModal && p.uneIndex) window.openCadEditModal(p.uneIndex);
@@ -466,6 +471,44 @@ window.updateCadSvgOverlay = () => {
     };
     if (window.cadUnePolygons) window.cadUnePolygons.forEach(updateHandlesPosition);
     if (window.cadCustomShapes) window.cadCustomShapes.forEach(updateHandlesPosition);
+
+    let svg = document.getElementById('cadSvgOverlay');
+    let frontBarGroup = svg ? svg.querySelector('#front-bar') : null;
+    if (frontBarGroup) {
+        if (window.cadFrontBaseline) {
+            let linePath = frontBarGroup.querySelector('path');
+            let fo = frontBarGroup.querySelector('foreignObject');
+            if (!linePath) {
+                linePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                linePath.setAttribute('stroke', '#ea580c');
+                linePath.setAttribute('stroke-opacity', '0.8');
+                linePath.setAttribute('stroke-width', '6');
+                linePath.setAttribute('stroke-linecap', 'round');
+                frontBarGroup.appendChild(linePath);
+                
+                fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+                fo.setAttribute('width', '100');
+                fo.setAttribute('height', '40');
+                fo.setAttribute('style', 'overflow:visible; pointer-events:none;');
+                let div = document.createElement('div');
+                div.className = 'front-bar-label';
+                div.style.cssText = 'color:#ffffff; font-size:14px; font-weight:bold; text-align:center; white-space:nowrap; transform:translate(-50%, -50%); position:absolute; left:50%; top:50%; pointer-events:auto;';
+                div.innerText = '畝の正面';
+                fo.appendChild(div);
+                frontBarGroup.appendChild(fo);
+            }
+            let pt1 = window.latLngToScreenPixel(window.cadFrontBaseline[0].lat, window.cadFrontBaseline[0].lng);
+            let pt2 = window.latLngToScreenPixel(window.cadFrontBaseline[1].lat, window.cadFrontBaseline[1].lng);
+            linePath.setAttribute('d', `M${pt1.x},${pt1.y} L${pt2.x},${pt2.y}`);
+            
+            let midX = (pt1.x + pt2.x) / 2;
+            let midY = (pt1.y + pt2.y) / 2;
+            fo.setAttribute('x', midX - 50);
+            fo.setAttribute('y', midY - 20);
+        } else {
+            frontBarGroup.innerHTML = '';
+        }
+    }
 };
 
 window.updateCadLabelScale = (detectedScale) => {
@@ -650,20 +693,7 @@ window.loadCadStateFromHistory = (index) => {
     if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
     if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
     window.cadFrontBaseline = state.frontBaseline || null;
-    if (window.cadFrontBaseline) {
-        window.cadFrontBaselineVisual = new google.maps.Polyline({
-            path: window.cadFrontBaseline, strokeColor: '#ea580c', strokeOpacity: 0.8, strokeWeight: 6, map: window.cadMap, zIndex: 8, strokeLinecap: 'round'
-        });
-        let midLat = (window.cadFrontBaseline[0].lat + window.cadFrontBaseline[1].lat) / 2;
-        let midLng = (window.cadFrontBaseline[0].lng + window.cadFrontBaseline[1].lng) / 2;
-        window.cadFrontBaselineMarker = new google.maps.Marker({
-            position: { lat: midLat, lng: midLng },
-            map: window.cadMap,
-            label: { text: '畝の正面', fontSize: '14px', fontWeight: 'bold', color: '#ffffff', className: 'front-bar-label' },
-            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
-            zIndex: 9
-        });
-    }
+    if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
 
         if (state.customShapes) {
         state.customShapes.forEach((cPath, idx) => {
@@ -1298,18 +1328,7 @@ window.openCADMode = (id) => {
             if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
             if (saved.frontBaseline) {
                 window.cadFrontBaseline = saved.frontBaseline;
-                window.cadFrontBaselineVisual = new google.maps.Polyline({
-                    path: window.cadFrontBaseline, strokeColor: '#ea580c', strokeOpacity: 0.8, strokeWeight: 6, map: window.cadMap, zIndex: 8, strokeLinecap: 'round'
-                });
-                let midLat = (window.cadFrontBaseline[0].lat + window.cadFrontBaseline[1].lat) / 2;
-                let midLng = (window.cadFrontBaseline[0].lng + window.cadFrontBaseline[1].lng) / 2;
-                window.cadFrontBaselineMarker = new google.maps.Marker({
-                    position: { lat: midLat, lng: midLng },
-                    map: window.cadMap,
-                    label: { text: '畝の正面', fontSize: '14px', fontWeight: 'bold', color: '#ffffff', className: 'front-bar-label' },
-                    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
-                    zIndex: 9
-                });
+                if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
             }
             if (saved.customShapes) {
                 saved.customShapes.forEach((cPath, idx) => {
@@ -1564,20 +1583,9 @@ window.cadSetFrontBar = (position) => {
     if (window.updateCadPreviewCount) window.updateCadPreviewCount();
 
     if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
-    window.cadFrontBaselineVisual = new google.maps.Polyline({
-        path: path, strokeColor: '#ea580c', strokeOpacity: 0.8, strokeWeight: 6, map: window.cadMap, zIndex: 8, strokeLinecap: 'round'
-    });
-
     if (window.cadFrontBaselineMarker) window.cadFrontBaselineMarker.setMap(null);
-    let midLat = (p1.lat + p2.lat) / 2;
-    let midLng = (p1.lng + p2.lng) / 2;
-    window.cadFrontBaselineMarker = new google.maps.Marker({
-        position: { lat: midLat, lng: midLng },
-        map: window.cadMap,
-        label: { text: '畝の正面', fontSize: '14px', fontWeight: 'bold', color: '#ffffff', className: 'front-bar-label' },
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
-        zIndex: 9
-    });
+    window.cadFrontBaseline = path;
+    if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
 
     if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
     else window.saveCadStateToHistory();
