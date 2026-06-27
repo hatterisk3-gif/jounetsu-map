@@ -476,16 +476,8 @@ window.updateCadSvgOverlay = () => {
     let frontBarGroup = svg ? svg.querySelector('#front-bar') : null;
     if (frontBarGroup) {
         if (window.cadFrontBaseline) {
-            let linePath = frontBarGroup.querySelector('path');
             let fo = frontBarGroup.querySelector('foreignObject');
-            if (!linePath) {
-                linePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                linePath.setAttribute('stroke', '#ea580c');
-                linePath.setAttribute('stroke-opacity', '0.8');
-                linePath.setAttribute('stroke-width', '6');
-                linePath.setAttribute('stroke-linecap', 'round');
-                frontBarGroup.appendChild(linePath);
-                
+            if (!fo) {
                 fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
                 fo.setAttribute('width', '100');
                 fo.setAttribute('height', '40');
@@ -499,7 +491,6 @@ window.updateCadSvgOverlay = () => {
             }
             let pt1 = window.latLngToScreenPixel(window.cadFrontBaseline[0].lat, window.cadFrontBaseline[0].lng);
             let pt2 = window.latLngToScreenPixel(window.cadFrontBaseline[1].lat, window.cadFrontBaseline[1].lng);
-            linePath.setAttribute('d', `M${pt1.x},${pt1.y} L${pt2.x},${pt2.y}`);
             
             let midX = (pt1.x + pt2.x) / 2;
             let midY = (pt1.y + pt2.y) / 2;
@@ -1579,16 +1570,18 @@ window.cadSetFrontBar = (position) => {
 
     let bearing = turf.bearing(turf.point([p1.lng, p1.lat]), turf.point([p2.lng, p2.lat]));
     if (bearing < 0) bearing += 360;
-    document.getElementById('cadAngle').value = Math.round(bearing);
-    if (window.updateCadPreviewCount) window.updateCadPreviewCount();
+    
+    // 畝の正面バー設置時に畝の角度を変えたり、ポリゴンを再生成したりしない
+    // document.getElementById('cadAngle').value = Math.round(bearing);
+    // if (window.updateCadPreviewCount) window.updateCadPreviewCount();
 
     if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
     if (window.cadFrontBaselineMarker) window.cadFrontBaselineMarker.setMap(null);
     window.cadFrontBaseline = path;
     if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
 
-    if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
-    else window.saveCadStateToHistory();
+    // アイコン表示と畝ポリゴンは独立させるため再生成しない
+    window.saveCadStateToHistory();
 };
 
 window.cadAddCustomShape = (type) => {
