@@ -1595,15 +1595,15 @@ window.cadSetFrontBar = (position) => {
     const bbox = turf.bbox(tPoly); // [minLng, minLat, maxLng, maxLat]
     const minLng = bbox[0], minLat = bbox[1], maxLng = bbox[2], maxLat = bbox[3];
 
-    let p;
+    let pt;
     switch(position) {
-        case 'top':    p = {lat: maxLat, lng: (minLng + maxLng) / 2}; break;
-        case 'bottom': p = {lat: minLat, lng: (minLng + maxLng) / 2}; break;
-        case 'left':   p = {lat: (minLat + maxLat) / 2, lng: minLng}; break;
-        case 'right':  p = {lat: (minLat + maxLat) / 2, lng: maxLng}; break;
+        case 'top':    pt = {lat: maxLat, lng: (minLng + maxLng) / 2}; break;
+        case 'bottom': pt = {lat: minLat, lng: (minLng + maxLng) / 2}; break;
+        case 'left':   pt = {lat: (minLat + maxLat) / 2, lng: minLng}; break;
+        case 'right':  pt = {lat: (minLat + maxLat) / 2, lng: maxLng}; break;
     }
 
-    let path = p;
+    let path = pt;
     window.cadFrontBaseline = path;
 
     let bearing = -window.cadCurrentRotation || 0;
