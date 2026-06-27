@@ -165,14 +165,16 @@ async function watch() {
                   const allFiles = modified.concat(added).concat(deleted).join(', ');
                   const commitMessage = `Auto: ${shortCommand} [変更: ${allFiles}]`;
 
-                  const shortAiOutput = aiOutput.length > 800 ? aiOutput.slice(0, 800) + '\n...（以下省略）' : aiOutput;
+                  // 🌟 【変更箇所1】上限を800文字から一気に2000文字へ！
+                  const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...（以下省略）' : aiOutput;
 
                   summaryForLine = `✅ デプロイ完了\nAuto: ${shortCommand}\n${fileChangesText}\n\n💡 AIの修正報告:\n${shortAiOutput}`;
 
                   execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
                   execSync('git push', { stdio: 'inherit' });
                 } else {
-                  summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput.slice(0, 800)}`;
+                  // 🌟 【変更箇所2】こちらも2000文字へ！
+                  summaryForLine = `✅ ファイルの変更がなかったためデプロイはスキップされました。\n\n💡 AIのコメント:\n${aiOutput.slice(0, 2000)}`;
                 }
               } catch (e) { }
             } else {
@@ -181,26 +183,37 @@ async function watch() {
           }
         }
 
-        // 🌟 最終的なLINEへの通知と、Drive上の画像削除のお願い（URLの合体）
-        let updateUrl = `${GAS_WEBAPP_URL}?action=update&row=${data.rowIndex}&summary=${encodeURIComponent(summaryForLine)}`;
+        // 🌟 【変更箇所3】文字数無制限のPOST通信に切り替え！
+        const updatePayload = {
+          action: "update",
+          row: data.rowIndex,
+          summary: summaryForLine
+        };
 
-        // テキスト処理が終わった後なら、usedImageId にIDが入っているので、ここで合体される！
         if (usedImageId !== "") {
-          updateUrl += `&fileId=${usedImageId}`;
+          updatePayload.fileId = usedImageId;
         }
 
         let retries = 3;
         while (retries > 0) {
           try {
-            await fetch(updateUrl);
-            // ログの出力も正確に分岐
+            const res = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updatePayload)
+            });
+
+            // GASがエラーを返した場合はターミナルに表示してやり直す
+            if (!res.ok) throw new Error("GAS HTTPエラー: " + res.status);
+
             if (usedImageId !== "") {
-              console.log('🔔 LINEへ通知を送信し、Drive上の使用済み画像をゴミ箱へ移動しました。');
+              console.log('🔔 完了通知をGASへ送信し、Drive上の画像を削除しました。');
             } else {
-              console.log('🔔 LINEへ通知を送信しました。');
+              console.log('🔔 完了通知をGASへ送信しました。');
             }
             break;
           } catch (e) {
+            console.error(`⚠️ GASへの通信エラー（再試行します）: ${e.message}`);
             retries--;
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
@@ -210,12 +223,10 @@ async function watch() {
         console.error('❌ 予期せぬエラー:', cmdError.message);
       }
     }
-    // 🌟 ここが消えていました！ ------------------
   } catch (error) {
     // ネットワークエラーなどを無視
   }
 }
-// ---------------------------------------------
 
 let isProcessing = false;
 async function loop() {
