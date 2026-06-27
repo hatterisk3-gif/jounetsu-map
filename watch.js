@@ -90,15 +90,13 @@ async function watch() {
                 .join(', ');
             } catch (e) { }
 
-            // 🌟 プロンプトを「サボり絶対許さない仕様」に最終進化
+            // 🌟 変更箇所：プロンプトの末尾をより具体的に！
             const magicalPrompt = `${imageContext}${cleanCommand} 。
             ※【最重要指令】現在、このプロジェクト内には以下の主要ファイルが存在します： [ ${availableFiles} ]。
             ユーザーからの指示に具体的な対象ファイル名が含まれていない「ざっくりとした指示」であっても、指示の文脈からあなたが修正すべきファイルを自ら推測し、対象となるファイルを直接編集してください。
             ※【サボり防止の絶対ルール】
-            あなたのタスクは「質問に答えること」ではなく「システムを改修すること」です。提案、解説、コードの例示だけで回答を終えることは、システムエラーとみなし固く禁じます。
-            必ず、ツールのファイル編集機能を用いて、既存のコード（.html, .js, .cssなど）を実際に書き換えてください。もし該当するファイルが見当たらない場合は、最も関連性の高いファイルを探し出すか、新規ファイルを作成してでも、必ず「コードの変更」を実行してください。
-            作業が全て完了したら、最後に今回の修正内容の解説（日本語で簡潔に）を「ai_report.txt」というファイルに出力してください。別のフォルダ（scratch等）への移動は厳禁です。`;
-
+            提案や解説だけで回答を終えることはシステムエラーとみなし固く禁じます。必ずツールのファイル編集機能を用いて、既存のコード（.html, .js, .cssなど）を実際に書き換えてください。
+            【重要】コードの書き換えがすべて完了した後、必ずその足で「ai_report.txt」というファイルをカレントディレクトリ直下に新規作成し、今回の修正内容の解説（日本語で簡潔に）を書き込んで保存してからタスクを終了してください。`;
             console.log('⚙️ 完全自動パイプラインを起動します...');
             console.log('🧠 AIがコードを修正中...（最大15分待機します）');
 
@@ -172,10 +170,11 @@ async function watch() {
                     }
                   });
 
+                  // 🌟 変更箇所：ここの絵文字も文字化けの原因でした！
                   let fileChangesText = "";
-                  if (modified.length > 0) fileChangesText += `\n📝 変更: ${modified.join(', ')}`;
-                  if (added.length > 0) fileChangesText += `\n✨ 追加: ${added.join(', ')}`;
-                  if (deleted.length > 0) fileChangesText += `\n🗑️ 削除: ${deleted.join(', ')}`;
+                  if (modified.length > 0) fileChangesText += `\n【変更】: ${modified.join(', ')}`;
+                  if (added.length > 0) fileChangesText += `\n【追加】: ${added.join(', ')}`;
+                  if (deleted.length > 0) fileChangesText += `\n【削除】: ${deleted.join(', ')}`;
 
                   const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
                   const allFiles = modified.concat(added).concat(deleted).join(', ');
