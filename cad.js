@@ -1691,31 +1691,21 @@ window.cadGenerateLines = () => {
             let diffPlus = (centerBearing - (angle + 90)) * Math.PI / 180;
             let diffMinus = (centerBearing - (angle - 90)) * Math.PI / 180;
             growDirection = Math.cos(diffPlus) > Math.cos(diffMinus) ? angle + 90 : angle - 90;
-
-            let maxDist = 0;
-            tPoly.geometry.coordinates[0].forEach(coord => {
-                const pt = turf.point(coord);
-                const dist = turf.distance(baseOrigin, pt, { units: 'meters' });
-                const bearing = turf.bearing(baseOrigin, pt);
-                const angleDiff = (bearing - growDirection) * Math.PI / 180;
-                const projDist = dist * Math.cos(angleDiff);
-                if (projDist > maxDist) maxDist = projDist;
-            });
-            
-            actualWidthM = maxDist / uneCount;
-            startOffset = actualWidthM / 2;
-        } else {
-            tPoly.geometry.coordinates[0].forEach(coord => {
-                const pt = turf.point(coord); const dist = turf.distance(centerTurf, pt, { units: 'meters' });
-                const bearing = turf.bearing(centerTurf, pt); const angleDiff = (bearing - (angle + 90)) * Math.PI / 180;
-                const projDist = dist * Math.cos(angleDiff);
-                if (projDist > maxPosDist) maxPosDist = projDist;
-                if (-projDist > maxNegDist) maxNegDist = -projDist;
-            });
-            const totalWidth = maxPosDist + maxNegDist;
-            actualWidthM = totalWidth / uneCount;
-            startOffset = -maxNegDist + actualWidthM / 2;
         }
+
+        tPoly.geometry.coordinates[0].forEach(coord => {
+            const pt = turf.point(coord); 
+            const dist = turf.distance(baseOrigin, pt, { units: 'meters' });
+            const bearing = turf.bearing(baseOrigin, pt); 
+            const angleDiff = (bearing - growDirection) * Math.PI / 180;
+            const projDist = dist * Math.cos(angleDiff);
+            if (projDist > maxPosDist) maxPosDist = projDist;
+            if (-projDist > maxNegDist) maxNegDist = -projDist;
+        });
+
+        const totalWidth = maxPosDist + maxNegDist;
+        actualWidthM = totalWidth / uneCount;
+        startOffset = -maxNegDist + actualWidthM / 2;
 
         const bbox = turf.bbox(tPoly);
         const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' });
@@ -1730,8 +1720,8 @@ window.cadGenerateLines = () => {
 
         for (let i = 0; i < uneCount; i++) {
             let offset = startOffset + i * actualWidthM;
-            let direction = useFrontBaseline ? growDirection : (offset >= 0 ? angle + 90 : angle - 90);
-            let absOffset = useFrontBaseline ? offset : Math.abs(offset);
+            let direction = offset >= 0 ? growDirection : growDirection + 180;
+            let absOffset = Math.abs(offset);
             let oPt = turf.destination(baseOrigin, absOffset, direction, { units: 'meters' });
 
             let pt1 = turf.destination(oPt, lineLen / 2, angle, { units: 'meters' }); let pt2 = turf.destination(oPt, lineLen / 2, angle + 180, { units: 'meters' });
