@@ -218,7 +218,7 @@ window.updateCadSvgOverlay = () => {
     if (window.cadSvgNeedsRebuild || !svg.querySelector('#cadSvgPaths') || svg._lastPolysLength !== currentPolysLength) {
         svg._lastPolysLength = currentPolysLength;
         let html = '<defs><filter id="hover-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/></filter></defs>' +
-                   '<g id="cadSvgPaths"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
+                   '<g id="cadSvgPaths"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="cadSvgPins"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
         svg.innerHTML = html;
         let pathsGroup = svg.querySelector('#cadSvgPaths');
         let textsGroup = svg.querySelector('#cadSvgTexts');
@@ -472,6 +472,79 @@ window.updateCadSvgOverlay = () => {
     if (window.cadUnePolygons) window.cadUnePolygons.forEach(updateHandlesPosition);
     if (window.cadCustomShapes) window.cadCustomShapes.forEach(updateHandlesPosition);
 
+    let pinsStateId = window.cadPins ? window.cadPins.map(mk => mk.cadPinType).join('_') + '_' + window.cadPins.length : '';
+    let pinsGroup = svg ? svg.querySelector('#cadSvgPins') : null;
+    if (pinsGroup && svg._lastPinsStateId !== pinsStateId) {
+        svg._lastPinsStateId = pinsStateId;
+        pinsGroup.innerHTML = '';
+        
+        if (window.cadPins) {
+            window.cadPins.forEach((mk, idx) => {
+                let fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+                fo.setAttribute('width', '60');
+                fo.setAttribute('height', '60');
+                fo.setAttribute('style', 'overflow:visible; pointer-events:none;');
+                
+                let div = document.createElement('div');
+                const iconStr = mk.cadPinType === 'water_in' ? '💧' : mk.cadPinType === 'water_out' ? '🕳️' : mk.cadPinType === 'parking_truck' ? '🛻' : '🚜';
+                div.innerHTML = iconStr;
+                div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                fo.appendChild(div);
+                
+                let isDraggingPin = false;
+                const onMove = (ev) => {
+                    if (ev.cancelable) ev.preventDefault();
+                    if (!isDraggingPin) return;
+                    let clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+                    let clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                    let newLatLng = window.screenPixelToLatLng(clientX, clientY);
+                    if (newLatLng) {
+                        mk.setPosition(newLatLng);
+                        window.updateCadSvgOverlay();
+                    }
+                };
+                
+                const onEnd = () => {
+                    if (!isDraggingPin) return;
+                    isDraggingPin = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onEnd);
+                    window.removeEventListener('touchmove', onMove);
+                    window.removeEventListener('touchend', onEnd);
+                    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                };
+                
+                div.addEventListener('mousedown', (e) => {
+                    isDraggingPin = true; e.stopPropagation();
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onEnd);
+                });
+                
+                div.addEventListener('touchstart', (e) => {
+                    isDraggingPin = true; e.stopPropagation();
+                    window.addEventListener('touchmove', onMove, {passive: false});
+                    window.addEventListener('touchend', onEnd);
+                }, {passive: false});
+                
+                pinsGroup.appendChild(fo);
+                mk._svgFoNode = fo;
+            });
+        }
+    }
+    
+    if (window.cadPins) {
+        window.cadPins.forEach(mk => {
+            if (mk._svgFoNode) {
+                let latLng = mk.getPosition();
+                if (latLng) {
+                    let screenPt = window.latLngToScreenPixel(latLng.lat(), latLng.lng());
+                    mk._svgFoNode.setAttribute('x', screenPt.x - 30);
+                    mk._svgFoNode.setAttribute('y', screenPt.y - 30);
+                }
+            }
+        });
+    }
+
     // svg is already defined at the top of the function
     let frontBarGroup = svg ? svg.querySelector('#front-bar') : null;
     if (frontBarGroup) {
@@ -704,12 +777,9 @@ window.loadCadStateFromHistory = (index) => {
     if (state.pins) {
         state.pins.forEach(pin => {
             const mk = new google.maps.Marker({
-                position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap,
-                label: { text: pin.type === 'water_in' ? '💧' : pin.type === 'water_out' ? '🕳️' : pin.type === 'parking_truck' ? '🛻' : '🚜', fontSize: '24px', className: 'polygon-label' },
-                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true
+                position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap, visible: false
             });
             mk.cadPinType = pin.type;
-            google.maps.event.addListener(mk, 'dragend', () => window.saveCadStateToHistory());
             window.cadPins.push(mk);
         });
     }
@@ -868,11 +938,10 @@ window.handleMapClick = (pageX, pageY) => {
             else window.saveCadStateToHistory();
         }
     } else {
-        const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : window.cadPinMode === 'parking_truck' ? '🛻' : '🚜';
-        const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, label: { text: iconStr, fontSize: '24px', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true });
+        const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, visible: false });
         mk.cadPinType = window.cadPinMode;
-        google.maps.event.addListener(mk, 'dragend', () => window.saveCadStateToHistory());
         window.cadPins.push(mk);
+        if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
         window.cadPinMode = null;
         if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
         window.saveCadStateToHistory();
@@ -1340,12 +1409,9 @@ window.openCADMode = (id) => {
             if (saved.pins) {
                 saved.pins.forEach(pin => {
                     const mk = new google.maps.Marker({
-                        position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap,
-                        label: { text: pin.type === 'water_in' ? '💧' : pin.type === 'water_out' ? '🕳️' : pin.type === 'parking_truck' ? '🛻' : '🚜', fontSize: '24px', className: 'polygon-label' },
-                        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true
+                        position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap, visible: false
                     });
                     mk.cadPinType = pin.type;
-                    google.maps.event.addListener(mk, 'dragend', () => window.saveCadStateToHistory());
                     window.cadPins.push(mk);
                 });
             }
