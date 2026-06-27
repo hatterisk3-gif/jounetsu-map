@@ -472,7 +472,7 @@ window.updateCadSvgOverlay = () => {
     if (window.cadUnePolygons) window.cadUnePolygons.forEach(updateHandlesPosition);
     if (window.cadCustomShapes) window.cadCustomShapes.forEach(updateHandlesPosition);
 
-    let svg = document.getElementById('cadSvgOverlay');
+    // svg is already defined at the top of the function
     let frontBarGroup = svg ? svg.querySelector('#front-bar') : null;
     if (frontBarGroup) {
         if (window.cadFrontBaseline) {
