@@ -492,6 +492,74 @@ window.updateCadSvgOverlay = () => {
             let pt1 = window.latLngToScreenPixel(window.cadFrontBaseline[0].lat, window.cadFrontBaseline[0].lng);
             let pt2 = window.latLngToScreenPixel(window.cadFrontBaseline[1].lat, window.cadFrontBaseline[1].lng);
             
+            let lineNode = frontBarGroup.querySelector('line');
+            if (!lineNode) {
+                lineNode = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                lineNode.setAttribute('stroke', '#FF5722');
+                lineNode.setAttribute('stroke-width', '4');
+                lineNode.setAttribute('stroke-dasharray', '8,4');
+                lineNode.setAttribute('style', 'pointer-events: none;');
+                frontBarGroup.insertBefore(lineNode, fo);
+            }
+            lineNode.setAttribute('x1', pt1.x);
+            lineNode.setAttribute('y1', pt1.y);
+            lineNode.setAttribute('x2', pt2.x);
+            lineNode.setAttribute('y2', pt2.y);
+
+            let h1 = frontBarGroup.querySelector('.front-handle-1');
+            let h2 = frontBarGroup.querySelector('.front-handle-2');
+            if (!h1) {
+                const createHandle = (idx, cls) => {
+                    let circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('class', cls);
+                    circle.setAttribute('r', '10');
+                    circle.setAttribute('fill', '#FF5722');
+                    circle.setAttribute('stroke', '#ffffff');
+                    circle.setAttribute('stroke-width', '2');
+                    circle.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+                    let isDragging = false;
+                    const onMove = (ev) => {
+                        if (ev.cancelable) ev.preventDefault();
+                        if (!isDragging) return;
+                        let cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+                        let cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                        let newLatLng = window.screenPixelToLatLng(cx, cy);
+                        if (newLatLng) {
+                            window.cadFrontBaseline[idx] = {lat: newLatLng.lat(), lng: newLatLng.lng()};
+                            window.updateCadSvgOverlay();
+                        }
+                    };
+                    const onEnd = () => {
+                        if (!isDragging) return;
+                        isDragging = false;
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onEnd);
+                        window.removeEventListener('touchmove', onMove);
+                        window.removeEventListener('touchend', onEnd);
+                        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                    };
+                    circle.addEventListener('mousedown', (e) => {
+                        isDragging = true; e.stopPropagation();
+                        window.addEventListener('mousemove', onMove);
+                        window.addEventListener('mouseup', onEnd);
+                    });
+                    circle.addEventListener('touchstart', (e) => {
+                        isDragging = true; e.stopPropagation();
+                        window.addEventListener('touchmove', onMove, {passive: false});
+                        window.addEventListener('touchend', onEnd);
+                    }, {passive: false});
+                    return circle;
+                };
+                h1 = createHandle(0, 'front-handle-1');
+                h2 = createHandle(1, 'front-handle-2');
+                frontBarGroup.appendChild(h1);
+                frontBarGroup.appendChild(h2);
+            }
+            h1.setAttribute('cx', pt1.x);
+            h1.setAttribute('cy', pt1.y);
+            h2.setAttribute('cx', pt2.x);
+            h2.setAttribute('cy', pt2.y);
+            
             let midX = (pt1.x + pt2.x) / 2;
             let midY = (pt1.y + pt2.y) / 2;
             fo.setAttribute('x', midX - 50);
@@ -667,7 +735,7 @@ window.loadCadStateFromHistory = (index) => {
         state.pins.forEach(pin => {
             const mk = new google.maps.Marker({
                 position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap,
-                label: { text: pin.type === 'water_in' ? '💧' : pin.type === 'water_out' ? '🕳️' : pin.type === 'parking_truck' ? '🛻' : '🚪', fontSize: '24px', className: 'polygon-label' },
+                label: { text: pin.type === 'water_in' ? '💧' : pin.type === 'water_out' ? '🕳️' : pin.type === 'parking_truck' ? '🛻' : '◢', fontSize: '24px', className: 'polygon-label' },
                 icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true
             });
             mk.cadPinType = pin.type;
@@ -830,7 +898,7 @@ window.handleMapClick = (pageX, pageY) => {
             else window.saveCadStateToHistory();
         }
     } else {
-        const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : window.cadPinMode === 'parking_truck' ? '🛻' : '🚪';
+        const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : window.cadPinMode === 'parking_truck' ? '🛻' : '◢';
         const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, label: { text: iconStr, fontSize: '24px', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true });
         mk.cadPinType = window.cadPinMode;
         google.maps.event.addListener(mk, 'dragend', () => window.saveCadStateToHistory());
@@ -1303,7 +1371,7 @@ window.openCADMode = (id) => {
                 saved.pins.forEach(pin => {
                     const mk = new google.maps.Marker({
                         position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap,
-                        label: { text: pin.type === 'water_in' ? '💧' : pin.type === 'water_out' ? '🕳️' : pin.type === 'parking_truck' ? '🛻' : '🚪', fontSize: '24px', className: 'polygon-label' },
+                        label: { text: pin.type === 'water_in' ? '💧' : pin.type === 'water_out' ? '🕳️' : pin.type === 'parking_truck' ? '🛻' : '◢', fontSize: '24px', className: 'polygon-label' },
                         icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true
                     });
                     mk.cadPinType = pin.type;
@@ -1536,7 +1604,7 @@ window.cadSetPinMode = (type) => {
         window.nakamichiTempPt = null;
         if (msgEl) { msgEl.innerText = `【中道ライン】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
     } else {
-        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🛻 軽トラ駐車' : '🚪 機械侵入口';
+        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🛻 軽トラ駐車' : '◢ 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
     }
 };
