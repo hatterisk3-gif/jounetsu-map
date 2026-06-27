@@ -667,7 +667,7 @@ window.loadCadStateFromHistory = (index) => {
         state.pins.forEach(pin => {
             const mk = new google.maps.Marker({
                 position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap,
-                label: { text: pin.type === 'water_in' ? '💧' : '🕳️', fontSize: '24px', className: 'polygon-label' },
+                label: { text: pin.type === 'water_in' ? '💧' : pin.type === 'water_out' ? '🕳️' : pin.type === 'parking_truck' ? '🛻' : '🚪', fontSize: '24px', className: 'polygon-label' },
                 icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true
             });
             mk.cadPinType = pin.type;
@@ -830,7 +830,7 @@ window.handleMapClick = (pageX, pageY) => {
             else window.saveCadStateToHistory();
         }
     } else {
-        const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : '🚧';
+        const iconStr = window.cadPinMode === 'water_in' ? '💧' : window.cadPinMode === 'water_out' ? '🕳️' : window.cadPinMode === 'parking_truck' ? '🛻' : '🚪';
         const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, label: { text: iconStr, fontSize: '24px', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true });
         mk.cadPinType = window.cadPinMode;
         google.maps.event.addListener(mk, 'dragend', () => window.saveCadStateToHistory());
@@ -886,7 +886,7 @@ window.initCadTouchEvents = () => {
 
             if (currTagName === 'img') {
                 let src = currEl.getAttribute('src') || '';
-                if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out') || src.includes('nakamichi')) {
+                if (src.includes('undo_poly') || src.includes('cb_direction') || src.includes('water_in') || src.includes('water_out') || src.includes('parking_truck') || src.includes('nakamichi')) {
                     return true;
                 }
             }
@@ -1303,7 +1303,7 @@ window.openCADMode = (id) => {
                 saved.pins.forEach(pin => {
                     const mk = new google.maps.Marker({
                         position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap,
-                        label: { text: pin.type === 'water_in' ? '💧' : '🕳️', fontSize: '24px', className: 'polygon-label' },
+                        label: { text: pin.type === 'water_in' ? '💧' : pin.type === 'water_out' ? '🕳️' : pin.type === 'parking_truck' ? '🛻' : '🚪', fontSize: '24px', className: 'polygon-label' },
                         icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, zIndex: 5000, draggable: true
                     });
                     mk.cadPinType = pin.type;
@@ -1536,7 +1536,7 @@ window.cadSetPinMode = (type) => {
         window.nakamichiTempPt = null;
         if (msgEl) { msgEl.innerText = `【中道ライン】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
     } else {
-        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : '🚧 機械侵入口';
+        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🛻 軽トラ駐車' : '🚪 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
     }
 };
