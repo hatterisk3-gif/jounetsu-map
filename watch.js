@@ -82,7 +82,7 @@ async function watch() {
           // 💬 【通常モード】AIによる自動修正ルート
           else {
             // 🌟 【新規追加】自動ファイルレーダー機能！
-            // フォルダの中にある .html, .js, .css の一覧を自動取得する
+            // 🌟 フォルダの中にある .html, .js, .css の一覧を自動取得する
             let availableFiles = "";
             try {
               availableFiles = fs.readdirSync(__dirname)
@@ -90,7 +90,14 @@ async function watch() {
                 .join(', ');
             } catch (e) { }
 
-            const magicalPrompt = `${imageContext}${cleanCommand} 。作業が完了したら、今回の内容の解説を「ai_report.txt」に書き出して保存してください。※修正はこのファイル群にある既存のファイルを直接修正し、ai_report.txt もこのファイル群にUTF-8で保存してください。`;
+            // 🌟 修正ポイント：AIがサボらないよう、絶対パス(__dirname)を使って逃げ道を塞ぐ！
+            const magicalPrompt = `${imageContext}${cleanCommand}。
+            【※最重要指令※】
+            現在の実際の作業ディレクトリの絶対パスは「 ${__dirname} 」です。
+            あなたが修正すべきファイル群（ ${availableFiles} など）はこのディレクトリ内にあります。
+            Antigravityのscratchフォルダ等にパッチや別ファイルを作成するのではなく、必ずツールを使って「 ${__dirname} 」の中にある実ファイルを直接上書き編集してください。
+            テキストによる修正案の提示だけで終わることはシステムエラーとみなします。
+            作業完了後、必ず「 ${__dirname}\\ai_report.txt 」として今回の修正内容をUTF-8で保存してから終了してください。`;
             console.log('🧠 AIがコードを修正中...（最大15分待機します）');
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
