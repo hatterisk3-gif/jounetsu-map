@@ -157,6 +157,9 @@
             style="flex:1; background:#f44336; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🗑️
             クリア</button>
         </div>
+        <div style="margin-top:10px;">
+          <button onclick="showCadHistoryModal()" style="width:100%; background:#9E9E9E; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">📅 過去の図面を復元</button>
+        </div>
       </div>
     </div>
   </div>
@@ -382,6 +385,14 @@
 
   <script src="admin.js" defer></script>
   <script src="cad.js" defer></script>
+
+  <div id="cadHistoryModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:90%; max-width:320px; z-index:999999;">
+    <div style="background:#fff; color:#333; padding:15px; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height:80vh; display:flex; flex-direction:column;">
+      <h3 style="margin-top:0; border-bottom:2px solid #2196F3; padding-bottom:10px; font-size:16px; text-align:center;">📅 過去の図面を復元</h3>
+      <div id="cadHistoryList" style="flex:1; overflow-y:auto; margin-bottom:15px;"></div>
+      <button onclick="document.getElementById('cadHistoryModal').style.display='none'" style="width:100%; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
+    </div>
+  </div>
 </body>
 
 </html>

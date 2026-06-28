@@ -47,6 +47,8 @@ function doPost(e) {
     else if (action === "deleteMachineFromMaster") result = deleteMachineFromMaster(params);
    else if (action === 'getMapCoordinates') result = getMapCoordinates(params);
     else if (action === 'parseWithGemini') result = parseWithGemini(params);
+    else if (action === "getPolygonDrawingHistory") result = getPolygonDrawingHistory(params);
+
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
@@ -774,8 +776,22 @@ function updatePolygon(params) {
       } catch (e) {
         console.error("畝シートの更新に失敗しました: " + e.message);
       }
+      
+      // 図面履歴シートにも保存
+      try {
+        let historySheet = ss.getSheetByName('図面履歴');
+        if (!historySheet) {
+          historySheet = ss.insertSheet('図面履歴');
+          historySheet.appendRow(['圃場ID', '圃場名', '更新日時', 'データ']);
+        }
+        let historyDate = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
+        historySheet.appendRow([id, newName, historyDate, params.uneSimData]);
+      } catch (e) {
+        console.error("図面履歴シートの更新に失敗しました: " + e.message);
+      }
     }
     
+
     sheet.getRange(targetRow, historyCol).setValue(JSON.stringify(newPhotos)); // J列: 履歴
   }
 
@@ -1987,3 +2003,28 @@ function getMapCoordinates(params) {
 function testAuth() {
   UrlFetchApp.fetch("https://www.google.com");
 }
+
+// ==========================================
+// 過去の図面履歴の取得
+// ==========================================
+function getPolygonDrawingHistory(params) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('図面履歴');
+  if (!sheet) return [];
+  
+  const data = sheet.getDataRange().getValues();
+  const history = [];
+  
+  // 1行目はヘッダーなのでスキップ
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === params.id) {
+      history.push({
+        date: data[i][2],
+        data: data[i][3]
+      });
+    }
+  }
+  
+  // 最新のものが上に来るように逆順にする
+  return history.reverse();
+}
