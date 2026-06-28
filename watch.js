@@ -82,33 +82,52 @@ async function watch() {
           }
           // 💬 【通常モード】AIによる自動修正ルート
           else {
-            // 🌟 【新規追加】自動ファイルレーダー機能！
-            // 🌟 フォルダの中にある .html, .js, .css の一覧を自動取得する
-            let availableFiles = "";
-            try {
-              availableFiles = fs.readdirSync(__dirname)
-                .filter(f => f.endsWith('.html') || f.endsWith('.js') || f.endsWith('.css'))
-                .join(', ');
-            } catch (e) { }
+            const safeDirPath = __dirname.replace(/\\/g, '/');
 
-            // 🌟 修正ポイント：AIがサボらないよう、絶対パス(__dirname)を使って逃げ道を塞ぐ！
-            const magicalPrompt = `${imageContext}${cleanCommand}。
+            // 🌟 【1段階目】AIには「コードの修正」だけに集中させる
+            const modifyPrompt = `${imageContext}${cleanCommand}。
             【※最重要指令※】
-            現在の実際の作業ディレクトリの絶対パスは「 ${__dirname} 」です。
-            あなたが修正すべきファイル群（ ${availableFiles} など）はこのディレクトリ内にあります。
-            Antigravityのscratchフォルダ等にパッチや別ファイルを作成するのではなく、必ずツールを使って「 ${__dirname} 」の中にある実ファイルを直接上書き編集してください。
-            テキストによる修正案の提示だけで終わることはシステムエラーとみなします。
-            作業完了後、必ず「 ${__dirname}\\ai_report.txt 」として今回の修正内容をUTF-8で保存してから終了してください。`;
+            現在の作業ディレクトリは「 ${safeDirPath} 」です。対象となる実ファイルをツールを使って直接編集・保存してください。`;
+
             console.log('🧠 AIがコードを修正中...（最大15分待機します）');
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
             let isSuccess = false;
 
             try {
-              execSync(`agy --print-timeout 15m --prompt "${magicalPrompt}"`, {
+              // ① まずコードの修正を実行
+              execSync(`agy --print-timeout 15m --prompt "${modifyPrompt}"`, {
                 env: { ...process.env, AGY_TIMEOUT: '900000' },
                 stdio: 'inherit'
               });
+
+              // ② 修正が終わったら、何が変更されたか（差分）を抽出する
+              let diffText = "";
+              try { diffText = execSync('git diff').toString().trim(); } catch (e) { }
+
+              if (diffText !== "") {
+                console.log('📝 AIが修正完了！続いて変更内容のレポートを自動作成中...');
+
+                // 差分が長すぎる場合はAIがパンクしないようにカット
+                const shortDiff = diffText.length > 5000 ? diffText.substring(0, 5000) + '\n...（以下省略）' : diffText;
+
+                // 🌟 【2段階目】AIに「レポート作成」だけを強制する
+                const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。
+                【※最重要指令※】
+                解説を作成したら、必ずツールを使って「 ${safeDirPath}/ai_report.txt 」というファイルを新規作成し、そこに保存してタスクを終了してください。
+                
+                【変更内容】
+                ${shortDiff}`;
+
+                // レポート作成を実行（時間は5分で十分）
+                execSync(`agy --print-timeout 5m --prompt "${reportPrompt}"`, {
+                  env: { ...process.env, AGY_TIMEOUT: '300000' },
+                  stdio: 'inherit'
+                });
+              } else {
+                console.log('⏭️ ファイルの変更がなかったため、レポート作成プロセスはスキップします。');
+              }
+
               isSuccess = true;
             } catch (e) {
               console.error('\n⚠️ AIの処理中にエラーまたはタイムアウトが発生しました！');
@@ -121,6 +140,8 @@ async function watch() {
                 console.log('✅ ロールバック完了。ファイルは安全な状態に復元されました。');
               } catch (gitErr) { }
             }
+
+            // 👇 ここから下は既存の「if (isSuccess) {」の処理に続きます
 
             if (isSuccess) {
               const reportPath = path.join(__dirname, 'ai_report.txt');
