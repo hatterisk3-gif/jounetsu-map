@@ -583,13 +583,25 @@ window.updateCadSvgOverlay = () => {
     }
     
     if (window.cadPins) {
+        let currentZoom = window.getCadZoom();
+        let pinScale = Math.max(0.5, Math.pow(2, currentZoom - 20));
+        let scaledFontSize = Math.round(24 * pinScale);
+        let foSize = Math.max(60, scaledFontSize + 50);
+
         window.cadPins.forEach(mk => {
             if (mk._svgFoNode) {
                 let latLng = mk.getPosition();
                 if (latLng) {
                     let screenPt = window.latLngToScreenPixel(latLng.lat(), latLng.lng());
-                    mk._svgFoNode.setAttribute('x', screenPt.x - 30);
-                    mk._svgFoNode.setAttribute('y', screenPt.y - 30);
+                    mk._svgFoNode.setAttribute('width', foSize);
+                    mk._svgFoNode.setAttribute('height', foSize);
+                    mk._svgFoNode.setAttribute('x', screenPt.x - (foSize / 2));
+                    mk._svgFoNode.setAttribute('y', screenPt.y - (foSize / 2));
+                    
+                    let div = mk._svgFoNode.querySelector('div');
+                    if (div) {
+                        div.style.fontSize = scaledFontSize + 'px';
+                    }
                 }
             }
         });
