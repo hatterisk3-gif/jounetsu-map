@@ -590,7 +590,8 @@ function getSavedPolygons() {
         color: data[i][3],
         author: data[i][5],
         signFunction: data[i][7] || "一般看板", // ★ここが超重要！H列（看板機能）をアプリに送る！
-        photos: photos
+        photos: photos,
+        uneSimData: data[i][10] // K列(11)
       });
     }
   }
@@ -612,7 +613,7 @@ function savePolygon(params) {
   
   if (isMarker) {
     // 【看板シートの列構成】
-    // A:ID, B:名前, C:座標, D:色/アイコン, E:登録日時, F:登録者, G:空白, H:看板機能
+    // A:ID, B:名前, C:座標, D:色/アイコン, E:登録日時, F:登録者, G:空白, H:看板機能, J:履歴, K:畝シミュレーションデータ
     sheet.appendRow([
       newId,
       params.name || "",
@@ -621,7 +622,10 @@ function savePolygon(params) {
       now,
       params.userName || "",
       "", 
-      params.signFunction || "機能なし"
+      params.signFunction || "機能なし",
+      "", // I列
+      "[]", // J列
+      params.uneSimData || "" // K列: 畝シミュレーションデータ
     ]);
   } else {
     // 【圃場シートの列構成（画像に合わせて完全に修正）】
@@ -719,11 +723,12 @@ function updatePolygon(params) {
 
   // --- 保存処理（正しい列番号に修正！） ---
   if (isSignboard) {
-    // 【看板】 B(2):名前, C(3):座標, D(4):色, H(8):看板機能, J(10):履歴
+    // 【看板】 B(2):名前, C(3):座標, D(4):色, H(8):看板機能, J(10):履歴, K(11):畝シミュレーションデータ
     sheet.getRange(targetRow, 2).setValue(newName);
     sheet.getRange(targetRow, 3).setValue(coords);
     sheet.getRange(targetRow, 4).setValue(color);
     if (params.signFunction !== undefined) sheet.getRange(targetRow, 8).setValue(params.signFunction);
+    if (params.uneSimData !== undefined) sheet.getRange(targetRow, 11).setValue(params.uneSimData);
     sheet.getRange(targetRow, historyCol).setValue(JSON.stringify(newPhotos));
   } else {
     // 【圃場】 画像に合わせて修正！

@@ -83,11 +83,11 @@ async function watch() {
           // 💬 【通常モード】AIによる自動修正ルート
           else {
             const safeDirPath = __dirname.replace(/\\/g, '/');
-
             // 🌟 【1段階目】AIには「コードの修正」だけに集中させる
             const modifyPrompt = `${imageContext}${cleanCommand}。
             【※最重要指令※】
-            現在の作業ディレクトリは「 ${safeDirPath} 」です。対象となる実ファイルをツールを使って直接編集・保存してください。`;
+            現在の作業ディレクトリは「 ${safeDirPath} 」です。
+            テキストで修正案を提案するだけでは不合格です。あなたが発言した修正内容（.html, .js, .gsなど複数ある場合はその全て）に対して、必ずツールを使って実ファイルを直接編集・保存してください。`;
 
             console.log('🧠 AIがコードを修正中...（最大15分待機します）');
 
@@ -95,37 +95,59 @@ async function watch() {
             let isSuccess = false;
 
             try {
-              // ① まずコードの修正を実行
+              // ① まずコードの修正を実行（作業ログはターミナルに表示させる）
               execSync(`agy --print-timeout 15m --prompt "${modifyPrompt}"`, {
                 env: { ...process.env, AGY_TIMEOUT: '900000' },
                 stdio: 'inherit'
               });
 
+              // 🌟 【1段階目】の execSync のすぐ下から...
+
               // ② 修正が終わったら、何が変更されたか（差分）を抽出する
               let diffText = "";
-              try { diffText = execSync('git diff').toString().trim(); } catch (e) { }
+              try {
+                // 🌟 修正ポイント1: HEADをつけることで、AIが勝手にgit addしていても確実に差分を拾う！
+                // 🌟 修正ポイント2: GIT_PAGER=cat で、余計な画面切り替えを防ぐ！
+                diffText = execSync('git diff HEAD', {
+                  env: { ...process.env, GIT_PAGER: 'cat' }
+                }).toString().trim();
+              } catch (e) { }
 
-              if (diffText !== "") {
+              // 🌟 修正ポイント3: 改行コードの警告だけを拾ってしまった場合は「差分なし」とみなす
+              const cleanDiffText = diffText.replace(/warning:.*LF will be replaced by CRLF.*/g, '').trim();
+
+              if (cleanDiffText !== "") {
                 console.log('📝 AIが修正完了！続いて変更内容のレポートを自動作成中...');
 
-                // 差分が長すぎる場合はAIがパンクしないようにカット
-                const shortDiff = diffText.length > 5000 ? diffText.substring(0, 5000) + '\n...（以下省略）' : diffText;
+                const shortDiff = cleanDiffText.length > 5000 ? cleanDiffText.substring(0, 5000) + '\n...（以下省略）' : cleanDiffText;
 
-                // 🌟 【2段階目】AIに「レポート作成」だけを強制する
-                const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。
-                【※最重要指令※】
-                解説を作成したら、必ずツールを使って「 ${safeDirPath}/ai_report.txt 」というファイルを新規作成し、そこに保存してタスクを終了してください。
-                
-                【変更内容】
-                ${shortDiff}`;
+                // 🌟 【2段階目】AIに「解説テキスト」だけを返させる（ファイル作成は指示しない）
+                const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。ツール等は一切使わず、テキストでの解説のみを出力してください。\n\n【変更内容】\n${shortDiff}`;
 
-                // レポート作成を実行（時間は5分で十分）
-                execSync(`agy --print-timeout 5m --prompt "${reportPrompt}"`, {
-                  env: { ...process.env, AGY_TIMEOUT: '300000' },
-                  stdio: 'inherit'
-                });
+                try {
+                  // 🌟🌟 最大の改善ポイント：ターミナルに流さず、出力を変数に直接キャッチする！ 🌟🌟
+                  const reportBuffer = execSync(`agy --print-timeout 5m --prompt "${reportPrompt}"`, {
+                    env: { ...process.env, AGY_TIMEOUT: '300000' }
+                    // ※ stdio: 'inherit' をあえて外すことで、出力結果を丸ごと reportBuffer に格納できます
+                  });
+
+                  // ターミナルの文字色コード（ANSIエスケープシーケンス）というノイズを綺麗に掃除する
+                  const cleanReport = reportBuffer.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+
+                  if (cleanReport) {
+                    aiOutput = cleanReport;
+                    console.log('✅ レポートの自動作成・取得に成功しました！');
+                  }
+                } catch (reportError) {
+                  console.error('⚠️ レポート作成中にエラーが発生しました。');
+                  // 万が一エラーになっても、途中までの出力があれば拾う
+                  if (reportError.stdout) {
+                    aiOutput = reportError.stdout.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+                  }
+                }
               } else {
                 console.log('⏭️ ファイルの変更がなかったため、レポート作成プロセスはスキップします。');
+                aiOutput = "（ファイルの変更はありませんでした）";
               }
 
               isSuccess = true;
@@ -141,20 +163,9 @@ async function watch() {
               } catch (gitErr) { }
             }
 
-            // 👇 ここから下は既存の「if (isSuccess) {」の処理に続きます
-
             if (isSuccess) {
-              const reportPath = path.join(__dirname, 'ai_report.txt');
-              if (fs.existsSync(reportPath)) {
-                aiOutput = fs.readFileSync(reportPath, 'utf8').trim();
-                try { fs.unlinkSync(reportPath); } catch (e) { }
-              } else {
-                aiOutput = "（レポートは省略されましたが、処理は完了しました！）";
-              }
+              // 🌟 旧式の「ai_report.txt を探して読み込む処理」は不要になったので完全に削除しました！
 
-              // ----------------------------------------------------
-              // 🌟 修正ポイント1：スクラッチフォルダのお掃除機能を追加
-              // ----------------------------------------------------
               console.log('🧹 agyが分析用に残した一時画像を削除中...');
               const files = fs.readdirSync(__dirname);
               files.forEach(file => {
