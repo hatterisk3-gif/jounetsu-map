@@ -96,65 +96,63 @@ async function watch() {
             let isSuccess = false;
 
             try {
-              // ① まずコードの修正を実行（作業ログはターミナルに表示させる）
-              execSync(`agy --print-timeout 15m --prompt "${modifyPrompt}"`, {
-                env: { ...process.env, AGY_TIMEOUT: '900000' },
-                stdio: 'inherit'
-              });
+              // 🌟 変更点1：IDEに渡す手紙（タスクファイル）のパス
+              const taskFile = path.join(__dirname, '.ai_task.txt');
+              const doneFile = path.join(__dirname, '.ai_task_done.txt');
 
-              // 🌟 【1段階目】の execSync のすぐ下から...
+              // 前回の古い完了ファイルが残っていたら消しておく
+              if (fs.existsSync(doneFile)) fs.unlinkSync(doneFile);
 
-              // ② 修正が終わったら、何が変更されたか（差分）を抽出する
-              let diffText = "";
-              try {
-                // 🌟 修正ポイント1: HEADをつけることで、AIが勝手にgit addしていても確実に差分を拾う！
-                // 🌟 修正ポイント2: GIT_PAGER=cat で、余計な画面切り替えを防ぐ！
-                diffText = execSync('git diff HEAD', {
-                  env: { ...process.env, GIT_PAGER: 'cat' }
-                }).toString().trim();
-              } catch (e) { }
+              // 🌟 変更点2：手紙（.ai_task.txt）を保存！ ➡️ これをIDEが検知してAIが走り出します
+              fs.writeFileSync(taskFile, modifyPrompt, 'utf8');
+              console.log('📝 IDEにAI実行の指示を送信しました！IDE側で自動処理が始まります...');
 
-              // 🌟 修正ポイント3: 改行コードの警告だけを拾ってしまった場合は「差分なし」とみなす
-              const cleanDiffText = diffText.replace(/warning:.*LF will be replaced by CRLF.*/g, '').trim();
-
-              if (cleanDiffText !== "") {
-                console.log('📝 AIが修正完了！続いて変更内容のレポートを自動作成中...');
-
-                const shortDiff = cleanDiffText.length > 5000 ? cleanDiffText.substring(0, 5000) + '\n...（以下省略）' : cleanDiffText;
-
-                // 🌟 【2段階目】AIに「解説テキスト」だけを返させる（ファイル作成は指示しない）
-                const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。ツール等は一切使わず、テキストでの解説のみを出力してください。\n\n【変更内容】\n${shortDiff}`;
-
-                try {
-                  // 🌟🌟 最大の改善ポイント：ターミナルに流さず、出力を変数に直接キャッチする！ 🌟🌟
-                  const reportBuffer = execSync(`agy --print-timeout 5m --prompt "${reportPrompt}"`, {
-                    env: { ...process.env, AGY_TIMEOUT: '300000' }
-                    // ※ stdio: 'inherit' をあえて外すことで、出力結果を丸ごと reportBuffer に格納できます
-                  });
-
-                  // ターミナルの文字色コード（ANSIエスケープシーケンス）というノイズを綺麗に掃除する
-                  const cleanReport = reportBuffer.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
-
-                  if (cleanReport) {
-                    aiOutput = cleanReport;
-                    console.log('✅ レポートの自動作成・取得に成功しました！');
-                  }
-                } catch (reportError) {
-                  console.error('⚠️ レポート作成中にエラーが発生しました。');
-                  // 万が一エラーになっても、途中までの出力があれば拾う
-                  if (reportError.stdout) {
-                    aiOutput = reportError.stdout.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
-                  }
-                }
-              } else {
-                console.log('⏭️ ファイルの変更がなかったため、レポート作成プロセスはスキップします。');
-                aiOutput = "（ファイルの変更はありませんでした）";
+              // 🌟 変更点3：IDEの処理が終わる（.ai_task_done.txt が作られる）まで待機する
+              let waitTime = 0;
+              while (!fs.existsSync(doneFile) && waitTime < 900) { // 最大15分待機
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                waitTime++;
               }
 
-              isSuccess = true;
+              if (fs.existsSync(doneFile)) {
+                console.log('✅ IDEでのAI処理が完了しました！');
+
+                // --- ここから下は今までと同じ差分抽出（git diff）とレポート作成処理 ---
+                let diffText = "";
+                try {
+                  diffText = execSync('git diff HEAD', { env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
+                } catch (e) { }
+
+                const cleanDiffText = diffText.replace(/warning:.*LF will be replaced by CRLF.*/g, '').trim();
+
+                if (cleanDiffText !== "") {
+                  console.log('📝 変更内容のレポートを自動作成中...');
+                  const shortDiff = cleanDiffText.length > 5000 ? cleanDiffText.substring(0, 5000) + '\n...（以下省略）' : cleanDiffText;
+                  const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。ツール等は一切使わず、テキストでの解説のみを出力してください。\n\n【変更内容】\n${shortDiff}`;
+
+                  try {
+                    const reportBuffer = execSync(`agy --print-timeout 5m --prompt "${reportPrompt}"`);
+                    const cleanReport = reportBuffer.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+                    if (cleanReport) aiOutput = cleanReport;
+                  } catch (reportError) {
+                    if (reportError.stdout) aiOutput = reportError.stdout.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+                  }
+                } else {
+                  console.log('⏭️ ファイルの変更がなかったため、レポート作成プロセスはスキップします。');
+                  aiOutput = "（ファイルの変更はありませんでした）";
+                }
+                isSuccess = true;
+
+                // 使い終わった手紙を掃除する
+                try { fs.unlinkSync(taskFile); fs.unlinkSync(doneFile); } catch (e) { }
+
+              } else {
+                throw new Error("IDEでの処理がタイムアウトしました。");
+              }
+
             } catch (e) {
-              console.error('\n⚠️ AIの処理中にエラーまたはタイムアウトが発生しました！');
-              aiOutput = "⚠️ AIの処理中にエラーが発生したか、タイムアウトしました。";
+              console.error('\n⚠️ 処理中にエラーまたはタイムアウトが発生しました！', e);
+              // (以降のロールバック処理などはそのまま残す)
 
               console.log('🔄 ファイルの中途半端な破損を防ぐため、変更をリセット（ロールバック）します...');
               try {
