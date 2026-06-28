@@ -492,7 +492,7 @@ window.updateCadSvgOverlay = () => {
                 iconSpan.innerHTML = iconStr;
                 div.appendChild(iconSpan);
                 
-                div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)) scale(calc(1 / var(--cad-scale))); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                 fo.appendChild(div);
 
                 let delBtn = document.createElement('div');
