@@ -2118,3 +2118,45 @@ window.saveUneSim = () => {
     alert("💾 描画した地形とピンをすべて保存しました！");
     window.closeCADMode();
 };
+window.showCadHistoryModal = async () => {
+    if (!window.cadTargetId) return;
+    const listEl = document.getElementById('cadHistoryList');
+    if (!listEl) return;
+    listEl.innerHTML = '<div style="text-align:center; padding:20px;">読み込み中...</div>';
+    document.getElementById('cadHistoryModal').style.display = 'block';
+    
+    try {
+        const history = await callGAS('getPolygonDrawingHistory', { id: window.cadTargetId });
+        if (!history || history.length === 0) {
+            listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">保存された履歴がありません。</div>';
+            return;
+        }
+        
+        listEl.innerHTML = '';
+        history.forEach((item, idx) => {
+            const btn = document.createElement('button');
+            btn.style.cssText = 'width:100%; text-align:left; padding:12px; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:14px; margin-bottom:5px;';
+            btn.innerHTML = '🕒 ' + item.date;
+            btn.onclick = () => {
+                if (confirm(item.date + ' の状態を復元しますか？現在の未保存の編集は失われます。')) {
+                    window.loadCadHistoryData(item.data);
+                    document.getElementById('cadHistoryModal').style.display = 'none';
+                }
+            };
+            listEl.appendChild(btn);
+        });
+    } catch(e) {
+        listEl.innerHTML = '<div style="text-align:center; padding:20px; color:red;">エラーが発生しました。</div>';
+    }
+};
+
+window.loadCadHistoryData = (simDataStr) => {
+    if (!simDataStr) return;
+    const p = loadedPolygons[window.cadTargetId];
+    if (p) p.uneSimData = simDataStr;
+    window.cadClearLines(true);
+    let currentId = window.cadTargetId;
+    window.closeCADMode();
+    window.openCADMode(currentId);
+};
+
