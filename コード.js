@@ -2013,30 +2013,43 @@ function testAuth() {
 // 過去の図面履歴の取得
 // ==========================================
 function getPolygonDrawingHistory(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('図面履歴');
-  if (!sheet) return [];
-  
-  const data = sheet.getDataRange().getValues();
-  const history = [];
-  
-  // 1行目はヘッダーなのでスキップ
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(params.id)) {
-      let dateVal = data[i][2];
-      let dateStr = "";
-      if (dateVal instanceof Date) {
-        dateStr = Utilities.formatDate(dateVal, "JST", "yyyy/MM/dd HH:mm:ss");
-      } else {
-        dateStr = String(dateVal || "");
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('図面履歴');
+    if (!sheet) return [];
+    
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return []; // データがない場合
+    
+    // メモリ枯渇を避けるため、A列(ID)とC列(更新日時)だけを取得する
+    const idData = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    const dateData = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+    
+    const history = [];
+    
+    for (let i = 0; i < idData.length; i++) {
+      if (String(idData[i][0]) === String(params.id)) {
+        let dateVal = dateData[i][0];
+        let dateStr = "";
+        if (dateVal instanceof Date) {
+          dateStr = Utilities.formatDate(dateVal, "JST", "yyyy/MM/dd HH:mm:ss");
+        } else {
+          dateStr = String(dateVal || "");
+        }
+        
+        // 一致した行のみ、D列のJSONデータを取得する
+        let dataVal = sheet.getRange(i + 2, 4).getValue();
+        
+        history.push({
+          date: dateStr,
+          data: dataVal ? String(dataVal) : ""
+        });
       }
-      history.push({
-        date: dateStr,
-        data: data[i][3] ? String(data[i][3]) : ""
-      });
     }
+    
+    // 最新のものが上に来るように逆順にし、直近20件のみを返す
+    return history.reverse().slice(0, 20);
+  } catch(e) {
+    throw new Error("履歴取得エラー: " + e.message);
   }
-  
-  // 最新のものが上に来るように逆順にする
-  return history.reverse();
-}
+}

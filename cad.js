@@ -2146,7 +2146,8 @@ window.showCadHistoryModal = async () => {
             listEl.appendChild(btn);
         });
     } catch(e) {
-        listEl.innerHTML = '<div style="text-align:center; padding:20px; color:red;">エラーが発生しました。</div>';
+        console.error("CAD History Error:", e);
+        listEl.innerHTML = `<div style="text-align:center; padding:20px; color:red;">エラーが発生しました。<br>${e.message}</div>`;
     }
 };
 

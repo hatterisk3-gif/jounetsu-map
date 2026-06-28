@@ -281,7 +281,7 @@ async function watch() {
               throw new Error("GAS HTTPエラー: " + res.status);
             }
 
-            if (usedImageId !== "") {
+            if (usedImageIds.length > 0) {
               console.log('🔔 完了通知をGASへ送信し、Drive上の画像を削除しました。');
             } else {
               console.log('🔔 完了通知をGASへ送信しました。');
