@@ -97,33 +97,38 @@ window.updateCadStrokeWeights = (scale) => {
     if (window.cadGridLines) window.cadGridLines.forEach(l => l.setOptions({ strokeWeight: Math.max(0.5, 2 / scale) }));
 };
 
+let cadMapTransformRAF = null;
 window.updateCadMapTransform = () => {
-    const mapDiv = document.getElementById('cadMap');
-    if (mapDiv) {
-        let offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
-        let offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
+    if (cadMapTransformRAF) return;
+    cadMapTransformRAF = requestAnimationFrame(() => {
+        cadMapTransformRAF = null;
+        const mapDiv = document.getElementById('cadMap');
+        if (mapDiv) {
+            let offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
+            let offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
 
-        let currentZoom = window.getCadZoom();
-        let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
-        let apparentScale = Math.pow(2, currentZoom - realZoom);
-        if (apparentScale < 0.25) apparentScale = 0.25;
+            let currentZoom = window.getCadZoom();
+            let realZoom = window.cadMap ? window.cadMap.getZoom() : 20;
+            let apparentScale = Math.pow(2, currentZoom - realZoom);
+            if (apparentScale < 0.25) apparentScale = 0.25;
 
-        mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
-        mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
-        mapDiv.style.setProperty('--cad-scale', apparentScale);
-        window.cadCurrentScale = apparentScale;
+            mapDiv.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) rotate(${window.cadCurrentRotation}deg) scale(${apparentScale})`;
+            mapDiv.style.setProperty('--label-rot', (-window.cadCurrentRotation) + 'deg');
+            mapDiv.style.setProperty('--cad-scale', apparentScale);
+            window.cadCurrentScale = apparentScale;
 
-        // 🌟 追加：線の太さを拡大率の逆数で補正する
-        if (typeof window.updateCadStrokeWeights === 'function') {
-            window.updateCadStrokeWeights(apparentScale);
+            // 🌟 追加：線の太さを拡大率の逆数で補正する
+            if (typeof window.updateCadStrokeWeights === 'function') {
+                window.updateCadStrokeWeights(apparentScale);
+            }
         }
-    }
-    if (typeof window.updateCadLabelPositionsThrottled === 'function') {
-        window.updateCadLabelPositionsThrottled();
-    }
-    if (typeof window.updateCadSvgOverlay === 'function') {
-        window.updateCadSvgOverlay();
-    }
+        if (typeof window.updateCadLabelPositionsThrottled === 'function') {
+            window.updateCadLabelPositionsThrottled();
+        }
+        if (typeof window.updateCadSvgOverlay === 'function') {
+            window.updateCadSvgOverlay();
+        }
+    });
 };
 
 window.latLngToScreenPixel = (lat, lng) => {
@@ -1333,7 +1338,7 @@ window.initCadTouchEvents = () => {
                 scheduleMapUpdate(null, nextZoom);
             } else if (pinchMode === 'rotate') {
                 window.cadCurrentRotation = startRotation + angleDiff;
-                scheduleMapUpdate(null, null);
+                scheduleMapUpdate(null, null, true);
             }
 
             let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
