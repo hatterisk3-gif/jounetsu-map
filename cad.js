@@ -312,6 +312,8 @@ window.updateCadSvgOverlay = () => {
         }
 
         window.cadSvgNeedsRebuild = false;
+        svg._lastHandleStateId = null;
+        svg._lastPinsStateId = null;
     }
     
     let handleStateId = '';
@@ -498,7 +500,7 @@ window.updateCadSvgOverlay = () => {
                 let delBtn = document.createElement('div');
                 delBtn.innerHTML = '✕';
                 delBtn.className = 'cad-pin-del-btn';
-                delBtn.style.cssText = 'position:absolute; top:-15px; right:-15px; width:24px; height:24px; background:#f44336; color:white; font-size:14px; line-height:24px; text-align:center; border-radius:50%; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5); display:none; border: 2px solid white;';
+                delBtn.style.cssText = 'position:absolute; top:-20px; right:-20px; width:40px; height:40px; background:#f44336; color:white; font-size:20px; line-height:36px; text-align:center; border-radius:50%; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5); display:none; border: 2px solid white;';
                 div.appendChild(delBtn);
                 
                 let isDraggingPin = false;
