@@ -2027,7 +2027,8 @@ function getPolygonDrawingHistory(params) {
     
     const history = [];
     
-    for (let i = 0; i < idData.length; i++) {
+    // 後ろから検索して最新の20件だけ取得する
+    for (let i = idData.length - 1; i >= 0; i--) {
       if (String(idData[i][0]) === String(params.id)) {
         let dateVal = dateData[i][0];
         let dateStr = "";
@@ -2044,11 +2045,12 @@ function getPolygonDrawingHistory(params) {
           date: dateStr,
           data: dataVal ? String(dataVal) : ""
         });
+        
+        if (history.length >= 20) break;
       }
     }
     
-    // 最新のものが上に来るように逆順にし、直近20件のみを返す
-    return history.reverse().slice(0, 20);
+    return history;
   } catch(e) {
     throw new Error("履歴取得エラー: " + e.message);
   }
