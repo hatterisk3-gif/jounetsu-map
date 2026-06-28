@@ -2022,10 +2022,17 @@ function getPolygonDrawingHistory(params) {
   
   // 1行目はヘッダーなのでスキップ
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === params.id) {
+    if (String(data[i][0]) === String(params.id)) {
+      let dateVal = data[i][2];
+      let dateStr = "";
+      if (dateVal instanceof Date) {
+        dateStr = Utilities.formatDate(dateVal, "JST", "yyyy/MM/dd HH:mm:ss");
+      } else {
+        dateStr = String(dateVal || "");
+      }
       history.push({
-        date: data[i][2],
-        data: data[i][3]
+        date: dateStr,
+        data: data[i][3] ? String(data[i][3]) : ""
       });
     }
   }
