@@ -192,21 +192,20 @@ async function watch() {
 
                   const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...（以下省略）' : aiOutput;
 
-                  // 🌟 修正ポイント：まずコミットとプッシュを実行する
+                  // 🌟 修正ポイント：コミットとプッシュはここで【1回だけ】実行！
                   console.log(`📦 コミットメッセージ: ${commitMessage}`);
                   execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
                   execSync('git push', { stdio: 'inherit' });
 
-                  // 🌟 修正ポイント：プッシュまで「成功した直後」にLINE用のメッセージを作る！
+                  // 🌟 プッシュ成功後にLINE用・メール用のメッセージを作る
                   summaryForLine = `【デプロイ完了】\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
                   fullSummaryForEmail = `【デプロイ完了】\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
-                  // ----------------------------------------------------
+                  console.log('✅ GitHubへのプッシュが完了しました！');
 
-                  execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
-                  execSync('git push', { stdio: 'inherit' });
                 } else {
                   summaryForLine = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント】:\n${aiOutput.slice(0, 2000)}`;
                   fullSummaryForEmail = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント(全文)】:\n${aiOutput}`;
+                  console.log('⏭️ 変更がないためプッシュをスキップしました。');
                 }
               } catch (e) {
                 // 🌟 修正ポイント：ここでエラーを握り潰さずに出力し、LINEにも通知する！
