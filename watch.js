@@ -6,8 +6,7 @@ const { execSync } = require('child_process');
 const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
 
 // 🌟 画像URLとIDを一時的に記憶しておくための変数
-let pendingImageUrl = "";
-let pendingImageId = "";
+let pendingImages = [];
 
 async function watch() {
   try {
@@ -30,33 +29,35 @@ async function watch() {
       let summaryForLine = "✅ 処理完了";
 
       // 変数を一番外側に出すことで、最後の通信処理までIDを生き残らせる！
-      let usedImageId = "";
+      let usedImageIds = [];
       // 👇 🌟 追加：メール用の全文テキストを入れる箱をここで準備する！
       let fullSummaryForEmail = "";
       try {
-        // 📸 【画像モード】
+        // 👇 修正後：画像モードの if文全体を以下に置き換えます
         if (rawCommand.startsWith('[IMAGE_URL:')) {
           const urlMatch = rawCommand.match(/\[IMAGE_URL:\s*(.*?)\]/);
           if (urlMatch && urlMatch[1]) {
-            pendingImageUrl = urlMatch[1];
-            const idMatch = pendingImageUrl.match(/id=([^&]+)/);
-            if (idMatch && idMatch[1]) {
-              pendingImageId = idMatch[1];
-            }
-            console.log(`📸 画像URLとIDをメモリに保持しました。`);
-            summaryForLine = "✅ 画像のURLを基地にセットしました！AIがいつでも見れる状態です。続けてテキストで指示をお願いします。";
+            const url = urlMatch[1];
+            let id = "";
+            const idMatch = url.match(/id=([^&]+)/);
+            if (idMatch && idMatch[1]) id = idMatch[1];
+
+            pendingImages.push({ url: url, id: id });
+            console.log(`📸 画像を受信しました（現在 ${pendingImages.length} 枚待機中）`);
+            summaryForLine = `✅ ${pendingImages.length}枚目の画像を基地にセットしました！\n続けて画像を送るか、テキストで指示をお願いします。`;
           }
         }
         // 💬 【通常/復元モード】テキスト指示の処理
         else {
           const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
           let imageContext = "";
+          // 👇 修正後： pendingImageUrl !== "" の if文全体を以下に置き換えます
+          if (pendingImages.length > 0) {
+            const urls = pendingImages.map(img => img.url).join(" \n ");
+            imageContext = `【重要】以下のURLにアクセスして複数の画像を視覚的に確認し、それらを総合的な参考資料として以下の指示を実行してください。\n参考画像URL:\n${urls}\n\n`;
 
-          if (pendingImageUrl !== "") {
-            imageContext = `【重要】以下のURLにアクセスして画像を視覚的に確認し、それを絶対的な参考資料として以下の指示を実行してください。参考画像URL: ${pendingImageUrl} 。 `;
-            usedImageId = pendingImageId;
-            pendingImageUrl = "";
-            pendingImageId = "";
+            usedImageIds = pendingImages.map(img => img.id).filter(id => id !== "");
+            pendingImages = []; // 基地のメモリをリセット
           }
 
           // 🌟 【新規追加】魔法の裏コマンド「元に戻して」を検知！
@@ -255,22 +256,16 @@ async function watch() {
         // ----------------------------------------------------
         // ※これより上にある summaryForLine はそのまま残してください
 
-        // 🌟 文字数無制限のPOST通信に切り替え！
         const updatePayload = {
           action: "update",
           row: data.rowIndex,
           summary: summaryForLine,
-          // 👇 🌟 修正：ここで直接計算せず、上で作った変数を入れるだけにする
           fullSummary: fullSummaryForEmail || summaryForLine
         };
 
-        if (usedImageId !== "") {
-          updatePayload.fileId = usedImageId;
-        }
-        // ※これより下の fetch 処理はそのまま
-
-        if (usedImageId !== "") {
-          updatePayload.fileId = usedImageId;
+        // 👇 修正後：ここだけ fileIds に変更します
+        if (usedImageIds.length > 0) {
+          updatePayload.fileIds = usedImageIds;
         }
 
         let retries = 3;
