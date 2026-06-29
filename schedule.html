@@ -54,6 +54,7 @@
           <div class="leg-item"><div class="leg-color" style="background:#FF9800;"></div>収穫中</div>
           <div class="leg-item"><div class="leg-color" style="background:#777777;"></div>対象外</div>
         </div>
+        <button id="btnTyphoon" onclick="openTyphoonModal()" style="display:none; margin-right:10px; background:#ffebee; color:#d32f2f; border:2px solid #d32f2f; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; align-items:center; cursor:pointer;">🌀 台風</button>
         <button id="btnWeather" onclick="openWeatherModal()" style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
         <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
         <select id="trackingMode" style="margin-right:10px; padding:8px; border-radius:5px; background:#555; color:white; border:1px solid #777; font-weight:bold; font-size:11px;">
@@ -104,6 +105,18 @@
           <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('weatherModal').style.display='none'">×</span>
         </div>
         <div id="weatherContent" style="overflow-y: auto; flex: 1;">
+          <div style="text-align:center; padding:20px;">読み込み中...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="typhoonModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
+        </div>
+        <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
           <div style="text-align:center; padding:20px;">読み込み中...</div>
         </div>
       </div>
@@ -218,6 +231,61 @@
           contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#333;">天気情報を取得できませんでした。</div>';
         }
         document.getElementById('weatherModal').style.display = 'flex';
+      };
+
+      async function fetchTyphoonInfo() {
+        try {
+          let url = "https://www.jma.go.jp/bosai/typhoon/data/TC.json";
+          let res = await fetch(url);
+          let btnTyphoon = document.getElementById('btnTyphoon');
+          
+          if (!res.ok) {
+            if (btnTyphoon) btnTyphoon.style.display = 'none';
+            return;
+          }
+          
+          let data = await res.json();
+          if (data && data.length > 0) {
+            if (btnTyphoon) btnTyphoon.style.display = 'flex';
+            
+            let html = `<div style="padding: 10px; text-align: center;">`;
+            html += `<h4 style="color:#d32f2f; margin-top:0; margin-bottom:15px; font-size:18px;">⚠️ 現在台風が発生しています</h4>`;
+            html += `<p style="font-size:14px; color:#333; line-height:1.6; text-align:left;">現在、気象庁より台風情報が発表されています。最新の進路予想や警報については、気象庁の公式ページをご確認ください。</p>`;
+            
+            try {
+              let typhoons = data.map(t => {
+                let id = t.id ? t.id.substring(2) : ""; 
+                let name = (t.name && t.name.kana) ? t.name.kana : "";
+                return id ? `台風${parseInt(id)}号${name ? ' ('+name+')' : ''}` : null;
+              }).filter(Boolean);
+              
+              if (typhoons.length > 0) {
+                html += `<div style="background:#ffebee; padding:10px; border-radius:5px; margin:15px 0; font-weight:bold; color:#d32f2f;">`;
+                html += `発表中: ${typhoons.join('、 ')}`;
+                html += `</div>`;
+              }
+            } catch(e) {}
+            
+            html += `<a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" style="display:inline-block; margin-top:15px; padding:12px 20px; background:#d32f2f; color:white; font-weight:bold; border-radius:8px; text-decoration:none; box-shadow:0 2px 5px rgba(0,0,0,0.2);">👉 気象庁の台風情報を見る</a>`;
+            html += `</div>`;
+            
+            window.cachedTyphoonHtml = html;
+          } else {
+            if (btnTyphoon) btnTyphoon.style.display = 'none';
+          }
+        } catch (e) {
+          console.error("台風情報取得エラー:", e);
+          let btn = document.getElementById('btnTyphoon');
+          if (btn) btn.style.display = 'none';
+        }
+      }
+
+      window.openTyphoonModal = function() {
+        let contentDiv = document.getElementById('typhoonContent');
+        if (window.cachedTyphoonHtml) {
+          contentDiv.innerHTML = window.cachedTyphoonHtml;
+        }
+        document.getElementById('typhoonModal').style.display = 'flex';
       };
 
       window.customAlert = (msg) => {
@@ -382,6 +450,8 @@
           localStorage.setItem('lastZoom', map.getZoom());
           fetchWeatherAndUpdateUI();
         });
+
+        fetchTyphoonInfo(); // 起動時に台風情報を取得
 
         loadData();
       }

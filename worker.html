@@ -33,6 +33,10 @@
         🏃‍♂️
     </button>
 
+    <button id="btnTyphoon" onclick="openTyphoonModal()" style="display: none; position: fixed; bottom: 446px; right: 10px; width: 50px; height: 50px; background: #ffebee; color: #d32f2f; border: 2px solid #d32f2f; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
+        🌀
+    </button>
+
     <button id="btnWeather" onclick="openWeatherModal()" style="position: fixed; bottom: 374px; right: 10px; width: 50px; height: 50px; background: white; color: #ff9800; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
         ☁️
     </button>
@@ -76,6 +80,18 @@
           <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('weatherModal').style.display='none'">×</span>
         </div>
         <div id="weatherContent" style="overflow-y: auto; flex: 1;">
+          <div style="text-align:center; padding:20px;">読み込み中...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="typhoonModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
+        </div>
+        <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
           <div style="text-align:center; padding:20px;">読み込み中...</div>
         </div>
       </div>

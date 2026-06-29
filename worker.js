@@ -443,6 +443,62 @@ window.openWeatherModal = function() {
   document.getElementById('weatherModal').style.display = 'flex';
 };
 
+async function fetchTyphoonInfo() {
+  try {
+    let url = "https://www.jma.go.jp/bosai/typhoon/data/TC.json";
+    let res = await fetch(url);
+    let btnTyphoon = document.getElementById('btnTyphoon');
+    
+    if (!res.ok) {
+      if (btnTyphoon) btnTyphoon.style.display = 'none';
+      return;
+    }
+    
+    let data = await res.json();
+    if (data && data.length > 0) {
+      if (btnTyphoon) btnTyphoon.style.display = 'flex';
+      
+      let html = `<div style="padding: 10px; text-align: center;">`;
+      html += `<h4 style="color:#d32f2f; margin-top:0; margin-bottom:15px; font-size:18px;">⚠️ 現在台風が発生しています</h4>`;
+      html += `<p style="font-size:14px; color:#333; line-height:1.6; text-align:left;">現在、気象庁より台風情報が発表されています。最新の進路予想や警報については、気象庁の公式ページをご確認ください。</p>`;
+      
+      // もし号数が取れれば表示
+      try {
+        let typhoons = data.map(t => {
+          let id = t.id ? t.id.substring(2) : ""; 
+          let name = (t.name && t.name.kana) ? t.name.kana : "";
+          return id ? `台風${parseInt(id)}号${name ? ' ('+name+')' : ''}` : null;
+        }).filter(Boolean);
+        
+        if (typhoons.length > 0) {
+          html += `<div style="background:#ffebee; padding:10px; border-radius:5px; margin:15px 0; font-weight:bold; color:#d32f2f;">`;
+          html += `発表中: ${typhoons.join('、 ')}`;
+          html += `</div>`;
+        }
+      } catch(e) {}
+      
+      html += `<a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" style="display:inline-block; margin-top:15px; padding:12px 20px; background:#d32f2f; color:white; font-weight:bold; border-radius:8px; text-decoration:none; box-shadow:0 2px 5px rgba(0,0,0,0.2);">👉 気象庁の台風情報を見る</a>`;
+      html += `</div>`;
+      
+      window.cachedTyphoonHtml = html;
+    } else {
+      if (btnTyphoon) btnTyphoon.style.display = 'none';
+    }
+  } catch (e) {
+    console.error("台風情報取得エラー:", e);
+    let btn = document.getElementById('btnTyphoon');
+    if (btn) btn.style.display = 'none';
+  }
+}
+
+window.openTyphoonModal = function() {
+  let contentDiv = document.getElementById('typhoonContent');
+  if (window.cachedTyphoonHtml) {
+    contentDiv.innerHTML = window.cachedTyphoonHtml;
+  }
+  document.getElementById('typhoonModal').style.display = 'flex';
+};
+
       function initMap() {
         let savedLat = localStorage.getItem('lastLat');
         let savedLng = localStorage.getItem('lastLng');
@@ -455,6 +511,8 @@ window.openWeatherModal = function() {
         google.maps.event.addListener(map, 'click', () => { if(isMapSelecting) return; infoWindow.close(); closeRightPanel(); document.getElementById('searchSuggestions').style.display='none';});
         map.addListener('zoom_changed', updateMarkersVisibility);
         
+        fetchTyphoonInfo(); // 起動時に台風情報を取得
+
         map.addListener('idle', () => {
           let center = map.getCenter();
           localStorage.setItem('lastLat', center.lat());
