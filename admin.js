@@ -995,11 +995,55 @@ window.setFudeVisibility = (isVisible) => {
     if (!map || !map.data) return;
     window.isFudeVisibleFlag = isVisible; // ★状態を記録する
     if (isVisible) {
-        map.data.setStyle({ fillColor: '#2196F3', fillOpacity: 0.15, strokeColor: '#2196F3', strokeWeight: 1, clickable: true, visible: true });
+        map.data.setStyle((feature) => {
+            // 1. ズームレベルによる制限（15未満なら非表示）
+            if (map.getZoom() < 15) {
+                return { visible: false };
+            }
+
+            // 2. 表示範囲による制限
+            const bounds = map.getBounds();
+            if (bounds) {
+                let isInside = false;
+                const geometry = feature.getGeometry();
+                if (geometry) {
+                    let point = null;
+                    if (geometry.getType() === 'Polygon') {
+                        const ring = geometry.getAt(0);
+                        if (ring && ring.getLength() > 0) point = ring.getAt(0);
+                    } else if (geometry.getType() === 'MultiPolygon') {
+                        const poly = geometry.getAt(0);
+                        if (poly) {
+                            const ring = poly.getAt(0);
+                            if (ring && ring.getLength() > 0) point = ring.getAt(0);
+                        }
+                    }
+                    if (point && bounds.contains(point)) {
+                        isInside = true;
+                    }
+                }
+                if (!isInside) {
+                    return { visible: false }; // 範囲外なら非表示
+                }
+            }
+
+            return { fillColor: '#2196F3', fillOpacity: 0.15, strokeColor: '#2196F3', strokeWeight: 1, clickable: true, visible: true };
+        });
     } else {
         map.data.setStyle({ visible: false }); // 隠す！
     }
 };
+
+// マップ初期化後にスクロール（移動・ズーム）時の再描画イベントを追加
+if (typeof mapInitPromise !== 'undefined') {
+    mapInitPromise.then(() => {
+        map.addListener('idle', () => {
+            if (window.isFudeVisibleFlag) {
+                setFudeVisibility(true);
+            }
+        });
+    });
+}
 // 🌟ここに追加：モードに応じて看板のラベル（文字）を隠す関数
 window.updateMarkerLabels = () => {
     const z = map ? map.getZoom() : 15;
