@@ -1450,37 +1450,38 @@ document.getElementById('btnLoadFude').onclick = () => {
         map.setOptions({ draggableCursor: 'wait' });
 
         const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev";
-        let loadedCount = 0;
-
-        regionData.files.forEach(fileName => {
-            if (window.fudeCache[fileName]) {
-                map.data.addGeoJson(window.fudeCache[fileName]);
-                loadedCount++;
-                checkComplete();
-            } else {
-                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
-                    .then(res => res.json())
-                    .then(geoJson => {
-                        window.fudeCache[fileName] = geoJson;
-                        map.data.addGeoJson(geoJson);
-                        loadedCount++;
-                        checkComplete();
-                    })
-                    .catch(err => { console.error("読込エラー", err); loadedCount++; checkComplete(); });
-            }
-        });
-
-        function checkComplete() {
-            if (loadedCount === regionData.files.length) {
+        let currentIndex = 0;
+        function loadNext() {
+            if (currentIndex >= regionData.files.length) {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
                 window.isMapLoadingFude = false;
                 map.setOptions({ draggableCursor: customDrawingMode ? pinCursor : null });
                 window.loadedFudeRegion = prefName;
                 setFudeVisibility(true);
-                // 🌟ポップアップを削除しました！
+                return;
+            }
+
+            let fileName = regionData.files[currentIndex];
+            if (window.fudeCache[fileName]) {
+                map.data.addGeoJson(window.fudeCache[fileName]);
+                currentIndex++;
+                setTimeout(loadNext, 50);
+            } else {
+                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
+                    .then(res => res.json())
+                    .then(geoJson => {
+                        window.fudeCache[fileName] = geoJson;
+                        map.data.addGeoJson(geoJson);
+                    })
+                    .catch(err => console.error("読込エラー", err))
+                    .finally(() => {
+                        currentIndex++;
+                        setTimeout(loadNext, 50);
+                    });
             }
         }
+        loadNext();
 
         setTimeout(() => {
             if (btn.disabled) {
@@ -1575,36 +1576,38 @@ document.getElementById('editLoadFudeBtn').onclick = () => {
         map.setOptions({ draggableCursor: 'wait' });
 
         const R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev";
-        let loadedCount = 0;
-
-        regionData.files.forEach(fileName => {
-            if (window.fudeCache[fileName]) {
-                map.data.addGeoJson(window.fudeCache[fileName]);
-                loadedCount++;
-                checkComplete();
-            } else {
-                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
-                    .then(res => res.json())
-                    .then(geoJson => {
-                        window.fudeCache[fileName] = geoJson;
-                        map.data.addGeoJson(geoJson);
-                        loadedCount++;
-                        checkComplete();
-                    })
-                    .catch(err => { console.error("読込エラー", err); loadedCount++; checkComplete(); });
-            }
-        });
-
-        function checkComplete() {
-            if (loadedCount === regionData.files.length) {
+        let currentIndex = 0;
+        function loadNext() {
+            if (currentIndex >= regionData.files.length) {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
                 window.isMapLoadingFude = false;
                 map.setOptions({ draggableCursor: null });
                 window.loadedFudeRegion = prefName;
                 setFudeVisibility(true);
+                return;
+            }
+
+            let fileName = regionData.files[currentIndex];
+            if (window.fudeCache[fileName]) {
+                map.data.addGeoJson(window.fudeCache[fileName]);
+                currentIndex++;
+                setTimeout(loadNext, 50);
+            } else {
+                fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
+                    .then(res => res.json())
+                    .then(geoJson => {
+                        window.fudeCache[fileName] = geoJson;
+                        map.data.addGeoJson(geoJson);
+                    })
+                    .catch(err => console.error("読込エラー", err))
+                    .finally(() => {
+                        currentIndex++;
+                        setTimeout(loadNext, 50);
+                    });
             }
         }
+        loadNext();
 
         setTimeout(() => {
             if (btn.disabled) {
@@ -1612,7 +1615,7 @@ document.getElementById('editLoadFudeBtn').onclick = () => {
                 map.setOptions({ draggableCursor: null });
                 window.loadedFudeRegion = prefName; setFudeVisibility(true);
             }
-        }, 8000);
+        }, 30000);
     });
 };
 
