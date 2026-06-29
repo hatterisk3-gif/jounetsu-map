@@ -2050,4 +2050,4 @@ function getPolygonDrawingHistory(params) {
     return history;
   } catch(e) {
     throw new Error("履歴取得エラー: " + e.message);
-}
+}}
