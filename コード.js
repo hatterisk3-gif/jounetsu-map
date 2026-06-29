@@ -2050,21 +2050,4 @@ function getPolygonDrawingHistory(params) {
     return history;
   } catch(e) {
     throw new Error("履歴取得エラー: " + e.message);
-  } catch(e) {
-          // エラー時は空文字
-        }
-        
-        history.push({
-          date: dateStr,
-          data: dataVal ? String(dataVal) : ""
-        });
-        
-        if (history.length >= 20) break;
-      }
-    }
-    
-    return history;
-  } catch(e) {
-    throw new Error("履歴取得エラー: " + e.message);
-  }
 }
