@@ -84,12 +84,12 @@ async function watch() {
           // 💬 【通常モード】AIによる自動修正ルート
           else {
             const safeDirPath = __dirname.replace(/\\/g, '/');
-            // 🌟 AIへの指示：承認待ちを禁止し、ターミナルから強制保存させる
+            // 🌟 AIへの指示：完了ファイルの中に解説レポートを直接書き込ませる！
             const modifyPrompt = `${imageContext}${cleanCommand}。
             🚨【絶対ルール】
             1. エディタのファイル編集機能（DiffやReview、Accept待ち状態になるツール）は絶対に使用しないでください。変更を保留状態にすることは禁止です。
             2. ファイルの修正は、必ずターミナルツール（bashコマンド、sed、またはnodeスクリプト等）を実行して、直接ファイルを上書き保存してください。
-            3. すべてのコード修正と保存が終わってから、最後に必ず「 .ai_task_done.txt 」というファイルを作成・保存して完了の合図を出してください。`;
+            3. すべてのコード修正と保存が終わってから、最後に必ず「 .ai_task_done.txt 」というファイルを作成・保存してください。その際、必ずファイルの中身に「エラーの原因と、具体的にどう修正したか」の詳細な解説レポート（あなたが今考えたこと）をテキストで書き込んでください。これがそのまま報告メールになります。`;
             console.log('🧠 AIがコードを修正中...（最大15分待機します）');
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
@@ -125,40 +125,17 @@ async function watch() {
 
                 const cleanDiffText = diffText.replace(/warning:.*LF will be replaced by CRLF.*/g, '').trim();
 
-                if (cleanDiffText !== "") {
-                  console.log('📝 変更内容のレポートを自動作成中...');
-                  const shortDiff = cleanDiffText.length > 5000 ? cleanDiffText.substring(0, 5000) + '\n...（以下省略）' : cleanDiffText;
-                  const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。ツール等は一切使わず、テキストでの解説のみを出力してください。\n\n【変更内容】\n${shortDiff}`;
+                // 🌟 新しい魔法：Agyがファイルに書き残してくれた解説をそのまま読み込む！
+                console.log('📝 IDEのAgyが作成した解説レポートを読み込んでいます...');
+                const aiReportText = fs.readFileSync(doneFile, 'utf8').trim();
 
-                  try {
-                    // 🌟 Windowsのコマンドプロンプトの「スペースや改行で文章が途切れる仕様」を完全回避！
-                    const isWin = process.platform === 'win32';
-                    const agyCommand = isWin ? 'agy.cmd' : 'agy';
-                    const agyProcess = spawnSync(agyCommand, ['--print-timeout', '5m', '--prompt', reportPrompt]);
-
-                    if (agyProcess.error) {
-                      throw agyProcess.error;
-                    }
-
-                    const outStr = agyProcess.stdout ? agyProcess.stdout.toString() : "";
-                    const errStr = agyProcess.stderr ? agyProcess.stderr.toString() : "";
-                    const rawReport = outStr || errStr;
-
-                    const cleanReport = rawReport.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
-                    if (cleanReport && !cleanReport.includes("途切れてしまっているようです")) {
-                      aiOutput = cleanReport;
-                    } else if (cleanReport) {
-                      aiOutput = "AIからの応答が途切れました。ログを確認してください。\n" + cleanReport;
-                    } else {
-                      aiOutput = "AIから空のレポートが返されました。ターミナルのログを確認してください。";
-                    }
-                  } catch (reportError) {
-                    console.log('📝 レポート生成エラー:', reportError.message);
-                    aiOutput = "レポート生成中にエラーが発生しました。";
-                  }
-                } else {
+                if (aiReportText && aiReportText !== "完了" && aiReportText !== "") {
+                  aiOutput = aiReportText;
+                } else if (cleanDiffText === "") {
                   console.log('⏭️ ファイルの変更がなかったため、レポート作成プロセスはスキップします。');
                   aiOutput = "（ファイルの変更はありませんでした）";
+                } else {
+                  aiOutput = "（ファイルの修正は完了しましたが、解説テキストがありませんでした）";
                 }
                 isSuccess = true;
 
