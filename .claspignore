@@ -4,5 +4,5 @@ worker.js
 cad.js
 watch.js
 fix_drag.js
-hyakusho-ai-bridge/**
+**/hyakusho-ai-bridge/**
 **/node_modules/**
