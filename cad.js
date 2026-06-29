@@ -1697,6 +1697,7 @@ window.cadUserClearLines = () => {
     if (confirm("図面をすべてクリアしますか？")) {
         window.cadClearLines();
         window.saveCadStateToHistory();
+        if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
     }
 };
 
