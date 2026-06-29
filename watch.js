@@ -131,16 +131,26 @@ async function watch() {
                   const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。ツール等は一切使わず、テキストでの解説のみを出力してください。\n\n【変更内容】\n${shortDiff}`;
 
                   try {
-                    // 🌟 魔法の修正：コード内の「"」や改行でコマンドが壊れない安全な渡し方に変更！
-                    const agyProcess = spawnSync('agy', ['--print-timeout', '5m', '--prompt', reportPrompt]);
+                    // 🌟 Windows環境で動かすための必須設定「 shell: true 」を追加！
+                    const agyProcess = spawnSync('agy', ['--print-timeout', '5m', '--prompt', reportPrompt], { shell: true });
+
+                    if (agyProcess.error) {
+                      throw agyProcess.error;
+                    }
+
                     const outStr = agyProcess.stdout ? agyProcess.stdout.toString() : "";
                     const errStr = agyProcess.stderr ? agyProcess.stderr.toString() : "";
                     const rawReport = outStr || errStr;
 
                     const cleanReport = rawReport.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
-                    if (cleanReport) aiOutput = cleanReport;
+                    if (cleanReport) {
+                      aiOutput = cleanReport;
+                    } else {
+                      aiOutput = "AIから空のレポートが返されました。ターミナルのログを確認してください。";
+                    }
                   } catch (reportError) {
-                    console.log('📝 レポート生成エラー（スキップします）');
+                    console.log('📝 レポート生成エラー:', reportError.message);
+                    aiOutput = "レポート生成中にエラーが発生しました。";
                   }
                 } else {
                   console.log('⏭️ ファイルの変更がなかったため、レポート作成プロセスはスキップします。');
