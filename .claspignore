@@ -6,3 +6,7 @@ watch.js
 fix_drag.js
 **/hyakusho-ai-bridge/**
 **/node_modules/**
+
+check.js
+ide_runner.js
+test_gas.js
