@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 
 // ⚠️ URLは藤田さんの現在の最新のものをそのまま使っています
 const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
@@ -84,14 +84,12 @@ async function watch() {
           // 💬 【通常モード】AIによる自動修正ルート
           else {
             const safeDirPath = __dirname.replace(/\\/g, '/');
-            // 🌟 【1段階目】AIには「コードの修正」だけに集中させる
-            // 🌟 【1段階目】AIには「コードの修正」だけに集中させる
-            // 🌟 AIへの指示をシンプルにし、デプロイコマンドを追加
-            // 🌟 AIへの指示：寸止めを禁止し、直接保存させる
+            // 🌟 AIへの指示：承認待ちを禁止し、ターミナルから強制保存させる
             const modifyPrompt = `${imageContext}${cleanCommand}。
             🚨【絶対ルール】
-            1. 修正案の提示や確認（Review）待ちで停止しないでください。必ずツールを使用して、実ファイルを「直接編集」し、「上書き保存」まで自動で完了させてください。
-            2. すべてのコード修正と保存が終わったら、最後に必ず「 .ai_task_done.txt 」というファイルを作成・保存して完了の合図を出してください。`;
+            1. エディタのファイル編集機能（DiffやReview、Accept待ち状態になるツール）は絶対に使用しないでください。変更を保留状態にすることは禁止です。
+            2. ファイルの修正は、必ずターミナルツール（bashコマンド、sed、またはnodeスクリプト等）を実行して、直接ファイルを上書き保存してください。
+            3. すべてのコード修正と保存が終わってから、最後に必ず「 .ai_task_done.txt 」というファイルを作成・保存して完了の合図を出してください。`;
             console.log('🧠 AIがコードを修正中...（最大15分待機します）');
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
@@ -133,11 +131,16 @@ async function watch() {
                   const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。ツール等は一切使わず、テキストでの解説のみを出力してください。\n\n【変更内容】\n${shortDiff}`;
 
                   try {
-                    const reportBuffer = execSync(`agy --print-timeout 5m --prompt "${reportPrompt}"`);
-                    const cleanReport = reportBuffer.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+                    // 🌟 魔法の修正：コード内の「"」や改行でコマンドが壊れない安全な渡し方に変更！
+                    const agyProcess = spawnSync('agy', ['--print-timeout', '5m', '--prompt', reportPrompt]);
+                    const outStr = agyProcess.stdout ? agyProcess.stdout.toString() : "";
+                    const errStr = agyProcess.stderr ? agyProcess.stderr.toString() : "";
+                    const rawReport = outStr || errStr;
+
+                    const cleanReport = rawReport.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
                     if (cleanReport) aiOutput = cleanReport;
                   } catch (reportError) {
-                    if (reportError.stdout) aiOutput = reportError.stdout.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+                    console.log('📝 レポート生成エラー（スキップします）');
                   }
                 } else {
                   console.log('⏭️ ファイルの変更がなかったため、レポート作成プロセスはスキップします。');
@@ -171,7 +174,8 @@ async function watch() {
               const files = fs.readdirSync(__dirname);
               files.forEach(file => {
                 const lowerFile = file.toLowerCase();
-                if (lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_')) {
+                // 🌟 error_image やその他の一時画像をリストに追加して確実にお掃除！
+                if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_')) {
                   try { fs.unlinkSync(path.join(__dirname, file)); } catch (e) { }
                 }
               });
