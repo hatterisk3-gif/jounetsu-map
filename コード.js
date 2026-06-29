@@ -1745,9 +1745,10 @@ function updateSignLink(params) {
   const sh = ss.getSheetByName('看板');
   if(!sh) return false;
   const data = sh.getDataRange().getValues();
+  const numColumns = sh.getDataRange().getNumColumns();
   for(let i=1; i<data.length; i++) {
     if(data[i][0] === params.id) {
-      sh.getRange(i+1, 9).setValue(params.linkedSigns); // I列は9番目
+      if(numColumns >= 9) sh.getRange(i+1, 9).setValue(params.linkedSigns); // I列は9番目
       return true;
     }
   }
@@ -2018,19 +2019,16 @@ function getPolygonDrawingHistory(params) {
     const sheet = ss.getSheetByName('図面履歴');
     if (!sheet) return [];
     
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return []; // データがない場合
-    
-    // メモリ枯渇を避けるため、A列(ID)とC列(更新日時)だけを取得する
-    const idData = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    const dateData = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return []; // データがない場合
     
     const history = [];
+    const targetId = String(params.id || "");
     
     // 後ろから検索して最新の20件だけ取得する
-    for (let i = idData.length - 1; i >= 0; i--) {
-      if (String(idData[i][0]) === String(params.id)) {
-        let dateVal = dateData[i][0];
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][0]) === targetId) {
+        let dateVal = data[i][2];
         let dateStr = "";
         if (dateVal instanceof Date) {
           dateStr = Utilities.formatDate(dateVal, "JST", "yyyy/MM/dd HH:mm:ss");
@@ -2038,8 +2036,23 @@ function getPolygonDrawingHistory(params) {
           dateStr = String(dateVal || "");
         }
         
-        // 一致した行のみ、D列のJSONデータを取得する
-        let dataVal = sheet.getRange(i + 2, 4).getValue();
+        let dataVal = data[i][3];
+        
+        history.push({
+          date: dateStr,
+          data: dataVal ? String(dataVal) : ""
+        });
+        
+        if (history.length >= 20) break;
+      }
+    }
+    
+    return history;
+  } catch(e) {
+    throw new Error("履歴取得エラー: " + e.message);
+  } catch(e) {
+          // エラー時は空文字
+        }
         
         history.push({
           date: dateStr,
