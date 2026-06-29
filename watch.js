@@ -131,8 +131,10 @@ async function watch() {
                   const reportPrompt = `以下のgit diffの変更内容を分析し、修正内容の解説を日本語で分かりやすくまとめてください。ツール等は一切使わず、テキストでの解説のみを出力してください。\n\n【変更内容】\n${shortDiff}`;
 
                   try {
-                    // 🌟 Windows環境で動かすための必須設定「 shell: true 」を追加！
-                    const agyProcess = spawnSync('agy', ['--print-timeout', '5m', '--prompt', reportPrompt], { shell: true });
+                    // 🌟 Windowsのコマンドプロンプトの「スペースや改行で文章が途切れる仕様」を完全回避！
+                    const isWin = process.platform === 'win32';
+                    const agyCommand = isWin ? 'agy.cmd' : 'agy';
+                    const agyProcess = spawnSync(agyCommand, ['--print-timeout', '5m', '--prompt', reportPrompt]);
 
                     if (agyProcess.error) {
                       throw agyProcess.error;
@@ -143,8 +145,10 @@ async function watch() {
                     const rawReport = outStr || errStr;
 
                     const cleanReport = rawReport.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
-                    if (cleanReport) {
+                    if (cleanReport && !cleanReport.includes("途切れてしまっているようです")) {
                       aiOutput = cleanReport;
+                    } else if (cleanReport) {
+                      aiOutput = "AIからの応答が途切れました。ログを確認してください。\n" + cleanReport;
                     } else {
                       aiOutput = "AIから空のレポートが返されました。ターミナルのログを確認してください。";
                     }
