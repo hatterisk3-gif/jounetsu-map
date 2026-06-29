@@ -54,6 +54,7 @@
           <div class="leg-item"><div class="leg-color" style="background:#FF9800;"></div>収穫中</div>
           <div class="leg-item"><div class="leg-color" style="background:#777777;"></div>対象外</div>
         </div>
+        <button id="btnWeather" onclick="openWeatherModal()" style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
         <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
         <select id="trackingMode" style="margin-right:10px; padding:8px; border-radius:5px; background:#555; color:white; border:1px solid #777; font-weight:bold; font-size:11px;">
             <option value="path">線(Path)</option>
@@ -96,6 +97,18 @@
       </div>
     </div>
 
+    <div id="weatherModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin: 0; color: #2196F3;">⛅ 週間天気予報</h3>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('weatherModal').style.display='none'">×</span>
+        </div>
+        <div id="weatherContent" style="overflow-y: auto; flex: 1;">
+          <div style="text-align:center; padding:20px;">読み込み中...</div>
+        </div>
+      </div>
+    </div>
+
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry&language=ja"></script>
     <script src="https://unpkg.com/deck.gl@^8.8.0/dist.min.js"></script>
     <script>
@@ -103,6 +116,109 @@
       let map, infoWindow, loadedPolygons = {};
       let globalSchedules = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
+
+      // ====== 天気予報関連 ======
+      let lastWeatherFetchPos = null;
+
+      function getWeatherEmoji(code) {
+        if (code === 0) return '☀️';
+        if (code === 1 || code === 2 || code === 3) return '🌤️';
+        if (code === 45 || code === 48) return '🌫️';
+        if (code >= 51 && code <= 57) return '🌧️';
+        if (code >= 61 && code <= 67) return '☔';
+        if (code >= 71 && code <= 77) return '❄️';
+        if (code >= 80 && code <= 82) return '🌧️';
+        if (code >= 85 && code <= 86) return '⛄';
+        if (code >= 95) return '⚡';
+        return '☁️';
+      }
+
+      function getWeatherDescription(code) {
+        if (code === 0) return '快晴';
+        if (code === 1) return '晴れ';
+        if (code === 2) return '一部曇り';
+        if (code === 3) return '曇り';
+        if (code === 45 || code === 48) return '霧';
+        if (code >= 51 && code <= 57) return '霧雨';
+        if (code >= 61 && code <= 67) return '雨';
+        if (code >= 71 && code <= 77) return '雪';
+        if (code >= 80 && code <= 82) return 'にわか雨';
+        if (code >= 85 && code <= 86) return '雪あられ';
+        if (code >= 95) return '雷雨';
+        return '不明';
+      }
+
+      async function fetchWeatherAndUpdateUI() {
+        if (!map) return;
+        let center = map.getCenter();
+        let lat = center.lat();
+        let lng = center.lng();
+
+        if (lastWeatherFetchPos) {
+          let diffLat = Math.abs(lat - lastWeatherFetchPos.lat);
+          let diffLng = Math.abs(lng - lastWeatherFetchPos.lng);
+          if (diffLat < 0.05 && diffLng < 0.05) return;
+        }
+        lastWeatherFetchPos = {lat, lng};
+
+        try {
+          let url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FTokyo`;
+          let res = await fetch(url);
+          let data = await res.json();
+          
+          let currentCode = data.current_weather.weathercode;
+          let emoji = getWeatherEmoji(currentCode);
+          let btnWeather = document.getElementById('btnWeather');
+          if (btnWeather) {
+            btnWeather.innerHTML = emoji;
+          }
+
+          let html = `<div style="padding: 10px;">`;
+          html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
+          
+          html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
+          html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
+                     <th style="padding: 8px; text-align: left; color:#333;">日付</th>
+                     <th style="padding: 8px; text-align: center; color:#333;">天気</th>
+                     <th style="padding: 8px; text-align: right; color:#333;">最高/最低</th>
+                   </tr>`;
+          
+          for (let i = 0; i < data.daily.time.length; i++) {
+            let dateStr = data.daily.time[i];
+            let d = new Date(dateStr);
+            let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
+            let code = data.daily.weathercode[i];
+            let maxT = data.daily.temperature_2m_max[i];
+            let minT = data.daily.temperature_2m_min[i];
+            let dEmoji = getWeatherEmoji(code);
+            let dDesc = getWeatherDescription(code);
+            
+            html += `<tr style="border-bottom: 1px solid #eee;">
+                       <td style="padding: 8px; text-align: left; color:#333;">${shortDate}</td>
+                       <td style="padding: 8px; text-align: center;" title="${dDesc}">${dEmoji}</td>
+                       <td style="padding: 8px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                     </tr>`;
+          }
+          html += `</table>`;
+          html += `<div style="font-size: 11px; color: #999; text-align: right; margin-top: 10px;">Data: Open-Meteo</div>`;
+          html += `</div>`;
+          
+          window.cachedWeatherHtml = html;
+
+        } catch (e) {
+          console.error("天気取得エラー:", e);
+        }
+      }
+
+      window.openWeatherModal = function() {
+        let contentDiv = document.getElementById('weatherContent');
+        if (window.cachedWeatherHtml) {
+          contentDiv.innerHTML = window.cachedWeatherHtml;
+        } else {
+          contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#333;">天気情報を取得できませんでした。</div>';
+        }
+        document.getElementById('weatherModal').style.display = 'flex';
+      };
 
       window.customAlert = (msg) => {
         document.getElementById('customAlertMessage').innerText = msg;
@@ -264,6 +380,7 @@
           localStorage.setItem('lastLat', map.getCenter().lat());
           localStorage.setItem('lastLng', map.getCenter().lng());
           localStorage.setItem('lastZoom', map.getZoom());
+          fetchWeatherAndUpdateUI();
         });
 
         loadData();

@@ -337,6 +337,112 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         }
       }
 
+// ====== 天気予報関連 ======
+let lastWeatherFetchPos = null;
+
+function getWeatherEmoji(code) {
+  if (code === 0) return '☀️';
+  if (code === 1 || code === 2 || code === 3) return '🌤️';
+  if (code === 45 || code === 48) return '🌫️';
+  if (code >= 51 && code <= 57) return '🌧️';
+  if (code >= 61 && code <= 67) return '☔';
+  if (code >= 71 && code <= 77) return '❄️';
+  if (code >= 80 && code <= 82) return '🌧️';
+  if (code >= 85 && code <= 86) return '⛄';
+  if (code >= 95) return '⚡';
+  return '☁️';
+}
+
+function getWeatherDescription(code) {
+  if (code === 0) return '快晴';
+  if (code === 1) return '晴れ';
+  if (code === 2) return '一部曇り';
+  if (code === 3) return '曇り';
+  if (code === 45 || code === 48) return '霧';
+  if (code >= 51 && code <= 57) return '霧雨';
+  if (code >= 61 && code <= 67) return '雨';
+  if (code >= 71 && code <= 77) return '雪';
+  if (code >= 80 && code <= 82) return 'にわか雨';
+  if (code >= 85 && code <= 86) return '雪あられ';
+  if (code >= 95) return '雷雨';
+  return '不明';
+}
+
+async function fetchWeatherAndUpdateUI() {
+  if (!map) return;
+  let center = map.getCenter();
+  let lat = center.lat();
+  let lng = center.lng();
+
+  // 前回取得した位置から0.05度（約5km）以上離れていなければスキップ（API呼び出しの節約）
+  if (lastWeatherFetchPos) {
+    let diffLat = Math.abs(lat - lastWeatherFetchPos.lat);
+    let diffLng = Math.abs(lng - lastWeatherFetchPos.lng);
+    if (diffLat < 0.05 && diffLng < 0.05) return;
+  }
+  lastWeatherFetchPos = {lat, lng};
+
+  try {
+    let url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FTokyo`;
+    let res = await fetch(url);
+    let data = await res.json();
+    
+    // 現在の天気をボタンに反映
+    let currentCode = data.current_weather.weathercode;
+    let emoji = getWeatherEmoji(currentCode);
+    let btnWeather = document.getElementById('btnWeather');
+    if (btnWeather) {
+      btnWeather.innerHTML = emoji;
+    }
+
+    // モーダルの中身を作成して保持（クリック時に表示）
+    let html = `<div style="padding: 10px;">`;
+    html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
+    
+    html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
+    html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
+               <th style="padding: 8px; text-align: left;">日付</th>
+               <th style="padding: 8px; text-align: center;">天気</th>
+               <th style="padding: 8px; text-align: right;">最高/最低</th>
+             </tr>`;
+    
+    for (let i = 0; i < data.daily.time.length; i++) {
+      let dateStr = data.daily.time[i]; // "YYYY-MM-DD"
+      let d = new Date(dateStr);
+      let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
+      let code = data.daily.weathercode[i];
+      let maxT = data.daily.temperature_2m_max[i];
+      let minT = data.daily.temperature_2m_min[i];
+      let dEmoji = getWeatherEmoji(code);
+      let dDesc = getWeatherDescription(code);
+      
+      html += `<tr style="border-bottom: 1px solid #eee;">
+                 <td style="padding: 8px; text-align: left;">${shortDate}</td>
+                 <td style="padding: 8px; text-align: center;" title="${dDesc}">${dEmoji}</td>
+                 <td style="padding: 8px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+               </tr>`;
+    }
+    html += `</table>`;
+    html += `<div style="font-size: 11px; color: #999; text-align: right; margin-top: 10px;">Data: Open-Meteo</div>`;
+    html += `</div>`;
+    
+    window.cachedWeatherHtml = html; // キャッシュしておく
+
+  } catch (e) {
+    console.error("天気取得エラー:", e);
+  }
+}
+
+window.openWeatherModal = function() {
+  let contentDiv = document.getElementById('weatherContent');
+  if (window.cachedWeatherHtml) {
+    contentDiv.innerHTML = window.cachedWeatherHtml;
+  } else {
+    contentDiv.innerHTML = '<div style="text-align:center; padding:20px;">天気情報を取得できませんでした。</div>';
+  }
+  document.getElementById('weatherModal').style.display = 'flex';
+};
+
       function initMap() {
         let savedLat = localStorage.getItem('lastLat');
         let savedLng = localStorage.getItem('lastLng');
@@ -354,6 +460,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           localStorage.setItem('lastLat', center.lat());
           localStorage.setItem('lastLng', center.lng());
           localStorage.setItem('lastZoom', map.getZoom());
+          fetchWeatherAndUpdateUI();
         });
         
         document.getElementById('btnCurrentLocation').onclick = () => { 
