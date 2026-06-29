@@ -1406,12 +1406,12 @@ window.initCadTouchEvents = () => {
     window.cadTouchAdded = true;
 };
 
-window.openCADMode = (id) => {
+window.openCADMode = async (id) => {
     infoWindow.close();
     window.cadTargetId = id;
     const p = loadedPolygons[id];
 
-    document.getElementById('cadTargetName').innerText = p.name;
+    document.getElementById('cadTargetName').innerText = p.name + " (最新の図面を読込中...)";
     document.getElementById('cadOverlay').style.display = 'flex';
 
     window.cadCurrentRotation = 0;
@@ -1465,6 +1465,16 @@ window.openCADMode = (id) => {
 
     window.cadClearLines(true);
     switchCadTab(1);
+
+    try {
+        const history = await callGAS('getPolygonDrawingHistory', { id });
+        if (history && history.length > 0 && history[0].data) {
+            p.uneSimData = history[0].data;
+        }
+    } catch (e) {
+        console.error("CAD最新データ取得エラー:", e);
+    }
+    document.getElementById('cadTargetName').innerText = p.name;
 
     if (p.uneSimData) {
         try {
