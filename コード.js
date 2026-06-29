@@ -45,9 +45,11 @@ function doPost(e) {
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
     else if (action === "deleteMachineFromMaster") result = deleteMachineFromMaster(params);
-   else if (action === 'getMapCoordinates') result = getMapCoordinates(params);
+    else if (action === 'getMapCoordinates') result = getMapCoordinates(params);
     else if (action === 'parseWithGemini') result = parseWithGemini(params);
     else if (action === "getPolygonDrawingHistory") result = getPolygonDrawingHistory(params);
+    else if (action === "saveTrackingData") result = saveTrackingData(params);
+    else if (action === "getTrackingData") result = getTrackingData(params);
 
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);

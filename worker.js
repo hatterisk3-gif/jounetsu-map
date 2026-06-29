@@ -7,6 +7,55 @@
       let latestUserPos = null;
       let map, infoWindow, loadedPolygons = {}, userLocationMarker = null;
 
+      // トラッキング（移動履歴）用
+      let trackingWatchId = null;
+      let lastTrackingTime = 0;
+
+      window.toggleTracking = () => {
+          const btn = document.getElementById('btnTracking');
+          if (trackingWatchId !== null) {
+              // トラッキング停止
+              navigator.geolocation.clearWatch(trackingWatchId);
+              trackingWatchId = null;
+              btn.style.backgroundColor = 'white';
+              btn.style.color = '#4CAF50';
+              customAlert("トラッキング（移動履歴の記録）を終了しました。");
+          } else {
+              // トラッキング開始
+              if (!navigator.geolocation) {
+                  customAlert("お使いの端末ではGPSがサポートされていません。");
+                  return;
+              }
+              btn.style.backgroundColor = '#4CAF50';
+              btn.style.color = 'white';
+              customAlert("トラッキングを開始しました。移動履歴が自動で記録されます。");
+              
+              trackingWatchId = navigator.geolocation.watchPosition((p) => {
+                  const now = Date.now();
+                  // 10秒に1回程度の頻度に制限（GASの呼び出し過多を防ぐ）
+                  if (now - lastTrackingTime < 10000) return;
+                  lastTrackingTime = now;
+
+                  const lat = p.coords.latitude;
+                  const lng = p.coords.longitude;
+                  
+                  // GASへ送信
+                  if (currentUser) {
+                      callGAS('saveTrackingData', {
+                          userName: currentUser,
+                          lat: lat,
+                          lng: lng
+                      }).catch(e => console.warn("トラッキング送信エラー", e));
+                  }
+              }, (err) => {
+                  console.warn("GPSエラー: ", err);
+              }, {
+                  enableHighAccuracy: true,
+                  timeout: 10000,
+                  maximumAge: 0
+              });
+          }
+      };
       // 共通UI系
       window.customAlert = (msg) => {
         document.getElementById('customAlertMessage').innerText = msg;
