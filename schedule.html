@@ -134,6 +134,247 @@
 
     
     <!-- Cultivation Plan Modal -->
+    
+    <div id="cultivationPlanModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 98%; max-width: 1400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 95vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <h3 style="margin: 0; color: #4CAF50;">🌱 栽培計画作成</h3>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('cultivationPlanModal').style.display='none'">×</span>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; background: #f1f8e9; padding: 10px; border-radius: 6px; align-items:flex-end;">
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">年度</label>
+            <select id="cpYear" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 70px;">
+                <option value="2024">2024</option>
+                <option value="2025">2025</option>
+                <option value="2026" selected>2026</option>
+                <option value="2027">2027</option>
+                <option value="2028">2028</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">収穫割合(例:334)</label>
+            <input type="text" id="cpHarvestRatio" placeholder="最大10枠" oninput="updateCpCellsText()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 90px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">作物</label>
+            <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 90px;"></select>
+            <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList()" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px; margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">品種</label>
+            <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 90px;"></select>
+            <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px; margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">定植面積</label>
+            <div style="display: flex; align-items: center;">
+                <input type="number" id="cpArea" value="10" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+                <span style="font-size: 12px; margin-left: 4px; color:#555;">a</span>
+            </div>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">穴数</label>
+            <select id="cpTrayHoles" onchange="checkCustomInput(this, 'cpTrayHoles_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
+            <input type="number" id="cpTrayHoles_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">条数</label>
+            <select id="cpRows" onchange="checkCustomInput(this, 'cpRows_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
+            <input type="number" id="cpRows_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">株間(cm)</label>
+            <select id="cpPlantSpacing" onchange="checkCustomInput(this, 'cpPlantSpacing_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
+            <input type="number" id="cpPlantSpacing_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">畝間(cm)</label>
+            <select id="cpRidgeSpacing" onchange="checkCustomInput(this, 'cpRidgeSpacing_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
+            <input type="number" id="cpRidgeSpacing_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">歩留まり率</label>
+            <select id="cpYieldRate" onchange="checkCustomInput(this, 'cpYieldRate_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
+            <input type="number" id="cpYieldRate_custom" step="0.1" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
+          </div>
+        </div>
+        
+        <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 10px; padding: 8px 15px; background: #e8f5e9; border-radius: 4px; border: 1px solid #c8e6c9;">
+          <div style="font-size: 13px; font-weight: bold; color: #2e7d32;">
+            <span style="font-size:11px; color:#555;">推定播種量:</span> <span id="cpCalcTrays" style="font-size:16px;">0</span> 枚
+          </div>
+          <div style="font-size: 13px; font-weight: bold; color: #2e7d32;">
+            <span style="font-size:11px; color:#555;">推定収穫個数:</span> <span id="cpCalcYield" style="font-size:16px;">0</span> 個
+          </div>
+          
+          <div style="margin-left: auto; display: flex; gap: 15px; align-items: center; background: #fff; padding: 6px 15px; border-radius: 20px; border: 1px solid #ccc; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <span style="font-size: 12px; font-weight: bold; color:#666;">🖌 ペイントツール:</span>
+            <label style="cursor: pointer; font-size: 13px; display: flex; align-items: center; gap:4px;">
+              <input type="radio" name="cpTool" value="sowing" checked> <span style="display:inline-block; width:12px; height:12px; background:#8D6E63; border-radius:2px;"></span>播種
+            </label>
+            <label style="cursor: pointer; font-size: 13px; display: flex; align-items: center; gap:4px;">
+              <input type="radio" name="cpTool" value="planting"> <span style="display:inline-block; width:12px; height:12px; background:#4CAF50; border-radius:2px;"></span>定植
+            </label>
+            <label style="cursor: pointer; font-size: 13px; display: flex; align-items: center; gap:4px;">
+              <input type="radio" name="cpTool" value="harvesting"> <span style="display:inline-block; width:12px; height:12px; background:#FF9800; border-radius:2px;"></span>収穫
+            </label>
+            <label style="cursor: pointer; font-size: 13px; display: flex; align-items: center; gap:4px;">
+              <input type="radio" name="cpTool" value="eraser"> <span style="display:inline-block; width:12px; height:12px; border:1px solid #ccc; background:#fff; border-radius:2px;"></span>消しゴム
+            </label>
+          </div>
+          
+          <button type="button" onclick="addCpPlanRow()" style="padding: 8px 15px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">＋ 作型を行に追加</button>
+        </div>
+        
+        <div style="flex: 1; overflow-x: auto; overflow-y: auto; border: 1px solid #ddd; position: relative;">
+          <table id="cpTable" style="border-collapse: separate; border-spacing: 0; min-width: 100%; width: max-content;">
+            <!-- Rendered by JS -->
+          </table>
+        </div>
+        
+        <div style="text-align: center; margin-top: 15px;">
+          <button type="button" onclick="saveCultivationPlan()" style="padding: 10px 40px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">保存</button>
+        </div>
+      </div>
+    </div>
+    <!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>情熱MAP [予定確認用]</title>
+    <link rel="apple-touch-icon" href="icon_schedule.png">
+    <link rel="icon" href="icon_schedule.png">
+    <link rel="manifest" href="manifest_schedule.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+      html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; overflow: hidden; background-color: #f8f9fa; }
+      .control-panel { padding: 10px; background-color: #222; border-bottom: 1px solid #444; z-index: 10; display: flex; justify-content: space-between; align-items: center; color: white; }
+      
+      /* ★追加：部署フィルターのエリア */
+      #deptFilterBar { display: flex; overflow-x: auto; gap: 8px; padding: 8px 10px; background: #333; border-bottom: 2px solid #2196F3; white-space: nowrap; align-items: center; z-index: 10; }
+      .dept-btn { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; border: 1px solid #777; background: #555; color: #ccc; cursor: pointer; transition: 0.2s; }
+      .dept-btn.active { background: #2196F3; color: white; border-color: #1976D2; box-shadow: 0 0 5px rgba(33, 150, 243, 0.5); }
+
+      #map { flex-grow: 1; width: 100%; }
+      button { padding: 10px 15px; font-size: 14px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; }
+      .btn-primary { background: #2196F3; color: white; }
+      .btn-reload { background: #fff; color: #333; border: 1px solid #ccc; padding: 8px 12px; }
+      .polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
+      .signboard-label { background: rgba(255,255,255,0.95); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 11px; font-weight: bold; margin-top: 5px; color: #000; }
+      
+      #scheduleModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 4000; justify-content: center; align-items: center; }
+      .modal-content { background: #fff; color: #333; padding: 0; border-radius: 8px; width: 95%; max-width: 900px; height: 90%; display: flex; flex-direction: column; overflow: hidden; }
+      .modal-header { background: #2196F3; color: white; padding: 15px; font-size: 18px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+      .modal-body { flex: 1; overflow-y: auto; padding: 10px; background: #f4f6f8; }
+      
+      table { width: 100%; border-collapse: collapse; font-size: 12px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+      th, td { padding: 8px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
+      th { background-color: #e3f2fd; color: #1a73e8; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1); }
+      .overdue-row { background-color: #ffebee; color: #d32f2f; font-weight: bold; }
+      
+      .legend { display: flex; gap: 10px; font-size: 11px; padding: 5px; background: #333; border-radius: 4px; margin-right: 10px;}
+      .leg-item { display: flex; align-items: center; gap: 3px; }
+      .leg-color { width: 12px; height: 12px; border-radius: 2px; }
+    
+      /* スマホで見切れないように横スクロール対応 */
+      @media screen and (max-width: 768px) {
+        .control-panel { flex-wrap: wrap; gap: 8px; padding: 10px 5px; }
+        .control-panel-buttons { width: 100%; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+        .control-panel-buttons::-webkit-scrollbar { height: 4px; }
+        .control-panel-buttons::-webkit-scrollbar-thumb { background: #888; border-radius: 2px; }
+      }
+      .control-panel-buttons > * { flex-shrink: 0; } /* 全画面共通でボタンが潰れないように */
+    </style>
+  </head>
+  <body>
+ 
+
+    <div class="control-panel">
+      <div style="font-weight:bold; font-size:16px;">🗺️ 予定確認MAP</div>
+      <div class="control-panel-buttons" style="display:flex; align-items:center;">
+        <div class="legend">
+          <div class="leg-item"><div class="leg-color" style="background:#4CAF50;"></div>平和</div>
+          <div class="leg-item"><div class="leg-color" style="background:#FFEB3B;"></div>予定有</div>
+          <div class="leg-item"><div class="leg-color" style="background:#F44336;"></div>問題/遅延</div>
+          <div class="leg-item"><div class="leg-color" style="background:#FF9800;"></div>収穫中</div>
+          <div class="leg-item"><div class="leg-color" style="background:#777777;"></div>対象外</div>
+        </div>
+        <button id="btnTyphoon" onclick="openTyphoonModal()" style="display:none; margin-right:10px; background:#ffebee; color:#d32f2f; border:2px solid #d32f2f; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; align-items:center; cursor:pointer;">🌀 台風</button>
+        <button id="btnWeather" onclick="openWeatherModal()" style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
+        <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
+        <select id="trackingMode" style="margin-right:10px; padding:8px; border-radius:5px; background:#555; color:white; border:1px solid #777; font-weight:bold; font-size:11px;">
+            <option value="path">線(Path)</option>
+            <option value="trip">アニメ(Trip)</option>
+        </select>
+        <button class="btn-primary" onclick="loadTrackingData()" style="background:#4CAF50; margin-right:10px;">🏃‍♂️ 表示</button>
+        <button class="btn-primary" onclick="openCultivationPlanModal()" style="background:#8BC34A; margin-right:10px;">🌱 栽培計画</button>
+        <button class="btn-primary" onclick="openScheduleTable()">📋 作業一覧</button>
+      </div>
+    </div>
+    
+    <div id="deptFilterBar">
+       </div>
+
+    <div id="map"></div>
+
+    <div id="scheduleModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span>📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
+          <span style="cursor:pointer; font-size:24px;" onclick="document.getElementById('scheduleModal').style.display='none'">×</span>
+        </div>
+        <div class="modal-body">
+          <table id="scheduleTable">
+            <thead>
+              <tr>
+                <th>作業名</th>
+                <th>部署</th>
+                <th>品目</th>
+                <th>圃場/看板名</th>
+                <th>予定日</th>
+                <th>期限日</th>
+                <th>時間(h)</th>
+                <th>適合者</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleTableBody">
+              </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="weatherModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin: 0; color: #2196F3;">⛅ 週間天気予報</h3>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('weatherModal').style.display='none'">×</span>
+        </div>
+        <div id="weatherContent" style="overflow-y: auto; flex: 1;">
+          <div style="text-align:center; padding:20px;">読み込み中...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="typhoonModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
+        </div>
+        <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
+          <div style="text-align:center; padding:20px;">読み込み中...</div>
+        </div>
+      </div>
+    </div>
+
+    
+    <!-- Cultivation Plan Modal -->
     <div id="cultivationPlanModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
       <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 98%; max-width: 1200px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 95vh; display: flex; flex-direction: column;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -323,104 +564,10 @@ function calcCp() {
     updateCpCellsText();
 }
 
-function updateCpCellsText() {
-    // 播種セルのテキスト更新
-    const sowingCells = document.querySelectorAll('#cpTable td[data-task="sowing"][data-selected="true"]');
-    sowingCells.forEach(td => {
-        const div = td.querySelector('div');
-        div.innerHTML = cpCurrentCalc.trays > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${cpCurrentCalc.trays}枚</span>` : '';
-    });
-    
-    // 定植セルのテキスト更新 (面積)
-    const areaA = getCpVal('cpArea', true) || 0;
-    const plantingCells = document.querySelectorAll('#cpTable td[data-task="planting"][data-selected="true"]');
-    plantingCells.forEach(td => {
-        const div = td.querySelector('div');
-        div.innerHTML = areaA > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${areaA}a</span>` : '';
-    });
-    
-    // 収穫セルのテキスト更新
-    const harvestCells = document.querySelectorAll('#cpTable td[data-task="harvesting"][data-selected="true"]');
-    const ratioStr = document.getElementById('cpHarvestRatio') ? document.getElementById('cpHarvestRatio').value.trim() : '';
-    let ratios = [];
-    if (/^\d+$/.test(ratioStr)) {
-        ratios = ratioStr.split('').map(Number);
-    }
-    
-    harvestCells.forEach((td, index) => {
-        const div = td.querySelector('div');
-        if (cpCurrentCalc.yield > 0) {
-            let cellYield = cpCurrentCalc.yield;
-            if (ratios.length > 0) {
-                let r = ratios[index] || 0;
-                let totalRatio = ratios.reduce((a, b) => a + b, 0);
-                if (totalRatio > 0) {
-                    cellYield = Math.floor(cpCurrentCalc.yield * r / totalRatio);
-                } else {
-                    cellYield = 0;
-                }
-            } else {
-                cellYield = Math.floor(cpCurrentCalc.yield / harvestCells.length);
-            }
-            td.dataset.amount = cellYield;
-            div.innerHTML = cellYield > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${cellYield.toLocaleString()}</span>` : '';
-        } else {
-            td.dataset.amount = 0;
-            div.innerHTML = '';
-        }
-    });
-}
-function renderCultivationPlanTable() {
-    const table = document.getElementById('cpTable');
-    if (!table) return;
-    
-    let tHTML = '<thead><tr><th style="min-width: 60px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; box-shadow: 1px 0 0 #ddd;"></th>';
-    for (let m = 1; m <= 12; m++) {
-        tHTML += '<th colspan="6" style="border: 1px solid #ddd; background: #f1f8e9; padding: 4px; min-width:150px;">' + m + '月</th>';
-    }
-    tHTML += '</tr><tr><th style="min-width: 60px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd;">作業</th>';
-    
-    const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
-    for (let m = 1; m <= 12; m++) {
-        for (let p of periods) {
-            tHTML += '<th style="border: 1px solid #ddd; padding: 4px 2px; font-size: 10px; width: 25px; border-bottom: 2px solid #ccc; background: #fafafa; color: #555; writing-mode: vertical-rl; text-orientation: upright;">' + p + '</th>';
-        }
-    }
-    tHTML += '</tr></thead><tbody>';
-    
-    const tasks = [
-        { id: 'sowing', name: '播種', color: '#8D6E63' },
-        { id: 'planting', name: '定植', color: '#4CAF50' },
-        { id: 'harvesting', name: '収穫', color: '#FF9800' }
-    ];
-    
-    tasks.forEach(task => {
-        tHTML += '<tr><td style="position: sticky; left: 0; background: #fff; z-index: 5; font-weight: bold; border: 1px solid #ddd; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd;">' + task.name + '</td>';
-        for (let m = 1; m <= 12; m++) {
-            for (let i = 0; i < periods.length; i++) {
-                let br = (i === 5) ? '1px solid #bbb' : '1px solid #eee';
-                tHTML += '<td style="border: 1px solid #eee; padding: 0; cursor: pointer; border-right: ' + br + ';" onclick="toggleCpCell(this, \'' + task.color + '\')" data-task="' + task.id + '" data-month="' + m + '" data-period="' + i + '"><div style="width: 100%; height: 35px; transition: 0.2s; box-sizing:border-box; text-align:center; overflow:hidden;"></div></td>';
-            }
-        }
-        tHTML += '</tr>';
-    });
-    
-    tHTML += '</tbody>';
-    table.innerHTML = tHTML;
-}
 
-function toggleCpCell(td, colorHex) {
-    const div = td.querySelector('div');
-    if (td.dataset.selected === 'true') {
-        div.style.backgroundColor = '';
-        td.dataset.selected = 'false';
-        div.innerHTML = '';
-    } else {
-        div.style.backgroundColor = colorHex;
-        td.dataset.selected = 'true';
-    }
-    updateCpCellsText();
-}
+
+
+
 
 function populateDefaultCpSelects() {
     populateSelect('cpCrop', [], ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
@@ -433,6 +580,266 @@ function populateDefaultCpSelects() {
     populateSelect('cpVariety', [], []);
 }
 
+
+// --- NEW CULTIVATION PLAN JS ---
+let cpPlans = [];
+
+function renderCultivationPlanTable() {
+    const table = document.getElementById('cpTable');
+    if (!table) return;
+    
+    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
+    
+    let tHTML = '<thead><tr><th style="min-width: 120px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; box-shadow: 1px 0 0 #ddd;"></th>';
+    months.forEach((m, idx) => {
+        let label = m + '月';
+        if (idx === 0) label = '今年 ' + label;
+        if (idx === 12) label = '来年 ' + label;
+        let bg = idx < 12 ? '#f1f8e9' : '#e8eaf6';
+        tHTML += '<th colspan="6" style="border: 1px solid #ddd; background: ' + bg + '; padding: 4px; min-width:150px;">' + label + '</th>';
+    });
+    tHTML += '</tr><tr><th style="min-width: 120px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd;">作型（品種）</th>';
+    
+    const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
+    months.forEach(() => {
+        for (let p of periods) {
+            tHTML += '<th style="border: 1px solid #ddd; padding: 4px 2px; font-size: 10px; width: 25px; border-bottom: 2px solid #ccc; background: #fafafa; color: #555; writing-mode: vertical-rl; text-orientation: upright;">' + p + '</th>';
+        }
+    });
+    tHTML += '</tr></thead><tbody id="cpTableBody"></tbody>';
+    
+    table.innerHTML = tHTML;
+    cpPlans = [];
+}
+
+function addCpPlanRow() {
+    const crop = getCpVal('cpCrop');
+    const variety = getCpVal('cpVariety');
+    if (!crop || !variety) {
+        alert("作物と品種を選択または入力してください。");
+        return;
+    }
+    
+    const plan = {
+        id: 'plan_' + Date.now(),
+        crop: crop,
+        variety: variety,
+        areaA: getCpVal('cpArea', true) || 0,
+        holes: getCpVal('cpTrayHoles', true) || 128,
+        rows: getCpVal('cpRows', true) || 1,
+        pSpace: getCpVal('cpPlantSpacing', true) || 30,
+        rSpace: getCpVal('cpRidgeSpacing', true) || 150,
+        yieldRate: getCpVal('cpYieldRate', true) || 0.9,
+        trays: cpCurrentCalc.trays,
+        yield: cpCurrentCalc.yield,
+        harvestRatioStr: document.getElementById('cpHarvestRatio').value.trim()
+    };
+    
+    cpPlans.push(plan);
+    renderCpPlanRow(plan);
+}
+
+function renderCpPlanRow(plan) {
+    const tbody = document.getElementById('cpTableBody');
+    if (!tbody) return;
+    
+    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
+    let tr = document.createElement('tr');
+    tr.dataset.planId = plan.id;
+    
+    let th = document.createElement('td');
+    th.style.cssText = 'position: sticky; left: 0; background: #fff; z-index: 5; font-weight: bold; font-size:12px; border: 1px solid #ddd; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd; padding:4px;';
+    th.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
+        <span>${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span></span>
+        <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
+    </div>`;
+    tr.appendChild(th);
+    
+    months.forEach((m, idx) => {
+        for (let i = 0; i < 6; i++) {
+            let td = document.createElement('td');
+            let br = (i === 5) ? '1px solid #bbb' : '1px solid #eee';
+            td.style.cssText = `border: 1px solid #eee; padding: 0; cursor: pointer; border-right: ${br};`;
+            td.dataset.monthIndex = idx;
+            td.dataset.month = m;
+            td.dataset.period = i;
+            td.dataset.task = '';
+            td.onclick = function() { toggleCpCell(this, plan.id); };
+            
+            let div = document.createElement('div');
+            div.style.cssText = 'width: 100%; height: 45px; transition: 0.2s; box-sizing:border-box; text-align:center; overflow:hidden;';
+            td.appendChild(div);
+            tr.appendChild(td);
+        }
+    });
+    
+    tbody.appendChild(tr);
+}
+
+function removeCpPlanRow(planId) {
+    cpPlans = cpPlans.filter(p => p.id !== planId);
+    const tbody = document.getElementById('cpTableBody');
+    const tr = tbody.querySelector(`tr[data-plan-id="${planId}"]`);
+    if (tr) tbody.removeChild(tr);
+}
+
+const TOOL_COLORS = {
+    'sowing': '#8D6E63',
+    'planting': '#4CAF50',
+    'harvesting': '#FF9800',
+    'eraser': ''
+};
+
+function toggleCpCell(td, planId) {
+    const tool = document.querySelector('input[name="cpTool"]:checked').value;
+    const div = td.querySelector('div');
+    
+    if (tool === 'eraser') {
+        td.dataset.task = '';
+        div.style.backgroundColor = '';
+        div.innerHTML = '';
+        td.dataset.amount = '';
+    } else {
+        if (td.dataset.task === tool) {
+            td.dataset.task = '';
+            div.style.backgroundColor = '';
+            div.innerHTML = '';
+            td.dataset.amount = '';
+        } else {
+            td.dataset.task = tool;
+            div.style.backgroundColor = TOOL_COLORS[tool];
+        }
+    }
+    
+    updateCpCellsText(planId);
+}
+
+function updateCpCellsText(planId) {
+    const plansToUpdate = planId ? cpPlans.filter(p => p.id === planId) : cpPlans;
+    
+    plansToUpdate.forEach(plan => {
+        const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
+        if (!tr) return;
+        
+        const sowingCells = tr.querySelectorAll('td[data-task="sowing"]');
+        sowingCells.forEach(td => {
+            const div = td.querySelector('div');
+            div.innerHTML = plan.trays > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:14px; font-weight:bold;">${plan.trays}枚</span>` : '';
+        });
+        
+        const plantingCells = tr.querySelectorAll('td[data-task="planting"]');
+        plantingCells.forEach(td => {
+            const div = td.querySelector('div');
+            div.innerHTML = plan.areaA > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:14px; font-weight:bold;">${plan.areaA}a</span>` : '';
+        });
+        
+        const harvestCells = tr.querySelectorAll('td[data-task="harvesting"]');
+        const ratioStr = plan.harvestRatioStr || '';
+        let ratios = [];
+        if (/^\d+$/.test(ratioStr)) {
+            ratios = ratioStr.split('').map(Number);
+        }
+        
+        harvestCells.forEach((td, index) => {
+            const div = td.querySelector('div');
+            if (plan.yield > 0) {
+                let cellYield = plan.yield;
+                if (ratios.length > 0) {
+                    let r = ratios[index] || 0;
+                    let totalRatio = ratios.reduce((a, b) => a + b, 0);
+                    if (totalRatio > 0) {
+                        cellYield = Math.floor(plan.yield * r / totalRatio);
+                    } else {
+                        cellYield = 0;
+                    }
+                } else {
+                    cellYield = Math.floor(plan.yield / harvestCells.length);
+                }
+                td.dataset.amount = cellYield;
+                div.innerHTML = cellYield > 0 ? `<span style="color:#fff; font-size:9px; display:block; padding-top:14px; font-weight:bold;">${cellYield.toLocaleString()}</span>` : '';
+            } else {
+                td.dataset.amount = 0;
+                div.innerHTML = '';
+            }
+        });
+    });
+}
+
+async function saveCultivationPlan() {
+    if (cpPlans.length === 0) {
+        alert("保存する作型がありません。");
+        return;
+    }
+    
+    const year = getCpVal('cpYear', true) || new Date().getFullYear();
+    
+    const payloadPlans = cpPlans.map(plan => {
+        const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
+        let tasks = { sowing: [], planting: [], harvesting: [] };
+        
+        if (tr) {
+            const cells = tr.querySelectorAll('td[data-task]');
+            cells.forEach(cell => {
+                const t = cell.dataset.task;
+                if (t && tasks[t]) {
+                    const m = parseInt(cell.dataset.month, 10);
+                    const p = parseInt(cell.dataset.period, 10);
+                    const mIdx = parseInt(cell.dataset.monthIndex, 10);
+                    
+                    let taskData = { month: m, periodIndex: p, monthIndex: mIdx };
+                    if (t === 'harvesting' && cell.dataset.amount) {
+                        taskData.amount = parseInt(cell.dataset.amount, 10);
+                    }
+                    tasks[t].push(taskData);
+                }
+            });
+        }
+        
+        return {
+            year: year,
+            crop: plan.crop,
+            variety: plan.variety,
+            areaA: plan.areaA,
+            holes: plan.holes,
+            rows: plan.rows,
+            pSpace: plan.pSpace,
+            rSpace: plan.rSpace,
+            yieldRate: plan.yieldRate,
+            trays: plan.trays,
+            yield: plan.yield,
+            tasks: tasks
+        };
+    });
+    
+    try {
+        const btn = document.querySelector('#cultivationPlanModal button[onclick="saveCultivationPlan()"]');
+        let orgText = '保存';
+        if (btn) {
+            orgText = btn.innerHTML;
+            btn.innerHTML = '送信中...';
+            btn.disabled = true;
+        }
+        
+        await callGAS('saveCultivationPlan', { planDataArray: payloadPlans });
+        
+        if (btn) {
+            btn.innerHTML = orgText;
+            btn.disabled = false;
+        }
+        document.getElementById('cultivationPlanModal').style.display = 'none';
+        
+        if(typeof fetchScheduleData === 'function') fetchScheduleData();
+        
+    } catch(e) {
+        alert("保存エラー: " + e.message);
+        const btn = document.querySelector('#cultivationPlanModal button[onclick="saveCultivationPlan()"]');
+        if (btn) {
+            btn.innerHTML = '保存';
+            btn.disabled = false;
+        }
+    }
+}
+// --- END NEW CULTIVATION PLAN JS ---
 function openCultivationPlanModal() {
     renderCultivationPlanTable();
     if(!cpMasterData) {
@@ -443,76 +850,7 @@ function openCultivationPlanModal() {
     document.getElementById('cultivationPlanModal').style.display = 'flex';
 }
 
-async function saveCultivationPlan() {
-    const crop = getCpVal('cpCrop');
-    const variety = getCpVal('cpVariety');
-    const areaA = getCpVal('cpArea', true) || 0;
-    
-    if (!crop || !variety || areaA <= 0) {
-        alert("作物、品種、定植面積を正しく入力してください。");
-        return;
-    }
-    
-    const holes = getCpVal('cpTrayHoles', true) || 128;
-    const rows = getCpVal('cpRows', true) || 1;
-    const pSpace = getCpVal('cpPlantSpacing', true) || 30;
-    const rSpace = getCpVal('cpRidgeSpacing', true) || 150;
-    const yieldRate = getCpVal('cpYieldRate', true) || 0.9;
-    const year = getCpVal('cpYear', true) || new Date().getFullYear();
-    
-    const plan = { 
-        year: year,
-        crop: crop, 
-        variety: variety, 
-        areaA: areaA,
-        holes: holes,
-        rows: rows,
-        pSpace: pSpace,
-        rSpace: rSpace,
-        yieldRate: yieldRate,
-        trays: cpCurrentCalc.trays,
-        yield: cpCurrentCalc.yield,
-        tasks: { sowing: [], planting: [], harvesting: [] } 
-    };
-    
-    const cells = document.querySelectorAll('#cpTable td[data-selected="true"]');
-    cells.forEach(cell => {
-        const t = cell.dataset.task;
-        const m = parseInt(cell.dataset.month, 10);
-        const p = parseInt(cell.dataset.period, 10);
-        let taskData = { month: m, periodIndex: p };
-        if (t === 'harvesting' && cell.dataset.amount) {
-            taskData.amount = parseInt(cell.dataset.amount, 10);
-        }
-        if (plan.tasks[t]) {
-            plan.tasks[t].push(taskData);
-        }
-    });
-    
-    try {
-        const btn = document.querySelector('#cultivationPlanModal button');
-        const orgText = btn.innerHTML;
-        btn.innerHTML = '送信中...';
-        btn.disabled = true;
-        
-        await callGAS('saveCultivationPlan', { planData: plan });
-        
-        btn.innerHTML = orgText;
-        btn.disabled = false;
-        document.getElementById('cultivationPlanModal').style.display = 'none';
-        
-        // Also refresh schedules map/data
-        fetchScheduleData();
-        
-    } catch(e) {
-        alert("保存エラー: " + e.message);
-        const btn = document.querySelector('#cultivationPlanModal button');
-        if (btn) {
-            btn.innerHTML = '保存';
-            btn.disabled = false;
-        }
-    }
-}
+
 </script>
     <script src="https://unpkg.com/deck.gl@^8.8.0/dist.min.js"></script>
     <script>
