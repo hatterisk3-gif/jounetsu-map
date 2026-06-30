@@ -259,7 +259,7 @@ async function fetchCultivationMaster() {
             method: 'POST',
             body: JSON.stringify({ action: 'getCultivationMaster' })
         });
-        cpMasterData = await res.json();
+        const json = await res.json();\n        cpMasterData = json.data || json;
         
         if(cpMasterData && cpMasterData.crops) {
             populateSelect('cpCrop', Object.keys(cpMasterData.crops), ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
