@@ -1228,10 +1228,17 @@ function createSignboardMarker(name, pos, icon, id) {
       window.updateSelectedPolysDisplay = () => {
         const disp = document.getElementById('selected_polys_display');
         if(!disp) return;
-        if(selectedPolyIds.length <= 1) { 
-          disp.innerHTML = `<span style="color:#555; font-size:13px; font-weight:bold; padding:4px 0;">${loadedPolygons[activePolyId].name} (単独)</span>`; 
+        if(selectedPolyIds.length === 0) {
+          disp.innerHTML = `<span style="color:#999; font-size:13px; font-weight:bold; padding:4px 0;">対象が選択されていません</span>`;
+        } else if(selectedPolyIds.length === 1) { 
+          const id = selectedPolyIds[0];
+          const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "不明な圃場";
+          disp.innerHTML = `<span style="color:#555; font-size:13px; font-weight:bold; padding:4px 0;">${name} (単独)</span>`; 
         } else { 
-          disp.innerHTML = selectedPolyIds.map(id => `<span style="background:#e8f0fe; color:#1a73e8; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid #aecbfa; margin-top:4px;">${loadedPolygons[id].name}</span>`).join(''); 
+          disp.innerHTML = selectedPolyIds.map(id => {
+            const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "不明な圃場";
+            return `<span style="background:#e8f0fe; color:#1a73e8; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid #aecbfa; margin-top:4px;">${name}</span>`;
+          }).join(''); 
         }
       };
 
@@ -1452,7 +1459,7 @@ function createSignboardMarker(name, pos, icon, id) {
         
         let targetSection = '';
         if (currentRecordType === 'work' && !p.isMarker) {
-           targetSection = `<div style="margin-bottom:15px; background:white; padding:10px; border-radius:8px; border:1px solid #ddd;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><label class="form-label" style="margin:0; color:#2196F3;">📍 記録対象 (複数選択)</label><button onclick="openMapSelect()" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = `<div style="margin-bottom:15px; background:white; padding:10px; border-radius:8px; border:1px solid #ddd;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><label class="form-label" style="margin:0; color:#2196F3;">📍 圃場記録対象 (複数選択)</label><button onclick="openMapSelect()" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
         }
         
         const now = new Date(); const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
