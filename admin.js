@@ -671,7 +671,7 @@ function initMap() {
     });
 
 
-    // 🌟変更：地図をスクロールし終わって「1秒後」にだけ判定する（スマホの負担を激減させる！）
+    // 🌟変更：地図をスクロールし終わって少し待ってから判定する（もっさり感軽減のため1000ms→400msに変更）
     let idleTimer = null;
     map.addListener('idle', () => {
         let center = map.getCenter();
@@ -683,7 +683,7 @@ function initMap() {
             clearTimeout(idleTimer);
             idleTimer = setTimeout(() => {
                 autoSwitchFudeRegion();
-            }, 1000);
+            }, 400);
         }
     });
 
@@ -1302,9 +1302,21 @@ window.autoSwitchFudeRegion = () => {
             if (window.loadedFudeRegion !== prefName) return; // 別の県に移動した場合は中止
 
             let fileName = regionData.files[currentIndex];
+
+            // ★ キャッシュにあれば通信せずに爆速で反映
+            if (window.fudeCache && window.fudeCache[fileName]) {
+                if (window.loadedFudeRegion === prefName) {
+                    map.data.addGeoJson(window.fudeCache[fileName]);
+                }
+                currentIndex++;
+                setTimeout(loadNextFile, 10); // キャッシュがある場合は超高速で次へ
+                return;
+            }
+
             fetch(`${R2_BASE_URL}/${regionData.folder}/${fileName}`)
                 .then(res => res.json())
                 .then(geoJson => {
+                    if (!window.fudeCache) window.fudeCache = {};
                     window.fudeCache[fileName] = geoJson;
                     if (window.loadedFudeRegion === prefName) {
                         map.data.addGeoJson(geoJson);
@@ -1313,7 +1325,7 @@ window.autoSwitchFudeRegion = () => {
                 .catch(err => console.warn("自動切替スキップ", err))
                 .finally(() => {
                     currentIndex++;
-                    setTimeout(loadNextFile, 500); // 500ms待ってから次を読み込む
+                    setTimeout(loadNextFile, 50); // 500msを50msに短縮して高速化
                 });
         }
         loadNextFile();
