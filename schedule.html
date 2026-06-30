@@ -227,6 +227,13 @@ function updateCpCellsText() {
         const div = td.querySelector('div');
         div.innerHTML = cpCurrentCalc.trays > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${cpCurrentCalc.trays}枚</span>` : '';
     });
+    // 定植セルのテキスト更新 (面積)
+    const areaA = parseFloat(document.getElementById('cpArea').value) || 0;
+    const plantingCells = document.querySelectorAll('#cpTable td[data-task="planting"][data-selected="true"]');
+    plantingCells.forEach(td => {
+        const div = td.querySelector('div');
+        div.innerHTML = areaA > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${areaA}a</span>` : '';
+    });
     // 収穫セルのテキスト更新
     const harvestCells = document.querySelectorAll('#cpTable td[data-task="harvesting"][data-selected="true"]');
     harvestCells.forEach(td => {
