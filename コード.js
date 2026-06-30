@@ -186,7 +186,7 @@ function getInitData() {
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
-    signFunctionsMaster: getCol(['看板マスタ'], 0) // ★ここを追加！看板マスタのA列を取得します
+    signFunctionsMaster: getCol(['看板マスタ', '看板機能マスタ', '看板機能'], 0) // ★ここを追加！看板マスタのA列を取得します
   };
   
   let workMaster = [];
