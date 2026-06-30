@@ -683,6 +683,7 @@ function initMap() {
             clearTimeout(idleTimer);
             idleTimer = setTimeout(() => {
                 autoSwitchFudeRegion();
+                if (typeof refreshFudeMapData === 'function') refreshFudeMapData();
             }, 400);
         }
     });
@@ -1257,6 +1258,54 @@ const fudeFiles = {
     }
 };
 // 🌟修正：違う県に移動した瞬間に、古い県のデータを【完全に忘れて】スマホを軽くする！
+
+let fudeRenderTimer = null;
+window.refreshFudeMapData = () => {
+    if (!window.loadedFudeRegion || !window.isFudeVisibleFlag) return;
+    const bounds = map.getBounds();
+    if (!bounds) return;
+
+    clearTimeout(fudeRenderTimer);
+    fudeRenderTimer = setTimeout(() => {
+        let ne = bounds.getNorthEast();
+        let sw = bounds.getSouthWest();
+        let latBuf = (ne.lat() - sw.lat()) * 0.1;
+        let lngBuf = (ne.lng() - sw.lng()) * 0.1;
+        let minLat = sw.lat() - latBuf, maxLat = ne.lat() + latBuf;
+        let minLng = sw.lng() - lngBuf, maxLng = ne.lng() + lngBuf;
+
+        // ★ メモリ節約：見えない領域のポリゴンを一度消す
+        map.data.forEach(f => map.data.remove(f));
+
+        let featuresToAdd = [];
+        const regionData = fudeFiles[window.loadedFudeRegion];
+        if (!regionData) return;
+
+        regionData.files.forEach(fileName => {
+            let geoJson = window.fudeCache[fileName];
+            if (geoJson && geoJson.features) {
+                geoJson.features.forEach(f => {
+                    let coords = null;
+                    if (f.geometry.type === "Polygon") coords = f.geometry.coordinates[0][0];
+                    else if (f.geometry.type === "MultiPolygon") coords = f.geometry.coordinates[0][0][0];
+
+                    if (coords) {
+                        let lng = coords[0], lat = coords[1];
+                        if (lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng) {
+                            featuresToAdd.push(f);
+                        }
+                    }
+                });
+            }
+        });
+
+        if (featuresToAdd.length > 0) {
+            if (featuresToAdd.length > 5000) featuresToAdd = featuresToAdd.slice(0, 5000);
+            map.data.addGeoJson({ type: "FeatureCollection", features: featuresToAdd });
+        }
+    }, 100);
+};
+
 window.autoSwitchFudeRegion = () => {
     if (window.isMapLoadingFude) return;
 
@@ -1305,9 +1354,7 @@ window.autoSwitchFudeRegion = () => {
 
             // ★ キャッシュにあれば通信せずに爆速で反映
             if (window.fudeCache && window.fudeCache[fileName]) {
-                if (window.loadedFudeRegion === prefName) {
-                    map.data.addGeoJson(window.fudeCache[fileName]);
-                }
+                if (window.loadedFudeRegion === prefName) { window.refreshFudeMapData(); }
                 currentIndex++;
                 setTimeout(loadNextFile, 10); // キャッシュがある場合は超高速で次へ
                 return;
@@ -1318,9 +1365,7 @@ window.autoSwitchFudeRegion = () => {
                 .then(geoJson => {
                     if (!window.fudeCache) window.fudeCache = {};
                     window.fudeCache[fileName] = geoJson;
-                    if (window.loadedFudeRegion === prefName) {
-                        map.data.addGeoJson(geoJson);
-                    }
+                    if (window.loadedFudeRegion === prefName) { window.refreshFudeMapData(); }
                 })
                 .catch(err => console.warn("自動切替スキップ", err))
                 .finally(() => {
@@ -1457,6 +1502,7 @@ document.getElementById('btnLoadFude').onclick = () => {
         if (window.loadedFudeRegion !== null) {
             map.data.forEach(function (feature) { map.data.remove(feature); });
         }
+        window.loadedFudeRegion = prefName;
 
         btn.innerHTML = `⏳ ${prefName}のデータを表示中...`;
         map.setOptions({ draggableCursor: 'wait' });
@@ -1469,14 +1515,13 @@ document.getElementById('btnLoadFude').onclick = () => {
                 btn.disabled = false;
                 window.isMapLoadingFude = false;
                 map.setOptions({ draggableCursor: customDrawingMode ? pinCursor : null });
-                window.loadedFudeRegion = prefName;
                 setFudeVisibility(true);
                 return;
             }
 
             let fileName = regionData.files[currentIndex];
             if (window.fudeCache[fileName]) {
-                map.data.addGeoJson(window.fudeCache[fileName]);
+                window.refreshFudeMapData();
                 currentIndex++;
                 setTimeout(loadNext, 50);
             } else {
@@ -1484,8 +1529,8 @@ document.getElementById('btnLoadFude').onclick = () => {
                     .then(res => res.json())
                     .then(geoJson => {
                         window.fudeCache[fileName] = geoJson;
-                        map.data.addGeoJson(geoJson);
-                    })
+                        window.refreshFudeMapData();
+                        })
                     .catch(err => console.error("読込エラー", err))
                     .finally(() => {
                         currentIndex++;
@@ -1499,7 +1544,7 @@ document.getElementById('btnLoadFude').onclick = () => {
             if (btn.disabled) {
                 btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false;
                 map.setOptions({ draggableCursor: customDrawingMode ? pinCursor : null });
-                window.loadedFudeRegion = prefName; setFudeVisibility(true);
+                setFudeVisibility(true);
             }
         }, 8000);
     });
@@ -1583,6 +1628,7 @@ document.getElementById('editLoadFudeBtn').onclick = () => {
         if (window.loadedFudeRegion !== null) {
             map.data.forEach(function (feature) { map.data.remove(feature); });
         }
+        window.loadedFudeRegion = prefName;
 
         btn.innerHTML = `⏳ 読込中...`;
         map.setOptions({ draggableCursor: 'wait' });
@@ -1595,14 +1641,13 @@ document.getElementById('editLoadFudeBtn').onclick = () => {
                 btn.disabled = false;
                 window.isMapLoadingFude = false;
                 map.setOptions({ draggableCursor: null });
-                window.loadedFudeRegion = prefName;
                 setFudeVisibility(true);
                 return;
             }
 
             let fileName = regionData.files[currentIndex];
             if (window.fudeCache[fileName]) {
-                map.data.addGeoJson(window.fudeCache[fileName]);
+                window.refreshFudeMapData();
                 currentIndex++;
                 setTimeout(loadNext, 50);
             } else {
@@ -1610,8 +1655,8 @@ document.getElementById('editLoadFudeBtn').onclick = () => {
                     .then(res => res.json())
                     .then(geoJson => {
                         window.fudeCache[fileName] = geoJson;
-                        map.data.addGeoJson(geoJson);
-                    })
+                        window.refreshFudeMapData();
+                        })
                     .catch(err => console.error("読込エラー", err))
                     .finally(() => {
                         currentIndex++;
@@ -1625,7 +1670,7 @@ document.getElementById('editLoadFudeBtn').onclick = () => {
             if (btn.disabled) {
                 btn.innerHTML = originalText; btn.disabled = false; window.isMapLoadingFude = false;
                 map.setOptions({ draggableCursor: null });
-                window.loadedFudeRegion = prefName; setFudeVisibility(true);
+                setFudeVisibility(true);
             }
         }, 30000);
     });
