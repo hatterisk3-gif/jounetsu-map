@@ -152,10 +152,19 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
       async function callGAS(action, params = {}) {
         params.action = action;
-        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
-        const json = await res.json();
-        if (json.status !== "success") throw new Error(json.message);
-        return json.data;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
+        try {
+          const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
+          clearTimeout(timeoutId);
+          const json = await res.json();
+          if (json.status !== "success") throw new Error(json.message);
+          return json.data;
+        } catch (e) {
+          clearTimeout(timeoutId);
+          if (e.name === 'AbortError') throw new Error("通信がタイムアウトしました。電波の良いところで再度お試しください。");
+          throw e;
+        }
       }
 
    // 🌟 1. ログイン処理（完全版） 🌟
@@ -2157,8 +2166,9 @@ function createSignboardMarker(name, pos, icon, id) {
             customAlert(`「${name}」をマスタに登録し、定位置を\n【${signName}】に設定しました！`);
             infoWindow.close(); 
          } catch(e) { 
-            document.getElementById('modal').style.display = 'none'; 
             customAlert("エラーが発生しました: " + e.message); 
+         } finally {
+            document.getElementById('modal').style.display = 'none'; 
          }
       };
 // ==========================================

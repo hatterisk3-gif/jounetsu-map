@@ -1610,10 +1610,11 @@ function addMachineToSign(params) {
   return {
      id: newId, 
      name: params.name, 
-     workCategory: params.workCategory,
+     workCategory: params.workCategory || "",
      signName: params.signName,
      signId: params.signId,
-     parts: params.parts
+     parts: params.parts || "",
+     machineNumber: params.machineNumber || ""
   };
 }
 // ==========================================
