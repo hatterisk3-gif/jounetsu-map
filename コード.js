@@ -41,6 +41,7 @@ function doPost(e) {
     else if (action === "updateSignLink") result = updateSignLink(params);
     else if (action === 'addToolToMaster') result = addToolToMaster(params);
     else if (action === "updateToolStatus") result = updateToolStatus(params);
+    else if (action === "saveCultivationPlan") result = saveCultivationPlan(params.planData);
     else if (action === "editToolInMaster") result = editToolInMaster(params);
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
@@ -2128,3 +2129,31 @@ function getTrackingData(params) {
 }
 
 // trigger clasp
+
+function saveCultivationPlan(planData) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('栽培計画');
+    if (!sheet) {
+      // Create sheet if it doesn't exist
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const newSheet = ss.insertSheet('栽培計画');
+      newSheet.appendRow(['タイムスタンプ', '作物', '品種', '定植面積', '播種枚数', '収穫個数', '計画データ(JSON)']);
+    }
+    const targetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('栽培計画');
+    const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+    
+    targetSheet.appendRow([
+      timestamp,
+      planData.crop || '',
+      planData.variety || '',
+      planData.areaA || '',
+      planData.trays || '',
+      planData.yield || '',
+      JSON.stringify(planData)
+    ]);
+    
+    return { status: 'success', message: '栽培計画を保存しました' };
+  } catch(e) {
+    throw new Error("栽培計画保存エラー: " + e.message);
+  }
+}
