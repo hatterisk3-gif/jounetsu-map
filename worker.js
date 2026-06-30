@@ -2007,6 +2007,7 @@ function createSignboardMarker(name, pos, icon, id) {
                               </div>
                               <div style="margin-top:8px; display:flex; justify-content:flex-end; gap:8px;">
                                   <button onclick="event.stopPropagation(); openEditMachineModal('${m.id}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer; color:#333;">✏️ 編集</button>
+                                  <button onclick="event.stopPropagation(); openMaintenanceForm('${m.id}', '${signId}')" style="background:#e3f2fd; color:#1976D2; border:1px solid #bbdefb; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer;">🔧 整備記録</button>
                                   <button onclick="event.stopPropagation(); deleteMachine('${m.id}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer;">🗑️ 削除</button>
                               </div>
                           </div>
@@ -2885,6 +2886,41 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       // 編集モーダルを開く
+      
+      // 車両・農機状況から直接整備記録を開く
+      window.openMaintenanceForm = (machineId, signId) => {
+          window.pendingMaintenanceMachineId = machineId;
+          document.getElementById('rightPanel').classList.remove('open');
+          
+          if (document.getElementById('modal')) {
+              document.getElementById('modal').style.display = 'none';
+          }
+          
+          // 作業記録フォームを開く
+          directOpenForm(signId, 'work');
+          
+          setTimeout(() => {
+              const workSelect = document.getElementById('workNameSelect');
+              if (workSelect) {
+                  for (let i = 0; i < workSelect.options.length; i++) {
+                      if (workSelect.options[i].text.includes("整備") || workSelect.options[i].text.includes("修理")) {
+                          workSelect.selectedIndex = i;
+                          workSelect.dispatchEvent(new Event('change'));
+                          break;
+                      }
+                  }
+              }
+              
+              setTimeout(() => {
+                  const toolSelect = document.getElementById('m_tool');
+                  if (toolSelect && window.pendingMaintenanceMachineId) {
+                      toolSelect.value = window.pendingMaintenanceMachineId;
+                  }
+                  window.pendingMaintenanceMachineId = null;
+              }, 200);
+          }, 300);
+      };
+
       window.openEditMachineModal = (machineId, signId) => {
           const m = pdlMachines.find(x => x.id === machineId);
           if(!m) return;
