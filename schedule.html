@@ -144,35 +144,43 @@
         <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; background: #f1f8e9; padding: 10px; border-radius: 6px;">
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">作物</label>
-            <input type="text" id="cpCrop" placeholder="キャベツ" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px;">
+            <input type="text" id="cpCrop" list="dl_cpCrop" onchange="updateVarietyList()" placeholder="キャベツ" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px;">
+            <datalist id="dl_cpCrop"></datalist>
           </div>
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">品種</label>
-            <input type="text" id="cpVariety" placeholder="寒玉" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px;">
+            <input type="text" id="cpVariety" list="dl_cpVariety" placeholder="寒玉" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px;">
+            <datalist id="dl_cpVariety"></datalist>
           </div>
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">穴数</label>
-            <input type="number" id="cpTrayHoles" value="128" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+            <input type="number" id="cpTrayHoles" list="dl_cpHoles" value="128" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+            <datalist id="dl_cpHoles"></datalist>
           </div>
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">条数</label>
-            <input type="number" id="cpRows" value="1" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px;">
+            <input type="number" id="cpRows" list="dl_cpRows" value="1" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px;">
+            <datalist id="dl_cpRows"></datalist>
           </div>
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">株間(cm)</label>
-            <input type="number" id="cpPlantSpacing" value="30" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+            <input type="number" id="cpPlantSpacing" list="dl_cpPSpace" value="30" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+            <datalist id="dl_cpPSpace"></datalist>
           </div>
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">畝間(cm)</label>
-            <input type="number" id="cpRidgeSpacing" value="150" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+            <input type="number" id="cpRidgeSpacing" list="dl_cpRSpace" value="150" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+            <datalist id="dl_cpRSpace"></datalist>
           </div>
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">収穫係数</label>
-            <input type="number" step="0.1" id="cpYieldRate" value="0.9" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+            <input type="number" step="0.1" id="cpYieldRate" list="dl_cpYields" value="0.9" oninput="calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+            <datalist id="dl_cpYields"></datalist>
           </div>
           <div style="border-left: 2px solid #ccc; padding-left: 10px; margin-left: 5px;">
             <label style="font-size: 11px; font-weight: bold; color: #e91e63; display: block;">定植面積(a)</label>
-            <input type="number" id="cpArea" placeholder="例: 10" oninput="calcCp()" style="padding: 6px; border: 2px solid #e91e63; border-radius: 4px; font-size: 13px; width: 70px; font-weight:bold;">
+            <input type="number" id="cpArea" list="dl_cpAreas" placeholder="例: 10" oninput="calcCp()" style="padding: 6px; border: 2px solid #e91e63; border-radius: 4px; font-size: 13px; width: 70px; font-weight:bold;">
+            <datalist id="dl_cpAreas"></datalist>
           </div>
           <div style="flex-grow: 1; display: flex; align-items: flex-end; justify-content: flex-end; gap: 10px;">
              <div id="cpCalcResults" style="font-size: 12px; font-weight: bold; color: #333; padding-bottom: 5px; text-align:right;"></div>
@@ -193,6 +201,47 @@
     <script>
       const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCIpxJCTRFfOIDS3JSQ1_o38zF9DJ2mNvDmwOWpyw6-0K_8/exec";
 // --- Cultivation Plan Feature ---
+
+let cpMasterData = null;
+
+async function fetchCultivationMaster() {
+    try {
+        const res = await fetch(GAS_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'getCultivationMaster' })
+        });
+        cpMasterData = await res.json();
+        
+        if(cpMasterData && cpMasterData.crops) {
+            populateDatalist('dl_cpCrop', Object.keys(cpMasterData.crops));
+            populateDatalist('dl_cpHoles', cpMasterData.holes);
+            populateDatalist('dl_cpRows', cpMasterData.rows);
+            populateDatalist('dl_cpPSpace', cpMasterData.pSpace);
+            populateDatalist('dl_cpRSpace', cpMasterData.rSpace);
+            populateDatalist('dl_cpYields', cpMasterData.yields);
+            populateDatalist('dl_cpAreas', cpMasterData.areas);
+        }
+    } catch(e) {
+        console.error("マスタ取得エラー", e);
+    }
+}
+
+function populateDatalist(id, arr) {
+    const dl = document.getElementById(id);
+    if(dl && arr) {
+        dl.innerHTML = arr.filter(Boolean).map(v => `<option value="${v}">`).join('');
+    }
+}
+
+function updateVarietyList() {
+    const crop = document.getElementById('cpCrop').value;
+    if(cpMasterData && cpMasterData.crops && cpMasterData.crops[crop]) {
+        populateDatalist('dl_cpVariety', cpMasterData.crops[crop]);
+    } else {
+        document.getElementById('dl_cpVariety').innerHTML = '';
+    }
+}
+
 let cpCurrentCalc = { trays: 0, yield: 0 };
 
 function calcCp() {
@@ -298,6 +347,7 @@ function openCultivationPlanModal() {
     renderCultivationPlanTable();
     calcCp();
     document.getElementById('cultivationPlanModal').style.display = 'flex';
+    if(!cpMasterData) fetchCultivationMaster();
 }
 
 async function saveCultivationPlan() {
@@ -310,10 +360,21 @@ async function saveCultivationPlan() {
         return;
     }
     
+    const holes = parseInt(document.getElementById('cpTrayHoles').value) || 128;
+    const rows = parseInt(document.getElementById('cpRows').value) || 1;
+    const pSpace = parseFloat(document.getElementById('cpPlantSpacing').value) || 30;
+    const rSpace = parseFloat(document.getElementById('cpRidgeSpacing').value) || 150;
+    const yieldRate = parseFloat(document.getElementById('cpYieldRate').value) || 0.9;
+    
     const plan = { 
         crop: crop, 
         variety: variety, 
         areaA: areaA,
+        holes: holes,
+        rows: rows,
+        pSpace: pSpace,
+        rSpace: rSpace,
+        yieldRate: yieldRate,
         trays: cpCurrentCalc.trays,
         yield: cpCurrentCalc.yield,
         tasks: { sowing: [], planting: [], harvesting: [] } 

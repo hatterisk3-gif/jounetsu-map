@@ -42,6 +42,7 @@ function doPost(e) {
     else if (action === 'addToolToMaster') result = addToolToMaster(params);
     else if (action === "updateToolStatus") result = updateToolStatus(params);
     else if (action === "saveCultivationPlan") result = saveCultivationPlan(params.planData);
+    else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "editToolInMaster") result = editToolInMaster(params);
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
@@ -2152,8 +2153,74 @@ function saveCultivationPlan(planData) {
       JSON.stringify(planData)
     ]);
     
+    // Update Master
+    let mSheet = ss.getSheetByName('栽培計画マスタ');
+    if (!mSheet) {
+      mSheet = ss.insertSheet('栽培計画マスタ');
+      mSheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積']);
+    }
+    const mData = mSheet.getDataRange().getValues();
+    let exists = false;
+    for(let i=1; i<mData.length; i++){
+      if(String(mData[i][0]) == String(planData.crop) && String(mData[i][1]) == String(planData.variety)) {
+         exists = true; break;
+      }
+    }
+    // For simplicity, just append to master to save the inputs so they can be read next time
+    mSheet.appendRow([
+      planData.crop || '',
+      planData.variety || '',
+      planData.holes || '',
+      planData.rows || '',
+      planData.pSpace || '',
+      planData.rSpace || '',
+      planData.yieldRate || '',
+      planData.areaA || ''
+    ]);
+    
     return { status: 'success', message: '栽培計画を保存しました' };
   } catch(e) {
     throw new Error("栽培計画保存エラー: " + e.message);
+  }
+}
+
+function getCultivationMaster() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('栽培計画マスタ');
+    if (!sheet) {
+      sheet = ss.insertSheet('栽培計画マスタ');
+      sheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積']);
+    }
+    const data = sheet.getDataRange().getValues();
+    let master = {
+      crops: {}, 
+      holes: [],
+      rows: [],
+      pSpace: [],
+      rSpace: [],
+      yields: [],
+      areas: []
+    };
+    if (data.length <= 1) return master;
+    
+    for (let i = 1; i < data.length; i++) {
+      let r = data[i];
+      let c = String(r[0]).trim();
+      let v = String(r[1]).trim();
+      if (c) {
+        if (!master.crops[c]) master.crops[c] = [];
+        if (v && !master.crops[c].includes(v)) master.crops[c].push(v);
+      }
+      if (r[2] !== '' && !master.holes.includes(r[2])) master.holes.push(r[2]);
+      if (r[3] !== '' && !master.rows.includes(r[3])) master.rows.push(r[3]);
+      if (r[4] !== '' && !master.pSpace.includes(r[4])) master.pSpace.push(r[4]);
+      if (r[5] !== '' && !master.rSpace.includes(r[5])) master.rSpace.push(r[5]);
+      if (r[6] !== '' && !master.yields.includes(r[6])) master.yields.push(r[6]);
+      if (r[7] !== '' && !master.areas.includes(r[7])) master.areas.push(r[7]);
+    }
+    return master;
+  } catch(e) {
+    return { error: e.message };
   }
 }
