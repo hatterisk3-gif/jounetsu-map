@@ -222,10 +222,27 @@ async function watch() {
 
                   const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...（以下省略）' : aiOutput;
 
-                  // 🌟 修正ポイント：コミットとプッシュはここで【1回だけ】実行！
                   console.log(`📦 コミットメッセージ: ${commitMessage}`);
                   execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
-                  execSync('git push', { stdio: 'inherit' });
+
+                  // 🌟 OneDrive等のファイルロック対策：自動リトライ付きのPush
+                  let pushRetries = 3;
+                  let pushSuccess = false;
+                  while (pushRetries > 0 && !pushSuccess) {
+                    try {
+                      console.log(`🐙 GitHubへプッシュ中... (残り試行回数: ${pushRetries})`);
+                      execSync('git push', { stdio: 'inherit' });
+                      pushSuccess = true;
+                    } catch (pushErr) {
+                      console.error(`⚠️ プッシュが弾かれました。OneDrive等が同期中の可能性があります。3秒後に再試行します...`);
+                      pushRetries--;
+                      if (pushRetries === 0) {
+                        throw new Error("3回再試行しましたが、GitHubへのプッシュに失敗しました。");
+                      }
+                      // 3秒（3000ミリ秒）待機して再アタック
+                      await new Promise(resolve => setTimeout(resolve, 3000));
+                    }
+                  }
 
                   // 🌟 プッシュ成功後にLINE用・メール用のメッセージを作る
                   summaryForLine = `【デプロイ完了】\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
