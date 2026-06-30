@@ -145,28 +145,513 @@ function writeLog(user, action, target, detail) {
   let sheet = ss.getSheetByName('操作ログ');
   if (!sheet) {
     sheet = ss.insertSheet('操作ログ');
-    // A:ID, B:農機名, C:型式, D:作業分類, E:写真, F:写真2, G:看板名, H:看板id, I:空, J:購入年月日, K:登録者, L:部品名, M:現在地名, N:現在地id, O:症状, P:対象機, Q:燃料, R:機械番号
-  sheet.appendRow([
-    newId,                     // A(0): id
-    params.name,               // B(1): name
-    params.model || "",        // C(2): model
-    params.workCategory || "", // D(3): workCategory
-    photo1Url,                 // E(4): photo1Url
-    photo2Url,                 // F(5): photo2Url
-    params.signName,           // G(6): signName
-    params.signId,             // H(7): signId
-    "",                        // I(8): category
-    params.purchaseDate || "", // J(9): purchaseDate
-    params.userName,           // K(10): userName
-    params.parts || "",        // L(11): parts
-    params.signName,           // M(12): currentLocName (初期値)
-    params.signId,             // N(13): currentLocId (初期値)
-    "",                        // O(14): symptoms
-    "",                        // P(15): targetMachineIds
-    "",                        // Q(16): fuel
-    params.machineNumber || "" // R(17): machineNumber
-  ]);
+    sheet.appendRow(["日時", "ユーザー", "操作内容", "対象", "詳細"]);
+    sheet.getRange("A1:E1").setFontWeight("bold").setBackground("#e0e0e0");
+  }
+  const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
+  sheet.appendRow([now, user || "不明", action, target, detail]);
+}
 
+function checkLogin(userId, password) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('名簿');
+  if (!sheet) throw new Error("「名簿」シートが見つかりません");
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) { 
+    if (String(data[i][0]) === String(userId) && String(data[i][1]) === String(password)) {
+      writeLog(data[i][2], "ログイン", "システム", "ログイン成功");
+      return { success: true, name: data[i][2], role: data[i][3] || "作業員" }; 
+    }
+  }
+  return { success: false, message: "IDまたはパスワードが正しくありません" };
+}
+// ==========================================
+// 初期データ取得
+// ==========================================
+function getInitData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  const getCol = (sheetNames, colIndex) => {
+    for (let name of sheetNames) {
+      const sh = ss.getSheetByName(name);
+      if (sh) {
+        const data = sh.getDataRange().getValues();
+        if (data.length > 1) return data.slice(1).map(r => r[colIndex]).filter(String);
+      }
+    }
+    return [];
+  };
+
+  const pdl = {
+    locations: getCol(['圃場設定マスタ', '拠点名'], 0),
+    conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
+    statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
+    stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
+    signFunctionsMaster: getCol(['看板マスタ'], 0) // ★ここを追加！看板マスタのA列を取得します
+  };
+  
+  let workMaster = [];
+  let workStatuses = [];
+  let signFunctions = [];
+  let containerNames = [];
+  let maintenanceContents = []; 
+  
+  const workSheet = ss.getSheetByName('作業マスタ');
+  if (workSheet) {
+    const data = workSheet.getDataRange().getValues();
+    if (data.length > 0) {
+      const headers = data[0].map(String); 
+      
+      const idxName = headers.indexOf('作業名');
+      const idxPlace = headers.indexOf('表示場所');
+      const idxFunc = headers.indexOf('対応看板機能');
+      const idxDetail = headers.indexOf('詳細作業名');
+      const idxStatus = headers.indexOf('進捗状況');
+      const idxContainer = headers.indexOf('コンテナ名');
+      const idxMaintenance = headers.indexOf('整備内容'); 
+
+      for (let i = 1; i < data.length; i++) {
+        let wName = idxName >= 0 ? data[i][idxName] : "";
+        if (wName) {
+          workMaster.push({ 
+            name: wName, 
+            displayPlace: idxPlace >= 0 ? data[i][idxPlace] : "", 
+            targetFunction: idxFunc >= 0 && data[i][idxFunc] ? String(data[i][idxFunc]).trim() : "",
+            detailWorks: idxDetail >= 0 && data[i][idxDetail] ? String(data[i][idxDetail]).trim() : ""
+          });
+        }
+        if (idxFunc >= 0 && data[i][idxFunc]) signFunctions.push(String(data[i][idxFunc]).trim());
+        if (idxStatus >= 0 && data[i][idxStatus]) workStatuses.push(data[i][idxStatus]);
+        if (idxContainer >= 0 && data[i][idxContainer]) containerNames.push(data[i][idxContainer]);
+        if (idxMaintenance >= 0 && data[i][idxMaintenance]) maintenanceContents.push(String(data[i][idxMaintenance]).trim()); 
+      }
+    }
+  }
+  
+  pdl.workMaster = workMaster;
+  pdl.signFunctions = [...new Set(signFunctions)].filter(String);
+  pdl.workStatuses = [...new Set(workStatuses)].filter(String);
+  if (pdl.workStatuses.length === 0) pdl.workStatuses = ['未着手', '途中', '完了'];
+  pdl.containerNames = [...new Set(containerNames)].filter(String);
+  pdl.maintenanceContents = [...new Set(maintenanceContents)].filter(String); 
+
+  pdl.crops = [];
+  for (let name of ['生育記録マスタ', '作物マスタ']) {
+     const sh = ss.getSheetByName(name);
+     if (sh) {
+        const data = sh.getDataRange().getValues();
+        if (data.length > 1) { pdl.crops = data.slice(1).filter(r => r[0]).map(r => ({ name: r[0], density: r[1] || 0 })); break; }
+     }
+  }
+pdl.signLinks = {};
+  const signSh = ss.getSheetByName('看板');
+  if(signSh) {
+     const sd = signSh.getDataRange().getValues();
+     for(let i=1; i<sd.length; i++) {
+        if(sd[i][0]) pdl.signLinks[sd[i][0]] = String(sd[i][8] || ""); // I列(インデックス8)
+     }
+  }
+// 農機マスタの読み込み
+  pdl.machines = [];
+  const macSh = ss.getSheetByName('農機マスタ');
+  if(macSh) {
+     const md = macSh.getDataRange().getValues();
+     for(let i=1; i<md.length; i++) { 
+       if(md[i][1]) {
+         // ★ここから上書き
+         pdl.machines.push({
+           id: String(md[i][0] || "").trim(),      
+           name: String(md[i][1] || "").trim(),    
+           workCategory: String(md[i][3] || ""), 
+           signName: String(md[i][6] || ""),     // G列: 定位置看板名
+           signId: String(md[i][7] || ""),       // H列: 定位置看板id
+           category: String(md[i][8] || ""),     // I列: 分類（アタッチメント判定に使用）
+           parts: String(md[i][11] || ""),       // L列: 部品名
+           currentLocName: String(md[i][12] || md[i][6] || ""), // M列: 現在地名
+           currentLocId: String(md[i][13] || md[i][7] || ""),   // N列: 現在地id
+           symptoms: String(md[i][14] || ""),    // O列: 症状名
+           targetMachineIds: String(md[i][15] || ""),
+           fuel: String(md[i][16] || ""),
+           machineNumber: String(md[i][17] || "")
+           });
+       }
+     }
+  }
+
+  // ★注意：この下にあった pdl.symptoms = []; と、作業記録マスタから
+  // 症状を取得する for文 のブロックはもう使わないので、削除してください！
+  
+
+pdl.materials = [];
+  const mSh = ss.getSheetByName('資材マスタ');
+  if(mSh) {
+     const md = mSh.getDataRange().getValues();
+     for(let i=1; i<md.length; i++) { 
+       if(md[i][1]) {
+         pdl.materials.push({
+           id: md[i][0], 
+           name: md[i][1], 
+           workCategory: String(md[i][2] || ""), 
+           size: md[i][3] || "",
+           volUnit: md[i][4] || "",    // E列: 容量単位
+           stockUnit: md[i][5] || "",  // F列: 在庫単位
+           signName: md[i][8] || "",   // I列: 場所看板名
+           signId: md[i][9] || "",     // J列: 場所看板id
+           stock: md[i][10] || 0       // K列: 在庫状況 ★L列(11)からK列(10)に変更
+         }); 
+       }
+     }
+  }
+
+// 🌟ここから追加：道具マスタの読み込み🌟
+  pdl.tools = [];
+  const toolSh = ss.getSheetByName('道具マスタ');
+  if (toolSh) {
+    const td = toolSh.getDataRange().getValues();
+    for (let i = 1; i < td.length; i++) {
+      if (td[i][0]) { // IDが存在する行のみ読み込む
+        pdl.tools.push({
+          id: String(td[i][0] || "").trim(),
+          date: String(td[i][1] || "").trim(),          // B列: 日付
+          name: String(td[i][2] || "").trim(),          // C列: 資材名
+          regNumber: String(td[i][3] || "").trim(),     // D列: 登録番号
+          workTypes: String(td[i][4] || "").trim(),     // E列: 使う作業
+          url: String(td[i][5] || "").trim(),           // F列: 写真
+          status: String(td[i][6] || "").trim(),        // G列: 稼働状況
+          signName: String(td[i][7] || "").trim(),      // H列: 場所看板名
+          signId: String(td[i][8] || "").trim()         // I列: 場所看板id
+        });
+      }
+    }
+  }
+  // 🌟ここまで🌟
+  let pastReports = {};
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (schedSheet) {
+    const data = schedSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const workName = String(data[i][0]); const polyId = String(data[i][10]); 
+      if (workName.includes('⚠️問題対応:') && polyId) {
+        let reason = workName.replace('⚠️問題対応: ', '').replace('⚠️問題対応:', '').trim();
+        if (reason.includes(' / ')) reason = reason.split(' / ')[0].trim();
+        if (!pastReports[polyId]) pastReports[polyId] = [];
+        if (!pastReports[polyId].includes(reason) && reason !== '') pastReports[polyId].push(reason);
+      }
+    }
+  }
+  pdl.pastReports = pastReports;
+
+  let activeLots = [];
+  const lotSheet = ss.getSheetByName('ロット記録');
+  if (lotSheet) {
+    const data = lotSheet.getDataRange().getValues();
+    if(data.length > 0){
+       const head = data[0].map(String);
+       const locIdx = head.indexOf('拠点') >= 0 ? head.indexOf('拠点') : 9;
+       for (let i = 1; i < data.length; i++) {
+         if (data[i][8] !== '完了' && data[i][8] !== '出荷済' && data[i][0]) {
+           activeLots.push({ lotId: data[i][0], containerType: data[i][5], remain: data[i][7], location: data[i][locIdx] || '未設定' });
+         }
+       }
+    }
+  }
+
+    
+  
+
+  // =========================================================
+  // ★修正：履歴から見つけていただいた「完璧なreturn」に上書き！
+  return { pdl, polygons: getSavedPolygons(), toukiList: getCol(['登記ID'], 0), activeLots };
+  // =========================================================
+
+} // ← これが getInitData を閉じる } です
+  
+
+
+
+/// =========================================
+// マスタ管理（★看板マスタの処理を追加）
+// =========================================
+function manageMasterData(masterType, manageAction, value, userName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheetName = "";
+  
+  if (masterType === 'crop') sheetName = '作物マスタ';
+  else if (masterType === 'tool') sheetName = '道具マスタ';
+  else if (masterType === 'material') sheetName = '資材マスタ';
+  else if (masterType === 'work') sheetName = '作業マスタ';
+  else if (masterType === 'sign') sheetName = '看板マスタ'; // ★追加
+  
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error(`${sheetName}が見つかりません`);
+
+  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(String);
+
+  if (manageAction === 'add') {
+    if (masterType === 'crop') {
+      sheet.appendRow([value.name, value.density]);
+    } else if (masterType === 'tool') {
+      const newId = "TOOL-" + Utilities.getUuid().substring(0,6);
+      sheet.appendRow([newId, value.name, "", value.workCategory, "", "", "", "", "", "所有", userName]);
+    } else if (masterType === 'material') {
+      const newId = "MAT-" + Utilities.getUuid().substring(0,6);
+      sheet.appendRow([newId, value.name, value.workCategory, value.size, value.unit, "", "", "", "", "", "", userName]);
+    } else if (masterType === 'work') {
+      const newRow = new Array(headers.length).fill("");
+      const map = {
+        '作業名': value.name,
+        '表示場所': value.displayPlace || "圃場",
+        '対応看板機能': value.targetFunction || "",
+        '詳細作業名': value.detailWorks || ""
+      };
+      for(let i=0; i<headers.length; i++) {
+        if(map[headers[i]] !== undefined) newRow[i] = map[headers[i]];
+      }
+      sheet.appendRow(newRow);
+    } else {
+      // ★看板マスタなど、1列だけのシンプルなマスタ用
+      sheet.appendRow([value]);
+    }
+    writeLog(userName, "マスタ追加", value.name || value, `対象: ${sheetName}`);
+  } 
+  else if (manageAction === 'delete') {
+    const data = sheet.getDataRange().getValues();
+    const targetVal = value.id || value.name || value;
+    
+    const keyIdx = masterType === 'work' ? headers.indexOf('作業名') : 0;
+
+    for (let i = 1; i < data.length; i++) {
+      let match = false;
+      if (masterType === 'work') {
+          if (keyIdx >= 0 && data[i][keyIdx] === targetVal) match = true;
+      } else {
+          if (data[i][0] === targetVal || data[i][1] === targetVal) match = true;
+      }
+
+      if (match) {
+        sheet.deleteRow(i + 1);
+        writeLog(userName, "マスタ削除", targetVal, `対象: ${sheetName}`);
+        break;
+      }
+    }
+  }
+
+  const newData = sheet.getDataRange().getValues();
+  if (masterType === 'crop') {
+    return newData.slice(1).filter(r => r[0]).map(r => ({ name: r[0], density: r[1] || 0 }));
+  } else if (masterType === 'tool') {
+    return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[3] || "" }));
+  } else if (masterType === 'material') {
+    return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
+  } else if (masterType === 'work') {
+    const idxName = headers.indexOf('作業名');
+    const idxPlace = headers.indexOf('表示場所');
+    const idxFunc = headers.indexOf('対応看板機能');
+    const idxDetail = headers.indexOf('詳細作業名');
+    return newData.slice(1).filter(r => idxName >= 0 && r[idxName]).map(r => ({
+      name: r[idxName],
+      displayPlace: idxPlace >= 0 ? r[idxPlace] : "",
+      targetFunction: idxFunc >= 0 ? r[idxFunc] : "",
+      detailWorks: idxDetail >= 0 ? r[idxDetail] : ""
+    }));
+  } else {
+    return newData.slice(1).map(r=>r[0]).filter(String);
+  }
+}
+// ==========================================
+// 問題報告の保存（K列に看板/圃場のIDを記録するように変更）
+// ==========================================
+function saveReportData(polyId, nameStr, author, reportText, photosBase64) {
+  let urls = [];
+  if (photosBase64 && photosBase64.length > 0) {
+    const folders = DriveApp.getFoldersByName("圃場写真"); 
+    const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("圃場写真");
+    for (let i = 0; i < photosBase64.length; i++) {
+      const s = photosBase64[i].base64.split(',');
+      const type = s[0].split(';')[0].replace('data:','');
+      const file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, photosBase64[i].filename));
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); 
+      urls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800");
+    }
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) throw new Error("作業予定シートがありません");
+
+  const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+  const workName = "⚠️問題対応: " + reportText;
+  
+  // A:作業名, B:担当部署(運営), C:作物名(空), D:圃場名, E:予定日, F:期限日, G:時間(空), H:適合者, I:完了日(空), J:写真URL, K:場所ID
+  schedSheet.appendRow([workName, "運営", "", nameStr, today, today, "", author, "", urls.join(" , "), polyId]);
+
+  writeLog(author, "問題報告", nameStr, `内容: ${reportText}`);
+  return true;
+}
+
+function addCropToMaster(cropData) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('生育記録マスタ');
+  const data = sheet.getDataRange().getValues(); let emptyRow = 2;
+  while (emptyRow <= data.length && data[emptyRow-1][0]) emptyRow++;
+  sheet.getRange(emptyRow, 1, 1, 2).setValues([[cropData.name, cropData.density || 0]]); 
+  return cropData;
+}
+function deleteCropFromMaster(cropName) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('生育記録マスタ');
+  const data = sheet.getDataRange().getValues(); let newCrops = [];
+  for(let j=1; j<data.length; j++) { if(data[j][0] && data[j][0] !== cropName) newCrops.push([data[j][0]]); }
+  sheet.getRange("A2:A").clearContent(); if(newCrops.length > 0) sheet.getRange(2, 1, newCrops.length, 1).setValues(newCrops); return cropName;
+}
+
+function getToukiDetails(idsStr) {
+  if (!idsStr) return [];
+  const ids = idsStr.split(',').map(s => s.trim());
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('登記');
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  return data.filter(row => ids.includes(String(row[0]))).map(row => ({ id: row[0], address: row[2], area: row[3], owner: row[4], type: row[5] }));
+}
+
+function saveToukiData(data, hojoId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('登記');
+  const id = "T-" + Utilities.formatDate(new Date(), "GMT", "mmss") + Math.floor(Math.random()*100);
+  sheet.appendRow([id, "", data.address, data.area, data.owner, data.type]);
+  if (hojoId) {
+    const found = findSheetAndRowById(hojoId);
+    if (found && found.sheet.getName() === '圃場') {
+      let current = found.rowData[11] || "";
+      found.sheet.getRange(found.rowIndex, 12).setValue(current ? current + "," + id : id);
+      syncToukiMapping();
+    }
+  }
+  return id;
+}
+
+function syncToukiMapping() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), hojoSheet = ss.getSheetByName('圃場'), toukiSheet = ss.getSheetByName('登記');
+  if (!hojoSheet || !toukiSheet) return;
+  const hData = hojoSheet.getDataRange().getValues(), mapping = {};
+  for (let i = 1; i < hData.length; i++) {
+    const name = hData[i][1], tIdsStr = hData[i][11];
+    if (tIdsStr) { tIdsStr.split(',').map(s => s.trim()).forEach(id => { if (!mapping[id]) mapping[id] = []; if (!mapping[id].includes(name)) mapping[id].push(name); }); }
+  }
+  const tData = toukiSheet.getDataRange().getValues();
+  for (let i = 1; i < tData.length; i++) {
+    const tid = String(tData[i][0]).trim();
+    if (tid) toukiSheet.getRange(i + 1, 2).setValue(mapping[tid] ? mapping[tid].join(' , ') : '');
+  }
+}
+
+// ==========================================
+// 保存済みの圃場・看板データを取得
+// ==========================================
+function getSavedPolygons() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let result = [];
+  
+  // 圃場シート
+  const fieldSheet = ss.getSheetByName('圃場');
+  if (fieldSheet) {
+    const data = fieldSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (!data[i][0]) continue;
+      let photos = [];
+      try { if (data[i][9]) photos = JSON.parse(data[i][9]); } catch(e){}
+      
+      result.push({
+        id: data[i][0],
+        name: data[i][1],
+        location: data[i][2],
+        condition: data[i][3],
+        area: data[i][4],
+        coords: JSON.parse(data[i][5] || "[]"),
+        color: data[i][6],
+        author: data[i][8],
+        photos: photos,
+        status: data[i][10],
+        toukiId: data[i][11],
+        ridgeDir: data[i][13],
+        ridgeWidth: data[i][14],
+        uneSimData: data[i][15]
+      });
+    }
+  }
+  
+  // 看板シート
+  const signSheet = ss.getSheetByName('看板');
+  if (signSheet) {
+    const data = signSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (!data[i][0]) continue;
+      let photos = [];
+      try { if (data[i][9]) photos = JSON.parse(data[i][9]); } catch(e){}
+      
+      result.push({
+        id: data[i][0],
+        name: data[i][1],
+        coords: JSON.parse(data[i][2] || "[]"),
+        color: data[i][3],
+        author: data[i][5],
+        signFunction: data[i][7] || "一般看板", // ★ここが超重要！H列（看板機能）をアプリに送る！
+        photos: photos,
+        uneSimData: data[i][10] // K列(11)
+      });
+    }
+  }
+  
+  return result;
+}
+// ==========================================
+// 圃場・看板の新規保存
+// ==========================================
+function savePolygon(params) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // 座標が1点なら看板、それ以上なら圃場と判定
+  const isMarker = JSON.parse(params.coords).length === 1;
+  const sheetName = isMarker ? '看板' : '圃場';
+  const sheet = ss.getSheetByName(sheetName);
+  
+  const newId = Utilities.getUuid();
+  const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
+  
+  if (isMarker) {
+    // 【看板シートの列構成】
+    // A:ID, B:名前, C:座標, D:色/アイコン, E:登録日時, F:登録者, G:空白, H:看板機能, J:履歴, K:畝シミュレーションデータ
+    sheet.appendRow([
+      newId,
+      params.name || "",
+      params.coords,
+      params.color || "",
+      now,
+      params.userName || "",
+      "", 
+      params.signFunction || "機能なし",
+      "", // I列
+      "[]", // J列
+      params.uneSimData || "" // K列: 畝シミュレーションデータ
+    ]);
+  } else {
+    // 【圃場シートの列構成（画像に合わせて完全に修正）】
+    // A:ID, B:圃場の名前, C:所属拠点名, D:圃場条件, E:圃場面積, F:座標, G:色/アイコン, H:登録日時, I:登録者, J:システム用データ(履歴), K:稼働状況, L:登記ID, M:親ID
+    sheet.appendRow([
+      newId,
+      params.name || "",         // B列: 圃場の名前
+      params.location || "",     // C列: 所属拠点名
+      params.condition || "",    // D列: 圃場条件
+      params.area || 0,          // E列: 圃場面積
+      params.coords,             // F列: 座標
+      params.color || "",        // G列: 色/アイコン
+      now,                       // H列: 登録日時
+      params.userName || "",     // I列: 登録者
+      "[]",                      // J列: システム用データ（履歴）
+      params.status || "",       // K列: 稼働状況
+      params.toukiId || "",      // L列: 登記ID
+      "",                        // M列: 親ID (新規作成時は空欄)
+      params.ridgeDir || "",     // N列以降（畝方向などの予備）
+      params.ridgeWidth || "",
+      params.uneSimData || ""    // P列: 畝シミュレーションデータ
+    ]);
+  }
+  
   writeLog(params.userName, "図形登録", params.name, `対象: ${sheetName}`);
   return newId;
 }
@@ -1098,20 +1583,26 @@ function addMachineToSign(params) {
   
   // 農機マスタの列に合わせて登録
   // A:ID, B:農機名, C:型式, D:作業分類, E:写真, F:写真2, G:看板名, H:看板id, I:空, J:購入年月日, K:登録者, L:部品名
+  // A:ID, B:農機名, C:型式, D:作業分類, E:写真, F:写真2, G:看板名, H:看板id, I:空, J:購入年月日, K:登録者, L:部品名, M:現在地名, N:現在地id, O:症状, P:対象機, Q:燃料, R:機械番号
   sheet.appendRow([
-    newId,
-    params.name,
-    params.machineNumber,
-    params.model || "",
-    params.workCategory || "",
-    photo1Url,
-    photo2Url,
-    params.signName,
-    params.signId,
-    "",                      // I列は空
-    params.purchaseDate || "",
-    params.userName,
-    params.parts || ""
+    newId,                     // A(0): id
+    params.name,               // B(1): name
+    params.model || "",        // C(2): model
+    params.workCategory || "", // D(3): workCategory
+    photo1Url,                 // E(4): photo1Url
+    photo2Url,                 // F(5): photo2Url
+    params.signName,           // G(6): signName
+    params.signId,             // H(7): signId
+    "",                        // I(8): category
+    params.purchaseDate || "", // J(9): purchaseDate
+    params.userName,           // K(10): userName
+    params.parts || "",        // L(11): parts
+    params.signName,           // M(12): currentLocName (初期値)
+    params.signId,             // N(13): currentLocId (初期値)
+    "",                        // O(14): symptoms
+    "",                        // P(15): targetMachineIds
+    "",                        // Q(16): fuel
+    params.machineNumber || "" // R(17): machineNumber
   ]);
 
   writeLog(params.userName, "農機新規登録", params.name, `定位置: ${params.signName}`);
@@ -1634,3 +2125,5 @@ function getTrackingData(params) {
     throw new Error("トラッキング取得エラー: " + e.message);
   }
 }
+
+// trigger clasp
