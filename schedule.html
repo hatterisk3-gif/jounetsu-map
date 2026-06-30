@@ -143,6 +143,18 @@
         
         <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; background: #f1f8e9; padding: 10px; border-radius: 6px;">
           <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">年度</label>
+            <input type="number" id="cpYear" value="2026" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">収穫割合(例:334)</label>
+            <input type="text" id="cpHarvestRatio" placeholder="例: 334" oninput="updateCpCellsText()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px;">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">年度</label>
+            <input type="number" id="cpYear" value="2026" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 60px;">
+          </div>
+          <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">作物</label>
             <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 90px;"></select>
             <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList()" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px; margin-top:4px;">
@@ -318,6 +330,7 @@ function updateCpCellsText() {
         const div = td.querySelector('div');
         div.innerHTML = cpCurrentCalc.trays > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${cpCurrentCalc.trays}枚</span>` : '';
     });
+    
     // 定植セルのテキスト更新 (面積)
     const areaA = getCpVal('cpArea', true) || 0;
     const plantingCells = document.querySelectorAll('#cpTable td[data-task="planting"][data-selected="true"]');
@@ -325,14 +338,38 @@ function updateCpCellsText() {
         const div = td.querySelector('div');
         div.innerHTML = areaA > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${areaA}a</span>` : '';
     });
+    
     // 収穫セルのテキスト更新
     const harvestCells = document.querySelectorAll('#cpTable td[data-task="harvesting"][data-selected="true"]');
-    harvestCells.forEach(td => {
+    const ratioStr = document.getElementById('cpHarvestRatio') ? document.getElementById('cpHarvestRatio').value.trim() : '';
+    let ratios = [];
+    if (/^\d+$/.test(ratioStr)) {
+        ratios = ratioStr.split('').map(Number);
+    }
+    
+    harvestCells.forEach((td, index) => {
         const div = td.querySelector('div');
-        div.innerHTML = cpCurrentCalc.yield > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${cpCurrentCalc.yield.toLocaleString()}</span>` : '';
+        if (cpCurrentCalc.yield > 0) {
+            let cellYield = cpCurrentCalc.yield;
+            if (ratios.length > 0) {
+                let r = ratios[index] || 0;
+                let totalRatio = ratios.reduce((a, b) => a + b, 0);
+                if (totalRatio > 0) {
+                    cellYield = Math.floor(cpCurrentCalc.yield * r / totalRatio);
+                } else {
+                    cellYield = 0;
+                }
+            } else {
+                cellYield = Math.floor(cpCurrentCalc.yield / harvestCells.length);
+            }
+            td.dataset.amount = cellYield;
+            div.innerHTML = cellYield > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:10px;">${cellYield.toLocaleString()}</span>` : '';
+        } else {
+            td.dataset.amount = 0;
+            div.innerHTML = '';
+        }
     });
 }
-
 function renderCultivationPlanTable() {
     const table = document.getElementById('cpTable');
     if (!table) return;
@@ -421,8 +458,10 @@ async function saveCultivationPlan() {
     const pSpace = getCpVal('cpPlantSpacing', true) || 30;
     const rSpace = getCpVal('cpRidgeSpacing', true) || 150;
     const yieldRate = getCpVal('cpYieldRate', true) || 0.9;
+    const year = getCpVal('cpYear', true) || new Date().getFullYear();
     
     const plan = { 
+        year: year,
         crop: crop, 
         variety: variety, 
         areaA: areaA,
@@ -441,8 +480,12 @@ async function saveCultivationPlan() {
         const t = cell.dataset.task;
         const m = parseInt(cell.dataset.month, 10);
         const p = parseInt(cell.dataset.period, 10);
+        let taskData = { month: m, periodIndex: p };
+        if (t === 'harvesting' && cell.dataset.amount) {
+            taskData.amount = parseInt(cell.dataset.amount, 10);
+        }
         if (plan.tasks[t]) {
-            plan.tasks[t].push({ month: m, periodIndex: p });
+            plan.tasks[t].push(taskData);
         }
     });
     
@@ -452,29 +495,22 @@ async function saveCultivationPlan() {
         btn.innerHTML = '送信中...';
         btn.disabled = true;
         
-        const res = await fetch(GAS_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'saveCultivationPlan',
-                planData: plan
-            })
-        });
-        const json = await res.json();
+        await callGAS('saveCultivationPlan', { planData: plan });
         
         btn.innerHTML = orgText;
         btn.disabled = false;
+        document.getElementById('cultivationPlanModal').style.display = 'none';
         
-        if (json.status === 'success') {
-            alert("【" + crop + " / " + variety + "】の栽培計画をシステムに保存しました！");
-            document.getElementById('cultivationPlanModal').style.display = 'none';
-        } else {
-            alert("保存エラー: " + json.message);
-        }
+        // Also refresh schedules map/data
+        fetchScheduleData();
+        
     } catch(e) {
-        alert("通信エラー: " + e.message);
+        alert("保存エラー: " + e.message);
         const btn = document.querySelector('#cultivationPlanModal button');
-        btn.innerHTML = '💾 保存';
-        btn.disabled = false;
+        if (btn) {
+            btn.innerHTML = '保存';
+            btn.disabled = false;
+        }
     }
 }
 </script>
