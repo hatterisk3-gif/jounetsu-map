@@ -810,6 +810,7 @@ async function saveCultivationPlan() {
           
           // 生のポリゴン情報をロード（描画はまだしない）
           data.polygons.forEach(p => {
+             p.isMarker = p.coords && p.coords.length === 1;
              loadedPolygons[p.id] = { ...p };
           });
           
@@ -995,91 +996,5 @@ async function saveCultivationPlan() {
         navigator.serviceWorker.register('/sw.js?v=schedule', { scope: '/schedule' });
       }
     </script>
-  
-<script>
-// --- Cultivation Plan Feature ---
-function renderCultivationPlanTable() {
-    const table = document.getElementById('cpTable');
-    if (!table) return;
-    
-    let tHTML = '<thead><tr><th style="min-width: 60px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; box-shadow: 1px 0 0 #ddd;"></th>';
-    
-    for (let m = 1; m <= 12; m++) {
-        tHTML += '<th colspan="6" style="border: 1px solid #ddd; background: #f1f8e9; padding: 4px; min-width:120px;">' + m + '月</th>';
-    }
-    tHTML += '</tr><tr><th style="min-width: 60px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd;">作業</th>';
-    
-    const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
-    for (let m = 1; m <= 12; m++) {
-        for (let p of periods) {
-            tHTML += '<th style="border: 1px solid #ddd; padding: 4px 2px; font-size: 10px; width: 20px; border-bottom: 2px solid #ccc; background: #fafafa; color: #555; writing-mode: vertical-rl; text-orientation: upright;">' + p + '</th>';
-        }
-    }
-    tHTML += '</tr></thead><tbody>';
-    
-    const tasks = [
-        { id: 'sowing', name: '播種', color: '#8D6E63' },
-        { id: 'planting', name: '定植', color: '#4CAF50' },
-        { id: 'harvesting', name: '収穫', color: '#FF9800' }
-    ];
-    
-    tasks.forEach(task => {
-        tHTML += '<tr><td style="position: sticky; left: 0; background: #fff; z-index: 5; font-weight: bold; border: 1px solid #ddd; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd;">' + task.name + '</td>';
-        for (let m = 1; m <= 12; m++) {
-            for (let i = 0; i < periods.length; i++) {
-                let br = (i === 5) ? '1px solid #bbb' : '1px solid #eee';
-                tHTML += '<td style="border: 1px solid #eee; padding: 0; cursor: pointer; border-right: ' + br + ';" onclick="toggleCpCell(this, \'' + task.color + '\')" data-task="' + task.id + '" data-month="' + m + '" data-period="' + i + '"><div style="width: 100%; height: 35px; transition: 0.2s; box-sizing:border-box;"></div></td>';
-            }
-        }
-        tHTML += '</tr>';
-    });
-    
-    tHTML += '</tbody>';
-    table.innerHTML = tHTML;
-}
-
-function toggleCpCell(td, colorHex) {
-    const div = td.querySelector('div');
-    if (td.dataset.selected === 'true') {
-        div.style.backgroundColor = '';
-        td.dataset.selected = 'false';
-    } else {
-        div.style.backgroundColor = colorHex;
-        td.dataset.selected = 'true';
-    }
-}
-
-function openCultivationPlanModal() {
-    renderCultivationPlanTable();
-    document.getElementById('cultivationPlanModal').style.display = 'flex';
-}
-
-function saveCultivationPlan() {
-    const crop = document.getElementById('cpCrop').value.trim();
-    const variety = document.getElementById('cpVariety').value.trim();
-    
-    if (!crop || !variety) {
-        alert("作物と品種を入力してください。");
-        return;
-    }
-    
-    const plan = { crop: crop, variety: variety, tasks: { sowing: [], planting: [], harvesting: [] } };
-    
-    const cells = document.querySelectorAll('#cpTable td[data-selected="true"]');
-    cells.forEach(cell => {
-        const t = cell.dataset.task;
-        const m = parseInt(cell.dataset.month, 10);
-        const p = parseInt(cell.dataset.period, 10);
-        if (plan.tasks[t]) {
-            plan.tasks[t].push({ month: m, periodIndex: p });
-        }
-    });
-    
-    console.log("Cultivation Plan to save:", plan);
-    // TODO: Send to GAS
-    alert("【" + crop + " / " + variety + "】の栽培計画を作成しました！\n（※システムへの保存処理はGAS連携が必要です）");
-    document.getElementById('cultivationPlanModal').style.display = 'none';
-}
-</script>
 </body>
 </html>
