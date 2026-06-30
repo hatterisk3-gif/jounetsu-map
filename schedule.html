@@ -892,6 +892,7 @@ async function saveCultivationPlan() {
           p.filteredTasks = filteredTasks; // ポップアップ用に保持
 
           // --- 描画処理 ---
+          if (!p.coords || p.coords.length === 0) continue;
           if (p.isMarker) {
             const strokeCol = hasProblem ? '#FFEB3B' : 'white';
             const strokeWid = hasProblem ? '4' : '2';
