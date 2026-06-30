@@ -39,6 +39,15 @@
       .legend { display: flex; gap: 10px; font-size: 11px; padding: 5px; background: #333; border-radius: 4px; margin-right: 10px;}
       .leg-item { display: flex; align-items: center; gap: 3px; }
       .leg-color { width: 12px; height: 12px; border-radius: 2px; }
+    
+      /* スマホで見切れないように横スクロール対応 */
+      @media screen and (max-width: 768px) {
+        .control-panel { flex-wrap: wrap; gap: 8px; padding: 10px 5px; }
+        .control-panel-buttons { width: 100%; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+        .control-panel-buttons::-webkit-scrollbar { height: 4px; }
+        .control-panel-buttons::-webkit-scrollbar-thumb { background: #888; border-radius: 2px; }
+      }
+      .control-panel-buttons > * { flex-shrink: 0; } /* 全画面共通でボタンが潰れないように */
     </style>
   </head>
   <body>
@@ -46,7 +55,7 @@
 
     <div class="control-panel">
       <div style="font-weight:bold; font-size:16px;">🗺️ 予定確認MAP</div>
-      <div style="display:flex; align-items:center;">
+      <div class="control-panel-buttons" style="display:flex; align-items:center;">
         <div class="legend">
           <div class="leg-item"><div class="leg-color" style="background:#4CAF50;"></div>平和</div>
           <div class="leg-item"><div class="leg-color" style="background:#FFEB3B;"></div>予定有</div>
