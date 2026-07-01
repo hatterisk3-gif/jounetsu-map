@@ -453,6 +453,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
       let match = false;
       if (masterType === 'work') {
           if (keyIdx >= 0 && data[i][keyIdx] === targetVal) match = true;
+      } else if (masterType === 'location' || masterType === 'sign') {
+          if (data[i][0] === targetVal) match = true;
       } else {
           if (data[i][0] === targetVal || data[i][1] === targetVal) match = true;
       }
