@@ -41,14 +41,10 @@ function populateSelect(id, arr, defaultOptions = []) {
         merged.sort((a,b) => a - b);
     }
     
-    let html = '';
-    if(merged.length === 0) {
-        html += '<option value="">選択...</option>';
-    } else {
-        merged.forEach(v => {
-            html += `<option value="${v}">${v}</option>`;
-        });
-    }
+    let html = '<option value="">選択...</option>';
+    merged.forEach(v => {
+        html += `<option value="${v}">${v}</option>`;
+    });
     html += '<option value="custom">その他(手入力)</option>';
     sel.innerHTML = html;
 }
@@ -76,15 +72,20 @@ async function fetchCultivationMaster() {
         const cachedStr = localStorage.getItem('cpMasterDataCache');
         if (cachedStr) {
             try {
-                cpMasterData = JSON.parse(cachedStr);
-                applyCultivationMasterData();
+                let cachedData = JSON.parse(cachedStr);
+                if (cachedData && cachedData.locations && cachedData.locations.length > 0) {
+                    cpMasterData = cachedData;
+                    applyCultivationMasterData();
+                }
             } catch(e) {}
         }
         
         const data = await callGAS('getCultivationMaster');
-        cpMasterData = data;
-        localStorage.setItem('cpMasterDataCache', JSON.stringify(data));
-        applyCultivationMasterData();
+        if(data && data.crops) {
+            cpMasterData = data;
+            localStorage.setItem('cpMasterDataCache', JSON.stringify(data));
+            applyCultivationMasterData();
+        }
     } catch(e) {
         console.error("マスタ取得エラー", e);
     }

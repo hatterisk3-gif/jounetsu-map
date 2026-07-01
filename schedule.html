@@ -212,6 +212,11 @@
 
     <script src="https://unpkg.com/deck.gl@^8.8.0/dist.min.js"></script>
 
-    <script src="schedule.js"></script>
+    <script>
+      // キャッシュバスターを付与して動的に読み込む
+      const script = document.createElement('script');
+      script.src = "schedule.js?v=" + new Date().getTime();
+      document.body.appendChild(script);
+    </script>
 </body>
 </html>
