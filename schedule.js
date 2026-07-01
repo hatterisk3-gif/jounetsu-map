@@ -184,7 +184,7 @@ function addCpPlanRow() {
         yieldRate: getCpVal('cpYieldRate', true) || 0.9,
         trays: cpCurrentCalc.trays,
         yield: cpCurrentCalc.yield,
-        harvestRatioStr: document.getElementById('cpHarvestRatio').value.trim()
+        harvestRatios: []
     };
     
     cpPlans.push(plan);
@@ -204,7 +204,8 @@ function renderCpPlanRow(plan) {
     th.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
         <span>${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span></span>
         <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
-    </div>`;
+    </div>
+    <div id="ratios_${plan.id}" style="margin-top: 5px; display:flex; gap: 2px; flex-wrap: wrap;"></div>`;
     tr.appendChild(th);
     
     months.forEach((m, idx) => {
@@ -286,24 +287,36 @@ function updateCpCellsText(planId) {
         });
         
         const harvestCells = tr.querySelectorAll('td[data-task="harvesting"]');
-        const ratioStr = plan.harvestRatioStr || '';
-        let ratios = [];
-        if (/^\d+$/.test(ratioStr)) {
-            ratios = ratioStr.split('').map(Number);
+        
+        const ratioContainer = document.getElementById(`ratios_${plan.id}`);
+        if (ratioContainer) {
+            let html = '';
+            if (harvestCells.length > 0) {
+                html += '<div style="width:100%; font-size:10px; color:#666; margin-bottom:2px;">収穫割合:</div>';
+                for (let i = 0; i < harvestCells.length; i++) {
+                    let val = (plan.harvestRatios && plan.harvestRatios[i] !== undefined) ? plan.harvestRatios[i] : '';
+                    if (val === 0) val = '';
+                    html += `<input type="number" value="${val}" oninput="updatePlanRatio('${plan.id}', ${i}, this.value)" style="width: 25px; height: 18px; padding: 0 2px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;" placeholder="枠${i+1}">`;
+                }
+            }
+            // Update only if innerHTML has logically changed to avoid losing focus while typing
+            // A simple check is length or if the number of inputs differs
+            const currentInputs = ratioContainer.querySelectorAll('input');
+            if (currentInputs.length !== harvestCells.length) {
+                ratioContainer.innerHTML = html;
+            }
         }
+
+        let ratios = plan.harvestRatios || [];
         
         harvestCells.forEach((td, index) => {
             const div = td.querySelector('div');
             if (plan.yield > 0) {
                 let cellYield = plan.yield;
-                if (ratios.length > 0) {
+                let totalRatio = ratios.reduce((a, b) => a + b, 0);
+                if (totalRatio > 0) {
                     let r = ratios[index] || 0;
-                    let totalRatio = ratios.reduce((a, b) => a + b, 0);
-                    if (totalRatio > 0) {
-                        cellYield = Math.floor(plan.yield * r / totalRatio);
-                    } else {
-                        cellYield = 0;
-                    }
+                    cellYield = Math.floor(plan.yield * r / totalRatio);
                 } else {
                     cellYield = Math.floor(plan.yield / harvestCells.length);
                 }
@@ -930,3 +943,10 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCI
 if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=schedule', { scope: '/schedule' });
       }
+window.updatePlanRatio = function(planId, index, value) {
+    const plan = cpPlans.find(p => p.id === planId);
+    if (!plan) return;
+    if (!plan.harvestRatios) plan.harvestRatios = [];
+    plan.harvestRatios[index] = parseFloat(value) || 0;
+    updateCpCellsText(planId);
+};
