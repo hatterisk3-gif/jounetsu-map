@@ -537,7 +537,11 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCI
         document.getElementById('scheduleModal').style.display = 'flex';
       };
 
-      window.onload = initMap;
+      if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(initMap, 1);
+      } else {
+        window.addEventListener('load', initMap);
+      }
 
 if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=schedule', { scope: '/schedule' });
