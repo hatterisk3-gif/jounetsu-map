@@ -408,7 +408,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'tool') sheetName = '道具マスタ';
   else if (masterType === 'material') sheetName = '資材マスタ';
   else if (masterType === 'work') sheetName = '作業マスタ';
-  else if (masterType === 'sign') sheetName = '看板マスタ'; // ★追加
+  else if (masterType === 'sign') sheetName = '看板マスタ';
+  else if (masterType === 'location') sheetName = '拠点マスタ';
   
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error(`${sheetName}が見つかりません`);
