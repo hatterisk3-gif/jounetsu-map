@@ -8,6 +8,44 @@ const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu
 // 🌟 画像URLとIDを一時的に記憶しておくための変数
 let pendingImages = [];
 
+// -------------------------------------------------------------------
+// 🤖 基地専用システム: AIエージェント実行・待機関数
+// -------------------------------------------------------------------
+async function runAIAgent(promptText) {
+  const taskFile = path.join(__dirname, '.ai_task.txt');
+  const doneFile = path.join(__dirname, '.ai_task_done.txt');
+
+  // 前回の古い完了ファイルが残っていたら消しておく
+  if (fs.existsSync(doneFile)) fs.unlinkSync(doneFile);
+
+  // IDEにAI実行の指示を送信（手紙を保存）
+  fs.writeFileSync(taskFile, promptText, 'utf8');
+  console.log('📝 IDEにAI実行の指示を送信しました！自動処理が始まります...');
+
+  // IDEの処理が終わる（.ai_task_done.txt が作られる）まで待機（最大15分）
+  let waitTime = 0;
+  while (!fs.existsSync(doneFile) && waitTime < 900) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    waitTime++;
+  }
+
+  if (!fs.existsSync(doneFile)) {
+    throw new Error("IDEでの処理がタイムアウトしました。");
+  }
+
+  console.log('✅ IDEでのAI処理が完了しました！');
+  const aiReportText = fs.readFileSync(doneFile, 'utf8').trim();
+
+  // デプロイへの混入を防ぐため、ファイルを即座に削除
+  try {
+    fs.unlinkSync(taskFile);
+    fs.unlinkSync(doneFile);
+  } catch (e) { }
+
+  return aiReportText;
+}
+// -------------------------------------------------------------------
+
 async function watch() {
   try {
     const response = await fetch(GAS_WEBAPP_URL);
@@ -28,12 +66,12 @@ async function watch() {
       const rawCommand = data.command;
       let summaryForLine = "✅ 処理完了";
 
-      // 変数を一番外側に出すことで、最後の通信処理までIDを生き残らせる！
+      // 変数を一番外側に出すことで、最後の通信処理までIDを生き残らせる
       let usedImageIds = [];
-      // 👇 🌟 追加：メール用の全文テキストを入れる箱をここで準備する！
       let fullSummaryForEmail = "";
+
       try {
-        // 👇 修正後：画像モードの if文全体を以下に置き換えます
+        // 📸 画像モード
         if (rawCommand.startsWith('[IMAGE_URL:')) {
           const urlMatch = rawCommand.match(/\[IMAGE_URL:\s*(.*?)\]/);
           if (urlMatch && urlMatch[1]) {
@@ -51,7 +89,7 @@ async function watch() {
         else {
           const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
           let imageContext = "";
-          // 👇 修正後： pendingImageUrl !== "" の if文全体を以下に置き換えます
+
           if (pendingImages.length > 0) {
             const urls = pendingImages.map(img => img.url).join(" \n ");
             imageContext = `【重要】以下のURLにアクセスして複数の画像を視覚的に確認し、それらを総合的な参考資料として以下の指示を実行してください。\n参考画像URL:\n${urls}\n\n`;
@@ -60,225 +98,195 @@ async function watch() {
             pendingImages = []; // 基地のメモリをリセット
           }
 
-          // 🌟 【新規追加】魔法の裏コマンド「元に戻して」を検知！
+          // ⏪ 【復元モード】「元に戻して」コマンド
           if (cleanCommand.includes("元に戻") || cleanCommand.includes("前に戻") || cleanCommand.includes("ロールバック")) {
             console.log('⏪ 「元に戻して」コマンドを検知！直前の状態へ巻き戻します...');
             try {
-              // 1. パソコン内のファイルを強制的に1つ前の状態に戻す
               execSync('git reset --hard HEAD~1', { stdio: 'inherit' });
-
-              // 2. その過去の状態で、GASを上書きする
               console.log('☁️ claspで過去の状態をGASへ反映中...');
               try { execSync('clasp push -f', { stdio: 'inherit' }); } catch (e) { }
-
-              // 3. GitHubの歴史も1つ前に強制的に巻き戻す（強制プッシュ）
               console.log('🐙 GitHubの歴史を巻き戻し中...');
               try { execSync('git push -f', { stdio: 'inherit' }); } catch (e) { }
-
               summaryForLine = "⏪ 【復元完了】直前の修正をすべて取り消し、GASとGitHubを1つ前の安全な状態に完全に巻き戻しました！";
             } catch (e) {
               summaryForLine = "❌ 復元処理に失敗しました。ターミナルを確認してください。";
               console.error(e);
             }
           }
-          // 💬 【通常モード】AIによる自動修正ルート
+          // 💬 【通常モード】AIによる自動修正・自己修復ルート
           else {
-            const safeDirPath = __dirname.replace(/\\/g, '/');
-            // 🌟 AIへの指示：HTML編集時の罠（エスケープミス）対策と目視確認を義務化！
-            // 🌟 AIへの指示：Windowsの文字化け対策（UTF-8保存の強制）を追加！
-            // 🌟 AIへの指示：完了ファイルの中に解説レポートを直接書き込ませる！
-            // 🌟 AIへの指示：ルールを極限まで圧縮し、スッキリさせる！
             const modifyPrompt = `${imageContext}${cleanCommand}。
 【最後に行うことのリスト】
  1.修正した個所が正しく動作するか自律的にテスト・再修正してください。
  2.システム動作に関係のないファイル・画像は削除してください。
  3.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。`;
 
-
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
             let isSuccess = false;
 
-            try {
-              // 🌟 変更点1：IDEに渡す手紙（タスクファイル）のパス
-              const taskFile = path.join(__dirname, '.ai_task.txt');
-              const doneFile = path.join(__dirname, '.ai_task_done.txt');
+            // 🌟 自己修復ループの設定
+            let maxRetries = 2; // 最大2回までエラー修正を試みる
+            let currentAttempt = 0;
+            let currentPrompt = modifyPrompt;
 
-              // 前回の古い完了ファイルが残っていたら消しておく
-              if (fs.existsSync(doneFile)) fs.unlinkSync(doneFile);
+            console.log('🚀 AIエージェントによるコード修正を開始します...');
 
-              // 🌟 変更点2：手紙（.ai_task.txt）を保存！ ➡️ これをIDEが検知してAIが走り出します
-              fs.writeFileSync(taskFile, modifyPrompt, 'utf8');
-              console.log('📝 IDEにAI実行の指示を送信しました！IDE側で自動処理が始まります...');
-
-              // 🌟 変更点3：IDEの処理が終わる（.ai_task_done.txt が作られる）まで待機する
-              let waitTime = 0;
-              while (!fs.existsSync(doneFile) && waitTime < 900) { // 最大15分待機
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                waitTime++;
-              }
-
-              if (fs.existsSync(doneFile)) {
-                console.log('✅ IDEでのAI処理が完了しました！');
-
-                // --- ここから下は今までと同じ差分抽出（git diff）とレポート作成処理 ---
-                let diffText = "";
-                try {
-                  diffText = execSync('git diff HEAD', { env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
-                } catch (e) { }
-
-                const cleanDiffText = diffText.replace(/warning:.*LF will be replaced by CRLF.*/g, '').trim();
-
-                // 🌟 新しい魔法：Agyがファイルに書き残してくれた解説をそのまま読み込む！
-                console.log('📝 IDEのAgyが作成した解説レポートを読み込んでいます...');
-                const aiReportText = fs.readFileSync(doneFile, 'utf8').trim();
-
-                // 🌟 【超重要】読み取ったら、デプロイに巻き込まれないように即座にファイルを削除！
-                try {
-                  fs.unlinkSync(doneFile);
-                  console.log('🗑️ デプロイへの混入を防ぐため、レポートファイル(.ai_task_done.txt)を削除しました。');
-                } catch (e) {
-                  // もしエラーになっても処理は止めない
-                }
-
-                if (aiReportText && aiReportText !== "完了" && aiReportText !== "") {
-                  aiOutput = aiReportText;
-                } else if (cleanDiffText === "") {
-                  console.log('⏭️ ファイルの変更がなかったため、レポート作成プロセスはスキップします。');
-                  aiOutput = "（ファイルの変更はありませんでした）";
-                } else {
-                  aiOutput = "（ファイルの修正は完了しましたが、解説テキストがありませんでした）";
-                }
-                isSuccess = true;
-
-                // 使い終わった手紙を掃除する
-                try { fs.unlinkSync(taskFile); fs.unlinkSync(doneFile); } catch (e) { }
-
-              } else {
-                throw new Error("IDEでの処理がタイムアウトしました。");
-              }
-
-            } catch (e) {
-              console.error('\n⚠️ 処理中にエラーまたはタイムアウトが発生しました！', e);
-              // (以降のロールバック処理などはそのまま残す)
-
-              console.log('🔄 ファイルの中途半端な破損を防ぐため、変更をリセット（ロールバック）します...');
+            while (currentAttempt <= maxRetries && !isSuccess) {
               try {
-                execSync('git reset --hard HEAD', { stdio: 'ignore' });
-                execSync('git clean -fd', { stdio: 'ignore' });
-                console.log('✅ ロールバック完了。ファイルは安全な状態に復元されました。');
-              } catch (gitErr) { }
+                // 1. AIエージェント実行
+                let rawAiOutput = await runAIAgent(currentPrompt);
+                if (rawAiOutput && rawAiOutput !== "完了" && rawAiOutput !== "") {
+                  aiOutput = rawAiOutput;
+                }
+
+                // 2. Clasp で GAS へプッシュ（事前コンパイル検証）
+                console.log('☁️ ClaspでGASへ仮反映し、構文エラーがないかテスト中...');
+                try {
+                  execSync('clasp push -f', { stdio: 'pipe' });
+                  console.log('✨ Clasp Push 成功！コードに問題はありませんでした。');
+                  isSuccess = true; // 成功したのでループを抜ける
+                } catch (claspError) {
+                  // 🚨 GASで構文エラー等が起きた場合
+                  const errorLog = claspError.stderr ? claspError.stderr.toString() : claspError.message;
+                  console.warn(`⚠️ GASへのプッシュで構文エラー等を検知しました:\n${errorLog}`);
+
+                  currentAttempt++;
+                  if (currentAttempt > maxRetries) {
+                    aiOutput = `最大再試行回数(${maxRetries}回)を超えました。\n\n【最終エラー】:\n${errorLog}`;
+                    break;
+                  }
+
+                  console.log(`🔄 エラーをAIにフィードバックし、自己修復を実行します（${currentAttempt}回目のリトライ）...`);
+
+                  // 中途半端な変更をリセットしてやり直し
+                  execSync('git reset --hard HEAD', { stdio: 'ignore' });
+                  execSync('git clean -fd', { stdio: 'ignore' });
+
+                  // AIへのプロンプトを「エラー修正」に切り替え
+                  currentPrompt = `先ほどのコード修正で、GASへのデプロイ時に以下のエラーが発生しました。\n\n【エラー内容】\n\`\`\`\n${errorLog}\n\`\`\`\n\nエラーの原因を特定し、コードを修正してください。\n完了後は先ほどと同じように '.ai_task_done.txt' にレポートを出力してください。`;
+                }
+
+              } catch (agentError) {
+                console.error('\n⚠️ AIエージェントの処理中、またはタイムアウトが発生しました！', agentError);
+                break; // ループを抜けて失敗処理へ
+              }
             }
 
+            // 🌟 デプロイ・Git保存プロセス（自己修復ループ突破後）
             if (isSuccess) {
-              // 🌟 旧式の「ai_report.txt を探して読み込む処理」は不要になったので完全に削除しました！
+              // 変更があったかチェック
+              let diffText = "";
+              try { diffText = execSync('git diff HEAD', { env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim(); } catch (e) { }
+              const cleanDiffText = diffText.replace(/warning:.*LF will be replaced by CRLF.*/g, '').trim();
 
-              console.log('🧹 agyが分析用に残した一時画像を削除中...');
-              const files = fs.readdirSync(__dirname);
-              files.forEach(file => {
-                const lowerFile = file.toLowerCase();
-                // 🌟 error_image やその他の一時画像をリストに追加して確実にお掃除！
-                if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_')) {
-                  try { fs.unlinkSync(path.join(__dirname, file)); } catch (e) { }
-                }
-              });
+              if (cleanDiffText === "") {
+                console.log('⏭️ ファイルの変更がなかったため、デプロイプロセスはスキップします。');
+                summaryForLine = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント】:\n${aiOutput.slice(0, 2000)}`;
+                fullSummaryForEmail = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント(全文)】:\n${aiOutput}`;
+              } else {
+                // 不要な一時ファイルのお掃除
+                console.log('🧹 agyが分析用に残した一時画像や迷子ファイルを削除中...');
+                const files = fs.readdirSync(__dirname);
+                files.forEach(file => {
+                  const lowerFile = file.toLowerCase();
+                  if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_')) {
+                    try { fs.unlinkSync(path.join(__dirname, file)); } catch (e) { }
+                  }
+                });
+                try {
+                  const os = require('os');
+                  const scratchDir = path.join(os.homedir(), '.gemini', 'antigravity-cli', 'scratch');
+                  if (fs.existsSync(scratchDir)) {
+                    fs.readdirSync(scratchDir).forEach(f => fs.unlinkSync(path.join(scratchDir, f)));
+                  }
+                } catch (e) { }
 
-              // 👇ここから追加：スクラッチフォルダの中身も自動削除！
-              try {
-                const os = require('os');
-                const scratchDir = path.join(os.homedir(), '.gemini', 'antigravity-cli', 'scratch');
-                if (fs.existsSync(scratchDir)) {
-                  const scratchFiles = fs.readdirSync(scratchDir);
-                  scratchFiles.forEach(f => fs.unlinkSync(path.join(scratchDir, f)));
-                  console.log('✨ scratchフォルダの迷子ファイルも綺麗にお掃除しました！');
-                }
-              } catch (e) { }
-              // 👆ここまで追加
+                console.log('🐙 GitHubへコミット中...');
+                try {
+                  execSync('git add .');
 
-              console.log('☁️ claspでGASへ反映中...');
-              try { execSync('clasp push -f', { stdio: 'inherit' }); } catch (e) { }
-
-              console.log('🐙 GitHubへプッシュ中...');
-              try {
-                execSync('git add .');
-
-                let gitStatusOutput = '';
-                try { gitStatusOutput = execSync('git diff --name-status --cached').toString().trim(); } catch (e) { }
-
-                if (gitStatusOutput) {
-                  let modified = [];
-                  let added = [];
-                  let deleted = [];
-
-                  gitStatusOutput.split('\n').forEach(line => {
-                    const parts = line.split(/\s+/);
-                    if (parts.length >= 2) {
-                      const status = parts[0].charAt(0);
-                      const file = parts[parts.length - 1];
-                      if (status === 'A') added.push(file);
-                      else if (status === 'D') deleted.push(file);
-                      else modified.push(file);
-                    }
-                  });
+                  let gitStatusOutput = '';
+                  try { gitStatusOutput = execSync('git diff --name-status --cached').toString().trim(); } catch (e) { }
 
                   let fileChangesText = "";
-                  if (modified.length > 0) fileChangesText += `\n【変更】: ${modified.join(', ')}`;
-                  if (added.length > 0) fileChangesText += `\n【追加】: ${added.join(', ')}`;
-                  if (deleted.length > 0) fileChangesText += `\n【削除】: ${deleted.join(', ')}`;
+                  let allFiles = "various files";
+                  if (gitStatusOutput) {
+                    let modified = [], added = [], deleted = [];
+                    gitStatusOutput.split('\n').forEach(line => {
+                      const parts = line.split(/\s+/);
+                      if (parts.length >= 2) {
+                        const status = parts[0].charAt(0);
+                        const file = parts[parts.length - 1];
+                        if (status === 'A') added.push(file);
+                        else if (status === 'D') deleted.push(file);
+                        else modified.push(file);
+                      }
+                    });
+                    if (modified.length > 0) fileChangesText += `\n【変更】: ${modified.join(', ')}`;
+                    if (added.length > 0) fileChangesText += `\n【追加】: ${added.join(', ')}`;
+                    if (deleted.length > 0) fileChangesText += `\n【削除】: ${deleted.join(', ')}`;
+                    allFiles = modified.concat(added).concat(deleted).join(', ');
+                  }
 
                   const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
-                  const allFiles = modified.concat(added).concat(deleted).join(', ');
                   const commitMessage = `Auto: ${shortCommand} [変更: ${allFiles}]`;
-
                   const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...（以下省略）' : aiOutput;
 
-                  console.log(`📦 コミットメッセージ: ${commitMessage}`);
                   execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
 
-                  // 🌟 OneDrive等のファイルロック対策：自動リトライ付きのPush
+                  // 🌟 【完全自動化】Clasp Deploy (本番公開)
+                  console.log('🚀 GASへの本番デプロイ（新バージョンの発行）を実行中...');
+                  let deployStatusText = "本番デプロイ(Deploy)完了！";
+                  try {
+                    const deployResult = execSync('clasp deploy', { stdio: 'pipe' }).toString();
+                    console.log(`✨ 本番デプロイ完了！:\n${deployResult}`);
+                  } catch (deployError) {
+                    const dLog = deployError.stderr ? deployError.stderr.toString() : deployError.message;
+                    console.warn(`⚠️ 本番デプロイに失敗しました:\n${dLog}`);
+                    deployStatusText = "⚠️ コード保存は成功しましたが、本番公開(Deploy)に失敗しました。";
+                  }
+
+                  // 🌟 GitHub Push (リトライ付き)
                   let pushRetries = 3;
                   let pushSuccess = false;
                   while (pushRetries > 0 && !pushSuccess) {
                     try {
                       console.log(`🐙 GitHubへプッシュ中... (残り試行回数: ${pushRetries})`);
-                      execSync('git push', { stdio: 'inherit' });
+                      execSync('git push', { stdio: 'pipe' });
                       pushSuccess = true;
                     } catch (pushErr) {
-                      console.error(`⚠️ プッシュが弾かれました。OneDrive等が同期中の可能性があります。3秒後に再試行します...`);
+                      console.error(`⚠️ プッシュが弾かれました。3秒後に再試行します...`);
                       pushRetries--;
-                      if (pushRetries === 0) {
-                        throw new Error("3回再試行しましたが、GitHubへのプッシュに失敗しました。");
-                      }
-                      // 3秒（3000ミリ秒）待機して再アタック
+                      if (pushRetries === 0) throw new Error("3回再試行しましたが、GitHubへのプッシュに失敗しました。");
                       await new Promise(resolve => setTimeout(resolve, 3000));
                     }
                   }
 
-                  // 🌟 プッシュ成功後にLINE用・メール用のメッセージを作る
-                  summaryForLine = `【デプロイ完了】\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
-                  fullSummaryForEmail = `【デプロイ完了】\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
+                  summaryForLine = `【デプロイ完了】\n${deployStatusText}\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
+                  fullSummaryForEmail = `【デプロイ完了】\n${deployStatusText}\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
                   console.log('✅ GitHubへのプッシュが完了しました！');
 
-                } else {
-                  summaryForLine = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント】:\n${aiOutput.slice(0, 2000)}`;
-                  fullSummaryForEmail = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント(全文)】:\n${aiOutput}`;
-                  console.log('⏭️ 変更がないためプッシュをスキップしました。');
+                } catch (e) {
+                  console.error('❌ GitHubへのプッシュ中にエラーが発生しました！', e.message);
+                  summaryForLine = `【Gitエラー】\nファイルの修正は行われましたが、保存処理に失敗しました。\n\n【原因】\n${e.message}\n\n【AIのコメント】:\n${aiOutput.slice(0, 1000)}`;
                 }
-              } catch (e) {
-                // 🌟 修正ポイント：ここでエラーを握り潰さずに出力し、LINEにも通知する！
-                console.error('❌ GitHubへのプッシュ中にエラーが発生しました！', e.message);
-                summaryForLine = `【Gitエラー】\nファイルの修正は行われましたが、GitHubへの保存(Push)に失敗しました。\nターミナルを確認してください。\n\n【原因】\n${e.message}\n\n【AIのコメント】:\n${aiOutput.slice(0, 1000)}`;
               }
+
             } else {
-              summaryForLine = `【処理失敗】（安全のため変更はリセットされました）\n\n【原因】:\n${aiOutput}`;
+              // ループを抜けても失敗だった場合（ロールバック）
+              console.log('🔄 最終的に解決できなかったため、元の状態にロールバックします...');
+              try {
+                execSync('git reset --hard HEAD', { stdio: 'ignore' });
+                execSync('git clean -fd', { stdio: 'ignore' });
+              } catch (gitErr) { }
+              summaryForLine = `【処理失敗】エラーを自己修復しきれなかったため、元の状態に安全にリセットしました。\n\n【原因】:\n${aiOutput}`;
             }
           }
         }
 
         // ----------------------------------------------------
-        // 🌟 修正ポイント2：GASへ送るデータに「完全版」を追加
+        // GASへの完了通知とデータ送信
         // ----------------------------------------------------
-        // ※これより上にある summaryForLine はそのまま残してください
-
         const updatePayload = {
           action: "update",
           row: data.rowIndex,
@@ -286,7 +294,6 @@ async function watch() {
           fullSummary: fullSummaryForEmail || summaryForLine
         };
 
-        // 👇 修正後：ここだけ fileIds に変更します
         if (usedImageIds.length > 0) {
           updatePayload.fileIds = usedImageIds;
         }
@@ -298,10 +305,9 @@ async function watch() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(updatePayload),
-              redirect: 'manual' // 🌟 GAS特有の302リダイレクトによるエラーを回避！
+              redirect: 'manual'
             });
 
-            // redirect: 'manual' の場合、正常完了時は 0 (opaqueredirect) または 302 が返ります
             if (res.status !== 200 && res.status !== 302 && res.type !== 'opaqueredirect') {
               throw new Error("GAS HTTPエラー: " + res.status);
             }
