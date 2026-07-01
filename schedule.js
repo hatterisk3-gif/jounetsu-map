@@ -172,23 +172,36 @@ function addCpPlanRow() {
         return;
     }
     
+    // Read new global parameters
+    const holes = getCpVal('cpTrayHoles', true) || 128;
+    const rows = getCpVal('cpRows', true) || 1;
+    const pSpace = getCpVal('cpPlantSpacing', true) || 30;
+    const rSpace = getCpVal('cpRidgeSpacing', true) || 150;
+    const yieldPerPlant = parseFloat(document.getElementById('cpYieldPerPlant').value) || 1;
+    const itemsPerPack = parseFloat(document.getElementById('cpItemsPerPack').value) || 1;
+    
     const plan = {
         id: 'plan_' + Date.now(),
         crop: crop,
         variety: variety,
-        areaA: getCpVal('cpArea', true) || 0,
-        holes: getCpVal('cpTrayHoles', true) || 128,
-        rows: getCpVal('cpRows', true) || 1,
-        pSpace: getCpVal('cpPlantSpacing', true) || 30,
-        rSpace: getCpVal('cpRidgeSpacing', true) || 150,
-        yieldRate: getCpVal('cpYieldRate', true) || 0.9,
-        trays: cpCurrentCalc.trays,
-        yield: cpCurrentCalc.yield,
-        harvestRatios: []
+        holes: holes,
+        rows: rows,
+        pSpace: pSpace,
+        rSpace: rSpace,
+        yieldPerPlant: yieldPerPlant,
+        itemsPerPack: itemsPerPack,
+        // Default row parameters
+        areaA: 10,
+        yieldRate: 0.9,
+        seedlingSuccess: 0.9,
+        harvestRatios: [],
+        trays: 0,
+        yield: 0
     };
     
     cpPlans.push(plan);
     renderCpPlanRow(plan);
+    updateRowCalculations(plan.id);
 }
 
 function renderCpPlanRow(plan) {
@@ -205,7 +218,16 @@ function renderCpPlanRow(plan) {
         <span>${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span></span>
         <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
     </div>
-    <div id="ratios_${plan.id}" style="margin-top: 5px; display:flex; gap: 2px; flex-wrap: wrap;"></div>`;
+    <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
+      <div style="display:flex; align-items:center;">面積: <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;">a</div>
+      <div style="display:flex; align-items:center;">歩留り: <input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
+      <div style="display:flex; align-items:center;">育苗成功率: <input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
+    </div>
+    <div style="font-size: 11px; margin-top: 4px; color: #2e7d32; font-weight: bold; line-height: 1.2;">
+      播種: <span id="calcTrays_${plan.id}">0</span> <span id="unitTrays_${plan.id}">枚</span><br>
+      収穫: <span id="calcYield_${plan.id}">0</span> 
+    </div>
+    <div id="ratios_${plan.id}" style="margin-top: 2px; display:flex; gap: 2px; flex-wrap: wrap;"></div>`;
     tr.appendChild(th);
     
     months.forEach((m, idx) => {
@@ -277,7 +299,7 @@ function updateCpCellsText(planId) {
         const sowingCells = tr.querySelectorAll('td[data-task="sowing"]');
         sowingCells.forEach(td => {
             const div = td.querySelector('div');
-            div.innerHTML = plan.trays > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:14px; font-weight:bold;">${plan.trays}枚</span>` : '';
+            div.innerHTML = plan.trays > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:14px; font-weight:bold;">${plan.trays}${plan.holes === 1 ? '粒' : '枚'}</span>` : '';
         });
         
         const plantingCells = tr.querySelectorAll('td[data-task="planting"]');
@@ -948,5 +970,54 @@ window.updatePlanRatio = function(planId, index, value) {
     if (!plan) return;
     if (!plan.harvestRatios) plan.harvestRatios = [];
     plan.harvestRatios[index] = parseFloat(value) || 0;
+    updateCpCellsText(planId);
+};
+
+window.updateRowParams = function(planId) {
+    const plan = cpPlans.find(p => p.id === planId);
+    if (!plan) return;
+    
+    plan.areaA = parseFloat(document.getElementById('area_' + planId).value) || 0;
+    plan.yieldRate = parseFloat(document.getElementById('yieldRate_' + planId).value) || 0;
+    plan.seedlingSuccess = parseFloat(document.getElementById('seedlingSuccess_' + planId).value) || 0.1; // avoid div by 0
+    
+    updateRowCalculations(planId);
+};
+
+window.updateRowCalculations = function(planId) {
+    const plan = cpPlans.find(p => p.id === planId);
+    if (!plan) return;
+    
+    const pSpaceM = plan.pSpace / 100;
+    const rSpaceM = plan.rSpace / 100;
+    
+    if (plan.areaA > 0 && pSpaceM > 0 && rSpaceM > 0 && plan.rows > 0) {
+        const areaM2 = plan.areaA * 100;
+        const areaPerPlant = (rSpaceM / plan.rows) * pSpaceM;
+        const totalPlants = Math.floor(areaM2 / areaPerPlant);
+        
+        const requiredSeedlings = Math.ceil(totalPlants / plan.seedlingSuccess);
+        
+        if (plan.holes === 1) {
+            plan.trays = requiredSeedlings; // Unit becomes 粒
+        } else {
+            plan.trays = Math.ceil(requiredSeedlings / plan.holes); // Unit is 枚
+        }
+        
+        plan.yield = Math.floor((totalPlants * plan.yieldRate * plan.yieldPerPlant) / plan.itemsPerPack);
+    } else {
+        plan.trays = 0;
+        plan.yield = 0;
+    }
+    
+    // Update display in the pinned column
+    const traysEl = document.getElementById('calcTrays_' + planId);
+    const yieldEl = document.getElementById('calcYield_' + planId);
+    const unitEl = document.getElementById('unitTrays_' + planId);
+    
+    if (traysEl) traysEl.innerText = plan.trays.toLocaleString();
+    if (yieldEl) yieldEl.innerText = plan.yield.toLocaleString();
+    if (unitEl) unitEl.innerText = plan.holes === 1 ? '粒' : '枚';
+    
     updateCpCellsText(planId);
 };
