@@ -71,6 +71,10 @@ async function fetchCultivationMaster() {
             
             updateVarietyList();
             calcCp();
+            populateSelect('cpItemsPerPack', cpMasterData.itemsPerPack || [], [1]);
+            
+            updateVarietyList();
+            calcCp();
         }
     } catch(e) {
         console.error("マスタ取得エラー", e);
@@ -84,6 +88,99 @@ function updateVarietyList() {
         opts = cpMasterData.crops[crop];
     }
     populateSelect('cpVariety', opts, []);
+    updatePresetList(crop);
+}
+
+function updatePresetList(crop) {
+    const presetSelect = document.getElementById('cpPreset');
+    if (!presetSelect) return;
+    presetSelect.innerHTML = '<option value="">選択...</option>';
+    if (cpMasterData && cpMasterData.presets && cpMasterData.presets[crop]) {
+        cpMasterData.presets[crop].forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.name;
+            opt.innerText = p.name;
+            presetSelect.appendChild(opt);
+        });
+    }
+}
+
+function loadCultivationPreset(presetName) {
+    if (!presetName) return;
+    const crop = getCpVal('cpCrop');
+    if (cpMasterData && cpMasterData.presets && cpMasterData.presets[crop]) {
+        const preset = cpMasterData.presets[crop].find(p => p.name === presetName);
+        if (preset) {
+            setCpVal('cpTrayHoles', preset.holes);
+            setCpVal('cpRows', preset.rows);
+            setCpVal('cpPlantSpacing', preset.pSpace);
+            setCpVal('cpRidgeSpacing', preset.rSpace);
+            setCpVal('cpYieldPerPlant', preset.yieldPerSeedling);
+            setCpVal('cpItemsPerPack', preset.itemsPerPack);
+            calcCp();
+        }
+    }
+}
+
+function setCpVal(id, value) {
+    if (value === undefined || value === '') return;
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    
+    let exists = Array.from(sel.options).some(opt => opt.value == value);
+    if (!exists) {
+        sel.value = 'custom';
+        const cInp = document.getElementById(id + '_custom');
+        if (cInp) {
+            cInp.style.display = 'block';
+            cInp.value = value;
+        }
+    } else {
+        sel.value = value;
+        const cInp = document.getElementById(id + '_custom');
+        if (cInp) {
+            cInp.style.display = 'none';
+        }
+    }
+}
+
+async function saveCultivationPresetFromUI() {
+    const crop = getCpVal('cpCrop');
+    if (!crop) {
+        alert("作物を選択または入力してください。");
+        return;
+    }
+    const presetName = prompt(crop + " の設定名を入力してください（例: 夏秋用）");
+    if (!presetName) return;
+    
+    const presetData = {
+        crop: crop,
+        name: presetName,
+        holes: getCpVal('cpTrayHoles', true) || 128,
+        rows: getCpVal('cpRows', true) || 1,
+        pSpace: getCpVal('cpPlantSpacing', true) || 30,
+        rSpace: getCpVal('cpRidgeSpacing', true) || 150,
+        yieldPerSeedling: getCpVal('cpYieldPerPlant', true) || 1,
+        itemsPerPack: getCpVal('cpItemsPerPack', true) || 1
+    };
+    
+    try {
+        const btn = document.getElementById('btnSavePreset');
+        if (btn) btn.innerHTML = '保存中...';
+        
+        await callGAS('saveCultivationPreset', presetData);
+        
+        cpMasterData = await callGAS('getCultivationMaster');
+        updatePresetList(crop);
+        document.getElementById('cpPreset').value = presetName;
+        
+        alert("設定を保存しました。");
+    } catch(e) {
+        alert("保存エラー: " + e.message);
+    } finally {
+        const btn = document.getElementById('btnSavePreset');
+        if (btn) btn.innerHTML = '設定を保存';
+    }
 }
 
 let cpCurrentCalc = { trays: 0, yield: 0 };
@@ -95,6 +192,8 @@ function calcCp() {
     const pSpace = (getCpVal('cpPlantSpacing', true) || 30) / 100;
     const rSpace = (getCpVal('cpRidgeSpacing', true) || 150) / 100;
     const yieldRate = getCpVal('cpYieldRate', true) || 0.9;
+    const yieldPerPlant = getCpVal('cpYieldPerPlant', true) || 1;
+    const itemsPerPack = getCpVal('cpItemsPerPack', true) || 1;
     
     if (areaA > 0 && pSpace > 0 && rSpace > 0 && rows > 0) {
         const areaM2 = areaA * 100;
@@ -102,7 +201,7 @@ function calcCp() {
         const totalPlants = Math.floor(areaM2 / areaPerPlant);
         
         cpCurrentCalc.trays = Math.ceil(totalPlants / holes);
-        cpCurrentCalc.yield = Math.floor(totalPlants * yieldRate);
+        cpCurrentCalc.yield = Math.floor((totalPlants * yieldRate * yieldPerPlant) / itemsPerPack);
         
         const traysEl = document.getElementById('cpCalcTrays');
         const yieldEl = document.getElementById('cpCalcYield');
@@ -118,11 +217,6 @@ function calcCp() {
     updateCpCellsText();
 }
 
-
-
-
-
-
 function populateDefaultCpSelects() {
     populateSelect('cpCrop', [], ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
     populateSelect('cpTrayHoles', [], [72, 128, 200, 288]);
@@ -132,6 +226,8 @@ function populateDefaultCpSelects() {
     populateSelect('cpYieldRate', [], [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
     populateSelect('cpArea', [], [5, 10, 15, 20, 50]);
     populateSelect('cpVariety', [], []);
+    populateSelect('cpYieldPerPlant', [], [1]);
+    populateSelect('cpItemsPerPack', [], [1]);
 }
 
 

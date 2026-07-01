@@ -2234,7 +2234,8 @@ function getCultivationMaster() {
       areas: [],
       fields: [], // 追加：圃場情報
       yieldPerSeedling: [], // 1苗当たり収量
-      itemsPerPack: [] // 1P当たり入り数
+      itemsPerPack: [], // 1P当たり入り数
+      presets: {} // プリセット情報
     };
     
     // 圃場情報の取得
@@ -2275,6 +2276,30 @@ function getCultivationMaster() {
       if (r[8] !== undefined && r[8] !== '' && !master.yieldPerSeedling.includes(r[8])) master.yieldPerSeedling.push(r[8]);
       if (r[9] !== undefined && r[9] !== '' && !master.itemsPerPack.includes(r[9])) master.itemsPerPack.push(r[9]);
     }
+    
+    // プリセット情報の取得
+    const presetSheet = ss.getSheetByName('栽培計画プリセット');
+    if (!presetSheet) {
+      ss.insertSheet('栽培計画プリセット').appendRow(['作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数']);
+    } else {
+      const presetData = presetSheet.getDataRange().getValues();
+      for (let i = 1; i < presetData.length; i++) {
+        let r = presetData[i];
+        if (r[0] && r[1]) {
+          if (!master.presets[r[0]]) master.presets[r[0]] = [];
+          master.presets[r[0]].push({
+            name: String(r[1]),
+            holes: r[2] || '',
+            rows: r[3] || '',
+            pSpace: r[4] || '',
+            rSpace: r[5] || '',
+            yieldPerSeedling: r[6] || '',
+            itemsPerPack: r[7] || ''
+          });
+        }
+      }
+    }
+
     return master;
   } catch(e) {
     return { error: e.message };
@@ -2334,5 +2359,51 @@ function appendCultivationMaster(newData) {
     return { success: true };
   } catch(e) {
     return { success: false, error: e.message };
+  }
+}
+
+// 栽培計画のプリセットを保存する関数
+function saveCultivationPreset(presetData) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('栽培計画プリセット');
+    if (!sheet) {
+      sheet = ss.insertSheet('栽培計画プリセット');
+      sheet.appendRow(['作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数']);
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    let updated = false;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === presetData.crop && data[i][1] === presetData.name) {
+        sheet.getRange(i + 1, 3, 1, 6).setValues([[
+          presetData.holes,
+          presetData.rows,
+          presetData.pSpace,
+          presetData.rSpace,
+          presetData.yieldPerSeedling,
+          presetData.itemsPerPack
+        ]]);
+        updated = true;
+        break;
+      }
+    }
+    
+    if (!updated) {
+      sheet.appendRow([
+        presetData.crop,
+        presetData.name,
+        presetData.holes,
+        presetData.rows,
+        presetData.pSpace,
+        presetData.rSpace,
+        presetData.yieldPerSeedling,
+        presetData.itemsPerPack
+      ]);
+    }
+    
+    return { success: true, message: "保存完了" };
+  } catch (e) {
+    return { success: false, message: e.message };
   }
 }

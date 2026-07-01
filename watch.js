@@ -89,10 +89,10 @@ async function watch() {
             // 🌟 AIへの指示：完了ファイルの中に解説レポートを直接書き込ませる！
             // 🌟 AIへの指示：ルールを極限まで圧縮し、スッキリさせる！
             const modifyPrompt = `${imageContext}${cleanCommand}。
-            【重要ルール】
-            1.最後に、自律的にテスト・再修正すること。
-            2.最後に、システム動作に関係のないファイルは必ず削除すること。
-            3.最後に、必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。`;
+【最後に行うこと】
+ 1.修正した個所が正しく動作するか自律的にテスト・再修正すること。
+ 2.システム動作に関係のないファイルは必ず削除すること。
+ 3.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。`;
 
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";

@@ -124,6 +124,14 @@
             <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 90px;"></select>
             <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px; margin-top:4px;">
           </div>
+          <div style="border-left: 1px solid #ccc; padding-left: 10px; margin-left: 5px;">
+            <label style="font-size: 11px; font-weight: bold; color: #1976D2; display: block;">設定名(保存/読込)</label>
+            <select id="cpPreset" onchange="loadCultivationPreset(this.value)" style="padding: 6px; border: 1px solid #1976D2; border-radius: 4px; font-size: 13px; width: 100px;">
+              <option value="">選択...</option>
+            </select>
+            <br>
+            <button id="btnSavePreset" onclick="saveCultivationPresetFromUI()" style="margin-top: 4px; padding: 4px 6px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; width:100px;">設定を保存</button>
+          </div>
           
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">穴数</label>
