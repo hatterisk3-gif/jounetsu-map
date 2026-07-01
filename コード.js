@@ -2378,6 +2378,13 @@ function getCultivationMaster() {
             yieldPerSeedling: r[6] || '',
             itemsPerPack: r[7] || ''
           });
+          // プリセットに保存されている数値を各プルダウンの選択肢にも反映する
+          if (r[2] !== '' && !master.holes.includes(r[2])) master.holes.push(r[2]);
+          if (r[3] !== '' && !master.rows.includes(r[3])) master.rows.push(r[3]);
+          if (r[4] !== '' && !master.pSpace.includes(r[4])) master.pSpace.push(r[4]);
+          if (r[5] !== '' && !master.rSpace.includes(r[5])) master.rSpace.push(r[5]);
+          if (r[6] !== undefined && r[6] !== '' && !master.yieldPerSeedling.includes(r[6])) master.yieldPerSeedling.push(r[6]);
+          if (r[7] !== undefined && r[7] !== '' && !master.itemsPerPack.includes(r[7])) master.itemsPerPack.push(r[7]);
         }
       }
     }
