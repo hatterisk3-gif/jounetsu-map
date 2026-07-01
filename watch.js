@@ -131,6 +131,14 @@ async function watch() {
                 console.log('📝 IDEのAgyが作成した解説レポートを読み込んでいます...');
                 const aiReportText = fs.readFileSync(doneFile, 'utf8').trim();
 
+                // 🌟 【超重要】読み取ったら、デプロイに巻き込まれないように即座にファイルを削除！
+                try {
+                  fs.unlinkSync(doneFile);
+                  console.log('🗑️ デプロイへの混入を防ぐため、レポートファイル(.ai_task_done.txt)を削除しました。');
+                } catch (e) {
+                  // もしエラーになっても処理は止めない
+                }
+
                 if (aiReportText && aiReportText !== "完了" && aiReportText !== "") {
                   aiOutput = aiReportText;
                 } else if (cleanDiffText === "") {

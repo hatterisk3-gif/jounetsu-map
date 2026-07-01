@@ -3,3 +3,4 @@ line_instruction.txt
 hyakusho-ai-bridge/
 # 🌟 一時的な画像ファイルをGitの保存対象から外す
 error_image.jpg
+.ai_task_done.txt
