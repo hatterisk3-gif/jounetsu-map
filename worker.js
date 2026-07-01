@@ -399,9 +399,11 @@ async function fetchWeatherAndUpdateUI() {
     // 現在の天気をボタンに反映
     let currentCode = data.current_weather.weathercode;
     let emoji = getWeatherEmoji(currentCode);
+    let tomorrowCode = data.daily.weathercode[1];
+    let tomorrowEmoji = getWeatherEmoji(tomorrowCode);
     let btnWeather = document.getElementById('btnWeather');
     if (btnWeather) {
-      btnWeather.innerHTML = emoji;
+      btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">明${tomorrowEmoji}</span></div>`;
     }
 
     // モーダルの中身を作成して保持（クリック時に表示）

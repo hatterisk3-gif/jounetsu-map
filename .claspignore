@@ -10,3 +10,5 @@ fix_drag.js
 check.js
 ide_runner.js
 test_gas.js
+schedule.js
+schedule.css
