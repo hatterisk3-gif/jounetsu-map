@@ -66,6 +66,8 @@ async function fetchCultivationMaster() {
             populateSelect('cpRidgeSpacing', cpMasterData.rSpace, [100, 120, 150, 180, 200]);
             populateSelect('cpYieldRate', cpMasterData.yields, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
             populateSelect('cpArea', cpMasterData.areas, [5, 10, 15, 20, 50]);
+            populateSelect('cpYieldPerPlant', cpMasterData.yieldPerSeedling || [], [1]);
+            populateSelect('cpItemsPerPack', cpMasterData.itemsPerPack || [], [1]);
             
             updateVarietyList();
             calcCp();
@@ -177,8 +179,8 @@ function addCpPlanRow() {
     const rows = getCpVal('cpRows', true) || 1;
     const pSpace = getCpVal('cpPlantSpacing', true) || 30;
     const rSpace = getCpVal('cpRidgeSpacing', true) || 150;
-    const yieldPerPlant = parseFloat(document.getElementById('cpYieldPerPlant').value) || 1;
-    const itemsPerPack = parseFloat(document.getElementById('cpItemsPerPack').value) || 1;
+    const yieldPerPlant = getCpVal('cpYieldPerPlant', true) || 1;
+    const itemsPerPack = getCpVal('cpItemsPerPack', true) || 1;
     
     const plan = {
         id: 'plan_' + Date.now(),
@@ -198,6 +200,26 @@ function addCpPlanRow() {
         trays: 0,
         yield: 0
     };
+    
+    // マスタにないデータをバックエンドに送信して保存
+    google.script.run.withSuccessHandler((res) => {
+        if(res && res.success && res.message !== "既に存在します") {
+            console.log("マスタに新しい選択肢を保存しました");
+            // バックグラウンドでマスタを更新しておく（次回開いた時用）
+            callGAS('getCultivationMaster').then(m => {
+                cpMaster = m;
+            });
+        }
+    }).appendCultivationMaster({
+        crop: crop,
+        variety: variety,
+        holes: holes,
+        rows: rows,
+        pSpace: pSpace,
+        rSpace: rSpace,
+        yieldPerSeedling: yieldPerPlant,
+        itemsPerPack: itemsPerPack
+    });
     
     cpPlans.push(plan);
     renderCpPlanRow(plan);

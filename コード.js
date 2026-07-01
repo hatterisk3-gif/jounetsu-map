@@ -2212,7 +2212,16 @@ function getCultivationMaster() {
     let sheet = ss.getSheetByName('栽培計画マスタ');
     if (!sheet) {
       sheet = ss.insertSheet('栽培計画マスタ');
-      sheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積']);
+      sheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積', '1苗当たり収量', '1P当たり入り数']);
+    } else {
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      let needsHeaderUpdate = false;
+      if (headers.length < 9 || headers[8] !== '1苗当たり収量') {
+          sheet.getRange(1, 9).setValue('1苗当たり収量');
+      }
+      if (headers.length < 10 || headers[9] !== '1P当たり入り数') {
+          sheet.getRange(1, 10).setValue('1P当たり入り数');
+      }
     }
     const data = sheet.getDataRange().getValues();
     let master = {
@@ -2223,7 +2232,9 @@ function getCultivationMaster() {
       rSpace: [],
       yields: [],
       areas: [],
-      fields: [] // 追加：圃場情報
+      fields: [], // 追加：圃場情報
+      yieldPerSeedling: [], // 1苗当たり収量
+      itemsPerPack: [] // 1P当たり入り数
     };
     
     // 圃場情報の取得
@@ -2261,9 +2272,67 @@ function getCultivationMaster() {
       if (r[5] !== '' && !master.rSpace.includes(r[5])) master.rSpace.push(r[5]);
       if (r[6] !== '' && !master.yields.includes(r[6])) master.yields.push(r[6]);
       if (r[7] !== '' && !master.areas.includes(r[7])) master.areas.push(r[7]);
+      if (r[8] !== undefined && r[8] !== '' && !master.yieldPerSeedling.includes(r[8])) master.yieldPerSeedling.push(r[8]);
+      if (r[9] !== undefined && r[9] !== '' && !master.itemsPerPack.includes(r[9])) master.itemsPerPack.push(r[9]);
     }
     return master;
   } catch(e) {
     return { error: e.message };
+  }
+}
+
+// 手入力データをマスタへ追記する関数
+function appendCultivationMaster(newData) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('栽培計画マスタ');
+    if (!sheet) return { success: false };
+    
+    const { crop, variety, holes, rows, pSpace, rSpace, yieldPerSeedling, itemsPerPack } = newData;
+    
+    // 現在のデータを取得して重複チェック
+    const data = sheet.getDataRange().getValues();
+    let isCropVarietyExist = false;
+    let isHolesExist = false;
+    let isRowsExist = false;
+    let isPSpaceExist = false;
+    let isRSpaceExist = false;
+    let isYieldPerSeedlingExist = false;
+    let isItemsPerPackExist = false;
+    
+    for (let i = 1; i < data.length; i++) {
+        let r = data[i];
+        if (String(r[0]).trim() === crop && String(r[1]).trim() === variety) isCropVarietyExist = true;
+        if (String(r[2]) === String(holes)) isHolesExist = true;
+        if (String(r[3]) === String(rows)) isRowsExist = true;
+        if (String(r[4]) === String(pSpace)) isPSpaceExist = true;
+        if (String(r[5]) === String(rSpace)) isRSpaceExist = true;
+        if (String(r[8]) === String(yieldPerSeedling)) isYieldPerSeedlingExist = true;
+        if (String(r[9]) === String(itemsPerPack)) isItemsPerPackExist = true;
+    }
+    
+    // 全てが存在する場合は何もしない
+    if (isCropVarietyExist && isHolesExist && isRowsExist && isPSpaceExist && isRSpaceExist && isYieldPerSeedlingExist && isItemsPerPackExist) {
+        return { success: true, message: "既に存在します" };
+    }
+    
+    // 一つでも新しいものがあれば、新しい行として追加（各列は存在しない場合のみ書き込む、または適当な行に追記）
+    // 通常マスタシートは列ごとに独立した選択肢として読み込まれるため、1行にまとめて追加しても問題ありません
+    sheet.appendRow([
+        !isCropVarietyExist ? crop : '',
+        !isCropVarietyExist ? variety : '',
+        !isHolesExist ? holes : '',
+        !isRowsExist ? rows : '',
+        !isPSpaceExist ? pSpace : '',
+        !isRSpaceExist ? rSpace : '',
+        '', // 収穫係数
+        '', // 定植面積
+        !isYieldPerSeedlingExist ? yieldPerSeedling : '',
+        !isItemsPerPackExist ? itemsPerPack : ''
+    ]);
+    
+    return { success: true };
+  } catch(e) {
+    return { success: false, error: e.message };
   }
 }
