@@ -41,7 +41,8 @@ function doPost(e) {
     else if (action === "updateSignLink") result = updateSignLink(params);
     else if (action === 'addToolToMaster') result = addToolToMaster(params);
     else if (action === "updateToolStatus") result = updateToolStatus(params);
-    else if (action === "saveCultivationPlan") result = saveCultivationPlan(params.planData);
+    else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.planDataArray);
+    else if (action === "getCultivationPlans") result = getCultivationPlans(params.year);
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "editToolInMaster") result = editToolInMaster(params);
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
@@ -2131,58 +2132,79 @@ function getTrackingData(params) {
 
 // trigger clasp
 
-function saveCultivationPlan(planData) {
+
+function saveCultivationPlans(year, planDataArray) {
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('栽培計画');
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('栽培計画');
     if (!sheet) {
-      // Create sheet if it doesn't exist
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
-      const newSheet = ss.insertSheet('栽培計画');
-      newSheet.appendRow(['タイムスタンプ', '作物', '品種', '定植面積', '播種枚数', '収穫個数', '計画データ(JSON)']);
-    }
-    const targetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('栽培計画');
-    const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    
-    targetSheet.appendRow([
-      timestamp,
-      planData.crop || '',
-      planData.variety || '',
-      planData.areaA || '',
-      planData.trays || '',
-      planData.yield || '',
-      JSON.stringify(planData)
-    ]);
-    
-    // Update Master
-    let mSheet = ss.getSheetByName('栽培計画マスタ');
-    if (!mSheet) {
-      mSheet = ss.insertSheet('栽培計画マスタ');
-      mSheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積']);
-    }
-    const mData = mSheet.getDataRange().getValues();
-    let exists = false;
-    for(let i=1; i<mData.length; i++){
-      if(String(mData[i][0]) == String(planData.crop) && String(mData[i][1]) == String(planData.variety)) {
-         exists = true; break;
+      sheet = ss.insertSheet('栽培計画');
+      sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
+    } else {
+      // 既存のヘッダーが古い場合は更新する（任意ですがここでは列構成が変わるため）
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      if (headers[1] !== '年度' || headers[2] !== 'ID') {
+         // 列構成をリセット
+         sheet.clear();
+         sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
       }
     }
-    // For simplicity, just append to master to save the inputs so they can be read next time
-    mSheet.appendRow([
-      planData.crop || '',
-      planData.variety || '',
-      planData.holes || '',
-      planData.rows || '',
-      planData.pSpace || '',
-      planData.rSpace || '',
-      planData.yieldRate || '',
-      planData.areaA || ''
-    ]);
+    
+    // 1. Delete existing rows for this year
+    if (sheet.getLastRow() > 1) {
+      const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (String(data[i][1]) === String(year)) {
+          sheet.deleteRow(i + 2);
+        }
+      }
+    }
+    
+    // 2. Append new rows
+    const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+    for (const plan of planDataArray) {
+       sheet.appendRow([
+          timestamp,
+          year,
+          plan.id,
+          plan.crop,
+          plan.variety,
+          JSON.stringify(plan)
+       ]);
+    }
     
     return { status: 'success', message: '栽培計画を保存しました' };
   } catch(e) {
     throw new Error("栽培計画保存エラー: " + e.message);
   }
 }
+
+function getCultivationPlans(year) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('栽培計画');
+    if (!sheet) return [];
+    
+    if (sheet.getLastRow() <= 1) return [];
+    
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+    const results = [];
+    
+    for (let i = 0; i < data.length; i++) {
+       const row = data[i];
+       if (String(row[1]) === String(year)) {
+          try {
+             const planData = JSON.parse(row[5]); // JSON is in 6th column (index 5)
+             results.push(planData);
+          } catch(e) {}
+       }
+    }
+    return results;
+  } catch(e) {
+    throw new Error("栽培計画取得エラー: " + e.message);
+  }
+}
+
 
 function getCultivationMaster() {
   try {
