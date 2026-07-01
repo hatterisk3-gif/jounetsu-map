@@ -190,7 +190,9 @@ function getInitData() {
     locSheet = ss.insertSheet('拠点マスタ');
     locSheet.appendRow(['拠点名']);
     locSheet.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
-    
+  }
+  
+  if (locSheet.getLastRow() <= 1) {
     const fieldSheet = ss.getSheetByName('圃場設定マスタ');
     if (fieldSheet) {
       const fieldData = fieldSheet.getDataRange().getValues();
@@ -2287,7 +2289,29 @@ function getCultivationMaster() {
     }
     
     // 拠点マスタから拠点リストを取得して返す（栽培計画モーダル用）
-    const locSheetForMaster = ss.getSheetByName('拠点マスタ');
+    let locSheetForMaster = ss.getSheetByName('拠点マスタ');
+    if (!locSheetForMaster) {
+      locSheetForMaster = ss.insertSheet('拠点マスタ');
+      locSheetForMaster.appendRow(['拠点名']);
+      locSheetForMaster.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
+    }
+    
+    // データがない場合は圃場設定マスタから移行
+    if (locSheetForMaster.getLastRow() <= 1) {
+      const fieldSheet = ss.getSheetByName('圃場設定マスタ');
+      if (fieldSheet) {
+        const fieldData = fieldSheet.getDataRange().getValues();
+        let locs = new Set();
+        for (let i = 1; i < fieldData.length; i++) {
+          if (fieldData[i][0]) locs.add(String(fieldData[i][0]).trim());
+        }
+        locs.forEach(l => {
+          if (l !== '拠点名' && l !== '拠点') locSheetForMaster.appendRow([l]);
+        });
+        if (fieldData.length > 1) fieldSheet.getRange(2, 1, fieldData.length - 1, 1).clearContent();
+      }
+    }
+
     if (locSheetForMaster) {
       const locData = locSheetForMaster.getDataRange().getValues();
       master.locations = [];

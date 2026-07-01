@@ -53,26 +53,38 @@ function populateSelect(id, arr, defaultOptions = []) {
     sel.innerHTML = html;
 }
 
+function applyCultivationMasterData() {
+    if(cpMasterData && cpMasterData.crops) {
+        populateSelect('cpLocation', cpMasterData.locations || [], []);
+        populateSelect('cpCrop', Object.keys(cpMasterData.crops), ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
+        populateSelect('cpTrayHoles', cpMasterData.holes, [72, 128, 200, 288]);
+        populateSelect('cpRows', cpMasterData.rows, [1, 2, 3, 4]);
+        populateSelect('cpPlantSpacing', cpMasterData.pSpace, [20, 25, 30, 35, 40, 45, 50]);
+        populateSelect('cpRidgeSpacing', cpMasterData.rSpace, [100, 120, 150, 180, 200]);
+        populateSelect('cpYieldRate', cpMasterData.yields, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
+        populateSelect('cpArea', cpMasterData.areas, [5, 10, 15, 20, 50]);
+        populateSelect('cpYieldPerPlant', cpMasterData.yieldPerSeedling || [], [1]);
+        populateSelect('cpItemsPerPack', cpMasterData.itemsPerPack || [], [1]);
+        
+        updateVarietyList();
+        calcCp();
+    }
+}
+
 async function fetchCultivationMaster() {
     try {
+        const cachedStr = localStorage.getItem('cpMasterDataCache');
+        if (cachedStr) {
+            try {
+                cpMasterData = JSON.parse(cachedStr);
+                applyCultivationMasterData();
+            } catch(e) {}
+        }
+        
         const data = await callGAS('getCultivationMaster');
         cpMasterData = data;
-        
-        if(cpMasterData && cpMasterData.crops) {
-            populateSelect('cpLocation', cpMasterData.locations || [], []);
-            populateSelect('cpCrop', Object.keys(cpMasterData.crops), ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
-            populateSelect('cpTrayHoles', cpMasterData.holes, [72, 128, 200, 288]);
-            populateSelect('cpRows', cpMasterData.rows, [1, 2, 3, 4]);
-            populateSelect('cpPlantSpacing', cpMasterData.pSpace, [20, 25, 30, 35, 40, 45, 50]);
-            populateSelect('cpRidgeSpacing', cpMasterData.rSpace, [100, 120, 150, 180, 200]);
-            populateSelect('cpYieldRate', cpMasterData.yields, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
-            populateSelect('cpArea', cpMasterData.areas, [5, 10, 15, 20, 50]);
-            populateSelect('cpYieldPerPlant', cpMasterData.yieldPerSeedling || [], [1]);
-            populateSelect('cpItemsPerPack', cpMasterData.itemsPerPack || [], [1]);
-            
-            updateVarietyList();
-            calcCp();
-        }
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(data));
+        applyCultivationMasterData();
     } catch(e) {
         console.error("マスタ取得エラー", e);
     }
@@ -896,10 +908,26 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCI
         const orgTxt = btn.innerText;
         btn.innerText = "通信中..."; btn.disabled = true;
 
+        const cachedStr = localStorage.getItem('passionMapScheduleData');
+        if (cachedStr) {
+          try {
+            const data = JSON.parse(cachedStr);
+            globalSchedules = data.activeSchedules || [];
+            loadedPolygons = {};
+            data.polygons.forEach(p => {
+               p.isMarker = p.coords && p.coords.length === 1;
+               loadedPolygons[p.id] = { ...p };
+            });
+            buildDeptFilter();
+            updateMapVisuals();
+          } catch(e) { console.error("Cache parse error", e); }
+        }
+  
         callGAS('getScheduleData').then(data => {
+          localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
           globalSchedules = data.activeSchedules || [];
           
-          // 生のポリゴン情報をロード（描画はまだしない）
+          loadedPolygons = {};
           data.polygons.forEach(p => {
              p.isMarker = p.coords && p.coords.length === 1;
              loadedPolygons[p.id] = { ...p };
