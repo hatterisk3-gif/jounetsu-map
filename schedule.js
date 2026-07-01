@@ -1031,38 +1031,66 @@ window.updateRowCalculations = function(planId) {
 window.updateFieldAllocations = function() {
     if (!window.globalFields) return;
     
-    // 1. 各圃場が現在どれだけ使用されているか計算する
-    let fieldUsage = {};
+    // 1. 各作型の使用期間(start~end)を取得
+    let planDataList = [];
     cpPlans.forEach(plan => {
         const select = document.getElementById('fieldSelect_' + plan.id);
         const areaInput = document.getElementById('area_' + plan.id);
-        if (select && areaInput && select.value) {
-            const usedArea = parseFloat(areaInput.value) || 0;
-            if (!fieldUsage[select.value]) fieldUsage[select.value] = 0;
-            fieldUsage[select.value] += usedArea;
-            // plan objectも更新
-            plan.fieldId = select.value;
-        } else if (select && !select.value) {
-            plan.fieldId = ""; // 未選択
+        const fId = select ? select.value : "";
+        const area = (areaInput && fId) ? (parseFloat(areaInput.value) || 0) : 0;
+        
+        let start = 108, end = -1;
+        const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
+        if (tr) {
+            // 定植と収穫を対象とする
+            const cells = tr.querySelectorAll('td[data-task="planting"], td[data-task="harvesting"]');
+            cells.forEach(cell => {
+                const mIdx = parseInt(cell.dataset.monthIndex, 10);
+                const pIdx = parseInt(cell.dataset.period, 10);
+                const t = mIdx * 6 + pIdx;
+                if (t < start) start = t;
+                if (t > end) end = t;
+            });
         }
+        
+        if (start > end) { 
+            // 定植や収穫が1つも塗られていない場合、安全のため全期間占有とみなす
+            start = 0; end = 107; 
+        }
+        
+        planDataList.push({ id: plan.id, fId: fId, area: area, start: start, end: end });
+        if (select) plan.fieldId = fId;
     });
 
-    // 2. 各プルダウンの選択肢を再構築する
+    // 2. 各プランのプルダウンの選択肢を再構築する
     cpPlans.forEach(plan => {
         const select = document.getElementById('fieldSelect_' + plan.id);
         if (!select) return;
+        
         const currentVal = select.value;
+        const myData = planDataList.find(p => p.id === plan.id);
         
         let html = '<option value="">圃場選択</option>';
         window.globalFields.forEach(f => {
-            // この圃場の総面積（a換算と仮定。もしm2なら/100だが、一旦そのまま表示）
-            const total = parseFloat(f.area) || 0;
-            // 現在の作型が使っている分は、自分の分なので引かないでおく（選択肢としての残り計算用）
-            let myUsage = (currentVal === String(f.id)) ? (parseFloat(document.getElementById('area_' + plan.id).value) || 0) : 0;
-            let otherUsage = (fieldUsage[f.id] || 0) - myUsage;
-            let remaining = total - otherUsage;
+            const totalArea = parseFloat(f.area) || 0;
             
-            // 小数第1位で丸める
+            // このプラン(myData)の期間内で、他の作型がこの圃場を使う最大の面積を求める
+            let maxOtherUsage = 0;
+            for (let t = myData.start; t <= myData.end; t++) {
+                let usageAtT = 0;
+                planDataList.forEach(other => {
+                    if (other.id !== plan.id && other.fId === String(f.id)) {
+                        if (t >= other.start && t <= other.end) {
+                            usageAtT += other.area;
+                        }
+                    }
+                });
+                if (usageAtT > maxOtherUsage) {
+                    maxOtherUsage = usageAtT;
+                }
+            }
+            
+            let remaining = totalArea - maxOtherUsage;
             remaining = Math.round(remaining * 10) / 10;
             
             let label = `${f.name} (残${remaining}a)`;
@@ -1076,9 +1104,21 @@ window.updateFieldAllocations = function() {
         const areaInput = document.getElementById('area_' + plan.id);
         if (currentVal && areaInput) {
             const myArea = parseFloat(areaInput.value) || 0;
-            let otherUsage = (fieldUsage[currentVal] || 0) - myArea;
+            let maxOtherUsage = 0;
+            for (let t = myData.start; t <= myData.end; t++) {
+                let usageAtT = 0;
+                planDataList.forEach(other => {
+                    if (other.id !== plan.id && other.fId === currentVal) {
+                        if (t >= other.start && t <= other.end) {
+                            usageAtT += other.area;
+                        }
+                    }
+                });
+                if (usageAtT > maxOtherUsage) maxOtherUsage = usageAtT;
+            }
             let fieldTotal = parseFloat(window.globalFields.find(f => f.id == currentVal)?.area) || 0;
-            if (myArea > (fieldTotal - otherUsage)) {
+            
+            if (myArea > (fieldTotal - maxOtherUsage)) {
                 areaInput.style.color = 'red';
                 areaInput.title = '残り面積を超過しています';
             } else {
