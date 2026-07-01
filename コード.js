@@ -190,6 +190,13 @@ function getInitData() {
     locSheet = ss.insertSheet('拠点マスタ');
     locSheet.appendRow(['拠点名']);
     locSheet.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
+  } else {
+    // ユーザーがA1から直接拠点名を書いている場合に対応するため、ヘッダーを確認
+    const a1Val = String(locSheet.getRange(1, 1).getValue() || '').trim();
+    if (a1Val !== '拠点名' && a1Val !== '拠点') {
+      locSheet.insertRowBefore(1);
+      locSheet.getRange(1, 1).setValue('拠点名').setFontWeight('bold').setBackground('#e0e0e0');
+    }
   }
   
   if (locSheet.getLastRow() <= 1) {
@@ -2294,6 +2301,13 @@ function getCultivationMaster() {
       locSheetForMaster = ss.insertSheet('拠点マスタ');
       locSheetForMaster.appendRow(['拠点名']);
       locSheetForMaster.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
+    } else {
+      // ユーザーがA1から直接拠点名を書いている場合に対応するため、ヘッダーを確認
+      const a1Val = String(locSheetForMaster.getRange(1, 1).getValue() || '').trim();
+      if (a1Val !== '拠点名' && a1Val !== '拠点') {
+        locSheetForMaster.insertRowBefore(1);
+        locSheetForMaster.getRange(1, 1).setValue('拠点名').setFontWeight('bold').setBackground('#e0e0e0');
+      }
     }
     
     // データがない場合は圃場設定マスタから移行
@@ -2316,7 +2330,10 @@ function getCultivationMaster() {
       const locData = locSheetForMaster.getDataRange().getValues();
       master.locations = [];
       for (let i = 1; i < locData.length; i++) {
-        if (locData[i][0]) master.locations.push(String(locData[i][0]).trim());
+        const val = String(locData[i][0] || '').trim();
+        if (val && val !== '拠点名' && val !== '拠点' && !master.locations.includes(val)) {
+          master.locations.push(val);
+        }
       }
     }
     
