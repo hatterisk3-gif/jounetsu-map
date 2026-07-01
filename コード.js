@@ -2222,8 +2222,29 @@ function getCultivationMaster() {
       pSpace: [],
       rSpace: [],
       yields: [],
-      areas: []
+      areas: [],
+      fields: [] // 追加：圃場情報
     };
+    
+    // 圃場情報の取得
+    const polySheet = ss.getSheetByName('圃場');
+    if (polySheet) {
+      const polyData = polySheet.getDataRange().getValues();
+      if (polyData.length > 1) {
+        for (let i = 1; i < polyData.length; i++) {
+          let r = polyData[i];
+          if (r[0]) {
+             // A:ID, B:圃場の名前, E:圃場面積
+             master.fields.push({
+               id: String(r[0]),
+               name: String(r[1]),
+               area: Number(r[4]) || 0
+             });
+          }
+        }
+      }
+    }
+    
     if (data.length <= 1) return master;
     
     for (let i = 1; i < data.length; i++) {

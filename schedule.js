@@ -215,11 +215,16 @@ function renderCpPlanRow(plan) {
     let th = document.createElement('td');
     th.style.cssText = 'position: sticky; left: 0; background: #fff; z-index: 5; font-weight: bold; font-size:12px; border: 1px solid #ddd; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd; padding:4px;';
     th.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
-        <span>${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span></span>
+        <span>${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span><span id="tagDisplay_${plan.id}" style="color: blue; font-size: 10px; margin-left: 5px; font-weight:bold;">${plan.tag || ''}</span></span>
         <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
     </div>
     <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
       <div style="display:flex; align-items:center;">面積: <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;">a</div>
+      <div style="display:flex; align-items:center;">
+          <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:70px; height:16px; font-size:9px; padding:0;">
+              <option value="">圃場選択</option>
+          </select>
+      </div>
       <div style="display:flex; align-items:center;">歩留り: <input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
       <div style="display:flex; align-items:center;">育苗成功率: <input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
     </div>
@@ -1020,4 +1025,104 @@ window.updateRowCalculations = function(planId) {
     if (unitEl) unitEl.innerText = plan.holes === 1 ? '粒' : '枚';
     
     updateCpCellsText(planId);
+};
+
+
+window.updateFieldAllocations = function() {
+    if (!window.globalFields) return;
+    
+    // 1. 各圃場が現在どれだけ使用されているか計算する
+    let fieldUsage = {};
+    cpPlans.forEach(plan => {
+        const select = document.getElementById('fieldSelect_' + plan.id);
+        const areaInput = document.getElementById('area_' + plan.id);
+        if (select && areaInput && select.value) {
+            const usedArea = parseFloat(areaInput.value) || 0;
+            if (!fieldUsage[select.value]) fieldUsage[select.value] = 0;
+            fieldUsage[select.value] += usedArea;
+            // plan objectも更新
+            plan.fieldId = select.value;
+        } else if (select && !select.value) {
+            plan.fieldId = ""; // 未選択
+        }
+    });
+
+    // 2. 各プルダウンの選択肢を再構築する
+    cpPlans.forEach(plan => {
+        const select = document.getElementById('fieldSelect_' + plan.id);
+        if (!select) return;
+        const currentVal = select.value;
+        
+        let html = '<option value="">圃場選択</option>';
+        window.globalFields.forEach(f => {
+            // この圃場の総面積（a換算と仮定。もしm2なら/100だが、一旦そのまま表示）
+            const total = parseFloat(f.area) || 0;
+            // 現在の作型が使っている分は、自分の分なので引かないでおく（選択肢としての残り計算用）
+            let myUsage = (currentVal === String(f.id)) ? (parseFloat(document.getElementById('area_' + plan.id).value) || 0) : 0;
+            let otherUsage = (fieldUsage[f.id] || 0) - myUsage;
+            let remaining = total - otherUsage;
+            
+            // 小数第1位で丸める
+            remaining = Math.round(remaining * 10) / 10;
+            
+            let label = `${f.name} (残${remaining}a)`;
+            let selected = (currentVal === String(f.id)) ? 'selected' : '';
+            html += `<option value="${f.id}" ${selected}>${label}</option>`;
+        });
+        
+        select.innerHTML = html;
+        
+        // 選択された圃場の残り面積が入力面積より少ない場合、赤字にするなどの警告
+        const areaInput = document.getElementById('area_' + plan.id);
+        if (currentVal && areaInput) {
+            const myArea = parseFloat(areaInput.value) || 0;
+            let otherUsage = (fieldUsage[currentVal] || 0) - myArea;
+            let fieldTotal = parseFloat(window.globalFields.find(f => f.id == currentVal)?.area) || 0;
+            if (myArea > (fieldTotal - otherUsage)) {
+                areaInput.style.color = 'red';
+                areaInput.title = '残り面積を超過しています';
+            } else {
+                areaInput.style.color = 'black';
+                areaInput.title = '';
+            }
+        }
+    });
+};
+
+window.assignTags = function() {
+    // 作物ごとにグループ化
+    let groups = {};
+    cpPlans.forEach(plan => {
+        // 現在のDOMから最新のtasksを取得してソートに使う
+        updateCpCellsText(plan.id); // ensures plan.tasks is up to date theoretically, but tasks are populated on toggle.
+        // wait, we need to gather tasks from DOM directly to be safe, just like saveCultivationPlan does
+        const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
+        let plantingTaskIndices = [];
+        if (tr) {
+            const cells = tr.querySelectorAll('td[data-task="planting"]');
+            cells.forEach(cell => {
+                const mIdx = parseInt(cell.dataset.monthIndex, 10);
+                const pIdx = parseInt(cell.dataset.period, 10);
+                plantingTaskIndices.push(mIdx * 6 + pIdx);
+            });
+        }
+        
+        // 最も早い定植時期を探す。無ければ非常に大きい値にする
+        let earliestPlanting = plantingTaskIndices.length > 0 ? Math.min(...plantingTaskIndices) : 9999;
+        
+        if (!groups[plan.crop]) groups[plan.crop] = [];
+        groups[plan.crop].push({ plan: plan, earliest: earliestPlanting });
+    });
+    
+    // ソートしてタグ割り当て
+    Object.keys(groups).forEach(crop => {
+        groups[crop].sort((a, b) => a.earliest - b.earliest);
+        groups[crop].forEach((item, index) => {
+            item.plan.tag = `${crop}${index + 1}`;
+            const tagDisplay = document.getElementById('tagDisplay_' + item.plan.id);
+            if (tagDisplay) {
+                tagDisplay.innerText = item.plan.tag;
+            }
+        });
+    });
 };
