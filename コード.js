@@ -2252,7 +2252,8 @@ function getCultivationMaster() {
       sheet = ss.insertSheet('栽培計画マスタ');
       sheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積', '1苗当たり収量', '1P当たり入り数']);
     } else {
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const lastCol = sheet.getLastColumn();
+      const headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
       let needsHeaderUpdate = false;
       if (headers.length < 9 || headers[8] !== '1苗当たり収量') {
           sheet.getRange(1, 9).setValue('1苗当たり収量');

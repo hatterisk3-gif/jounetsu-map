@@ -91,7 +91,7 @@ async function watch() {
             const modifyPrompt = `${imageContext}${cleanCommand}。
 【最後に行うこと】
  1.修正した個所が正しく動作するか自律的にテスト・再修正すること。
- 2.システム動作に関係のないファイルは必ず削除すること。
+ 2.システム動作に関係のないファイル・画像は必ず削除すること
  3.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。`;
 
 
