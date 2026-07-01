@@ -220,7 +220,7 @@ function getInitData() {
   }
 
   const pdl = {
-    locations: getCol(['拠点マスタ'], 0),
+    locations: Array.from(new Set([...getCol(['拠点マスタ'], 0), ...getCol(['圃場設定マスタ'], 0)])),
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
@@ -2327,16 +2327,24 @@ function getCultivationMaster() {
       }
     }
 
+    // 拠点マスタと圃場設定マスタの両方から拠点を集める（ユーザーがどちらに書いても対応するため）
+    let locs = new Set();
     if (locSheetForMaster) {
       const locData = locSheetForMaster.getDataRange().getValues();
-      master.locations = [];
       for (let i = 1; i < locData.length; i++) {
         const val = String(locData[i][0] || '').trim();
-        if (val && val !== '拠点名' && val !== '拠点' && !master.locations.includes(val)) {
-          master.locations.push(val);
-        }
+        if (val && val !== '拠点名' && val !== '拠点') locs.add(val);
       }
     }
+    const fieldSheet = ss.getSheetByName('圃場設定マスタ');
+    if (fieldSheet) {
+      const fieldData = fieldSheet.getDataRange().getValues();
+      for (let i = 1; i < fieldData.length; i++) {
+        const val = String(fieldData[i][0] || '').trim();
+        if (val && val !== '拠点名' && val !== '拠点') locs.add(val);
+      }
+    }
+    master.locations = Array.from(locs);
     
     // データがない場合はここまででリターン
     if (data.length <= 1) return master;
