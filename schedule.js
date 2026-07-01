@@ -59,6 +59,7 @@ async function fetchCultivationMaster() {
         cpMasterData = data;
         
         if(cpMasterData && cpMasterData.crops) {
+            populateSelect('cpLocation', cpMasterData.locations || [], []);
             populateSelect('cpCrop', Object.keys(cpMasterData.crops), ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
             populateSelect('cpTrayHoles', cpMasterData.holes, [72, 128, 200, 288]);
             populateSelect('cpRows', cpMasterData.rows, [1, 2, 3, 4]);
@@ -67,10 +68,6 @@ async function fetchCultivationMaster() {
             populateSelect('cpYieldRate', cpMasterData.yields, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
             populateSelect('cpArea', cpMasterData.areas, [5, 10, 15, 20, 50]);
             populateSelect('cpYieldPerPlant', cpMasterData.yieldPerSeedling || [], [1]);
-            populateSelect('cpItemsPerPack', cpMasterData.itemsPerPack || [], [1]);
-            
-            updateVarietyList();
-            calcCp();
             populateSelect('cpItemsPerPack', cpMasterData.itemsPerPack || [], [1]);
             
             updateVarietyList();
@@ -218,6 +215,7 @@ function calcCp() {
 }
 
 function populateDefaultCpSelects() {
+    populateSelect('cpLocation', [], []);
     populateSelect('cpCrop', [], ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
     populateSelect('cpTrayHoles', [], [72, 128, 200, 288]);
     populateSelect('cpRows', [], [1, 2, 3, 4]);
@@ -263,6 +261,7 @@ function renderCultivationPlanTable() {
 }
 
 function addCpPlanRow() {
+    const location = getCpVal('cpLocation');
     const crop = getCpVal('cpCrop');
     const variety = getCpVal('cpVariety');
     if (!crop || !variety) {
@@ -280,6 +279,7 @@ function addCpPlanRow() {
     
     const plan = {
         id: 'plan_' + Date.now(),
+        location: location,
         crop: crop,
         variety: variety,
         holes: holes,
@@ -333,7 +333,7 @@ function renderCpPlanRow(plan) {
     let th = document.createElement('td');
     th.style.cssText = 'position: sticky; left: 0; background: #fff; z-index: 5; font-weight: bold; font-size:12px; border: 1px solid #ddd; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd; padding:4px;';
     th.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
-        <span>${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span><span id="tagDisplay_${plan.id}" style="color: blue; font-size: 10px; margin-left: 5px; font-weight:bold;">${plan.tag || ''}</span></span>
+        <span>${plan.location ? `<span style="font-size:10px; color:#555; border:1px solid #ccc; padding:1px 3px; border-radius:3px; margin-right:4px;">${plan.location}</span>` : ''}${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span><span id="tagDisplay_${plan.id}" style="color: blue; font-size: 10px; margin-left: 5px; font-weight:bold;">${plan.tag || ''}</span></span>
         <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
     </div>
     <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">

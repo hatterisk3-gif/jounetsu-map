@@ -184,8 +184,34 @@ function getInitData() {
     return [];
   };
 
+  // 拠点マスタの自動移行処理
+  let locSheet = ss.getSheetByName('拠点マスタ');
+  if (!locSheet) {
+    locSheet = ss.insertSheet('拠点マスタ');
+    locSheet.appendRow(['拠点名']);
+    locSheet.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
+    
+    const fieldSheet = ss.getSheetByName('圃場設定マスタ');
+    if (fieldSheet) {
+      const fieldData = fieldSheet.getDataRange().getValues();
+      let locs = new Set();
+      for (let i = 1; i < fieldData.length; i++) {
+        if (fieldData[i][0]) locs.add(String(fieldData[i][0]).trim());
+      }
+      locs.forEach(l => {
+        if (l !== '拠点名' && l !== '拠点') {
+          locSheet.appendRow([l]);
+        }
+      });
+      // 移行後、圃場設定マスタのA列(値のみ)をクリアする（ヘッダー行は残す）
+      if (fieldData.length > 1) {
+        fieldSheet.getRange(2, 1, fieldData.length - 1, 1).clearContent();
+      }
+    }
+  }
+
   const pdl = {
-    locations: getCol(['圃場設定マスタ', '拠点名'], 0),
+    locations: getCol(['拠点マスタ'], 0),
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
@@ -2257,6 +2283,17 @@ function getCultivationMaster() {
       }
     }
     
+    // 拠点マスタから拠点リストを取得して返す（栽培計画モーダル用）
+    const locSheetForMaster = ss.getSheetByName('拠点マスタ');
+    if (locSheetForMaster) {
+      const locData = locSheetForMaster.getDataRange().getValues();
+      master.locations = [];
+      for (let i = 1; i < locData.length; i++) {
+        if (locData[i][0]) master.locations.push(String(locData[i][0]).trim());
+      }
+    }
+    
+    // データがない場合はここまででリターン
     if (data.length <= 1) return master;
     
     for (let i = 1; i < data.length; i++) {
