@@ -550,12 +550,10 @@ async function saveCultivationPlan() {
     }
 }
 // --- END NEW CULTIVATION PLAN JS ---
-function openCultivationPlanModal() {
+async function openCultivationPlanModal() {
     renderCultivationPlanTable();
-    if(!cpMasterData) {
-        populateDefaultCpSelects();
-        fetchCultivationMaster();
-    }
+    populateDefaultCpSelects();
+    await fetchCultivationMaster();
     calcCp();
     document.getElementById('cultivationPlanModal').style.display = 'flex';
 }
