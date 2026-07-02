@@ -30,16 +30,38 @@
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">作物</label>
               <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList()" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
+                <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
+                <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList()" oninput="calcCp(); checkCroptypeDB()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
               </div>
             </div>
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">品種</label>
               <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
+                <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp(); checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
+                <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp(); checkCroptypeDB()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
+                <button onclick="searchCroptypeWeb()" title="作型をWEB検索" style="padding: 4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; width: 28px; display: flex; align-items: center; justify-content: center;">🌐</button>
               </div>
+            </div>
+            <div style="width: 100%;">
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">まき時期</label>
+              <select id="cpSeason" onchange="checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
+                  <option value="">選択...</option>
+                  <option value="春">春</option>
+                  <option value="夏">夏</option>
+                  <option value="秋">秋</option>
+                  <option value="冬">冬</option>
+                  <option value="周年">周年まき</option>
+              </select>
+            </div>
+            <div style="width: 100%;">
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">産地</label>
+              <select id="cpClimate" onchange="checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
+                  <option value="">選択...</option>
+                  <option value="暖地">暖地</option>
+                  <option value="温暖地">温暖地</option>
+                  <option value="一般地">一般地</option>
+                  <option value="高冷地">高冷地</option>
+              </select>
             </div>
             <div style="width: 100%; border-left: 1px solid #ccc; padding-left: 8px;">
               <label style="font-size: 11px; font-weight: bold; color: #1976D2; display: block; margin-bottom: 2px;">設定名(保存/読込)</label>

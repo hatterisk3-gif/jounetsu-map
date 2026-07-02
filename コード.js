@@ -45,6 +45,7 @@ function doPost(e) {
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year);
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
+    else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
     else if (action === "editToolInMaster") result = editToolInMaster(params);
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
@@ -2358,6 +2359,31 @@ function getCultivationMaster() {
       if (r[9] !== undefined && r[9] !== '' && !master.itemsPerPack.includes(r[9])) master.itemsPerPack.push(r[9]);
     }
     
+    // 作型DBの取得
+    master.croptypesDB = [];
+    const croptypeSheet = ss.getSheetByName('作型DB');
+    if (!croptypeSheet) {
+      ss.insertSheet('作型DB').appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫']);
+    } else {
+      const dbData = croptypeSheet.getDataRange().getValues();
+      for (let i = 1; i < dbData.length; i++) {
+        let r = dbData[i];
+        if (r[0] && r[1]) {
+          try {
+            master.croptypesDB.push({
+              crop: String(r[0]),
+              variety: String(r[1]),
+              season: String(r[2] || ''),
+              climate: String(r[3] || ''),
+              sowing: r[4] ? JSON.parse(r[4]) : [],
+              planting: r[5] ? JSON.parse(r[5]) : [],
+              harvesting: r[6] ? JSON.parse(r[6]) : []
+            });
+          } catch(e) { console.log('JSON parse error in croptypesDB', e); }
+        }
+      }
+    }
+    
     // プリセット情報の取得
     const presetSheet = ss.getSheetByName('栽培計画プリセット');
     if (!presetSheet) {
@@ -2448,6 +2474,50 @@ function appendCultivationMaster(newData) {
     return { success: true };
   } catch(e) {
     return { success: false, error: e.message };
+  }
+}
+
+// 作型DBを保存する関数
+function saveCroptypeDB(params) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('作型DB');
+    if (!sheet) {
+      sheet = ss.insertSheet('作型DB');
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫']);
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    let updated = false;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(params.crop).trim() && 
+          String(data[i][1]).trim() === String(params.variety).trim() && 
+          String(data[i][2] || '').trim() === String(params.season || '').trim() && 
+          String(data[i][3] || '').trim() === String(params.climate || '').trim()) {
+        
+        sheet.getRange(i + 1, 5).setValue(JSON.stringify(params.sowing || []));
+        sheet.getRange(i + 1, 6).setValue(JSON.stringify(params.planting || []));
+        sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
+        updated = true;
+        break;
+      }
+    }
+    
+    if (!updated) {
+      sheet.appendRow([
+        params.crop,
+        params.variety,
+        params.season || '',
+        params.climate || '',
+        JSON.stringify(params.sowing || []),
+        JSON.stringify(params.planting || []),
+        JSON.stringify(params.harvesting || [])
+      ]);
+    }
+    SpreadsheetApp.flush();
+    return { success: true, message: "作型DBを更新しました" };
+  } catch(e) {
+    return { success: false, message: e.message };
   }
 }
 

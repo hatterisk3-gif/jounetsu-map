@@ -303,6 +303,47 @@ function renderCultivationPlanTable() {
     cpPlans = [];
 }
 
+let pendingCroptypeData = null;
+
+function searchCroptypeWeb() {
+    const crop = getCpVal('cpCrop');
+    const variety = getCpVal('cpVariety');
+    const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+    
+    if (!crop || !variety) {
+        alert("作物と品種を選択してから検索してください。");
+        return;
+    }
+    
+    let query = `${crop} ${variety} 作型`;
+    if (climate) query += ` ${climate}`;
+    
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    window.open(url, '_blank');
+}
+
+function checkCroptypeDB() {
+    const crop = getCpVal('cpCrop');
+    const variety = getCpVal('cpVariety');
+    const season = document.getElementById('cpSeason') ? document.getElementById('cpSeason').value : '';
+    const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+    
+    pendingCroptypeData = null;
+    
+    if (!crop || !variety) return;
+    
+    if (cpMasterData && cpMasterData.croptypesDB) {
+        const found = cpMasterData.croptypesDB.find(db => 
+            db.crop === crop && db.variety === variety &&
+            db.season === season && db.climate === climate
+        );
+        
+        if (found) {
+            pendingCroptypeData = found;
+        }
+    }
+}
+
 function addCpPlanRow() {
     const location = getCpVal('cpLocation');
     const crop = getCpVal('cpCrop');
@@ -340,9 +381,15 @@ function addCpPlanRow() {
         yield: 0
     };
     
-    // 以前存在した google.script.run によるマスタ追加処理は、GASエンドポイントが存在せず
-    // UIをクラッシュさせる原因となるため削除しました。
-    // マスタ（プリセット）への追加は専用の保存ボタンで行われます。
+    if (pendingCroptypeData) {
+        plan.sowing = pendingCroptypeData.sowing ? [...pendingCroptypeData.sowing] : [];
+        plan.planting = pendingCroptypeData.planting ? [...pendingCroptypeData.planting] : [];
+        plan.harvesting = pendingCroptypeData.harvesting ? [...pendingCroptypeData.harvesting] : [];
+    } else {
+        plan.sowing = [];
+        plan.planting = [];
+        plan.harvesting = [];
+    }
     
     cpPlans.push(plan);
     renderCpPlanRow(plan);
@@ -373,9 +420,12 @@ function renderCpPlanRow(plan) {
       <div style="display:flex; align-items:center;">歩留り: <input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
       <div style="display:flex; align-items:center;">育苗成功率: <input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
     </div>
-    <div style="font-size: 11px; margin-top: 4px; color: #2e7d32; font-weight: bold; line-height: 1.2;">
-      播種: <span id="calcTrays_${plan.id}">0</span> <span id="unitTrays_${plan.id}">枚</span><br>
-      収穫: <span id="calcYield_${plan.id}">0</span> 
+    <div style="font-size: 11px; margin-top: 4px; display:flex; justify-content:space-between; align-items:flex-end;">
+      <div style="color: #2e7d32; font-weight: bold; line-height: 1.2;">
+        播種: <span id="calcTrays_${plan.id}">0</span> <span id="unitTrays_${plan.id}">枚</span><br>
+        収穫: <span id="calcYield_${plan.id}">0</span> 
+      </div>
+      <button onclick="registerCroptypeToDB('${plan.id}')" style="background:#fff; border:1px solid #1976D2; color:#1976D2; padding:2px 6px; border-radius:4px; font-size:10px; cursor:pointer;">作型をDB登録</button>
     </div>
     <div id="ratios_${plan.id}" style="margin-top: 2px; display:flex; gap: 2px; flex-wrap: wrap;"></div>`;
     tr.appendChild(th);
@@ -406,6 +456,47 @@ function removeCpPlanRow(planId) {
     const tbody = document.getElementById('cpTableBody');
     const tr = tbody.querySelector(`tr[data-plan-id="${planId}"]`);
     if (tr) tbody.removeChild(tr);
+}
+
+async function registerCroptypeToDB(planId) {
+    const plan = cpPlans.find(p => p.id === planId);
+    if (!plan) return;
+    
+    // Save current drawn timeline to plan.sowing, etc.
+    updatePlanDataFromDOM();
+    
+    const season = document.getElementById('cpSeason') ? document.getElementById('cpSeason').value : '';
+    const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+    
+    if(!confirm(`${plan.crop}（${plan.variety}）の作型をデータベースに登録しますか？\n※現在の「まき時期[${season || '未指定'}]」「産地[${climate || '未指定'}]」として保存されます。`)) return;
+    
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '登録中...';
+    btn.disabled = true;
+    
+    const params = {
+        crop: plan.crop,
+        variety: plan.variety,
+        season: season,
+        climate: climate,
+        sowing: plan.sowing || [],
+        planting: plan.planting || [],
+        harvesting: plan.harvesting || []
+    };
+    
+    try {
+        await callGAS('saveCroptypeDB', params);
+        alert("作型をデータベースに登録しました！次回から自動で読み込まれます。");
+        cpMasterData = await callGAS('getCultivationMaster');
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        checkCroptypeDB();
+    } catch (e) {
+        alert("登録エラー: " + e.message);
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
 }
 
 const TOOL_COLORS = {
