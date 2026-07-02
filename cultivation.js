@@ -340,25 +340,9 @@ function addCpPlanRow() {
         yield: 0
     };
     
-    // マスタにないデータをバックエンドに送信して保存
-    google.script.run.withSuccessHandler((res) => {
-        if(res && res.success && res.message !== "既に存在します") {
-            console.log("マスタに新しい選択肢を保存しました");
-            // バックグラウンドでマスタを更新しておく（次回開いた時用）
-            callGAS('getCultivationMaster').then(m => {
-                cpMaster = m;
-            });
-        }
-    }).appendCultivationMaster({
-        crop: crop,
-        variety: variety,
-        holes: holes,
-        rows: rows,
-        pSpace: pSpace,
-        rSpace: rSpace,
-        yieldPerSeedling: yieldPerPlant,
-        itemsPerPack: itemsPerPack
-    });
+    // 以前存在した google.script.run によるマスタ追加処理は、GASエンドポイントが存在せず
+    // UIをクラッシュさせる原因となるため削除しました。
+    // マスタ（プリセット）への追加は専用の保存ボタンで行われます。
     
     cpPlans.push(plan);
     renderCpPlanRow(plan);

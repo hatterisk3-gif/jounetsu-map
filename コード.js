@@ -2339,9 +2339,7 @@ function getCultivationMaster() {
     }
     master.locations = Array.from(locs);
     
-    // データがない場合はここまででリターン
-    if (data.length <= 1) return master;
-    
+    // データがない場合はマスタの反映処理をスキップしますが、プリセット取得処理には進みます
     for (let i = 1; i < data.length; i++) {
       let r = data[i];
       let c = String(r[0]).trim();
