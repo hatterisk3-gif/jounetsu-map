@@ -1799,6 +1799,91 @@ window.cadAddCustomShape = (type) => {
     window.saveCadStateToHistory();
 };
 
+window.cadCalcUneCountFromSpacing = () => {
+    try {
+        if (!window.cadTargetId) return;
+        const p = loadedPolygons[window.cadTargetId];
+        if (!p || !p.coords || p.coords.length < 3) return;
+
+        const spacingEl = document.getElementById('cadRidgeSpacing');
+        const spacingCm = spacingEl ? parseFloat(spacingEl.value) : 0;
+        if (isNaN(spacingCm) || spacingCm <= 0) {
+            alert("畝間(cm)を正しく入力してください。");
+            return;
+        }
+
+        const angleEl = document.getElementById('cadAngle');
+        const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+
+        let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([coords[0][0], coords[0][1]]);
+        const tPoly = turf.polygon([coords]);
+
+        const centerTurf = turf.center(tPoly);
+        let maxPosDist = 0, maxNegDist = 0;
+        let baseOrigin = centerTurf;
+        let growDirection = angle + 90;
+
+        if (window.cadFrontBaseline) {
+            if (Array.isArray(window.cadFrontBaseline) && window.cadFrontBaseline.length === 2) {
+                let p1lng = typeof window.cadFrontBaseline[0].lng === 'function' ? window.cadFrontBaseline[0].lng() : parseFloat(window.cadFrontBaseline[0].lng);
+                let p1lat = typeof window.cadFrontBaseline[0].lat === 'function' ? window.cadFrontBaseline[0].lat() : parseFloat(window.cadFrontBaseline[0].lat);
+                let p2lng = typeof window.cadFrontBaseline[1].lng === 'function' ? window.cadFrontBaseline[1].lng() : parseFloat(window.cadFrontBaseline[1].lng);
+                let p2lat = typeof window.cadFrontBaseline[1].lat === 'function' ? window.cadFrontBaseline[1].lat() : parseFloat(window.cadFrontBaseline[1].lat);
+                baseOrigin = turf.midpoint(turf.point([p1lng, p1lat]), turf.point([p2lng, p2lat]));
+            } else {
+                let pLng = typeof window.cadFrontBaseline.lng === 'function' ? window.cadFrontBaseline.lng() : parseFloat(window.cadFrontBaseline.lng);
+                let pLat = typeof window.cadFrontBaseline.lat === 'function' ? window.cadFrontBaseline.lat() : parseFloat(window.cadFrontBaseline.lat);
+                baseOrigin = turf.point([pLng, pLat]);
+            }
+            let centerBearing = turf.bearing(baseOrigin, centerTurf);
+            let diffPlus = (centerBearing - (angle + 90)) * Math.PI / 180;
+            let diffMinus = (centerBearing - (angle - 90)) * Math.PI / 180;
+            growDirection = Math.cos(diffPlus) > Math.cos(diffMinus) ? angle + 90 : angle - 90;
+        }
+
+        tPoly.geometry.coordinates[0].forEach(coord => {
+            const pt = turf.point(coord); 
+            const dist = turf.distance(baseOrigin, pt, { units: 'meters' });
+            const bearing = turf.bearing(baseOrigin, pt); 
+            const angleDiff = (bearing - growDirection) * Math.PI / 180;
+            const projDist = dist * Math.cos(angleDiff);
+            if (projDist > maxPosDist) maxPosDist = projDist;
+            if (-projDist > maxNegDist) maxNegDist = -projDist;
+        });
+
+        const totalWidthMeters = maxPosDist + maxNegDist;
+        const spacingMeters = spacingCm / 100;
+        let count = Math.floor(totalWidthMeters / spacingMeters);
+        if (count < 1) count = 1;
+
+        document.getElementById('cadUneCount').value = count;
+        alert(`圃場の有効幅: 約 ${totalWidthMeters.toFixed(1)} m\n畝間 ${spacingCm} cm で計算し、確定畝数を ${count} に設定しました。`);
+    } catch(e) {
+        alert("計算エラー: " + e.message);
+    }
+};
+
+window.cadLoadUneCountFromCAD = () => {
+    if (window.cadUnePolygons && window.cadUnePolygons.length > 0) {
+        document.getElementById('cadUneCount').value = window.cadUnePolygons.length;
+        alert(`現在の画面に描画されている畝数（${window.cadUnePolygons.length}）を確定畝数にセットしました。`);
+        return;
+    }
+    
+    if (window.cadTargetId && loadedPolygons[window.cadTargetId] && loadedPolygons[window.cadTargetId].uneSimData) {
+        try {
+            const saved = JSON.parse(loadedPolygons[window.cadTargetId].uneSimData);
+            if (saved.uneCount) {
+                document.getElementById('cadUneCount').value = saved.uneCount;
+                alert(`保存されているCADデータから畝数（${saved.uneCount}）をロードしました。`);
+                return;
+            }
+        } catch(e) {}
+    }
+    alert("CADデータに畝数が登録されていません。");
+};
+
 window.cadGenerateLines = () => {
     try {
         if (!window.cadTargetId) return;
