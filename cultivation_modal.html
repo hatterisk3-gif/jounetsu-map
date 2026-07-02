@@ -5,75 +5,98 @@
           <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('cultivationPlanModal').style.display='none'">×</span>
         </div>
         
-        <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; background: #f1f8e9; padding: 10px; border-radius: 6px; align-items:flex-end;">
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">年度</label>
-            <select id="cpYear" onchange="loadCultivationPlans(this.value)" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 70px;">
-                <option value="2024">2024</option>
-                <option value="2025">2025</option>
-                <option value="2026" selected>2026</option>
-                <option value="2027">2027</option>
-                <option value="2028">2028</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">拠点</label>
-            <select id="cpLocation" onchange="checkCustomInput(this, 'cpLocation_custom')" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 100px;">
-              <option value="">選択...</option>
-            </select>
-            <input type="text" id="cpLocation_custom" placeholder="手入力" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 90px; margin-top:4px;">
-          </div>
-
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">作物</label>
-            <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 90px;"></select>
-            <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList()" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px; margin-top:4px;">
-          </div>
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">品種</label>
-            <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 90px;"></select>
-            <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 80px; margin-top:4px;">
-          </div>
-          <div style="border-left: 1px solid #ccc; padding-left: 10px; margin-left: 5px;">
-            <label style="font-size: 11px; font-weight: bold; color: #1976D2; display: block;">設定名(保存/読込)</label>
-            <select id="cpPreset" onchange="loadCultivationPreset(this.value)" style="padding: 6px; border: 1px solid #1976D2; border-radius: 4px; font-size: 13px; width: 100px;">
-              <option value="">選択...</option>
-            </select>
-            <br>
-            <button id="btnSavePreset" onclick="saveCultivationPresetFromUI()" style="margin-top: 4px; padding: 4px 6px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; width:100px;">設定を保存</button>
-          </div>
-          
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">穴数</label>
-            <select id="cpTrayHoles" onchange="checkCustomInput(this, 'cpTrayHoles_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
-            <input type="number" id="cpTrayHoles_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
-          </div>
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">条数</label>
-            <select id="cpRows" onchange="checkCustomInput(this, 'cpRows_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
-            <input type="number" id="cpRows_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
-          </div>
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">株間(cm)</label>
-            <select id="cpPlantSpacing" onchange="checkCustomInput(this, 'cpPlantSpacing_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
-            <input type="number" id="cpPlantSpacing_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
-          </div>
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">畝間(cm)</label>
-            <select id="cpRidgeSpacing" onchange="checkCustomInput(this, 'cpRidgeSpacing_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
-            <input type="number" id="cpRidgeSpacing_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
-          </div>
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">1苗当たり収量</label>
-            <select id="cpYieldPerPlant" onchange="checkCustomInput(this, 'cpYieldPerPlant_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
-            <input type="number" id="cpYieldPerPlant_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
-          </div>
-          <div>
-            <label style="font-size: 11px; font-weight: bold; color: #555; display: block;">1P当たり入り数</label>
-            <select id="cpItemsPerPack" onchange="checkCustomInput(this, 'cpItemsPerPack_custom'); calcCp()" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 65px;"></select>
-            <input type="number" id="cpItemsPerPack_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 50px; margin-top:4px;">
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; background: #f1f8e9; padding: 8px 12px; border-radius: 6px;">
+          <!-- 上段：基本情報 -->
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">年度</label>
+              <select id="cpYear" onchange="loadCultivationPlans(this.value)" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 70px;">
+                  <option value="2024">2024</option>
+                  <option value="2025">2025</option>
+                  <option value="2026" selected>2026</option>
+                  <option value="2027">2027</option>
+                  <option value="2028">2028</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">拠点</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpLocation" onchange="checkCustomInput(this, 'cpLocation_custom')" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 90px;">
+                  <option value="">選択...</option>
+                </select>
+                <input type="text" id="cpLocation_custom" placeholder="手入力" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 80px;">
+              </div>
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">作物</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 90px;"></select>
+                <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList()" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 80px;">
+              </div>
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">品種</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 90px;"></select>
+                <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 80px;">
+              </div>
+            </div>
+            <div style="border-left: 1px solid #ccc; padding-left: 10px; margin-left: 5px; display: flex; align-items: flex-end; gap: 4px;">
+              <div>
+                <label style="font-size: 11px; font-weight: bold; color: #1976D2; display: block; margin-bottom: 2px;">設定名(保存/読込)</label>
+                <select id="cpPreset" onchange="loadCultivationPreset(this.value)" style="padding: 4px; border: 1px solid #1976D2; border-radius: 4px; font-size: 12px; width: 100px;">
+                  <option value="">選択...</option>
+                </select>
+              </div>
+              <button id="btnSavePreset" onclick="saveCultivationPresetFromUI()" style="padding: 4px 10px; height: 26px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">設定を保存</button>
+            </div>
           </div>
           
+          <!-- 下段：パラメータ情報 -->
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; padding-top: 4px; border-top: 1px dashed #ccc;">
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">穴数</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpTrayHoles" onchange="checkCustomInput(this, 'cpTrayHoles_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 65px;"></select>
+                <input type="number" id="cpTrayHoles_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 50px;">
+              </div>
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">条数</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpRows" onchange="checkCustomInput(this, 'cpRows_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 65px;"></select>
+                <input type="number" id="cpRows_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 50px;">
+              </div>
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">株間(cm)</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpPlantSpacing" onchange="checkCustomInput(this, 'cpPlantSpacing_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 65px;"></select>
+                <input type="number" id="cpPlantSpacing_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 50px;">
+              </div>
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">畝間(cm)</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpRidgeSpacing" onchange="checkCustomInput(this, 'cpRidgeSpacing_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 65px;"></select>
+                <input type="number" id="cpRidgeSpacing_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 50px;">
+              </div>
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">1苗収量</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpYieldPerPlant" onchange="checkCustomInput(this, 'cpYieldPerPlant_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 65px;"></select>
+                <input type="number" id="cpYieldPerPlant_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 50px;">
+              </div>
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">1P入数</label>
+              <div style="display: flex; gap: 4px;">
+                <select id="cpItemsPerPack" onchange="checkCustomInput(this, 'cpItemsPerPack_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 65px;"></select>
+                <input type="number" id="cpItemsPerPack_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 50px;">
+              </div>
+            </div>
+          </div>
         </div>
         
         <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; padding: 8px 15px; background: #e8f5e9; border-radius: 4px; border: 1px solid #c8e6c9;">
