@@ -32,7 +32,13 @@
             <option value="trip">アニメ(Trip)</option>
         </select>
         <button class="btn-primary" onclick="loadTrackingData()" style="background:#4CAF50; margin-right:10px;">🏃‍♂️ 表示</button>
-        <button class="btn-primary" onclick="openCultivationPlanModal()" style="background:#8BC34A; margin-right:10px;">🌱 栽培計画</button>
+        <div style="position: relative; display: inline-block; margin-right: 10px;">
+          <button class="btn-primary" onclick="toggleCultivationMenu()" style="background:#8BC34A;">🌱 栽培計画 ▼</button>
+          <div id="cultivationMenu" style="display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 1000; min-width: 170px; flex-direction: column;">
+            <button onclick="openCultivationPlanModal(); toggleCultivationMenu()" style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; border-bottom: 1px solid #eee; font-size: 13px; font-weight: bold; color: #333;">📝 栽培計画を立てる</button>
+            <button onclick="openCroptypeRegistrationModal(); toggleCultivationMenu()" style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; font-size: 13px; font-weight: bold; color: #333;">🏷️ 品種作型を登録する</button>
+          </div>
+        </div>
         <button class="btn-primary" onclick="openScheduleTable()">📋 作業一覧</button>
       </div>
     </div>

@@ -394,10 +394,12 @@ function addCpPlanRow() {
         plan.sowing = pendingCroptypeData.sowing ? [...pendingCroptypeData.sowing] : [];
         plan.planting = pendingCroptypeData.planting ? [...pendingCroptypeData.planting] : [];
         plan.harvesting = pendingCroptypeData.harvesting ? [...pendingCroptypeData.harvesting] : [];
+        plan.fileUrl = pendingCroptypeData.fileUrl || '';
     } else {
         plan.sowing = [];
         plan.planting = [];
         plan.harvesting = [];
+        plan.fileUrl = '';
     }
     
     cpPlans.push(plan);
@@ -415,8 +417,14 @@ function renderCpPlanRow(plan) {
     
     let th = document.createElement('td');
     th.style.cssText = 'position: sticky; left: 0; background: #fff; z-index: 5; font-weight: bold; font-size:12px; border: 1px solid #ddd; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd; padding:4px;';
+    
+    let fileLinkHtml = '';
+    if (plan.fileUrl) {
+        fileLinkHtml = `<a href="${plan.fileUrl}" target="_blank" style="font-size:10px; color:#1976d2; margin-left:4px; text-decoration:none;">📁資料</a>`;
+    }
+    
     th.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
-        <span>${plan.location ? `<span style="font-size:10px; color:#555; border:1px solid #ccc; padding:1px 3px; border-radius:3px; margin-right:4px;">${plan.location}</span>` : ''}${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span><span id="tagDisplay_${plan.id}" style="color: blue; font-size: 10px; margin-left: 5px; font-weight:bold;">${plan.tag || ''}</span></span>
+        <span>${plan.location ? `<span style="font-size:10px; color:#555; border:1px solid #ccc; padding:1px 3px; border-radius:3px; margin-right:4px;">${plan.location}</span>` : ''}${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span>${fileLinkHtml}<span id="tagDisplay_${plan.id}" style="color: blue; font-size: 10px; margin-left: 5px; font-weight:bold;">${plan.tag || ''}</span></span>
         <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
     </div>
     <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
@@ -807,5 +815,175 @@ function nextCpStep(step) {
                 el.open = false;
             }
         }
+    }
+}
+
+// --- CULTIVATION MENU ---
+function toggleCultivationMenu() {
+    const menu = document.getElementById('cultivationMenu');
+    if (menu) {
+        menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
+    }
+}
+
+document.addEventListener('click', function(e) {
+    const menu = document.getElementById('cultivationMenu');
+    const btn = document.querySelector('button[onclick="toggleCultivationMenu()"]');
+    if (menu && btn && !menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.style.display = 'none';
+    }
+});
+
+// --- CROPTYPE REGISTRATION ---
+function openCroptypeRegistrationModal() {
+    document.getElementById('croptypeRegistrationModal').style.display = 'flex';
+    renderCroptypePaintGrid();
+}
+
+function closeCroptypeRegistrationModal() {
+    document.getElementById('croptypeRegistrationModal').style.display = 'none';
+}
+
+function renderCroptypePaintGrid() {
+    const table = document.getElementById('crTable');
+    if (!table) return;
+    table.innerHTML = '';
+    
+    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
+    
+    let headerTr = document.createElement('tr');
+    let thLabel = document.createElement('th');
+    thLabel.textContent = '月';
+    thLabel.style.cssText = 'position: sticky; left: 0; background: #eee; z-index: 10; padding: 4px; font-size: 11px; min-width: 80px; white-space: nowrap;';
+    headerTr.appendChild(thLabel);
+    
+    months.forEach(m => {
+        let th = document.createElement('th');
+        th.textContent = m;
+        th.style.cssText = 'padding: 4px; border: 1px solid #ccc; font-size: 11px; min-width: 20px; text-align: center; background: #f9f9f9; white-space: nowrap;';
+        headerTr.appendChild(th);
+    });
+    table.appendChild(headerTr);
+    
+    let tr = document.createElement('tr');
+    let tdLabel = document.createElement('td');
+    tdLabel.textContent = '作型を塗る';
+    tdLabel.style.cssText = 'position: sticky; left: 0; background: #fff; z-index: 5; font-size: 11px; font-weight: bold; border: 1px solid #ddd; text-align: center; white-space: nowrap;';
+    tr.appendChild(tdLabel);
+    
+    months.forEach((m, i) => {
+        let td = document.createElement('td');
+        td.dataset.monthIndex = i;
+        td.dataset.task = '';
+        td.style.cssText = 'padding: 0; border: 1px dashed #ccc; cursor: pointer; min-width: 20px;';
+        td.onclick = function() { toggleCrCell(this); };
+        
+        let div = document.createElement('div');
+        div.style.cssText = 'width: 100%; height: 30px; transition: 0.2s; box-sizing:border-box;';
+        td.appendChild(div);
+        tr.appendChild(td);
+    });
+    table.appendChild(tr);
+}
+
+function toggleCrCell(td) {
+    const tool = document.querySelector('input[name="crTool"]:checked').value;
+    const div = td.querySelector('div');
+    
+    if (tool === 'eraser') {
+        td.dataset.task = '';
+        div.style.backgroundColor = '';
+    } else {
+        if (td.dataset.task === tool) {
+            td.dataset.task = '';
+            div.style.backgroundColor = '';
+        } else {
+            td.dataset.task = tool;
+            div.style.backgroundColor = TOOL_COLORS[tool];
+        }
+    }
+}
+
+async function saveCroptypeData() {
+    const crop = document.getElementById('crCrop').value;
+    const variety = document.getElementById('crVariety').value;
+    const season = document.getElementById('crSeason').value;
+    const climate = document.getElementById('crClimate').value;
+    
+    if (!crop || !variety || !season || !climate) {
+        alert('作物、品種、まき時期、産地はすべて入力してください。');
+        return;
+    }
+    
+    const tr = document.querySelector('#crTable tr:last-child');
+    const tds = tr.querySelectorAll('td[data-month-index]');
+    
+    let sowing = [];
+    let planting = [];
+    let harvesting = [];
+    
+    tds.forEach((td, idx) => {
+        if (td.dataset.task === 'sowing') sowing.push(idx);
+        if (td.dataset.task === 'planting') planting.push(idx);
+        if (td.dataset.task === 'harvesting') harvesting.push(idx);
+    });
+    
+    const btn = document.getElementById('btnSaveCroptype');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '保存中...';
+    btn.disabled = true;
+    
+    const fileInput = document.getElementById('crFile');
+    const file = fileInput.files.length > 0 ? fileInput.files[0] : null;
+    
+    const payload = {
+        crop: crop,
+        variety: variety,
+        season: season,
+        climate: climate,
+        sowing: sowing,
+        planting: planting,
+        harvesting: harvesting,
+        fileData: '',
+        fileName: '',
+        fileType: ''
+    };
+    
+    try {
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                payload.fileData = e.target.result;
+                payload.fileName = file.name;
+                payload.fileType = file.type;
+                await sendCroptypeToGAS(payload, btn, originalText);
+            };
+            reader.readAsDataURL(file);
+        } else {
+            await sendCroptypeToGAS(payload, btn, originalText);
+        }
+    } catch(e) {
+        console.error(e);
+        alert('エラーが発生しました: ' + e.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function sendCroptypeToGAS(payload, btn, originalText) {
+    try {
+        const res = await callGAS('saveCroptypeWithFile', payload);
+        alert(res.message);
+        
+        // cpMasterDataを再読み込み
+        cpMasterData = await callGAS('getCultivationMaster');
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        
+        closeCroptypeRegistrationModal();
+    } catch(e) {
+        alert('保存に失敗しました: ' + e.message);
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
 }

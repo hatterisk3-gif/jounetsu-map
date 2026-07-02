@@ -48,6 +48,7 @@ function doPost(e) {
     else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
     else if (action === "saveCroptypeDBBatch") result = saveCroptypeDBBatch(params);
     else if (action === "saveVarietyWithFile") result = saveVarietyWithFile(params);
+    else if (action === "saveCroptypeWithFile") result = saveCroptypeWithFile(params);
     else if (action === "editToolInMaster") result = editToolInMaster(params);
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
@@ -1791,6 +1792,81 @@ function getMachineLastHourMeters() {
   }
   return res;
 }
+
+// ==========================================
+// 品種作型登録 (ファイル付き)
+// ==========================================
+function saveCroptypeWithFile(params) {
+  try {
+    let fileUrl = "";
+    if (params.fileData && params.fileName) {
+      let dataStr = params.fileData;
+      let splitBase = dataStr.split(',');
+      let type = splitBase[0].split(';')[0].replace('data:', '');
+      let byteString = Utilities.base64Decode(splitBase[1]);
+      let blob = Utilities.newBlob(byteString, type, params.fileName);
+      
+      const folderName = "情熱MAP品種情報";
+      let folders = DriveApp.getFoldersByName(folderName);
+      let folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+      
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      fileUrl = file.getUrl();
+    }
+    
+    // Save to 作型DB
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('作型DB');
+    if (!sheet) {
+      sheet = ss.insertSheet('作型DB');
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL']);
+    }
+    
+    const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+    let fileUrlColIndex = headers.indexOf('ファイルURL') + 1;
+    if (fileUrlColIndex === 0) {
+      fileUrlColIndex = headers.length + 1;
+      sheet.getRange(1, fileUrlColIndex).setValue('ファイルURL');
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    let updated = false;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(params.crop).trim() && 
+          String(data[i][1]).trim() === String(params.variety).trim() && 
+          String(data[i][2] || '').trim() === String(params.season || '').trim() && 
+          String(data[i][3] || '').trim() === String(params.climate || '').trim()) {
+        
+        sheet.getRange(i + 1, 5).setValue(JSON.stringify(params.sowing || []));
+        sheet.getRange(i + 1, 6).setValue(JSON.stringify(params.planting || []));
+        sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
+        if (fileUrl) {
+          sheet.getRange(i + 1, fileUrlColIndex).setValue(fileUrl);
+        }
+        updated = true;
+        break;
+      }
+    }
+    
+    if (!updated) {
+      let newRow = [];
+      newRow[0] = params.crop;
+      newRow[1] = params.variety;
+      newRow[2] = params.season || '';
+      newRow[3] = params.climate || '';
+      newRow[4] = JSON.stringify(params.sowing || []);
+      newRow[5] = JSON.stringify(params.planting || []);
+      newRow[6] = JSON.stringify(params.harvesting || []);
+      newRow[fileUrlColIndex - 1] = fileUrl;
+      sheet.appendRow(newRow);
+    }
+    
+    return { success: true, message: "作型を保存しました", url: fileUrl };
+  } catch(e) {
+    return { success: false, message: e.message };
+  }
+}
 // ==========================================
 // 看板の連携IDを「看板」シートのI列に保存
 // ==========================================
@@ -2365,9 +2441,11 @@ function getCultivationMaster() {
     master.croptypesDB = [];
     const croptypeSheet = ss.getSheetByName('作型DB');
     if (!croptypeSheet) {
-      ss.insertSheet('作型DB').appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫']);
+      ss.insertSheet('作型DB').appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL']);
     } else {
       const dbData = croptypeSheet.getDataRange().getValues();
+      const headers = dbData[0] || [];
+      const fileUrlCol = headers.indexOf('ファイルURL');
       for (let i = 1; i < dbData.length; i++) {
         let r = dbData[i];
         if (r[0] && r[1]) {
@@ -2379,7 +2457,8 @@ function getCultivationMaster() {
               climate: String(r[3] || ''),
               sowing: r[4] ? JSON.parse(r[4]) : [],
               planting: r[5] ? JSON.parse(r[5]) : [],
-              harvesting: r[6] ? JSON.parse(r[6]) : []
+              harvesting: r[6] ? JSON.parse(r[6]) : [],
+              fileUrl: fileUrlCol !== -1 ? r[fileUrlCol] : ''
             });
           } catch(e) { console.log('JSON parse error in croptypesDB', e); }
         }
