@@ -322,6 +322,15 @@ function searchCroptypeWeb() {
     window.open(url, '_blank');
 }
 
+function loadAndAddCroptype() {
+    checkCroptypeDB();
+    if (pendingCroptypeData) {
+        addCpPlanRow();
+    } else {
+        alert("該当する品種の作型データがマスタに見つかりませんでした。手動で行を追加してください。");
+    }
+}
+
 function checkCroptypeDB() {
     const crop = getCpVal('cpCrop');
     const variety = getCpVal('cpVariety');
