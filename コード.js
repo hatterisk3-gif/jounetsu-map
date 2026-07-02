@@ -46,6 +46,8 @@ function doPost(e) {
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
     else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
+    else if (action === "saveCroptypeDBBatch") result = saveCroptypeDBBatch(params);
+    else if (action === "saveVarietyWithFile") result = saveVarietyWithFile(params);
     else if (action === "editToolInMaster") result = editToolInMaster(params);
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
@@ -2387,9 +2389,12 @@ function getCultivationMaster() {
     // プリセット情報の取得
     const presetSheet = ss.getSheetByName('栽培計画プリセット');
     if (!presetSheet) {
-      ss.insertSheet('栽培計画プリセット').appendRow(['作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数']);
+      ss.insertSheet('栽培計画プリセット').appendRow(['作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数', 'ファイルURL']);
     } else {
       const presetData = presetSheet.getDataRange().getValues();
+      const presetHeaders = presetData[0] || [];
+      const urlCol = presetHeaders.indexOf('ファイルURL');
+      
       for (let i = 1; i < presetData.length; i++) {
         let r = presetData[i];
         let pc = String(r[0]).trim();
@@ -2402,7 +2407,8 @@ function getCultivationMaster() {
             pSpace: r[4] || '',
             rSpace: r[5] || '',
             yieldPerSeedling: r[6] || '',
-            itemsPerPack: r[7] || ''
+            itemsPerPack: r[7] || '',
+            fileUrl: urlCol !== -1 ? r[urlCol] : ''
           });
           // プリセットに保存されている数値を各プルダウンの選択肢にも反映する
           if (r[2] !== '' && !master.holes.includes(r[2])) master.holes.push(r[2]);
@@ -2474,6 +2480,21 @@ function appendCultivationMaster(newData) {
     return { success: true };
   } catch(e) {
     return { success: false, error: e.message };
+  }
+}
+
+// 作型DBを一括保存する関数
+function saveCroptypeDBBatch(params) {
+  try {
+    const croptypes = params.croptypes;
+    if (!croptypes || croptypes.length === 0) return { success: true };
+    
+    for (let c of croptypes) {
+        saveCroptypeDB(c);
+    }
+    return { success: true, message: "作型DBを一括更新しました" };
+  } catch(e) {
+    return { success: false, message: e.message };
   }
 }
 
@@ -2564,6 +2585,94 @@ function saveCultivationPreset(presetData) {
     SpreadsheetApp.flush();
     
     return { success: true, message: "保存完了" };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// 品種登録（ファイル付き）を保存する関数
+function saveVarietyWithFile(params) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('栽培計画プリセット');
+    if (!sheet) {
+      sheet = ss.insertSheet('栽培計画プリセット');
+      sheet.appendRow(['作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数', 'ファイルURL']);
+    }
+    
+    // ヘッダーにファイルURLがなければ追加
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    let fileUrlColIndex = headers.indexOf('ファイルURL') + 1;
+    if (fileUrlColIndex === 0) {
+      fileUrlColIndex = headers.length + 1;
+      sheet.getRange(1, fileUrlColIndex).setValue('ファイルURL');
+    }
+    
+    let fileUrl = "";
+    if (params.fileData && params.fileName) {
+      // Decode Base64
+      let dataStr = params.fileData;
+      if (dataStr.indexOf(',') !== -1) {
+        dataStr = dataStr.split(',')[1];
+      }
+      const blob = Utilities.newBlob(Utilities.base64Decode(dataStr), params.fileType, params.fileName);
+      
+      // フォルダ検索 or 作成
+      const folderName = "情熱MAP品種情報";
+      let folders = DriveApp.getFoldersByName(folderName);
+      let folder;
+      if (folders.hasNext()) {
+        folder = folders.next();
+      } else {
+        folder = DriveApp.createFolder(folderName);
+      }
+      
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      fileUrl = file.getUrl();
+    }
+    
+    // シートへの書き込み（上書き or 追記）
+    const data = sheet.getDataRange().getValues();
+    let updated = false;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(params.crop).trim() && String(data[i][1]).trim() === String(params.name).trim()) {
+        sheet.getRange(i + 1, 3, 1, 6).setValues([[
+          params.holes,
+          params.rows,
+          params.pSpace,
+          params.rSpace,
+          params.yieldPerSeedling,
+          params.itemsPerPack
+        ]]);
+        if (fileUrl) {
+          sheet.getRange(i + 1, fileUrlColIndex).setValue(fileUrl);
+        } else {
+          // If no new file, keep existing or leave blank
+        }
+        updated = true;
+        break;
+      }
+    }
+    
+    if (!updated) {
+      let newRow = [];
+      for (let j = 0; j < fileUrlColIndex; j++) newRow.push('');
+      newRow[0] = params.crop;
+      newRow[1] = params.name; // プリセット名として品種名を扱う
+      newRow[2] = params.holes;
+      newRow[3] = params.rows;
+      newRow[4] = params.pSpace;
+      newRow[5] = params.rSpace;
+      newRow[6] = params.yieldPerSeedling;
+      newRow[7] = params.itemsPerPack;
+      newRow[fileUrlColIndex - 1] = fileUrl;
+      sheet.appendRow(newRow);
+    }
+    
+    SpreadsheetApp.flush();
+    
+    return { success: true, message: "品種情報とファイルを保存しました", fileUrl: fileUrl };
   } catch (e) {
     return { success: false, message: e.message };
   }

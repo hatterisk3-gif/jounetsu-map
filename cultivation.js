@@ -425,7 +425,6 @@ function renderCpPlanRow(plan) {
         播種: <span id="calcTrays_${plan.id}">0</span> <span id="unitTrays_${plan.id}">枚</span><br>
         収穫: <span id="calcYield_${plan.id}">0</span> 
       </div>
-      <button onclick="registerCroptypeToDB('${plan.id}')" style="background:#fff; border:1px solid #1976D2; color:#1976D2; padding:2px 6px; border-radius:4px; font-size:10px; cursor:pointer;">作型をDB登録</button>
     </div>
     <div id="ratios_${plan.id}" style="margin-top: 2px; display:flex; gap: 2px; flex-wrap: wrap;"></div>`;
     tr.appendChild(th);
@@ -458,46 +457,6 @@ function removeCpPlanRow(planId) {
     if (tr) tbody.removeChild(tr);
 }
 
-async function registerCroptypeToDB(planId) {
-    const plan = cpPlans.find(p => p.id === planId);
-    if (!plan) return;
-    
-    // Save current drawn timeline to plan.sowing, etc.
-    updatePlanDataFromDOM();
-    
-    const season = document.getElementById('cpSeason') ? document.getElementById('cpSeason').value : '';
-    const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
-    
-    if(!confirm(`${plan.crop}（${plan.variety}）の作型をデータベースに登録しますか？\n※現在の「まき時期[${season || '未指定'}]」「産地[${climate || '未指定'}]」として保存されます。`)) return;
-    
-    const btn = event.target;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '登録中...';
-    btn.disabled = true;
-    
-    const params = {
-        crop: plan.crop,
-        variety: plan.variety,
-        season: season,
-        climate: climate,
-        sowing: plan.sowing || [],
-        planting: plan.planting || [],
-        harvesting: plan.harvesting || []
-    };
-    
-    try {
-        await callGAS('saveCroptypeDB', params);
-        alert("作型をデータベースに登録しました！次回から自動で読み込まれます。");
-        cpMasterData = await callGAS('getCultivationMaster');
-        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-        checkCroptypeDB();
-    } catch (e) {
-        alert("登録エラー: " + e.message);
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-    }
-}
 
 const TOOL_COLORS = {
     'sowing': '#8D6E63',
@@ -650,6 +609,26 @@ async function saveCultivationPlan() {
         
         await callGAS('saveCultivationPlan', { planDataArray: payloadPlans });
         
+        // Batch save croptypes
+        const season = document.getElementById('cpSeason') ? document.getElementById('cpSeason').value : '';
+        const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+        const croptypeParamsArray = payloadPlans.map(plan => ({
+            crop: plan.crop,
+            variety: plan.variety,
+            season: season,
+            climate: climate,
+            sowing: plan.tasks.sowing || [],
+            planting: plan.tasks.planting || [],
+            harvesting: plan.tasks.harvesting || []
+        }));
+        
+        // Call GAS to save batch croptypes
+        await callGAS('saveCroptypeDBBatch', { croptypes: croptypeParamsArray });
+        
+        // Reload master data
+        cpMasterData = await callGAS('getCultivationMaster');
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        
         if (btn) {
             btn.innerHTML = orgText;
             btn.disabled = false;
@@ -675,4 +654,135 @@ async function openCultivationPlanModal() {
     calcCp();
     document.getElementById('cultivationPlanModal').style.display = 'flex';
 }
-
+
+// --- VARIETY REGISTRATION ---
+
+function loadCultivationPreset(presetName) {
+    if (!presetName) {
+        document.getElementById('varietyFileLinkArea').innerHTML = '';
+        return;
+    }
+    const crop = getCpVal('cpCrop');
+    if (!cpMasterData || !cpMasterData.presets || !cpMasterData.presets[crop]) return;
+    
+    const p = cpMasterData.presets[crop].find(x => x.name === presetName);
+    if (p) {
+        setCpVal('cpTrayHoles', p.holes);
+        setCpVal('cpPlantRows', p.rows);
+        setCpVal('cpPlantSpacing', p.pSpace);
+        setCpVal('cpRowSpacing', p.rSpace);
+        setCpVal('cpYieldPerSeedling', p.yieldPerSeedling);
+        setCpVal('cpItemsPerPack', p.itemsPerPack);
+        calcCp();
+        
+        // Show file link if exists
+        const fileArea = document.getElementById('varietyFileLinkArea');
+        if (p.fileUrl) {
+            fileArea.innerHTML = `<a href="${p.fileUrl}" target="_blank" style="color: #E91E63; text-decoration: none; font-weight: bold;">📄 品種情報を確認</a>`;
+        } else {
+            fileArea.innerHTML = '';
+        }
+    }
+}
+
+function openVarietyRegistrationModal() {
+    const crop = getCpVal('cpCrop', true);
+    if (!crop) {
+        alert("作物を選択してください。");
+        return;
+    }
+    
+    const variety = getCpVal('cpVariety', true);
+    
+    document.getElementById('vrCrop').value = crop;
+    document.getElementById('vrVariety').value = variety || '';
+    
+    // 現在のUIパラメータをプレビュー
+    const params = [
+        `穴数: ${getCpVal('cpTrayHoles', true) || '-'}`,
+        `条数: ${getCpVal('cpPlantRows', true) || '-'}`,
+        `株間: ${getCpVal('cpPlantSpacing', true) || '-'}`,
+        `畝間: ${getCpVal('cpRowSpacing', true) || '-'}`,
+        `歩留り: ${getCpVal('cpYieldRate', true) || '-'}%`,
+        `1苗収量: ${getCpVal('cpYieldPerSeedling', true) || '-'}`,
+        `1P入り数: ${getCpVal('cpItemsPerPack', true) || '-'}`
+    ];
+    document.getElementById('vrParamsPreview').innerText = params.join(' / ');
+    
+    document.getElementById('vrFile').value = '';
+    document.getElementById('varietyRegistrationModal').style.display = 'flex';
+}
+
+function closeVarietyRegistrationModal() {
+    document.getElementById('varietyRegistrationModal').style.display = 'none';
+}
+
+async function saveVarietyData() {
+    const crop = document.getElementById('vrCrop').value;
+    const variety = document.getElementById('vrVariety').value;
+    
+    if (!variety) {
+        alert("品種名(設定名)を入力してください。");
+        return;
+    }
+    
+    const fileInput = document.getElementById('vrFile');
+    const file = fileInput.files[0];
+    
+    const btn = document.getElementById('btnSaveVarietyModal');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '送信中...';
+    btn.disabled = true;
+    
+    const params = {
+        crop: crop,
+        name: variety,
+        holes: getCpVal('cpTrayHoles', true) || '',
+        rows: getCpVal('cpPlantRows', true) || '',
+        pSpace: getCpVal('cpPlantSpacing', true) || '',
+        rSpace: getCpVal('cpRowSpacing', true) || '',
+        yieldPerSeedling: getCpVal('cpYieldPerSeedling', true) || '',
+        itemsPerPack: getCpVal('cpItemsPerPack', true) || ''
+    };
+    
+    try {
+        if (file) {
+            // Read file as Base64
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                params.fileData = e.target.result;
+                params.fileName = file.name;
+                params.fileType = file.type;
+                await sendVarietyToGAS(params, btn, originalText);
+            };
+            reader.readAsDataURL(file);
+        } else {
+            await sendVarietyToGAS(params, btn, originalText);
+        }
+    } catch (e) {
+        alert("エラー: " + e.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function sendVarietyToGAS(params, btn, originalText) {
+    try {
+        const res = await callGAS('saveVarietyWithFile', params);
+        alert(res.message);
+        
+        // Reload master data to get the new preset & url
+        cpMasterData = await callGAS('getCultivationMaster');
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        
+        // Update the select box
+        populateDefaultCpSelects();
+        
+        closeVarietyRegistrationModal();
+    } catch(e) {
+        alert("保存エラー: " + e.message);
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}

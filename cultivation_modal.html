@@ -64,13 +64,14 @@
               </select>
             </div>
             <div style="width: 100%; border-left: 1px solid #ccc; padding-left: 8px;">
-              <label style="font-size: 11px; font-weight: bold; color: #1976D2; display: block; margin-bottom: 2px;">設定名(保存/読込)</label>
+              <label style="font-size: 11px; font-weight: bold; color: #1976D2; display: block; margin-bottom: 2px;">品種設定(読込/登録)</label>
               <div style="display: flex; gap: 4px; align-items: center; width: 100%;">
                 <select id="cpPreset" onchange="loadCultivationPreset(this.value)" style="padding: 4px; border: 1px solid #1976D2; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
                   <option value="">選択...</option>
                 </select>
-                <button id="btnSavePreset" onclick="saveCultivationPresetFromUI()" style="padding: 4px 6px; height: 26px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap;">保存</button>
+                <button id="btnSavePreset" onclick="openVarietyRegistrationModal()" style="padding: 4px 6px; height: 26px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap;">品種登録</button>
               </div>
+              <div id="varietyFileLinkArea" style="margin-top: 4px; font-size: 11px; text-align: right;"></div>
             </div>
           </div>
         </div>
@@ -158,6 +159,41 @@
         <div style="text-align: center; margin-top: 15px;">
           <button type="button" onclick="assignTags()" style="padding: 10px 20px; background: #2196F3; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; margin-right: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">タグ割り当て</button>
           <button type="button" onclick="saveCultivationPlan()" style="padding: 10px 40px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 品種登録モーダル -->
+    <div id="varietyRegistrationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10010; justify-content: center; align-items: center;">
+      <div style="background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin: 0; color: #2196F3;">🏷️ 品種を登録</h3>
+          <span style="cursor: pointer; font-size: 20px; color: #999;" onclick="closeVarietyRegistrationModal()">×</span>
+        </div>
+        
+        <div style="margin-bottom: 10px;">
+          <label style="font-size: 12px; font-weight: bold;">対象の作物</label>
+          <input type="text" id="vrCrop" disabled style="width: 100%; padding: 6px; border: 1px solid #ddd; background: #f5f5f5; border-radius: 4px; margin-top: 4px; box-sizing: border-box;">
+        </div>
+        
+        <div style="margin-bottom: 10px;">
+          <label style="font-size: 12px; font-weight: bold;">品種名 (設定名)</label>
+          <input type="text" id="vrVariety" placeholder="例: 夏秋用など" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px; box-sizing: border-box;">
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #e3f2fd; border-radius: 6px; font-size: 11px; color: #555;">
+          <p style="margin: 0 0 5px 0; font-weight: bold;">保存されるパラメータ:</p>
+          <div id="vrParamsPreview"></div>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <label style="font-size: 12px; font-weight: bold;">品種情報ファイル (PDF・JPG 等)</label>
+          <input type="file" id="vrFile" accept=".pdf,image/jpeg,image/png,image/jpg" style="width: 100%; padding: 6px; margin-top: 4px; font-size: 12px; box-sizing: border-box;">
+        </div>
+        
+        <div style="text-align: right;">
+          <button onclick="closeVarietyRegistrationModal()" style="padding: 8px 12px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; margin-right: 8px;">キャンセル</button>
+          <button id="btnSaveVarietyModal" onclick="saveVarietyData()" style="padding: 8px 16px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">登録する</button>
         </div>
       </div>
     </div>
