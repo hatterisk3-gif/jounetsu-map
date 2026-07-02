@@ -786,3 +786,17 @@ async function sendVarietyToGAS(params, btn, originalText) {
         btn.disabled = false;
     }
 }
+
+function nextCpStep(step) {
+    for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById('cpStep' + i);
+        if (el) {
+            if (i === step) {
+                el.open = true;
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+                el.open = false;
+            }
+        }
+    }
+}
