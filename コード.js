@@ -2368,9 +2368,10 @@ function getCultivationMaster() {
       const presetData = presetSheet.getDataRange().getValues();
       for (let i = 1; i < presetData.length; i++) {
         let r = presetData[i];
-        if (r[0] && r[1]) {
-          if (!master.presets[r[0]]) master.presets[r[0]] = [];
-          master.presets[r[0]].push({
+        let pc = String(r[0]).trim();
+        if (pc && r[1]) {
+          if (!master.presets[pc]) master.presets[pc] = [];
+          master.presets[pc].push({
             name: String(r[1]),
             holes: r[2] || '',
             rows: r[3] || '',
@@ -2465,7 +2466,7 @@ function saveCultivationPreset(presetData) {
     const data = sheet.getDataRange().getValues();
     let updated = false;
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === presetData.crop && data[i][1] === presetData.name) {
+      if (String(data[i][0]).trim() === String(presetData.crop).trim() && String(data[i][1]).trim() === String(presetData.name).trim()) {
         sheet.getRange(i + 1, 3, 1, 6).setValues([[
           presetData.holes,
           presetData.rows,
@@ -2491,6 +2492,8 @@ function saveCultivationPreset(presetData) {
         presetData.itemsPerPack
       ]);
     }
+    
+    SpreadsheetApp.flush();
     
     return { success: true, message: "保存完了" };
   } catch (e) {
