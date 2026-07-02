@@ -117,6 +117,9 @@ function updateVarietyList() {
 function updatePresetList(crop) {
     const presetSelect = document.getElementById('cpPreset');
     if (!presetSelect) return;
+    
+    const currentVal = presetSelect.value;
+    
     presetSelect.innerHTML = '<option value="">選択...</option>';
     if (cpMasterData && cpMasterData.presets && cpMasterData.presets[crop]) {
         cpMasterData.presets[crop].forEach(p => {
@@ -125,6 +128,19 @@ function updatePresetList(crop) {
             opt.innerText = p.name;
             presetSelect.appendChild(opt);
         });
+    }
+    
+    if (currentVal !== '') {
+        const exists = Array.from(presetSelect.options).some(opt => opt.value === currentVal);
+        if (exists) {
+            presetSelect.value = currentVal;
+        } else if (presetSelect.options.length > 1) {
+            presetSelect.value = presetSelect.options[1].value;
+            loadCultivationPreset(presetSelect.value);
+        }
+    } else if (presetSelect.options.length > 1) {
+        presetSelect.value = presetSelect.options[1].value;
+        loadCultivationPreset(presetSelect.value);
     }
 }
 
