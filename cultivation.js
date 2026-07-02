@@ -30,6 +30,9 @@ function populateSelect(id, arr, defaultOptions = []) {
     const sel = document.getElementById(id);
     if(!sel) return;
     
+    // 現在の選択値を保存
+    const currentVal = sel.value;
+    
     // Merge master array with defaults, remove duplicates
     let merged = [...defaultOptions];
     if(arr && arr.length > 0) {
@@ -47,6 +50,16 @@ function populateSelect(id, arr, defaultOptions = []) {
     });
     html += '<option value="custom">その他(手入力)</option>';
     sel.innerHTML = html;
+    
+    // 選択値を復元
+    if (currentVal !== '') {
+        const exists = Array.from(sel.options).some(opt => opt.value === currentVal);
+        if (exists) {
+            sel.value = currentVal;
+        } else if (currentVal === 'custom') {
+            sel.value = 'custom';
+        }
+    }
 }
 
 function applyCultivationMasterData() {
@@ -181,6 +194,7 @@ async function saveCultivationPresetFromUI() {
         await callGAS('saveCultivationPreset', presetData);
         
         cpMasterData = await callGAS('getCultivationMaster');
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         updatePresetList(crop);
         document.getElementById('cpPreset').value = presetName;
         
