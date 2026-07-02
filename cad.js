@@ -1832,11 +1832,17 @@ window.cadGenerateLines = () => {
         if (window.cadFrontBaseline) {
             useFrontBaseline = true;
             if (Array.isArray(window.cadFrontBaseline) && window.cadFrontBaseline.length === 2) {
-                let p1 = turf.point([window.cadFrontBaseline[0].lng, window.cadFrontBaseline[0].lat]);
-                let p2 = turf.point([window.cadFrontBaseline[1].lng, window.cadFrontBaseline[1].lat]);
+                let p1lng = typeof window.cadFrontBaseline[0].lng === 'function' ? window.cadFrontBaseline[0].lng() : parseFloat(window.cadFrontBaseline[0].lng);
+                let p1lat = typeof window.cadFrontBaseline[0].lat === 'function' ? window.cadFrontBaseline[0].lat() : parseFloat(window.cadFrontBaseline[0].lat);
+                let p2lng = typeof window.cadFrontBaseline[1].lng === 'function' ? window.cadFrontBaseline[1].lng() : parseFloat(window.cadFrontBaseline[1].lng);
+                let p2lat = typeof window.cadFrontBaseline[1].lat === 'function' ? window.cadFrontBaseline[1].lat() : parseFloat(window.cadFrontBaseline[1].lat);
+                let p1 = turf.point([p1lng, p1lat]);
+                let p2 = turf.point([p2lng, p2lat]);
                 baseOrigin = turf.midpoint(p1, p2);
             } else {
-                baseOrigin = turf.point([window.cadFrontBaseline.lng, window.cadFrontBaseline.lat]);
+                let pLng = typeof window.cadFrontBaseline.lng === 'function' ? window.cadFrontBaseline.lng() : parseFloat(window.cadFrontBaseline.lng);
+                let pLat = typeof window.cadFrontBaseline.lat === 'function' ? window.cadFrontBaseline.lat() : parseFloat(window.cadFrontBaseline.lat);
+                baseOrigin = turf.point([pLng, pLat]);
             }
             
             let centerBearing = turf.bearing(baseOrigin, centerTurf);
@@ -1863,7 +1869,11 @@ window.cadGenerateLines = () => {
         const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' });
 
         let nakamichiPolys = window.cadNakamichiLines.map(line => {
-            const centerLine = turf.lineString([[line[0].lng, line[0].lat], [line[1].lng, line[1].lat]]);
+            let p1lng = typeof line[0].lng === 'function' ? line[0].lng() : parseFloat(line[0].lng);
+            let p1lat = typeof line[0].lat === 'function' ? line[0].lat() : parseFloat(line[0].lat);
+            let p2lng = typeof line[1].lng === 'function' ? line[1].lng() : parseFloat(line[1].lng);
+            let p2lat = typeof line[1].lat === 'function' ? line[1].lat() : parseFloat(line[1].lat);
+            const centerLine = turf.lineString([[p1lng, p1lat], [p2lng, p2lat]]);
             return turf.buffer(centerLine, 0.5 / 1000, { units: 'kilometers' });
         });
 

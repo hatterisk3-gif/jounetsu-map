@@ -44,6 +44,7 @@ function doPost(e) {
     else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.planDataArray);
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year);
     else if (action === "getCultivationMaster") result = getCultivationMaster();
+    else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
     else if (action === "editToolInMaster") result = editToolInMaster(params);
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
