@@ -273,7 +273,7 @@ function renderCultivationPlanTable() {
     
     const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
     
-    let tHTML = '<thead><tr><th style="min-width: 120px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; box-shadow: 1px 0 0 #ddd;"></th>';
+    let tHTML = '<thead><tr><th style="width: 160px; min-width: 160px; max-width: 160px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; box-shadow: 1px 0 0 #ddd; box-sizing: border-box;"></th>';
     months.forEach((m, idx) => {
         let label = m + '月';
         if (idx === 0) label = '今年 ' + label;
@@ -281,7 +281,7 @@ function renderCultivationPlanTable() {
         let bg = idx < 12 ? '#f1f8e9' : '#e8eaf6';
         tHTML += '<th colspan="6" style="border: 1px solid #ddd; background: ' + bg + '; padding: 4px; min-width:150px;">' + label + '</th>';
     });
-    tHTML += '</tr><tr><th style="min-width: 120px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd;">作型（品種）</th>';
+    tHTML += '</tr><tr><th style="width: 160px; min-width: 160px; max-width: 160px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd; box-sizing: border-box;">作型（品種）</th>';
     
     const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
     months.forEach(() => {
@@ -397,6 +397,12 @@ function addCpPlanRow() {
     cpPlans.push(plan);
     renderCpPlanRow(plan);
     updateRowCalculations(plan.id);
+    
+    // UI改善: 作型を追加後、ペイント領域を広くするために設定項目を自動で閉じる
+    for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById('cpStep' + i);
+        if (el) el.open = false;
+    }
 }
 
 function renderCpPlanRow(plan) {
@@ -415,27 +421,29 @@ function renderCpPlanRow(plan) {
         fileLinkHtml = `<a href="${plan.fileUrl}" target="_blank" style="font-size:10px; color:#1976d2; margin-left:4px; text-decoration:none;">📁資料</a>`;
     }
     
-    th.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
-        <span>${plan.location ? `<span style="font-size:10px; color:#555; border:1px solid #ccc; padding:1px 3px; border-radius:3px; margin-right:4px;">${plan.location}</span>` : ''}${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span>${fileLinkHtml}<span id="tagDisplay_${plan.id}" style="color: blue; font-size: 10px; margin-left: 5px; font-weight:bold;">${plan.tag || ''}</span></span>
-        <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
-    </div>
-    <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
-      <div style="display:flex; align-items:center;">面積: <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;">a</div>
-      <div style="display:flex; align-items:center;">
-          <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:70px; height:16px; font-size:9px; padding:0;">
-              <option value="">圃場選択</option>
-          </select>
+    th.innerHTML = `<div style="width: 150px; box-sizing: border-box; white-space: normal;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>${plan.location ? `<span style="font-size:10px; color:#555; border:1px solid #ccc; padding:1px 3px; border-radius:3px; margin-right:4px;">${plan.location}</span>` : ''}${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span>${fileLinkHtml}<span id="tagDisplay_${plan.id}" style="color: blue; font-size: 10px; margin-left: 5px; font-weight:bold;">${plan.tag || ''}</span></span>
+          <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
       </div>
-      <div style="display:flex; align-items:center;">歩留り: <input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
-      <div style="display:flex; align-items:center;">育苗成功率: <input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
-    </div>
-    <div style="font-size: 11px; margin-top: 4px; display:flex; justify-content:space-between; align-items:flex-end;">
-      <div style="color: #2e7d32; font-weight: bold; line-height: 1.2;">
-        播種: <span id="calcTrays_${plan.id}">0</span> <span id="unitTrays_${plan.id}">枚</span><br>
-        収穫: <span id="calcYield_${plan.id}">0</span> 
+      <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
+        <div style="display:flex; align-items:center;">面積: <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;">a</div>
+        <div style="display:flex; align-items:center;">
+            <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:70px; height:16px; font-size:9px; padding:0;">
+                <option value="">圃場選択</option>
+            </select>
+        </div>
+        <div style="display:flex; align-items:center;">歩留り: <input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
+        <div style="display:flex; align-items:center;">成功率: <input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
       </div>
-    </div>
-    <div id="ratios_${plan.id}" style="margin-top: 2px; display:flex; gap: 2px; flex-wrap: wrap;"></div>`;
+      <div style="font-size: 11px; margin-top: 4px; display:flex; justify-content:space-between; align-items:flex-end;">
+        <div style="color: #2e7d32; font-weight: bold; line-height: 1.2;">
+          播種: <span id="calcTrays_${plan.id}">0</span> <span id="unitTrays_${plan.id}">枚</span><br>
+          収穫: <span id="calcYield_${plan.id}">0</span> 
+        </div>
+      </div>
+      <div id="ratios_${plan.id}" style="margin-top: 2px; display:flex; gap: 2px; flex-wrap: wrap;"></div>
+    </div>`;
     tr.appendChild(th);
     
     months.forEach((m, idx) => {
