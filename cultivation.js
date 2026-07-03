@@ -273,7 +273,7 @@ function renderCultivationPlanTable() {
     
     const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
     
-    let tHTML = '<thead><tr><th style="width: 160px; min-width: 160px; max-width: 160px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; box-shadow: 1px 0 0 #ddd; box-sizing: border-box;"></th>';
+    let tHTML = '<thead><tr>';
     months.forEach((m, idx) => {
         let label = m + '月';
         if (idx === 0) label = '今年 ' + label;
@@ -281,7 +281,7 @@ function renderCultivationPlanTable() {
         let bg = idx < 12 ? '#f1f8e9' : '#e8eaf6';
         tHTML += '<th colspan="6" style="border: 1px solid #ddd; background: ' + bg + '; padding: 4px; min-width:150px;">' + label + '</th>';
     });
-    tHTML += '</tr><tr><th style="width: 160px; min-width: 160px; max-width: 160px; position: sticky; left: 0; background: #e3f2fd; z-index: 10; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd; box-sizing: border-box;">作型（品種）</th>';
+    tHTML += '</tr><tr>';
     
     const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
     months.forEach(() => {
@@ -410,47 +410,57 @@ function renderCpPlanRow(plan) {
     if (!tbody) return;
     
     const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
-    let tr = document.createElement('tr');
-    tr.dataset.planId = plan.id;
-    
-    let th = document.createElement('td');
-    th.style.cssText = 'position: sticky; left: 0; background: #fff; z-index: 5; font-weight: bold; font-size:12px; border: 1px solid #ddd; border-bottom: 2px solid #ccc; box-shadow: 1px 0 0 #ddd; padding:4px;';
+    let trInfo = document.createElement('tr');
+    trInfo.dataset.planIdInfo = plan.id;
+    let tdInfo = document.createElement('td');
+    tdInfo.colSpan = months.length * 6;
+    tdInfo.style.cssText = 'background: #fff; border: 1px solid #ddd; padding: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);';
     
     let fileLinkHtml = '';
     if (plan.fileUrl) {
         fileLinkHtml = `<a href="${plan.fileUrl}" target="_blank" style="font-size:10px; color:#1976d2; margin-left:4px; text-decoration:none;">📁資料</a>`;
     }
     
-    th.innerHTML = `<div style="width: 150px; box-sizing: border-box; white-space: normal;">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span>${plan.location ? `<span style="font-size:10px; color:#555; border:1px solid #ccc; padding:1px 3px; border-radius:3px; margin-right:4px;">${plan.location}</span>` : ''}${plan.crop}<br><span style="font-size:10px; color:#666;">${plan.variety}</span>${fileLinkHtml}<span id="tagDisplay_${plan.id}" style="color: blue; font-size: 10px; margin-left: 5px; font-weight:bold;">${plan.tag || ''}</span></span>
-          <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 4px;">×</button>
-      </div>
-      <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
-        <div style="display:flex; align-items:center;">面積: <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;">a</div>
-        <div style="display:flex; align-items:center;">
-            <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:70px; height:16px; font-size:9px; padding:0;">
-                <option value="">圃場選択</option>
-            </select>
+    tdInfo.innerHTML = `
+      <div style="position: sticky; left: 0; display: inline-block; padding: 6px; width: calc(100vw - 40px); max-width: 800px; box-sizing: border-box; background: #e3f2fd; z-index: 10; border-right: 1px solid #bbdefb;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:bold; font-size:12px; display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
+                <span style="background:#1976D2; color:#fff; padding:2px 6px; border-radius:10px; font-size:10px;">${plan.crop}</span>
+                <span style="color:#0d47a1;">${plan.variety}</span>
+                ${plan.location ? `<span style="font-size:10px; color:#555; border:1px solid #ccc; padding:1px 3px; border-radius:3px;">${plan.location}</span>` : ''}
+                ${fileLinkHtml}
+                <span id="tagDisplay_${plan.id}" style="color: #e91e63; font-size: 10px; font-weight:bold;">${plan.tag || ''}</span>
+            </span>
+            <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:18px; line-height:1; padding:0 8px; font-weight:bold; margin-left: auto;">×</button>
         </div>
-        <div style="display:flex; align-items:center;">歩留り: <input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
-        <div style="display:flex; align-items:center;">成功率: <input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:16px; font-size:10px; padding:0 2px;"></div>
-      </div>
-      <div style="font-size: 11px; margin-top: 4px; display:flex; justify-content:space-between; align-items:flex-end;">
-        <div style="color: #2e7d32; font-weight: bold; line-height: 1.2;">
-          播種: <span id="calcTrays_${plan.id}">0</span> <span id="unitTrays_${plan.id}">枚</span><br>
-          収穫: <span id="calcYield_${plan.id}">0</span> 
+        <div style="font-size: 10px; margin-top: 6px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb;">
+          <div style="display:flex; align-items:center; white-space:nowrap;">面積: <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:40px; height:20px; font-size:11px; padding:0 4px; margin: 0 2px; border:1px solid #ccc; border-radius:3px;">a</div>
+          <div style="display:flex; align-items:center;">
+              <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:80px; height:20px; font-size:11px; padding:0; border:1px solid #ccc; border-radius:3px;">
+                  <option value="">圃場選択</option>
+              </select>
+          </div>
+          <div style="display:flex; align-items:center; white-space:nowrap;">歩留り: <input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:40px; height:20px; font-size:11px; padding:0 4px; margin: 0 2px; border:1px solid #ccc; border-radius:3px;"></div>
+          <div style="display:flex; align-items:center; white-space:nowrap;">成功率: <input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:40px; height:20px; font-size:11px; padding:0 4px; margin: 0 2px; border:1px solid #ccc; border-radius:3px;"></div>
+          <div style="display:flex; align-items:center; white-space:nowrap; margin-left:auto; color: #2e7d32; font-weight: bold; font-size:11px;">
+            播種:<span id="calcTrays_${plan.id}" style="margin:0 2px;">0</span><span id="unitTrays_${plan.id}">枚</span> | 
+            収穫:<span id="calcYield_${plan.id}" style="margin:0 2px;">0</span> 
+          </div>
         </div>
+        <div id="ratios_${plan.id}" style="margin-top: 4px; display:flex; gap: 4px; flex-wrap: wrap;"></div>
       </div>
-      <div id="ratios_${plan.id}" style="margin-top: 2px; display:flex; gap: 2px; flex-wrap: wrap;"></div>
-    </div>`;
-    tr.appendChild(th);
+    `;
+    trInfo.appendChild(tdInfo);
+    tbody.appendChild(trInfo);
+
+    let tr = document.createElement('tr');
+    tr.dataset.planId = plan.id;
     
     months.forEach((m, idx) => {
         for (let i = 0; i < 6; i++) {
             let td = document.createElement('td');
             let br = (i === 5) ? '1px solid #bbb' : '1px solid #eee';
-            td.style.cssText = `border: 1px solid #eee; padding: 0; cursor: pointer; border-right: ${br};`;
+            td.style.cssText = `border: 1px solid #eee; padding: 0; cursor: pointer; border-right: ${br}; min-width: 25px;`;
             td.dataset.monthIndex = idx;
             td.dataset.month = m;
             td.dataset.period = i;
@@ -458,7 +468,7 @@ function renderCpPlanRow(plan) {
             td.onclick = function() { toggleCpCell(this, plan.id); };
             
             let div = document.createElement('div');
-            div.style.cssText = 'width: 100%; height: 45px; transition: 0.2s; box-sizing:border-box; text-align:center; overflow:hidden;';
+            div.style.cssText = 'width: 100%; height: 45px; transition: 0.1s; box-sizing:border-box; text-align:center; overflow:hidden; pointer-events: none;';
             td.appendChild(div);
             tr.appendChild(td);
         }
@@ -472,6 +482,8 @@ function removeCpPlanRow(planId) {
     const tbody = document.getElementById('cpTableBody');
     const tr = tbody.querySelector(`tr[data-plan-id="${planId}"]`);
     if (tr) tbody.removeChild(tr);
+    const trInfo = tbody.querySelector(`tr[data-plan-id-info="${planId}"]`);
+    if (trInfo) tbody.removeChild(trInfo);
 }
 
 
@@ -858,34 +870,26 @@ function renderCroptypePaintGrid() {
     const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
     
     let headerTr = document.createElement('tr');
-    let thLabel = document.createElement('th');
-    thLabel.textContent = '月';
-    thLabel.style.cssText = 'position: sticky; left: 0; background: #eee; z-index: 10; padding: 4px; font-size: 11px; min-width: 80px; white-space: nowrap;';
-    headerTr.appendChild(thLabel);
     
     months.forEach(m => {
         let th = document.createElement('th');
-        th.textContent = m;
-        th.style.cssText = 'padding: 4px; border: 1px solid #ccc; font-size: 11px; min-width: 20px; text-align: center; background: #f9f9f9; white-space: nowrap;';
+        th.textContent = m + '月';
+        th.style.cssText = 'padding: 4px; border: 1px solid #ccc; font-size: 11px; min-width: 25px; text-align: center; background: #f9f9f9; white-space: nowrap;';
         headerTr.appendChild(th);
     });
     table.appendChild(headerTr);
     
     let tr = document.createElement('tr');
-    let tdLabel = document.createElement('td');
-    tdLabel.textContent = '作型を塗る';
-    tdLabel.style.cssText = 'position: sticky; left: 0; background: #fff; z-index: 5; font-size: 11px; font-weight: bold; border: 1px solid #ddd; text-align: center; white-space: nowrap;';
-    tr.appendChild(tdLabel);
     
     months.forEach((m, i) => {
         let td = document.createElement('td');
         td.dataset.monthIndex = i;
         td.dataset.task = '';
-        td.style.cssText = 'padding: 0; border: 1px dashed #ccc; cursor: pointer; min-width: 20px;';
+        td.style.cssText = 'padding: 0; border: 1px dashed #ccc; cursor: pointer; min-width: 25px;';
         td.onclick = function() { toggleCrCell(this); };
         
         let div = document.createElement('div');
-        div.style.cssText = 'width: 100%; height: 30px; transition: 0.2s; box-sizing:border-box;';
+        div.style.cssText = 'width: 100%; height: 35px; transition: 0.1s; box-sizing:border-box; pointer-events: none;';
         td.appendChild(div);
         tr.appendChild(td);
     });
