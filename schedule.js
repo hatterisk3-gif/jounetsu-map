@@ -471,7 +471,13 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCI
               p.polygon = new google.maps.Polygon({ paths: p.coords, map, fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeOpacity: 1, strokeWeight: hasProblem ? 4 : (isActiveForDept ? 3 : 1) });
               const bounds = new google.maps.LatLngBounds(); p.coords.forEach(pt => bounds.extend(pt));
               p.marker = new google.maps.Marker({ position: bounds.getCenter(), map, visible: map.getZoom() >= 14, label: {text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label'}, icon: {path: google.maps.SymbolPath.CIRCLE, scale: 0} });
-              google.maps.event.addListener(p.polygon, 'click', (e) => showPopup(p, e.latLng));
+              google.maps.event.addListener(p.polygon, 'click', (e) => {
+                if (window.isFieldCultivationMode) {
+                  handleFieldCultivationClick(p);
+                } else {
+                  showPopup(p, e.latLng);
+                }
+              });
             } else {
               p.polygon.setOptions({ fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeWeight: hasProblem ? 4 : (isActiveForDept ? 3 : 1) });
               p.marker.setLabel({text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label'});
@@ -741,5 +747,153 @@ window.assignTags = function() {
                 tagDisplay.innerText = item.plan.tag;
             }
         });
+    });
+};
+
+// =============================================
+// 圃場から栽培計画モード
+// =============================================
+window.isFieldCultivationMode = false;
+let drawnRidgePolygons = [];
+
+window.startFieldCultivationMode = function() {
+    window.isFieldCultivationMode = true;
+    document.getElementById('fieldCultivationModeBanner').style.display = 'flex';
+    document.getElementById('fieldCultivationModeMessage').innerText = '🗺️ 栽培計画を立てる圃場をタップしてください';
+    if (infoWindow) infoWindow.close();
+};
+
+window.cancelFieldCultivationMode = function() {
+    window.isFieldCultivationMode = false;
+    document.getElementById('fieldCultivationModeBanner').style.display = 'none';
+    clearDrawnRidges();
+};
+
+function clearDrawnRidges() {
+    drawnRidgePolygons.forEach(item => {
+        if (item.polygon) item.polygon.setMap(null);
+        if (item.label) item.label.setMap(null);
+    });
+    drawnRidgePolygons = [];
+}
+
+function getPolygonCenter(coords) {
+    let bounds = new google.maps.LatLngBounds();
+    coords.forEach(pt => bounds.extend(pt));
+    return bounds.getCenter();
+}
+
+window.handleFieldCultivationClick = function(p) {
+    // 畝データがない圃場のチェック
+    if (!p.uneSimData || String(p.uneSimData).trim() === '' || String(p.uneSimData).trim() === '[]') {
+        customAlert('この圃場には畝データが登録されていません。');
+        return;
+    }
+
+    // 圃場にズーム
+    const bounds = new google.maps.LatLngBounds();
+    p.coords.forEach(pt => bounds.extend(pt));
+    map.fitBounds(bounds);
+
+    // 既存の畝描画をクリア
+    clearDrawnRidges();
+
+    let uneData = [];
+    try {
+        uneData = JSON.parse(p.uneSimData);
+    } catch (e) {
+        console.error('Failed to parse uneSimData', e);
+        customAlert('畝データの読み込みに失敗しました。');
+        return;
+    }
+
+    if (uneData.length === 0) {
+        customAlert('この圃場には畝データが登録されていません。');
+        return;
+    }
+
+    document.getElementById('fieldCultivationModeMessage').innerText = '🌱 栽培計画を登録する畝をタップしてください';
+
+    // 畝ポリゴンを描画
+    uneData.forEach((une, index) => {
+        if (!une.polygon || une.polygon.length < 3) return;
+
+        const ridgeName = p.name + ' (畝' + (index + 1) + ')';
+
+        // 既存の計画があるか確認（俯瞰表示用）
+        const ridgeTasks = globalSchedules.filter(t => t.fieldName === ridgeName);
+        const hasPlan = ridgeTasks.length > 0;
+        const fillColor = hasPlan ? '#FF9800' : '#8BC34A';
+
+        const ridgePoly = new google.maps.Polygon({
+            paths: une.polygon,
+            map: map,
+            fillColor: fillColor,
+            fillOpacity: 0.8,
+            strokeColor: '#33691E',
+            strokeWeight: 2,
+            zIndex: 100
+        });
+
+        // ラベル表示
+        const labelText = hasPlan ? (ridgeTasks[0].cropName || '計画あり') : ('畝' + (index + 1));
+        const ridgeCenter = getPolygonCenter(une.polygon);
+        const marker = new google.maps.Marker({
+            position: ridgeCenter,
+            map: map,
+            label: { text: labelText, color: '#000', fontSize: '12px', fontWeight: 'bold' },
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+            zIndex: 101
+        });
+
+        // 畝クリック時の処理
+        google.maps.event.addListener(ridgePoly, 'click', function(e) {
+            if (typeof e.stop === 'function') e.stop();
+
+            const areaSqMeters = google.maps.geometry.spherical.computeArea(ridgePoly.getPath());
+            const areaAres = (areaSqMeters / 100).toFixed(1);
+
+            // 栽培計画モーダルを開く
+            if (typeof openCultivationPlanModal === 'function') {
+                openCultivationPlanModal();
+
+                setTimeout(() => {
+                    if (typeof addCpPlanRow === 'function') {
+                        addCpPlanRow();
+
+                        setTimeout(() => {
+                            const tbody = document.getElementById('cpTableBody');
+                            if (tbody && tbody.lastElementChild) {
+                                const newRow = tbody.lastElementChild;
+                                const planId = newRow.dataset.planId;
+                                if (planId) {
+                                    // 面積をセット
+                                    const areaInput = document.getElementById('area_' + planId);
+                                    if (areaInput) areaInput.value = areaAres;
+
+                                    // 圃場名をセット
+                                    const fieldSelect = document.getElementById('fieldSelect_' + planId);
+                                    if (fieldSelect) {
+                                        const exists = Array.from(fieldSelect.options).some(opt => opt.text === ridgeName);
+                                        if (!exists) {
+                                            const opt = document.createElement('option');
+                                            opt.value = ridgeName;
+                                            opt.text = ridgeName;
+                                            fieldSelect.add(opt);
+                                        }
+                                        fieldSelect.value = ridgeName;
+                                    }
+
+                                    if (typeof updateRowParams === 'function') updateRowParams(planId);
+                                }
+                            }
+                        }, 100);
+                        cancelFieldCultivationMode();
+                    }
+                }, 500);
+            }
+        });
+
+        drawnRidgePolygons.push({ polygon: ridgePoly, label: marker });
     });
 };

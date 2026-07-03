@@ -422,7 +422,7 @@ function renderCpPlanRow(plan) {
     }
     
     tdInfo.innerHTML = `
-      <div style="display: inline-block; padding: 4px; width: max-content; max-width: 95vw; box-sizing: border-box; background: #e3f2fd; z-index: 10; border-right: 1px solid #bbdefb; margin-bottom: 2px;">
+      <div style="display: block; padding: 4px; width: 100%; box-sizing: border-box; background: #e3f2fd; z-index: 10; border-right: 1px solid #bbdefb; margin-bottom: 2px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="font-weight:bold; font-size:12px; display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
                 <span style="background:#1976D2; color:#fff; padding:2px 6px; border-radius:10px; font-size:10px;">${plan.crop}</span>
@@ -433,19 +433,17 @@ function renderCpPlanRow(plan) {
             </span>
             <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:18px; line-height:1; padding:0 8px; font-weight:bold; margin-left: auto;">×</button>
         </div>
-        <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb;">
-          <div style="display:flex; align-items:center; white-space:nowrap;">面積:<input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:60px; height:26px; font-size:16px; padding:0 4px; margin: 0 4px; border:1px solid #ccc; border-radius:3px;">a</div>
-          <div style="display:flex; align-items:center;">
-              <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:120px; height:26px; font-size:16px; padding:0; border:1px solid #ccc; border-radius:3px;">
-                  <option value="">圃場選択</option>
-              </select>
-          </div>
-          <div style="display:flex; align-items:center; white-space:nowrap;">歩留り:<input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:60px; height:26px; font-size:16px; padding:0 4px; margin: 0 4px; border:1px solid #ccc; border-radius:3px;"></div>
-          <div style="display:flex; align-items:center; white-space:nowrap;">成功率:<input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:60px; height:26px; font-size:16px; padding:0 4px; margin: 0 4px; border:1px solid #ccc; border-radius:3px;"></div>
-          <div style="display:flex; align-items:center; white-space:nowrap; margin-left:auto; color: #2e7d32; font-weight: bold; font-size:10px;">
-            播種:<span id="calcTrays_${plan.id}" style="margin:0 2px;">0</span><span id="unitTrays_${plan.id}">枚</span> | 
-            収穫:<span id="calcYield_${plan.id}" style="margin:0 2px;">0</span> 
-          </div>
+        <div style="font-size: 10px; margin-top: 4px; display:grid; grid-template-columns: auto auto 1fr; gap:3px 6px; align-items:center; background: #fff; padding: 4px 6px; border-radius: 4px; border: 1px solid #bbdefb;">
+          <span style="white-space:nowrap;">面積:</span>
+          <div style="display:flex; align-items:center; gap:2px;"><input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:50px; height:22px; font-size:13px; padding:0 3px; border:1px solid #ccc; border-radius:3px;">a</div>
+          <div><select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:100%; max-width:120px; height:22px; font-size:12px; padding:0; border:1px solid #ccc; border-radius:3px;"><option value="">圃場選択</option></select></div>
+          <span style="white-space:nowrap;">歩留:</span>
+          <div><input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:50px; height:22px; font-size:13px; padding:0 3px; border:1px solid #ccc; border-radius:3px;"></div>
+          <div style="display:flex; align-items:center; gap:2px; white-space:nowrap;">成功率:<input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:50px; height:22px; font-size:13px; padding:0 3px; border:1px solid #ccc; border-radius:3px;"></div>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:3px; color: #2e7d32; font-weight: bold; font-size:10px;">
+          播種:<span id="calcTrays_${plan.id}" style="margin:0 2px;">0</span><span id="unitTrays_${plan.id}">枚</span> | 
+          収穫:<span id="calcYield_${plan.id}" style="margin:0 2px;">0</span> 
         </div>
         <div id="ratios_${plan.id}" style="margin-top: 4px; display:flex; gap: 4px; flex-wrap: wrap;"></div>
       </div>
