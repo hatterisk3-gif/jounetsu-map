@@ -664,12 +664,18 @@ async function saveCultivationPlan() {
     }
 }
 // --- END NEW CULTIVATION PLAN JS ---
-async function openCultivationPlanModal() {
+function openCultivationPlanModal() {
+    const modal = document.getElementById('cultivationPlanModal');
+    if (!modal) {
+        console.warn("Cultivation modal not loaded yet.");
+        return;
+    }
+    modal.style.display = 'flex';
     renderCultivationPlanTable();
     populateDefaultCpSelects();
-    await fetchCultivationMaster();
-    calcCp();
-    document.getElementById('cultivationPlanModal').style.display = 'flex';
+    fetchCultivationMaster().then(() => {
+        calcCp();
+    });
 }
 
 // --- VARIETY REGISTRATION ---
