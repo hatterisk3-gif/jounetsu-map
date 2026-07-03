@@ -21,25 +21,48 @@
           <div class="leg-item"><div class="leg-color" style="background:#4CAF50;"></div>平和</div>
           <div class="leg-item"><div class="leg-color" style="background:#FFEB3B;"></div>予定有</div>
           <div class="leg-item"><div class="leg-color" style="background:#F44336;"></div>問題/遅延</div>
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>情熱MAP [予定確認用]</title>
+    <link rel="apple-touch-icon" href="icon_schedule.png">
+    <link rel="icon" href="icon_schedule.png">
+    <link rel="manifest" href="manifest_schedule.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="schedule.css">
+  </head>
+  <body>
+
+    <div class="control-panel">
+      <div style="font-weight:bold; font-size:16px;">🗺️ 予定確認MAP</div>
+      <div class="control-panel-buttons" style="display:flex; align-items:center;">
+        <div class="legend">
+          <div class="leg-item"><div class="leg-color" style="background:#4CAF50;"></div>平和</div>
+          <div class="leg-item"><div class="leg-color" style="background:#FFEB3B;"></div>予定有</div>
+          <div class="leg-item"><div class="leg-color" style="background:#F44336;"></div>問題/遅延</div>
           <div class="leg-item"><div class="leg-color" style="background:#FF9800;"></div>収穫中</div>
           <div class="leg-item"><div class="leg-color" style="background:#777777;"></div>対象外</div>
         </div>
         <button id="btnTyphoon" onclick="openTyphoonModal()" style="display:none; margin-right:10px; background:#ffebee; color:#d32f2f; border:2px solid #d32f2f; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; align-items:center; cursor:pointer;">🌀 台風</button>
         <button id="btnWeather" onclick="openWeatherModal()" style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
         <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
-        <select id="trackingMode" style="margin-right:10px; padding:8px; border-radius:5px; background:#555; color:white; border:1px solid #777; font-weight:bold; font-size:11px;">
+        <select id="trackingMode" class="desktop-only" style="margin-right:10px; padding:8px; border-radius:5px; background:#555; color:white; border:1px solid #777; font-weight:bold; font-size:11px;">
             <option value="path">線(Path)</option>
             <option value="trip">アニメ(Trip)</option>
         </select>
-        <button class="btn-primary" onclick="loadTrackingData()" style="background:#4CAF50; margin-right:10px;">🏃‍♂️ 表示</button>
-        <div style="position: relative; display: inline-block; margin-right: 10px;">
+        <button class="btn-primary desktop-only" onclick="loadTrackingData()" style="background:#4CAF50; margin-right:10px;">🏃‍♂️ 表示</button>
+        <div class="desktop-only" style="position: relative; display: inline-block; margin-right: 10px;">
           <button class="btn-primary" onclick="toggleCultivationMenu()" style="background:#8BC34A;">🌱 栽培計画 ▼</button>
           <div id="cultivationMenu" style="display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 1000; min-width: 170px; flex-direction: column;">
             <button onclick="openCultivationPlanModal(); toggleCultivationMenu()" style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; border-bottom: 1px solid #eee; font-size: 13px; font-weight: bold; color: #333;">📝 栽培計画を立てる</button>
             <button onclick="openCroptypeRegistrationModal(); toggleCultivationMenu()" style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; font-size: 13px; font-weight: bold; color: #333;">🏷️ 品種作型を登録する</button>
           </div>
         </div>
-        <button class="btn-primary" onclick="openScheduleTable()">📋 作業一覧</button>
+        <button class="btn-primary desktop-only" onclick="openScheduleTable()">📋 作業一覧</button>
       </div>
     </div>
     
@@ -102,9 +125,51 @@
     <!-- Cultivation Plan Modal -->
     
     <div id="cultivationModalContainer"></div>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry&language=ja"></script>
 
+    <!-- モバイル用下部ナビゲーション -->
+    <div class="mobile-bottom-bar">
+      <button onclick="openScheduleTable()">
+        <div style="font-size:20px;">📋</div>
+        <div style="font-weight:bold;">作業一覧</div>
+      </button>
+      <button onclick="document.getElementById('mobileCultivationMenu').style.display='flex'">
+        <div style="font-size:20px;">🌱</div>
+        <div style="font-weight:bold;">栽培計画</div>
+      </button>
+      <button onclick="document.getElementById('mobileTrackingMenu').style.display='flex'">
+        <div style="font-size:20px;">🏃‍♂️</div>
+        <div style="font-weight:bold;">軌跡表示</div>
+      </button>
+    </div>
+
+    <!-- モバイル用アクションシート: 栽培計画 -->
+    <div id="mobileCultivationMenu" class="mobile-action-sheet" style="display:none;" onclick="this.style.display='none'">
+      <div class="action-sheet-content" onclick="event.stopPropagation()">
+        <button onclick="openCultivationPlanModal(); document.getElementById('mobileCultivationMenu').style.display='none'">📝 栽培計画を立てる</button>
+        <button onclick="openCroptypeRegistrationModal(); document.getElementById('mobileCultivationMenu').style.display='none'">🏷️ 品種作型を登録する</button>
+        <button class="cancel-btn" onclick="document.getElementById('mobileCultivationMenu').style.display='none'">キャンセル</button>
+      </div>
+    </div>
+
+    <!-- モバイル用アクションシート: 軌跡表示 -->
+    <div id="mobileTrackingMenu" class="mobile-action-sheet" style="display:none;" onclick="this.style.display='none'">
+      <div class="action-sheet-content" onclick="event.stopPropagation()">
+        <div style="padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; text-align: center; color: #333;">軌跡表示モード</div>
+        <div style="padding: 15px;">
+          <select id="trackingModeMobile" style="width:100%; padding: 10px; font-size:16px; border:1px solid #ccc; border-radius:5px;">
+            <option value="path">線 (Path)</option>
+            <option value="trip">アニメ (Trip)</option>
+          </select>
+        </div>
+        <button onclick="document.getElementById('trackingMode').value = document.getElementById('trackingModeMobile').value; loadTrackingData(); document.getElementById('mobileTrackingMenu').style.display='none'">🏃‍♂️ 表示する</button>
+        <button class="cancel-btn" onclick="document.getElementById('mobileTrackingMenu').style.display='none'">キャンセル</button>
+      </div>
+    </div>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry&language=ja"></script>
     <script src="https://unpkg.com/deck.gl@^8.8.0/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/geo-layers@^8.8.0/dist.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
 
     <script>
       // 栽培計画モーダルのHTMLを動的読み込み
