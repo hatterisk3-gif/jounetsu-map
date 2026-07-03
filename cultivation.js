@@ -144,22 +144,7 @@ function updatePresetList(crop) {
     }
 }
 
-function loadCultivationPreset(presetName) {
-    if (!presetName) return;
-    const crop = getCpVal('cpCrop');
-    if (cpMasterData && cpMasterData.presets && cpMasterData.presets[crop]) {
-        const preset = cpMasterData.presets[crop].find(p => p.name === presetName);
-        if (preset) {
-            setCpVal('cpTrayHoles', preset.holes);
-            setCpVal('cpRows', preset.rows);
-            setCpVal('cpPlantSpacing', preset.pSpace);
-            setCpVal('cpRidgeSpacing', preset.rSpace);
-            setCpVal('cpYieldPerPlant', preset.yieldPerSeedling);
-            setCpVal('cpItemsPerPack', preset.itemsPerPack);
-            calcCp();
-        }
-    }
-}
+// Removed duplicate loadCultivationPreset
 
 function setCpVal(id, value) {
     if (value === undefined || value === '') return;
@@ -691,10 +676,10 @@ function loadCultivationPreset(presetName) {
     const p = cpMasterData.presets[crop].find(x => x.name === presetName);
     if (p) {
         setCpVal('cpTrayHoles', p.holes);
-        setCpVal('cpPlantRows', p.rows);
+        setCpVal('cpRows', p.rows);
         setCpVal('cpPlantSpacing', p.pSpace);
-        setCpVal('cpRowSpacing', p.rSpace);
-        setCpVal('cpYieldPerSeedling', p.yieldPerSeedling);
+        setCpVal('cpRidgeSpacing', p.rSpace);
+        setCpVal('cpYieldPerPlant', p.yieldPerSeedling);
         setCpVal('cpItemsPerPack', p.itemsPerPack);
         calcCp();
         
@@ -709,13 +694,13 @@ function loadCultivationPreset(presetName) {
 }
 
 function openVarietyRegistrationModal() {
-    const crop = getCpVal('cpCrop', true);
+    const crop = getCpVal('cpCrop');
     if (!crop) {
         alert("作物を選択してください。");
         return;
     }
     
-    const variety = getCpVal('cpVariety', true);
+    const variety = getCpVal('cpVariety');
     
     document.getElementById('vrCrop').value = crop;
     document.getElementById('vrVariety').value = variety || '';
@@ -723,11 +708,11 @@ function openVarietyRegistrationModal() {
     // 現在のUIパラメータをプレビュー
     const params = [
         `穴数: ${getCpVal('cpTrayHoles', true) || '-'}`,
-        `条数: ${getCpVal('cpPlantRows', true) || '-'}`,
+        `条数: ${getCpVal('cpRows', true) || '-'}`,
         `株間: ${getCpVal('cpPlantSpacing', true) || '-'}`,
-        `畝間: ${getCpVal('cpRowSpacing', true) || '-'}`,
+        `畝間: ${getCpVal('cpRidgeSpacing', true) || '-'}`,
         `歩留り: ${getCpVal('cpYieldRate', true) || '-'}%`,
-        `1苗収量: ${getCpVal('cpYieldPerSeedling', true) || '-'}`,
+        `1苗収量: ${getCpVal('cpYieldPerPlant', true) || '-'}`,
         `1P入り数: ${getCpVal('cpItemsPerPack', true) || '-'}`
     ];
     document.getElementById('vrParamsPreview').innerText = params.join(' / ');
@@ -761,10 +746,10 @@ async function saveVarietyData() {
         crop: crop,
         name: variety,
         holes: getCpVal('cpTrayHoles', true) || '',
-        rows: getCpVal('cpPlantRows', true) || '',
+        rows: getCpVal('cpRows', true) || '',
         pSpace: getCpVal('cpPlantSpacing', true) || '',
-        rSpace: getCpVal('cpRowSpacing', true) || '',
-        yieldPerSeedling: getCpVal('cpYieldPerSeedling', true) || '',
+        rSpace: getCpVal('cpRidgeSpacing', true) || '',
+        yieldPerSeedling: getCpVal('cpYieldPerPlant', true) || '',
         itemsPerPack: getCpVal('cpItemsPerPack', true) || ''
     };
     
