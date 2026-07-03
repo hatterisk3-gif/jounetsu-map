@@ -434,14 +434,14 @@ function renderCpPlanRow(plan) {
             <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:18px; line-height:1; padding:0 8px; font-weight:bold; margin-left: auto;">×</button>
         </div>
         <div style="font-size: 10px; margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb;">
-          <div style="display:flex; align-items:center; white-space:nowrap;">面積:<input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:18px; font-size:10px; padding:0 2px; margin: 0 2px; border:1px solid #ccc; border-radius:3px;">a</div>
+          <div style="display:flex; align-items:center; white-space:nowrap;">面積:<input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:60px; height:26px; font-size:16px; padding:0 4px; margin: 0 4px; border:1px solid #ccc; border-radius:3px;">a</div>
           <div style="display:flex; align-items:center;">
-              <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:70px; height:18px; font-size:10px; padding:0; border:1px solid #ccc; border-radius:3px;">
+              <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:120px; height:26px; font-size:16px; padding:0; border:1px solid #ccc; border-radius:3px;">
                   <option value="">圃場選択</option>
               </select>
           </div>
-          <div style="display:flex; align-items:center; white-space:nowrap;">歩留り:<input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:18px; font-size:10px; padding:0 2px; margin: 0 2px; border:1px solid #ccc; border-radius:3px;"></div>
-          <div style="display:flex; align-items:center; white-space:nowrap;">成功率:<input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:35px; height:18px; font-size:10px; padding:0 2px; margin: 0 2px; border:1px solid #ccc; border-radius:3px;"></div>
+          <div style="display:flex; align-items:center; white-space:nowrap;">歩留り:<input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:60px; height:26px; font-size:16px; padding:0 4px; margin: 0 4px; border:1px solid #ccc; border-radius:3px;"></div>
+          <div style="display:flex; align-items:center; white-space:nowrap;">成功率:<input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:60px; height:26px; font-size:16px; padding:0 4px; margin: 0 4px; border:1px solid #ccc; border-radius:3px;"></div>
           <div style="display:flex; align-items:center; white-space:nowrap; margin-left:auto; color: #2e7d32; font-weight: bold; font-size:10px;">
             播種:<span id="calcTrays_${plan.id}" style="margin:0 2px;">0</span><span id="unitTrays_${plan.id}">枚</span> | 
             収穫:<span id="calcYield_${plan.id}" style="margin:0 2px;">0</span> 
