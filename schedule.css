@@ -1,5 +1,5 @@
 html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; overflow: hidden; background-color: #f8f9fa; }
-      .control-panel { padding: 10px; background-color: #222; border-bottom: 1px solid #444; z-index: 10; display: flex; justify-content: space-between; align-items: center; color: white; }
+      .control-panel { padding: 10px; background-color: #222; border-bottom: 1px solid #444; z-index: 20; display: flex; justify-content: space-between; align-items: center; color: white; }
       
       /* ★追加：部署フィルターのエリア */
       #deptFilterBar { display: flex; overflow-x: auto; gap: 8px; padding: 8px 10px; background: #333; border-bottom: 2px solid #2196F3; white-space: nowrap; align-items: center; z-index: 10; }

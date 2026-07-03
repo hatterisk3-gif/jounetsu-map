@@ -457,7 +457,7 @@ window.openWeatherModal = function() {
 
 async function fetchTyphoonInfo() {
   try {
-    let url = "https://www.jma.go.jp/bosai/typhoon/data/TC.json";
+    let url = "https://www.jma.go.jp/bosai/typhoon/data/targetTc.json";
     let res = await fetch(url);
     let btnTyphoon = document.getElementById('btnTyphoon');
     
@@ -477,9 +477,8 @@ async function fetchTyphoonInfo() {
       // もし号数が取れれば表示
       try {
         let typhoons = data.map(t => {
-          let id = t.id ? t.id.substring(2) : ""; 
-          let name = (t.name && t.name.kana) ? t.name.kana : "";
-          return id ? `台風${parseInt(id)}号${name ? ' ('+name+')' : ''}` : null;
+          let num = t.typhoonNumber ? parseInt(t.typhoonNumber.substring(2)) : 0;
+          return num ? `台風${num}号` : null;
         }).filter(Boolean);
         
         if (typhoons.length > 0) {
