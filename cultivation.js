@@ -147,20 +147,27 @@ function updatePresetList(crop) {
 // Removed duplicate loadCultivationPreset
 
 function setCpVal(id, value) {
-    if (value === undefined || value === '') return;
     const sel = document.getElementById(id);
     if (!sel) return;
     
-    let exists = Array.from(sel.options).some(opt => opt.value == value);
+    if (value === '' || value === 0 || value === null) {
+        sel.value = '';
+        const cInp = document.getElementById(id + '_custom');
+        if (cInp) cInp.style.display = 'none';
+        return;
+    }
+
+    const strVal = String(value);
+    let exists = Array.from(sel.options).some(opt => opt.value === strVal);
     if (!exists) {
         sel.value = 'custom';
         const cInp = document.getElementById(id + '_custom');
         if (cInp) {
             cInp.style.display = 'block';
-            cInp.value = value;
+            cInp.value = strVal;
         }
     } else {
-        sel.value = value;
+        sel.value = strVal;
         const cInp = document.getElementById(id + '_custom');
         if (cInp) {
             cInp.style.display = 'none';

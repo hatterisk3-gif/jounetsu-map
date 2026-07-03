@@ -1,12 +1,20 @@
 /**
  * 情熱MAP 統合API (管理者・作業員 共通)
  */
+const MASTER_SPREADSHEET_ID = "1Kfg5JzNE8pZVQuyuHExz1Q00vzd75MmWrtKLLHUG89c"; // マスター・スプレッドシートのID
+let TENANT_SS = null;
+
 function doPost(e) {
   try {
     const params = JSON.parse(e.postData.contents);
     const action = params.action;
     let result = null;
-    if (action === "login") result = checkLogin(params.userId, params.password);
+
+    if (params.spreadsheetId) {
+      TENANT_SS = SpreadsheetApp.openById(params.spreadsheetId);
+    }
+
+    if (action === "login") result = checkLogin(params.orgId, params.userId, params.password);
     else if (action === "getInitData") result = getInitData(); 
     else if (action === "savePolygon") result = savePolygon(params); // ★ savePolygonDataからsavePolygonに変更(関数名統一)
     else if (action === "updatePolygon") result = updatePolygon(params); // ★ updatePolygonDataからupdatePolygonに変更
@@ -149,7 +157,7 @@ ${Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss")}
 }
 
 function writeLog(user, action, target, detail) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   let sheet = ss.getSheetByName('操作ログ');
   if (!sheet) {
     sheet = ss.insertSheet('操作ログ');
@@ -160,14 +168,55 @@ function writeLog(user, action, target, detail) {
   sheet.appendRow([now, user || "不明", action, target, detail]);
 }
 
-function checkLogin(userId, password) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('名簿');
-  if (!sheet) throw new Error("「名簿」シートが見つかりません");
+function checkLogin(orgId, userId, password) {
+  if (!orgId) return { success: false, message: "組織IDが入力されていません" };
+  
+  let masterSS;
+  try {
+    masterSS = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+  } catch (e) {
+    return { success: false, message: "マスターデータベースにアクセスできません" };
+  }
+  
+  const masterSheet = masterSS.getSheetByName('組織一覧');
+  if (!masterSheet) return { success: false, message: "マスターDBに「組織一覧」シートがありません" };
+  
+  const masterData = masterSheet.getDataRange().getValues();
+  let targetSpreadsheetId = null;
+  
+  for (let i = 1; i < masterData.length; i++) {
+    if (String(masterData[i][0]) === String(orgId)) {
+      targetSpreadsheetId = masterData[i][2]; // C列がスプレッドシートID
+      break;
+    }
+  }
+  
+  if (!targetSpreadsheetId) {
+    return { success: false, message: "無効な組織IDです" };
+  }
+  
+  // URL形式の場合はスプレッドシートIDを抽出する
+  if (targetSpreadsheetId.includes('spreadsheets/d/')) {
+    const match = targetSpreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+      targetSpreadsheetId = match[1];
+    }
+  }
+  
+  // テナントDBを開く
+  try {
+    TENANT_SS = SpreadsheetApp.openById(targetSpreadsheetId);
+  } catch(e) {
+    return { success: false, message: "組織のデータベースにアクセスできません" };
+  }
+  
+  const sheet = TENANT_SS.getSheetByName('名簿');
+  if (!sheet) throw new Error("組織DBに「名簿」シートが見つかりません");
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) { 
     if (String(data[i][0]) === String(userId) && String(data[i][1]) === String(password)) {
       writeLog(data[i][2], "ログイン", "システム", "ログイン成功");
-      return { success: true, name: data[i][2], role: data[i][3] || "作業員" }; 
+      return { success: true, name: data[i][2], role: data[i][3] || "作業員", spreadsheetId: targetSpreadsheetId }; 
     }
   }
   return { success: false, message: "IDまたはパスワードが正しくありません" };
@@ -176,7 +225,7 @@ function checkLogin(userId, password) {
 // 初期データ取得
 // ==========================================
 function getInitData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   
   const getCol = (sheetNames, colIndex) => {
     for (let name of sheetNames) {
@@ -415,7 +464,7 @@ pdl.materials = [];
 // マスタ管理（★看板マスタの処理を追加）
 // =========================================
 function manageMasterData(masterType, manageAction, value, userName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   let sheetName = "";
   
   if (masterType === 'crop') sheetName = '作物マスタ';
@@ -520,7 +569,7 @@ function saveReportData(polyId, nameStr, author, reportText, photosBase64) {
     }
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const schedSheet = ss.getSheetByName('作業予定');
   if (!schedSheet) throw new Error("作業予定シートがありません");
 
@@ -535,14 +584,14 @@ function saveReportData(polyId, nameStr, author, reportText, photosBase64) {
 }
 
 function addCropToMaster(cropData) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('生育記録マスタ');
+  const sheet = TENANT_SS.getSheetByName('生育記録マスタ');
   const data = sheet.getDataRange().getValues(); let emptyRow = 2;
   while (emptyRow <= data.length && data[emptyRow-1][0]) emptyRow++;
   sheet.getRange(emptyRow, 1, 1, 2).setValues([[cropData.name, cropData.density || 0]]); 
   return cropData;
 }
 function deleteCropFromMaster(cropName) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('生育記録マスタ');
+  const sheet = TENANT_SS.getSheetByName('生育記録マスタ');
   const data = sheet.getDataRange().getValues(); let newCrops = [];
   for(let j=1; j<data.length; j++) { if(data[j][0] && data[j][0] !== cropName) newCrops.push([data[j][0]]); }
   sheet.getRange("A2:A").clearContent(); if(newCrops.length > 0) sheet.getRange(2, 1, newCrops.length, 1).setValues(newCrops); return cropName;
@@ -551,14 +600,14 @@ function deleteCropFromMaster(cropName) {
 function getToukiDetails(idsStr) {
   if (!idsStr) return [];
   const ids = idsStr.split(',').map(s => s.trim());
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('登記');
+  const sheet = TENANT_SS.getSheetByName('登記');
   if (!sheet) return [];
   const data = sheet.getDataRange().getValues();
   return data.filter(row => ids.includes(String(row[0]))).map(row => ({ id: row[0], address: row[2], area: row[3], owner: row[4], type: row[5] }));
 }
 
 function saveToukiData(data, hojoId) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('登記');
+  const sheet = TENANT_SS.getSheetByName('登記');
   const id = "T-" + Utilities.formatDate(new Date(), "GMT", "mmss") + Math.floor(Math.random()*100);
   sheet.appendRow([id, "", data.address, data.area, data.owner, data.type]);
   if (hojoId) {
@@ -573,7 +622,7 @@ function saveToukiData(data, hojoId) {
 }
 
 function syncToukiMapping() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet(), hojoSheet = ss.getSheetByName('圃場'), toukiSheet = ss.getSheetByName('登記');
+  const ss = TENANT_SS, hojoSheet = ss.getSheetByName('圃場'), toukiSheet = ss.getSheetByName('登記');
   if (!hojoSheet || !toukiSheet) return;
   const hData = hojoSheet.getDataRange().getValues(), mapping = {};
   for (let i = 1; i < hData.length; i++) {
@@ -591,7 +640,7 @@ function syncToukiMapping() {
 // 保存済みの圃場・看板データを取得
 // ==========================================
 function getSavedPolygons() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   let result = [];
   
   // 圃場シート
@@ -650,7 +699,7 @@ function getSavedPolygons() {
 // 圃場・看板の新規保存
 // ==========================================
 function savePolygon(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   // 座標が1点なら看板、それ以上なら圃場と判定
   const isMarker = JSON.parse(params.coords).length === 1;
   const sheetName = isMarker ? '看板' : '圃場';
@@ -706,7 +755,7 @@ function savePolygon(params) {
 // 圃場・看板情報の更新処理
 // ==========================================
 function updatePolygon(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const id = params.id;
   const userName = params.userName || "システム";
   
@@ -855,7 +904,7 @@ function updatePolygon(params) {
 // 圃場の分割
 // ==========================================
 function splitField(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('圃場');
   const data = sheet.getDataRange().getValues();
   let targetRowData = null;
@@ -916,7 +965,7 @@ function mergeFields(baseId, targetId, userName) {
     baseId = baseId.baseId;
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('圃場');
   const data = sheet.getDataRange().getValues();
   
@@ -973,7 +1022,7 @@ function deletePolygonData(id, user) {
 function findSheetAndRowById(id) {
   const sheets = ['圃場', '看板'];
   for (let s of sheets) {
-    let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(s);
+    let sheet = TENANT_SS.getSheetByName(s);
     if (!sheet) continue;
     let data = sheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) { if (data[i][0] === id) return { sheet, rowIndex: i + 1, rowData: data[i] }; }
@@ -981,7 +1030,7 @@ function findSheetAndRowById(id) {
 }
 
 function getOrCreateRecordSheet(sheetName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet(); let sheet = ss.getSheetByName(sheetName);
+  const ss = TENANT_SS; let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
     if (sheetName === '看板記録') { sheet.appendRow(["日時", "圃場名", "登録者", "写真URL", "システムID"]); } 
@@ -1015,7 +1064,7 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
   // ====================================================
   // ★開始条件(D列)と終了条件(E列)をマスタから取得
   // ====================================================
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const settingSheet = ss.getSheetByName('圃場設定マスタ');
   let startKeywords = [];
   let resetKeywords = [];
@@ -1116,7 +1165,7 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
   found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
   
   const rsName = recordType === 'work' ? '作業記録' : (pType === '看板' ? '看板記録' : '生育記録');
-  const rs = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(rsName);
+  const rs = TENANT_SS.getSheetByName(rsName);
   if (rs) {
     const d = rs.getDataRange().getValues();
     for (let i = 1; i < d.length; i++) {
@@ -1153,7 +1202,7 @@ function deleteRecordItem(polyId, recordId, user) {
 // 作業予定と地図ステータスの取得（部署自動判定を追加）
 // ==========================================
 function getScheduleData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const today = new Date(); today.setHours(0,0,0,0);
 
   // 1. 作業記録マスタから「作業名 -> 担当部署」の辞書を作成
@@ -1258,7 +1307,7 @@ function getScheduleData() {
 // （コードの一番下に追加してください）
 // ==========================================
 function getOrCreateCropColor(cropName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('作物マスタ');
   if (!sheet) return '#4CAF50'; // 見つからない場合のデフォルト緑
   const data = sheet.getDataRange().getValues();
@@ -1292,7 +1341,7 @@ function getOrCreateCropColor(cropName) {
 // 🚜 全体収穫（一括ロット生成）処理 ★拠点別に対応
 // ==========================================
 function saveGlobalHarvest(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
   const time = Utilities.formatDate(new Date(), "JST", "HH:mm");
   
@@ -1357,7 +1406,7 @@ function saveGlobalHarvest(params) {
 // 📦 出荷記録処理
 // ==========================================
 function saveGlobalShipping(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
   
   // ① 選択されたロットを「出荷済（残0）」に更新する
@@ -1389,7 +1438,7 @@ function saveGlobalShipping(params) {
 // 在庫の入出庫処理・記録
 // ==========================================
 function updateInventory(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   
   // 1. 在庫記録シートへの追記
   let invSheet = ss.getSheetByName('在庫記録');
@@ -1434,7 +1483,7 @@ function updateInventory(params) {
 // 現場（アプリ）からの新規資材登録
 // ==========================================
 function addMaterialToSign(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('資材マスタ');
   const newId = 'MAT-' + Utilities.getUuid().substring(0,8);
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
@@ -1504,7 +1553,7 @@ function addMaterialToSign(params) {
 // 指定した資材の入出庫履歴を取得する
 // ==========================================
 function getInventoryHistory(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const invSheet = ss.getSheetByName('在庫記録');
   if (!invSheet) return [];
   
@@ -1529,7 +1578,7 @@ function getInventoryHistory(params) {
 // 在庫の再計算と履歴の編集・削除
 // ==========================================
 function recalcStock(materialId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const invSheet = ss.getSheetByName('在庫記録');
   let newStock = 0;
   
@@ -1559,14 +1608,14 @@ function recalcStock(materialId) {
 }
 
 function deleteInventoryHistory(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const invSheet = ss.getSheetByName('在庫記録');
   invSheet.deleteRow(params.rowIndex); // 行を削除
   return recalcStock(params.materialId); // 再計算して新しい在庫を返す
 }
 
 function editInventoryHistory(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const invSheet = ss.getSheetByName('在庫記録');
   
   // 🌟F列(6列目): 操作内容（入庫・出庫など）を上書きする
@@ -1583,7 +1632,7 @@ function editInventoryHistory(params) {
 // 農機の片づけ場所を更新する
 // ==========================================
 function updateMachineLocations(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const macSh = ss.getSheetByName('農機マスタ');
   if(!macSh) return false;
   
@@ -1606,7 +1655,7 @@ function updateMachineLocations(params) {
 // 現場（アプリ）からの新規農機・車両登録
 // ==========================================
 function addMachineToSign(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('農機マスタ');
   const newId = 'MAC-' + Utilities.getUuid().substring(0,8);
   
@@ -1667,7 +1716,7 @@ function addMachineToSign(params) {
 // 資材マスタの編集
 // ==========================================
 function editMaterial(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('資材マスタ');
   if(!sheet) throw new Error("資材マスタシートがありません");
   
@@ -1688,7 +1737,7 @@ function editMaterial(params) {
 // 農機の部品を新規追加する
 // ==========================================
 function addMachinePart(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('農機マスタ');
   if(!sheet) throw new Error("農機マスタシートがありません");
   
@@ -1707,7 +1756,7 @@ function addMachinePart(params) {
 // 農機の症状を自動追加する
 // ==========================================
 function addMachineSymptom(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('農機マスタ');
   if(!sheet) throw new Error("農機マスタシートがありません");
   
@@ -1726,7 +1775,7 @@ function addMachineSymptom(params) {
 // 給油記録の保存と履歴取得
 // ==========================================
 function saveRefuelRecord(p) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   let sheet = ss.getSheetByName('給油記録');
   if(!sheet) { // もしシートがなければ自動作成
     sheet = ss.insertSheet('給油記録');
@@ -1752,7 +1801,7 @@ function saveRefuelRecord(p) {
   return true;
 }
 function getRefuelHistory() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sh = ss.getSheetByName('給油記録');
   if(!sh) return [];
   const data = sh.getDataRange().getValues();
@@ -1776,7 +1825,7 @@ function getRefuelHistory() {
 // 各車両の前回（最新）のアワメーターを取得する
 // ==========================================
 function getMachineLastHourMeters() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sh = ss.getSheetByName('給油記録');
   let res = {};
   if(!sh) return res;
@@ -1816,7 +1865,7 @@ function saveCroptypeWithFile(params) {
     }
     
     // Save to 作型DB
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     let sheet = ss.getSheetByName('作型DB');
     if (!sheet) {
       sheet = ss.insertSheet('作型DB');
@@ -1871,7 +1920,7 @@ function saveCroptypeWithFile(params) {
 // 看板の連携IDを「看板」シートのI列に保存
 // ==========================================
 function updateSignLink(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sh = ss.getSheetByName('看板');
   if(!sh) return false;
   const data = sh.getDataRange().getValues();
@@ -1888,7 +1937,7 @@ function updateSignLink(params) {
 // 🪚 道具マスタへの新規登録
 // ==========================================
 function addToolToMaster(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const sheet = ss.getSheetByName('道具マスタ');
   if (!sheet) throw new Error("「道具マスタ」シートが見つかりません。");
   
@@ -1945,7 +1994,7 @@ function addToolToMaster(params) {
 // 🪚 道具のステータス更新と「道具記録」への履歴保存
 // ==========================================
 function updateToolStatus(params) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = TENANT_SS;
   const masterSheet = ss.getSheetByName('道具マスタ');
   const logSheet = ss.getSheetByName('道具記録');
   
@@ -1999,7 +2048,7 @@ function updateToolStatus(params) {
 // 🪚 道具マスタの編集
 // ==========================================
 function editToolInMaster(params) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('道具マスタ');
+  const sheet = TENANT_SS.getSheetByName('道具マスタ');
   if (!sheet) throw new Error("「道具マスタ」シートが見つかりません。");
   
   const data = sheet.getDataRange().getValues();
@@ -2023,7 +2072,7 @@ function editToolInMaster(params) {
 // 🪚 道具マスタからの削除
 // ==========================================
 function deleteToolFromMaster(params) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('道具マスタ');
+  const sheet = TENANT_SS.getSheetByName('道具マスタ');
   if (!sheet) throw new Error("「道具マスタ」シートが見つかりません。");
   
   const data = sheet.getDataRange().getValues();
@@ -2046,7 +2095,7 @@ function deleteToolFromMaster(params) {
 // 🚜 農機・車両マスタの編集
 // ==========================================
 function editMachineInMaster(params) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('農機マスタ');
+  const sheet = TENANT_SS.getSheetByName('農機マスタ');
   const data = sheet.getDataRange().getValues();
   let targetRowIndex = -1;
   for (let i = 1; i < data.length; i++) {
@@ -2067,7 +2116,7 @@ function editMachineInMaster(params) {
 // 🚜 農機・車両マスタからの削除
 // ==========================================
 function deleteMachineFromMaster(params) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('農機マスタ');
+  const sheet = TENANT_SS.getSheetByName('農機マスタ');
   const data = sheet.getDataRange().getValues();
   let targetRowIndex = -1;
   for (let i = 1; i < data.length; i++) {
@@ -2145,7 +2194,7 @@ function testAuth() {
 // ==========================================
 function getPolygonDrawingHistory(params) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     const sheet = ss.getSheetByName('図面履歴');
     if (!sheet) return [];
     
@@ -2187,7 +2236,7 @@ function getPolygonDrawingHistory(params) {
 // ==========================================
 function saveTrackingData(params) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     let sheet = ss.getSheetByName('トラッキング');
     if (!sheet) {
       sheet = ss.insertSheet('トラッキング');
@@ -2208,7 +2257,7 @@ function saveTrackingData(params) {
 // ==========================================
 function getTrackingData(params) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     const sheet = ss.getSheetByName('トラッキング');
     if (!sheet) return [];
     
@@ -2253,7 +2302,7 @@ function getTrackingData(params) {
 
 function saveCultivationPlans(year, planDataArray) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     let sheet = ss.getSheetByName('栽培計画');
     if (!sheet) {
       sheet = ss.insertSheet('栽培計画');
@@ -2299,7 +2348,7 @@ function saveCultivationPlans(year, planDataArray) {
 
 function getCultivationPlans(year) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     const sheet = ss.getSheetByName('栽培計画');
     if (!sheet) return [];
     
@@ -2326,7 +2375,7 @@ function getCultivationPlans(year) {
 
 function getCultivationMaster() {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     let sheet = ss.getSheetByName('栽培計画マスタ');
     if (!sheet) {
       sheet = ss.insertSheet('栽培計画マスタ');
@@ -2509,7 +2558,7 @@ function getCultivationMaster() {
 // 手入力データをマスタへ追記する関数
 function appendCultivationMaster(newData) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     let sheet = ss.getSheetByName('栽培計画マスタ');
     if (!sheet) return { success: false };
     
@@ -2580,7 +2629,7 @@ function saveCroptypeDBBatch(params) {
 // 作型DBを保存する関数
 function saveCroptypeDB(params) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     let sheet = ss.getSheetByName('作型DB');
     if (!sheet) {
       sheet = ss.insertSheet('作型DB');
@@ -2624,7 +2673,7 @@ function saveCroptypeDB(params) {
 // 栽培計画のプリセットを保存する関数
 function saveCultivationPreset(presetData) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     let sheet = ss.getSheetByName('栽培計画プリセット');
     if (!sheet) {
       sheet = ss.insertSheet('栽培計画プリセット');
@@ -2672,7 +2721,7 @@ function saveCultivationPreset(presetData) {
 // 品種登録（ファイル付き）を保存する関数
 function saveVarietyWithFile(params) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = TENANT_SS;
     let sheet = ss.getSheetByName('栽培計画プリセット');
     if (!sheet) {
       sheet = ss.insertSheet('栽培計画プリセット');

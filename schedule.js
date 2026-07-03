@@ -171,6 +171,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbw3yW9QsJMR24PP0k3rASCI
 
       async function callGAS(action, params = {}) {
         params.action = action;
+        params.spreadsheetId = localStorage.getItem('spreadsheetId');
         const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
         const json = await res.json();
         if (json.status !== "success") throw new Error(json.message);
