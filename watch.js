@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 
 // ⚠️ URLは藤田さんの現在の最新のものをそのまま使っています
-const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec';
 
 // 🌟 画像URLとIDを一時的に記憶しておくための変数
 let pendingImages = [];
@@ -118,8 +118,9 @@ async function watch() {
             const modifyPrompt = `${imageContext}${cleanCommand}。
 【最後に行うことのリスト】
  1.修正した個所が正しく動作するか自律的にテスト・再修正してください。
- 2.システム動作に関係のないファイル・画像は削除してください。
- 3.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。`;
+ 2.テストや検証用にスクリプトを作成する場合は、必ず 'tmp_' から始まるファイル名（例: tmp_test.js）を使用してください。
+ 3.システム動作に関係のない一時ファイル・画像は削除してください。
+ 4.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。`;
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
             let isSuccess = false;
@@ -189,7 +190,7 @@ async function watch() {
                 const files = fs.readdirSync(__dirname);
                 files.forEach(file => {
                   const lowerFile = file.toLowerCase();
-                  if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_')) {
+                  if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_') || lowerFile.startsWith('tmp_')) {
                     try { fs.unlinkSync(path.join(__dirname, file)); } catch (e) { }
                   }
                 });
@@ -238,7 +239,7 @@ async function watch() {
                   console.log('🚀 GASへの本番デプロイ（新バージョンの発行）を実行中...');
                   let deployStatusText = "本番デプロイ(Deploy)完了！";
                   try {
-                    const deployResult = execSync('clasp deploy', { stdio: 'pipe' }).toString();
+                    const deployResult = execSync('clasp deploy -i AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV -d "Auto Update"', { stdio: 'pipe' }).toString();
                     console.log(`✨ 本番デプロイ完了！:\n${deployResult}`);
                   } catch (deployError) {
                     const dLog = deployError.stderr ? deployError.stderr.toString() : deployError.message;

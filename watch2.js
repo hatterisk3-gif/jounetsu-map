@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 
 // ⚠️ URLは藤田さんの現在の最新のものをそのまま使っています
-const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec';
 
 // 🌟 画像URLとIDを一時的に記憶しておくための変数
 let pendingImages = [];
@@ -126,7 +126,7 @@ ${pmPlan}
 
 🚨【絶対ルール】
 1. エディタのDiff/Review機能は使用禁止。必ずターミナル(Node.js等)で直接ファイルを上書き保存すること。
-2. 作業用の一時スクリプトは、使用後に必ず削除して証拠隠滅すること。
+2. 作業用の検証スクリプトを作成する場合は、必ず 'tmp_' から始まるファイル名（例: tmp_test.js）を使用すること。使用後は削除するのが望ましいが、消し忘れてもシステムが後で自動削除します。
 3. トークン節約のため、完了後のテストやレポート作成は一切行わないこと。ファイルの修正と掃除が終わったら、何も出力せずに直ちに終了してください。`;
 
             while (currentAttempt <= maxRetries && !isSuccess) {
@@ -217,7 +217,7 @@ ${cleanDiffText}
                 const files = fs.readdirSync(__dirname);
                 files.forEach(file => {
                   const lowerFile = file.toLowerCase();
-                  if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_')) {
+                  if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_') || lowerFile.startsWith('tmp_')) {
                     try { fs.unlinkSync(path.join(__dirname, file)); } catch (e) { }
                   }
                 });
@@ -266,7 +266,7 @@ ${cleanDiffText}
                   console.log('🚀 GASへの本番デプロイ（新バージョンの発行）を実行中...');
                   let deployStatusText = "本番デプロイ(Deploy)完了！";
                   try {
-                    const deployResult = execSync('clasp deploy', { stdio: 'pipe' }).toString();
+                    const deployResult = execSync('clasp deploy -i AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV -d "Auto Update"', { stdio: 'pipe' }).toString();
                     console.log(`✨ 本番デプロイ完了！:\n${deployResult}`);
                   } catch (deployError) {
                     const dLog = deployError.stderr ? deployError.stderr.toString() : deployError.message;
