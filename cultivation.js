@@ -271,6 +271,10 @@ function renderCultivationPlanTable() {
     const table = document.getElementById('cpTable');
     if (!table) return;
     
+    // 左パネルをクリア
+    const leftBody = document.getElementById('cpLeftBody');
+    if (leftBody) leftBody.innerHTML = '';
+    
     const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
     
     let tHTML = '<thead><tr>';
@@ -293,6 +297,36 @@ function renderCultivationPlanTable() {
     
     table.innerHTML = tHTML;
     cpPlans = [];
+    
+    // テーブルヘッダーの高さに左パネルヘッダーを同期
+    setTimeout(() => { syncLeftHeaderHeight(); }, 50);
+}
+
+function syncLeftHeaderHeight() {
+    const table = document.getElementById('cpTable');
+    const leftHeader = document.getElementById('cpLeftHeader');
+    if (!table || !leftHeader) return;
+    const thead = table.querySelector('thead');
+    if (thead) {
+        leftHeader.style.height = thead.offsetHeight + 'px';
+    }
+}
+
+function syncAllRowHeights() {
+    cpPlans.forEach(plan => {
+        const leftCard = document.getElementById('cpLeftCard_' + plan.id);
+        const rightRow = document.querySelector('#cpTableBody tr[data-plan-id="' + plan.id + '"]');
+        if (leftCard && rightRow) {
+            // リセットしてから計算
+            leftCard.style.height = 'auto';
+            rightRow.style.height = 'auto';
+            const leftH = leftCard.offsetHeight;
+            const rightH = rightRow.offsetHeight;
+            const maxH = Math.max(leftH, rightH);
+            leftCard.style.height = maxH + 'px';
+            rightRow.style.height = maxH + 'px';
+        }
+    });
 }
 
 let pendingCroptypeData = null;
@@ -407,50 +441,58 @@ function addCpPlanRow() {
 
 function renderCpPlanRow(plan) {
     const tbody = document.getElementById('cpTableBody');
-    if (!tbody) return;
+    const leftBody = document.getElementById('cpLeftBody');
+    if (!tbody || !leftBody) return;
     
-    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
-    let trInfo = document.createElement('tr');
-    trInfo.dataset.planIdInfo = plan.id;
-    let tdInfo = document.createElement('td');
-    tdInfo.colSpan = months.length * 6;
-    tdInfo.style.cssText = 'background: #fff; border: 1px solid #ddd; padding: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);';
-    
+    // --- 左パネル: 品種カード ---
     let fileLinkHtml = '';
     if (plan.fileUrl) {
-        fileLinkHtml = `<a href="${plan.fileUrl}" target="_blank" style="font-size:10px; color:#1976d2; margin-left:4px; text-decoration:none;">📁資料</a>`;
+        fileLinkHtml = `<a href="${plan.fileUrl}" target="_blank" style="font-size:10px; color:#1976d2; text-decoration:none;">📁</a>`;
     }
     
-    tdInfo.innerHTML = `
-      <div style="display: block; padding: 4px; width: 100%; box-sizing: border-box; background: #e3f2fd; z-index: 10; border-right: 1px solid #bbdefb; margin-bottom: 2px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-weight:bold; font-size:12px; display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
-                <span style="background:#1976D2; color:#fff; padding:2px 6px; border-radius:10px; font-size:10px;">${plan.crop}</span>
-                <span style="color:#0d47a1;">${plan.variety}</span>
-                ${plan.location ? `<span style="font-size:10px; color:#555; border:1px solid #ccc; padding:1px 3px; border-radius:3px;">${plan.location}</span>` : ''}
+    let card = document.createElement('div');
+    card.id = 'cpLeftCard_' + plan.id;
+    card.style.cssText = 'padding: 6px; background: #e3f2fd; border-bottom: 1px solid #bbdefb; box-sizing: border-box; overflow: hidden;';
+    card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-weight:bold; font-size:11px; display:flex; align-items:center; flex-wrap:wrap; gap:3px;">
+                <span style="background:#1976D2; color:#fff; padding:1px 5px; border-radius:8px; font-size:9px;">${plan.crop}</span>
+                <span style="color:#0d47a1; font-size:11px;">${plan.variety}</span>
                 ${fileLinkHtml}
-                <span id="tagDisplay_${plan.id}" style="color: #e91e63; font-size: 10px; font-weight:bold;">${plan.tag || ''}</span>
+                <span id="tagDisplay_${plan.id}" style="color: #e91e63; font-size: 9px; font-weight:bold;">${plan.tag || ''}</span>
             </span>
-            <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:18px; line-height:1; padding:0 8px; font-weight:bold; margin-left: auto;">×</button>
+            <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:16px; line-height:1; padding:0 4px; font-weight:bold;">×</button>
         </div>
-        <div style="font-size: 10px; margin-top: 4px; display:grid; grid-template-columns: auto auto 1fr; gap:3px 6px; align-items:center; background: #fff; padding: 4px 6px; border-radius: 4px; border: 1px solid #bbdefb;">
-          <span style="white-space:nowrap;">面積:</span>
-          <div style="display:flex; align-items:center; gap:2px;"><input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:50px; height:22px; font-size:13px; padding:0 3px; border:1px solid #ccc; border-radius:3px;">a</div>
-          <div><select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:100%; max-width:120px; height:22px; font-size:12px; padding:0; border:1px solid #ccc; border-radius:3px;"><option value="">圃場選択</option></select></div>
-          <span style="white-space:nowrap;">歩留:</span>
-          <div><input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:50px; height:22px; font-size:13px; padding:0 3px; border:1px solid #ccc; border-radius:3px;"></div>
-          <div style="display:flex; align-items:center; gap:2px; white-space:nowrap;">成功率:<input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:50px; height:22px; font-size:13px; padding:0 3px; border:1px solid #ccc; border-radius:3px;"></div>
+        <div style="font-size: 10px; display:flex; flex-direction:column; gap:3px; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb;">
+          <div style="display:flex; align-items:center; gap:3px;">
+            <span>面積:</span>
+            <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:45px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+            <span>a</span>
+          </div>
+          <div>
+            <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:100%; height:20px; font-size:11px; padding:0; border:1px solid #ccc; border-radius:3px;">
+              <option value="">圃場選択</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:center; gap:3px;">
+            <span>歩留:</span>
+            <input type="number" step="0.1" id="yieldRate_${plan.id}" value="${plan.yieldRate}" oninput="updateRowParams('${plan.id}')" style="width:40px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+          </div>
+          <div style="display:flex; align-items:center; gap:3px;">
+            <span>成功率:</span>
+            <input type="number" step="0.01" id="seedlingSuccess_${plan.id}" value="${plan.seedlingSuccess}" oninput="updateRowParams('${plan.id}')" style="width:40px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+          </div>
         </div>
-        <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:3px; color: #2e7d32; font-weight: bold; font-size:10px;">
-          播種:<span id="calcTrays_${plan.id}" style="margin:0 2px;">0</span><span id="unitTrays_${plan.id}">枚</span> | 
-          収穫:<span id="calcYield_${plan.id}" style="margin:0 2px;">0</span> 
+        <div style="display:flex; align-items:center; gap:4px; margin-top:3px; color: #2e7d32; font-weight: bold; font-size:9px; flex-wrap:wrap;">
+          播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span> |
+          収穫:<span id="calcYield_${plan.id}">0</span>
         </div>
-        <div id="ratios_${plan.id}" style="margin-top: 4px; display:flex; gap: 4px; flex-wrap: wrap;"></div>
-      </div>
+        <div id="ratios_${plan.id}" style="margin-top: 3px; display:flex; gap: 3px; flex-wrap: wrap;"></div>
     `;
-    trInfo.appendChild(tdInfo);
-    tbody.appendChild(trInfo);
+    leftBody.appendChild(card);
 
+    // --- 右パネル: ペイントセル行 ---
+    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
     let tr = document.createElement('tr');
     tr.dataset.planId = plan.id;
     
@@ -473,15 +515,25 @@ function renderCpPlanRow(plan) {
     });
     
     tbody.appendChild(tr);
+    
+    // 左右の高さを同期
+    setTimeout(() => { syncAllRowHeights(); }, 50);
 }
 
 function removeCpPlanRow(planId) {
     cpPlans = cpPlans.filter(p => p.id !== planId);
+    // 右テーブルの行を削除
     const tbody = document.getElementById('cpTableBody');
     const tr = tbody.querySelector(`tr[data-plan-id="${planId}"]`);
     if (tr) tbody.removeChild(tr);
+    // 旧形式の情報行も削除（互換性）
     const trInfo = tbody.querySelector(`tr[data-plan-id-info="${planId}"]`);
     if (trInfo) tbody.removeChild(trInfo);
+    // 左パネルのカードを削除
+    const leftCard = document.getElementById('cpLeftCard_' + planId);
+    if (leftCard) leftCard.parentNode.removeChild(leftCard);
+    // 高さ再同期
+    setTimeout(() => { syncAllRowHeights(); }, 50);
 }
 
 
@@ -686,6 +738,25 @@ function openCultivationPlanModal() {
     fetchCultivationMaster().then(() => {
         calcCp();
     });
+    
+    // 左右パネルの縦スクロール同期
+    const leftPanel = document.getElementById('cpLeftPanel');
+    const rightPanel = document.getElementById('cpRightPanel');
+    if (leftPanel && rightPanel) {
+        let syncing = false;
+        leftPanel.onscroll = function() {
+            if (syncing) return;
+            syncing = true;
+            rightPanel.scrollTop = leftPanel.scrollTop;
+            syncing = false;
+        };
+        rightPanel.onscroll = function() {
+            if (syncing) return;
+            syncing = true;
+            leftPanel.scrollTop = rightPanel.scrollTop;
+            syncing = false;
+        };
+    }
 }
 
 // --- VARIETY REGISTRATION ---
