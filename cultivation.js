@@ -681,10 +681,16 @@ async function saveCultivationPlan() {
             return;
         }
     }
-    
-    const year = getCpVal('cpYear', true) || new Date().getFullYear();
-    
-    const payloadPlans = cpPlans.map(plan => {
+    try {
+        const year = getCpVal('cpYear', true) || new Date().getFullYear();
+        const crop = getCpVal('cpCrop');
+        
+        if (!crop) {
+            alert("作物が選択されていません。基本設定から作物を選択してください。");
+            return;
+        }
+        
+        const payloadPlans = cpPlans.map(plan => {
         const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
         let tasks = { sowing: [], planting: [], harvesting: [] };
         
@@ -744,7 +750,7 @@ async function saveCultivationPlan() {
             btn.disabled = true;
         }
         
-        await callGAS('saveCultivationPlans', { year: year, planDataArray: payloadPlans });
+        await callGAS('saveCultivationPlans', { year: year, crop: crop, planDataArray: payloadPlans });
         
         // Batch save croptypes
         const season = document.getElementById('cpSeason') ? document.getElementById('cpSeason').value : '';
@@ -796,11 +802,15 @@ function openCultivationPlanModal() {
     renderCultivationPlanTable();
     populateDefaultCpSelects();
     
-    const year = getCpVal('cpYear', true) || new Date().getFullYear();
+    // 既存の行をクリア
+    const tbody = document.getElementById('cpTableBody');
+    if (tbody) tbody.innerHTML = '';
+    const leftBody = document.getElementById('cpLeftBody');
+    if (leftBody) leftBody.innerHTML = '';
+    cpPlans = [];
+    
     fetchCultivationMaster().then(() => {
-        loadCultivationPlans(year).then(() => {
-            calcCp();
-        });
+        calcCp();
     });
     
     // 左右パネルの縦スクロール同期
@@ -1181,7 +1191,15 @@ function updateVarietyCardFieldsDisplay(planId) {
     setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
 }
 
-async function loadCultivationPlans(year) {
+async function loadHistoryPlans() {
+    const year = getCpVal('cpYear', true) || new Date().getFullYear();
+    const crop = getCpVal('cpCrop');
+    
+    if (!crop) {
+        alert("作物を選択してください。");
+        return;
+    }
+    
     // 既存の行をクリア
     const tbody = document.getElementById('cpTableBody');
     if (tbody) tbody.innerHTML = '';
@@ -1190,7 +1208,15 @@ async function loadCultivationPlans(year) {
     cpPlans = [];
 
     try {
-        const plans = await callGAS('getCultivationPlans', { year: year });
+        const btn = document.querySelector('button[onclick="loadHistoryPlans()"]');
+        let orgText = '📂 この条件で保存済み計画を読み込む';
+        if (btn) {
+            orgText = btn.innerHTML;
+            btn.innerHTML = '読み込み中...';
+            btn.disabled = true;
+        }
+
+        const plans = await callGAS('getCultivationPlans', { year: year, crop: crop });
         if (plans && Array.isArray(plans)) {
             plans.forEach(plan => {
                 // IDがない場合は新規生成
@@ -1207,8 +1233,19 @@ async function loadCultivationPlans(year) {
                 else if (typeof updateRowCalculations === 'function') updateRowCalculations(plan.id);
             });
         }
+        
+        if (btn) {
+            btn.innerHTML = orgText;
+            btn.disabled = false;
+        }
     } catch (e) {
-        console.error("栽培計画ロードエラー", e);
+        console.error("計画読み込みエラー", e);
+        alert("計画の読み込みに失敗しました。");
+        const btn = document.querySelector('button[onclick="loadHistoryPlans()"]');
+        if (btn) {
+            btn.innerHTML = '📂 この条件で保存済み計画を読み込む';
+            btn.disabled = false;
+        }
     }
 }
 

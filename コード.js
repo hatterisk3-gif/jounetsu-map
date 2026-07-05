@@ -49,8 +49,8 @@ function doPost(e) {
     else if (action === "updateSignLink") result = updateSignLink(params);
     else if (action === 'addToolToMaster') result = addToolToMaster(params);
     else if (action === "updateToolStatus") result = updateToolStatus(params);
-    else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.planDataArray);
-    else if (action === "getCultivationPlans") result = getCultivationPlans(params.year);
+    else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray);
+    else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop);
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
     else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
@@ -2300,7 +2300,7 @@ function getTrackingData(params) {
 // trigger clasp
 
 
-function saveCultivationPlans(year, planDataArray) {
+function saveCultivationPlans(year, crop, planDataArray) {
   try {
     const ss = TENANT_SS;
     let sheet = ss.getSheetByName('栽培計画');
@@ -2322,11 +2322,11 @@ function saveCultivationPlans(year, planDataArray) {
       }
     }
     
-    // 1. Delete existing rows for this year
+    // 1. Delete existing rows for this year and crop
     if (sheet.getLastRow() > 1) {
       const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
       for (let i = data.length - 1; i >= 0; i--) {
-        if (String(data[i][1]) === String(year)) {
+        if (String(data[i][1]) === String(year) && String(data[i][3]) === String(crop)) {
           sheet.deleteRow(i + 2);
         }
       }
@@ -2351,7 +2351,7 @@ function saveCultivationPlans(year, planDataArray) {
   }
 }
 
-function getCultivationPlans(year) {
+function getCultivationPlans(year, crop) {
   try {
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('栽培計画');
@@ -2364,7 +2364,7 @@ function getCultivationPlans(year) {
     
     for (let i = 0; i < data.length; i++) {
        const row = data[i];
-       if (String(row[1]) === String(year)) {
+       if (String(row[1]) === String(year) && String(row[3]) === String(crop)) {
           try {
              const planData = JSON.parse(row[5]); // JSON is in 6th column (index 5)
              results.push(planData);
