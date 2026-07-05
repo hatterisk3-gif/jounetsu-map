@@ -3445,14 +3445,14 @@ window.executeAutoRecord = async () => {
           const id = localStorage.getItem('passionMapUserId');
           const pw = localStorage.getItem('passionMapUserPw');
           
+          if(document.getElementById('loginOrgId') && orgId) document.getElementById('loginOrgId').value = orgId;
+          if(document.getElementById('loginId') && id) document.getElementById('loginId').value = id; 
+          if(document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw; 
+          
           if(orgId && id && pw) { 
               // 画面を即座に隠す
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
-              
-              if(document.getElementById('loginOrgId')) document.getElementById('loginOrgId').value = orgId;
-              document.getElementById('loginId').value = id; 
-              document.getElementById('loginPw').value = pw; 
            
               // キャッシュがあれば先に0.1秒で地図を描画する！
               const cachedData = localStorage.getItem('passionMapInitData');
