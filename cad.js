@@ -243,7 +243,7 @@ window.updateCadSvgOverlay = () => {
         
         if (window.cadTargetPolygon) {
             window.cadTargetPolygon._svgPathNode = createPathNode('#D7CCC8', '#8BC34A');
-            window.cadTargetPolygon._svgPathNode.setAttribute('fill-opacity', '0.95');
+            window.cadTargetPolygon._svgPathNode.setAttribute('fill-opacity', '0.4');
             window.cadTargetPolygon._svgPathNode.setAttribute('stroke-opacity', '1.0');
             window.cadTargetPolygon._svgPathNode.setAttribute('stroke-width', '3');
             pathsGroup.appendChild(window.cadTargetPolygon._svgPathNode);
@@ -2015,7 +2015,7 @@ function addUnePolygon(coordsArray, idx) {
         strokeWeight: Math.max(0.5, 2), map: window.cadMap, zIndex: 10, editable: false, draggable: false, clickable: true
     });
     gPoly.uneIndex = 'une_' + idx;
-                    gPoly.uneGroup = uGroup;
+    gPoly.uneGroup = 'default';
     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
     window.bindShapeHistoryEvents(gPoly);
     window.cadUnePolygons.push(gPoly);
