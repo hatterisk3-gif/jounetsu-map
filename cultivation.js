@@ -677,8 +677,9 @@ function updateCpCellsText(planId) {
 
 async function saveCultivationPlan() {
     if (cpPlans.length === 0) {
-        alert("保存する作型がありません。");
-        return;
+        if (!confirm("この年度の作型がすべて削除されます。保存してよろしいですか？")) {
+            return;
+        }
     }
     
     const year = getCpVal('cpYear', true) || new Date().getFullYear();
