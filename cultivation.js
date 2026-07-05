@@ -65,7 +65,9 @@ function populateSelect(id, arr, defaultOptions = []) {
 function applyCultivationMasterData() {
     if(cpMasterData && cpMasterData.crops) {
         populateSelect('cpLocation', cpMasterData.locations || [], []);
-        populateSelect('cpCrop', Object.keys(cpMasterData.crops), ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
+        let customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
+        let allCrops = Array.from(new Set([...Object.keys(cpMasterData.crops), ...customCrops]));
+        populateSelect('cpCrop', allCrops, ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
         populateSelect('cpTrayHoles', cpMasterData.holes, [72, 128, 200, 288]);
         populateSelect('cpRows', cpMasterData.rows, [1, 2, 3, 4]);
         populateSelect('cpPlantSpacing', cpMasterData.pSpace, [20, 25, 30, 35, 40, 45, 50]);
@@ -251,7 +253,8 @@ function calcCp() {
 
 function populateDefaultCpSelects() {
     populateSelect('cpLocation', [], []);
-    populateSelect('cpCrop', [], ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
+    let customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
+    populateSelect('cpCrop', customCrops, ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
     populateSelect('cpTrayHoles', [], [72, 128, 200, 288]);
     populateSelect('cpRows', [], [1, 2, 3, 4]);
     populateSelect('cpPlantSpacing', [], [20, 25, 30, 35, 40, 45, 50]);
@@ -444,6 +447,9 @@ function renderCpPlanRow(plan) {
     const leftBody = document.getElementById('cpLeftBody');
     if (!tbody || !leftBody) return;
     
+    // fieldIdsの初期化
+    plan.fieldIds = plan.fieldIds || [];
+    
     // --- 左パネル: 品種カード ---
     let fileLinkHtml = '';
     if (plan.fileUrl) {
@@ -469,10 +475,13 @@ function renderCpPlanRow(plan) {
             <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:45px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
             <span>a</span>
           </div>
-          <div>
-            <select id="fieldSelect_${plan.id}" class="cp-field-select" onchange="updateRowParams('${plan.id}')" style="width:100%; height:20px; font-size:11px; padding:0; border:1px solid #ccc; border-radius:3px;">
-              <option value="">圃場選択</option>
-            </select>
+          <div id="fieldSelectContainer_${plan.id}" style="width:100%; font-size:10px; display:flex; flex-direction:column; gap:2px;">
+             <button type="button" onclick="openFieldSelectMap('${plan.id}')" style="width:100%; height:20px; font-size:10px; padding:0; background:#2196F3; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold;">🗺️ 圃場選択 (地図)</button>
+             <div style="display:flex; justify-content:space-between; font-weight:bold; color:#e65100; margin-top:1px; font-size:9px;">
+                <span>選択: <span id="selectedArea_${plan.id}">0</span>a</span>
+                <span>あと: <span id="diffArea_${plan.id}">0</span>a</span>
+             </div>
+             <div id="selectedFieldNames_${plan.id}" style="font-size:9px; color:#666; max-height:36px; overflow-y:auto; line-height:1.2; background:#f9f9f9; padding:2px; border:1px solid #eee; border-radius:3px; word-break:break-all; box-sizing:border-box;">未選択</div>
           </div>
           <div style="display:flex; align-items:center; gap:3px;">
             <span>歩留:</span>
@@ -509,12 +518,44 @@ function renderCpPlanRow(plan) {
             
             let div = document.createElement('div');
             div.style.cssText = 'width: 100%; height: 45px; transition: 0.1s; box-sizing:border-box; text-align:center; overflow:hidden; pointer-events: none;';
+            
+            // 既存タスクがある場合はセルに色を塗る
+            let taskType = '';
+            if (plan.tasks) {
+                if (plan.tasks.sowing && plan.tasks.sowing.some(x => x.monthIndex === idx && x.periodIndex === i)) {
+                    taskType = 'sowing';
+                } else if (plan.tasks.planting && plan.tasks.planting.some(x => x.monthIndex === idx && x.periodIndex === i)) {
+                    taskType = 'planting';
+                } else if (plan.tasks.harvesting && plan.tasks.harvesting.some(x => x.monthIndex === idx && x.periodIndex === i)) {
+                    taskType = 'harvesting';
+                }
+            }
+            if (taskType) {
+                td.dataset.task = taskType;
+                div.style.backgroundColor = TOOL_COLORS[taskType];
+                if (taskType === 'harvesting') {
+                    const taskItem = plan.tasks.harvesting.find(x => x.monthIndex === idx && x.periodIndex === i);
+                    if (taskItem && taskItem.amount) {
+                        td.dataset.amount = taskItem.amount;
+                        div.innerText = taskItem.amount + 'c';
+                        div.style.color = '#fff';
+                        div.style.fontSize = '9px';
+                        div.style.lineHeight = '45px';
+                    }
+                }
+            }
+            
             td.appendChild(div);
             tr.appendChild(td);
         }
     });
     
     tbody.appendChild(tr);
+    
+    // 圃場選択表示を更新
+    if (typeof updateVarietyCardFieldsDisplay === 'function') {
+        updateVarietyCardFieldsDisplay(plan.id);
+    }
     
     // 左右の高さを同期
     setTimeout(() => { syncAllRowHeights(); }, 50);
@@ -673,9 +714,22 @@ async function saveCultivationPlan() {
             yieldRate: plan.yieldRate,
             trays: plan.trays,
             yield: plan.yield,
-            tasks: tasks
+            tasks: tasks,
+            fieldIds: plan.fieldIds || []
         };
     });
+    
+    let customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
+    let updatedCustomCrops = false;
+    payloadPlans.forEach(plan => {
+        if (plan.crop && !customCrops.includes(plan.crop)) {
+            customCrops.push(plan.crop);
+            updatedCustomCrops = true;
+        }
+    });
+    if (updatedCustomCrops) {
+        localStorage.setItem('customCrops', JSON.stringify(customCrops));
+    }
     
     try {
         const btn = document.querySelector('#cultivationPlanModal button[onclick="saveCultivationPlan()"]');
@@ -686,7 +740,7 @@ async function saveCultivationPlan() {
             btn.disabled = true;
         }
         
-        await callGAS('saveCultivationPlan', { planDataArray: payloadPlans });
+        await callGAS('saveCultivationPlans', { year: year, planDataArray: payloadPlans });
         
         // Batch save croptypes
         const season = document.getElementById('cpSeason') ? document.getElementById('cpSeason').value : '';
@@ -735,8 +789,12 @@ function openCultivationPlanModal() {
     modal.style.display = 'flex';
     renderCultivationPlanTable();
     populateDefaultCpSelects();
+    
+    const year = getCpVal('cpYear', true) || new Date().getFullYear();
     fetchCultivationMaster().then(() => {
-        calcCp();
+        loadCultivationPlans(year).then(() => {
+            calcCp();
+        });
     });
     
     // 左右パネルの縦スクロール同期
@@ -1066,3 +1124,82 @@ async function sendCroptypeToGAS(payload, btn, originalText) {
         btn.disabled = false;
     }
 }
+
+function updateVarietyCardFieldsDisplay(planId) {
+    const plan = cpPlans.find(p => p.id === planId);
+    if (!plan) return;
+
+    // planned area
+    const areaInput = document.getElementById('area_' + planId);
+    const targetArea = areaInput ? (parseFloat(areaInput.value) || 0) : (plan.areaA || 0);
+
+    // selected area
+    let selectedArea = 0;
+    let selectedNames = [];
+    
+    // schedule.js の window.loadedPolygons を参照
+    if (plan.fieldIds && Array.isArray(plan.fieldIds)) {
+        plan.fieldIds.forEach(id => {
+            const p = window.loadedPolygons ? window.loadedPolygons[id] : null;
+            if (p) {
+                selectedArea += parseFloat(p.area) || 0;
+                selectedNames.push(p.name);
+            }
+        });
+    }
+
+    selectedArea = Math.round(selectedArea * 10) / 10;
+    let diffArea = targetArea - selectedArea;
+    diffArea = Math.round(diffArea * 10) / 10;
+
+    // UI要素を更新
+    const selAreaEl = document.getElementById('selectedArea_' + planId);
+    if (selAreaEl) selAreaEl.innerText = selectedArea;
+
+    const diffAreaEl = document.getElementById('diffArea_' + planId);
+    if (diffAreaEl) {
+        diffAreaEl.innerText = diffArea;
+        if (diffArea > 0) {
+            diffAreaEl.style.color = '#d32f2f'; // 不足時は赤色
+        } else {
+            diffAreaEl.style.color = '#2e7d32'; // 足りている時は緑色
+        }
+    }
+
+    const namesEl = document.getElementById('selectedFieldNames_' + planId);
+    if (namesEl) {
+        namesEl.innerText = selectedNames.length > 0 ? selectedNames.join(', ') : '未選択';
+    }
+}
+
+async function loadCultivationPlans(year) {
+    // 既存の行をクリア
+    const tbody = document.getElementById('cpTableBody');
+    if (tbody) tbody.innerHTML = '';
+    const leftBody = document.getElementById('cpLeftBody');
+    if (leftBody) leftBody.innerHTML = '';
+    cpPlans = [];
+
+    try {
+        const plans = await callGAS('getCultivationPlans', { year: year });
+        if (plans && Array.isArray(plans)) {
+            plans.forEach(plan => {
+                // IDがない場合は新規生成
+                if (!plan.id) plan.id = 'cp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                cpPlans.push(plan);
+                renderCpPlanRow(plan);
+            });
+            // 各種数値を再計算・表示
+            cpPlans.forEach(plan => {
+                if (typeof window.updateRowParams === 'function') window.updateRowParams(plan.id);
+                else if (typeof updateRowParams === 'function') updateRowParams(plan.id);
+                
+                if (typeof window.updateRowCalculations === 'function') window.updateRowCalculations(plan.id);
+                else if (typeof updateRowCalculations === 'function') updateRowCalculations(plan.id);
+            });
+        }
+    } catch (e) {
+        console.error("栽培計画ロードエラー", e);
+    }
+}
+

@@ -16,7 +16,7 @@ const agyCommand = isWin ? 'agy.cmd' : 'agy';
 // 🤖 CLI版Agyを実行する共通ヘルパー関数（トークン節約・画面非依存）
 // -------------------------------------------------------------------
 function runCliAgent(promptText, timeoutStr = '5m') {
-  const result = spawnSync(agyCommand, ['--print-timeout', timeoutStr, '--prompt', promptText]);
+  const result = spawnSync(agyCommand, ['--model', 'gemini-3.5-flash', '--print-timeout', timeoutStr, '--prompt', promptText]);
   return result.stdout.toString() || result.stderr.toString();
 }
 // -------------------------------------------------------------------

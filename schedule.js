@@ -473,6 +473,8 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
               google.maps.event.addListener(p.polygon, 'click', (e) => {
                 if (window.isFieldCultivationMode) {
                   handleFieldCultivationClick(p);
+                } else if (window.isMapSelectingField) {
+                  handleMapSelectFieldToggle(p);
                 } else {
                   showPopup(p, e.latLng);
                 }
@@ -895,4 +897,155 @@ window.handleFieldCultivationClick = function(p) {
 
         drawnRidgePolygons.push({ polygon: ridgePoly, label: marker });
     });
+};
+
+// =============================================
+// 🗺️ 圃場複数選択モード (地図上での選択)
+// =============================================
+window.isMapSelectingField = false;
+window.mapSelectionPlanId = null;
+window.mapSelectedFieldIds = [];
+
+window.openFieldSelectMap = function(planId) {
+    const plan = cpPlans.find(p => p.id === planId);
+    if (!plan) return;
+
+    window.mapSelectionPlanId = planId;
+    window.mapSelectedFieldIds = [...(plan.fieldIds || [])];
+    window.isMapSelectingField = true;
+
+    // 栽培計画モーダルを一旦非表示にする
+    document.getElementById('cultivationPlanModal').style.display = 'none';
+
+    // 圃場選択バナーを表示
+    document.getElementById('fieldSelectionMapBanner').style.display = 'flex';
+
+    // マップ上のポリゴンをハイライト
+    window.highlightSelectedFieldsOnMap();
+    window.updateFieldSelectionBanner();
+};
+
+window.highlightSelectedFieldsOnMap = function() {
+    for (let id in loadedPolygons) {
+        const p = loadedPolygons[id];
+        if (p.isMarker || !p.polygon) continue;
+
+        const val = String(p.id);
+        const isSelected = window.mapSelectedFieldIds.includes(val);
+
+        if (isSelected) {
+            p.polygon.setOptions({
+                strokeColor: '#FFEB3B',
+                strokeWeight: 4,
+                fillOpacity: 0.8
+            });
+        } else {
+            // 通常時のカラーに戻す
+            const originalColor = p.color || '#4CAF50';
+            p.polygon.setOptions({
+                strokeColor: originalColor,
+                strokeWeight: 1,
+                fillOpacity: 0.3
+            });
+        }
+    }
+};
+
+window.updateFieldSelectionBanner = function() {
+    const planId = window.mapSelectionPlanId;
+    if (!planId) return;
+    const plan = cpPlans.find(p => p.id === planId);
+    if (!plan) return;
+
+    // 目標面積
+    const areaInput = document.getElementById('area_' + planId);
+    const targetArea = areaInput ? (parseFloat(areaInput.value) || 0) : (plan.areaA || 0);
+
+    // 選択された合計面積
+    let selectedArea = 0;
+    let selectedNames = [];
+    window.mapSelectedFieldIds.forEach(id => {
+        const p = loadedPolygons[id];
+        if (p) {
+            selectedArea += parseFloat(p.area) || 0;
+            selectedNames.push(p.name);
+        }
+    });
+
+    selectedArea = Math.round(selectedArea * 10) / 10;
+    let diffArea = targetArea - selectedArea;
+    diffArea = Math.round(diffArea * 10) / 10;
+
+    // バナーUIを更新
+    const varInfo = document.getElementById('fieldSelectionVarietyInfo');
+    if (varInfo) {
+        varInfo.innerText = `品種: ${plan.crop} - ${plan.variety} (目標: ${targetArea}a)`;
+    }
+
+    const selAreaEl = document.getElementById('fsSelectedArea');
+    if (selAreaEl) selAreaEl.innerText = selectedArea;
+
+    const diffAreaEl = document.getElementById('fsDiffArea');
+    if (diffAreaEl) {
+        diffAreaEl.innerText = diffArea;
+        if (diffArea > 0) {
+            diffAreaEl.style.color = '#ffeb3b'; // 不足している
+        } else {
+            diffAreaEl.style.color = '#fff'; // 満たしている
+        }
+    }
+
+    const listEl = document.getElementById('fsSelectedFieldsList');
+    if (listEl) {
+        listEl.innerText = selectedNames.length > 0 ? '選択中: ' + selectedNames.join(', ') : '選択中の圃場: なし';
+    }
+};
+
+window.handleMapSelectFieldToggle = function(p) {
+    if (!window.isMapSelectingField) return;
+    const val = String(p.id);
+    const idx = window.mapSelectedFieldIds.indexOf(val);
+    
+    if (idx > -1) {
+        window.mapSelectedFieldIds.splice(idx, 1);
+    } else {
+        window.mapSelectedFieldIds.push(val);
+    }
+    
+    window.highlightSelectedFieldsOnMap();
+    window.updateFieldSelectionBanner();
+};
+
+window.confirmFieldSelection = function() {
+    const planId = window.mapSelectionPlanId;
+    if (!planId) return;
+    const plan = cpPlans.find(p => p.id === planId);
+    if (plan) {
+        plan.fieldIds = [...window.mapSelectedFieldIds];
+        if (typeof updateVarietyCardFieldsDisplay === 'function') {
+            updateVarietyCardFieldsDisplay(planId);
+        }
+    }
+    window.exitFieldSelectionMode();
+};
+
+window.cancelFieldSelection = function() {
+    window.exitFieldSelectionMode();
+};
+
+window.exitFieldSelectionMode = function() {
+    window.isMapSelectingField = false;
+    window.mapSelectionPlanId = null;
+    window.mapSelectedFieldIds = [];
+
+    // バナーを非表示
+    document.getElementById('fieldSelectionMapBanner').style.display = 'none';
+
+    // 栽培計画モーダルを再表示
+    document.getElementById('cultivationPlanModal').style.display = 'flex';
+
+    // マップ表示を元に戻す
+    if (typeof updateMapVisuals === 'function') {
+        updateMapVisuals();
+    }
 };
