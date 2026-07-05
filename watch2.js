@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 
 // ⚠️ URLは藤田さんの現在の最新のものをそのまま使っています
-const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec';
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
 
 // 🌟 画像URLとIDを一時的に記憶しておくための変数
 let pendingImages = [];
@@ -13,13 +13,21 @@ const isWin = process.platform === 'win32';
 const agyCommand = isWin ? 'agy.cmd' : 'agy';
 
 // -------------------------------------------------------------------
-// 🤖 CLI版Agyを実行する共通ヘルパー関数（トークン節約・画面非依存）
+// 🤖 CLI版Agyを実行する共通ヘルパー関数（安全ガード付き）
 // -------------------------------------------------------------------
 function runCliAgent(promptText, timeoutStr = '5m') {
-  const result = spawnSync(agyCommand, ['--model', 'gemini-3.5-flash', '--print-timeout', timeoutStr, '--prompt', promptText]);
-  return result.stdout.toString() || result.stderr.toString();
+  const result = spawnSync(agyCommand, ['--print-timeout', timeoutStr, '--prompt', promptText]);
+
+  // 🌟 コマンド自体がエラー（見つからない等）の場合のガード
+  if (result.error) {
+    throw new Error(`Agyコマンド(${agyCommand})の起動に失敗しました。パスが通っているか確認してください。詳細: ${result.error.message}`);
+  }
+
+  // 🌟 中身がある場合のみ toString() を実行するガード
+  const stdoutStr = result.stdout ? result.stdout.toString() : "";
+  const stderrStr = result.stderr ? result.stderr.toString() : "";
+  return stdoutStr || stderrStr;
 }
-// -------------------------------------------------------------------
 
 async function watch() {
   try {
