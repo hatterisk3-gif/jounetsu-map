@@ -9,7 +9,7 @@ const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu
 let pendingImages = [];
 
 // -------------------------------------------------------------------
-// 🤖 基地専用システム: AIエージェント実行・待機関数
+// 🤖 基地専用システム: AIエージェント実行・待機関数（IDE / CLI 切り替え）
 // -------------------------------------------------------------------
 async function runAIAgent(promptText) {
   const taskFile = path.join(__dirname, '.ai_task.txt');
@@ -29,8 +29,13 @@ async function runAIAgent(promptText) {
     waitTime++;
   }
 
+  // 🚨 IDEがタイムアウトした場合（5時間制限などで止まったとき）
   if (!fs.existsSync(doneFile)) {
-    throw new Error("IDEでの処理がタイムアウトしました。");
+    console.log('⚠️ IDEでの処理がタイムアウトしました。制限がかかっている可能性があります。');
+    console.log('💻 自動的にCLIモード（agy）に切り替えて処理を続行します...');
+
+    // CLIモードの関数を実行して結果を返す
+    return await runCLIAgent(promptText);
   }
 
   console.log('✅ IDEでのAI処理が完了しました！');
@@ -43,6 +48,39 @@ async function runAIAgent(promptText) {
   } catch (e) { }
 
   return aiReportText;
+}
+
+// 💻 IDEが止まったときに呼び出されるCLI（agy）フォールバック関数
+async function runCLIAgent(promptText) {
+  const taskFile = path.join(__dirname, '.ai_task.txt');
+  const doneFile = path.join(__dirname, '.ai_task_done.txt');
+
+  try {
+    console.log('🔧 CLI版 AIエージェント (agy) を起動中...');
+
+    // 💡 spawnSync を使うことで、プロンプト内の改行や特殊文字を安全に agy へ渡せます
+    spawnSync('agy', ['--prompt', promptText], { stdio: 'inherit' });
+
+    // CLIの処理完了後、.ai_task_done.txt が生成されたか確認
+    if (!fs.existsSync(doneFile)) {
+      throw new Error("CLIを実行しましたが、.ai_task_done.txt が生成されませんでした。");
+    }
+
+    console.log('✅ CLI(agy)でのAI処理が完了しました！');
+    const aiReportText = fs.readFileSync(doneFile, 'utf8').trim();
+
+    // 後片付け
+    try {
+      fs.unlinkSync(taskFile);
+      fs.unlinkSync(doneFile);
+    } catch (e) { }
+
+    return aiReportText;
+
+  } catch (cliError) {
+    console.error('❌ CLIモード（agy）での実行も失敗しました。');
+    throw cliError;
+  }
 }
 // -------------------------------------------------------------------
 
@@ -134,7 +172,7 @@ async function watch() {
 
             while (currentAttempt <= maxRetries && !isSuccess) {
               try {
-                // 1. AIエージェント実行
+                // 1. AIエージェント実行（ここで自動的にエディタ -> CLI の切り替えが行われます）
                 let rawAiOutput = await runAIAgent(currentPrompt);
                 if (rawAiOutput && rawAiOutput !== "完了" && rawAiOutput !== "") {
                   aiOutput = rawAiOutput;
