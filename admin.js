@@ -2149,15 +2149,17 @@ document.addEventListener('DOMContentLoaded', () => {
     tryInitMap();
 
     // ログイン処理やキャッシュ読み込みは即座に実行（地図の初期化を待たない）
+    const orgId = localStorage.getItem('passionMapOrgId') || localStorage.getItem('pMapAdminOrgId');
     const id = localStorage.getItem('passionMapUserId');
     const pw = localStorage.getItem('passionMapUserPw');
     const savedName = localStorage.getItem('pMapAdminName');
 
-    if (id && pw) {
+    if (orgId && id && pw) {
         const loginScreen = document.getElementById('loginScreen');
         if (loginScreen) loginScreen.style.display = 'none';
 
         if (savedName) currentUser = savedName;
+        if (document.getElementById('loginOrgId')) document.getElementById('loginOrgId').value = orgId;
         document.getElementById('loginId').value = id;
         document.getElementById('loginPw').value = pw;
 

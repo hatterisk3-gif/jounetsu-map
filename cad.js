@@ -799,8 +799,8 @@ window.saveCadStateToHistory = () => {
     if (window.isHistoryNavigating || !window.cadTargetId) return;
 
     let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
-    let customShapesData = window.cadCustomShapes.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '' }));
-    let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '' }));
+    let customShapesData = window.cadCustomShapes.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
+    let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
 
     const state = {
         angle: document.getElementById('cadAngle').value,
@@ -871,6 +871,7 @@ window.loadCadStateFromHistory = (index) => {
             let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
             gPoly.uneIndex = 'custom_' + idx;
             gPoly.uneGroup = uGroup;
+            if (shape.customLabel) gPoly.customLabel = shape.customLabel;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
             window.cadCustomShapes.push(gPoly);
@@ -884,6 +885,7 @@ window.loadCadStateFromHistory = (index) => {
             let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
             gPoly.uneIndex = 'une_' + idx;
             gPoly.uneGroup = uGroup;
+            if (shape.customLabel) gPoly.customLabel = shape.customLabel;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
             window.cadUnePolygons.push(gPoly);
@@ -1891,16 +1893,30 @@ window.cadAddCustomShape = (type) => {
 };
 
 window.cadAdjustRidgeGap = (delta) => {
-    if (typeof window.cadRidgeGapRatio === 'undefined') window.cadRidgeGapRatio = 0.2;
-    window.cadRidgeGapRatio += delta;
-    if (window.cadRidgeGapRatio < 0.0) window.cadRidgeGapRatio = 0.0;
-    if (window.cadRidgeGapRatio > 0.8) window.cadRidgeGapRatio = 0.8;
-    
-    if (window.cadUnePolygons && window.cadUnePolygons.length > 0) {
-        window.cadGenerateLines();
-    } else {
-        alert("先に畝を生成してください。");
+    const scaleFactor = 1 + delta;
+    if (scaleFactor <= 0) return;
+
+    let targetPolygons = [...window.cadUnePolygons, ...window.cadCustomShapes];
+    if (targetPolygons.length === 0) {
+        alert("先に畝を生成するか、追加してください。");
+        return;
     }
+
+    targetPolygons.forEach(poly => {
+        let path = poly.getPath(); let coords = [];
+        for (let i = 0; i < path.getLength(); i++) { let pt = path.getAt(i); coords.push([pt.lng(), pt.lat()]); }
+        coords.push([path.getAt(0).lng(), path.getAt(0).lat()]);
+        let tPoly = turf.polygon([coords]);
+
+        let scaledPoly = turf.transformScale(tPoly, scaleFactor, { origin: 'center' });
+        let newCoords = scaledPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
+        newCoords.pop();
+        poly.setPath(newCoords);
+    });
+
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 };
 
 window.cadGenerateLines = () => {
@@ -2271,8 +2287,8 @@ window.saveUneSim = () => {
     if (!window.cadTargetId) return;
     const p = loadedPolygons[window.cadTargetId];
     let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
-    let customShapesData = window.cadCustomShapes.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '' }));
-    let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '' }));
+    let customShapesData = window.cadCustomShapes.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
+    let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
 
     const angleEl = document.getElementById('cadAngle'); const widthEl = document.getElementById('cadWidth'); const countEl = document.getElementById('cadUneCount');
 
