@@ -51,6 +51,7 @@ function doPost(e) {
     else if (action === "updateToolStatus") result = updateToolStatus(params);
     else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray);
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop);
+    else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
     else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
@@ -2374,6 +2375,38 @@ function getCultivationPlans(year, crop) {
     return results;
   } catch(e) {
     throw new Error("栽培計画取得エラー: " + e.message);
+  }
+}
+
+function getSavedCultivationPlanList() {
+  try {
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('栽培計画');
+    if (!sheet || sheet.getLastRow() <= 1) return [];
+    
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+    const map = {};
+    
+    for (let i = 0; i < data.length; i++) {
+       const row = data[i];
+       const year = String(row[1]);
+       const crop = String(row[3]);
+       if (!year || !crop) continue;
+       
+       const key = year + "_" + crop;
+       if (!map[key]) {
+           map[key] = { year: year, crop: crop, count: 0, lastUpdated: row[0] };
+       }
+       map[key].count++;
+       // Update last updated if newer
+       if (new Date(row[0]) > new Date(map[key].lastUpdated)) {
+           map[key].lastUpdated = row[0];
+       }
+    }
+    
+    return Object.values(map).sort((a, b) => b.year.localeCompare(a.year));
+  } catch(e) {
+    throw new Error("栽培計画リスト取得エラー: " + e.message);
   }
 }
 

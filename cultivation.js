@@ -386,6 +386,7 @@ function addCpPlanRow() {
     const location = getCpVal('cpLocation');
     const crop = getCpVal('cpCrop');
     const variety = getCpVal('cpVariety');
+    const fieldCondition = getCpVal('cpFieldCondition') || '露地';
     if (!crop || !variety) {
         alert("作物と品種を選択または入力してください。");
         return;
@@ -404,6 +405,7 @@ function addCpPlanRow() {
         location: location,
         crop: crop,
         variety: variety,
+        fieldCondition: fieldCondition,
         holes: holes,
         rows: rows,
         pSpace: pSpace,
@@ -1242,9 +1244,98 @@ async function loadHistoryPlans() {
         alert("計画の読み込みに失敗しました。");
         const btn = document.querySelector('button[onclick="loadHistoryPlans()"]');
         if (btn) {
-            btn.innerHTML = '📂 この条件で保存済み計画を読み込む';
+            btn.innerHTML = '📂 保存済みの計画一覧から選んで読み込む';
             btn.disabled = false;
         }
     }
+}
+
+// --- History List Modal ---
+async function showHistoryListModal() {
+    const modal = document.getElementById('historyListModal');
+    if (!modal) return;
+    
+    modal.style.display = 'flex';
+    const container = document.getElementById('historyListContainer');
+    container.innerHTML = '<div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">読み込み中...</div>';
+    
+    try {
+        const list = await callGAS('getSavedCultivationPlanList');
+        if (!list || list.length === 0) {
+            container.innerHTML = '<div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">保存済みの計画はありません。</div>';
+            return;
+        }
+        
+        let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+        list.forEach(item => {
+            const dateStr = new Date(item.lastUpdated).toLocaleString('ja-JP', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+            html += `
+            <div onclick="selectHistoryPlan('${item.year}', '${item.crop}')" style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s ease; display: flex; justify-content: space-between; align-items: center;" onmouseover="this.style.background='#e8f5e9'; this.style.borderColor='#4CAF50'" onmouseout="this.style.background='#f9f9f9'; this.style.borderColor='#ddd'">
+                <div>
+                    <div style="font-size: 16px; font-weight: bold; color: #333; margin-bottom: 4px;">${item.year}年 ${item.crop}</div>
+                    <div style="font-size: 12px; color: #777;">作型数: ${item.count}件</div>
+                </div>
+                <div style="font-size: 11px; color: #999; text-align: right;">
+                    最終更新<br>${dateStr}
+                </div>
+            </div>`;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+        
+    } catch(e) {
+        container.innerHTML = '<div style="text-align: center; color: #d32f2f; font-size: 14px; padding: 20px;">一覧の取得に失敗しました。</div>';
+    }
+}
+
+function closeHistoryListModal() {
+    const modal = document.getElementById('historyListModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function selectHistoryPlan(year, crop) {
+    closeHistoryListModal();
+    
+    // Set Year
+    const yearSelect = document.getElementById('cpYear');
+    if (yearSelect) {
+        let foundYear = false;
+        for (let i = 0; i < yearSelect.options.length; i++) {
+            if (yearSelect.options[i].value == year) foundYear = true;
+        }
+        if (!foundYear) {
+            const opt = document.createElement('option');
+            opt.value = year;
+            opt.text = year;
+            yearSelect.appendChild(opt);
+        }
+        yearSelect.value = year;
+    }
+    
+    // Set Crop
+    const cropSelect = document.getElementById('cpCrop');
+    if (cropSelect) {
+        let foundCrop = false;
+        for (let i = 0; i < cropSelect.options.length; i++) {
+            if (cropSelect.options[i].value == crop) foundCrop = true;
+        }
+        if (!foundCrop) {
+            // custom crop
+            const custom = document.getElementById('cpCrop_custom');
+            if (custom) {
+                cropSelect.value = "その他(手入力)";
+                custom.style.display = 'block';
+                custom.value = crop;
+            }
+        } else {
+            cropSelect.value = crop;
+            const custom = document.getElementById('cpCrop_custom');
+            if (custom) custom.style.display = 'none';
+        }
+    }
+    
+    if (typeof updateVarietyList === 'function') updateVarietyList();
+    if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
+    loadHistoryPlans();
 }
 
