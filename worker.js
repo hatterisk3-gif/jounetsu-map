@@ -152,7 +152,13 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
       async function callGAS(action, params = {}) {
         params.action = action;
-        params.spreadsheetId = localStorage.getItem('spreadsheetId');
+        if (action !== 'login') {
+          const spreadsheetId = localStorage.getItem('spreadsheetId');
+          if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
+            throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
+          }
+          params.spreadsheetId = spreadsheetId;
+        }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
         try {
@@ -170,6 +176,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
    // 🌟 1. ログイン処理（完全版） 🌟
       async function executeLogin(isAuto = false) {
+          const orgId = document.getElementById('loginOrgId').value;
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
           const btn = document.querySelector('.login-btn');
@@ -181,12 +188,14 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
 
           try {
-              const result = await callGAS('login', {userId: id, password: pw});
+              const result = await callGAS('login', {orgId: orgId, userId: id, password: pw});
               if (result.success) {
                   currentUser = result.name;
                   document.getElementById('loginScreen').style.display = 'none';
+                  localStorage.setItem('passionMapOrgId', orgId);
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
+                  localStorage.setItem('spreadsheetId', result.spreadsheetId);
                   
                   // 最新データを取りに行く
                   loadInitData(); 
@@ -3398,14 +3407,16 @@ window.executeAutoRecord = async () => {
 // 🌟 4. アプリ起動時の爆速処理（window.onloadをやめる！） 🌟
       document.addEventListener('DOMContentLoaded', () => {
           initMap();
+          const orgId = localStorage.getItem('passionMapOrgId');
           const id = localStorage.getItem('passionMapUserId');
           const pw = localStorage.getItem('passionMapUserPw');
           
-          if(id && pw) { 
+          if(orgId && id && pw) { 
               // 画面を即座に隠す
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
               
+              if(document.getElementById('loginOrgId')) document.getElementById('loginOrgId').value = orgId;
               document.getElementById('loginId').value = id; 
               document.getElementById('loginPw').value = pw; 
            

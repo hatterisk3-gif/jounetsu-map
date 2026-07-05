@@ -10,7 +10,7 @@ function doPost(e) {
     const action = params.action;
     let result = null;
 
-    if (params.spreadsheetId) {
+    if (params.spreadsheetId && params.spreadsheetId !== 'undefined' && params.spreadsheetId !== 'null' && params.spreadsheetId !== '') {
       TENANT_SS = SpreadsheetApp.openById(params.spreadsheetId);
     }
 

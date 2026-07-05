@@ -169,8 +169,12 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       };
 
       async function callGAS(action, params = {}) {
+        const spreadsheetId = localStorage.getItem('spreadsheetId');
+        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
+          throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
+        }
         params.action = action;
-        params.spreadsheetId = localStorage.getItem('spreadsheetId');
+        params.spreadsheetId = spreadsheetId;
         const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
         const json = await res.json();
         if (json.status !== "success") throw new Error(json.message);

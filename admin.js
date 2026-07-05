@@ -114,7 +114,20 @@ window.promptLineUrl = async () => {
 };
 const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場', '🚙': '駐車場（軽トラ）' };
 
-async function callGAS(action, params = {}) { params.action = action; params.spreadsheetId = localStorage.getItem('spreadsheetId'); const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) }); const j = await res.json(); if (j.status !== "success") throw new Error(j.message); return j.data; }
+async function callGAS(action, params = {}) {
+    params.action = action;
+    if (action !== 'login') {
+        const spreadsheetId = localStorage.getItem('spreadsheetId');
+        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
+            throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
+        }
+        params.spreadsheetId = spreadsheetId;
+    }
+    const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
+    const j = await res.json();
+    if (j.status !== "success") throw new Error(j.message);
+    return j.data;
+}
 
 function saveAdminCredentials(id, pw, name) {
     try {
