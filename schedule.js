@@ -1,11 +1,59 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+      
+      // Check login on script load
+      function checkLoginStatus() {
+          const sid = localStorage.getItem('spreadsheetId');
+          if (!sid || sid === 'undefined' || sid === 'null') {
+              // Not logged in
+              const ls = document.getElementById('loginScreen');
+              if (ls) ls.style.display = 'flex';
+              return false;
+          }
+          return true;
+      }
+      
+      // We need to stop loadData if not logged in.
       let map, infoWindow, loadedPolygons = {};
       let globalSchedules = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
 
-      function executeLogout() {
-          location.href = "/index.html";
+      
+      async function executeLogin() {
+          const orgId = document.getElementById('loginOrgId').value;
+          const id = document.getElementById('loginId').value;
+          const pw = document.getElementById('loginPw').value;
+          const btn = document.querySelector('.login-btn');
+          
+          if (btn) { 
+              btn.innerText = "通信中..."; 
+              btn.disabled = true; 
+          }
+
+          try {
+              const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'login', orgId: orgId, userId: id, password: pw}) });
+              const result = await res.json();
+              if (result.status === 'success' && result.data.success) {
+                  document.getElementById('loginScreen').style.display = 'none';
+                  localStorage.setItem('passionMapOrgId', orgId);
+                  localStorage.setItem('passionMapUserId', id); 
+                  localStorage.setItem('passionMapUserPw', pw);
+                  localStorage.setItem('spreadsheetId', result.data.spreadsheetId);
+                  
+                  // Reload or init map data
+                  location.reload();
+              } else {
+                  document.getElementById('loginScreen').style.display = 'flex';
+                  document.getElementById('loginError').innerText = result.data.message || result.message;
+                  if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+              }
+          } catch(e) { 
+              document.getElementById('loginScreen').style.display = 'flex';
+              document.getElementById('loginError').innerText = "通信エラー: " + e.message; 
+              if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+          }
       }
+
+      function executeLogout() { localStorage.clear(); location.reload(); }
 
       // ====== 天気予報関連 ======
       let lastWeatherFetchPos = null;
@@ -334,6 +382,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       }
 
       function initMap() {
+        if (!checkLoginStatus()) return;
         let savedLat = localStorage.getItem('lastLat');
         let savedLng = localStorage.getItem('lastLng');
         let savedZoom = localStorage.getItem('lastZoom');
@@ -371,6 +420,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       }
 
       function loadData() {
+        if (!checkLoginStatus()) return;
         const btn = document.querySelector('.btn-primary');
         const orgTxt = btn.innerText;
         btn.innerText = "通信中..."; btn.disabled = true;
@@ -1096,7 +1146,7 @@ window.exitFieldSelectionMode = function() {
 window.openRadarModal = function(lat, lng) {
   const contentDiv = document.getElementById('radarContent');
   if (contentDiv) {
-    contentDiv.innerHTML = `<iframe width="100%" height="100%" src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lng}&zoom=10&level=surface&overlay=radar&menu=&message=&calendar=&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1" frameborder="0" style="width:100%; height:100%; border:none;"></iframe>`;
+    contentDiv.innerHTML = `<iframe width="100%" height="100%" src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lng}&zoom=10&level=surface&overlay=rain&menu=&message=&calendar=&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1" frameborder="0" style="width:100%; height:100%; border:none;"></iframe>`;
   }
   const modal = document.getElementById('radarModal');
   if (modal) modal.style.display = 'flex';

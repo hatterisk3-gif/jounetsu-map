@@ -14,6 +14,17 @@
   </head>
   <body>
 
+    <div id="loginScreen" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 10000; justify-content: center; align-items: center;">
+      <div style="background: #222; padding: 30px; border-radius: 8px; width: 80%; max-width: 320px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+        <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP</h2>
+        <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px;"></div>
+        <input type="text" id="loginOrgId" placeholder="組織ID" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; font-size: 16px; background:#333; color:white;">
+        <input type="text" id="loginId" placeholder="スタッフID" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; font-size: 16px; background:#333; color:white;">
+        <input type="password" id="loginPw" placeholder="パスワード" style="width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; font-size: 16px; background:#333; color:white;">
+        <button class="login-btn" onclick="executeLogin()" style="width: 100%; padding: 14px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer;">ログイン</button>
+      </div>
+    </div>
+
     <div class="control-panel">
       <div style="font-weight:bold; font-size:16px;">🗺️ 予定確認MAP</div>
       <div class="control-panel-buttons" style="display:flex; align-items:center;">
