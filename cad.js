@@ -269,7 +269,8 @@ window.updateCadSvgOverlay = () => {
                 textNode.setAttribute('text-anchor', 'middle');
                 textNode.setAttribute('dominant-baseline', 'central');
                 textNode.setAttribute('style', 'pointer-events: none; paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
-                let labelStr = String(idx + 1); if (p.uneGroup) labelStr += ' (' + p.uneGroup + ')'; textNode.textContent = labelStr;
+                let baseIdx = String(idx + 1); if (p.customLabel) baseIdx = p.customLabel;
+                let labelStr = baseIdx; if (p.uneGroup && p.uneGroup !== 'default') labelStr += ' (' + p.uneGroup + ')'; textNode.textContent = labelStr;
                 p._svgTextNode = textNode;
                 textsGroup.appendChild(textNode);
             });
@@ -295,7 +296,8 @@ window.updateCadSvgOverlay = () => {
                 textNode.setAttribute('text-anchor', 'middle');
                 textNode.setAttribute('dominant-baseline', 'central');
                 textNode.setAttribute('style', 'pointer-events: none; paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
-                textNode.textContent = String(baseIdx + idx + 1);
+                let baseIdxStr = String(baseIdx + idx + 1); if (p.customLabel) baseIdxStr = p.customLabel;
+                textNode.textContent = baseIdxStr;
                 p._svgTextNode = textNode;
                 textsGroup.appendChild(textNode);
             });
@@ -808,7 +810,8 @@ window.saveCadStateToHistory = () => {
         nakamichiLines: JSON.parse(JSON.stringify(window.cadNakamichiLines)),
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
-        frontBaseline: window.cadFrontBaseline ? JSON.parse(JSON.stringify(window.cadFrontBaseline)) : null
+        frontBaseline: window.cadFrontBaseline ? JSON.parse(JSON.stringify(window.cadFrontBaseline)) : null,
+        ridgeGapRatio: window.cadRidgeGapRatio
     };
 
     const stateStr = JSON.stringify(state);
@@ -1840,7 +1843,7 @@ window.cadSetFrontBar = (position) => {
     let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
     if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([coords[0][0], coords[0][1]]);
     const tPoly = turf.polygon([coords]);
-    const bbox = turf.bbox(tPoly); // [minLng, minLat, maxLng, maxLat]
+    const bbox = turf.bbox(tPoly);
     const minLng = bbox[0], minLat = bbox[1], maxLng = bbox[2], maxLat = bbox[3];
 
     let pt;
@@ -1854,19 +1857,11 @@ window.cadSetFrontBar = (position) => {
     let path = pt;
     window.cadFrontBaseline = path;
 
-    let bearing = -window.cadCurrentRotation || 0;
-    if (bearing < 0) bearing += 360;
-    
-    // 畝の正面バー設置時に畝の角度を変えたり、ポリゴンを再生成したりしない
-    // document.getElementById('cadAngle').value = Math.round(bearing);
-    // if (window.updateCadPreviewCount) window.updateCadPreviewCount();
-
     if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
     if (window.cadFrontBaselineMarker) window.cadFrontBaselineMarker.setMap(null);
     window.cadFrontBaseline = path;
     if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
 
-    // アイコン表示と畝ポリゴンは独立させるため再生成しない
     window.saveCadStateToHistory();
 };
 
@@ -1895,89 +1890,17 @@ window.cadAddCustomShape = (type) => {
     window.saveCadStateToHistory();
 };
 
-window.cadCalcUneCountFromSpacing = () => {
-    try {
-        if (!window.cadTargetId) return;
-        const p = loadedPolygons[window.cadTargetId];
-        if (!p || !p.coords || p.coords.length < 3) return;
-
-        const spacingEl = document.getElementById('cadRidgeSpacing');
-        const spacingCm = spacingEl ? parseFloat(spacingEl.value) : 0;
-        if (isNaN(spacingCm) || spacingCm <= 0) {
-            alert("畝間(cm)を正しく入力してください。");
-            return;
-        }
-
-        const angleEl = document.getElementById('cadAngle');
-        const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
-
-        let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
-        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([coords[0][0], coords[0][1]]);
-        const tPoly = turf.polygon([coords]);
-
-        const centerTurf = turf.center(tPoly);
-        let maxPosDist = 0, maxNegDist = 0;
-        let baseOrigin = centerTurf;
-        let growDirection = angle + 90;
-
-        if (window.cadFrontBaseline) {
-            if (Array.isArray(window.cadFrontBaseline) && window.cadFrontBaseline.length === 2) {
-                let p1lng = typeof window.cadFrontBaseline[0].lng === 'function' ? window.cadFrontBaseline[0].lng() : parseFloat(window.cadFrontBaseline[0].lng);
-                let p1lat = typeof window.cadFrontBaseline[0].lat === 'function' ? window.cadFrontBaseline[0].lat() : parseFloat(window.cadFrontBaseline[0].lat);
-                let p2lng = typeof window.cadFrontBaseline[1].lng === 'function' ? window.cadFrontBaseline[1].lng() : parseFloat(window.cadFrontBaseline[1].lng);
-                let p2lat = typeof window.cadFrontBaseline[1].lat === 'function' ? window.cadFrontBaseline[1].lat() : parseFloat(window.cadFrontBaseline[1].lat);
-                baseOrigin = turf.midpoint(turf.point([p1lng, p1lat]), turf.point([p2lng, p2lat]));
-            } else {
-                let pLng = typeof window.cadFrontBaseline.lng === 'function' ? window.cadFrontBaseline.lng() : parseFloat(window.cadFrontBaseline.lng);
-                let pLat = typeof window.cadFrontBaseline.lat === 'function' ? window.cadFrontBaseline.lat() : parseFloat(window.cadFrontBaseline.lat);
-                baseOrigin = turf.point([pLng, pLat]);
-            }
-            let centerBearing = turf.bearing(baseOrigin, centerTurf);
-            let diffPlus = (centerBearing - (angle + 90)) * Math.PI / 180;
-            let diffMinus = (centerBearing - (angle - 90)) * Math.PI / 180;
-            growDirection = Math.cos(diffPlus) > Math.cos(diffMinus) ? angle + 90 : angle - 90;
-        }
-
-        tPoly.geometry.coordinates[0].forEach(coord => {
-            const pt = turf.point(coord); 
-            const dist = turf.distance(baseOrigin, pt, { units: 'meters' });
-            const bearing = turf.bearing(baseOrigin, pt); 
-            const angleDiff = (bearing - growDirection) * Math.PI / 180;
-            const projDist = dist * Math.cos(angleDiff);
-            if (projDist > maxPosDist) maxPosDist = projDist;
-            if (-projDist > maxNegDist) maxNegDist = -projDist;
-        });
-
-        const totalWidthMeters = maxPosDist + maxNegDist;
-        const spacingMeters = spacingCm / 100;
-        let count = Math.floor(totalWidthMeters / spacingMeters);
-        if (count < 1) count = 1;
-
-        document.getElementById('cadUneCount').value = count;
-        alert(`圃場の有効幅: 約 ${totalWidthMeters.toFixed(1)} m\n畝間 ${spacingCm} cm で計算し、確定畝数を ${count} に設定しました。`);
-    } catch(e) {
-        alert("計算エラー: " + e.message);
-    }
-};
-
-window.cadLoadUneCountFromCAD = () => {
-    if (window.cadUnePolygons && window.cadUnePolygons.length > 0) {
-        document.getElementById('cadUneCount').value = window.cadUnePolygons.length;
-        alert(`現在の画面に描画されている畝数（${window.cadUnePolygons.length}）を確定畝数にセットしました。`);
-        return;
-    }
+window.cadAdjustRidgeGap = (delta) => {
+    if (typeof window.cadRidgeGapRatio === 'undefined') window.cadRidgeGapRatio = 0.2;
+    window.cadRidgeGapRatio += delta;
+    if (window.cadRidgeGapRatio < 0.0) window.cadRidgeGapRatio = 0.0;
+    if (window.cadRidgeGapRatio > 0.8) window.cadRidgeGapRatio = 0.8;
     
-    if (window.cadTargetId && loadedPolygons[window.cadTargetId] && loadedPolygons[window.cadTargetId].uneSimData) {
-        try {
-            const saved = JSON.parse(loadedPolygons[window.cadTargetId].uneSimData);
-            if (saved.uneCount) {
-                document.getElementById('cadUneCount').value = saved.uneCount;
-                alert(`保存されているCADデータから畝数（${saved.uneCount}）をロードしました。`);
-                return;
-            }
-        } catch(e) {}
+    if (window.cadUnePolygons && window.cadUnePolygons.length > 0) {
+        window.cadGenerateLines();
+    } else {
+        alert("先に畝を生成してください。");
     }
-    alert("CADデータに畝数が登録されていません。");
 };
 
 window.cadGenerateLines = () => {
@@ -2005,13 +1928,11 @@ window.cadGenerateLines = () => {
         let maxPosDist = 0, maxNegDist = 0;
 
         let baseOrigin = centerTurf;
-        let useFrontBaseline = false;
         let growDirection = angle + 90;
         let actualWidthM = 0;
         let startOffset = 0;
 
         if (window.cadFrontBaseline) {
-            useFrontBaseline = true;
             if (Array.isArray(window.cadFrontBaseline) && window.cadFrontBaseline.length === 2) {
                 let p1lng = typeof window.cadFrontBaseline[0].lng === 'function' ? window.cadFrontBaseline[0].lng() : parseFloat(window.cadFrontBaseline[0].lng);
                 let p1lat = typeof window.cadFrontBaseline[0].lat === 'function' ? window.cadFrontBaseline[0].lat() : parseFloat(window.cadFrontBaseline[0].lat);
@@ -2068,7 +1989,8 @@ window.cadGenerateLines = () => {
             let oPt = turf.destination(baseOrigin, absOffset, direction, { units: 'meters' });
 
             let pt1 = turf.destination(oPt, lineLen / 2, angle, { units: 'meters' }); let pt2 = turf.destination(oPt, lineLen / 2, angle + 180, { units: 'meters' });
-            let w = actualWidthM * 0.8;
+            let ratio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
+            let w = actualWidthM * ratio;
             let p1 = turf.destination(pt1, w / 2, angle + 90, { units: 'meters' }).geometry.coordinates; let p2 = turf.destination(pt1, w / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
             let p3 = turf.destination(pt2, w / 2, angle - 90, { units: 'meters' }).geometry.coordinates; let p4 = turf.destination(pt2, w / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
             rects.push(turf.polygon([[p1, p2, p3, p4, p1]]));
@@ -2131,6 +2053,15 @@ window.openCadEditModal = (idx) => {
             let pt = path.getAt(i);
             window.cadEditOriginalPath.push(new google.maps.LatLng(pt.lat(), pt.lng()));
         }
+        if (document.getElementById('cadEditUneGroup')) document.getElementById('cadEditUneGroup').value = poly.uneGroup || '';
+        if (document.getElementById('cadEditCustomLabel')) {
+            let labelStr = poly.customLabel;
+            if (!labelStr) {
+                const globalIdx = [...window.cadUnePolygons, ...window.cadCustomShapes].indexOf(poly);
+                labelStr = String(globalIdx + 1);
+            }
+            document.getElementById('cadEditCustomLabel').value = labelStr;
+        }
     }
     
     document.getElementById('cadEditPolyModal').style.display = 'flex';
@@ -2187,6 +2118,15 @@ window.updateSinglePolyLabel = (idx) => {
         const bounds = new google.maps.LatLngBounds();
         poly.getPath().forEach(pt => bounds.extend(pt));
         marker.setPosition(bounds.getCenter());
+
+        let labelStr = poly.customLabel ? poly.customLabel : String(polyIndex + 1);
+        marker.setLabel({
+            text: labelStr,
+            color: '#ffffff',
+            fontSize: '24px',
+            fontWeight: 'bold',
+            className: 'polygon-label ridge-label'
+        });
     }
 };
 
@@ -2281,7 +2221,7 @@ window.reassignLabels = () => {
 
     totalPolygons.forEach((poly, index) => {
         const marker = window.cadUneLabels[index];
-        const idxStr = String(index + 1);
+        const idxStr = poly.customLabel ? poly.customLabel : String(index + 1);
 
         marker.associatedPoly = poly;
 
@@ -2302,6 +2242,13 @@ window.reassignLabels = () => {
     });
 
     window.updateCadLabelPositionsThrottled();
+
+    if (!window.cadIsSnapping) {
+        const countEl = document.getElementById('cadUneCount');
+        if (countEl && totalPolygons.length > 0) {
+            countEl.value = totalPolygons.length;
+        }
+    }
 };
 
 window.saveUneSim = () => {
@@ -2382,15 +2329,20 @@ window.cadGetGroupColor = (group) => {
     return colors[Math.abs(hash) % colors.length];
 };
 
-window.cadApplyUneGroup = () => {
+window.cadApplyUneDetails = () => {
     const idx = document.getElementById('cadEditIndex').value;
     const group = document.getElementById('cadEditUneGroup').value.trim();
+    const customLabel = document.getElementById('cadEditCustomLabel') ? document.getElementById('cadEditCustomLabel').value.trim() : '';
     const isCustom = idx.startsWith('custom_');
     const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
     const poly = polyList.find(p => p.uneIndex === idx);
     if (poly) {
         poly.uneGroup = group;
+        if (customLabel) poly.customLabel = customLabel;
+        else delete poly.customLabel;
+        
         poly.setOptions({ fillColor: window.cadGetGroupColor(group) });
+        if (typeof window.updateSinglePolyLabel === 'function') window.updateSinglePolyLabel(idx);
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
         if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
     }
