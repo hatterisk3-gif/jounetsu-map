@@ -13,5 +13,5 @@ description:
    - `git add .`
    - `git commit -m "Manual: 【生成したコミットメッセージ】"`
    - `git push`
-   - `clasp deploy`
+   - `clasp deploy -i AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV`
 4. すべてのコマンドが成功したら、「🚀 AIによる要約コミットとデプロイが完了しました！」と報告してください。
