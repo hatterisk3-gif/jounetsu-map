@@ -760,7 +760,9 @@ async function saveCultivationPlan() {
         }));
         
         // Call GAS to save batch croptypes
-        await callGAS('saveCroptypeDBBatch', { croptypes: croptypeParamsArray });
+        if (croptypeParamsArray.length > 0) {
+            await callGAS('saveCroptypeDBBatch', { croptypes: croptypeParamsArray });
+        }
         
         // Reload master data
         cpMasterData = await callGAS('getCultivationMaster');
