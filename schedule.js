@@ -682,7 +682,9 @@ window.updateRowCalculations = function(planId) {
             plan.trays = Math.ceil(requiredSeedlings / plan.holes); // Unit is 枚
         }
         
-        plan.yield = Math.floor((totalPlants * plan.yieldRate * plan.yieldPerPlant) / plan.itemsPerPack);
+        const ypp = parseFloat(plan.yieldPerPlant) || 1;
+        const ipp = parseFloat(plan.itemsPerPack) || 1;
+        plan.yield = Math.floor((totalPlants * plan.yieldRate * ypp) / ipp);
     } else {
         plan.trays = 0;
         plan.yield = 0;
