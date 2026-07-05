@@ -1389,7 +1389,7 @@ function saveGlobalHarvest(params) {
   const lotSheet = getOrCreateRecordSheet('ロット記録');
   
   // J列(拠点)のヘッダーがなければ自動で作る
-  const header = lotSheet.getRange(1, 1, 1, lotSheet.getLastColumn()).getValues()[0];
+  const header = lotSheet.getRange(1, 1, 1, Math.max(1, lotSheet.getLastColumn())).getValues()[0];
   if (header.length < 10 || header[9] !== "拠点") {
       lotSheet.getRange(1, 10).setValue("拠点").setFontWeight("bold").setBackground("#e0e0e0");
   }
@@ -2309,11 +2309,16 @@ function saveCultivationPlans(year, planDataArray) {
       sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
     } else {
       // 既存のヘッダーが古い場合は更新する（任意ですがここでは列構成が変わるため）
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      if (headers[1] !== '年度' || headers[2] !== 'ID') {
-         // 列構成をリセット
-         sheet.clear();
-         sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
+      const lastCol = sheet.getLastColumn();
+      if (lastCol === 0) {
+        sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
+      } else {
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        if (headers.length < 3 || headers[1] !== '年度' || headers[2] !== 'ID') {
+           // 列構成をリセット
+           sheet.clear();
+           sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
+        }
       }
     }
     
@@ -2729,7 +2734,7 @@ function saveVarietyWithFile(params) {
     }
     
     // ヘッダーにファイルURLがなければ追加
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
     let fileUrlColIndex = headers.indexOf('ファイルURL') + 1;
     if (fileUrlColIndex === 0) {
       fileUrlColIndex = headers.length + 1;
