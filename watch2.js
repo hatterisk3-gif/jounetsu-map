@@ -13,17 +13,16 @@ const isWin = process.platform === 'win32';
 const agyCommand = isWin ? 'agy.cmd' : 'agy';
 
 // -------------------------------------------------------------------
-// 🤖 CLI版Agyを実行する共通ヘルパー関数（安全ガード付き）
+// 🤖 CLI版Agyを実行する共通ヘルパー関数（Windows完全対策版）
 // -------------------------------------------------------------------
 function runCliAgent(promptText, timeoutStr = '5m') {
-  const result = spawnSync(agyCommand, ['--print-timeout', timeoutStr, '--prompt', promptText]);
+  // 🌟 第3引数に { shell: true } を追加して、Windowsのシェル経由で安全に実行させる
+  const result = spawnSync(agyCommand, ['--print-timeout', timeoutStr, '--prompt', promptText], { shell: true });
 
-  // 🌟 コマンド自体がエラー（見つからない等）の場合のガード
   if (result.error) {
-    throw new Error(`Agyコマンド(${agyCommand})の起動に失敗しました。パスが通っているか確認してください。詳細: ${result.error.message}`);
+    throw new Error(`Agyコマンド(${agyCommand})の起動に失敗しました。詳細: ${result.error.message}`);
   }
 
-  // 🌟 中身がある場合のみ toString() を実行するガード
   const stdoutStr = result.stdout ? result.stdout.toString() : "";
   const stderrStr = result.stderr ? result.stderr.toString() : "";
   return stdoutStr || stderrStr;
