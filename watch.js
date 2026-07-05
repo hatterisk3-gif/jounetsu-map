@@ -239,7 +239,7 @@ async function watch() {
                   console.log('🚀 GASへの本番デプロイ（新バージョンの発行）を実行中...');
                   let deployStatusText = "本番デプロイ(Deploy)完了！";
                   try {
-                    const deployResult = execSync('clasp deploy -i AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV -d "Auto Update"', { stdio: 'pipe' }).toString();
+                    const deployResult = execSync('clasp deploy -i AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz -d "Auto Update"', { stdio: 'pipe' }).toString();
                     console.log(`✨ 本番デプロイ完了！:\n${deployResult}`);
                   } catch (deployError) {
                     const dLog = deployError.stderr ? deployError.stderr.toString() : deployError.message;

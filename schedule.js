@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec";
       let map, infoWindow, loadedPolygons = {};
       let globalSchedules = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
@@ -1024,6 +1024,10 @@ window.confirmFieldSelection = function() {
         plan.fieldIds = [...window.mapSelectedFieldIds];
         if (typeof updateVarietyCardFieldsDisplay === 'function') {
             updateVarietyCardFieldsDisplay(planId);
+        }
+        // 圃場選択が変更されたので、データベース（GAS）に栽培計画を保存する
+        if (typeof saveCultivationPlan === 'function') {
+            saveCultivationPlan();
         }
     }
     window.exitFieldSelectionMode();
