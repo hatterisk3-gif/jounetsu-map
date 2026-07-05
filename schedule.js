@@ -53,7 +53,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
         lastWeatherFetchPos = {lat, lng};
 
         try {
-          let url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FTokyo`;
+          let url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FTokyo`;
           let res = await fetch(url);
           let data = await res.json();
           
@@ -69,6 +69,39 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
           let html = `<div style="padding: 10px;">`;
           html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
           
+          let now = new Date();
+          let currentHourStr = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0') + "T" + String(now.getHours()).padStart(2, '0') + ":00";
+          let startIndex = data.hourly ? data.hourly.time.indexOf(currentHourStr) : -1;
+          if (startIndex === -1) startIndex = 0;
+          
+          if (data.hourly) {
+            html += `<div style="margin-bottom:15px;">`;
+            html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕒 今後の天気 (1時間ごと)</div>`;
+            html += `<div style="display:flex; overflow-x:auto; padding-bottom:5px; gap:10px;">`;
+            for(let i = startIndex; i < startIndex + 12 && i < data.hourly.time.length; i++) {
+                let t = new Date(data.hourly.time[i]);
+                let hStr = t.getHours() + "時";
+                let hCode = data.hourly.weathercode[i];
+                let hTemp = Math.round(data.hourly.temperature_2m[i] * 10) / 10;
+                let hPrecip = data.hourly.precipitation[i];
+                let hEmoji = getWeatherEmoji(hCode);
+                html += `<div style="min-width:50px; text-align:center; background:#f9f9f9; padding:5px; border-radius:5px; border:1px solid #eee;">
+                           <div style="font-size:12px; color:#666;">${hStr}</div>
+                           <div style="font-size:18px; margin:3px 0;">${hEmoji}</div>
+                           <div style="font-size:13px; font-weight:bold;">${hTemp}℃</div>
+                           <div style="font-size:11px; color:#2196F3;">${hPrecip}mm</div>
+                         </div>`;
+            }
+            html += `</div></div>`;
+          }
+
+          html += `<div style="margin-bottom:15px;">`;
+          html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🌧️ 雨雲レーダー (Windy)</div>`;
+          html += `<iframe width="100%" height="250" src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lng}&zoom=10&level=surface&overlay=rain&menu=&message=&calendar=&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1" frameborder="0" style="border-radius:8px; pointer-events:auto;"></iframe>`;
+          html += `<div style="text-align:right; margin-top:5px;"><a href="https://www.jma.go.jp/bosai/nowc/#lat:${lat}&lon:${lng}&zoom:10&colordepth:normal&elements:hrpns&none_disp:on" target="_blank" style="font-size:12px; color:#2196F3; text-decoration:none;">🔗 気象庁の雨雲レーダーを開く</a></div>`;
+          html += `</div>`;
+
+          html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 週間予報</div>`;
           html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
           html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
                      <th style="padding: 8px; text-align: left; color:#333;">日付</th>
