@@ -40,7 +40,8 @@
             <button onclick="openCroptypeRegistrationModal(); toggleCultivationMenu()" style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; font-size: 13px; font-weight: bold; color: #333;">🏷️ 品種作型を登録する</button>
           </div>
         </div>
-        <button class="btn-primary desktop-only" onclick="openScheduleTable()">📋 作業一覧</button>
+        <button class="btn-primary desktop-only" onclick="openScheduleTable()" style="margin-right:10px;">📋 作業一覧</button>
+        <button class="btn-primary desktop-only" onclick="executeLogout()" style="background:#f44336;">🚪 ログアウト</button>
       </div>
     </div>
     
@@ -122,6 +123,10 @@
       <button onclick="document.getElementById('mobileTrackingMenu').style.display='flex'">
         <div style="font-size:20px;">🏃‍♂️</div>
         <div style="font-weight:bold;">軌跡表示</div>
+      </button>
+      <button onclick="executeLogout()">
+        <div style="font-size:20px;">🚪</div>
+        <div style="font-weight:bold;">ログアウト</div>
       </button>
     </div>
 

@@ -3,6 +3,11 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let globalSchedules = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
 
+      function executeLogout() {
+          localStorage.clear();
+          location.href = "worker.html";
+      }
+
       // ====== 天気予報関連 ======
       let lastWeatherFetchPos = null;
 
