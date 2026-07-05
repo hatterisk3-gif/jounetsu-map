@@ -635,19 +635,30 @@ function updateCpCellsText(planId) {
         const ratioContainer = document.getElementById(`ratios_${plan.id}`);
         if (ratioContainer) {
             let html = '';
+            let totalRatio = (plan.harvestRatios || []).reduce((a, b) => a + (b||0), 0);
+            let remaining = 10 - totalRatio;
+            let ratioText = `(残り${remaining})`;
+            let colorStyle = remaining < 0 ? 'red' : '#666';
+            
             if (harvestCells.length > 0) {
-                html += '<div style="width:100%; font-size:10px; color:#666; margin-bottom:2px;">収穫割合:</div>';
+                html += `<div id="harvestRatioLabel_${plan.id}" style="width:100%; font-size:10px; color:${colorStyle}; margin-bottom:2px;">収穫割合:${ratioText}</div>`;
                 for (let i = 0; i < harvestCells.length; i++) {
                     let val = (plan.harvestRatios && plan.harvestRatios[i] !== undefined) ? plan.harvestRatios[i] : '';
                     if (val === 0) val = '';
                     html += `<input type="number" value="${val}" oninput="updatePlanRatio('${plan.id}', ${i}, this.value)" style="width: 25px; height: 18px; padding: 0 2px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;" placeholder="枠${i+1}">`;
                 }
             }
+            
             // Update only if innerHTML has logically changed to avoid losing focus while typing
-            // A simple check is length or if the number of inputs differs
             const currentInputs = ratioContainer.querySelectorAll('input');
             if (currentInputs.length !== harvestCells.length) {
                 ratioContainer.innerHTML = html;
+            } else {
+                const label = document.getElementById(`harvestRatioLabel_${plan.id}`);
+                if (label) {
+                    label.innerText = `収穫割合:${ratioText}`;
+                    label.style.color = colorStyle;
+                }
             }
         }
 
