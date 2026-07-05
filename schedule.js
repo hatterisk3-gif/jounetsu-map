@@ -4,7 +4,6 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
 
       function executeLogout() {
-          localStorage.clear();
           location.href = "worker.html";
       }
 
@@ -95,10 +94,8 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
             html += `</div></div>`;
           }
 
-          html += `<div style="margin-bottom:15px;">`;
-          html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🌧️ 雨雲レーダー (Windy)</div>`;
-          html += `<iframe width="100%" height="250" src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lng}&zoom=10&level=surface&overlay=rain&menu=&message=&calendar=&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1" frameborder="0" style="border-radius:8px; pointer-events:auto;"></iframe>`;
-          html += `<div style="text-align:right; margin-top:5px;"><a href="https://www.jma.go.jp/bosai/nowc/#lat:${lat}&lon:${lng}&zoom:10&colordepth:normal&elements:hrpns&none_disp:on" target="_blank" style="font-size:12px; color:#2196F3; text-decoration:none;">🔗 気象庁の雨雲レーダーを開く</a></div>`;
+                    html += `<div style="margin-bottom:15px; text-align:center;">`;
+          html += `<button onclick="openRadarModal(${lat}, ${lng})" style="width:100%; max-width:300px; padding:12px; background:#2196F3; color:white; border:none; border-radius:6px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2);">🌧️ 雨雲レーダーを大画面で見る</button>`;
           html += `</div>`;
 
           html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 週間予報</div>`;
@@ -1094,4 +1091,20 @@ window.exitFieldSelectionMode = function() {
     if (typeof updateMapVisuals === 'function') {
         updateMapVisuals();
     }
+};
+
+window.openRadarModal = function(lat, lng) {
+  const contentDiv = document.getElementById('radarContent');
+  if (contentDiv) {
+    contentDiv.innerHTML = `<iframe width="100%" height="100%" src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lng}&zoom=10&level=surface&overlay=rain&menu=&message=&calendar=&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1" frameborder="0" style="width:100%; height:100%; border:none;"></iframe>`;
+  }
+  const modal = document.getElementById('radarModal');
+  if (modal) modal.style.display = 'flex';
+};
+
+window.closeRadarModal = function() {
+  const modal = document.getElementById('radarModal');
+  if (modal) modal.style.display = 'none';
+  const contentDiv = document.getElementById('radarContent');
+  if (contentDiv) contentDiv.innerHTML = '';
 };

@@ -179,5 +179,17 @@
       };
       document.body.appendChild(script);
     </script>
+
+    <!-- Radar Modal -->
+    <div id="radarModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; justify-content: center; align-items: center;">
+      <div style="background: #fff; width: 95%; height: 90vh; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #2196F3; color: white;">
+          <h3 style="margin: 0; font-size: 18px;">🌧️ 雨雲レーダー</h3>
+          <span style="cursor: pointer; font-size: 28px; line-height: 1;" onclick="closeRadarModal()">×</span>
+        </div>
+        <div id="radarContent" style="flex: 1; position: relative; -webkit-overflow-scrolling: touch;"></div>
+      </div>
+    </div>
+    
 </body>
 </html>
