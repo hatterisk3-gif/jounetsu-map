@@ -670,6 +670,9 @@ function updateCpCellsText(planId) {
             }
         });
     });
+    
+    // UI改善: 高さの同期を追加
+    setTimeout(() => { syncAllRowHeights(); }, 50);
 }
 
 async function saveCultivationPlan() {
@@ -1170,6 +1173,9 @@ function updateVarietyCardFieldsDisplay(planId) {
     if (namesEl) {
         namesEl.innerText = selectedNames.length > 0 ? selectedNames.join(', ') : '未選択';
     }
+    
+    // UI改善: 高さの同期を追加
+    setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
 }
 
 async function loadCultivationPlans(year) {
