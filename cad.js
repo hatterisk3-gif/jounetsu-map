@@ -861,11 +861,13 @@ window.loadCadStateFromHistory = (index) => {
     window.cadFrontBaseline = state.frontBaseline || null;
     if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
 
-        if (state.customShapes) {
-        state.customShapes.forEach((cPath, idx) => {
+    if (state.customShapes) {
+        state.customShapes.forEach((shape, idx) => {
+            let cPath = shape.coords ? shape.coords : shape;
+            let uGroup = shape.group || 'default';
             let gPoly = new google.maps.Polygon({ paths: cPath, fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
             gPoly.uneIndex = 'custom_' + idx;
-                    gPoly.uneGroup = uGroup;
+            gPoly.uneGroup = uGroup;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
             window.cadCustomShapes.push(gPoly);
@@ -873,10 +875,12 @@ window.loadCadStateFromHistory = (index) => {
     }
 
     if (state.unePolygons) {
-        state.unePolygons.forEach((uPath, idx) => {
+        state.unePolygons.forEach((shape, idx) => {
+            let uPath = shape.coords ? shape.coords : shape;
+            let uGroup = shape.group || 'default';
             let gPoly = new google.maps.Polygon({ paths: uPath, fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
             gPoly.uneIndex = 'une_' + idx;
-                    gPoly.uneGroup = uGroup;
+            gPoly.uneGroup = uGroup;
             google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
             window.bindShapeHistoryEvents(gPoly);
             window.cadUnePolygons.push(gPoly);
@@ -932,23 +936,30 @@ window.bindShapeHistoryEvents = (poly) => {
     });
 };
 
-window.handleMapClick = (pageX, pageY) => {
-    if (document.getElementById('cadOverlay').style.display !== 'flex') return;
-
+window.getPageLatLng = (pageX, pageY) => {
     const wrapper = document.getElementById('cadMapWrapper');
+    if (!wrapper || !window.cadMap) return null;
     const rect = wrapper.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
     const dx = pageX - cx; const dy = pageY - cy;
 
-    const theta = -window.cadCurrentRotation * Math.PI / 180;
+    const theta = -(window.cadCurrentRotation || 0) * Math.PI / 180;
     const cosT = Math.cos(theta); const sinT = Math.sin(theta);
     const mapDx = dx * cosT - dy * sinT; const mapDy = dx * sinT + dy * cosT;
 
     const proj = window.cadMap.getProjection();
+    if (!proj) return null;
     const scale = Math.pow(2, window.getCadZoom());
     const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
-    const latLng = proj.fromPointToLatLng(new google.maps.Point(centerPt.x + mapDx / scale, centerPt.y + mapDy / scale));
+    return proj.fromPointToLatLng(new google.maps.Point(centerPt.x + mapDx / scale, centerPt.y + mapDy / scale));
+};
+
+window.handleMapClick = (pageX, pageY) => {
+    if (document.getElementById('cadOverlay').style.display !== 'flex') return;
+
+    const latLng = window.getPageLatLng(pageX, pageY);
+    if (!latLng) return;
 
     if (!window.cadPinMode) {
         if (google.maps.geometry && google.maps.geometry.poly) {
@@ -976,45 +987,15 @@ window.handleMapClick = (pageX, pageY) => {
 
     const msgEl = document.getElementById('cadPinModeMsg');
 
-    if (window.cadPinMode === 'nakamichi') {
-        let tempPtVar = 'nakamichiTempPt';
-        let tempMarkerVar = 'nakamichiTempMarker';
-        let lineName = '中道ライン';
+    if (window.cadPinMode === 'nakamichi') return;
 
-        if (!window[tempPtVar]) {
-            window[tempPtVar] = latLng;
-            // 🌟 1回目のタップを視覚的に確認できるように！
-            window[tempMarkerVar] = new google.maps.Marker({
-                position: latLng, map: window.cadMap,
-                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#E91E63', fillOpacity: 1, strokeColor: 'white', strokeWeight: Math.max(0.5, 2) }, zIndex: 9999
-            });
-            if (msgEl) {
-                msgEl.innerText = `【${lineName}】終点をタップして線を引いてください`;
-                msgEl.style.color = "#E91E63";
-            }
-        } else {
-            let p1 = window[tempPtVar]; let p2 = latLng;
-            window[tempPtVar] = null; 
-            window.cadPinMode = null;
-            if (window[tempMarkerVar]) { window[tempMarkerVar].setMap(null); window[tempMarkerVar] = null; }
-            if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
-
-            let path = [{ lat: p1.lat(), lng: p1.lng() }, { lat: p2.lat(), lng: p2.lng() }];
-            
-            window.cadNakamichiLines.push(path);
-            window.drawNakamichiVisual(path);
-            if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
-            else window.saveCadStateToHistory();
-        }
-    } else {
-        const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, visible: false });
-        mk.cadPinType = window.cadPinMode;
-        window.cadPins.push(mk);
-        if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
-        window.cadPinMode = null;
-        if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
-        window.saveCadStateToHistory();
-    }
+    const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, visible: false });
+    mk.cadPinType = window.cadPinMode;
+    window.cadPins.push(mk);
+    if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+    window.cadPinMode = null;
+    if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+    window.saveCadStateToHistory();
 };
 
 window.initCadTouchEvents = () => {
@@ -1191,6 +1172,24 @@ window.initCadTouchEvents = () => {
         isMouseDown = true; isDragging = false;
         pendingCenter = null;
         pendingZoom = null;
+
+        if (window.cadPinMode === 'nakamichi') {
+            ignoreDrag = true;
+            window.cadNakamichiIsDrawing = true;
+            window.nakamichiTempPt = window.getPageLatLng(startPageX, startPageY);
+            if (window.nakamichiTempLine) { window.nakamichiTempLine.setMap(null); }
+            if (window.nakamichiTempPt) {
+                window.nakamichiTempLine = new google.maps.Polyline({
+                    path: [window.nakamichiTempPt, window.nakamichiTempPt],
+                    strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6),
+                    map: window.cadMap, zIndex: 9999
+                });
+            }
+            const msgEl = document.getElementById('cadPinModeMsg');
+            if (msgEl) { msgEl.innerText = 'ドラッグして線を引いてください。離すと確定します。'; msgEl.style.color = "#E91E63"; }
+            return;
+        }
+
         if (!ignoreDrag) {
             e.stopPropagation();
             window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
@@ -1202,11 +1201,23 @@ window.initCadTouchEvents = () => {
     }, { capture: true });
 
     wrapper.addEventListener('mousemove', (e) => {
-        if (document.getElementById('cadOverlay').style.display !== 'flex' || ignoreDrag || !isMouseDown || lastTouchX === null || lastTouchY === null) return;
+        if (document.getElementById('cadOverlay').style.display !== 'flex' || (!ignoreDrag && !isMouseDown) || lastTouchX === null || lastTouchY === null) return;
+        
+        const currentX = e.pageX; const currentY = e.pageY;
+
+        if (window.cadPinMode === 'nakamichi' && window.cadNakamichiIsDrawing && window.nakamichiTempPt) {
+            const currentLatLng = window.getPageLatLng(currentX, currentY);
+            if (currentLatLng && window.nakamichiTempLine) {
+                window.nakamichiTempLine.setPath([window.nakamichiTempPt, currentLatLng]);
+            }
+            return;
+        }
+
+        if (ignoreDrag || !isMouseDown) return;
+
         if (!ignoreDrag) {
             e.stopPropagation();
         }
-        const currentX = e.pageX; const currentY = e.pageY;
 
         if (Math.abs(currentX - startPageX) > 6 || Math.abs(currentY - startPageY) > 6) isDragging = true;
 
@@ -1225,6 +1236,31 @@ window.initCadTouchEvents = () => {
     }, { capture: true });
 
     wrapper.addEventListener('mouseup', (e) => {
+        if (window.cadPinMode === 'nakamichi' && window.cadNakamichiIsDrawing) {
+            window.cadNakamichiIsDrawing = false;
+            let distPx = Math.hypot(e.pageX - startPageX, e.pageY - startPageY);
+            if (window.nakamichiTempPt && distPx > 10) {
+                const endLatLng = window.getPageLatLng(e.pageX, e.pageY);
+                if (endLatLng && window.nakamichiTempLine) {
+                    let path = [{ lat: window.nakamichiTempPt.lat(), lng: window.nakamichiTempPt.lng() }, { lat: endLatLng.lat(), lng: endLatLng.lng() }];
+                    window.cadNakamichiLines.push(path);
+                    window.drawNakamichiVisual(path);
+                    
+                    window.cadPinMode = null;
+                    const msgEl = document.getElementById('cadPinModeMsg');
+                    if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+                    
+                    if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
+                    else window.saveCadStateToHistory();
+                }
+            }
+            if (window.nakamichiTempLine) { window.nakamichiTempLine.setMap(null); window.nakamichiTempLine = null; }
+            window.nakamichiTempPt = null;
+            ignoreDrag = false;
+            isMouseDown = false;
+            return;
+        }
+
         if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
             window.handleMapClick(e.pageX, e.pageY);
         }
@@ -1296,6 +1332,23 @@ window.initCadTouchEvents = () => {
             lastTouchX = e.touches[0].pageX; lastTouchY = e.touches[0].pageY;
             startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
             isDragging = false;
+            
+            if (window.cadPinMode === 'nakamichi') {
+                ignoreDrag = true;
+                window.cadNakamichiIsDrawing = true;
+                window.nakamichiTempPt = window.getPageLatLng(startPageX, startPageY);
+                if (window.nakamichiTempLine) { window.nakamichiTempLine.setMap(null); }
+                if (window.nakamichiTempPt) {
+                    window.nakamichiTempLine = new google.maps.Polyline({
+                        path: [window.nakamichiTempPt, window.nakamichiTempPt],
+                        strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6),
+                        map: window.cadMap, zIndex: 9999
+                    });
+                }
+                const msgEl = document.getElementById('cadPinModeMsg');
+                if (msgEl) { msgEl.innerText = 'ドラッグして線を引いてください。離すと確定します。'; msgEl.style.color = "#E91E63"; }
+            }
+
             if (!ignoreDrag) {
                 if (e.cancelable) {
                     e.preventDefault();
@@ -1348,12 +1401,25 @@ window.initCadTouchEvents = () => {
             document.getElementById('cadAngle').value = displayAngle;
 
         } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
+            const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
+
+            if (window.cadPinMode === 'nakamichi' && window.cadNakamichiIsDrawing && window.nakamichiTempPt) {
+                if (e.cancelable) { e.preventDefault(); }
+                e.stopPropagation();
+                const currentLatLng = window.getPageLatLng(currentX, currentY);
+                if (currentLatLng && window.nakamichiTempLine) {
+                    window.nakamichiTempLine.setPath([window.nakamichiTempPt, currentLatLng]);
+                }
+                lastTouchX = currentX; lastTouchY = currentY;
+                return;
+            }
+
             if (ignoreDrag) return;
             if (e.cancelable) {
                 e.preventDefault();
             }
             e.stopPropagation();
-            const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
+
 
             if (Math.abs(currentX - startPageX) > 6 || Math.abs(currentY - startPageY) > 6) isDragging = true;
 
@@ -1375,6 +1441,36 @@ window.initCadTouchEvents = () => {
     const handleTouchEndOrCancel = (e) => {
         if (e.touches.length < 2) { initialPinchDist = null; initialPinchAngle = null; pinchMode = null; }
         if (e.touches.length === 0) {
+            
+            if (window.cadPinMode === 'nakamichi' && window.cadNakamichiIsDrawing) {
+                window.cadNakamichiIsDrawing = false;
+                let endX = lastTouchX || startPageX;
+                let endY = lastTouchY || startPageY;
+                let distPx = Math.hypot(endX - startPageX, endY - startPageY);
+                if (window.nakamichiTempPt && distPx > 10) {
+                    const endLatLng = window.getPageLatLng(endX, endY);
+                    if (endLatLng && window.nakamichiTempLine) {
+                        let path = [{ lat: window.nakamichiTempPt.lat(), lng: window.nakamichiTempPt.lng() }, { lat: endLatLng.lat(), lng: endLatLng.lng() }];
+                        window.cadNakamichiLines.push(path);
+                        window.drawNakamichiVisual(path);
+                        
+                        window.cadPinMode = null;
+                        const msgEl = document.getElementById('cadPinModeMsg');
+                        if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+                        
+                        if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
+                        else window.saveCadStateToHistory();
+                    }
+                }
+                if (window.nakamichiTempLine) { window.nakamichiTempLine.setMap(null); window.nakamichiTempLine = null; }
+                window.nakamichiTempPt = null;
+                ignoreDrag = false;
+                isDragging = false;
+                startPageX = null; startPageY = null;
+                lastTouchX = null; lastTouchY = null;
+                return;
+            }
+
             if (!isDragging && startPageX !== null && startPageY !== null && !ignoreDrag) {
                 window.handleMapClick(startPageX, startPageY);
             }
@@ -1732,7 +1828,7 @@ window.cadSetPinMode = (type) => {
 };
 
 window.drawNakamichiVisual = (path) => {
-    let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 6), map: window.cadMap, zIndex: 9 });
+    let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6), map: window.cadMap, zIndex: 9 });
     window.cadNakamichiMapPolygons.push(line);
 };
 
