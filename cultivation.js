@@ -741,8 +741,7 @@ async function saveCultivationPlan() {
         localStorage.setItem('customCrops', JSON.stringify(customCrops));
     }
     
-    try {
-        const btn = document.querySelector('#cultivationPlanModal button[onclick="saveCultivationPlan()"]');
+    const btn = document.querySelector('#cultivationPlanModal button[onclick="saveCultivationPlan()"]');
         let orgText = '保存';
         if (btn) {
             orgText = btn.innerHTML;
