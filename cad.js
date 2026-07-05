@@ -269,7 +269,7 @@ window.updateCadSvgOverlay = () => {
                 textNode.setAttribute('text-anchor', 'middle');
                 textNode.setAttribute('dominant-baseline', 'central');
                 textNode.setAttribute('style', 'pointer-events: none; paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
-                let baseIdx = String(idx + 1); if (p.customLabel) baseIdx = p.customLabel;
+                let baseIdx = p._displayLabel ? p._displayLabel : (p.customLabel ? p.customLabel : String(idx + 1));
                 let labelStr = baseIdx; if (p.uneGroup && p.uneGroup !== 'default') labelStr += ' (' + p.uneGroup + ')'; textNode.textContent = labelStr;
                 p._svgTextNode = textNode;
                 textsGroup.appendChild(textNode);
@@ -296,7 +296,7 @@ window.updateCadSvgOverlay = () => {
                 textNode.setAttribute('text-anchor', 'middle');
                 textNode.setAttribute('dominant-baseline', 'central');
                 textNode.setAttribute('style', 'pointer-events: none; paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
-                let baseIdxStr = String(baseIdx + idx + 1); if (p.customLabel) baseIdxStr = p.customLabel;
+                let baseIdxStr = p._displayLabel ? p._displayLabel : (p.customLabel ? p.customLabel : String(baseIdx + idx + 1));
                 textNode.textContent = baseIdxStr;
                 p._svgTextNode = textNode;
                 textsGroup.appendChild(textNode);
@@ -2053,14 +2053,13 @@ window.openCadEditModal = (idx) => {
             let pt = path.getAt(i);
             window.cadEditOriginalPath.push(new google.maps.LatLng(pt.lat(), pt.lng()));
         }
-        if (document.getElementById('cadEditUneGroup')) document.getElementById('cadEditUneGroup').value = poly.uneGroup || '';
+        if (document.getElementById('cadEditUneGroup')) {
+            let g = poly.uneGroup || '';
+            if (g === 'default') g = '';
+            document.getElementById('cadEditUneGroup').value = g;
+        }
         if (document.getElementById('cadEditCustomLabel')) {
-            let labelStr = poly.customLabel;
-            if (!labelStr) {
-                const globalIdx = [...window.cadUnePolygons, ...window.cadCustomShapes].indexOf(poly);
-                labelStr = String(globalIdx + 1);
-            }
-            document.getElementById('cadEditCustomLabel').value = labelStr;
+            document.getElementById('cadEditCustomLabel').value = poly.customLabel || '';
         }
     }
     
@@ -2119,7 +2118,7 @@ window.updateSinglePolyLabel = (idx) => {
         poly.getPath().forEach(pt => bounds.extend(pt));
         marker.setPosition(bounds.getCenter());
 
-        let labelStr = poly.customLabel ? poly.customLabel : String(polyIndex + 1);
+        let labelStr = poly._displayLabel ? poly._displayLabel : (poly.customLabel ? poly.customLabel : String(polyIndex + 1));
         marker.setLabel({
             text: labelStr,
             color: '#ffffff',
@@ -2219,9 +2218,26 @@ window.reassignLabels = () => {
         window.cadUneLabels.push(labelMarker);
     }
 
+    const usedCustomNumbers = new Set();
+    totalPolygons.forEach(p => {
+        if (p.customLabel) usedCustomNumbers.add(p.customLabel.trim());
+    });
+
+    let autoNumber = 1;
+
     totalPolygons.forEach((poly, index) => {
         const marker = window.cadUneLabels[index];
-        const idxStr = poly.customLabel ? poly.customLabel : String(index + 1);
+        let idxStr = '';
+        if (poly.customLabel) {
+            idxStr = poly.customLabel;
+        } else {
+            while (usedCustomNumbers.has(String(autoNumber))) {
+                autoNumber++;
+            }
+            idxStr = String(autoNumber);
+            autoNumber++;
+        }
+        poly._displayLabel = idxStr;
 
         marker.associatedPoly = poly;
 
@@ -2342,7 +2358,7 @@ window.cadApplyUneDetails = () => {
         else delete poly.customLabel;
         
         poly.setOptions({ fillColor: window.cadGetGroupColor(group) });
-        if (typeof window.updateSinglePolyLabel === 'function') window.updateSinglePolyLabel(idx);
+        if (typeof window.reassignLabels === 'function') window.reassignLabels();
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
         if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
     }
