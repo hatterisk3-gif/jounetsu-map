@@ -1279,16 +1279,36 @@ async function saveCroptypeData() {
 async function sendCroptypeToGAS(payload, btn, originalText) {
     try {
         const res = await callGAS('saveCroptypeWithFile', payload);
-        alert(res.message);
         
         // cpMasterDataを再読み込み
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         
-        closeCroptypeRegistrationModal();
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        
+        if (confirm("作型が登録されました！\n続けて同じ品種の別の作型を登録しますか？")) {
+            // まき時期をリセット
+            document.getElementById('crSeason').value = '';
+            document.getElementById('crFile').value = '';
+            
+            // ペイントグリッドをクリア
+            const tr = document.querySelector('#crTable tr:last-child');
+            if (tr) {
+                const tds = tr.querySelectorAll('td[data-month-index]');
+                tds.forEach(td => {
+                    td.dataset.task = '';
+                    const div = td.querySelector('div');
+                    if (div) {
+                        div.style.backgroundColor = '';
+                    }
+                });
+            }
+        } else {
+            closeCroptypeRegistrationModal();
+        }
     } catch(e) {
         alert('保存に失敗しました: ' + e.message);
-    } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
     }
