@@ -248,6 +248,38 @@ async function deleteCultivationPresetUI() {
     }
 }
 
+async function renameCultivationPresetUI() {
+    const crop = getCpVal('cpCrop');
+    const presetName = document.getElementById('cpPreset').value;
+    if (!crop || !presetName) {
+        alert("名前変更するプリセットを選択してください。");
+        return;
+    }
+    
+    const newName = prompt(`プリセット「${presetName}」の新しい名前を入力してください:`, presetName);
+    if (!newName || newName === presetName) return;
+    
+    try {
+        const btn = document.getElementById('btnRenamePreset');
+        if (btn) btn.innerHTML = '変更中...';
+        
+        await callGAS('renameCultivationPreset', { crop: crop, oldName: presetName, newName: newName });
+        
+        cpMasterData = await callGAS('getCultivationMaster');
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        updatePresetList(crop);
+        document.getElementById('cpPreset').value = newName;
+        loadCultivationPreset(newName);
+        
+        alert("プリセット名を変更しました。");
+    } catch(e) {
+        alert("変更エラー: " + e.message);
+    } finally {
+        const btn = document.getElementById('btnRenamePreset');
+        if (btn) btn.innerHTML = '名前変更';
+    }
+}
+
 let cpCurrentCalc = { trays: 0, yield: 0 };
 
 function calcCp() {
@@ -622,6 +654,24 @@ function toggleCpCell(td, planId) {
     const tool = document.querySelector('input[name="cpTool"]:checked').value;
     const div = td.querySelector('div');
     
+    if (tool === 'sowing' || tool === 'planting') {
+        const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
+        if (tr) {
+            const allTds = tr.querySelectorAll('td[data-month-index]');
+            allTds.forEach(otherTd => {
+                if (otherTd !== td && otherTd.dataset.task === tool) {
+                    otherTd.dataset.task = '';
+                    const otherDiv = otherTd.querySelector('div');
+                    if (otherDiv) {
+                        otherDiv.style.backgroundColor = '';
+                        otherDiv.innerHTML = '';
+                    }
+                    otherTd.dataset.amount = '';
+                }
+            });
+        }
+    }
+    
     if (tool === 'eraser') {
         td.dataset.task = '';
         div.style.backgroundColor = '';
@@ -880,14 +930,17 @@ function openCultivationPlanModal() {
 
 function loadCultivationPreset(presetName) {
     const btnDel = document.getElementById('btnDeletePreset');
+    const btnRen = document.getElementById('btnRenamePreset');
     if (!presetName) {
         document.getElementById('varietyFileLinkArea').innerHTML = '';
         if (btnDel) btnDel.style.display = 'none';
+        if (btnRen) btnRen.style.display = 'none';
         return;
     }
     const crop = getCpVal('cpCrop');
     if (!cpMasterData || !cpMasterData.presets || !cpMasterData.presets[crop]) {
         if (btnDel) btnDel.style.display = 'none';
+        if (btnRen) btnRen.style.display = 'none';
         return;
     }
     
@@ -909,8 +962,10 @@ function loadCultivationPreset(presetName) {
             fileArea.innerHTML = '';
         }
         if (btnDel) btnDel.style.display = 'inline-block';
+        if (btnRen) btnRen.style.display = 'inline-block';
     } else {
         if (btnDel) btnDel.style.display = 'none';
+        if (btnRen) btnRen.style.display = 'none';
     }
 }
 
@@ -1124,6 +1179,22 @@ function renderCroptypePaintGrid() {
 function toggleCrCell(td) {
     const tool = document.querySelector('input[name="crTool"]:checked').value;
     const div = td.querySelector('div');
+    
+    if (tool === 'sowing' || tool === 'planting') {
+        const table = document.getElementById('crTable');
+        if (table) {
+            const allTds = table.querySelectorAll('td[data-month-index]');
+            allTds.forEach(otherTd => {
+                if (otherTd !== td && otherTd.dataset.task === tool) {
+                    otherTd.dataset.task = '';
+                    const otherDiv = otherTd.querySelector('div');
+                    if (otherDiv) {
+                        otherDiv.style.backgroundColor = '';
+                    }
+                }
+            });
+        }
+    }
     
     if (tool === 'eraser') {
         td.dataset.task = '';

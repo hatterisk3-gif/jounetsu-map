@@ -55,6 +55,7 @@ function doPost(e) {
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
     else if (action === "deleteCultivationPreset") result = deleteCultivationPreset(params);
+    else if (action === "renameCultivationPreset") result = renameCultivationPreset(params);
     else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
     else if (action === "saveCroptypeDBBatch") result = saveCroptypeDBBatch(params);
     else if (action === "saveVarietyWithFile") result = saveVarietyWithFile(params);
@@ -2719,6 +2720,26 @@ function deleteCultivationPreset(presetData) {
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][0]).trim() === String(presetData.crop).trim() && String(data[i][1]).trim() === String(presetData.name).trim()) {
         sheet.deleteRow(i + 1);
+        return { success: true };
+      }
+    }
+    return { success: false, message: '対象のプリセットが見つかりませんでした' };
+  } catch(e) {
+    return { success: false, message: e.toString() };
+  }
+}
+
+// 栽培計画のプリセット名を変更する関数
+function renameCultivationPreset(presetData) {
+  try {
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('栽培計画プリセット');
+    if (!sheet) return { success: false, message: 'プリセットシートがありません' };
+    
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(presetData.crop).trim() && String(data[i][1]).trim() === String(presetData.oldName).trim()) {
+        sheet.getRange(i + 1, 2).setValue(presetData.newName);
         return { success: true };
       }
     }
