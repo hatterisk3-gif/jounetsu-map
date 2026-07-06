@@ -2223,13 +2223,27 @@ window.cadResizePoly = (scaleFactor, isContinuous = false) => {
     const poly = polyList.find(p => p.uneIndex === idx);
     if (!poly) return;
 
-    let path = poly.getPath(); let coords = [];
-    for (let i = 0; i < path.getLength(); i++) { let pt = path.getAt(i); coords.push([pt.lng(), pt.lat()]); }
-    coords.push([path.getAt(0).lng(), path.getAt(0).lat()]); let tPoly = turf.polygon([coords]);
+    let path = poly.getPath();
+    if (path.getLength() === 0) return;
 
-    let scaledPoly = turf.transformScale(tPoly, scaleFactor);
-    let newCoords = scaledPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
-    newCoords.pop(); poly.setPath(newCoords); window.updateSinglePolyLabel(idx);
+    let centerLng = 0;
+    let centerLat = 0;
+    for (let i = 0; i < path.getLength(); i++) {
+        centerLng += path.getAt(i).lng();
+        centerLat += path.getAt(i).lat();
+    }
+    centerLng /= path.getLength();
+    centerLat /= path.getLength();
+
+    let newCoords = [];
+    for (let i = 0; i < path.getLength(); i++) {
+        let pt = path.getAt(i);
+        let nLng = centerLng + (pt.lng() - centerLng) * scaleFactor;
+        let nLat = centerLat + (pt.lat() - centerLat) * scaleFactor;
+        newCoords.push(new google.maps.LatLng(nLat, nLng));
+    }
+    
+    poly.setPath(newCoords); window.updateSinglePolyLabel(idx);
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (!isContinuous) window.saveCadStateToHistory();
 };
