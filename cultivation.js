@@ -1287,8 +1287,9 @@ async function sendCroptypeToGAS(payload, btn, originalText) {
         btn.innerHTML = originalText;
         btn.disabled = false;
         
-        if (confirm("作型が登録されました！\n続けて同じ品種の別の作型を登録しますか？")) {
-            // まき時期をリセット
+        if (confirm("作型が登録されました！\n続けて別の品種や作型を登録しますか？\n(※OKを押すと入力がクリアされ連続登録できます)")) {
+            // 品種・まき時期をリセット
+            document.getElementById('crVariety').value = '';
             document.getElementById('crSeason').value = '';
             document.getElementById('crFile').value = '';
             
