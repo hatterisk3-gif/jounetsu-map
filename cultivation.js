@@ -1210,14 +1210,16 @@ function toggleCrCell(td) {
     }
 }
 
-async function saveCroptypeData() {
-    const crop = document.getElementById('crCrop').value;
+let crPendingCroptypes = [];
+
+function addCroptypeToList() {
     const variety = document.getElementById('crVariety').value;
     const season = document.getElementById('crSeason').value;
+    const crop = document.getElementById('crCrop').value;
     const climate = document.getElementById('crClimate').value;
     
-    if (!crop || !variety || !season || !climate) {
-        alert('作物、品種、まき時期、産地はすべて入力してください。');
+    if (!variety || !season) {
+        alert('品種とまき時期は必ず入力してください。');
         return;
     }
     
@@ -1233,11 +1235,6 @@ async function saveCroptypeData() {
         if (td.dataset.task === 'planting') planting.push(idx);
         if (td.dataset.task === 'harvesting') harvesting.push(idx);
     });
-    
-    const btn = document.getElementById('btnSaveCroptype');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '保存中...';
-    btn.disabled = true;
     
     const fileInput = document.getElementById('crFile');
     const file = fileInput.files.length > 0 ? fileInput.files[0] : null;
@@ -1255,61 +1252,123 @@ async function saveCroptypeData() {
         fileType: ''
     };
     
-    try {
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                payload.fileData = e.target.result;
-                payload.fileName = file.name;
-                payload.fileType = file.type;
-                await sendCroptypeToGAS(payload, btn, originalText);
-            };
-            reader.readAsDataURL(file);
-        } else {
-            await sendCroptypeToGAS(payload, btn, originalText);
-        }
-    } catch(e) {
-        console.error(e);
-        alert('エラーが発生しました: ' + e.message);
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            payload.fileData = e.target.result;
+            payload.fileName = file.name;
+            payload.fileType = file.type;
+            crPendingCroptypes.push(payload);
+            resetCrInputArea();
+            renderCrPendingList();
+        };
+        reader.readAsDataURL(file);
+    } else {
+        crPendingCroptypes.push(payload);
+        resetCrInputArea();
+        renderCrPendingList();
     }
 }
 
-async function sendCroptypeToGAS(payload, btn, originalText) {
-    try {
-        const res = await callGAS('saveCroptypeWithFile', payload);
+function resetCrInputArea() {
+    document.getElementById('crVariety').value = '';
+    document.getElementById('crSeason').value = '';
+    document.getElementById('crFile').value = '';
+    
+    const tr = document.querySelector('#crTable tr:last-child');
+    if (tr) {
+        const tds = tr.querySelectorAll('td[data-month-index]');
+        tds.forEach(td => {
+            td.dataset.task = '';
+            const div = td.querySelector('div');
+            if (div) div.style.backgroundColor = '';
+        });
+    }
+}
+
+function removeCroptypeFromList(index) {
+    crPendingCroptypes.splice(index, 1);
+    renderCrPendingList();
+}
+
+function renderCrPendingList() {
+    const listDiv = document.getElementById('crPendingList');
+    const countSpan = document.getElementById('crPendingCount');
+    if (!listDiv || !countSpan) return;
+    
+    countSpan.innerText = crPendingCroptypes.length;
+    
+    if (crPendingCroptypes.length === 0) {
+        listDiv.innerHTML = '<div style="color: #999; font-size: 12px; text-align: center; padding: 10px;">追加された作型がここに表示されます</div>';
+        return;
+    }
+    
+    listDiv.innerHTML = '';
+    crPendingCroptypes.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #fff; border: 1px solid #ccc; border-radius: 4px;';
         
-        // cpMasterDataを再読み込み
+        let fileText = item.fileName ? ` <span style="font-size:10px; color:#1976d2; background:#e3f2fd; padding:2px 4px; border-radius:2px;">📎 ${item.fileName}</span>` : '';
+        
+        div.innerHTML = `
+            <div style="font-size: 13px; font-weight: bold; color: #333;">
+                ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${fileText}
+            </div>
+            <button onclick="removeCroptypeFromList(${index})" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer;">削除</button>
+        `;
+        listDiv.appendChild(div);
+    });
+}
+
+async function saveCroptypeData() {
+    if (crPendingCroptypes.length === 0) {
+        alert('リストに登録する作型がありません。まずは「リストに追加」してください。');
+        return;
+    }
+    
+    const crop = document.getElementById('crCrop').value;
+    const climate = document.getElementById('crClimate').value;
+    
+    if (!crop || !climate) {
+        alert('上部の「作物」と「産地」を選択してください。');
+        return;
+    }
+    
+    // 共通項目を全てのリストアイテムに適用
+    crPendingCroptypes.forEach(item => {
+        item.crop = crop;
+        item.climate = climate;
+    });
+    
+    const btn = document.getElementById('btnSaveCroptype');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '保存中...';
+    btn.disabled = true;
+    
+    try {
+        // 全てのアイテムを順番に保存する
+        for (let i = 0; i < crPendingCroptypes.length; i++) {
+            const item = crPendingCroptypes[i];
+            btn.innerHTML = `保存中 (${i+1}/${crPendingCroptypes.length})...`;
+            await callGAS('saveCroptypeWithFile', item);
+        }
+        
+        // 全て保存できたらマスタデータを再読み込み
+        btn.innerHTML = 'マスター更新中...';
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        
+        crPendingCroptypes = [];
+        renderCrPendingList();
         
         btn.innerHTML = originalText;
         btn.disabled = false;
         
-        if (confirm("作型が登録されました！\n続けて別の品種や作型を登録しますか？\n(※OKを押すと入力がクリアされ連続登録できます)")) {
-            // 品種・まき時期をリセット
-            document.getElementById('crVariety').value = '';
-            document.getElementById('crSeason').value = '';
-            document.getElementById('crFile').value = '';
-            
-            // ペイントグリッドをクリア
-            const tr = document.querySelector('#crTable tr:last-child');
-            if (tr) {
-                const tds = tr.querySelectorAll('td[data-month-index]');
-                tds.forEach(td => {
-                    td.dataset.task = '';
-                    const div = td.querySelector('div');
-                    if (div) {
-                        div.style.backgroundColor = '';
-                    }
-                });
-            }
-        } else {
-            closeCroptypeRegistrationModal();
-        }
+        alert('全ての作型が登録されました！');
+        closeCroptypeRegistrationModal();
     } catch(e) {
-        alert('保存に失敗しました: ' + e.message);
+        console.error(e);
+        alert('保存中にエラーが発生しました: ' + e.message);
         btn.innerHTML = originalText;
         btn.disabled = false;
     }
