@@ -2383,7 +2383,7 @@ window.gridDrawTempLine = null;
 window.gridGeneratedPaths = [];
 
 window.startGridDrawMode = () => {
-    if(!window.map) return;
+    if(!map) return;
     window.gridDrawModeActive = true;
     window.gridDrawTaps = [];
     document.getElementById('cadGridTapInfo').style.display = 'block';
@@ -2391,13 +2391,13 @@ window.startGridDrawMode = () => {
     
     document.getElementById('drawStep1').style.display = 'none';
 
-    window.gridDrawTapListener = google.maps.event.addListener(window.map, 'click', (e) => {
+    window.gridDrawTapListener = google.maps.event.addListener(map, 'click', (e) => {
         if(!window.gridDrawModeActive) return;
         let pt = e.latLng;
         window.gridDrawTaps.push(pt);
         
         let marker = new google.maps.Marker({
-            position: pt, map: window.map,
+            position: pt, map: map,
             icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillOpacity: 1, fillColor: '#E91E63', strokeColor: '#fff', strokeWeight: 2 }
         });
         window.gridDrawTempMarkers.push(marker);
@@ -2407,7 +2407,7 @@ window.startGridDrawMode = () => {
         } else if (window.gridDrawTaps.length === 2) {
             document.getElementById('gridTapMsg').innerText = 'タップ3: 基準ブロックの「左下の角」 (高さを決定)';
             window.gridDrawTempLine = new google.maps.Polyline({
-                path: window.gridDrawTaps, map: window.map, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: 3
+                path: window.gridDrawTaps, map: map, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: 3
             });
         } else if (window.gridDrawTaps.length === 3) {
             google.maps.event.removeListener(window.gridDrawTapListener);
@@ -2427,7 +2427,7 @@ window.startGridDrawMode = () => {
             let p4 = new google.maps.LatLng(t4.geometry.coordinates[1], t4.geometry.coordinates[0]);
             
             let tempPoly = new google.maps.Polygon({
-                paths: [p1, p2, p4, p3], map: window.map,
+                paths: [p1, p2, p4, p3], map: map,
                 fillColor: '#E91E63', fillOpacity: 0.4, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: 2
             });
             window.gridDrawTempMarkers.push(tempPoly);
@@ -2511,7 +2511,7 @@ window.executeCadGridCopy = () => {
             window.gridGeneratedPaths.push(pathData);
             
             let gPoly = new google.maps.Polygon({ 
-                paths: pathData, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: 2, map: window.map, clickable: false
+                paths: pathData, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: 2, map: map, clickable: false
             });
             window.gridDrawTempMarkers.push(gPoly);
         }
