@@ -412,7 +412,8 @@ window.switchWeatherTab = function(tabName) {
     cF.style.display = 'none';
   }
 };
-\nasync function fetchWeatherAndUpdateUI() {
+
+async function fetchWeatherAndUpdateUI() {
   if (!map) return;
   let center = map.getCenter();
   let lat = center.lat();
