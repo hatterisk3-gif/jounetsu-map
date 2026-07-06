@@ -217,6 +217,37 @@ async function saveCultivationPresetFromUI() {
     }
 }
 
+async function deleteCultivationPresetUI() {
+    const crop = getCpVal('cpCrop');
+    const presetName = document.getElementById('cpPreset').value;
+    if (!crop || !presetName) {
+        alert("削除するプリセットを選択してください。");
+        return;
+    }
+    
+    if (!confirm(`プリセット「${presetName}」を削除してもよろしいですか？`)) return;
+    
+    try {
+        const btn = document.getElementById('btnDeletePreset');
+        if (btn) btn.innerHTML = '削除中...';
+        
+        await callGAS('deleteCultivationPreset', { crop: crop, name: presetName });
+        
+        cpMasterData = await callGAS('getCultivationMaster');
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        updatePresetList(crop);
+        document.getElementById('cpPreset').value = '';
+        loadCultivationPreset('');
+        
+        alert("プリセットを削除しました。");
+    } catch(e) {
+        alert("削除エラー: " + e.message);
+    } finally {
+        const btn = document.getElementById('btnDeletePreset');
+        if (btn) btn.innerHTML = '削除';
+    }
+}
+
 let cpCurrentCalc = { trays: 0, yield: 0 };
 
 function calcCp() {
@@ -848,12 +879,17 @@ function openCultivationPlanModal() {
 // --- VARIETY REGISTRATION ---
 
 function loadCultivationPreset(presetName) {
+    const btnDel = document.getElementById('btnDeletePreset');
     if (!presetName) {
         document.getElementById('varietyFileLinkArea').innerHTML = '';
+        if (btnDel) btnDel.style.display = 'none';
         return;
     }
     const crop = getCpVal('cpCrop');
-    if (!cpMasterData || !cpMasterData.presets || !cpMasterData.presets[crop]) return;
+    if (!cpMasterData || !cpMasterData.presets || !cpMasterData.presets[crop]) {
+        if (btnDel) btnDel.style.display = 'none';
+        return;
+    }
     
     const p = cpMasterData.presets[crop].find(x => x.name === presetName);
     if (p) {
@@ -872,6 +908,9 @@ function loadCultivationPreset(presetName) {
         } else {
             fileArea.innerHTML = '';
         }
+        if (btnDel) btnDel.style.display = 'inline-block';
+    } else {
+        if (btnDel) btnDel.style.display = 'none';
     }
 }
 
