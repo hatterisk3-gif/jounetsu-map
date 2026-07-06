@@ -199,9 +199,8 @@ async function watch() {
                   console.log(`🔄 エラーをAIにフィードバックし、自己修復を実行します（${currentAttempt}回目のリトライ）...`);
 
                   // 中途半端な変更をリセットしてやり直し
-                  execSync('git reset --hard HEAD', { stdio: 'ignore' });
-                  execSync('git clean -fd', { stdio: 'ignore' });
-
+                  try { execSync('git reset --hard HEAD', { stdio: 'ignore' }); } catch (e) { }
+                  try { execSync('git clean -fd', { stdio: 'ignore' }); } catch (e) { }
                   // AIへのプロンプトを「エラー修正」に切り替え
                   currentPrompt = `先ほどのコード修正で、GASへのデプロイ時に以下のエラーが発生しました。\n\n【エラー内容】\n\`\`\`\n${errorLog}\n\`\`\`\n\nエラーの原因を特定し、コードを修正してください。\n完了後は先ほどと同じように '.ai_task_done.txt' にレポートを出力してください。`;
                 }
