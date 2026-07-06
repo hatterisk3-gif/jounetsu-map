@@ -1148,7 +1148,7 @@ window.exitFieldSelectionMode = function() {
 window.openRadarModal = function(lat, lng) {
   const contentDiv = document.getElementById('radarContent');
   if (contentDiv) {
-    contentDiv.innerHTML = `<iframe width="100%" height="100%" src="https://www.rainviewer.com/map.html?loc=${lat},${lng},10&radar=1&mbar=1&c=1&o=83&transparent=1" frameborder="0" style="width:100%; height:100%; border:none;"></iframe>`;
+    contentDiv.innerHTML = `<iframe width="100%" height="100%" src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lng}&zoom=10&level=surface&overlay=rain&menu=&message=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1" frameborder="0" style="width:100%; height:100%; border:none;"></iframe>`;
   }
   const modal = document.getElementById('radarModal');
   if (modal) modal.style.display = 'flex';
