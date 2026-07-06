@@ -701,6 +701,43 @@ function getSavedPolygons() {
 // ==========================================
 // 圃場・看板の新規保存
 // ==========================================
+function savePolygonsBatch(paramsList) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('圃場');
+  const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
+  
+  let rowsToAppend = [];
+  let insertedIds = [];
+  
+  for (let i = 0; i < paramsList.length; i++) {
+    const params = paramsList[i];
+    const newId = Utilities.getUuid();
+    insertedIds.push(newId);
+    
+    rowsToAppend.push([
+      newId,
+      params.name || "",         // B列: 圃場の名前
+      params.location || "",     // C列: 所属拠点名
+      params.condition || "",    // D列: 圃場条件
+      params.area || 0,          // E列: 圃場面積
+      params.coords,             // F列: 座標
+      params.color || "",        // G列: 色/アイコン
+      now,                       // H列: 登録日時
+      params.userName || "",     // I列: 登録者
+      "[]",                      // J列: システム用データ（履歴）
+      params.status || "",       // K列: 稼働状況
+      params.toukiId || "",      // L列: 登記ID
+      params.parentId || ""      // M列: 親ID
+    ]);
+  }
+  
+  if (rowsToAppend.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
+  }
+  
+  return insertedIds;
+}
+
 function savePolygon(params) {
   const ss = TENANT_SS;
   // 座標が1点なら看板、それ以上なら圃場と判定

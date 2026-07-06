@@ -812,9 +812,15 @@ function clearCustomDrawing() {
     if (window.selectedFudePolygons) { window.selectedFudePolygons.forEach(p => p.setMap(null)); window.selectedFudePolygons = []; }
     window.selectedFudePaths = [];
 
-    // ★追加：結合後のプレビュー図形もリセットする
     if (window.mergedPreviewPolygon) { window.mergedPreviewPolygon.setMap(null); window.mergedPreviewPolygon = null; }
     window.isMergedFude = false;
+    
+    if (window.gridDrawTempMarkers) { window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); }); window.gridDrawTempMarkers = []; }
+    if (window.gridDrawTempLine) { window.gridDrawTempLine.setMap(null); window.gridDrawTempLine = null; }
+    window.gridGeneratedPaths = [];
+    if (window.gridDrawModeActive && typeof window.cancelCadGridCopyMode === 'function') {
+        window.cancelCadGridCopyMode();
+    }
 
     if (document.getElementById('step1SaveBtn')) document.getElementById('step1SaveBtn').disabled = true;
     if (document.getElementById('undoDrawBtn')) document.getElementById('undoDrawBtn').disabled = true;
@@ -823,7 +829,10 @@ function clearCustomDrawing() {
     if (document.getElementById('drawStep1')) document.getElementById('drawStep1').style.display = 'block';
     if (document.getElementById('drawStep2')) document.getElementById('drawStep2').style.display = 'none';
 
-    if (document.getElementById('fieldName')) document.getElementById('fieldName').value = '';
+    if (document.getElementById('fieldName')) {
+        document.getElementById('fieldName').value = '';
+        document.getElementById('fieldName').placeholder = '圃場の名前を入力...';
+    }
     if (document.getElementById('fieldLocation')) document.getElementById('fieldLocation').value = '';
     if (document.getElementById('fieldCondition')) document.getElementById('fieldCondition').value = '';
     if (document.getElementById('fieldStatus')) document.getElementById('fieldStatus').value = '';
@@ -837,13 +846,21 @@ document.getElementById('btnViewMode').onclick = () => {
     document.getElementById('drawArea').style.display = 'none';
     customDrawingMode = null;
     clearCustomDrawing();
+    
+    if (window.gridDrawTempMarkers) {
+        window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
+        window.gridDrawTempMarkers = [];
+    }
+    if (window.gridDrawTempLine) { window.gridDrawTempLine.setMap(null); window.gridDrawTempLine = null; }
+    window.gridGeneratedPaths = [];
+    
     setFudeVisibility(false);
     map.setOptions({ draggable: true, draggableCursor: null });
 
     let legendDiv = document.getElementById('adminLegendUI');
     if (legendDiv) legendDiv.style.display = 'block';
 
-    if (typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加
+    if (typeof updateMarkerLabels === 'function') updateMarkerLabels();
 };
 
 // 🌟圃場ボタン
@@ -1588,28 +1605,54 @@ document.getElementById('finalSaveBtn').onclick = async () => {
     const n = document.getElementById('fieldName').value, l = document.getElementById('fieldLocation').value, c = document.getElementById('fieldCondition').value, s = document.getElementById('fieldStatus').value, t = "";
     if (!n) { customAlert("圃場名を入力してください"); return; }
 
-    let pathsToSave = [];
-    if (window.isMergedFude || customDrawingPath.length >= 3) {
-        pathsToSave = [customDrawingPath]; // 結合済みの1つの大きなパスを使う
-    } else {
-        customAlert("形が描画されていません"); return;
-    }
-
     document.getElementById('modalBody').innerHTML = `<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>`;
     document.getElementById('modal').style.display = 'flex';
 
     try {
-        // 1件の巨大な圃場として保存
-        let currentPath = pathsToSave[0];
-        let pathData = currentPath.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
-        let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath) / 100);
+        if (window.gridGeneratedPaths && window.gridGeneratedPaths.length > 0) {
+            let paramsList = [];
+            for (let i = 0; i < window.gridGeneratedPaths.length; i++) {
+                let pathData = window.gridGeneratedPaths[i];
+                let latLngs = pathData.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
+                let area = Math.round(google.maps.geometry.spherical.computeArea(latLngs) / 100);
+                
+                paramsList.push({
+                    name: `${n}-${i+1}`,
+                    coords: JSON.stringify(pathData),
+                    color: '#d32f2f',
+                    userName: currentUser,
+                    location: l, condition: c, area, status: s, toukiId: t
+                });
+            }
+            
+            let newIds = await callGAS('savePolygonsBatch', paramsList);
+            for (let i = 0; i < newIds.length; i++) {
+                createPolygonObject({ ...paramsList[i], id: newIds[i], coords: window.gridGeneratedPaths[i], isMarker: false });
+            }
+            window.gridGeneratedPaths = [];
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('btnViewMode').click();
+            customAlert(`「${n}」として ${paramsList.length} 件の区画を登録しました！`);
+        } else {
+            let pathsToSave = [];
+            if (window.isMergedFude || customDrawingPath.length >= 3) {
+                pathsToSave = [customDrawingPath]; // 結合済みの1つの大きなパスを使う
+            } else {
+                document.getElementById('modal').style.display = 'none';
+                customAlert("形が描画されていません"); return;
+            }
 
-        let newId = await callGAS('savePolygon', { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, area, status: s, toukiId: t });
-        createPolygonObject({ id: newId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, area, status: s, toukiId: t, isMarker: false });
+            let currentPath = pathsToSave[0];
+            let pathData = currentPath.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
+            let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath) / 100);
 
-        document.getElementById('modal').style.display = 'none';
-        document.getElementById('btnViewMode').click();
-        customAlert(`「${n}」として、圃場を登録しました！`);
+            let newId = await callGAS('savePolygon', { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, area, status: s, toukiId: t });
+            createPolygonObject({ id: newId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, area, status: s, toukiId: t, isMarker: false });
+
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('btnViewMode').click();
+            customAlert(`「${n}」として、圃場を登録しました！`);
+        }
     } catch (e) {
         document.getElementById('modal').style.display = 'none';
         customAlert("エラーが発生: " + e.message);
@@ -2332,6 +2375,153 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("ログイン情報がないため、手動ログインを待機します");
     }
 });
+
+window.gridDrawModeActive = false;
+window.gridDrawTaps = [];
+window.gridDrawTempMarkers = [];
+window.gridDrawTempLine = null;
+window.gridGeneratedPaths = [];
+
+window.startGridDrawMode = () => {
+    if(!window.map) return;
+    window.gridDrawModeActive = true;
+    window.gridDrawTaps = [];
+    document.getElementById('cadGridTapInfo').style.display = 'block';
+    document.getElementById('gridTapMsg').innerText = 'タップ1: 基準ブロックの「左上の角」';
+    
+    document.getElementById('drawStep1').style.display = 'none';
+
+    window.gridDrawTapListener = google.maps.event.addListener(window.map, 'click', (e) => {
+        if(!window.gridDrawModeActive) return;
+        let pt = e.latLng;
+        window.gridDrawTaps.push(pt);
+        
+        let marker = new google.maps.Marker({
+            position: pt, map: window.map,
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillOpacity: 1, fillColor: '#E91E63', strokeColor: '#fff', strokeWeight: 2 }
+        });
+        window.gridDrawTempMarkers.push(marker);
+        
+        if (window.gridDrawTaps.length === 1) {
+            document.getElementById('gridTapMsg').innerText = 'タップ2: 基準ブロックの「右上の角」 (幅と角度を決定)';
+        } else if (window.gridDrawTaps.length === 2) {
+            document.getElementById('gridTapMsg').innerText = 'タップ3: 基準ブロックの「左下の角」 (高さを決定)';
+            window.gridDrawTempLine = new google.maps.Polyline({
+                path: window.gridDrawTaps, map: window.map, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: 3
+            });
+        } else if (window.gridDrawTaps.length === 3) {
+            google.maps.event.removeListener(window.gridDrawTapListener);
+            document.getElementById('cadGridTapInfo').style.display = 'none';
+            
+            let p1 = window.gridDrawTaps[0];
+            let p2 = window.gridDrawTaps[1];
+            let p3 = window.gridDrawTaps[2];
+            
+            let t1 = turf.point([p1.lng(), p1.lat()]);
+            let t2 = turf.point([p2.lng(), p2.lat()]);
+            let t3 = turf.point([p3.lng(), p3.lat()]);
+            
+            let angle = turf.bearing(t1, t2);
+            let width = turf.distance(t1, t2, {units: 'kilometers'});
+            let t4 = turf.destination(t3, width, angle, {units: 'kilometers'});
+            let p4 = new google.maps.LatLng(t4.geometry.coordinates[1], t4.geometry.coordinates[0]);
+            
+            let tempPoly = new google.maps.Polygon({
+                paths: [p1, p2, p4, p3], map: window.map,
+                fillColor: '#E91E63', fillOpacity: 0.4, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: 2
+            });
+            window.gridDrawTempMarkers.push(tempPoly);
+            
+            // Buttons in HTML still call cancelCadGridCopyMode and executeCadGridCopy,
+            // we will overwrite them globally.
+            document.getElementById('cadGridModal').style.display = 'block';
+        }
+    });
+};
+
+window.cancelCadGridCopyMode = () => {
+    window.gridDrawModeActive = false;
+    if (window.gridDrawTapListener) {
+        google.maps.event.removeListener(window.gridDrawTapListener);
+        window.gridDrawTapListener = null;
+    }
+    document.getElementById('cadGridTapInfo').style.display = 'none';
+    document.getElementById('cadGridModal').style.display = 'none';
+    document.getElementById('drawStep1').style.display = 'block'; 
+    
+    window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
+    window.gridDrawTempMarkers = [];
+    if (window.gridDrawTempLine) {
+        window.gridDrawTempLine.setMap(null);
+        window.gridDrawTempLine = null;
+    }
+    window.gridDrawTaps = [];
+};
+
+window.executeCadGridCopy = () => {
+    if (window.gridDrawTaps.length < 3) return;
+    
+    let cols = parseInt(document.getElementById('gridCols').value) || 1;
+    let rows = parseInt(document.getElementById('gridRows').value) || 1;
+    let gapX = (parseFloat(document.getElementById('gridGapX').value) || 0) / 1000; 
+    let gapY = (parseFloat(document.getElementById('gridGapY').value) || 0) / 1000; 
+    
+    let p1 = window.gridDrawTaps[0];
+    let p2 = window.gridDrawTaps[1];
+    let p3 = window.gridDrawTaps[2];
+    
+    let t1 = turf.point([p1.lng(), p1.lat()]);
+    let t2 = turf.point([p2.lng(), p2.lat()]);
+    let t3 = turf.point([p3.lng(), p3.lat()]);
+    
+    let angleX = turf.bearing(t1, t2); 
+    let width = turf.distance(t1, t2, {units: 'kilometers'}); 
+    let angleYRaw = turf.bearing(t1, t3);
+    
+    let diff = ((angleYRaw - angleX) % 360 + 360) % 360; 
+    let angleY = angleX + (diff < 180 ? 90 : -90);
+    
+    let dist13 = turf.distance(t1, t3, {units: 'kilometers'});
+    let angleDiffRad = (angleYRaw - angleY) * Math.PI / 180;
+    let height = Math.abs(dist13 * Math.cos(angleDiffRad));
+    if (height < 0.0001) height = dist13; 
+    
+    let stepX = width + gapX;
+    let stepY = height + gapY;
+    
+    window.gridGeneratedPaths = [];
+    
+    for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+            let cellOrigin = turf.destination(t1, c * stepX, angleX, {units: 'kilometers'});
+            cellOrigin = turf.destination(cellOrigin, r * stepY, angleY, {units: 'kilometers'});
+            
+            let c1 = cellOrigin.geometry.coordinates;
+            let c2 = turf.destination(cellOrigin, width, angleX, {units: 'kilometers'}).geometry.coordinates;
+            let c3 = turf.destination(turf.point(c2), height, angleY, {units: 'kilometers'}).geometry.coordinates;
+            let c4 = turf.destination(cellOrigin, height, angleY, {units: 'kilometers'}).geometry.coordinates;
+            
+            let pathData = [
+                {lng: c1[0], lat: c1[1]},
+                {lng: c2[0], lat: c2[1]},
+                {lng: c3[0], lat: c3[1]},
+                {lng: c4[0], lat: c4[1]}
+            ];
+            
+            window.gridGeneratedPaths.push(pathData);
+            
+            let gPoly = new google.maps.Polygon({ 
+                paths: pathData, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: 2, map: window.map, clickable: false
+            });
+            window.gridDrawTempMarkers.push(gPoly);
+        }
+    }
+    
+    document.getElementById('cadGridModal').style.display = 'none';
+    document.getElementById('drawStep1').style.display = 'none';
+    document.getElementById('drawStep2').style.display = 'block';
+    document.getElementById('fieldName').placeholder = "圃場名 (自動で -1, -2 と連番が付きます)";
+};
 
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js?v=admin', { scope: '/admin' });
