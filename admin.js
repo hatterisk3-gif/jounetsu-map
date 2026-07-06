@@ -840,6 +840,9 @@ document.getElementById('btnViewMode').onclick = () => {
     setFudeVisibility(false);
     map.setOptions({ draggable: true, draggableCursor: null });
 
+    let legendDiv = document.getElementById('adminLegendUI');
+    if (legendDiv) legendDiv.style.display = 'block';
+
     if (typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加
 };
 
@@ -858,6 +861,9 @@ document.getElementById('btnDrawMode').onclick = () => {
     if (typeof preloadFudeData === 'function') preloadFudeData();
     if (typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加（ここで文字が消えます！）
 
+    let legendDiv = document.getElementById('adminLegendUI');
+    if (legendDiv) legendDiv.style.display = 'none';
+
     customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「🤖 筆ポリゴンから登録」を押して枠を取得してください。", "drawMode");
 };
 
@@ -875,6 +881,9 @@ document.getElementById('btnMarkerMode').onclick = () => {
 
     if (typeof preloadFudeData === 'function') preloadFudeData();
     if (typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加
+
+    let legendDiv = document.getElementById('adminLegendUI');
+    if (legendDiv) legendDiv.style.display = 'none';
 
     customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。", "markerMode");
 };

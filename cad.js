@@ -2457,3 +2457,162 @@ window.cadApplyGroupToAllSubsequent = () => {
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
     alert("この畝以降をすべて「" + (group || '未設定') + "」に設定しました。");
 };
+
+
+
+// === Grid Copy Feature ===
+window.cadGridModeActive = false;
+window.cadGridTaps = [];
+window.cadGridTapListener = null;
+window.cadGridTempMarkers = [];
+window.cadGridTempLine = null;
+
+window.startCadGridCopyMode = () => {
+    if(!window.cadMap) return;
+    window.cadGridModeActive = true;
+    window.cadGridTaps = [];
+    document.getElementById('cadGridTapInfo').style.display = 'block';
+    document.getElementById('gridTapMsg').innerText = 'タップ1: 基準ブロックの「左上の角」';
+    
+    window.cadGridTapListener = google.maps.event.addListener(window.cadMap, 'click', (e) => {
+        if(!window.cadGridModeActive) return;
+        
+        let pt = e.latLng;
+        window.cadGridTaps.push(pt);
+        
+        let marker = new google.maps.Marker({
+            position: pt,
+            map: window.cadMap,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 5, fillOpacity: 1, fillColor: '#E91E63', strokeColor: '#fff', strokeWeight: 2
+            }
+        });
+        window.cadGridTempMarkers.push(marker);
+        
+        if (window.cadGridTaps.length === 1) {
+            document.getElementById('gridTapMsg').innerText = 'タップ2: 基準ブロックの「右上の角」 (幅と角度を決定)';
+        } else if (window.cadGridTaps.length === 2) {
+            document.getElementById('gridTapMsg').innerText = 'タップ3: 基準ブロックの「左下の角」 (高さを決定)';
+            
+            window.cadGridTempLine = new google.maps.Polyline({
+                path: window.cadGridTaps,
+                map: window.cadMap,
+                strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: 3
+            });
+        } else if (window.cadGridTaps.length === 3) {
+            google.maps.event.removeListener(window.cadGridTapListener);
+            document.getElementById('cadGridTapInfo').style.display = 'none';
+            
+            let p1 = window.cadGridTaps[0];
+            let p2 = window.cadGridTaps[1];
+            let p3 = window.cadGridTaps[2];
+            
+            let t1 = turf.point([p1.lng(), p1.lat()]);
+            let t2 = turf.point([p2.lng(), p2.lat()]);
+            let t3 = turf.point([p3.lng(), p3.lat()]);
+            
+            let angle = turf.bearing(t1, t2);
+            let width = turf.distance(t1, t2, {units: 'kilometers'});
+            let t4 = turf.destination(t3, width, angle, {units: 'kilometers'});
+            let p4 = new google.maps.LatLng(t4.geometry.coordinates[1], t4.geometry.coordinates[0]);
+            
+            let tempPoly = new google.maps.Polygon({
+                paths: [p1, p2, p4, p3], map: window.cadMap,
+                fillColor: '#E91E63', fillOpacity: 0.4, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: 2
+            });
+            window.cadGridTempMarkers.push(tempPoly);
+            
+            document.getElementById('cadGridModal').style.display = 'block';
+        }
+    });
+};
+
+window.cancelCadGridCopyMode = () => {
+    window.cadGridModeActive = false;
+    if (window.cadGridTapListener) {
+        google.maps.event.removeListener(window.cadGridTapListener);
+        window.cadGridTapListener = null;
+    }
+    let elInfo = document.getElementById('cadGridTapInfo');
+    if(elInfo) elInfo.style.display = 'none';
+    let elModal = document.getElementById('cadGridModal');
+    if(elModal) elModal.style.display = 'none';
+    
+    window.cadGridTempMarkers.forEach(m => {
+        if(m) m.setMap(null);
+    });
+    window.cadGridTempMarkers = [];
+    if (window.cadGridTempLine) {
+        window.cadGridTempLine.setMap(null);
+        window.cadGridTempLine = null;
+    }
+    window.cadGridTaps = [];
+};
+
+window.executeCadGridCopy = () => {
+    if (window.cadGridTaps.length < 3) return;
+    
+    let cols = parseInt(document.getElementById('gridCols').value) || 1;
+    let rows = parseInt(document.getElementById('gridRows').value) || 1;
+    let gapX = (parseFloat(document.getElementById('gridGapX').value) || 0) / 1000; 
+    let gapY = (parseFloat(document.getElementById('gridGapY').value) || 0) / 1000; 
+    
+    let p1 = window.cadGridTaps[0];
+    let p2 = window.cadGridTaps[1];
+    let p3 = window.cadGridTaps[2];
+    
+    let t1 = turf.point([p1.lng(), p1.lat()]);
+    let t2 = turf.point([p2.lng(), p2.lat()]);
+    let t3 = turf.point([p3.lng(), p3.lat()]);
+    
+    let angleX = turf.bearing(t1, t2); 
+    let width = turf.distance(t1, t2, {units: 'kilometers'}); 
+    
+    let angleYRaw = turf.bearing(t1, t3);
+    
+    let diff = ((angleYRaw - angleX) % 360 + 360) % 360; 
+    let angleY = angleX + (diff < 180 ? 90 : -90);
+    
+    let dist13 = turf.distance(t1, t3, {units: 'kilometers'});
+    let angleDiffRad = (angleYRaw - angleY) * Math.PI / 180;
+    let height = Math.abs(dist13 * Math.cos(angleDiffRad));
+    if (height < 0.0001) height = dist13; 
+    
+    let stepX = width + gapX;
+    let stepY = height + gapY;
+    
+    for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+            let cellOrigin = turf.destination(t1, c * stepX, angleX, {units: 'kilometers'});
+            cellOrigin = turf.destination(cellOrigin, r * stepY, angleY, {units: 'kilometers'});
+            
+            let c1 = cellOrigin.geometry.coordinates;
+            let c2 = turf.destination(cellOrigin, width, angleX, {units: 'kilometers'}).geometry.coordinates;
+            let c3 = turf.destination(turf.point(c2), height, angleY, {units: 'kilometers'}).geometry.coordinates;
+            let c4 = turf.destination(cellOrigin, height, angleY, {units: 'kilometers'}).geometry.coordinates;
+            
+            let paths = [
+                {lng: c1[0], lat: c1[1]},
+                {lng: c2[0], lat: c2[1]},
+                {lng: c3[0], lat: c3[1]},
+                {lng: c4[0], lat: c4[1]}
+            ];
+            
+            let gPoly = new google.maps.Polygon({ 
+                paths: paths, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 
+            });
+            gPoly.uneIndex = 'custom_' + Date.now() + '_' + c + '_' + r;
+            google.maps.event.addListener(gPoly, 'click', ((idx) => () => {
+                if(typeof window.openCadEditModal === 'function') window.openCadEditModal(idx);
+            })(gPoly.uneIndex));
+            if(typeof window.bindShapeHistoryEvents === 'function') window.bindShapeHistoryEvents(gPoly);
+            window.cadCustomShapes.push(gPoly);
+        }
+    }
+    
+    if(typeof window.reassignLabels === 'function') window.reassignLabels();
+    if(typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    
+    window.cancelCadGridCopyMode(); 
+};
