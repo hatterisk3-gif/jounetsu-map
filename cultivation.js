@@ -1048,6 +1048,18 @@ document.addEventListener('click', function(e) {
 
 // --- CROPTYPE REGISTRATION ---
 function openCroptypeRegistrationModal() {
+    let customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
+    let allCrops = [];
+    if(cpMasterData && cpMasterData.crops) {
+        allCrops = Array.from(new Set([...Object.keys(cpMasterData.crops), ...customCrops]));
+    }
+    populateSelect('crCrop', allCrops, ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ']);
+    
+    const currentCrop = getCpVal('cpCrop');
+    if (currentCrop) {
+        document.getElementById('crCrop').value = currentCrop;
+    }
+    
     document.getElementById('croptypeRegistrationModal').style.display = 'flex';
     renderCroptypePaintGrid();
 }
@@ -1062,30 +1074,49 @@ function renderCroptypePaintGrid() {
     table.innerHTML = '';
     
     const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
+    const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
     
-    let headerTr = document.createElement('tr');
-    
-    months.forEach(m => {
+    let headerTr1 = document.createElement('tr');
+    months.forEach((m, idx) => {
+        let label = m + '月';
+        if (idx === 0) label = '今年 ' + label;
+        if (idx === 12) label = '来年 ' + label;
+        let bg = idx < 12 ? '#f1f8e9' : '#e8eaf6';
         let th = document.createElement('th');
-        th.textContent = m + '月';
-        th.style.cssText = 'padding: 4px; border: 1px solid #ccc; font-size: 11px; min-width: 25px; text-align: center; background: #f9f9f9; white-space: nowrap;';
-        headerTr.appendChild(th);
+        th.colSpan = 6;
+        th.textContent = label;
+        th.style.cssText = `padding: 4px; border: 1px solid #ccc; font-size: 11px; min-width: 150px; text-align: center; background: ${bg}; white-space: nowrap;`;
+        headerTr1.appendChild(th);
     });
-    table.appendChild(headerTr);
+    table.appendChild(headerTr1);
+    
+    let headerTr2 = document.createElement('tr');
+    months.forEach(() => {
+        for (let p of periods) {
+            let th = document.createElement('th');
+            th.textContent = p;
+            th.style.cssText = 'border: 1px solid #ddd; padding: 4px 2px; font-size: 10px; width: 25px; border-bottom: 2px solid #ccc; background: #fafafa; color: #555; writing-mode: vertical-rl; text-orientation: upright;';
+            headerTr2.appendChild(th);
+        }
+    });
+    table.appendChild(headerTr2);
     
     let tr = document.createElement('tr');
-    
-    months.forEach((m, i) => {
-        let td = document.createElement('td');
-        td.dataset.monthIndex = i;
-        td.dataset.task = '';
-        td.style.cssText = 'padding: 0; border: 1px dashed #ccc; cursor: pointer; min-width: 25px;';
-        td.onclick = function() { toggleCrCell(this); };
-        
-        let div = document.createElement('div');
-        div.style.cssText = 'width: 100%; height: 35px; transition: 0.1s; box-sizing:border-box; pointer-events: none;';
-        td.appendChild(div);
-        tr.appendChild(td);
+    let cellIndex = 0;
+    months.forEach(() => {
+        for (let p of periods) {
+            let td = document.createElement('td');
+            td.dataset.monthIndex = cellIndex;
+            td.dataset.task = '';
+            td.style.cssText = 'padding: 0; border: 1px dashed #ccc; cursor: pointer; min-width: 25px;';
+            td.onclick = function() { toggleCrCell(this); };
+            
+            let div = document.createElement('div');
+            div.style.cssText = 'width: 100%; height: 35px; transition: 0.1s; box-sizing:border-box; pointer-events: none;';
+            td.appendChild(div);
+            tr.appendChild(td);
+            cellIndex++;
+        }
     });
     table.appendChild(tr);
 }

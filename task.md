@@ -1,0 +1,5 @@
+- `[x]` cad.js の cadAdjustRidgeGap 関数の改修 (幅方向のみのスケール計算)
+- `[x]` cultivation_modal.html の crCrop を input から select へ変更
+- `[x]` cultivation.js の openCroptypeRegistrationModal にて crCrop の選択肢を動的生成する処理を追加
+- `[x]` cultivation.js の renderCroptypePaintGrid を半旬単位 (108列) で描画するように変更
+- `[x]` テスト検証 (幅スケーリング、プルダウン、ペイント操作)

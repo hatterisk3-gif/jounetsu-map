@@ -1903,14 +1903,45 @@ window.cadAdjustRidgeGap = (delta) => {
     }
 
     targetPolygons.forEach(poly => {
-        let path = poly.getPath(); let coords = [];
-        for (let i = 0; i < path.getLength(); i++) { let pt = path.getAt(i); coords.push([pt.lng(), pt.lat()]); }
+        let path = poly.getPath(); 
+        let coords = [];
+        for (let i = 0; i < path.getLength(); i++) { 
+            let pt = path.getAt(i); 
+            coords.push([pt.lng(), pt.lat()]); 
+        }
         coords.push([path.getAt(0).lng(), path.getAt(0).lat()]);
+        
         let tPoly = turf.polygon([coords]);
-
-        let scaledPoly = turf.transformScale(tPoly, scaleFactor, { origin: 'center' });
-        let newCoords = scaledPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
-        newCoords.pop();
+        let centerTurf = turf.center(tPoly);
+        
+        const angleEl = document.getElementById('cadAngle');
+        const L = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0; // Length bearing
+        
+        let newCoords = [];
+        // path.getLength() vertices (not including the closed one)
+        for (let i = 0; i < path.getLength(); i++) {
+            let ptTurf = turf.point([path.getAt(i).lng(), path.getAt(i).lat()]);
+            let D = turf.distance(centerTurf, ptTurf, {units: 'kilometers'});
+            let B = turf.bearing(centerTurf, ptTurf);
+            
+            let theta = B - L;
+            let thetaRad = theta * Math.PI / 180;
+            
+            let dL = D * Math.cos(thetaRad); // Length component
+            let dW = D * Math.sin(thetaRad); // Width component
+            
+            let new_dW = dW * scaleFactor;
+            
+            let new_D = Math.sqrt(dL * dL + new_dW * new_dW);
+            let new_thetaRad = Math.atan2(new_dW, dL);
+            let new_theta = new_thetaRad * 180 / Math.PI;
+            
+            let new_B = L + new_theta;
+            
+            let newPt = turf.destination(centerTurf, new_D, new_B, {units: 'kilometers'});
+            newCoords.push(new google.maps.LatLng(newPt.geometry.coordinates[1], newPt.geometry.coordinates[0]));
+        }
+        
         poly.setPath(newCoords);
     });
 
