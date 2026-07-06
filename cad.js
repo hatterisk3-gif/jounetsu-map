@@ -1946,6 +1946,7 @@ window.cadAdjustRidgeGap = (delta) => {
     });
 
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    window.cadSvgNeedsRebuild = true;
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 };
@@ -2406,6 +2407,7 @@ window.cadApplyUneDetails = () => {
         
         poly.setOptions({ fillColor: window.cadGetGroupColor(group) });
         if (typeof window.reassignLabels === 'function') window.reassignLabels();
+        window.cadSvgNeedsRebuild = true;
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
         if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
     }
@@ -2429,6 +2431,8 @@ window.cadApplyGroupToAllSubsequent = () => {
             p.setOptions({ fillColor: window.cadGetGroupColor(group) });
         }
     });
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    window.cadSvgNeedsRebuild = true;
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
     alert("この畝以降をすべて「" + (group || '未設定') + "」に設定しました。");
