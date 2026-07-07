@@ -332,17 +332,40 @@ async function fetchWeatherAndUpdateUI() {
         document.getElementById('customAlertOk').onclick = () => { document.getElementById('customAlertModal').style.display = 'none'; };
       };
 
-      async function callGAS(action, params = {}) {
+      async function callGAS(action, params = {}, retries = 2) {
         const spreadsheetId = localStorage.getItem('spreadsheetId');
         if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
           throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
         }
         params.action = action;
         params.spreadsheetId = spreadsheetId;
-        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
-        const json = await res.json();
-        if (json.status !== "success") throw new Error(json.message);
-        return json.data;
+        
+        let lastError = null;
+        for (let i = 0; i <= retries; i++) {
+            try {
+                const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
+                const text = await res.text();
+                let json;
+                try {
+                    json = JSON.parse(text);
+                } catch (e) {
+                    if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+                        throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
+                    }
+                    throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
+                }
+                if (json.status !== "success") throw new Error(json.message);
+                return json.data;
+            } catch (err) {
+                lastError = err;
+                if (i < retries) {
+                    console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${retries})`, err);
+                    await new Promise(r => setTimeout(r, 1500));
+                }
+            }
+        }
+        lastError.message = lastError.message.replace("（リトライ中...）", "");
+        throw lastError;
       }
 
       let trackingOverlay = null;

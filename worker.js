@@ -150,7 +150,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
       };
 
-      async function callGAS(action, params = {}) {
+      async function callGAS(action, params = {}, retries = 2) {
         params.action = action;
         if (action !== 'login') {
           const spreadsheetId = localStorage.getItem('spreadsheetId');
@@ -159,19 +159,40 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
           params.spreadsheetId = spreadsheetId;
         }
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
-        try {
-          const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
-          clearTimeout(timeoutId);
-          const json = await res.json();
-          if (json.status !== "success") throw new Error(json.message);
-          return json.data;
-        } catch (e) {
-          clearTimeout(timeoutId);
-          if (e.name === 'AbortError') throw new Error("通信がタイムアウトしました。電波の良いところで再度お試しください。");
-          throw e;
+        
+        let lastError = null;
+        for (let i = 0; i <= retries; i++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            try {
+                const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
+                clearTimeout(timeoutId);
+                const text = await res.text();
+                let json;
+                try {
+                    json = JSON.parse(text);
+                } catch (e) {
+                    if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+                        throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
+                    }
+                    throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
+                }
+                if (json.status !== "success") throw new Error(json.message);
+                return json.data;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                lastError = err;
+                if (i < retries) {
+                    console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${retries})`, err);
+                    await new Promise(r => setTimeout(r, 1500));
+                }
+            }
         }
+        lastError.message = lastError.message.replace("（リトライ中...）", "");
+        if (lastError.name === 'AbortError') {
+            throw new Error("通信がタイムアウトしました。電波の良い場所で再度お試しください。");
+        }
+        throw lastError;
       }
 
    // 🌟 1. ログイン処理（完全版） 🌟
