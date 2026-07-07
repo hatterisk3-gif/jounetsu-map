@@ -1044,7 +1044,16 @@ document.getElementById('backToStep1Btn').onclick = () => {
         customDrawingPath = [];
         window.isMergedFude = false;
     } else {
-        clearCustomDrawing();
+        // 手動描画モードの場合、クリアせずにそのまま状態を復元する
+        if (window.gridGeneratedPaths && window.gridGeneratedPaths.length > 0) {
+            window.gridGeneratedPaths = [];
+            if (window.gridDrawTempMarkers) {
+                window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
+                window.gridDrawTempMarkers = [];
+            }
+        }
+        // マーカーやポリゴンを再描画（分割パネルも条件を満たせば再表示される）
+        updateCustomDrawingVisuals();
     }
 
     if (window.loadedFudeRegion) setFudeVisibility(true);
@@ -1636,7 +1645,11 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                 });
             }
             
-            let newIds = await callGAS('savePolygonsBatch', paramsList);
+            let newIds = [];
+            for (let i = 0; i < paramsList.length; i++) {
+                let id = await callGAS('savePolygon', paramsList[i]);
+                if (id) newIds.push(id);
+            }
             for (let i = 0; i < newIds.length; i++) {
                 createPolygonObject({ ...paramsList[i], id: newIds[i], coords: window.gridGeneratedPaths[i], isMarker: false });
             }
