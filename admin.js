@@ -1718,7 +1718,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                 let area = Math.round(google.maps.geometry.spherical.computeArea(latLngs) / 100);
                 
                 paramsList.push({
-                    name: `${n}-${i+1}`,
+                    name: `${n}_${i+1}`,
                     coords: JSON.stringify(pathData),
                     color: '#d32f2f',
                     userName: currentUser,
