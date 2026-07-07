@@ -20,6 +20,7 @@ function doPost(e) {
     else if (action === "savePolygonBatch") result = savePolygonBatch(params); // ★一括保存用
     else if (action === "updatePolygon") result = updatePolygon(params); 
     else if (action === "deletePolygon") result = deletePolygonData(params.id, params.userName);
+    else if (action === "deletePolygonBatch") result = deletePolygonBatchData(params.ids, params.userName);
     else if (action === "saveRecord") result = saveRecord(params.id, params.name, params.author, params.recordType, params.data, params.photos);
     else if (action === "updateRecordItem") result = updateRecordItem(params.id, params.recordId, params.recordType, params.data, params.photos, params.keptUrls, params.userName);
     else if (action === "deleteRecordItem") result = deleteRecordItem(params.id, params.recordId, params.userName);
@@ -1095,6 +1096,42 @@ function deletePolygonData(id, user) {
     writeLog(user, "図形削除", name, `システムID: ${id}`);
     return "DELETED"; 
   } 
+}
+
+function deletePolygonBatchData(ids, user) {
+  const ss = TENANT_SS;
+  const sheets = ['圃場', '看板'];
+  
+  let rowsToDelete = { '圃場': [], '看板': [] };
+  let names = [];
+  
+  for (let s of sheets) {
+    let sheet = ss.getSheetByName(s);
+    if (!sheet) continue;
+    let data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (ids.includes(data[i][0])) {
+        rowsToDelete[s].push(i + 1);
+        names.push(data[i][1]);
+      }
+    }
+  }
+
+  let hasHojoDeleted = false;
+  
+  for (let s of sheets) {
+    let sheet = ss.getSheetByName(s);
+    if (!sheet) continue;
+    let r = rowsToDelete[s].sort((a, b) => b - a);
+    for (let rowIdx of r) {
+      sheet.deleteRow(rowIdx);
+      if (s === '圃場') hasHojoDeleted = true;
+    }
+  }
+  
+  if (hasHojoDeleted) syncToukiMapping();
+  writeLog(user, "図形削除(一括)", names.join(", "), `システムID: ${ids.length}件`);
+  return "DELETED_BATCH";
 }
 
 

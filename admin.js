@@ -436,7 +436,80 @@ function applyCol(id, v) {
 }
 
 function actionEditShape(id) { infoWindow.close(); editingId = id; loadedPolygons[id].polygon ? loadedPolygons[id].polygon.setEditable(true) : loadedPolygons[id].marker.setDraggable(true); if (loadedPolygons[id].polygon) originalCoordsForEdit = loadedPolygons[id].polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() })); else originalCoordsForEdit = [loadedPolygons[id].marker.getPosition()]; document.getElementById('editShapePanel').style.display = 'block'; map.setZoom(map.getZoom()); }
-async function actionDelete(id) { if (await customConfirm("削除しますか？")) { if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); loadedPolygons[id].marker.setMap(null); delete loadedPolygons[id]; callGAS('deletePolygon', { id, userName: currentUser }); infoWindow.close(); } }
+async function actionDelete(id) {
+    const p = loadedPolygons[id];
+    if (!p) return;
+
+    let baseName = p.name;
+    let match = p.name.match(/^(.*)_\d+$/);
+    if (match) baseName = match[1];
+
+    let relatedIds = [];
+    for (let k in loadedPolygons) {
+        let poly = loadedPolygons[k];
+        if (poly.name === baseName || poly.name.startsWith(baseName + "_")) {
+            relatedIds.push(k);
+        }
+    }
+
+    if (relatedIds.length > 1) {
+        document.getElementById('modalBody').innerHTML = `
+            <div style="padding:10px; text-align:center;">
+                <h3 style="margin-top:0; color:#333;">削除オプション</h3>
+                <p>「${p.name}」を削除します。</p>
+                <p style="font-size:12px; color:#666;">関連する圃場（同じ名前の連番）が ${relatedIds.length} 件見つかりました。</p>
+                <button id="btnDelSingle" style="width:100%; padding:12px; margin-bottom:10px; background:#f44336; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">この圃場だけ削除</button>
+                <button id="btnDelGroup" style="width:100%; padding:12px; margin-bottom:10px; background:#d32f2f; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">「${baseName}」グループ（${relatedIds.length}件）を一括削除</button>
+                <button id="btnDelCancel" style="width:100%; padding:12px; background:#ccc; color:#333; border:none; border-radius:4px; cursor:pointer;">キャンセル</button>
+            </div>
+        `;
+        document.getElementById('modal').style.display = 'flex';
+        
+        document.getElementById('btnDelSingle').onclick = async () => {
+            document.getElementById('modal').style.display = 'none';
+            await doDeletePolygons([id]);
+        };
+        document.getElementById('btnDelGroup').onclick = async () => {
+            document.getElementById('modal').style.display = 'none';
+            if (await customConfirm(`本当に ${relatedIds.length}件 を一括削除しますか？\n(復元できません)`)) {
+                await doDeletePolygons(relatedIds);
+            }
+        };
+        document.getElementById('btnDelCancel').onclick = () => {
+            document.getElementById('modal').style.display = 'none';
+        };
+    } else {
+        if (await customConfirm("削除しますか？")) {
+            await doDeletePolygons([id]);
+        }
+    }
+}
+
+async function doDeletePolygons(ids) {
+    document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:red;'>🗑️ 削除中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>";
+    document.getElementById('modal').style.display = 'flex';
+    
+    try {
+        if (ids.length === 1) {
+            let id = ids[0];
+            if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
+            if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null); 
+            delete loadedPolygons[id]; 
+            await callGAS('deletePolygon', { id, userName: currentUser }); 
+        } else {
+            ids.forEach(id => {
+                if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
+                if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null); 
+                delete loadedPolygons[id];
+            });
+            await callGAS('deletePolygonBatch', { ids, userName: currentUser });
+        }
+    } catch(e) {
+        customAlert("削除中にエラーが発生しました: " + e.message);
+    }
+    document.getElementById('modal').style.display = 'none';
+    infoWindow.close();
+}
 function cancelMerge() { isMergeMode = false; mergeBaseId = null; document.getElementById('mergeModePanel').style.display = 'none'; }
 function startMerge(id) { isMergeMode = true; mergeBaseId = id; infoWindow.close(); document.getElementById('mergeModePanel').style.display = 'block'; customAlert("統合する別の圃場をクリックしてください。"); }
 async function execMerge(bId, tId) { if (bId === tId) return; if (!await customConfirm("マスタと履歴を統合しますか？")) { cancelMerge(); return; } const bP = loadedPolygons[bId], tP = loadedPolygons[tId]; if (tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId + "," + tP.toukiId).split(","))].join(",") : tP.toukiId; tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; cancelMerge(); callGAS('mergeFields', { baseId: bId, targetId: tId, userName: currentUser }); customAlert("完了！残った圃場の範囲を広げてください"); }
