@@ -842,6 +842,8 @@ window.saveCadStateToHistory = () => {
         angle: document.getElementById('cadAngle').value,
         width: document.getElementById('cadWidth').value,
         uneCount: document.getElementById('cadUneCount').value,
+        marginSide: document.getElementById('cadMarginSide') ? document.getElementById('cadMarginSide').value : 0,
+        marginEnd: document.getElementById('cadMarginEnd') ? document.getElementById('cadMarginEnd').value : 0,
         pins: pins,
         nakamichiLines: JSON.parse(JSON.stringify(window.cadNakamichiLines)),
         drainageLines: JSON.parse(JSON.stringify(window.cadDrainageLines)),
@@ -880,6 +882,8 @@ window.loadCadStateFromHistory = (index) => {
     document.getElementById('cadAngle').value = state.angle || 0;
     document.getElementById('cadWidth').value = state.width || 150;
     document.getElementById('cadUneCount').value = state.uneCount || 0;
+    if (document.getElementById('cadMarginSide')) document.getElementById('cadMarginSide').value = state.marginSide || 0;
+    if (document.getElementById('cadMarginEnd')) document.getElementById('cadMarginEnd').value = state.marginEnd || 0;
 
     if (state.pins) {
         state.pins.forEach(pin => {
@@ -1034,7 +1038,39 @@ window.handleMapClick = (pageX, pageY) => {
 
     const msgEl = document.getElementById('cadPinModeMsg');
 
-    if (window.cadPinMode === 'nakamichi') return;
+    if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') return;
+
+    if (window.cadPinMode === 'snap_line') {
+        const p = loadedPolygons[window.cadTargetId];
+        if (p && p.coords && p.coords.length > 2) {
+            let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
+            if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([coords[0][0], coords[0][1]]);
+            const pt = turf.point([latLng.lng(), latLng.lat()]);
+            
+            let minD = Infinity;
+            let bestBearing = 0;
+            for (let i = 0; i < coords.length - 1; i++) {
+                let line = turf.lineString([coords[i], coords[i+1]]);
+                let d = turf.pointToLineDistance(pt, line, {units: 'meters'});
+                if (d < minD) {
+                    minD = d;
+                    bestBearing = turf.bearing(turf.point(coords[i]), turf.point(coords[i+1]));
+                }
+            }
+            
+            let angle = bestBearing;
+            while (angle < 0) angle += 360;
+            while (angle >= 180) angle -= 180; // keep it 0-180 for standard ridge direction
+            angle = Math.round(angle * 10) / 10;
+            
+            document.getElementById('cadAngle').value = angle;
+            if (window.cadUnePolygons && window.cadUnePolygons.length > 0) window.cadGenerateLines();
+            else window.saveCadStateToHistory();
+        }
+        window.cadPinMode = null;
+        if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+        return;
+    }
 
     const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, visible: false });
     mk.cadPinType = window.cadPinMode;
@@ -1873,6 +1909,8 @@ window.cadSetPinMode = (type) => {
     } else if (type === 'drainage') {
         window.nakamichiTempPt = null;
         if (msgEl) { msgEl.innerText = `【排水ライン】始点となる場所をタップしてください`; msgEl.style.color = "#00BCD4"; }
+    } else if (type === 'snap_line') {
+        if (msgEl) { msgEl.innerText = `【角度合わせ】基準にしたい外周の直線をタップしてください`; msgEl.style.color = "#4CAF50"; }
     } else {
         const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🛻 軽トラ駐車' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
@@ -2164,28 +2202,24 @@ window.cadGenerateLines = () => {
             return turf.buffer(centerLine, 0.5 / 1000, { units: 'kilometers' });
         });
 
+        let drainagePolys = (window.cadDrainageLines || []).map(line => {
+            let p1lng = typeof line[0].lng === 'function' ? line[0].lng() : parseFloat(line[0].lng);
+            let p1lat = typeof line[0].lat === 'function' ? line[0].lat() : parseFloat(line[0].lat);
+            let p2lng = typeof line[1].lng === 'function' ? line[1].lng() : parseFloat(line[1].lng);
+            let p2lat = typeof line[1].lat === 'function' ? line[1].lat() : parseFloat(line[1].lat);
+            const centerLine = turf.lineString([[p1lng, p1lat], [p2lng, p2lat]]);
+            return turf.buffer(centerLine, 0.5 / 1000, { units: 'kilometers' });
+        });
+        
+        let avoidPolys = [...nakamichiPolys, ...drainagePolys];
+
         const lineLen = diagDist + 40;
         let rects = [];
         
-        const marginEl = document.getElementById('cadMargin');
-        const edgeMarginMeters = marginEl && marginEl.value ? parseFloat(marginEl.value) / 100 : 0;
-        let tPolyLines = [];
-        if (edgeMarginMeters > 0) {
-            if (tPoly.geometry.type === 'Polygon') {
-                tPolyLines.push(turf.lineString(tPoly.geometry.coordinates[0]));
-            } else if (tPoly.geometry.type === 'MultiPolygon') {
-                tPoly.geometry.coordinates.forEach(c => tPolyLines.push(turf.lineString(c[0])));
-            }
-        }
-        const checkMargin = (pt) => {
-            if (edgeMarginMeters <= 0) return true;
-            let minD = Infinity;
-            for (let l of tPolyLines) {
-                let d = turf.pointToLineDistance(pt, l, {units: 'meters'});
-                if (d < minD) minD = d;
-            }
-            return minD >= edgeMarginMeters;
-        };
+        const marginSideEl = document.getElementById('cadMarginSide');
+        const marginEndEl = document.getElementById('cadMarginEnd');
+        const sideMarginMeters = marginSideEl && marginSideEl.value ? parseFloat(marginSideEl.value) / 100 : 0;
+        const endMarginMeters = marginEndEl && marginEndEl.value ? parseFloat(marginEndEl.value) / 100 : 0;
 
         for (let i = 0; i < uneCount; i++) {
             let offset = startOffset + i * actualWidthM;
@@ -2203,19 +2237,35 @@ window.cadGenerateLines = () => {
             
             for (let d = 0; d <= lineLen; d += stepMeters) {
                 let c = turf.destination(pt1, d, angle + 180, {units: 'meters'});
-                let cL = turf.destination(c, w / 2, angle + 90, {units: 'meters'});
-                let cR = turf.destination(c, w / 2, angle - 90, {units: 'meters'});
+                let wCheck = w + 2 * sideMarginMeters;
+                let c_fwd = turf.destination(c, endMarginMeters, angle + 180, {units: 'meters'});
+                let c_bwd = turf.destination(c, endMarginMeters, angle, {units: 'meters'});
                 
-                let isValid = turf.booleanPointInPolygon(cL, tPoly) && turf.booleanPointInPolygon(cR, tPoly);
-                if (isValid && nakamichiPolys.length > 0) {
-                    for (let nk of nakamichiPolys) {
-                        if (turf.booleanPointInPolygon(cL, nk) || turf.booleanPointInPolygon(cR, nk) || turf.booleanPointInPolygon(c, nk)) {
-                            isValid = false; break;
-                        }
+                let p_fwd_L = turf.destination(c_fwd, wCheck / 2, angle + 90, {units: 'meters'});
+                let p_fwd_R = turf.destination(c_fwd, wCheck / 2, angle - 90, {units: 'meters'});
+                let p_bwd_L = turf.destination(c_bwd, wCheck / 2, angle + 90, {units: 'meters'});
+                let p_bwd_R = turf.destination(c_bwd, wCheck / 2, angle - 90, {units: 'meters'});
+                let c_L = turf.destination(c, wCheck / 2, angle + 90, {units: 'meters'});
+                let c_R = turf.destination(c, wCheck / 2, angle - 90, {units: 'meters'});
+
+                let ptsToCheck = [p_fwd_L, p_fwd_R, p_bwd_L, p_bwd_R, c_L, c_R];
+                
+                let isValid = true;
+                for (let pt of ptsToCheck) {
+                    if (!turf.booleanPointInPolygon(pt, tPoly)) {
+                        isValid = false; break;
                     }
                 }
-                if (isValid && edgeMarginMeters > 0) {
-                    if (!checkMargin(cL) || !checkMargin(cR) || !checkMargin(c)) isValid = false;
+                
+                if (isValid && avoidPolys.length > 0) {
+                    for (let av of avoidPolys) {
+                        for (let pt of ptsToCheck) {
+                            if (turf.booleanPointInPolygon(pt, av)) {
+                                isValid = false; break;
+                            }
+                        }
+                        if (!isValid) break;
+                    }
                 }
                 
                 if (isValid) {
