@@ -1728,6 +1728,9 @@ document.getElementById('finalSaveBtn').onclick = async () => {
             }
             
             let newIds = await callGAS('savePolygonBatch', { polygons: paramsList });
+            if (!newIds || !Array.isArray(newIds)) {
+                throw new Error("サーバーから正しい応答がありませんでした（コード.js が最新バージョンにデプロイされているか確認してください）");
+            }
             for (let i = 0; i < newIds.length; i++) {
                 createPolygonObject({ ...paramsList[i], id: newIds[i], coords: window.gridGeneratedPaths[i], isMarker: false });
             }
