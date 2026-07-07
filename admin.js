@@ -1727,11 +1727,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                 });
             }
             
-            let newIds = [];
-            for (let i = 0; i < paramsList.length; i++) {
-                let id = await callGAS('savePolygon', paramsList[i]);
-                if (id) newIds.push(id);
-            }
+            let newIds = await callGAS('savePolygonBatch', { polygons: paramsList });
             for (let i = 0; i < newIds.length; i++) {
                 createPolygonObject({ ...paramsList[i], id: newIds[i], coords: window.gridGeneratedPaths[i], isMarker: false });
             }

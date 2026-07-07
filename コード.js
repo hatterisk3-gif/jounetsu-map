@@ -16,8 +16,9 @@ function doPost(e) {
 
     if (action === "login") result = checkLogin(params.orgId, params.userId, params.password);
     else if (action === "getInitData") result = getInitData(); 
-    else if (action === "savePolygon") result = savePolygon(params); // ★ savePolygonDataからsavePolygonに変更(関数名統一)
-    else if (action === "updatePolygon") result = updatePolygon(params); // ★ updatePolygonDataからupdatePolygonに変更
+    else if (action === "savePolygon") result = savePolygon(params); 
+    else if (action === "savePolygonBatch") result = savePolygonBatch(params); // ★一括保存用
+    else if (action === "updatePolygon") result = updatePolygon(params); 
     else if (action === "deletePolygon") result = deletePolygonData(params.id, params.userName);
     else if (action === "saveRecord") result = saveRecord(params.id, params.name, params.author, params.recordType, params.data, params.photos);
     else if (action === "updateRecordItem") result = updateRecordItem(params.id, params.recordId, params.recordType, params.data, params.photos, params.keptUrls, params.userName);
@@ -789,6 +790,45 @@ function savePolygon(params) {
   
   writeLog(params.userName, "図形登録", params.name, `対象: ${sheetName}`);
   return newId;
+}
+
+function savePolygonBatch(params) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('圃場');
+  const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
+  const newIds = [];
+  
+  if (!params.polygons || params.polygons.length === 0) return [];
+  
+  const rows = params.polygons.map(p => {
+    const newId = Utilities.getUuid();
+    newIds.push(newId);
+    return [
+      newId,
+      p.name || "",
+      p.location || "",
+      p.condition || "",
+      p.area || 0,
+      p.coords,
+      p.color || "",
+      now,
+      p.userName || "",
+      "[]",
+      p.status || "",
+      p.toukiId || "",
+      "",
+      p.ridgeDir || "",
+      p.ridgeWidth || "",
+      p.uneSimData || ""
+    ];
+  });
+  
+  if (rows.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  }
+  
+  writeLog(params.polygons[0].userName, "図形登録(一括)", `${params.polygons.length}件の圃場`, `対象: 圃場`);
+  return newIds;
 }
 
 // ==========================================
