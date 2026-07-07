@@ -528,24 +528,38 @@ function initMap() {
     let centerPos = (!isNaN(parsedLat) && !isNaN(parsedLng)) ? { lat: parsedLat, lng: parsedLng } : { lat: 33.91, lng: 134.66 };
     let zoomLevel = savedZoom ? parseInt(savedZoom) : 15;
 
-    map = new google.maps.Map(document.getElementById('map'), {
-        center: centerPos,
-        zoom: zoomLevel,
-        maxZoom: 45,
-        mapTypeId: 'hybrid',
-        gestureHandling: 'greedy',
-        mapTypeControl: false,
-        fullscreenControl: false,
-        streetViewControl: false,
-        styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
-    });
-
     class StretchedMapType {
         constructor() {
             this.tileSize = new google.maps.Size(256, 256);
             this.maxZoom = 45;
             this.name = 'ハイブリッド';
+            this.alt = 'ハイブリッド';
             this.maxNativeZoom = 21; // Googleの最大ネイティブズーム
+            
+            // Get standard projection to prevent Google Maps from rejecting the custom map type
+            let baseType = map.mapTypes.get('roadmap') || map.mapTypes.get('hybrid');
+            if (baseType && baseType.projection) {
+                this.projection = baseType.projection;
+            } else {
+                // Fallback manual Mercator projection just in case
+                this.projection = {
+                    fromLatLngToPoint: function(latLng, opt_point) {
+                        let point = opt_point || new google.maps.Point(0, 0);
+                        let origin = new google.maps.Point(128, 128);
+                        point.x = origin.x + latLng.lng() * (256 / 360);
+                        let siny = Math.min(Math.max(Math.sin((latLng.lat() * Math.PI) / 180), -0.9999), 0.9999);
+                        point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) * -(256 / (2 * Math.PI));
+                        return point;
+                    },
+                    fromPointToLatLng: function(point) {
+                        let origin = new google.maps.Point(128, 128);
+                        let lng = (point.x - origin.x) / (256 / 360);
+                        let latRadians = (point.y - origin.y) / -(256 / (2 * Math.PI));
+                        let lat = (2 * Math.atan(Math.exp(latRadians)) - Math.PI / 2) * 180 / Math.PI;
+                        return new google.maps.LatLng(lat, lng);
+                    }
+                };
+            }
         }
         getTile(coord, zoom, ownerDocument) {
             let div = ownerDocument.createElement('div');
@@ -591,12 +605,24 @@ function initMap() {
         }
         releaseTile(tile) {}
     }
-    
-    map.mapTypes.set('hybrid', new StretchedMapType());
-    map.setMapTypeId('hybrid');
+
+    // Dummy map options to register MapType before instantiation? No, we can just instantiate Map directly if we use mapTypes.set inside a registry. But MapTypeRegistry is on the map instance!
+    // Wait, mapTypes is a property of the map instance! So we MUST create the map first.
+    map = new google.maps.Map(document.getElementById('map'), {
+        center: centerPos,
+        zoom: zoomLevel,
+        maxZoom: 45,
+        gestureHandling: 'greedy',
+        mapTypeControl: false,
+        fullscreenControl: false,
+        streetViewControl: false,
+        styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
+    });
+
+    map.mapTypes.set('hybrid_stretched', new StretchedMapType());
+    map.setMapTypeId('hybrid_stretched');
 
     infoWindow = new google.maps.InfoWindow();
-
     google.maps.event.addListener(map, 'click', () => infoWindow.close());
 
     map.data.setStyle({
