@@ -1704,6 +1704,7 @@ document.getElementById('btnLoadFude').onclick = () => {
 // 🌟変更：合体した外郭を「1つの圃場」として保存する
 document.getElementById('finalSaveBtn').onclick = async () => {
     const n = document.getElementById('fieldName').value, l = document.getElementById('fieldLocation').value, c = document.getElementById('fieldCondition').value, s = document.getElementById('fieldStatus').value, t = "";
+    const startNum = parseInt(document.getElementById('fieldStartNumber').value) || 1;
     if (!n) { customAlert("圃場名を入力してください"); return; }
 
     document.getElementById('modalBody').innerHTML = `<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>`;
@@ -1718,7 +1719,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                 let area = Math.round(google.maps.geometry.spherical.computeArea(latLngs) / 100);
                 
                 paramsList.push({
-                    name: `${n}_${i+1}`,
+                    name: `${n}_${startNum + i}`,
                     coords: JSON.stringify(pathData),
                     color: '#d32f2f',
                     userName: currentUser,
