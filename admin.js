@@ -531,7 +531,7 @@ function initMap() {
     map = new google.maps.Map(document.getElementById('map'), {
         center: centerPos,
         zoom: zoomLevel,
-        maxZoom: 30,
+        maxZoom: 45,
         mapTypeId: 'hybrid',
         gestureHandling: 'greedy',
         mapTypeControl: false,
@@ -542,9 +542,9 @@ function initMap() {
 
     google.maps.event.addListenerOnce(map, 'idle', () => {
         const satType = map.mapTypes.get('satellite');
-        if (satType) satType.maxZoom = 30;
+        if (satType) satType.maxZoom = 45;
         const hybType = map.mapTypes.get('hybrid');
-        if (hybType) hybType.maxZoom = 30;
+        if (hybType) hybType.maxZoom = 45;
     });
     infoWindow = new google.maps.InfoWindow();
 
