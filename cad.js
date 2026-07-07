@@ -9,6 +9,8 @@ window.cadPinMode = null;
 window.cadUneLabels = [];
 window.cadNakamichiLines = [];
 window.cadNakamichiMapPolygons = [];
+window.cadDrainageLines = [];
+window.cadDrainageMapPolygons = [];
 window.cadCustomShapes = [];
 window.cadGridLines = [];
 window.nakamichiTempMarker = null;
@@ -218,7 +220,8 @@ window.updateCadSvgOverlay = () => {
     
     let currentPolysLength = (window.cadUnePolygons ? window.cadUnePolygons.length : 0) + 
                              (window.cadCustomShapes ? window.cadCustomShapes.length : 0) + 
-                             (window.cadNakamichiMapPolygons ? window.cadNakamichiMapPolygons.length : 0);
+                             (window.cadNakamichiMapPolygons ? window.cadNakamichiMapPolygons.length : 0) +
+                             (window.cadDrainageMapPolygons ? window.cadDrainageMapPolygons.length : 0);
                              
     if (window.cadSvgNeedsRebuild || !svg.querySelector('#cadSvgPaths') || svg._lastPolysLength !== currentPolysLength) {
         svg._lastPolysLength = currentPolysLength;
@@ -307,6 +310,21 @@ window.updateCadSvgOverlay = () => {
                 p._svgPathNode = createPathNode('none', '#E91E63', true);
                 pathsGroup.appendChild(p._svgPathNode);
             });
+        }
+        
+        if (window.cadDrainageMapPolygons) {
+            window.cadDrainageMapPolygons.forEach(p => {
+                p._svgPathNode = createPathNode('none', '#00BCD4', true);
+                p._svgPathNode.setAttribute('stroke-dasharray', '8,8');
+                pathsGroup.appendChild(p._svgPathNode);
+            });
+        }
+
+        if (!svg.querySelector('#cadSvgTempLine')) {
+            let tempLineNode = createPathNode('none', '#E91E63', true);
+            tempLineNode.setAttribute('id', 'cadSvgTempLine');
+            tempLineNode.style.display = 'none';
+            pathsGroup.appendChild(tempLineNode);
         }
 
         if (window.cadGridLines) {
@@ -462,6 +480,24 @@ window.updateCadSvgOverlay = () => {
         window.cadNakamichiMapPolygons.forEach(p => {
             if (p._svgPathNode) p._svgPathNode.setAttribute('d', updatePathD(p, true));
         });
+    }
+    if (window.cadDrainageMapPolygons) {
+        window.cadDrainageMapPolygons.forEach(p => {
+            if (p._svgPathNode) p._svgPathNode.setAttribute('d', updatePathD(p, true));
+        });
+    }
+    
+    let tempLineNode = document.getElementById('cadSvgTempLine');
+    if (tempLineNode) {
+        if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing && window.nakamichiTempLine) {
+            tempLineNode.setAttribute('stroke', window.cadPinMode === 'drainage' ? '#00BCD4' : '#E91E63');
+            if (window.cadPinMode === 'drainage') tempLineNode.setAttribute('stroke-dasharray', '8,8');
+            else tempLineNode.removeAttribute('stroke-dasharray');
+            tempLineNode.setAttribute('d', updatePathD(window.nakamichiTempLine, true));
+            tempLineNode.style.display = 'block';
+        } else {
+            tempLineNode.style.display = 'none';
+        }
     }
     
     const updateHandlesPosition = (poly) => {
@@ -808,6 +844,7 @@ window.saveCadStateToHistory = () => {
         uneCount: document.getElementById('cadUneCount').value,
         pins: pins,
         nakamichiLines: JSON.parse(JSON.stringify(window.cadNakamichiLines)),
+        drainageLines: JSON.parse(JSON.stringify(window.cadDrainageLines)),
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline ? JSON.parse(JSON.stringify(window.cadFrontBaseline)) : null,
@@ -857,6 +894,11 @@ window.loadCadStateFromHistory = (index) => {
     if (state.nakamichiLines) {
         window.cadNakamichiLines = state.nakamichiLines || [];
         window.cadNakamichiLines.forEach(line => window.drawNakamichiVisual(line));
+    }
+    
+    if (state.drainageLines) {
+        window.cadDrainageLines = state.drainageLines || [];
+        window.cadDrainageLines.forEach(line => window.drawDrainageVisual(line));
     }
 
     if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
@@ -1802,6 +1844,8 @@ window.cadClearLines = (skipHistory = false) => {
     window.cadPins.forEach(mk => mk.setMap(null)); window.cadPins = [];
     window.cadNakamichiMapPolygons.forEach(pl => pl.setMap(null)); window.cadNakamichiMapPolygons = [];
     window.cadNakamichiLines = [];
+    window.cadDrainageMapPolygons.forEach(pl => pl.setMap(null)); window.cadDrainageMapPolygons = [];
+    window.cadDrainageLines = [];
     window.cadCustomShapes.forEach(pl => pl.setMap(null)); window.cadCustomShapes = [];
     if (window.cadGridLines) { window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; }
     if (window.cadUneLabels) { window.cadUneLabels.forEach(lbl => lbl.setMap(null)); window.cadUneLabels = []; }
@@ -1826,6 +1870,9 @@ window.cadSetPinMode = (type) => {
     if (type === 'nakamichi') {
         window.nakamichiTempPt = null;
         if (msgEl) { msgEl.innerText = `【中道ライン】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
+    } else if (type === 'drainage') {
+        window.nakamichiTempPt = null;
+        if (msgEl) { msgEl.innerText = `【排水ライン】始点となる場所をタップしてください`; msgEl.style.color = "#00BCD4"; }
     } else {
         const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🛻 軽トラ駐車' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
@@ -1835,6 +1882,12 @@ window.cadSetPinMode = (type) => {
 window.drawNakamichiVisual = (path) => {
     let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6), map: window.cadMap, zIndex: 9 });
     window.cadNakamichiMapPolygons.push(line);
+};
+
+window.drawDrainageVisual = (path) => {
+    // 破線を表現するため、SVGレイヤーでのみ表示（Google Map上では透明）
+    let line = new google.maps.Polyline({ path: path, strokeColor: 'transparent', strokeOpacity: 0, strokeWeight: Math.max(0.5, 6), map: window.cadMap, zIndex: 9 });
+    window.cadDrainageMapPolygons.push(line);
 };
 
 window.cadSetFrontBar = (position) => {
@@ -1885,6 +1938,88 @@ window.cadAddCustomShape = (type) => {
     let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
 
     gPoly.uneIndex = 'custom_' + Date.now();
+    google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
+    window.bindShapeHistoryEvents(gPoly);
+    window.cadCustomShapes.push(gPoly);
+    window.reassignLabels();
+    window.saveCadStateToHistory();
+};
+
+window.cadAddMakura = () => {
+    let center = window.cadMap.getCenter(); 
+    let centerPt = turf.point([center.lng(), center.lat()]);
+    
+    const angleEl = document.getElementById('cadAngle');
+    const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+    
+    const widthEl = document.getElementById('cadWidth');
+    let actualWidthM = widthEl && widthEl.value ? parseFloat(widthEl.value) / 100 : 1.5;
+    
+    const p = loadedPolygons[window.cadTargetId];
+    if (!p || !p.coords || p.coords.length < 3) return;
+    let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
+    if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([coords[0][0], coords[0][1]]);
+    const tPoly = turf.polygon([coords]);
+
+    let makuraAngle = angle + 90;
+    
+    let pt1 = turf.destination(centerPt, 500, makuraAngle + 180, { units: 'meters' });
+    let length = 1000;
+    
+    let stepMeters = 0.5;
+    let validSegments = [];
+    let currentSegment = null;
+    
+    for (let d = 0; d <= length; d += stepMeters) {
+        let c = turf.destination(pt1, d, makuraAngle, {units: 'meters'});
+        let cL = turf.destination(c, actualWidthM / 2, makuraAngle + 90, {units: 'meters'});
+        let cR = turf.destination(c, actualWidthM / 2, makuraAngle - 90, {units: 'meters'});
+        
+        let isValid = turf.booleanPointInPolygon(cL, tPoly) && turf.booleanPointInPolygon(cR, tPoly);
+        if (isValid) {
+            if (!currentSegment) currentSegment = { start: d, end: d };
+            else currentSegment.end = d;
+        } else {
+            if (currentSegment) {
+                if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
+                currentSegment = null;
+            }
+        }
+    }
+    if (currentSegment && (currentSegment.end - currentSegment.start >= 1.0)) {
+        validSegments.push(currentSegment);
+    }
+    
+    if (validSegments.length === 0) {
+        alert("画面中央付近が圃場の外であるか、枕を配置するスペースがありません。圃場内に移動してから再度お試しください。");
+        return;
+    }
+    
+    let bestSeg = validSegments[0];
+    let minDist = Infinity;
+    validSegments.forEach(seg => {
+        let midD = (seg.start + seg.end) / 2;
+        let distToCenter = Math.abs(midD - 500);
+        if (distToCenter < minDist) {
+            minDist = distToCenter;
+            bestSeg = seg;
+        }
+    });
+
+    let sPt = turf.destination(pt1, bestSeg.start, makuraAngle, {units: 'meters'});
+    let ePt = turf.destination(pt1, bestSeg.end, makuraAngle, {units: 'meters'});
+    
+    let p1 = turf.destination(sPt, actualWidthM / 2, makuraAngle + 90, {units: 'meters'}).geometry.coordinates;
+    let p2 = turf.destination(sPt, actualWidthM / 2, makuraAngle - 90, {units: 'meters'}).geometry.coordinates;
+    let p3 = turf.destination(ePt, actualWidthM / 2, makuraAngle - 90, {units: 'meters'}).geometry.coordinates;
+    let p4 = turf.destination(ePt, actualWidthM / 2, makuraAngle + 90, {units: 'meters'}).geometry.coordinates;
+    
+    let paths = [p1, p2, p3, p4, p1].map(c => ({ lat: c[1], lng: c[0] }));
+    
+    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
+
+    gPoly.uneIndex = 'custom_' + Date.now() + Math.floor(Math.random() * 1000);
+    gPoly.uneGroup = '枕';
     google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
     window.bindShapeHistoryEvents(gPoly);
     window.cadCustomShapes.push(gPoly);
@@ -2031,6 +2166,26 @@ window.cadGenerateLines = () => {
 
         const lineLen = diagDist + 40;
         let rects = [];
+        
+        const marginEl = document.getElementById('cadMargin');
+        const edgeMarginMeters = marginEl && marginEl.value ? parseFloat(marginEl.value) / 100 : 0;
+        let tPolyLines = [];
+        if (edgeMarginMeters > 0) {
+            if (tPoly.geometry.type === 'Polygon') {
+                tPolyLines.push(turf.lineString(tPoly.geometry.coordinates[0]));
+            } else if (tPoly.geometry.type === 'MultiPolygon') {
+                tPoly.geometry.coordinates.forEach(c => tPolyLines.push(turf.lineString(c[0])));
+            }
+        }
+        const checkMargin = (pt) => {
+            if (edgeMarginMeters <= 0) return true;
+            let minD = Infinity;
+            for (let l of tPolyLines) {
+                let d = turf.pointToLineDistance(pt, l, {units: 'meters'});
+                if (d < minD) minD = d;
+            }
+            return minD >= edgeMarginMeters;
+        };
 
         for (let i = 0; i < uneCount; i++) {
             let offset = startOffset + i * actualWidthM;
@@ -2038,30 +2193,64 @@ window.cadGenerateLines = () => {
             let absOffset = Math.abs(offset);
             let oPt = turf.destination(baseOrigin, absOffset, direction, { units: 'meters' });
 
-            let pt1 = turf.destination(oPt, lineLen / 2, angle, { units: 'meters' }); let pt2 = turf.destination(oPt, lineLen / 2, angle + 180, { units: 'meters' });
+            let pt1 = turf.destination(oPt, lineLen / 2, angle, { units: 'meters' });
             let ratio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
             let w = actualWidthM * ratio;
-            let p1 = turf.destination(pt1, w / 2, angle + 90, { units: 'meters' }).geometry.coordinates; let p2 = turf.destination(pt1, w / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
-            let p3 = turf.destination(pt2, w / 2, angle - 90, { units: 'meters' }).geometry.coordinates; let p4 = turf.destination(pt2, w / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
-            rects.push(turf.polygon([[p1, p2, p3, p4, p1]]));
+            
+            let stepMeters = 0.5;
+            let validSegments = [];
+            let currentSegment = null;
+            
+            for (let d = 0; d <= lineLen; d += stepMeters) {
+                let c = turf.destination(pt1, d, angle + 180, {units: 'meters'});
+                let cL = turf.destination(c, w / 2, angle + 90, {units: 'meters'});
+                let cR = turf.destination(c, w / 2, angle - 90, {units: 'meters'});
+                
+                let isValid = turf.booleanPointInPolygon(cL, tPoly) && turf.booleanPointInPolygon(cR, tPoly);
+                if (isValid && nakamichiPolys.length > 0) {
+                    for (let nk of nakamichiPolys) {
+                        if (turf.booleanPointInPolygon(cL, nk) || turf.booleanPointInPolygon(cR, nk) || turf.booleanPointInPolygon(c, nk)) {
+                            isValid = false; break;
+                        }
+                    }
+                }
+                if (isValid && edgeMarginMeters > 0) {
+                    if (!checkMargin(cL) || !checkMargin(cR) || !checkMargin(c)) isValid = false;
+                }
+                
+                if (isValid) {
+                    if (!currentSegment) currentSegment = { start: d, end: d };
+                    else currentSegment.end = d;
+                } else {
+                    if (currentSegment) {
+                        if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
+                        currentSegment = null;
+                    }
+                }
+            }
+            if (currentSegment && (currentSegment.end - currentSegment.start >= 1.0)) {
+                validSegments.push(currentSegment);
+            }
+            
+            validSegments.forEach(seg => {
+                let sPt = turf.destination(pt1, seg.start, angle + 180, {units: 'meters'});
+                let ePt = turf.destination(pt1, seg.end, angle + 180, {units: 'meters'});
+                
+                let p1 = turf.destination(sPt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                let p2 = turf.destination(sPt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                let p3 = turf.destination(ePt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                let p4 = turf.destination(ePt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                
+                rects.push(turf.polygon([[p1, p2, p3, p4, p1]]));
+            });
         }
 
         let successCount = 0;
         let polyIndex = 1;
 
         rects.forEach(rect => {
-            try {
-                let intersected = turf.intersect(tPoly, rect);
-                if (intersected) {
-                    nakamichiPolys.forEach(nkPoly => { if (intersected) intersected = turf.difference(intersected, nkPoly) || intersected; });
-                    const drawPoly = (geom) => {
-                        if (turf.area(geom) < 1) return;
-                        if (geom.type === 'Polygon') { addUnePolygon(geom.coordinates[0], polyIndex++); successCount++; }
-                        else if (geom.type === 'MultiPolygon') { geom.coordinates.forEach(c => { addUnePolygon(c[0], polyIndex++); successCount++; }); }
-                    };
-                    drawPoly(intersected.geometry);
-                }
-            } catch (e) { }
+            addUnePolygon(rect.geometry.coordinates[0], polyIndex++);
+            successCount++;
         });
 
         window.reassignLabels();
@@ -2091,12 +2280,18 @@ function addUnePolygon(coordsArray, idx) {
 
 window.cadEditOriginalPath = null;
 window.openCadEditModal = (idx) => {
+    const currentIdx = document.getElementById('cadEditIndex').value;
+    if (currentIdx && currentIdx !== idx) {
+        if (typeof window.cadCompleteEditPoly === 'function') window.cadCompleteEditPoly();
+    }
+
     document.getElementById('cadEditIndex').value = idx;
     
     const isCustom = idx.startsWith('custom_');
     const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
     const poly = polyList.find(p => p.uneIndex === idx);
     if (poly) {
+        poly.setEditable(true);
         let path = poly.getPath();
         window.cadEditOriginalPath = [];
         for (let i = 0; i < path.getLength(); i++) {
@@ -2116,6 +2311,20 @@ window.openCadEditModal = (idx) => {
     document.getElementById('cadEditPolyModal').style.display = 'flex';
 };
 
+window.cadCompleteEditPoly = () => {
+    const idx = document.getElementById('cadEditIndex').value;
+    if (idx) {
+        const isCustom = idx.startsWith('custom_');
+        const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
+        const poly = polyList.find(p => p.uneIndex === idx);
+        if (poly) poly.setEditable(false);
+    }
+    document.getElementById('cadEditPolyModal').style.display = 'none';
+    document.getElementById('cadEditIndex').value = '';
+    window.cadEditOriginalPath = null;
+    window.saveCadStateToHistory();
+};
+
 window.cadCancelEditPoly = () => {
     const idx = document.getElementById('cadEditIndex').value;
     if (idx && window.cadEditOriginalPath) {
@@ -2123,6 +2332,7 @@ window.cadCancelEditPoly = () => {
         const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
         const poly = polyList.find(p => p.uneIndex === idx);
         if (poly) {
+            poly.setEditable(false);
             poly.setPath(window.cadEditOriginalPath);
             if (typeof window.updateSinglePolyLabel === 'function') window.updateSinglePolyLabel(idx);
             if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();

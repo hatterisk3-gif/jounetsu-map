@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [管理者用] v1.34</title>
+  <title>情熱MAP [管理者用] v1.41</title>
   <link rel="apple-touch-icon" href="icon_admin.png">
   <link rel="icon" href="icon_admin.png">
   <link rel="manifest" href="manifest_admin.json">
@@ -19,7 +19,7 @@
 <body>
   <div id="loginScreen">
     <div class="login-box">
-      <h2>情熱MAP [管理] (v1.34)</h2>
+      <h2>情熱MAP [管理] (v1.41)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div>
       <input type="text" id="loginOrgId" class="login-input" placeholder="組織ID">
       <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
@@ -75,6 +75,11 @@
           <div style="flex:1;">
             <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">📏 基準の畝幅(cm)</label>
             <input type="number" id="cadWidth" value="150"
+              style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚫 端の余白(cm)</label>
+            <input type="number" id="cadMargin" value="0"
               style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
           </div>
         </div>
@@ -137,12 +142,18 @@
           <button onclick="cadSetPinMode('nakamichi')"
             style="flex:1; background:#9C27B0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛤
             中道ライン</button>
+          <button onclick="cadSetPinMode('drainage')"
+            style="flex:1; background:#00BCD4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">〰️
+            排水ライン</button>
           <button onclick="cadAddCustomShape('rect')"
             style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛
             四角畝</button>
           <button onclick="cadAddCustomShape('circle')"
             style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⚫
             丸畝</button>
+          <button onclick="cadAddMakura()"
+            style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛌
+            枕畝</button>
         </div>
         <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; text-align:center; margin-bottom:10px;">💡
           畝を直接タップすると、十字キーで移動や変形ができます。</div>
@@ -229,7 +240,7 @@
         <button onclick="window.cadCancelEditPoly()"
           style="flex:1; background:#FF9800; color:white; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">✖
           キャンセル</button>
-        <button onclick="document.getElementById('cadEditPolyModal').style.display='none'; document.getElementById('cadEditIndex').value='';"
+        <button onclick="if(typeof window.cadCompleteEditPoly==='function') window.cadCompleteEditPoly(); else {document.getElementById('cadEditPolyModal').style.display='none'; document.getElementById('cadEditIndex').value='';}"
           style="flex:1; background:#ccc; color:#333; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">完了</button>
       </div>
     </div>

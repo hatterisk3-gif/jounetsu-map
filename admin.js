@@ -458,7 +458,22 @@ function applyCol(id, v) {
     callGAS('updatePolygon', { id, color: v, signFunction: p.signFunction, userName: currentUser }); infoWindow.close();
 }
 
-function actionEditShape(id) { infoWindow.close(); editingId = id; loadedPolygons[id].polygon ? loadedPolygons[id].polygon.setEditable(true) : loadedPolygons[id].marker.setDraggable(true); if (loadedPolygons[id].polygon) originalCoordsForEdit = loadedPolygons[id].polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() })); else originalCoordsForEdit = [loadedPolygons[id].marker.getPosition()]; document.getElementById('editShapePanel').style.display = 'block'; map.setZoom(map.getZoom()); }
+function actionEditShape(id) {
+    infoWindow.close();
+    editingId = id;
+    loadedPolygons[id].polygon ? loadedPolygons[id].polygon.setEditable(true) : loadedPolygons[id].marker.setDraggable(true);
+    
+    if (loadedPolygons[id].polygon) {
+        originalCoordsForEdit = loadedPolygons[id].polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
+        if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'inline-block';
+    } else {
+        originalCoordsForEdit = [loadedPolygons[id].marker.getPosition()];
+        if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'none';
+    }
+    
+    document.getElementById('editShapePanel').style.display = 'block';
+    map.setZoom(map.getZoom());
+}
 async function actionDelete(id) {
     const p = loadedPolygons[id];
     if (!p) return;
@@ -1200,6 +1215,7 @@ document.getElementById('step1SaveBtn').onclick = () => {
 
     document.getElementById('drawStep1').style.display = 'none';
     document.getElementById('drawStep2').style.display = 'block';
+    if (document.getElementById('fieldStartNumber')) document.getElementById('fieldStartNumber').style.display = 'none';
     setFudeVisibility(false);
 };
 
@@ -2676,7 +2692,8 @@ window.executeSplitPolygon = () => {
     document.getElementById('splitCountModal').style.display = 'none';
     document.getElementById('drawStep1').style.display = 'none';
     document.getElementById('drawStep2').style.display = 'block';
-    if (document.getElementById('fieldName')) document.getElementById('fieldName').placeholder = "圃場名 (自動で -1, -2 と連番が付きます)";
+    if (document.getElementById('fieldStartNumber')) document.getElementById('fieldStartNumber').style.display = 'block';
+    if (document.getElementById('fieldName')) document.getElementById('fieldName').placeholder = "圃場名 (自動で _1, _2 と連番が付きます)";
 };
 
 if ('serviceWorker' in navigator) {
