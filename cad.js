@@ -2232,12 +2232,8 @@ window.cadGenerateLines = () => {
             let ratio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
             let w = actualWidthM * ratio;
             
-            let stepMeters = 0.5;
-            let validSegments = [];
-            let currentSegment = null;
-            
-            for (let d = 0; d <= lineLen; d += stepMeters) {
-                let c = turf.destination(pt1, d, angle + 180, {units: 'meters'});
+            let checkValid = (dist) => {
+                let c = turf.destination(pt1, dist, angle + 180, {units: 'meters'});
                 let wCheck = w + 2 * sideMarginMeters;
                 let c_fwd = turf.destination(c, endMarginMeters, angle + 180, {units: 'meters'});
                 let c_bwd = turf.destination(c, endMarginMeters, angle, {units: 'meters'});
@@ -2251,36 +2247,57 @@ window.cadGenerateLines = () => {
 
                 let ptsToCheck = [p_fwd_L, p_fwd_R, p_bwd_L, p_bwd_R, c_L, c_R];
                 
-                let isValid = true;
                 for (let pt of ptsToCheck) {
-                    if (!turf.booleanPointInPolygon(pt, tPoly)) {
-                        isValid = false; break;
-                    }
+                    if (!turf.booleanPointInPolygon(pt, tPoly)) return false;
                 }
                 
-                if (isValid && avoidPolys.length > 0) {
+                if (avoidPolys.length > 0) {
                     for (let av of avoidPolys) {
                         for (let pt of ptsToCheck) {
-                            if (turf.booleanPointInPolygon(pt, av)) {
-                                isValid = false; break;
-                            }
+                            if (turf.booleanPointInPolygon(pt, av)) return false;
                         }
-                        if (!isValid) break;
                     }
                 }
-                
+                return true;
+            };
+
+            let stepMeters = 0.5;
+            let validSegments = [];
+            let currentSegment = null;
+            
+            for (let d = 0; d <= lineLen; d += stepMeters) {
+                let isValid = checkValid(d);
                 if (isValid) {
-                    if (!currentSegment) currentSegment = { start: d, end: d };
-                    else currentSegment.end = d;
+                    if (!currentSegment) {
+                        let fine_d = d;
+                        while (fine_d - 0.1 >= d - stepMeters && checkValid(fine_d - 0.1)) {
+                            fine_d -= 0.1;
+                        }
+                        currentSegment = { start: fine_d, end: d };
+                    } else {
+                        currentSegment.end = d;
+                    }
                 } else {
                     if (currentSegment) {
+                        let fine_d = currentSegment.end;
+                        while (fine_d + 0.1 <= d && checkValid(fine_d + 0.1)) {
+                            fine_d += 0.1;
+                        }
+                        currentSegment.end = fine_d;
                         if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
                         currentSegment = null;
                     }
                 }
             }
-            if (currentSegment && (currentSegment.end - currentSegment.start >= 1.0)) {
-                validSegments.push(currentSegment);
+            if (currentSegment) {
+                let fine_d = currentSegment.end;
+                while (fine_d + 0.1 <= lineLen && checkValid(fine_d + 0.1)) {
+                    fine_d += 0.1;
+                }
+                currentSegment.end = fine_d;
+                if (currentSegment.end - currentSegment.start >= 1.0) {
+                    validSegments.push(currentSegment);
+                }
             }
             
             validSegments.forEach(seg => {
