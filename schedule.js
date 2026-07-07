@@ -470,7 +470,15 @@ async function fetchWeatherAndUpdateUI() {
         let centerPos = (savedLat && savedLng) ? {lat: parseFloat(savedLat), lng: parseFloat(savedLng)} : {lat: 33.91, lng: 134.66};
         let zoomLevel = savedZoom ? parseInt(savedZoom) : 15;
 
-        map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, mapTypeId: 'hybrid', gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true });
+        map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true });
+        
+        google.maps.event.addListenerOnce(map, 'idle', () => {
+            const satType = map.mapTypes.get('satellite');
+            if (satType) satType.maxZoom = 30;
+            const hybType = map.mapTypes.get('hybrid');
+            if (hybType) hybType.maxZoom = 30;
+        });
+
         infoWindow = new google.maps.InfoWindow();
         google.maps.event.addListener(map, 'click', () => infoWindow.close());
 
