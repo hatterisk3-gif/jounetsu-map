@@ -638,10 +638,7 @@ window.openTyphoonModal = function() {
         map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', mapTypeControl: false, fullscreenControl: false, styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
         
         google.maps.event.addListenerOnce(map, 'idle', () => {
-            const satType = map.mapTypes.get('satellite');
-            if (satType) satType.maxZoom = 30;
-            const hybType = map.mapTypes.get('hybrid');
-            if (hybType) hybType.maxZoom = 30;
+            // Native scaling enabled by NOT overriding satType.maxZoom
         });
 
         infoWindow = new google.maps.InfoWindow();

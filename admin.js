@@ -540,12 +540,6 @@ function initMap() {
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
-    google.maps.event.addListenerOnce(map, 'idle', () => {
-        const satType = map.mapTypes.get('satellite');
-        if (satType) satType.maxZoom = 45;
-        const hybType = map.mapTypes.get('hybrid');
-        if (hybType) hybType.maxZoom = 45;
-    });
     infoWindow = new google.maps.InfoWindow();
 
     google.maps.event.addListener(map, 'click', () => infoWindow.close());
