@@ -491,26 +491,36 @@ async function actionDelete(id) {
     }
 
     if (relatedIds.length > 1) {
+        let checkboxHtml = relatedIds.map(rid => {
+            let pName = loadedPolygons[rid].name;
+            let checked = (rid === id) ? "checked" : "";
+            return `<label style="display:block; padding:8px 5px; border-bottom:1px solid #eee; cursor:pointer; text-align:left;">
+                <input type="checkbox" class="del-checkbox" value="${rid}" ${checked} style="transform:scale(1.2); margin-right:8px;"> ${pName}
+            </label>`;
+        }).join('');
+
         document.getElementById('modalBody').innerHTML = `
             <div style="padding:10px; text-align:center;">
-                <h3 style="margin-top:0; color:#333;">削除オプション</h3>
-                <p>「${p.name}」を削除します。</p>
-                <p style="font-size:12px; color:#666;">関連する圃場（同じ名前の連番）が ${relatedIds.length} 件見つかりました。</p>
-                <button id="btnDelSingle" style="width:100%; padding:12px; margin-bottom:10px; background:#f44336; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">この圃場だけ削除</button>
-                <button id="btnDelGroup" style="width:100%; padding:12px; margin-bottom:10px; background:#d32f2f; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">「${baseName}」グループ（${relatedIds.length}件）を一括削除</button>
+                <h3 style="margin-top:0; color:#333;">圃場の削除</h3>
+                <p style="font-size:14px; margin-bottom:10px;">削除する圃場にチェックを入れてください：</p>
+                <div style="max-height: 250px; overflow-y: auto; background:#f9f9f9; border:1px solid #ccc; border-radius:4px; padding:5px; margin-bottom:15px;">
+                    ${checkboxHtml}
+                </div>
+                <button id="btnExecuteDelete" style="width:100%; padding:12px; margin-bottom:10px; background:#d32f2f; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">選択した圃場を削除</button>
                 <button id="btnDelCancel" style="width:100%; padding:12px; background:#ccc; color:#333; border:none; border-radius:4px; cursor:pointer;">キャンセル</button>
             </div>
         `;
         document.getElementById('modal').style.display = 'flex';
         
-        document.getElementById('btnDelSingle').onclick = async () => {
+        document.getElementById('btnExecuteDelete').onclick = async () => {
+            let selected = Array.from(document.querySelectorAll('.del-checkbox:checked')).map(cb => cb.value);
+            if (selected.length === 0) {
+                customAlert("削除する圃場が選択されていません。");
+                return;
+            }
             document.getElementById('modal').style.display = 'none';
-            await doDeletePolygons([id]);
-        };
-        document.getElementById('btnDelGroup').onclick = async () => {
-            document.getElementById('modal').style.display = 'none';
-            if (await customConfirm(`本当に ${relatedIds.length}件 を一括削除しますか？\n(復元できません)`)) {
-                await doDeletePolygons(relatedIds);
+            if (await customConfirm(`選択した ${selected.length}件 を削除しますか？\n(復元できません)`)) {
+                await doDeletePolygons(selected);
             }
         };
         document.getElementById('btnDelCancel').onclick = () => {
