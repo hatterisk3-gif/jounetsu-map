@@ -1064,6 +1064,7 @@ window.handleMapClick = (pageX, pageY) => {
             angle = Math.round(angle * 10) / 10;
             
             document.getElementById('cadAngle').value = angle;
+            window.cadAlignMapHeading(); // 🌟 地図も垂直に合わせる
             if (window.cadUnePolygons && window.cadUnePolygons.length > 0) window.cadGenerateLines();
             else window.saveCadStateToHistory();
         }
@@ -2595,7 +2596,7 @@ window.reassignLabels = () => {
     }
 };
 
-window.saveUneSim = () => {
+window.saveUneSim = async () => {
     if (!window.cadTargetId) return;
     const p = loadedPolygons[window.cadTargetId];
     let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
@@ -2603,22 +2604,37 @@ window.saveUneSim = () => {
     let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: poly.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() })), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
 
     const angleEl = document.getElementById('cadAngle'); const widthEl = document.getElementById('cadWidth'); const countEl = document.getElementById('cadUneCount');
+    const marginSideEl = document.getElementById('cadMarginSide'); const marginEndEl = document.getElementById('cadMarginEnd');
 
     const simDataStr = JSON.stringify({
         angle: angleEl && angleEl.value ? angleEl.value : 0,
         width: widthEl && widthEl.value ? widthEl.value : 150,
         uneCount: countEl && countEl.value ? countEl.value : 0,
+        marginSide: marginSideEl && marginSideEl.value ? marginSideEl.value : 0,
+        marginEnd: marginEndEl && marginEndEl.value ? marginEndEl.value : 0,
         pins: pins,
         nakamichiLines: window.cadNakamichiLines,
+        drainageLines: window.cadDrainageLines,
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline || null
     });
 
     p.uneSimData = simDataStr;
-    callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
-    alert("💾 描画した地形とピンをすべて保存しました！");
-    window.closeCADMode();
+    const saveBtn = document.querySelector('button[onclick="saveUneSim()"]');
+    const originalText = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) saveBtn.innerHTML = '⏳ 保存中...';
+    
+    try {
+        await callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
+        alert("💾 描画した地形とピンをすべて保存しました！");
+        window.closeCADMode();
+    } catch (e) {
+        console.error(e);
+        alert("保存中にエラーが発生しました。");
+    } finally {
+        if (saveBtn) saveBtn.innerHTML = originalText;
+    }
 };
 window.showCadHistoryModal = async () => {
     if (!window.cadTargetId) return;
