@@ -540,6 +540,61 @@ function initMap() {
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
+    class StretchedMapType {
+        constructor() {
+            this.tileSize = new google.maps.Size(256, 256);
+            this.maxZoom = 45;
+            this.name = 'ハイブリッド';
+            this.maxNativeZoom = 21; // Googleの最大ネイティブズーム
+        }
+        getTile(coord, zoom, ownerDocument) {
+            let div = ownerDocument.createElement('div');
+            div.style.width = '256px';
+            div.style.height = '256px';
+            div.style.overflow = 'hidden';
+            div.style.position = 'relative';
+
+            let z = zoom;
+            let x = coord.x;
+            let y = coord.y;
+            let scale = 1;
+
+            if (z > this.maxNativeZoom) {
+                let zDiff = z - this.maxNativeZoom;
+                scale = Math.pow(2, zDiff);
+                z = this.maxNativeZoom;
+                x = Math.floor(x / scale);
+                y = Math.floor(y / scale);
+            }
+
+            let img = ownerDocument.createElement('img');
+            img.src = `https://mt1.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}`;
+            img.style.position = 'absolute';
+            
+            if (scale > 1) {
+                img.style.width = (256 * scale) + 'px';
+                img.style.height = (256 * scale) + 'px';
+                let offsetX = (coord.x % scale) * 256;
+                let offsetY = (coord.y % scale) * 256;
+                img.style.left = `-${offsetX}px`;
+                img.style.top = `-${offsetY}px`;
+                img.style.imageRendering = 'pixelated';
+            } else {
+                img.style.width = '256px';
+                img.style.height = '256px';
+                img.style.left = '0px';
+                img.style.top = '0px';
+            }
+            
+            div.appendChild(img);
+            return div;
+        }
+        releaseTile(tile) {}
+    }
+    
+    map.mapTypes.set('hybrid', new StretchedMapType());
+    map.setMapTypeId('hybrid');
+
     infoWindow = new google.maps.InfoWindow();
 
     google.maps.event.addListener(map, 'click', () => infoWindow.close());
