@@ -1438,6 +1438,24 @@ function createSignboardMarker(name, pos, icon, id) {
            else if (disp) { disp.innerText = `-- 本`; }
         }
       };
+      
+      window.selectWorkChip = (wName) => {
+          document.getElementById('rec_work_name').value = wName;
+          document.querySelectorAll('.work-chip').forEach(el => {
+              const isRecent = el.dataset.recent === "true";
+              el.style.background = isRecent ? '#fff3e0' : '#f4f6f8';
+              el.style.color = isRecent ? '#e65100' : '#333';
+              el.style.borderColor = isRecent ? '#ffb74d' : '#ccc';
+              el.style.fontWeight = 'normal';
+              if (el.dataset.wname === wName) {
+                  el.style.background = '#e3f2fd';
+                  el.style.color = '#1976d2';
+                  el.style.borderColor = '#1976d2';
+                  el.style.fontWeight = 'bold';
+              }
+          });
+          handleWorkNameChange();
+      };
 
       window.handleWorkNameChange = () => {
         const wName = document.getElementById('rec_work_name')?.value || "";
@@ -1663,6 +1681,29 @@ function createSignboardMarker(name, pos, icon, id) {
           let ridgeUI = p.isMarker ? '' : `<div style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #80deea;"><label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗 (伝達事項)</label><div style="font-size:12px; color:#00695c; margin-bottom:8px;">📌 現在の畝数: <b>${currentUneCount}</b></div><div style="display:flex; gap:10px;"><div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" id="rec_worked_ridges" class="form-input" placeholder="例: 1-5" style="margin-bottom:0;"></div><div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" id="rec_next_ridge" class="form-input" placeholder="例: 6" value="${lastNextRidge}" style="margin-bottom:0;"></div></div></div>`;
           
           let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster.filter(w => w.displayPlace === '圃場');
+          
+          let recentWorks = [];
+          for (let id in loadedPolygons) {
+              if (loadedPolygons[id].photos) {
+                  loadedPolygons[id].photos.forEach(ph => {
+                      if (ph.author === currentUser && ph.type === 'work' && ph.data && ph.data.workName) {
+                          recentWorks.push({ name: ph.data.workName, time: ph.time ? new Date(ph.date.replace(/\//g,'-')+'T'+ph.time+':00').getTime() : new Date(ph.date.replace(/\//g,'-')).getTime() });
+                      }
+                  });
+              }
+          }
+          recentWorks.sort((a,b) => b.time - a.time);
+          let uniqueRecent = [...new Set(recentWorks.map(r => r.name))].slice(0, 3);
+          
+          let recentChipsHTML = '';
+          if (uniqueRecent.length > 0) {
+              recentChipsHTML = `<div style="margin-bottom:10px;"><div style="font-size:11px; color:#888; margin-bottom:5px;">🕒 最近使った作業</div><div style="display:flex; flex-wrap:wrap; gap:8px;">` + 
+                  uniqueRecent.map(wName => `<button type="button" class="work-chip" data-recent="true" data-wname="${wName}" onclick="selectWorkChip('${wName}')" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>`).join('') + `</div></div>`;
+          }
+
+          let allChipsHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">` + 
+              availableWorks.map(w => `<button type="button" class="work-chip" data-recent="false" data-wname="${w.name}" onclick="selectWorkChip('${w.name}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`).join('') + `</div>`;
+
           let wNames = '<option value="">選択してください</option>' + availableWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
           let wStats = '<option value="">選択してください</option>' + pdlWorkStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
           let crops = '<option value="">選択してください</option>' + pdlCrops.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
@@ -1701,7 +1742,10 @@ function createSignboardMarker(name, pos, icon, id) {
           `;
 
           html = `${targetSection}<label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;"><label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}">
-                  <label class="form-label">🚜 作業名</label><select id="rec_work_name" class="form-input" onchange="handleWorkNameChange()">${wNames}</select>
+                  <label class="form-label">🚜 作業名</label>
+                  ${recentChipsHTML}
+                  ${allChipsHTML}
+                  <select id="rec_work_name" class="form-input" style="display:none;" onchange="handleWorkNameChange()">${wNames}</select>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
                   ${cropSection}${ridgeUI}<div id="used_items_section"></div><div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div><div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>${timeUI}${workTimeUI}<label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label><select id="rec_progress_status" class="form-input">${wStats}</select>${exPhotos}${photoUI}`;
         } else if (p.isMarker) {
@@ -1725,7 +1769,11 @@ function createSignboardMarker(name, pos, icon, id) {
             if(document.getElementById('rec_worked_ridges')) document.getElementById('rec_worked_ridges').value = d.workedRidges || '';
             if(document.getElementById('rec_next_ridge')) document.getElementById('rec_next_ridge').value = d.nextRidge || '';
             
-            handleWorkNameChange();
+            if (d.workName && typeof selectWorkChip === 'function') {
+                selectWorkChip(d.workName);
+            } else {
+                handleWorkNameChange();
+            }
             
             if (d.detailedWorks) {
                const savedDetails = d.detailedWorks.split(',').map(s=>s.trim());

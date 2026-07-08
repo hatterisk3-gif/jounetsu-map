@@ -1073,7 +1073,7 @@ window.handleMapClick = (pageX, pageY) => {
             document.getElementById('cadAngle').value = angle;
             window.cadAlignMapHeading(); // 🌟 地図も垂直に合わせる
             window.updateCadPreviewCount(); // 畝数を自動計算
-            window.cadGenerateLines(); // 選んだ線に合わせてまっすぐ生成させる
+            window.saveCadStateToHistory();
         }
         window.cadPinMode = null;
         if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
