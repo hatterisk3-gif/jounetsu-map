@@ -86,7 +86,7 @@ function parseWithGemini(params) {
     throw new Error('GEMINI_API_KEY が設定されていません。GASのスクリプトプロパティを確認してください。');
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
   const prompt = `
 以下の自由記述テキストから、作業記録に必要な情報を抽出・推測し、必ず提供されたリストの中にある名前に変換してください。
@@ -168,7 +168,7 @@ function parseCropImageWithGemini(params) {
     throw new Error('GEMINI_API_KEY が設定されていません。GASのスクリプトプロパティを確認してください。');
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
 const prompt = `
 あなたは農業の専門家として、提供された作型表（栽培カレンダー）の画像から、指定された産地の「播種（まき時期）」「定植（植え付け）」「収穫」のスケジュールを正確に読み取り、JSONフォーマットで出力してください。
