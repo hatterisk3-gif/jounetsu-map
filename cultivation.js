@@ -1218,6 +1218,7 @@ function addCroptypeToList() {
     const crop = document.getElementById('crCrop').value;
     const climate = document.getElementById('crClimate').value;
     const characteristics = document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '';
+    const maker = document.getElementById('crMaker') ? document.getElementById('crMaker').value : '';
     
     if (!variety || !season) {
         alert('品種とまき時期は必ず入力してください。');
@@ -1246,6 +1247,7 @@ function addCroptypeToList() {
         season: season,
         climate: climate,
         characteristics: characteristics,
+        maker: maker,
         sowing: sowing,
         planting: planting,
         harvesting: harvesting,
@@ -1311,11 +1313,12 @@ function renderCrPendingList() {
         div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #fff; border: 1px solid #ccc; border-radius: 4px;';
         
         let fileText = item.fileName ? ` <span style="font-size:10px; color:#1976d2; background:#e3f2fd; padding:2px 4px; border-radius:2px;">📎 ${item.fileName}</span>` : '';
+        let makerText = item.maker ? ` <span style="font-size:10px; color:#388e3c; background:#e8f5e9; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏢 ${item.maker}</span>` : '';
         let charText = item.characteristics ? ` <span style="font-size:10px; color:#e65100; background:#fff3e0; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏷️ ${item.characteristics}</span>` : '';
         
         div.innerHTML = `
             <div style="font-size: 13px; font-weight: bold; color: #333;">
-                ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${fileText}${charText}
+                ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${fileText}${makerText}${charText}
             </div>
             <button onclick="removeCroptypeFromList(${index})" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer;">削除</button>
         `;
@@ -1642,7 +1645,8 @@ function applyAICropExtractionResult(data) {
     const allTds = table.querySelectorAll('td[data-month-index]');
     allTds.forEach(td => {
         td.dataset.task = '';
-        td.querySelector('div').style.background = 'transparent';
+        const div = td.querySelector('div');
+        if (div) div.style.background = 'transparent';
     });
     
     // Auto-fill crop, climate, variety if present
@@ -1698,10 +1702,94 @@ function applyAICropExtractionResult(data) {
         }
     }
     
-    // Apply sowing
-    if (data.sowing && Array.isArray(data.sowing)) {
-        data.sowing.forEach(item => {
-            let idx = mapPeriodToIndex(item.month, item.period);
+    if (data.maker) {
+        let crMaker = document.getElementById('crMaker');
+        if (crMaker) {
+            crMaker.value = data.maker;
+        }
+    }
+    
+    // Process multiple types if available
+    if (data.types && Array.isArray(data.types) && data.types.length > 0) {
+        const fileInput = document.getElementById('crFile');
+        const file = fileInput && fileInput.files.length > 0 ? fileInput.files[0] : null;
+        
+        const processPayloads = (fileData) => {
+            data.types.forEach(t => {
+                let s_arr = [];
+                let p_arr = [];
+                let h_arr = [];
+                
+                if (t.sowing && Array.isArray(t.sowing)) {
+                    t.sowing.forEach(item => {
+                        let idx = mapPeriodToIndex(item.month, item.period);
+                        if (idx >= 0) s_arr.push(idx);
+                    });
+                }
+                if (t.planting && Array.isArray(t.planting)) {
+                    t.planting.forEach(item => {
+                        let idx = mapPeriodToIndex(item.month, item.period);
+                        if (idx >= 0) p_arr.push(idx);
+                    });
+                }
+                if (t.harvesting && Array.isArray(t.harvesting)) {
+                    t.harvesting.forEach(item => {
+                        let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
+                        let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
+                        if (endIdx < startIdx && endIdx !== -1) endIdx += 12 * 6;
+                        if (startIdx >= 0 && endIdx >= startIdx) {
+                            for (let i = startIdx; i <= endIdx + 1; i++) {
+                                h_arr.push(i);
+                            }
+                        }
+                    });
+                }
+                
+                const payload = {
+                    crop: document.getElementById('crCrop') ? document.getElementById('crCrop').value : '',
+                    variety: document.getElementById('crVariety') ? document.getElementById('crVariety').value : '',
+                    season: t.type_name || '',
+                    climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
+                    characteristics: document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '',
+                    maker: document.getElementById('crMaker') ? document.getElementById('crMaker').value : '',
+                    sowing: s_arr,
+                    planting: p_arr,
+                    harvesting: h_arr,
+                    fileData: fileData || '',
+                    fileName: file ? file.name : '',
+                    fileType: file ? file.type : ''
+                };
+                crPendingCroptypes.push(payload);
+            });
+            renderCrPendingList();
+            alert(`AIによる自動入力が完了し、${data.types.length}件の作型をリストに追加しました。不要な作型は「削除」してください。`);
+        };
+        
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                processPayloads(e.target.result);
+            };
+            reader.readAsDataURL(file);
+        } else {
+            processPayloads('');
+        }
+    } else {
+        // Fallback for single format
+        // Apply sowing
+        if (data.sowing && Array.isArray(data.sowing)) {
+            data.sowing.forEach(item => {
+                let idx = mapPeriodToIndex(item.month, item.period);
+                if (idx >= 0) {
+                    let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                    if (td) {
+                        td.dataset.task = 'sowing';
+                        td.querySelector('div').style.background = '#8D6E63';
+                    }
+                }
+            });
+        } else if (data.sowing) {
+            let idx = mapPeriodToIndex(data.sowing.month, data.sowing.period);
             if (idx >= 0) {
                 let td = table.querySelector(`td[data-month-index="${idx}"]`);
                 if (td) {
@@ -1709,22 +1797,22 @@ function applyAICropExtractionResult(data) {
                     td.querySelector('div').style.background = '#8D6E63';
                 }
             }
-        });
-    } else if (data.sowing) {
-        let idx = mapPeriodToIndex(data.sowing.month, data.sowing.period);
-        if (idx >= 0) {
-            let td = table.querySelector(`td[data-month-index="${idx}"]`);
-            if (td) {
-                td.dataset.task = 'sowing';
-                td.querySelector('div').style.background = '#8D6E63';
-            }
         }
-    }
-    
-    // Apply planting
-    if (data.planting && Array.isArray(data.planting)) {
-        data.planting.forEach(item => {
-            let idx = mapPeriodToIndex(item.month, item.period);
+        
+        // Apply planting
+        if (data.planting && Array.isArray(data.planting)) {
+            data.planting.forEach(item => {
+                let idx = mapPeriodToIndex(item.month, item.period);
+                if (idx >= 0) {
+                    let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                    if (td) {
+                        td.dataset.task = 'planting';
+                        td.querySelector('div').style.background = '#4CAF50';
+                    }
+                }
+            });
+        } else if (data.planting) {
+            let idx = mapPeriodToIndex(data.planting.month, data.planting.period);
             if (idx >= 0) {
                 let td = table.querySelector(`td[data-month-index="${idx}"]`);
                 if (td) {
@@ -1732,40 +1820,31 @@ function applyAICropExtractionResult(data) {
                     td.querySelector('div').style.background = '#4CAF50';
                 }
             }
-        });
-    } else if (data.planting) {
-        let idx = mapPeriodToIndex(data.planting.month, data.planting.period);
-        if (idx >= 0) {
-            let td = table.querySelector(`td[data-month-index="${idx}"]`);
-            if (td) {
-                td.dataset.task = 'planting';
-                td.querySelector('div').style.background = '#4CAF50';
-            }
         }
-    }
-    
-    // Apply harvesting
-    if (data.harvesting && Array.isArray(data.harvesting)) {
-        data.harvesting.forEach(item => {
-            let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
-            let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
-            
-            if (endIdx < startIdx && endIdx !== -1) {
-                endIdx += 12 * 6; // next year
-            }
-            
-            if (startIdx >= 0 && endIdx >= startIdx) {
-                for (let i = startIdx; i <= endIdx + 1; i++) { // Include upper bound + 1 to cover "後" half of the period
-                    let td = table.querySelector(`td[data-month-index="${i}"]`);
-                    if (td) {
-                        td.dataset.task = 'harvesting';
-                        td.querySelector('div').style.background = '#FF9800';
+        
+        // Apply harvesting
+        if (data.harvesting && Array.isArray(data.harvesting)) {
+            data.harvesting.forEach(item => {
+                let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
+                let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
+                
+                if (endIdx < startIdx && endIdx !== -1) {
+                    endIdx += 12 * 6; // next year
+                }
+                
+                if (startIdx >= 0 && endIdx >= startIdx) {
+                    for (let i = startIdx; i <= endIdx + 1; i++) { // Include upper bound + 1 to cover "後" half of the period
+                        let td = table.querySelector(`td[data-month-index="${i}"]`);
+                        if (td) {
+                            td.dataset.task = 'harvesting';
+                            td.querySelector('div').style.background = '#FF9800';
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
+        
+        alert("AIによる自動入力が完了しました。はみ出た箇所や不足箇所を微調整してください。");
     }
-    
-    alert("AIによる自動入力が完了しました。はみ出た箇所や不足箇所を微調整してください。");
 }
 

@@ -177,33 +177,45 @@ const prompt = `
 ${params.climate || '一般地'}（※もし画像から産地が特定できる場合は、画像の内容を優先して抽出してください）
 
 【抽出ルール】
-1. 指定された産地の行（または列）を探し、そこに記載されている図表（例：赤丸＝播種、緑の三角＝定植、緑の帯＝収穫）の時期を読み取ります。
+1. 画像内に複数の作型（例：春まき、夏まき、秋まきなど）の行が記載されている場合、それぞれを独立した作型としてすべて抽出してください。
 2. 時期は「月」と「上/中/下（上旬/中旬/下旬）」で特定してください。
 3. 月は数値（1〜12）、時期は文字列（"上", "中", "下"）とします。
 4. 播種（sowing）と定植（planting）は対象の「月」と「時期」を抽出します。複数ある場合は配列で返してください（単数でも配列でも可）。
 5. 収穫（harvesting）は「期間（帯）」で示されることが多いため、開始（start）と終了（end）の「月」と「時期」を配列で抽出します。
-6. 追加として、画像内に記載されている「作物名（crop）」「産地（climate）」「品種名（variety）」があれば文字列として抽出してください。
+6. 追加として、画像内に記載されている「メーカー名（maker）」「作物名（crop）」「産地（climate）」「品種名（variety）」があれば文字列として抽出してください。（メーカー名は、サカタのタネ、タキイ種苗などの種苗会社名です）
 7. さらに、品種の「特性（ネコブ耐病性、アントシアンレス、色、形などのアピールポイントや特徴）」の記載があれば、それを短い文字列の配列として「characteristics」に抽出してください。
 8. 画像内に該当データが存在しない項目は null にしてください。
 
 【出力フォーマット】
 以下のJSONフォーマットのみを出力してください（マークダウンのコードブロック \`\`\`json は不要です）。
 {
+  "maker": "サカタのタネ",
   "crop": "キャベツ",
   "climate": "一般地",
   "variety": "初秋",
   "characteristics": ["ネコブ耐病性", "アントシアンレス", "濃緑色"],
-  "sowing": [
-    { "month": 1, "period": "上" },
-    { "month": 2, "period": "中" }
-  ],
-  "planting": [
-    { "month": 3, "period": "中" }
-  ],
-  "harvesting": [
+  "types": [
     {
-      "start_month": 5, "start_period": "上",
-      "end_month": 6, "end_period": "下"
+      "type_name": "春まき",
+      "sowing": [
+        { "month": 1, "period": "上" },
+        { "month": 2, "period": "中" }
+      ],
+      "planting": [
+        { "month": 3, "period": "中" }
+      ],
+      "harvesting": [
+        {
+          "start_month": 5, "start_period": "上",
+          "end_month": 6, "end_period": "下"
+        }
+      ]
+    },
+    {
+      "type_name": "夏まき",
+      "sowing": [ ... ],
+      "planting": [ ... ],
+      "harvesting": [ ... ]
     }
   ]
 }
@@ -2885,18 +2897,24 @@ function saveCroptypeDB(params) {
     let sheet = ss.getSheetByName('作型DB');
     if (!sheet) {
       sheet = ss.insertSheet('作型DB');
-      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)']);
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)', 'メーカー']);
     } else {
-      // 既存シートに「特性(タグ)」カラムがない場合は追加
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      // 既存シートに「特性(タグ)」「メーカー」カラムがない場合は追加
+      let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
       if (headers.indexOf('特性(タグ)') === -1) {
         sheet.getRange(1, headers.length + 1).setValue('特性(タグ)');
+        headers.push('特性(タグ)');
+      }
+      if (headers.indexOf('メーカー') === -1) {
+        sheet.getRange(1, headers.length + 1).setValue('メーカー');
+        headers.push('メーカー');
       }
     }
     
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const tagsColIndex = headers.indexOf('特性(タグ)') + 1; // 1-based index
+    const makerColIndex = headers.indexOf('メーカー') + 1; // 1-based index
     
     let updated = false;
     for (let i = 1; i < data.length; i++) {
@@ -2910,6 +2928,9 @@ function saveCroptypeDB(params) {
         sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
         if (tagsColIndex > 0) {
           sheet.getRange(i + 1, tagsColIndex).setValue(params.characteristics || '');
+        }
+        if (makerColIndex > 0) {
+          sheet.getRange(i + 1, makerColIndex).setValue(params.maker || '');
         }
         updated = true;
         break;
@@ -2926,12 +2947,15 @@ function saveCroptypeDB(params) {
         JSON.stringify(params.planting || []),
         JSON.stringify(params.harvesting || [])
       ];
-      // 8列目以降に対応するため、ヘッダー長に合わせる
+      // ヘッダー長に合わせる
       while (newRow.length < headers.length) {
         newRow.push('');
       }
       if (tagsColIndex > 0) {
         newRow[tagsColIndex - 1] = params.characteristics || '';
+      }
+      if (makerColIndex > 0) {
+        newRow[makerColIndex - 1] = params.maker || '';
       }
       sheet.appendRow(newRow);
     }
