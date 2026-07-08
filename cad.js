@@ -1257,7 +1257,7 @@ window.initCadTouchEvents = () => {
         pendingCenter = null;
         pendingZoom = null;
 
-        if (window.cadPinMode === 'nakamichi') {
+        if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') {
             ignoreDrag = true;
             window.cadNakamichiIsDrawing = true;
             window.nakamichiTempPt = window.getPageLatLng(startPageX, startPageY);
@@ -1265,12 +1265,12 @@ window.initCadTouchEvents = () => {
             if (window.nakamichiTempPt) {
                 window.nakamichiTempLine = new google.maps.Polyline({
                     path: [window.nakamichiTempPt, window.nakamichiTempPt],
-                    strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6),
+                    strokeColor: window.cadPinMode === 'drainage' ? '#00BCD4' : '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6),
                     map: window.cadMap, zIndex: 9999
                 });
             }
             const msgEl = document.getElementById('cadPinModeMsg');
-            if (msgEl) { msgEl.innerText = 'ドラッグして線を引いてください。離すと確定します。'; msgEl.style.color = "#E91E63"; }
+            if (msgEl) { msgEl.innerText = 'ドラッグして線を引いてください。離すと確定します。'; msgEl.style.color = window.cadPinMode === 'drainage' ? '#00BCD4' : "#E91E63"; }
             return;
         }
 
@@ -1289,7 +1289,7 @@ window.initCadTouchEvents = () => {
         
         const currentX = e.pageX; const currentY = e.pageY;
 
-        if (window.cadPinMode === 'nakamichi' && window.cadNakamichiIsDrawing && window.nakamichiTempPt) {
+        if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing && window.nakamichiTempPt) {
             const currentLatLng = window.getPageLatLng(currentX, currentY);
             if (currentLatLng && window.nakamichiTempLine) {
                 window.nakamichiTempLine.setPath([window.nakamichiTempPt, currentLatLng]);
@@ -1320,15 +1320,20 @@ window.initCadTouchEvents = () => {
     }, { capture: true });
 
     wrapper.addEventListener('mouseup', (e) => {
-        if (window.cadPinMode === 'nakamichi' && window.cadNakamichiIsDrawing) {
+        if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing) {
             window.cadNakamichiIsDrawing = false;
             let distPx = Math.hypot(e.pageX - startPageX, e.pageY - startPageY);
             if (window.nakamichiTempPt && distPx > 10) {
                 const endLatLng = window.getPageLatLng(e.pageX, e.pageY);
                 if (endLatLng && window.nakamichiTempLine) {
                     let path = [{ lat: window.nakamichiTempPt.lat(), lng: window.nakamichiTempPt.lng() }, { lat: endLatLng.lat(), lng: endLatLng.lng() }];
-                    window.cadNakamichiLines.push(path);
-                    window.drawNakamichiVisual(path);
+                    if (window.cadPinMode === 'drainage') {
+                        window.cadDrainageLines.push(path);
+                        window.drawDrainageVisual(path);
+                    } else {
+                        window.cadNakamichiLines.push(path);
+                        window.drawNakamichiVisual(path);
+                    }
                     
                     window.cadPinMode = null;
                     const msgEl = document.getElementById('cadPinModeMsg');
@@ -1417,7 +1422,7 @@ window.initCadTouchEvents = () => {
             startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
             isDragging = false;
             
-            if (window.cadPinMode === 'nakamichi') {
+            if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') {
                 ignoreDrag = true;
                 window.cadNakamichiIsDrawing = true;
                 window.nakamichiTempPt = window.getPageLatLng(startPageX, startPageY);
@@ -1425,12 +1430,12 @@ window.initCadTouchEvents = () => {
                 if (window.nakamichiTempPt) {
                     window.nakamichiTempLine = new google.maps.Polyline({
                         path: [window.nakamichiTempPt, window.nakamichiTempPt],
-                        strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6),
+                        strokeColor: window.cadPinMode === 'drainage' ? '#00BCD4' : '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6),
                         map: window.cadMap, zIndex: 9999
                     });
                 }
                 const msgEl = document.getElementById('cadPinModeMsg');
-                if (msgEl) { msgEl.innerText = 'ドラッグして線を引いてください。離すと確定します。'; msgEl.style.color = "#E91E63"; }
+                if (msgEl) { msgEl.innerText = 'ドラッグして線を引いてください。離すと確定します。'; msgEl.style.color = window.cadPinMode === 'drainage' ? '#00BCD4' : "#E91E63"; }
             }
 
             if (!ignoreDrag) {
@@ -1487,7 +1492,7 @@ window.initCadTouchEvents = () => {
         } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
             const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
 
-            if (window.cadPinMode === 'nakamichi' && window.cadNakamichiIsDrawing && window.nakamichiTempPt) {
+            if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing && window.nakamichiTempPt) {
                 if (e.cancelable) { e.preventDefault(); }
                 e.stopPropagation();
                 const currentLatLng = window.getPageLatLng(currentX, currentY);
@@ -1526,7 +1531,7 @@ window.initCadTouchEvents = () => {
         if (e.touches.length < 2) { initialPinchDist = null; initialPinchAngle = null; pinchMode = null; }
         if (e.touches.length === 0) {
             
-            if (window.cadPinMode === 'nakamichi' && window.cadNakamichiIsDrawing) {
+            if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing) {
                 window.cadNakamichiIsDrawing = false;
                 let endX = lastTouchX || startPageX;
                 let endY = lastTouchY || startPageY;
@@ -1535,8 +1540,13 @@ window.initCadTouchEvents = () => {
                     const endLatLng = window.getPageLatLng(endX, endY);
                     if (endLatLng && window.nakamichiTempLine) {
                         let path = [{ lat: window.nakamichiTempPt.lat(), lng: window.nakamichiTempPt.lng() }, { lat: endLatLng.lat(), lng: endLatLng.lng() }];
-                        window.cadNakamichiLines.push(path);
-                        window.drawNakamichiVisual(path);
+                        if (window.cadPinMode === 'drainage') {
+                            window.cadDrainageLines.push(path);
+                            window.drawDrainageVisual(path);
+                        } else {
+                            window.cadNakamichiLines.push(path);
+                            window.drawNakamichiVisual(path);
+                        }
                         
                         window.cadPinMode = null;
                         const msgEl = document.getElementById('cadPinModeMsg');
@@ -1661,9 +1671,14 @@ window.openCADMode = async (id) => {
     if (p.uneSimData) {
         try {
             const saved = JSON.parse(p.uneSimData);
-            if (saved.angle !== undefined) document.getElementById('cadAngle').value = saved.angle;
-            if (saved.width !== undefined) document.getElementById('cadWidth').value = saved.width;
-            if (saved.uneCount !== undefined) document.getElementById('cadUneCount').value = saved.uneCount;
+            document.getElementById('cadAngle').value = saved.angle !== undefined ? saved.angle : 0;
+            document.getElementById('cadWidth').value = saved.width !== undefined ? saved.width : 150;
+            document.getElementById('cadUneCount').value = saved.uneCount !== undefined ? saved.uneCount : 0;
+            
+            const marginSideEl = document.getElementById('cadMarginSide');
+            const marginEndEl = document.getElementById('cadMarginEnd');
+            if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 50;
+            if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 250;
 
             if (saved.pins) {
                 saved.pins.forEach(pin => {
@@ -1713,6 +1728,16 @@ window.openCADMode = async (id) => {
             window.reassignLabels();
             switchCadTab(2);
         } catch (e) { }
+    } else {
+        document.getElementById('cadAngle').value = 0;
+        document.getElementById('cadWidth').value = 150;
+        
+        const marginSideEl = document.getElementById('cadMarginSide');
+        const marginEndEl = document.getElementById('cadMarginEnd');
+        if (marginSideEl) marginSideEl.value = 50;
+        if (marginEndEl) marginEndEl.value = 250;
+        
+        updateCadPreviewCount();
     }
 
     // 起動直後の状態を履歴0番目として保存
@@ -1994,8 +2019,8 @@ window.cadAddMakura = () => {
     const angleEl = document.getElementById('cadAngle');
     const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
     
-    const widthEl = document.getElementById('cadWidth');
-    let actualWidthM = widthEl && widthEl.value ? parseFloat(widthEl.value) / 100 : 1.5;
+    const marginEndEl = document.getElementById('cadMarginEnd');
+    let actualWidthM = marginEndEl && marginEndEl.value ? parseFloat(marginEndEl.value) / 100 : 2.5;
     
     const p = loadedPolygons[window.cadTargetId];
     if (!p || !p.coords || p.coords.length < 3) return;
@@ -2190,9 +2215,15 @@ window.cadGenerateLines = () => {
             if (-projDist > maxNegDist) maxNegDist = -projDist;
         });
 
+        const marginSideEl = document.getElementById('cadMarginSide');
+        const marginEndEl = document.getElementById('cadMarginEnd');
+        const sideMarginMeters = marginSideEl && marginSideEl.value ? parseFloat(marginSideEl.value) / 100 : 0;
+        const endMarginMeters = marginEndEl && marginEndEl.value ? parseFloat(marginEndEl.value) / 100 : 0;
+
         const totalWidth = maxPosDist + maxNegDist;
-        actualWidthM = totalWidth / uneCount;
-        startOffset = -maxNegDist + actualWidthM / 2;
+        const availableWidth = Math.max(0, totalWidth - sideMarginMeters * 2);
+        actualWidthM = uneCount > 0 ? availableWidth / uneCount : 0;
+        startOffset = -maxNegDist + sideMarginMeters + actualWidthM / 2;
 
         const bbox = turf.bbox(tPoly);
         const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' });
@@ -2219,11 +2250,6 @@ window.cadGenerateLines = () => {
 
         const lineLen = diagDist + 40;
         let rects = [];
-        
-        const marginSideEl = document.getElementById('cadMarginSide');
-        const marginEndEl = document.getElementById('cadMarginEnd');
-        const sideMarginMeters = marginSideEl && marginSideEl.value ? parseFloat(marginSideEl.value) / 100 : 0;
-        const endMarginMeters = marginEndEl && marginEndEl.value ? parseFloat(marginEndEl.value) / 100 : 0;
 
         for (let i = 0; i < uneCount; i++) {
             let offset = startOffset + i * actualWidthM;
