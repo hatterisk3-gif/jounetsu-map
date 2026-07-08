@@ -1038,6 +1038,13 @@ window.handleMapClick = (pageX, pageY) => {
 
     const msgEl = document.getElementById('cadPinModeMsg');
 
+    if (window.cadPinMode === 'makuraune') {
+        window.cadExecuteAddMakura(latLng);
+        window.cadPinMode = null;
+        if (msgEl) { msgEl.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。'; msgEl.style.color = "#FF9800"; }
+        return;
+    }
+
     if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') return;
 
     if (window.cadPinMode === 'snap_line') {
@@ -2013,8 +2020,13 @@ window.cadAddCustomShape = (type) => {
 };
 
 window.cadAddMakura = () => {
-    let center = window.cadMap.getCenter(); 
-    let centerPt = turf.point([center.lng(), center.lat()]);
+    window.cadPinMode = 'makuraune';
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) { msgEl.innerText = '枕畝を配置したい場所をタップしてください。'; msgEl.style.color = "#ea580c"; }
+};
+
+window.cadExecuteAddMakura = (latLng) => {
+    let centerPt = turf.point([latLng.lng(), latLng.lat()]);
     
     const angleEl = document.getElementById('cadAngle');
     const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
@@ -2033,6 +2045,19 @@ window.cadAddMakura = () => {
     let pt1 = turf.destination(centerPt, 500, makuraAngle + 180, { units: 'meters' });
     let length = 1000;
     
+    let avoidPolys = window.cadUnePolygons.map(poly => {
+        let path = poly.getPath().getArray();
+        let coords = path.map(pt => [pt.lng(), pt.lat()]);
+        if (coords.length > 2) {
+            if (coords[0][0] !== coords[coords.length-1][0] || coords[0][1] !== coords[coords.length-1][1]) {
+                coords.push([coords[0][0], coords[0][1]]);
+            }
+            let t = turf.polygon([coords]);
+            return turf.buffer(t, 0.2 / 1000, { units: 'kilometers' });
+        }
+        return null;
+    }).filter(Boolean);
+    
     let stepMeters = 0.5;
     let validSegments = [];
     let currentSegment = null;
@@ -2043,6 +2068,15 @@ window.cadAddMakura = () => {
         let cR = turf.destination(c, actualWidthM / 2, makuraAngle - 90, {units: 'meters'});
         
         let isValid = turf.booleanPointInPolygon(cL, tPoly) && turf.booleanPointInPolygon(cR, tPoly);
+        if (isValid) {
+            for (let av of avoidPolys) {
+                if (turf.booleanPointInPolygon(cL, av) || turf.booleanPointInPolygon(cR, av)) {
+                    isValid = false;
+                    break;
+                }
+            }
+        }
+        
         if (isValid) {
             if (!currentSegment) currentSegment = { start: d, end: d };
             else currentSegment.end = d;
