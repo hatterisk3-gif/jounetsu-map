@@ -1072,8 +1072,8 @@ window.handleMapClick = (pageX, pageY) => {
             
             document.getElementById('cadAngle').value = angle;
             window.cadAlignMapHeading(); // 🌟 地図も垂直に合わせる
-            if (window.cadUnePolygons && window.cadUnePolygons.length > 0) window.cadGenerateLines();
-            else window.saveCadStateToHistory();
+            window.updateCadPreviewCount(); // 畝数を自動計算
+            window.cadGenerateLines(); // 選んだ線に合わせてまっすぐ生成させる
         }
         window.cadPinMode = null;
         if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
@@ -1783,67 +1783,6 @@ window.cadRotateMap = (deg) => {
     let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
     if (displayAngle < 0) displayAngle += 360;
     document.getElementById('cadAngle').value = displayAngle;
-    updateCadPreviewCount();
-};
-
-window.cadSnapAngle = () => {
-    if (!window.cadTargetId) return;
-    const p = loadedPolygons[window.cadTargetId];
-    if (!p) return;
-
-    let rawCoords = p.coords;
-    if (typeof rawCoords === 'string') {
-        try {
-            rawCoords = JSON.parse(rawCoords);
-        } catch (e) {
-            rawCoords = [];
-        }
-    }
-    if (!rawCoords || !Array.isArray(rawCoords) || rawCoords.length === 0) return;
-
-    let currentAngle = parseFloat(document.getElementById('cadAngle').value) || 0;
-
-    let coords = [];
-    for (let pt of rawCoords) {
-        let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
-        let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
-        if (!isNaN(lng) && !isNaN(lat)) {
-            coords.push([lng, lat]);
-        }
-    }
-
-    if (coords.length < 2) return;
-
-    let minDiff = Infinity;
-    let bestAngle = currentAngle;
-
-    for (let i = 0; i < coords.length; i++) {
-        let c1 = coords[i];
-        let c2 = coords[(i + 1) % coords.length];
-
-        if (c1[0] === c2[0] && c1[1] === c2[1]) continue;
-
-        let pt1 = turf.point(c1);
-        let pt2 = turf.point(c2);
-        let bearing = turf.bearing(pt1, pt2);
-
-        let diff = (bearing - currentAngle) % 360;
-        if (diff > 180) diff -= 360;
-        if (diff < -180) diff += 360;
-
-        let mod90 = ((diff % 90) + 90) % 90;
-        let diffTo90 = Math.min(mod90, 90 - mod90);
-
-        if (diffTo90 < minDiff) {
-            minDiff = diffTo90;
-            let perfectMultipleOf90 = Math.round(diff / 90) * 90;
-            bestAngle = bearing - perfectMultipleOf90;
-        }
-    }
-
-    bestAngle = Math.round(((bestAngle % 360) + 360) % 360);
-    document.getElementById('cadAngle').value = bestAngle;
-    window.cadAlignMapHeading();
     updateCadPreviewCount();
 };
 
