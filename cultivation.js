@@ -1278,17 +1278,31 @@ function addCroptypeToList() {
         });
         
         Promise.all(filePromises).then(fileDataArray => {
-            payload.files = fileDataArray;
+            // Append previously edited files if any
+            if (window._crEditingFiles && window._crEditingFiles.length > 0) {
+                payload.files = window._crEditingFiles.concat(fileDataArray);
+            } else {
+                payload.files = fileDataArray;
+            }
+            window._crEditingFiles = null;
             crPendingCroptypes.push(payload);
             resetCrInputArea();
             renderCrPendingList();
         }).catch(err => {
             console.error(err);
+            if (window._crEditingFiles && window._crEditingFiles.length > 0) {
+                payload.files = window._crEditingFiles;
+            }
+            window._crEditingFiles = null;
             crPendingCroptypes.push(payload);
             resetCrInputArea();
             renderCrPendingList();
         });
     } else {
+        if (window._crEditingFiles && window._crEditingFiles.length > 0) {
+            payload.files = window._crEditingFiles;
+        }
+        window._crEditingFiles = null;
         crPendingCroptypes.push(payload);
         resetCrInputArea();
         renderCrPendingList();
@@ -1315,6 +1329,71 @@ function resetCrInputArea() {
 }
 
 function removeCroptypeFromList(index) {
+    crPendingCroptypes.splice(index, 1);
+    renderCrPendingList();
+}
+
+function editPendingCroptype(index) {
+    const item = crPendingCroptypes[index];
+    if (!item) return;
+    
+    // Set UI values
+    if (document.getElementById('crVariety')) document.getElementById('crVariety').value = item.variety || '';
+    if (document.getElementById('crSeason')) document.getElementById('crSeason').value = item.season || '';
+    if (document.getElementById('crMaker')) document.getElementById('crMaker').value = item.maker || '';
+    if (document.getElementById('crCharacteristics')) document.getElementById('crCharacteristics').value = item.characteristics || '';
+    if (document.getElementById('crHarvestSeason')) document.getElementById('crHarvestSeason').value = item.harvestSeason || '';
+    
+    // Files are hard to re-attach to the file input (security limits). 
+    // We can store them globally and re-attach when saving, but for simplicity we keep them if we just edit the UI?
+    // Wait, if we splice, we lose files. So we must put them back in the new payload.
+    // Instead of full reset, let's keep crCurrentData and files?
+    // Let's populate the table:
+    const table = document.getElementById('crTable');
+    if (table) {
+        const tds = table.querySelectorAll('td[data-month-index]');
+        tds.forEach(td => {
+            td.dataset.task = '';
+            const div = td.querySelector('div');
+            if (div) div.style.backgroundColor = '';
+        });
+        
+        if (item.sowing) {
+            item.sowing.forEach(idx => {
+                let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                if (td) {
+                    td.dataset.task = 'sowing';
+                    td.querySelector('div').style.background = '#8D6E63';
+                }
+            });
+        }
+        if (item.planting) {
+            item.planting.forEach(idx => {
+                let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                if (td) {
+                    td.dataset.task = 'planting';
+                    td.querySelector('div').style.background = '#4CAF50';
+                }
+            });
+        }
+        if (item.harvesting) {
+            item.harvesting.forEach(idx => {
+                let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                if (td) {
+                    td.dataset.task = 'harvesting';
+                    td.querySelector('div').style.background = '#FF9800';
+                }
+            });
+        }
+    }
+    
+    // We can't re-populate <input type="file">. 
+    // If the user clicks "リストに追加" again, it creates a new item with no files, 
+    // UNLESS we temporarily hold the files from the edited item.
+    // Let's store edited files globally.
+    window._crEditingFiles = item.files || [];
+    
+    // Remove from pending list
     crPendingCroptypes.splice(index, 1);
     renderCrPendingList();
 }
@@ -1368,7 +1447,10 @@ function renderCrPendingList() {
                 <div style="font-size: 13px; font-weight: bold; color: #333;">
                     ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${filesText}${harvestSeasonText}${makerText}${charText}
                 </div>
-                <button onclick="removeCroptypeFromList(${index})" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-left: 8px;">削除</button>
+                <div>
+                    <button onclick="editPendingCroptype(${index})" style="background: #2196F3; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-left: 8px;">編集</button>
+                    <button onclick="removeCroptypeFromList(${index})" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-left: 8px;">削除</button>
+                </div>
             </div>
             ${calendarHtml}
         `;
@@ -1784,14 +1866,34 @@ function applyAICropExtractionResult(data) {
                 
                 if (t.sowing && Array.isArray(t.sowing)) {
                     t.sowing.forEach(item => {
-                        let idx = mapPeriodToIndex(item.month, item.period);
-                        if (idx >= 0) s_arr.push(idx);
+                        let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
+                        let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
+                        if (endIdx < startIdx && endIdx !== -1) endIdx += 12 * 6;
+                        if (startIdx >= 0 && endIdx >= startIdx) {
+                            for (let i = startIdx; i <= endIdx + 1; i++) {
+                                s_arr.push(i);
+                            }
+                        } else if (item.month) {
+                            // Fallback for old format
+                            let idx = mapPeriodToIndex(item.month, item.period);
+                            if (idx >= 0) s_arr.push(idx);
+                        }
                     });
                 }
                 if (t.planting && Array.isArray(t.planting)) {
                     t.planting.forEach(item => {
-                        let idx = mapPeriodToIndex(item.month, item.period);
-                        if (idx >= 0) p_arr.push(idx);
+                        let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
+                        let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
+                        if (endIdx < startIdx && endIdx !== -1) endIdx += 12 * 6;
+                        if (startIdx >= 0 && endIdx >= startIdx) {
+                            for (let i = startIdx; i <= endIdx + 1; i++) {
+                                p_arr.push(i);
+                            }
+                        } else if (item.month) {
+                            // Fallback for old format
+                            let idx = mapPeriodToIndex(item.month, item.period);
+                            if (idx >= 0) p_arr.push(idx);
+                        }
                     });
                 }
                 if (t.harvesting && Array.isArray(t.harvesting)) {
@@ -1858,47 +1960,55 @@ function applyAICropExtractionResult(data) {
         // Apply sowing
         if (data.sowing && Array.isArray(data.sowing)) {
             data.sowing.forEach(item => {
-                let idx = mapPeriodToIndex(item.month, item.period);
-                if (idx >= 0) {
-                    let td = table.querySelector(`td[data-month-index="${idx}"]`);
-                    if (td) {
-                        td.dataset.task = 'sowing';
-                        td.querySelector('div').style.background = '#8D6E63';
+                let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
+                let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
+                if (endIdx < startIdx && endIdx !== -1) endIdx += 12 * 6;
+                if (startIdx >= 0 && endIdx >= startIdx) {
+                    for (let i = startIdx; i <= endIdx + 1; i++) {
+                        let td = table.querySelector(`td[data-month-index="${i}"]`);
+                        if (td) {
+                            td.dataset.task = 'sowing';
+                            td.querySelector('div').style.background = '#8D6E63';
+                        }
+                    }
+                } else if (item.month) {
+                    let idx = mapPeriodToIndex(item.month, item.period);
+                    if (idx >= 0) {
+                        let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                        if (td) {
+                            td.dataset.task = 'sowing';
+                            td.querySelector('div').style.background = '#8D6E63';
+                        }
                     }
                 }
             });
-        } else if (data.sowing) {
-            let idx = mapPeriodToIndex(data.sowing.month, data.sowing.period);
-            if (idx >= 0) {
-                let td = table.querySelector(`td[data-month-index="${idx}"]`);
-                if (td) {
-                    td.dataset.task = 'sowing';
-                    td.querySelector('div').style.background = '#8D6E63';
-                }
-            }
         }
         
         // Apply planting
         if (data.planting && Array.isArray(data.planting)) {
             data.planting.forEach(item => {
-                let idx = mapPeriodToIndex(item.month, item.period);
-                if (idx >= 0) {
-                    let td = table.querySelector(`td[data-month-index="${idx}"]`);
-                    if (td) {
-                        td.dataset.task = 'planting';
-                        td.querySelector('div').style.background = '#4CAF50';
+                let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
+                let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
+                if (endIdx < startIdx && endIdx !== -1) endIdx += 12 * 6;
+                if (startIdx >= 0 && endIdx >= startIdx) {
+                    for (let i = startIdx; i <= endIdx + 1; i++) {
+                        let td = table.querySelector(`td[data-month-index="${i}"]`);
+                        if (td) {
+                            td.dataset.task = 'planting';
+                            td.querySelector('div').style.background = '#4CAF50';
+                        }
+                    }
+                } else if (item.month) {
+                    let idx = mapPeriodToIndex(item.month, item.period);
+                    if (idx >= 0) {
+                        let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                        if (td) {
+                            td.dataset.task = 'planting';
+                            td.querySelector('div').style.background = '#4CAF50';
+                        }
                     }
                 }
             });
-        } else if (data.planting) {
-            let idx = mapPeriodToIndex(data.planting.month, data.planting.period);
-            if (idx >= 0) {
-                let td = table.querySelector(`td[data-month-index="${idx}"]`);
-                if (td) {
-                    td.dataset.task = 'planting';
-                    td.querySelector('div').style.background = '#4CAF50';
-                }
-            }
         }
         
         // Apply harvesting
