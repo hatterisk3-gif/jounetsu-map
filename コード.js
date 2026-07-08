@@ -178,8 +178,9 @@ ${params.climate || '一般地'}（※もし画像から産地が特定できる
 
 【抽出ルール】
 1. 画像内に複数の作型（例：春まき、夏まき、秋まきなど）の行が記載されている場合、それぞれを独立した作型としてすべて抽出してください。
-   その際、作型の名称（type_name）は、表の階層構造や条件（大分類・栽培方法・具体的なまき時期など）をハイフン等で繋げて、できるだけ細かく詳細に記載してください。（例：「冬春まき - トンネル栽培 - 1月中旬まき」）
-   さらに、表内に「初夏どり」「年内どり」などの「収穫時期の呼称（とる時期）」が記載されている場合は、それも抽出して type_name の末尾に含めてください。（例：「冬春まき - トンネル栽培 - 1月中旬まき (初夏どり)」）
+   ※特に「播種・定植・収穫のタイミングが少しずつズレている複数行（ずらし巻きなど）」がある場合は、それらをひとまとめにせず、1行（1つの栽培サイクル）ごとに独立した作型として別々に抽出してください。
+   作型の名称（type_name）は、表の階層構造や条件（大分類・栽培方法・具体的なまき時期など）をハイフン等で繋げて、細かく詳細に記載してください。（例：「冬春まき - トンネル栽培 - 1月中旬まき」）
+   表内に「初夏どり」「年内どり」などの「収穫時期の呼称（とる時期）」が記載されている場合は、それを「harvest_season」として専用枠に抽出してください。
 2. 時期は「月」と「上/中/下（上旬/中旬/下旬）」で特定してください。
 3. 月は数値（1〜12）、時期は文字列（"上", "中", "下"）とします。
 4. 播種（sowing）と定植（planting）は対象の「月」と「時期」を抽出します。複数ある場合は配列で返してください（単数でも配列でも可）。
@@ -198,7 +199,8 @@ ${params.climate || '一般地'}（※もし画像から産地が特定できる
   "characteristics": ["ネコブ耐病性", "アントシアンレス", "濃緑色"],
   "types": [
     {
-      "type_name": "冬春まき - トンネル栽培 - 1月中旬まき (初夏どり)",
+      "type_name": "冬春まき - トンネル栽培 - 1月中旬まき",
+      "harvest_season": "初夏どり",
       "sowing": [
         { "month": 1, "period": "上" },
         { "month": 2, "period": "中" }
@@ -2155,6 +2157,13 @@ function saveCroptypeWithFile(params) {
       headers.push('メーカー');
     }
     
+    let harvestSeasonColIndex = headers.indexOf('とる時期') + 1;
+    if (harvestSeasonColIndex === 0) {
+      harvestSeasonColIndex = headers.length + 1;
+      sheet.getRange(1, harvestSeasonColIndex).setValue('とる時期');
+      headers.push('とる時期');
+    }
+    
     const data = sheet.getDataRange().getValues();
     let updated = false;
     for (let i = 1; i < data.length; i++) {
@@ -2177,6 +2186,9 @@ function saveCroptypeWithFile(params) {
         if (params.maker) {
           sheet.getRange(i + 1, makerColIndex).setValue(params.maker);
         }
+        if (params.harvestSeason) {
+          sheet.getRange(i + 1, harvestSeasonColIndex).setValue(params.harvestSeason);
+        }
         updated = true;
         break;
       }
@@ -2194,6 +2206,7 @@ function saveCroptypeWithFile(params) {
       newRow[fileUrlColIndex - 1] = fileUrl;
       newRow[charColIndex - 1] = params.characteristics || '';
       newRow[makerColIndex - 1] = params.maker || '';
+      newRow[harvestSeasonColIndex - 1] = params.harvestSeason || '';
       sheet.appendRow(newRow);
     }
     

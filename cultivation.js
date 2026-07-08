@@ -1221,6 +1221,7 @@ function addCroptypeToList() {
     const climate = document.getElementById('crClimate').value;
     const characteristics = document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '';
     const maker = document.getElementById('crMaker') ? document.getElementById('crMaker').value : '';
+    const harvestSeason = document.getElementById('crHarvestSeason') ? document.getElementById('crHarvestSeason').value : '';
     
     if (!variety || !season) {
         alert('品種とまき時期は必ず入力してください。');
@@ -1250,6 +1251,7 @@ function addCroptypeToList() {
         climate: climate,
         characteristics: characteristics,
         maker: maker,
+        harvestSeason: harvestSeason,
         sowing: sowing,
         planting: planting,
         harvesting: harvesting,
@@ -1297,6 +1299,9 @@ function resetCrInputArea() {
     document.getElementById('crVariety').value = '';
     document.getElementById('crSeason').value = '';
     document.getElementById('crFile').value = '';
+    if (document.getElementById('crCharacteristics')) document.getElementById('crCharacteristics').value = '';
+    if (document.getElementById('crMaker')) document.getElementById('crMaker').value = '';
+    if (document.getElementById('crHarvestSeason')) document.getElementById('crHarvestSeason').value = '';
     
     const tr = document.querySelector('#crTable tr:last-child');
     if (tr) {
@@ -1338,6 +1343,7 @@ function renderCrPendingList() {
         
         let makerText = item.maker ? ` <span style="font-size:10px; color:#388e3c; background:#e8f5e9; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏢 ${item.maker}</span>` : '';
         let charText = item.characteristics ? ` <span style="font-size:10px; color:#e65100; background:#fff3e0; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏷️ ${item.characteristics}</span>` : '';
+        let harvestSeasonText = item.harvestSeason ? ` <span style="font-size:10px; color:#1565c0; background:#e3f2fd; padding:2px 4px; border-radius:2px; margin-left: 4px;">🎯 ${item.harvestSeason}</span>` : '';
         
         // Build mini calendar
         let calendarHtml = '<div style="margin-top: 6px; overflow-x: auto;"><table style="border-collapse: collapse; font-size: 9px; min-width: 100%; text-align: center;">';
@@ -1360,7 +1366,7 @@ function renderCrPendingList() {
         div.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <div style="font-size: 13px; font-weight: bold; color: #333;">
-                    ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${filesText}${makerText}${charText}
+                    ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${filesText}${harvestSeasonText}${makerText}${charText}
                 </div>
                 <button onclick="removeCroptypeFromList(${index})" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-left: 8px;">削除</button>
             </div>
@@ -1808,6 +1814,7 @@ function applyAICropExtractionResult(data) {
                     climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
                     characteristics: document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '',
                     maker: document.getElementById('crMaker') ? document.getElementById('crMaker').value : '',
+                    harvestSeason: t.harvest_season || '',
                     sowing: s_arr,
                     planting: p_arr,
                     harvesting: h_arr,
