@@ -221,18 +221,31 @@ ${params.climate || '一般地'}（※もし画像から産地が特定できる
 }
 `;
 
+  const payloadParts = [{ text: prompt }];
+  
+  if (params.files && Array.isArray(params.files)) {
+    params.files.forEach(f => {
+      payloadParts.push({
+        inlineData: {
+          mimeType: f.mimeType,
+          data: f.base64Data
+        }
+      });
+    });
+  } else if (params.base64Data) {
+    // fallback for older client
+    payloadParts.push({
+      inlineData: {
+        mimeType: params.mimeType,
+        data: params.base64Data
+      }
+    });
+  }
+
   const payload = {
     contents: [
       {
-        parts: [
-          { text: prompt },
-          {
-            inlineData: {
-              mimeType: params.mimeType,
-              data: params.base64Data
-            }
-          }
-        ]
+        parts: payloadParts
       }
     ]
   };
@@ -2074,8 +2087,24 @@ function getMachineLastHourMeters() {
 // ==========================================
 function saveCroptypeWithFile(params) {
   try {
-    let fileUrl = "";
-    if (params.fileData && params.fileName) {
+    let fileUrls = [];
+    
+    // Process files array if exists
+    if (params.files && Array.isArray(params.files) && params.files.length > 0) {
+      const folderName = "情熱MAP品種情報";
+      let folders = DriveApp.getFoldersByName(folderName);
+      let folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+      
+      params.files.forEach(f => {
+        if (f.base64Data && f.fileName) {
+          let byteString = Utilities.base64Decode(f.base64Data);
+          let blob = Utilities.newBlob(byteString, f.mimeType || 'application/octet-stream', f.fileName);
+          const file = folder.createFile(blob);
+          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          fileUrls.push(file.getUrl());
+        }
+      });
+    } else if (params.fileData && params.fileName) { // fallback
       let dataStr = params.fileData;
       let splitBase = dataStr.split(',');
       let type = splitBase[0].split(';')[0].replace('data:', '');
@@ -2088,22 +2117,40 @@ function saveCroptypeWithFile(params) {
       
       const file = folder.createFile(blob);
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      fileUrl = file.getUrl();
+      fileUrls.push(file.getUrl());
     }
+    
+    let fileUrl = fileUrls.join(',');
     
     // Save to 作型DB
     const ss = TENANT_SS;
     let sheet = ss.getSheetByName('作型DB');
     if (!sheet) {
       sheet = ss.insertSheet('作型DB');
-      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL']);
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL', '特性', 'メーカー']);
     }
     
     const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+    
     let fileUrlColIndex = headers.indexOf('ファイルURL') + 1;
     if (fileUrlColIndex === 0) {
       fileUrlColIndex = headers.length + 1;
       sheet.getRange(1, fileUrlColIndex).setValue('ファイルURL');
+      headers.push('ファイルURL');
+    }
+    
+    let charColIndex = headers.indexOf('特性') + 1;
+    if (charColIndex === 0) {
+      charColIndex = headers.length + 1;
+      sheet.getRange(1, charColIndex).setValue('特性');
+      headers.push('特性');
+    }
+    
+    let makerColIndex = headers.indexOf('メーカー') + 1;
+    if (makerColIndex === 0) {
+      makerColIndex = headers.length + 1;
+      sheet.getRange(1, makerColIndex).setValue('メーカー');
+      headers.push('メーカー');
     }
     
     const data = sheet.getDataRange().getValues();
@@ -2118,7 +2165,15 @@ function saveCroptypeWithFile(params) {
         sheet.getRange(i + 1, 6).setValue(JSON.stringify(params.planting || []));
         sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
         if (fileUrl) {
+          // If already exists, we might want to append? 
+          // For now, overwrite or keep new ones if provided.
           sheet.getRange(i + 1, fileUrlColIndex).setValue(fileUrl);
+        }
+        if (params.characteristics) {
+          sheet.getRange(i + 1, charColIndex).setValue(params.characteristics);
+        }
+        if (params.maker) {
+          sheet.getRange(i + 1, makerColIndex).setValue(params.maker);
         }
         updated = true;
         break;
@@ -2126,7 +2181,7 @@ function saveCroptypeWithFile(params) {
     }
     
     if (!updated) {
-      let newRow = [];
+      let newRow = new Array(headers.length).fill('');
       newRow[0] = params.crop;
       newRow[1] = params.variety;
       newRow[2] = params.season || '';
@@ -2135,6 +2190,8 @@ function saveCroptypeWithFile(params) {
       newRow[5] = JSON.stringify(params.planting || []);
       newRow[6] = JSON.stringify(params.harvesting || []);
       newRow[fileUrlColIndex - 1] = fileUrl;
+      newRow[charColIndex - 1] = params.characteristics || '';
+      newRow[makerColIndex - 1] = params.maker || '';
       sheet.appendRow(newRow);
     }
     

@@ -518,7 +518,8 @@ function renderCpPlanRow(plan) {
     // --- 左パネル: 品種カード ---
     let fileLinkHtml = '';
     if (plan.fileUrl) {
-        fileLinkHtml = `<a href="${plan.fileUrl}" target="_blank" style="font-size:10px; color:#1976d2; text-decoration:none;">📁</a>`;
+        let urls = plan.fileUrl.split(',');
+        fileLinkHtml = urls.map(u => `<a href="${u.trim()}" target="_blank" style="font-size:10px; color:#1976d2; text-decoration:none;">📁</a>`).join(' ');
     }
     
     let card = document.createElement('div');
@@ -957,7 +958,8 @@ function loadCultivationPreset(presetName) {
         // Show file link if exists
         const fileArea = document.getElementById('varietyFileLinkArea');
         if (p.fileUrl) {
-            fileArea.innerHTML = `<a href="${p.fileUrl}" target="_blank" style="color: #E91E63; text-decoration: none; font-weight: bold;">📄 品種情報を確認</a>`;
+            let urls = p.fileUrl.split(',');
+            fileArea.innerHTML = urls.map((u, i) => `<a href="${u.trim()}" target="_blank" style="color: #E91E63; text-decoration: none; font-weight: bold; margin-right: 4px;">📄 資料${urls.length > 1 ? i+1 : ''}を確認</a>`).join('');
         } else {
             fileArea.innerHTML = '';
         }
@@ -1239,7 +1241,7 @@ function addCroptypeToList() {
     });
     
     const fileInput = document.getElementById('crFile');
-    const file = fileInput.files.length > 0 ? fileInput.files[0] : null;
+    const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
     
     const payload = {
         crop: crop,
@@ -1251,22 +1253,39 @@ function addCroptypeToList() {
         sowing: sowing,
         planting: planting,
         harvesting: harvesting,
-        fileData: '',
-        fileName: '',
-        fileType: ''
+        files: []
     };
     
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            payload.fileData = e.target.result;
-            payload.fileName = file.name;
-            payload.fileType = file.type;
+    if (files.length > 0) {
+        const filePromises = files.map(file => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const dataUrl = e.target.result;
+                    const base64Data = dataUrl.split(',')[1];
+                    resolve({
+                        base64Data: base64Data,
+                        mimeType: dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';')),
+                        fileName: file.name,
+                        fileType: file.type
+                    });
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        });
+        
+        Promise.all(filePromises).then(fileDataArray => {
+            payload.files = fileDataArray;
             crPendingCroptypes.push(payload);
             resetCrInputArea();
             renderCrPendingList();
-        };
-        reader.readAsDataURL(file);
+        }).catch(err => {
+            console.error(err);
+            crPendingCroptypes.push(payload);
+            resetCrInputArea();
+            renderCrPendingList();
+        });
     } else {
         crPendingCroptypes.push(payload);
         resetCrInputArea();
@@ -1310,17 +1329,42 @@ function renderCrPendingList() {
     listDiv.innerHTML = '';
     crPendingCroptypes.forEach((item, index) => {
         const div = document.createElement('div');
-        div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #fff; border: 1px solid #ccc; border-radius: 4px;';
+        div.style.cssText = 'padding: 8px; background: #fff; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 8px;';
         
-        let fileText = item.fileName ? ` <span style="font-size:10px; color:#1976d2; background:#e3f2fd; padding:2px 4px; border-radius:2px;">📎 ${item.fileName}</span>` : '';
+        let filesText = '';
+        if (item.files && item.files.length > 0) {
+            filesText = item.files.map(f => ` <span style="font-size:10px; color:#1976d2; background:#e3f2fd; padding:2px 4px; border-radius:2px;">📎 ${f.fileName}</span>`).join('');
+        }
+        
         let makerText = item.maker ? ` <span style="font-size:10px; color:#388e3c; background:#e8f5e9; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏢 ${item.maker}</span>` : '';
         let charText = item.characteristics ? ` <span style="font-size:10px; color:#e65100; background:#fff3e0; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏷️ ${item.characteristics}</span>` : '';
         
+        // Build mini calendar
+        let calendarHtml = '<div style="margin-top: 6px; overflow-x: auto;"><table style="border-collapse: collapse; font-size: 9px; min-width: 100%; text-align: center;">';
+        calendarHtml += '<tr>';
+        for (let m = 1; m <= 12; m++) {
+            calendarHtml += `<th colspan="6" style="border: 1px solid #eee; background: #f5f5f5; padding: 1px;">${m}月</th>`;
+        }
+        calendarHtml += '</tr><tr>';
+        
+        for (let i = 0; i < 72; i++) {
+            let bgColor = 'transparent';
+            if (item.sowing && item.sowing.includes(i)) bgColor = '#8D6E63';
+            else if (item.planting && item.planting.includes(i)) bgColor = '#4CAF50';
+            else if (item.harvesting && item.harvesting.includes(i)) bgColor = '#FF9800';
+            
+            calendarHtml += `<td style="border: 1px solid #eee; padding: 0; min-width: 4px; height: 8px;"><div style="width:100%; height:100%; background-color:${bgColor};"></div></td>`;
+        }
+        calendarHtml += '</tr></table></div>';
+        
         div.innerHTML = `
-            <div style="font-size: 13px; font-weight: bold; color: #333;">
-                ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${fileText}${makerText}${charText}
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="font-size: 13px; font-weight: bold; color: #333;">
+                    ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${filesText}${makerText}${charText}
+                </div>
+                <button onclick="removeCroptypeFromList(${index})" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-left: 8px;">削除</button>
             </div>
-            <button onclick="removeCroptypeFromList(${index})" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer;">削除</button>
+            ${calendarHtml}
         `;
         listDiv.appendChild(div);
     });
@@ -1588,35 +1632,47 @@ async function executeAICropExtraction() {
     }
     
     const climate = climateSelect.value || '一般地';
-    const file = fileInput.files[0];
+    const files = Array.from(fileInput.files);
     
     loadingDiv.style.display = 'block';
     
     try {
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            const dataUrl = e.target.result;
-            const base64Data = dataUrl.split(',')[1];
-            const mimeType = dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';'));
-            
-            try {
-                const res = await callGAS('parseCropImageWithGemini', {
-                    base64Data: base64Data,
-                    mimeType: mimeType,
-                    climate: climate
-                });
-                loadingDiv.style.display = 'none';
-                if (res) {
-                    applyAICropExtractionResult(res);
-                } else {
-                    alert("AI解析に失敗しました。データがありません。");
-                }
-            } catch (err) {
-                loadingDiv.style.display = 'none';
-                alert("AI解析中にエラーが発生しました: " + err.message);
+        const filePromises = files.map(file => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const dataUrl = e.target.result;
+                    const base64Data = dataUrl.split(',')[1];
+                    const mimeType = dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';'));
+                    resolve({
+                        base64Data: base64Data,
+                        mimeType: mimeType,
+                        fileName: file.name,
+                        fileType: file.type
+                    });
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        });
+
+        const fileDataArray = await Promise.all(filePromises);
+        
+        try {
+            const res = await callGAS('parseCropImageWithGemini', {
+                files: fileDataArray,
+                climate: climate
+            });
+            loadingDiv.style.display = 'none';
+            if (res) {
+                applyAICropExtractionResult(res);
+            } else {
+                alert("AI解析に失敗しました。データがありません。");
             }
-        };
-        reader.readAsDataURL(file);
+        } catch (err) {
+            loadingDiv.style.display = 'none';
+            alert("AI解析中にエラーが発生しました: " + err.message);
+        }
     } catch (err) {
         loadingDiv.style.display = 'none';
         alert("ファイルの読み込みに失敗しました。");
@@ -1712,9 +1768,9 @@ function applyAICropExtractionResult(data) {
     // Process multiple types if available
     if (data.types && Array.isArray(data.types) && data.types.length > 0) {
         const fileInput = document.getElementById('crFile');
-        const file = fileInput && fileInput.files.length > 0 ? fileInput.files[0] : null;
+        const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
         
-        const processPayloads = (fileData) => {
+        const processPayloads = (fileDataArray) => {
             data.types.forEach(t => {
                 let s_arr = [];
                 let p_arr = [];
@@ -1755,9 +1811,7 @@ function applyAICropExtractionResult(data) {
                     sowing: s_arr,
                     planting: p_arr,
                     harvesting: h_arr,
-                    fileData: fileData || '',
-                    fileName: file ? file.name : '',
-                    fileType: file ? file.type : ''
+                    files: fileDataArray // Array of {base64Data, mimeType, fileName, fileType}
                 };
                 crPendingCroptypes.push(payload);
             });
@@ -1765,14 +1819,32 @@ function applyAICropExtractionResult(data) {
             alert(`AIによる自動入力が完了し、${data.types.length}件の作型をリストに追加しました。不要な作型は「削除」してください。`);
         };
         
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                processPayloads(e.target.result);
-            };
-            reader.readAsDataURL(file);
+        if (files.length > 0) {
+            const filePromises = files.map(file => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const dataUrl = e.target.result;
+                        const base64Data = dataUrl.split(',')[1];
+                        resolve({
+                            base64Data: base64Data,
+                            mimeType: dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';')),
+                            fileName: file.name,
+                            fileType: file.type
+                        });
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            });
+            Promise.all(filePromises).then(fileDataArray => {
+                processPayloads(fileDataArray);
+            }).catch(err => {
+                console.error("File read error:", err);
+                processPayloads([]);
+            });
         } else {
-            processPayloads('');
+            processPayloads([]);
         }
     } else {
         // Fallback for single format
