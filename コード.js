@@ -68,6 +68,7 @@ function doPost(e) {
     else if (action === "deleteMachineFromMaster") result = deleteMachineFromMaster(params);
     else if (action === 'getMapCoordinates') result = getMapCoordinates(params);
     else if (action === 'parseWithGemini') result = parseWithGemini(params);
+    else if (action === 'parseCropImageWithGemini') result = parseCropImageWithGemini(params);
     else if (action === "getPolygonDrawingHistory") result = getPolygonDrawingHistory(params);
     else if (action === "saveTrackingData") result = saveTrackingData(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
@@ -148,6 +149,96 @@ ${Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss")}
 
   let text = json.candidates[0].content.parts[0].text.trim();
   // マークダウンの \`\`\`json が含まれている場合は除去する
+  if (text.startsWith('\`\`\`json')) {
+    text = text.replace(/^\`\`\`json/, '').replace(/\`\`\`$/, '').trim();
+  } else if (text.startsWith('\`\`\`')) {
+    text = text.replace(/^\`\`\`/, '').replace(/\`\`\`$/, '').trim();
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error('Geminiの出力がJSON形式ではありませんでした: ' + text);
+  }
+}
+
+function parseCropImageWithGemini(params) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY が設定されていません。GASのスクリプトプロパティを確認してください。');
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  const prompt = `
+あなたは農業の専門家として、提供された作型表（栽培カレンダー）の画像から、指定された産地の「播種（まき時期）」「定植（植え付け）」「収穫」のスケジュールを正確に読み取り、JSONフォーマットで出力してください。
+
+【指定された産地】
+${params.climate || '一般地'}
+
+【抽出ルール】
+1. 指定された産地の行（または列）を探し、そこに記載されている図表（例：赤丸＝播種、緑の三角＝定植、緑の帯＝収穫）の時期を読み取ります。
+2. 時期は「月」と「上/中/下（上旬/中旬/下旬）」で特定してください。
+3. 月は数値（1〜12）、時期は文字列（"上", "中", "下"）とします。
+4. 播種（sowing）と定植（planting）は「点」で示されることが多いため、対象の「月」と「時期」を一つ抽出します。複数ある場合は配列で返してください（もし単一なら配列ではなく単体オブジェクトで構いません）。
+5. 収穫（harvesting）は「期間（帯）」で示されることが多いため、開始（start）と終了（end）の「月」と「時期」を抽出します。
+6. 画像内に該当データが存在しない項目は null にしてください。
+
+【出力フォーマット】
+以下のJSONフォーマットのみを出力してください（マークダウンのコードブロック \`\`\`json は不要です）。
+{
+  "sowing": [
+    { "month": 1, "period": "上" }
+  ],
+  "planting": [
+    { "month": 2, "period": "中" }
+  ],
+  "harvesting": [
+    {
+      "start_month": 5, "start_period": "上",
+      "end_month": 6, "end_period": "下"
+    }
+  ]
+}
+`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: params.mimeType,
+              data: params.base64Data
+            }
+          }
+        ]
+      }
+    ]
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const response = UrlFetchApp.fetch(url, options);
+  const responseCode = response.getResponseCode();
+  const responseBody = response.getContentText();
+
+  if (responseCode !== 200) {
+    throw new Error(`Gemini API Error: ${responseCode} - ${responseBody}`);
+  }
+
+  const json = JSON.parse(responseBody);
+  if (!json.candidates || json.candidates.length === 0) {
+    throw new Error('Geminiから有効な回答が得られませんでした。');
+  }
+
+  let text = json.candidates[0].content.parts[0].text.trim();
   if (text.startsWith('\`\`\`json')) {
     text = text.replace(/^\`\`\`json/, '').replace(/\`\`\`$/, '').trim();
   } else if (text.startsWith('\`\`\`')) {

@@ -307,7 +307,11 @@
           
           <div style="margin-bottom: 10px; padding: 8px; background: #fff; border-radius: 4px; border: 1px dashed #ccc;">
             <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 4px;">関連資料 (PDF・JPG 等)</label>
-            <input type="file" id="crFile" accept=".pdf,image/jpeg,image/png,image/jpg" style="width: 100%; padding: 4px; font-size: 11px; box-sizing: border-box;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="file" id="crFile" accept=".pdf,image/jpeg,image/png,image/jpg" style="flex: 1; padding: 4px; font-size: 11px; box-sizing: border-box;">
+              <button onclick="executeAICropExtraction()" style="padding: 4px 10px; background: #9C27B0; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; white-space: nowrap;">🤖 AIで自動入力</button>
+            </div>
+            <div id="crAILoading" style="display: none; font-size: 11px; color: #9C27B0; margin-top: 4px; font-weight: bold;">AI解析中...（数秒〜十数秒かかります）</div>
           </div>
           
           <div style="text-align: center;">

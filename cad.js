@@ -1981,8 +1981,25 @@ window.cadExecuteAddMakura = (latLng) => {
 
     let makuraAngle = angle + 90;
     
-    let pt1 = turf.destination(centerPt, 500, makuraAngle + 180, { units: 'meters' });
-    let length = 1000;
+    let pt1 = turf.destination(centerPt, 1000, makuraAngle + 180, { units: 'meters' });
+    let pt2 = turf.destination(centerPt, 1000, makuraAngle, { units: 'meters' });
+    
+    let c1 = turf.destination(pt1, actualWidthM / 2, makuraAngle + 90, {units: 'meters'}).geometry.coordinates;
+    let c2 = turf.destination(pt1, actualWidthM / 2, makuraAngle - 90, {units: 'meters'}).geometry.coordinates;
+    let c3 = turf.destination(pt2, actualWidthM / 2, makuraAngle - 90, {units: 'meters'}).geometry.coordinates;
+    let c4 = turf.destination(pt2, actualWidthM / 2, makuraAngle + 90, {units: 'meters'}).geometry.coordinates;
+    
+    let makuraRect = turf.polygon([[c1, c2, c3, c4, c1]]);
+    
+    let finalPoly = null;
+    try {
+        finalPoly = turf.intersect(turf.featureCollection([tPoly, makuraRect]));
+    } catch(e) { console.error(e); }
+    
+    if (!finalPoly) {
+        alert("圃場の外にタップされたか、枕畝を生成できません。");
+        return;
+    }
     
     let avoidPolys = window.cadUnePolygons.map(poly => {
         let path = poly.getPath().getArray();
@@ -1997,74 +2014,41 @@ window.cadExecuteAddMakura = (latLng) => {
         return null;
     }).filter(Boolean);
     
-    let stepMeters = 0.5;
-    let validSegments = [];
-    let currentSegment = null;
-    
-    for (let d = 0; d <= length; d += stepMeters) {
-        let c = turf.destination(pt1, d, makuraAngle, {units: 'meters'});
-        let cL = turf.destination(c, actualWidthM / 2, makuraAngle + 90, {units: 'meters'});
-        let cR = turf.destination(c, actualWidthM / 2, makuraAngle - 90, {units: 'meters'});
-        
-        let isValid = turf.booleanPointInPolygon(cL, tPoly) && turf.booleanPointInPolygon(cR, tPoly);
-        if (isValid) {
-            for (let av of avoidPolys) {
-                if (turf.booleanPointInPolygon(cL, av) || turf.booleanPointInPolygon(cR, av)) {
-                    isValid = false;
-                    break;
-                }
-            }
-        }
-        
-        if (isValid) {
-            if (!currentSegment) currentSegment = { start: d, end: d };
-            else currentSegment.end = d;
-        } else {
-            if (currentSegment) {
-                if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
-                currentSegment = null;
-            }
-        }
-    }
-    if (currentSegment && (currentSegment.end - currentSegment.start >= 1.0)) {
-        validSegments.push(currentSegment);
+    for (let av of avoidPolys) {
+        if (!finalPoly) break;
+        try {
+            finalPoly = turf.difference(turf.featureCollection([finalPoly, av]));
+        } catch(e) { console.error(e); }
     }
     
-    if (validSegments.length === 0) {
-        alert("画面中央付近が圃場の外であるか、枕を配置するスペースがありません。圃場内に移動してから再度お試しください。");
+    if (!finalPoly) {
+        alert("既存の畝と完全に重なっているため、枕畝を生成するスペースがありません。");
         return;
     }
     
-    let bestSeg = validSegments[0];
-    let minDist = Infinity;
-    validSegments.forEach(seg => {
-        let midD = (seg.start + seg.end) / 2;
-        let distToCenter = Math.abs(midD - 500);
-        if (distToCenter < minDist) {
-            minDist = distToCenter;
-            bestSeg = seg;
-        }
+    let flattened = turf.flatten(finalPoly);
+    
+    let addedCount = 0;
+    flattened.features.forEach((feature, idx) => {
+        let coordinates = feature.geometry.coordinates;
+        if (!coordinates || coordinates.length === 0) return;
+        let paths = coordinates.map(ring => ring.map(c => ({ lat: c[1], lng: c[0] })));
+        
+        let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
+        gPoly.uneIndex = 'custom_' + Date.now() + '_' + idx + '_' + Math.floor(Math.random() * 1000);
+        gPoly.uneGroup = '枕';
+        google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
+        window.bindShapeHistoryEvents(gPoly);
+        window.cadCustomShapes.push(gPoly);
+        addedCount++;
     });
-
-    let sPt = turf.destination(pt1, bestSeg.start, makuraAngle, {units: 'meters'});
-    let ePt = turf.destination(pt1, bestSeg.end, makuraAngle, {units: 'meters'});
     
-    let p1 = turf.destination(sPt, actualWidthM / 2, makuraAngle + 90, {units: 'meters'}).geometry.coordinates;
-    let p2 = turf.destination(sPt, actualWidthM / 2, makuraAngle - 90, {units: 'meters'}).geometry.coordinates;
-    let p3 = turf.destination(ePt, actualWidthM / 2, makuraAngle - 90, {units: 'meters'}).geometry.coordinates;
-    let p4 = turf.destination(ePt, actualWidthM / 2, makuraAngle + 90, {units: 'meters'}).geometry.coordinates;
-    
-    let paths = [p1, p2, p3, p4, p1].map(c => ({ lat: c[1], lng: c[0] }));
-    
-    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
-
-    gPoly.uneIndex = 'custom_' + Date.now() + Math.floor(Math.random() * 1000);
-    gPoly.uneGroup = '枕';
-    google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
-    window.bindShapeHistoryEvents(gPoly);
-    window.cadCustomShapes.push(gPoly);
-    window.reassignLabels();
-    window.saveCadStateToHistory();
+    if (addedCount > 0) {
+        window.reassignLabels();
+        window.saveCadStateToHistory();
+    } else {
+        alert("枕畝を生成できるスペースがありませんでした。");
+    }
 };
 
 window.cadAdjustRidgeGap = (delta) => {

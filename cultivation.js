@@ -1571,3 +1571,145 @@ function selectHistoryPlan(year, crop) {
     loadHistoryPlans();
 }
 
+async function executeAICropExtraction() {
+    const fileInput = document.getElementById('crFile');
+    const climateSelect = document.getElementById('crClimate');
+    const loadingDiv = document.getElementById('crAILoading');
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert("関連資料（画像やPDF）を選択してください。");
+        return;
+    }
+    
+    const climate = climateSelect.value || '一般地';
+    const file = fileInput.files[0];
+    
+    loadingDiv.style.display = 'block';
+    
+    try {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dataUrl = e.target.result;
+            const base64Data = dataUrl.split(',')[1];
+            const mimeType = dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';'));
+            
+            google.script.run.withSuccessHandler(function(res) {
+                loadingDiv.style.display = 'none';
+                if (res.status === 'success') {
+                    applyAICropExtractionResult(res.data);
+                } else {
+                    alert("AI解析に失敗しました: " + res.message);
+                }
+            }).withFailureHandler(function(err) {
+                loadingDiv.style.display = 'none';
+                alert("通信エラーが発生しました: " + err);
+            }).doGet({
+                action: 'parseCropImageWithGemini',
+                base64Data: base64Data,
+                mimeType: mimeType,
+                climate: climate
+            });
+        };
+        reader.readAsDataURL(file);
+    } catch (err) {
+        loadingDiv.style.display = 'none';
+        alert("ファイルの読み込みに失敗しました。");
+    }
+}
+
+function applyAICropExtractionResult(data) {
+    if (!data) return;
+    
+    const mapPeriodToIndex = (month, period) => {
+        let mIdx = parseInt(month);
+        if (isNaN(mIdx) || mIdx < 1 || mIdx > 12) return -1;
+        let baseMonthIndex = mIdx - 1; 
+        
+        let pOffset = 0; // 上前
+        if (period && period.includes('中')) pOffset = 2; // 中前
+        else if (period && period.includes('下')) pOffset = 4; // 下前
+        
+        return baseMonthIndex * 6 + pOffset;
+    };
+
+    const table = document.getElementById('crTable');
+    if (!table) return;
+    
+    // reset all
+    const allTds = table.querySelectorAll('td[data-month-index]');
+    allTds.forEach(td => {
+        td.dataset.task = '';
+        td.querySelector('div').style.background = 'transparent';
+    });
+    
+    // Apply sowing
+    if (data.sowing && Array.isArray(data.sowing)) {
+        data.sowing.forEach(item => {
+            let idx = mapPeriodToIndex(item.month, item.period);
+            if (idx >= 0) {
+                let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                if (td) {
+                    td.dataset.task = 'sowing';
+                    td.querySelector('div').style.background = '#8D6E63';
+                }
+            }
+        });
+    } else if (data.sowing) {
+        let idx = mapPeriodToIndex(data.sowing.month, data.sowing.period);
+        if (idx >= 0) {
+            let td = table.querySelector(`td[data-month-index="${idx}"]`);
+            if (td) {
+                td.dataset.task = 'sowing';
+                td.querySelector('div').style.background = '#8D6E63';
+            }
+        }
+    }
+    
+    // Apply planting
+    if (data.planting && Array.isArray(data.planting)) {
+        data.planting.forEach(item => {
+            let idx = mapPeriodToIndex(item.month, item.period);
+            if (idx >= 0) {
+                let td = table.querySelector(`td[data-month-index="${idx}"]`);
+                if (td) {
+                    td.dataset.task = 'planting';
+                    td.querySelector('div').style.background = '#4CAF50';
+                }
+            }
+        });
+    } else if (data.planting) {
+        let idx = mapPeriodToIndex(data.planting.month, data.planting.period);
+        if (idx >= 0) {
+            let td = table.querySelector(`td[data-month-index="${idx}"]`);
+            if (td) {
+                td.dataset.task = 'planting';
+                td.querySelector('div').style.background = '#4CAF50';
+            }
+        }
+    }
+    
+    // Apply harvesting
+    if (data.harvesting && Array.isArray(data.harvesting)) {
+        data.harvesting.forEach(item => {
+            let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
+            let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
+            
+            if (endIdx < startIdx && endIdx !== -1) {
+                endIdx += 12 * 6; // next year
+            }
+            
+            if (startIdx >= 0 && endIdx >= startIdx) {
+                for (let i = startIdx; i <= endIdx + 1; i++) { // Include upper bound + 1 to cover "後" half of the period
+                    let td = table.querySelector(`td[data-month-index="${i}"]`);
+                    if (td) {
+                        td.dataset.task = 'harvesting';
+                        td.querySelector('div').style.background = '#FF9800';
+                    }
+                }
+            }
+        });
+    }
+    
+    alert("AIによる自動入力が完了しました。はみ出た箇所や不足箇所を微調整してください。");
+}
+
