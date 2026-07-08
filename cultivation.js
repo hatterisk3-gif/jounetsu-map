@@ -1591,27 +1591,27 @@ async function executeAICropExtraction() {
     
     try {
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = async function(e) {
             const dataUrl = e.target.result;
             const base64Data = dataUrl.split(',')[1];
             const mimeType = dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';'));
             
-            google.script.run.withSuccessHandler(function(res) {
+            try {
+                const res = await callGAS('parseCropImageWithGemini', {
+                    base64Data: base64Data,
+                    mimeType: mimeType,
+                    climate: climate
+                });
                 loadingDiv.style.display = 'none';
-                if (res.status === 'success') {
-                    applyAICropExtractionResult(res.data);
+                if (res) {
+                    applyAICropExtractionResult(res);
                 } else {
-                    alert("AI解析に失敗しました: " + res.message);
+                    alert("AI解析に失敗しました。データがありません。");
                 }
-            }).withFailureHandler(function(err) {
+            } catch (err) {
                 loadingDiv.style.display = 'none';
-                alert("通信エラーが発生しました: " + err);
-            }).doGet({
-                action: 'parseCropImageWithGemini',
-                base64Data: base64Data,
-                mimeType: mimeType,
-                climate: climate
-            });
+                alert("AI解析中にエラーが発生しました: " + err.message);
+            }
         };
         reader.readAsDataURL(file);
     } catch (err) {
