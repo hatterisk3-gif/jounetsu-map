@@ -170,28 +170,35 @@ function parseCropImageWithGemini(params) {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-  const prompt = `
+const prompt = `
 あなたは農業の専門家として、提供された作型表（栽培カレンダー）の画像から、指定された産地の「播種（まき時期）」「定植（植え付け）」「収穫」のスケジュールを正確に読み取り、JSONフォーマットで出力してください。
 
 【指定された産地】
-${params.climate || '一般地'}
+${params.climate || '一般地'}（※もし画像から産地が特定できる場合は、画像の内容を優先して抽出してください）
 
 【抽出ルール】
 1. 指定された産地の行（または列）を探し、そこに記載されている図表（例：赤丸＝播種、緑の三角＝定植、緑の帯＝収穫）の時期を読み取ります。
 2. 時期は「月」と「上/中/下（上旬/中旬/下旬）」で特定してください。
 3. 月は数値（1〜12）、時期は文字列（"上", "中", "下"）とします。
-4. 播種（sowing）と定植（planting）は「点」で示されることが多いため、対象の「月」と「時期」を一つ抽出します。複数ある場合は配列で返してください（もし単一なら配列ではなく単体オブジェクトで構いません）。
-5. 収穫（harvesting）は「期間（帯）」で示されることが多いため、開始（start）と終了（end）の「月」と「時期」を抽出します。
-6. 画像内に該当データが存在しない項目は null にしてください。
+4. 播種（sowing）と定植（planting）は対象の「月」と「時期」を抽出します。複数ある場合は配列で返してください（単数でも配列でも可）。
+5. 収穫（harvesting）は「期間（帯）」で示されることが多いため、開始（start）と終了（end）の「月」と「時期」を配列で抽出します。
+6. 追加として、画像内に記載されている「作物名（crop）」「産地（climate）」「品種名（variety）」があれば文字列として抽出してください。
+7. さらに、品種の「特性（ネコブ耐病性、アントシアンレス、色、形などのアピールポイントや特徴）」の記載があれば、それを短い文字列の配列として「characteristics」に抽出してください。
+8. 画像内に該当データが存在しない項目は null にしてください。
 
 【出力フォーマット】
 以下のJSONフォーマットのみを出力してください（マークダウンのコードブロック \`\`\`json は不要です）。
 {
+  "crop": "キャベツ",
+  "climate": "一般地",
+  "variety": "初秋",
+  "characteristics": ["ネコブ耐病性", "アントシアンレス", "濃緑色"],
   "sowing": [
-    { "month": 1, "period": "上" }
+    { "month": 1, "period": "上" },
+    { "month": 2, "period": "中" }
   ],
   "planting": [
-    { "month": 2, "period": "中" }
+    { "month": 3, "period": "中" }
   ],
   "harvesting": [
     {
@@ -2878,10 +2885,19 @@ function saveCroptypeDB(params) {
     let sheet = ss.getSheetByName('作型DB');
     if (!sheet) {
       sheet = ss.insertSheet('作型DB');
-      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫']);
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)']);
+    } else {
+      // 既存シートに「特性(タグ)」カラムがない場合は追加
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      if (headers.indexOf('特性(タグ)') === -1) {
+        sheet.getRange(1, headers.length + 1).setValue('特性(タグ)');
+      }
     }
     
     const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const tagsColIndex = headers.indexOf('特性(タグ)') + 1; // 1-based index
+    
     let updated = false;
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][0]).trim() === String(params.crop).trim() && 
@@ -2892,13 +2908,16 @@ function saveCroptypeDB(params) {
         sheet.getRange(i + 1, 5).setValue(JSON.stringify(params.sowing || []));
         sheet.getRange(i + 1, 6).setValue(JSON.stringify(params.planting || []));
         sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
+        if (tagsColIndex > 0) {
+          sheet.getRange(i + 1, tagsColIndex).setValue(params.characteristics || '');
+        }
         updated = true;
         break;
       }
     }
     
     if (!updated) {
-      sheet.appendRow([
+      let newRow = [
         params.crop,
         params.variety,
         params.season || '',
@@ -2906,7 +2925,15 @@ function saveCroptypeDB(params) {
         JSON.stringify(params.sowing || []),
         JSON.stringify(params.planting || []),
         JSON.stringify(params.harvesting || [])
-      ]);
+      ];
+      // 8列目以降に対応するため、ヘッダー長に合わせる
+      while (newRow.length < headers.length) {
+        newRow.push('');
+      }
+      if (tagsColIndex > 0) {
+        newRow[tagsColIndex - 1] = params.characteristics || '';
+      }
+      sheet.appendRow(newRow);
     }
     SpreadsheetApp.flush();
     return { success: true, message: "作型DBを更新しました" };

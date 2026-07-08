@@ -654,7 +654,7 @@ function toggleCpCell(td, planId) {
     const tool = document.querySelector('input[name="cpTool"]:checked').value;
     const div = td.querySelector('div');
     
-    if (tool === 'sowing' || tool === 'planting') {
+    if (tool === 'planting') {
         const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
         if (tr) {
             const allTds = tr.querySelectorAll('td[data-month-index]');
@@ -1180,7 +1180,7 @@ function toggleCrCell(td) {
     const tool = document.querySelector('input[name="crTool"]:checked').value;
     const div = td.querySelector('div');
     
-    if (tool === 'sowing' || tool === 'planting') {
+    if (tool === 'planting') {
         const table = document.getElementById('crTable');
         if (table) {
             const allTds = table.querySelectorAll('td[data-month-index]');
@@ -1217,6 +1217,7 @@ function addCroptypeToList() {
     const season = document.getElementById('crSeason').value;
     const crop = document.getElementById('crCrop').value;
     const climate = document.getElementById('crClimate').value;
+    const characteristics = document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '';
     
     if (!variety || !season) {
         alert('品種とまき時期は必ず入力してください。');
@@ -1244,6 +1245,7 @@ function addCroptypeToList() {
         variety: variety,
         season: season,
         climate: climate,
+        characteristics: characteristics,
         sowing: sowing,
         planting: planting,
         harvesting: harvesting,
@@ -1309,10 +1311,11 @@ function renderCrPendingList() {
         div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #fff; border: 1px solid #ccc; border-radius: 4px;';
         
         let fileText = item.fileName ? ` <span style="font-size:10px; color:#1976d2; background:#e3f2fd; padding:2px 4px; border-radius:2px;">📎 ${item.fileName}</span>` : '';
+        let charText = item.characteristics ? ` <span style="font-size:10px; color:#e65100; background:#fff3e0; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏷️ ${item.characteristics}</span>` : '';
         
         div.innerHTML = `
             <div style="font-size: 13px; font-weight: bold; color: #333;">
-                ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${fileText}
+                ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${fileText}${charText}
             </div>
             <button onclick="removeCroptypeFromList(${index})" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer;">削除</button>
         `;
@@ -1641,6 +1644,59 @@ function applyAICropExtractionResult(data) {
         td.dataset.task = '';
         td.querySelector('div').style.background = 'transparent';
     });
+    
+    // Auto-fill crop, climate, variety if present
+    if (data.crop) {
+        let crCrop = document.getElementById('crCrop');
+        if (crCrop) {
+            let found = false;
+            for (let i = 0; i < crCrop.options.length; i++) {
+                if (crCrop.options[i].text === data.crop || crCrop.options[i].value === data.crop) {
+                    crCrop.selectedIndex = i;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                // if not found, we can add it as a new option and select it
+                let opt = document.createElement('option');
+                opt.value = data.crop;
+                opt.text = data.crop;
+                crCrop.add(opt);
+                crCrop.value = data.crop;
+            }
+        }
+    }
+    
+    if (data.climate) {
+        let crClimate = document.getElementById('crClimate');
+        if (crClimate) {
+            for (let i = 0; i < crClimate.options.length; i++) {
+                if (crClimate.options[i].text.includes(data.climate) || crClimate.options[i].value.includes(data.climate)) {
+                    crClimate.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+    }
+    
+    if (data.variety) {
+        let crVariety = document.getElementById('crVariety');
+        if (crVariety) {
+            crVariety.value = data.variety;
+        }
+    }
+    
+    if (data.characteristics) {
+        let crCharacteristics = document.getElementById('crCharacteristics');
+        if (crCharacteristics) {
+            if (Array.isArray(data.characteristics)) {
+                crCharacteristics.value = data.characteristics.join(', ');
+            } else {
+                crCharacteristics.value = data.characteristics;
+            }
+        }
+    }
     
     // Apply sowing
     if (data.sowing && Array.isArray(data.sowing)) {
