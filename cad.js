@@ -1852,6 +1852,9 @@ window.updateCadPreviewCount = () => {
     if (!window.cadTargetId) return;
     const widthCm = parseFloat(document.getElementById('cadWidth').value);
     const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
+    const marginSideEl = document.getElementById('cadMarginSide');
+    const sideMarginMeters = marginSideEl && marginSideEl.value ? parseFloat(marginSideEl.value) / 100 : 0;
+    
     const p = loadedPolygons[window.cadTargetId];
     if (!widthCm || widthCm <= 0 || !p || !p.coords) return;
 
@@ -1868,7 +1871,7 @@ window.updateCadPreviewCount = () => {
         if (-projDist > maxNegDist) maxNegDist = -projDist;
     });
 
-    const totalWidth = maxPosDist + maxNegDist;
+    const totalWidth = Math.max(0, maxPosDist + maxNegDist - sideMarginMeters * 2);
     const numLines = Math.floor(totalWidth / (widthCm / 100));
 
     const countEl = document.getElementById('cadUneCount');
@@ -2604,13 +2607,6 @@ window.reassignLabels = () => {
     });
 
     window.updateCadLabelPositionsThrottled();
-
-    if (!window.cadIsSnapping) {
-        const countEl = document.getElementById('cadUneCount');
-        if (countEl && totalPolygons.length > 0) {
-            countEl.value = totalPolygons.length;
-        }
-    }
 };
 
 window.saveUneSim = async () => {
