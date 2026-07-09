@@ -1912,20 +1912,34 @@ function applyAICropExtractionResult(data) {
                         }
                     }
                     
-                    const payload = {
-                    crop: document.getElementById('crCrop') ? document.getElementById('crCrop').value : '',
-                    variety: document.getElementById('crVariety') ? document.getElementById('crVariety').value : '',
-                    season: t.type_name || '',
-                    climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
-                    characteristics: document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '',
-                    maker: document.getElementById('crMaker') ? document.getElementById('crMaker').value : '',
-                    harvestSeason: t.harvest_season || '',
-                    sowing: s_arr,
-                    planting: p_arr,
-                    harvesting: h_arr,
-                    files: fileDataArray // Array of {base64Data, mimeType, fileName, fileType}
-                };
-                crPendingCroptypes.push(payload);
+                    let subLen = Math.max(1, s_arr.length, p_arr.length);
+                    for (let subIdx = 0; subIdx < subLen; subIdx++) {
+                        let sub_s = s_arr.length > 0 ? [s_arr[Math.min(subIdx, s_arr.length - 1)]] : [];
+                        let sub_p = p_arr.length > 0 ? [p_arr[Math.min(subIdx, p_arr.length - 1)]] : [];
+                        let sub_h = [];
+                        if (h_arr.length > 0) {
+                            let h_chunk_size = Math.max(1, Math.round(h_arr.length / subLen));
+                            let h_start = Math.min(subIdx * h_chunk_size, h_arr.length - 1);
+                            let h_end = (subIdx === subLen - 1) ? h_arr.length : Math.min((subIdx + 1) * h_chunk_size, h_arr.length);
+                            for (let i = h_start; i < h_end; i++) {
+                                sub_h.push(h_arr[i]);
+                            }
+                        }
+                        const payload = {
+                            crop: document.getElementById('crCrop') ? document.getElementById('crCrop').value : '',
+                            variety: document.getElementById('crVariety') ? document.getElementById('crVariety').value : '',
+                            season: t.type_name || '',
+                            climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
+                            characteristics: document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '',
+                            maker: document.getElementById('crMaker') ? document.getElementById('crMaker').value : '',
+                            harvestSeason: t.harvest_season || '',
+                            sowing: sub_s,
+                            planting: sub_p,
+                            harvesting: sub_h,
+                            files: fileDataArray // Array of {base64Data, mimeType, fileName, fileType}
+                        };
+                        crPendingCroptypes.push(payload);
+                    }
                 } // End for loop
             });
             renderCrPendingList();
