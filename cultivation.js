@@ -655,24 +655,6 @@ function toggleCpCell(td, planId) {
     const tool = document.querySelector('input[name="cpTool"]:checked').value;
     const div = td.querySelector('div');
     
-    if (tool === 'planting') {
-        const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
-        if (tr) {
-            const allTds = tr.querySelectorAll('td[data-month-index]');
-            allTds.forEach(otherTd => {
-                if (otherTd !== td && otherTd.dataset.task === tool) {
-                    otherTd.dataset.task = '';
-                    const otherDiv = otherTd.querySelector('div');
-                    if (otherDiv) {
-                        otherDiv.style.backgroundColor = '';
-                        otherDiv.innerHTML = '';
-                    }
-                    otherTd.dataset.amount = '';
-                }
-            });
-        }
-    }
-    
     if (tool === 'eraser') {
         td.dataset.task = '';
         div.style.backgroundColor = '';
@@ -1181,22 +1163,6 @@ function renderCroptypePaintGrid() {
 function toggleCrCell(td) {
     const tool = document.querySelector('input[name="crTool"]:checked').value;
     const div = td.querySelector('div');
-    
-    if (tool === 'planting') {
-        const table = document.getElementById('crTable');
-        if (table) {
-            const allTds = table.querySelectorAll('td[data-month-index]');
-            allTds.forEach(otherTd => {
-                if (otherTd !== td && otherTd.dataset.task === tool) {
-                    otherTd.dataset.task = '';
-                    const otherDiv = otherTd.querySelector('div');
-                    if (otherDiv) {
-                        otherDiv.style.backgroundColor = '';
-                    }
-                }
-            });
-        }
-    }
     
     if (tool === 'eraser') {
         td.dataset.task = '';
@@ -1912,34 +1878,20 @@ function applyAICropExtractionResult(data) {
                         }
                     }
                     
-                    let subLen = Math.max(1, s_arr.length, p_arr.length);
-                    for (let subIdx = 0; subIdx < subLen; subIdx++) {
-                        let sub_s = s_arr.length > 0 ? [s_arr[Math.min(subIdx, s_arr.length - 1)]] : [];
-                        let sub_p = p_arr.length > 0 ? [p_arr[Math.min(subIdx, p_arr.length - 1)]] : [];
-                        let sub_h = [];
-                        if (h_arr.length > 0) {
-                            let h_chunk_size = Math.max(1, Math.round(h_arr.length / subLen));
-                            let h_start = Math.min(subIdx * h_chunk_size, h_arr.length - 1);
-                            let h_end = (subIdx === subLen - 1) ? h_arr.length : Math.min((subIdx + 1) * h_chunk_size, h_arr.length);
-                            for (let i = h_start; i < h_end; i++) {
-                                sub_h.push(h_arr[i]);
-                            }
-                        }
-                        const payload = {
-                            crop: document.getElementById('crCrop') ? document.getElementById('crCrop').value : '',
-                            variety: document.getElementById('crVariety') ? document.getElementById('crVariety').value : '',
-                            season: t.type_name || '',
-                            climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
-                            characteristics: document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '',
-                            maker: document.getElementById('crMaker') ? document.getElementById('crMaker').value : '',
-                            harvestSeason: t.harvest_season || '',
-                            sowing: sub_s,
-                            planting: sub_p,
-                            harvesting: sub_h,
-                            files: fileDataArray // Array of {base64Data, mimeType, fileName, fileType}
-                        };
-                        crPendingCroptypes.push(payload);
-                    }
+                    const payload = {
+                        crop: document.getElementById('crCrop') ? document.getElementById('crCrop').value : '',
+                        variety: document.getElementById('crVariety') ? document.getElementById('crVariety').value : '',
+                        season: t.type_name || '',
+                        climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
+                        characteristics: document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '',
+                        maker: document.getElementById('crMaker') ? document.getElementById('crMaker').value : '',
+                        harvestSeason: t.harvest_season || '',
+                        sowing: s_arr,
+                        planting: p_arr,
+                        harvesting: h_arr,
+                        files: fileDataArray // Array of {base64Data, mimeType, fileName, fileType}
+                    };
+                    crPendingCroptypes.push(payload);
                 } // End for loop
             });
             renderCrPendingList();
