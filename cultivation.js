@@ -1860,12 +1860,18 @@ function applyAICropExtractionResult(data) {
         
         const processPayloads = (fileDataArray) => {
             data.types.forEach(t => {
-                let s_arr = [];
-                let p_arr = [];
-                let h_arr = [];
-                
-                if (t.sowing && Array.isArray(t.sowing)) {
-                    t.sowing.forEach(item => {
+                let maxLen = 1;
+                if (t.sowing && Array.isArray(t.sowing)) maxLen = Math.max(maxLen, t.sowing.length);
+                if (t.planting && Array.isArray(t.planting)) maxLen = Math.max(maxLen, t.planting.length);
+                if (t.harvesting && Array.isArray(t.harvesting)) maxLen = Math.max(maxLen, t.harvesting.length);
+
+                for (let idx = 0; idx < maxLen; idx++) {
+                    let s_arr = [];
+                    let p_arr = [];
+                    let h_arr = [];
+                    
+                    if (t.sowing && Array.isArray(t.sowing) && t.sowing[idx]) {
+                        let item = t.sowing[idx];
                         let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
                         let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
                         if (endIdx < startIdx && endIdx !== -1) endIdx += 12 * 6;
@@ -1875,13 +1881,12 @@ function applyAICropExtractionResult(data) {
                             }
                         } else if (item.month) {
                             // Fallback for old format
-                            let idx = mapPeriodToIndex(item.month, item.period);
-                            if (idx >= 0) s_arr.push(idx);
+                            let mappedIdx = mapPeriodToIndex(item.month, item.period);
+                            if (mappedIdx >= 0) s_arr.push(mappedIdx);
                         }
-                    });
-                }
-                if (t.planting && Array.isArray(t.planting)) {
-                    t.planting.forEach(item => {
+                    }
+                    if (t.planting && Array.isArray(t.planting) && t.planting[idx]) {
+                        let item = t.planting[idx];
                         let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
                         let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
                         if (endIdx < startIdx && endIdx !== -1) endIdx += 12 * 6;
@@ -1891,13 +1896,12 @@ function applyAICropExtractionResult(data) {
                             }
                         } else if (item.month) {
                             // Fallback for old format
-                            let idx = mapPeriodToIndex(item.month, item.period);
-                            if (idx >= 0) p_arr.push(idx);
+                            let mappedIdx = mapPeriodToIndex(item.month, item.period);
+                            if (mappedIdx >= 0) p_arr.push(mappedIdx);
                         }
-                    });
-                }
-                if (t.harvesting && Array.isArray(t.harvesting)) {
-                    t.harvesting.forEach(item => {
+                    }
+                    if (t.harvesting && Array.isArray(t.harvesting) && t.harvesting[idx]) {
+                        let item = t.harvesting[idx];
                         let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
                         let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
                         if (endIdx < startIdx && endIdx !== -1) endIdx += 12 * 6;
@@ -1906,10 +1910,9 @@ function applyAICropExtractionResult(data) {
                                 h_arr.push(i);
                             }
                         }
-                    });
-                }
-                
-                const payload = {
+                    }
+                    
+                    const payload = {
                     crop: document.getElementById('crCrop') ? document.getElementById('crCrop').value : '',
                     variety: document.getElementById('crVariety') ? document.getElementById('crVariety').value : '',
                     season: t.type_name || '',
@@ -1923,9 +1926,10 @@ function applyAICropExtractionResult(data) {
                     files: fileDataArray // Array of {base64Data, mimeType, fileName, fileType}
                 };
                 crPendingCroptypes.push(payload);
+                } // End for loop
             });
             renderCrPendingList();
-            alert(`AIによる自動入力が完了し、${data.types.length}件の作型をリストに追加しました。不要な作型は「削除」してください。`);
+            alert(`AIによる自動入力が完了し、作型をリストに追加しました。不要な作型は「削除」してください。`);
         };
         
         if (files.length > 0) {
