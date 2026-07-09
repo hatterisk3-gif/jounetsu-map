@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>諠・・MAP [邂｡逅・・畑] v1.65</title>
+  <title>情熱MAP [管理者用] v1.65</title>
   <link rel="apple-touch-icon" href="icon_admin.png">
   <link rel="icon" href="icon_admin.png">
   <link rel="manifest" href="manifest_admin.json">
@@ -19,38 +19,38 @@
 <body>
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">諠・・MAP 邂｡逅・判髱｢ (v1.65)</h2>
+      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v1.65)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div>
-      <input type="text" id="loginOrgId" class="login-input" placeholder="邨・ｹ祢D">
-      <input type="text" id="loginId" class="login-input" placeholder="繧ｹ繧ｿ繝・ヵID">
-      <input type="password" id="loginPw" class="login-input" placeholder="繝代せ繝ｯ繝ｼ繝・>
-      <button class="login-btn" id="loginBtn" onclick="executeLogin()">邂｡逅・・→縺励※繝ｭ繧ｰ繧､繝ｳ</button>
+      <input type="text" id="loginOrgId" class="login-input" placeholder="組織ID">
+      <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
+      <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
+      <button class="login-btn" id="loginBtn" onclick="executeLogin()">管理者としてログイン</button>
     </div>
   </div>
 
   <button id="btnCurrentLocation" style="position: fixed; bottom: 230px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
-      桃
+      📍
   </button>
 
   <div id="cadOverlay">
     <div id="cadHeader">
-      <div style="font-weight:bold; font-size:16px;">囿 霎ｲ讌ｭCAD <span id="cadTargetName"
+      <div style="font-weight:bold; font-size:16px;">🚜 農業CAD <span id="cadTargetName"
           style="font-size:12px; color:#aaa; margin-left:10px;"></span></div>
       <button onclick="closeCADMode()"
-        style="background:#f44336; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; font-size:14px; cursor:pointer;">髢峨§繧・/button>
+        style="background:#f44336; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
     </div>
 
     <div id="cadMapWrapper">
       <div id="cadMap"></div>
-      <!-- 検 SVG overlay for crisp polygons at extreme zoom -->
+      <!-- 🌟 SVG overlay for crisp polygons at extreme zoom -->
       <svg id="cadSvgOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;"></svg>
-      <!-- 剥 繧ｺ繝ｼ繝繝懊ち繝ｳ繧定ｿｽ蜉 -->
+      <!-- 🔍 ズームボタンを追加 -->
       <div
         style="position: absolute; right: 15px; top: 70px; display: flex; flex-direction: column; gap: 8px; z-index: 1000;">
         <button onclick="cadZoomIn()"
-          style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0, 0, 0, 0.7); color: white; border: 1px solid rgba(255, 255, 255, 0.3); font-size: 24px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); outline: none;">・・/button>
+          style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0, 0, 0, 0.7); color: white; border: 1px solid rgba(255, 255, 255, 0.3); font-size: 24px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); outline: none;">＋</button>
         <button onclick="cadZoomOut()"
-          style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0, 0, 0, 0.7); color: white; border: 1px solid rgba(255, 255, 255, 0.3); font-size: 24px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); outline: none;">・・/button>
+          style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0, 0, 0, 0.7); color: white; border: 1px solid rgba(255, 255, 255, 0.3); font-size: 24px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); outline: none;">－</button>
       </div>
     </div>
 
@@ -59,131 +59,131 @@
       <div style="display:flex; gap:0; margin-bottom:8px; border-bottom:2px solid #555;">
         <div id="cadTab1" onclick="switchCadTab(1)"
           style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0; font-size:12px;">
-          竭 逕滓・繝｢繝ｼ繝・/div>
+          ① 生成モード</div>
         <div id="cadTab2" onclick="switchCadTab(2)"
           style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:12px;">
-          竭｡ 邱ｨ髮・・菫晏ｭ・/div>
+          ② 編集・保存</div>
       </div>
 
       <div id="cadMode1">
         <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
           <div style="flex:1; display:none;">
-            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">ｧｭ 譁ｹ隗・蠎ｦ)</label>
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🧭 方角(度)</label>
             <input type="number" step="0.1" id="cadAngle" value="0" oninput="updateCadPreviewCount()"
               style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
           </div>
           <div style="flex:1;">
-            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">棟 蝓ｺ貅悶・逡晏ｹ・cm)</label>
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">📏 基準の畝幅(cm)</label>
             <input type="number" id="cadWidth" value="150" oninput="updateCadPreviewCount()"
               style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
           </div>
           <div style="flex:1;">
-            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">圻 蛛ｴ髱｢縺ｮ菴咏區(cm)</label>
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚫 側面の余白(cm)</label>
             <input type="number" id="cadMarginSide" value="50" oninput="updateCadPreviewCount()"
               style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
           </div>
           <div style="flex:1;">
-            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">圻 遶ｯ髱｢縺ｮ菴咏區(cm)</label>
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚫 端面の余白(cm)</label>
             <input type="number" id="cadMarginEnd" value="250" oninput="updateCadPreviewCount()"
               style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
           </div>
         </div>
 
-        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">盗 逡昴・豁｣髱｢・医ヰ繝ｼ・蛾・鄂ｮ</div>
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📐 畝の正面（バー）配置</div>
         <div style="display:flex; gap:5px; margin-bottom:5px;">
-           <button onclick="cadSetFrontBar('top')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">荳・蛹・</button>
-           <button onclick="cadSetFrontBar('bottom')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">荳・蜊・</button>
-           <button onclick="cadSetFrontBar('left')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">蟾ｦ(隘ｿ)</button>
-           <button onclick="cadSetFrontBar('right')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">蜿ｳ(譚ｱ)</button>
+           <button onclick="cadSetFrontBar('top')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">上(北)</button>
+           <button onclick="cadSetFrontBar('bottom')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">下(南)</button>
+           <button onclick="cadSetFrontBar('left')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">左(西)</button>
+           <button onclick="cadSetFrontBar('right')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">右(東)</button>
         </div>
         <div style="display:flex; gap:5px; margin-bottom:10px;">
 
           <button onclick="cadSetPinMode('snap_line')"
-            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">識
-            驕ｸ繧薙□邱壹↓蜷医ｏ縺帙ｋ</button>
+            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
+            選んだ線に合わせる</button>
           <button onclick="cadRotateMap(-5)"
-            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">竊ｩ・・/button>
+            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↩️</button>
           <button onclick="cadRotateMap(5)"
-            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">竊ｪ・・/button>
+            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↪️</button>
         </div>
 
-        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">棟 逡晞俣・磯俣髫費ｼ峨・隱ｿ謨ｴ</div>
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📏 畝間（間隔）の調整</div>
         <div style="display:flex; gap:5px; margin-bottom:10px;">
-          <button onclick="cadAdjustRidgeGap(-0.05)" style="flex:1; background:#4CAF50; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">髢馴囈繧堤強縺上☆繧・/button>
-          <button onclick="cadAdjustRidgeGap(0.05)" style="flex:1; background:#FF9800; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">髢馴囈繧貞ｺ・￥縺吶ｋ</button>
+          <button onclick="cadAdjustRidgeGap(-0.05)" style="flex:1; background:#4CAF50; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">間隔を狭くする</button>
+          <button onclick="cadAdjustRidgeGap(0.05)" style="flex:1; background:#FF9800; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">間隔を広くする</button>
         </div>
 
         <div style="display:flex; gap:10px; align-items:center;">
           <div
             style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
-            <span style="font-size:11px; color:#aaa;">遒ｺ螳夂幅謨ｰ:</span>
+            <span style="font-size:11px; color:#aaa;">確定畝数:</span>
             <input type="number" id="cadUneCount" value="0"
               style="width:50px; font-size:16px; font-weight:bold; color:#8BC34A; background:transparent; border:none; text-align:center;">
           </div>
           <button onclick="cadGenerateLines()"
-            style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">囿
-            逡昴ｒ逕滓・</button>
+            style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜
+            畝を生成</button>
         </div>
       </div>
 
       <div id="cadMode2" style="display:none;">
-        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">桃 險ｭ蛯吶ヴ繝ｳ縺ｨ陬懷勧邱・/div>
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📍 設備ピンと補助線</div>
         <div style="display:flex; gap:5px; margin-bottom:10px;">
           <button onclick="cadSetPinMode('water_in')"
-            style="flex:1; background:#03A9F4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">挑
-            蜷ｸ豌ｴ</button>
+            style="flex:1; background:#03A9F4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">💧
+            吸水</button>
           <button onclick="cadSetPinMode('water_out')"
-            style="flex:1; background:#8D6E63; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">糞・・
-            謗呈ｰｴ</button>
+            style="flex:1; background:#8D6E63; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🕳️
+            排水</button>
           <button onclick="cadSetPinMode('machine_entry')"
-            style="flex:1; background:#FF5722; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">囿
-            萓ｵ蜈･蜿｣</button>
+            style="flex:1; background:#FF5722; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🚜
+            侵入口</button>
           <button onclick="cadSetPinMode('parking_truck')"
-            style="flex:1; background:#607D8B; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">崕
-            霆ｽ繝医Λ</button>
+            style="flex:1; background:#607D8B; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛻
+            軽トラ</button>
         </div>
 
-        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">笨ゑｸ・蝨ｰ蠖｢繝ｻ閾ｪ逕ｱ逡昴・霑ｽ蜉 (繧ｿ繝・・縺ｧ遘ｻ蜍・螟牙ｽ｢蜿ｯ閭ｽ)</div>
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 地形・自由畝の追加 (タップで移動/変形可能)</div>
         <div style="display:flex; gap:5px; margin-bottom:5px;">
           <button onclick="cadSetPinMode('nakamichi')"
-            style="flex:1; background:#9C27B0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">乢
-            荳ｭ驕薙Λ繧､繝ｳ</button>
+            style="flex:1; background:#9C27B0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛤
+            中道ライン</button>
           <button onclick="cadSetPinMode('drainage')"
-            style="flex:1; background:#00BCD4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">縲ｰ・・
-            謗呈ｰｴ繝ｩ繧､繝ｳ</button>
+            style="flex:1; background:#00BCD4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">〰️
+            排水ライン</button>
           <button onclick="cadAddCustomShape('rect')"
-            style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">筮・
-            蝗幄ｧ堤幅</button>
+            style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛
+            四角畝</button>
           <button onclick="cadAddCustomShape('circle')"
-            style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">笞ｫ
-            荳ｸ逡・/button>
+            style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⚫
+            丸畝</button>
           <button onclick="cadAddMakura()"
-            style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">寥
-            譫慕幅</button>
+            style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛌
+            枕畝</button>
         </div>
-        <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; text-align:center; margin-bottom:10px;">庁
-          逡昴ｒ逶ｴ謗･繧ｿ繝・・縺吶ｋ縺ｨ縲∝香蟄励く繝ｼ縺ｧ遘ｻ蜍輔ｄ螟牙ｽ｢縺後〒縺阪∪縺吶・/div>
+        <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; text-align:center; margin-bottom:10px;">💡
+          畝を直接タップすると、十字キーで移動や変形ができます。</div>
 
-        <!-- 検 譁ｰ讖溯・・壼ｱ･豁ｴ・域綾繧九・騾ｲ繧・峨・繧ｿ繝ｳ -->
+        <!-- 🌟 新機能：履歴（戻る・進む）ボタン -->
         <div style="display:flex; gap:5px; margin-bottom:10px;">
           <button id="cadUndoBtn" onclick="cadUndoAction()" disabled
-            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">竊ｩ・・
-            謌ｻ縺・/button>
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↩️
+            戻す</button>
           <button id="cadRedoBtn" onclick="cadRedoAction()" disabled
-            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">竊ｪ・・
-            騾ｲ繧</button>
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↪️
+            進む</button>
         </div>
 
         <div style="display:flex; gap:10px; width:100%; margin-top:5px;">
           <button onclick="saveUneSim()"
-            style="flex:2; background:#2196F3; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">沈
-            謠冗判蝗ｳ髱｢繧剃ｿ晏ｭ・/button>
+            style="flex:2; background:#2196F3; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">💾
+            描画図面を保存</button>
           <button onclick="cadUserClearLines()"
-            style="flex:1; background:#f44336; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">卵・・
-            繧ｯ繝ｪ繧｢</button>
+            style="flex:1; background:#f44336; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🗑️
+            クリア</button>
         </div>
         <div style="margin-top:10px;">
-          <button onclick="showCadHistoryModal()" style="width:100%; background:#9E9E9E; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">套 驕主悉縺ｮ蝗ｳ髱｢繧貞ｾｩ蜈・/button>
+          <button onclick="showCadHistoryModal()" style="width:100%; background:#9E9E9E; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">📅 過去の図面を復元</button>
         </div>
       </div>
     </div>
@@ -192,62 +192,62 @@
     style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); width:90%; max-width:300px; z-index:999999;">
     <div
       style="background:#fff; color:#333; padding:15px; border-radius:12px; text-align:center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-      <h3 style="margin-top:0; border-bottom:2px solid #8BC34A; padding-bottom:10px; font-size:16px;">屏 繝昴Μ繧ｴ繝ｳ縺ｮ謫堺ｽ・/h3>
+      <h3 style="margin-top:0; border-bottom:2px solid #8BC34A; padding-bottom:10px; font-size:16px;">🛠 ポリゴンの操作</h3>
       <input type="hidden" id="cadEditIndex">
-      <div style="font-size:12px; margin-bottom:15px; color:#666;">蜊∝ｭ励く繝ｼ繧・・繧ｿ繝ｳ縺ｧ遘ｻ蜍輔・螟牙ｽ｢縺後〒縺阪∪縺・/div>
+      <div style="font-size:12px; margin-bottom:15px; color:#666;">十字キーやボタンで移動・変形ができます</div>
       
-      <!-- 繧ｰ繝ｫ繝ｼ繝苓ｨｭ螳夊ｿｽ蜉 -->
+      <!-- グループ設定追加 -->
       <div style="margin-bottom:15px; background:#f9f9f9; padding:10px; border-radius:8px;">
-        <label style="font-size:12px; font-weight:bold; color:#555;">捷 逡昴げ繝ｫ繝ｼ繝・(莉ｻ諢・</label>
+        <label style="font-size:12px; font-weight:bold; color:#555;">🏷 畝グループ (任意)</label>
         <div style="display:flex; gap:10px; margin-bottom:5px;">
           <div style="flex:1;">
-            <label style="font-size:12px; font-weight:bold; color:#555;">箸 逡晉分蜿ｷ</label>
-            <input type="text" id="cadEditCustomLabel" placeholder="萓・ 1A" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;">
+            <label style="font-size:12px; font-weight:bold; color:#555;">🔢 畝番号</label>
+            <input type="text" id="cadEditCustomLabel" placeholder="例: 1A" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;">
           </div>
           <div style="flex:1;">
-            <label style="font-size:12px; font-weight:bold; color:#555;">捷 繧ｰ繝ｫ繝ｼ繝・/label>
-            <input type="text" id="cadEditUneGroup" placeholder="萓・ A蛹ｺ逕ｻ" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;">
+            <label style="font-size:12px; font-weight:bold; color:#555;">🏷 グループ</label>
+            <input type="text" id="cadEditUneGroup" placeholder="例: A区画" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;">
           </div>
         </div>
         <div style="text-align:right;">
-          <button onclick="window.cadApplyUneDetails()" style="background:#4CAF50; color:white; border:none; border-radius:4px; padding:6px 12px; font-weight:bold;">驕ｩ逕ｨ</button>
+          <button onclick="window.cadApplyUneDetails()" style="background:#4CAF50; color:white; border:none; border-radius:4px; padding:6px 12px; font-weight:bold;">適用</button>
         </div>
         <div style="margin-top:5px; text-align:left;">
-          <button onclick="window.cadApplyGroupToAllSubsequent()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:4px 8px; font-size:10px; cursor:pointer;">縺薙・逡昜ｻ･髯阪ｒ縺吶∋縺ｦ蜷後§繧ｰ繝ｫ繝ｼ繝励↓縺吶ｋ</button>
+          <button onclick="window.cadApplyGroupToAllSubsequent()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:4px 8px; font-size:10px; cursor:pointer;">この畝以降をすべて同じグループにする</button>
         </div>
       </div>
       
       <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-bottom:20px;">
         <div style="display:flex; flex-direction:column; gap:10px;">
-          <button onmousedown="window.startCadContinuousAction('rotate', -1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('rotate', -1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">竊ｺ</button>
-          <button onmousedown="window.startCadContinuousAction('resize', 0.9)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('resize', 0.9); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">筐・/button>
+          <button onmousedown="window.startCadContinuousAction('rotate', -1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('rotate', -1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">↺</button>
+          <button onmousedown="window.startCadContinuousAction('resize', 0.9)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('resize', 0.9); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">➖</button>
         </div>
         <div style="display:grid; grid-template-columns: repeat(3, 40px); grid-gap: 5px;">
           <div></div>
-          <button onmousedown="window.startCadContinuousAction('move', 'up')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'up'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">笆ｲ</button>
+          <button onmousedown="window.startCadContinuousAction('move', 'up')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'up'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">▲</button>
           <div></div>
-          <button onmousedown="window.startCadContinuousAction('move', 'left')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'left'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">笳</button>
+          <button onmousedown="window.startCadContinuousAction('move', 'left')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'left'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">◀</button>
           <div style="background:#e3f2fd;border-radius:8px;"></div>
-          <button onmousedown="window.startCadContinuousAction('move', 'right')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'right'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">笆ｶ</button>
+          <button onmousedown="window.startCadContinuousAction('move', 'right')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'right'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">▶</button>
           <div></div>
-          <button onmousedown="window.startCadContinuousAction('move', 'down')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'down'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">笆ｼ</button>
+          <button onmousedown="window.startCadContinuousAction('move', 'down')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'down'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">▼</button>
           <div></div>
         </div>
         <div style="display:flex; flex-direction:column; gap:10px;">
-          <button onmousedown="window.startCadContinuousAction('rotate', 1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('rotate', 1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">竊ｻ</button>
-          <button onmousedown="window.startCadContinuousAction('resize', 1.1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('resize', 1.1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">筐・/button>
+          <button onmousedown="window.startCadContinuousAction('rotate', 1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('rotate', 1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">↻</button>
+          <button onmousedown="window.startCadContinuousAction('resize', 1.1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('resize', 1.1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">➕</button>
         </div>
       </div>
 
       <div style="display:flex; gap:10px;">
         <button onclick="window.cadDeletePoly()"
-          style="flex:1; background:#F44336; color:white; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">卵
-          蜑企勁</button>
+          style="flex:1; background:#F44336; color:white; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">🗑
+          削除</button>
         <button onclick="window.cadCancelEditPoly()"
-          style="flex:1; background:#FF9800; color:white; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">笨・
-          繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
+          style="flex:1; background:#FF9800; color:white; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">✖
+          キャンセル</button>
         <button onclick="if(typeof window.cadCompleteEditPoly==='function') window.cadCompleteEditPoly(); else {document.getElementById('cadEditPolyModal').style.display='none'; document.getElementById('cadEditIndex').value='';}"
-          style="flex:1; background:#ccc; color:#333; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">螳御ｺ・/button>
+          style="flex:1; background:#ccc; color:#333; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">完了</button>
       </div>
     </div>
   </div>
@@ -263,7 +263,7 @@
       <div id="tutorialCheckboxWrapper"
         style="display: none; margin-bottom: 15px; text-align: center; font-size: 12px; color: #555;">
         <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
-          <input type="checkbox" id="dontShowAgainCheckbox" style="transform: scale(1.2);"> 莉雁ｾ後％縺ｮ繝｡繝・そ繝ｼ繧ｸ繧定｡ｨ遉ｺ縺励↑縺・
+          <input type="checkbox" id="dontShowAgainCheckbox" style="transform: scale(1.2);"> 今後このメッセージを表示しない
         </label>
       </div>
 
@@ -280,9 +280,9 @@
       </div>
       <div style="display: flex; gap: 10px;">
         <button id="customConfirmOk"
-          style="flex: 1; background: #d32f2f; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">縺ｯ縺・/button>
+          style="flex: 1; background: #d32f2f; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">はい</button>
         <button id="customConfirmCancel"
-          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">縺・＞縺・/button>
+          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">いいえ</button>
       </div>
     </div>
   </div>
@@ -299,7 +299,7 @@
         <button id="customPromptOk"
           style="flex: 1; background: #4CAF50; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
         <button id="customPromptCancel"
-          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
+          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">キャンセル</button>
       </div>
     </div>
   </div>
@@ -311,10 +311,10 @@
   <div id="masterModal">
     <div
       style="background:#fff; color:#333; padding:20px; border-radius:8px; width:90%; max-width:400px; max-height:85%; display:flex; flex-direction:column;">
-      <h3 style="margin-top:0; color:#d32f2f;">笞呻ｸ・繝槭せ繧ｿ鬆・岼險ｭ螳・/h3>
+      <h3 style="margin-top:0; color:#d32f2f;">⚙️ マスタ項目設定</h3>
       <div id="masterSections" style="overflow-y:auto; flex:1; padding-right:5px;"></div>
       <button onclick="document.getElementById('masterModal').style.display='none'"
-        style="width:100%; padding:12px; background:#666; color:#fff; border-radius:4px; margin-top:15px; border:none; font-weight:bold; font-size:16px;">髢峨§繧・/button>
+        style="width:100%; padding:12px; background:#666; color:#fff; border-radius:4px; margin-top:15px; border:none; font-weight:bold; font-size:16px;">閉じる</button>
     </div>
   </div>
 
@@ -322,63 +322,63 @@
     <div
       style="background:#222; color:#fff; width:90%; max-width:400px; border-radius:8px; display:flex; flex-direction:column; padding:20px; box-sizing:border-box; border:1px solid #444;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-        <h3 style="margin:0; color:#d32f2f; font-size:18px;">笨会ｸ・繧ｷ繧ｹ繝・Β邂｡逅・・∈騾｣邨｡</h3>
-        <span onclick="closeFeedback()" style="cursor:pointer; font-size:24px; color:#999; line-height:1;">ﾃ・/span>
+        <h3 style="margin:0; color:#d32f2f; font-size:18px;">✉️ システム管理者へ連絡</h3>
+        <span onclick="closeFeedback()" style="cursor:pointer; font-size:24px; color:#999; line-height:1;">×</span>
       </div>
-      <p style="font-size:12px; color:#aaa; margin-top:0;">繝舌げ縺ｮ蝣ｱ蜻翫ｄ讖溯・霑ｽ蜉縺ｮ隕∵悍縺ｪ縺ｩ繧偵＃險伜・縺上□縺輔＞縲・/p>
-      <textarea id="feedbackText" rows="6" placeholder="萓具ｼ壹・・・逕ｻ髱｢縺ｧ繧ｨ繝ｩ繝ｼ縺悟・縺ｾ縺吶ゅ・・・讖溯・繧定ｿｽ蜉縺励※縺ｻ縺励＞縺ｧ縺吶・
+      <p style="font-size:12px; color:#aaa; margin-top:0;">バグの報告や機能追加の要望などをご記入ください。</p>
+      <textarea id="feedbackText" rows="6" placeholder="例：〇〇の画面でエラーが出ます。〇〇の機能を追加してほしいです。"
         style="width:100%; padding:10px; border-radius:4px; border:1px solid #555; background:#333; color:#fff; box-sizing:border-box; margin-bottom:15px; resize:none;"></textarea>
       <button id="sendFeedbackBtn" onclick="sendFeedback()"
-        style="width:100%; background:#d32f2f; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold; font-size:16px;">騾∽ｿ｡縺吶ｋ</button>
+        style="width:100%; background:#d32f2f; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold; font-size:16px;">送信する</button>
     </div>
   </div>
 
   <div class="control-panel">
     <div class="control-row">
       <div class="search-container">
-        <input type="text" id="searchInput" class="search-input" placeholder="剥 蝨・ｴ繝ｻ逵区攸...">
+        <input type="text" id="searchInput" class="search-input" placeholder="🔍 圃場・看板...">
         <div id="searchSuggestions"></div>
       </div>
       <div class="search-container">
-        <input type="text" id="mapSearchInput" class="search-input" placeholder="訣 菴乗園繝ｻ蝨ｰ蝓・..">
+        <input type="text" id="mapSearchInput" class="search-input" placeholder="🌍 住所・地域...">
       </div>
       <button onclick="promptLineUrl()"
-        style="background:rgba(156, 39, 176, 0.8); color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:11px;">桃
-        蠎ｧ讓呎､懃ｴ｢</button>
+        style="background:rgba(156, 39, 176, 0.8); color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:11px;">📍
+        座標検索</button>
       <button onclick="forceUpdateApp()"
-        style="background:#4CAF50; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">売
-        譛譁ｰ縺ｫ譖ｴ譁ｰ</button>
+        style="background:#4CAF50; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
+        最新に更新</button>
       <button onclick="openFeedback()"
-        style="background:rgba(68, 68, 68, 0.8); color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">笨会ｸ・
-        騾｣邨｡</button>
+        style="background:rgba(68, 68, 68, 0.8); color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️
+        連絡</button>
       <button onclick="executeLogout()"
-        style="background:rgba(244, 67, 54, 0.8); color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">繝ｭ繧ｰ繧｢繧ｦ繝・/button>
+        style="background:rgba(244, 67, 54, 0.8); color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">ログアウト</button>
     </div>
     <div class="control-row">
-      <button id="btnViewMode" class="mode-btn active">操 髢ｲ隕ｧ</button>
-      <button id="btnDrawMode" class="mode-btn">笨擾ｸ・蝨・ｴ</button>
-      <button id="btnMarkerMode" class="mode-btn">桃 逵区攸</button>
+      <button id="btnViewMode" class="mode-btn active">👀 閲覧</button>
+      <button id="btnDrawMode" class="mode-btn">✏️ 圃場</button>
+      <button id="btnMarkerMode" class="mode-btn">📍 看板</button>
       <button onclick="openMasterModal()"
-        style="background:rgba(33, 150, 243, 0.8); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">笞呻ｸ・
-        繝槭せ繧ｿ</button>
+        style="background:rgba(33, 150, 243, 0.8); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️
+        マスタ</button>
     </div>
     <div id="drawArea" class="action-bar" style="display:none;">
       <div id="drawStep1">
         <div style="display:flex; gap:8px; margin-bottom:8px;">
           <button id="btnManualDraw"
-            style="flex:1; background:#00BCD4; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">漕
-            謇句虚縺ｧ謠上￥</button>
+            style="flex:1; background:#00BCD4; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">👆
+            手動で描く</button>
           <button id="btnLoadFude"
-            style="flex:1; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">､・
-            遲・・繝ｪ縺九ｉ</button>
+            style="flex:1; background:#673AB7; color:white; border:none; border-radius:4px; font-weight:bold; padding:10px;">🤖
+            筆ポリから</button>
         </div>
         <div style="display:flex; gap:8px;">
           <button id="undoDrawBtn"
             style="background:#FF9800; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;"
-            disabled>竊ｩ・・1縺､謌ｻ縺・/button>
+            disabled>↩️ 1つ戻す</button>
           <button id="step1SaveBtn"
             style="background:#4CAF50; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;"
-            disabled>蠖｢繧呈ｱｺ螳夲ｼ域ｬ｡縺ｸ・・/button>
+            disabled>形を決定（次へ）</button>
         </div>
       </div>
 
@@ -387,43 +387,43 @@
           style="display:none; background:#222; padding:8px; border-radius:4px; margin-bottom:10px; line-height:1.4;">
         </div>
         <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-          <input type="text" id="fieldName" class="form-input" placeholder="蝨・ｴ蜷・ style="flex: 2; margin-bottom: 0;">
-          <input type="number" id="fieldStartNumber" class="form-input" placeholder="髢句ｧ狗分蜿ｷ" value="1" style="flex: 1; margin-bottom: 0;" min="0.1" step="0.1">
+          <input type="text" id="fieldName" class="form-input" placeholder="圃場名" style="flex: 2; margin-bottom: 0;">
+          <input type="number" id="fieldStartNumber" class="form-input" placeholder="開始番号" value="1" style="flex: 1; margin-bottom: 0;" min="0.1" step="0.1">
         </div>
         <select id="fieldLocation" class="form-input">
-          <option value="">諡轤ｹ</option>
+          <option value="">拠点</option>
         </select>
         <select id="fieldCondition" class="form-input">
-          <option value="">譚｡莉ｶ</option>
+          <option value="">条件</option>
         </select>
         <select id="fieldStatus" class="form-input">
-          <option value="">遞ｼ蜒咲憾豕・/option>
+          <option value="">稼働状況</option>
         </select>
 
         <div style="display:flex; gap:8px;">
           <button id="backToStep1Btn"
-            style="background:#666; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;">繧・ｊ逶ｴ縺・/button>
+            style="background:#666; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;">やり直す</button>
           <button id="finalSaveBtn"
-            style="background:#d32f2f; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;">蝨・ｴ逋ｻ骭ｲ</button>
+            style="background:#d32f2f; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;">圃場登録</button>
         </div>
       </div>
     </div>
   </div>
   <div id="editShapePanel"
     style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#ffeb3b; color:#000; padding:10px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:400px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
-    笞・・蠖｢迥ｶ螟画峩荳ｭ
+    ⚠️ 形状変更中
     <div style="margin-top:10px;">
-      <button id="editLoadFudeBtn" style="display:none; background:#673AB7; color:white; margin:0 5px; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">､・遲・・繝ｪ縺九ｉ</button>
-      <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 5px; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">遒ｺ螳・/button>
-      <button id="cancelShapeBtn" style="background:#666; color:#fff; border:none; margin:0 5px; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">謌ｻ縺・/button>
+      <button id="editLoadFudeBtn" style="display:none; background:#673AB7; color:white; margin:0 5px; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">🤖 筆ポリから</button>
+      <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 5px; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">確定</button>
+      <button id="cancelShapeBtn" style="background:#666; color:#fff; border:none; margin:0 5px; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">戻す</button>
     </div>
   </div>
   <div id="mergeModePanel"
     style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#FF9800; color:#fff; padding:10px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:400px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
-    囿 邨ｱ蜷医Δ繝ｼ繝我ｸｭ・壹ｂ縺・ｸ縺､縺ｮ蝨・ｴ繧偵け繝ｪ繝・け縺励※邨ｱ蜷・
+    🚜 統合モード中：もう一つの圃場をクリックして統合
     <div style="margin-top:10px;">
       <button onclick="cancelMerge()"
-        style="background:#666; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
+        style="background:#666; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">キャンセル</button>
     </div>
   </div>
   <div id="map"></div>
@@ -437,31 +437,31 @@
 
   <div id="cadHistoryModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:90%; max-width:320px; z-index:999999;">
     <div style="background:#fff; color:#333; padding:15px; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height:80vh; display:flex; flex-direction:column;">
-      <h3 style="margin-top:0; border-bottom:2px solid #2196F3; padding-bottom:10px; font-size:16px; text-align:center;">套 驕主悉縺ｮ蝗ｳ髱｢繧貞ｾｩ蜈・/h3>
+      <h3 style="margin-top:0; border-bottom:2px solid #2196F3; padding-bottom:10px; font-size:16px; text-align:center;">📅 過去の図面を復元</h3>
       <div id="cadHistoryList" style="flex:1; overflow-y:auto; margin-bottom:15px;"></div>
-      <button onclick="document.getElementById('cadHistoryModal').style.display='none'" style="width:100%; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">髢峨§繧・/button>
+      <button onclick="document.getElementById('cadHistoryModal').style.display='none'" style="width:100%; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
     </div>
   </div>
   <div id="splitPolygonPanel" style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#009688; color:#fff; padding:15px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:400px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
-    笨ゑｸ・蝗幄ｧ貞ｽ｢繧貞插遲牙・蜑ｲ縺励∪縺吶°・・
+    ✂️ 四角形を均等分割しますか？
     <div style="margin-top:10px; display:flex; gap:5px; flex-wrap:wrap; justify-content:center;">
-      <button onclick="promptSplitPolygon('long')" style="background:#E91E63; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">髟ｷ縺・婿縺ｫ蛻・牡</button>
-      <button onclick="promptSplitPolygon('short')" style="background:#FF9800; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">遏ｭ縺・婿縺ｫ蛻・牡</button>
-      <button onclick="cancelSplitPolygon()" style="background:#666; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">縺昴・縺ｾ縺ｾ</button>
+      <button onclick="promptSplitPolygon('long')" style="background:#E91E63; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">長い方に分割</button>
+      <button onclick="promptSplitPolygon('short')" style="background:#FF9800; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">短い方に分割</button>
+      <button onclick="cancelSplitPolygon()" style="background:#666; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">そのまま</button>
     </div>
   </div>
 
   <div id="splitCountModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:90%; max-width:320px; z-index:999999;">
     <div style="background:#fff; color:#333; padding:15px; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); display:flex; flex-direction:column;">
-      <h3 id="splitModalTitle" style="margin-top:0; border-bottom:2px solid #009688; padding-bottom:10px; font-size:16px; text-align:center;">笨ゑｸ・蛻・牡謨ｰ縺ｮ謖・ｮ・/h3>
+      <h3 id="splitModalTitle" style="margin-top:0; border-bottom:2px solid #009688; padding-bottom:10px; font-size:16px; text-align:center;">✂️ 分割数の指定</h3>
       <div style="margin-bottom:15px;">
-        <label style="font-size:12px; font-weight:bold; color:#555;">縺・￥縺､縺ｫ蛻・牡縺励∪縺吶°・・</label>
+        <label style="font-size:12px; font-weight:bold; color:#555;">いくつに分割しますか？:</label>
         <input type="number" id="splitCountInput" value="2" min="2" max="100" style="width:100%; padding:8px; margin-top:3px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
         <input type="hidden" id="splitTargetAxis" value="">
       </div>
       <div style="display:flex; gap:10px;">
-        <button onclick="document.getElementById('splitCountModal').style.display='none'" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
-        <button onclick="executeSplitPolygon()" style="flex:1; background:#009688; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">蛻・牡縺吶ｋ</button>
+        <button onclick="document.getElementById('splitCountModal').style.display='none'" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">キャンセル</button>
+        <button onclick="executeSplitPolygon()" style="flex:1; background:#009688; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">分割する</button>
       </div>
     </div>
   </div>
