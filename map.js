@@ -121,7 +121,7 @@ function initMap() {
         zoom: 15,
         mapTypeId: 'satellite',
         disableDefaultUI: true,
-        zoomControl: true,
+        zoomControl: false,
         gestureHandling: 'greedy'
     });
 
@@ -165,8 +165,9 @@ function drawPolygons(dataList) {
     let hasPolygons = false;
 
     dataList.forEach(pData => {
-        const coords = pData.coords || pData.path;
+        const coords = pData.coords;
         if (!coords || coords.length === 0) return;
+        if (coords.length === 1) return; // 看板アイコンは全て表示しない
 
         const manureStatus = pData.manure_status || 'none';
         const color = STATUS_COLORS[manureStatus] || STATUS_COLORS['none'];
@@ -182,6 +183,7 @@ function drawPolygons(dataList) {
         });
 
         poly.pData = pData;
+        poly._manureStatus = manureStatus;
         polygons.push(poly);
 
         coords.forEach(pos => bounds.extend(new google.maps.LatLng(pos.lat, pos.lng)));
@@ -196,6 +198,7 @@ function drawPolygons(dataList) {
             label: { text: pData.name || '', color: '#fff', fontSize: '11px', fontWeight: 'bold',
                      className: 'polygon-label' }
         });
+        labelMarker._manureStatus = manureStatus;
         markers.push(labelMarker);
 
         poly.addListener('click', () => {
@@ -222,6 +225,7 @@ function drawPolygons(dataList) {
             });
             pinMarker._isPinMarker = true;
             pinMarker._fieldId = pData.id || pData.name;
+            pinMarker._manureStatus = manureStatus;
             markers.push(pinMarker);
         }
     });
@@ -229,7 +233,18 @@ function drawPolygons(dataList) {
     if (hasPolygons) {
         map.fitBounds(bounds);
     }
+    applyFilter(); // 初回描画時にもフィルタを適用
 }
+
+window.applyFilter = function() {
+    const checkedValues = Array.from(document.querySelectorAll('.filter-cb:checked')).map(cb => cb.value);
+    polygons.forEach(p => {
+        p.setMap(checkedValues.includes(p._manureStatus) ? map : null);
+    });
+    markers.forEach(m => {
+        m.setMap(checkedValues.includes(m._manureStatus) ? map : null);
+    });
+};
 
 function getPolygonCenter(paths) {
     let bounds = new google.maps.LatLngBounds();
