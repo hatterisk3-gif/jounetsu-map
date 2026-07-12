@@ -19,8 +19,7 @@ const STATUS_COLORS = {
 
 const STATUS_LABELS = {
     'supplying': '給水中',
-    'stopped': '止水中',
-    'none': '未設定'
+    'stopped': '止水中'
 };
 
 // ====== GAS通信 ======
@@ -177,8 +176,8 @@ function drawPolygons(dataList) {
         if (!coords || coords.length === 0) return;
         if (coords.length === 1) return; // 看板アイコンは全て表示しない
 
-        const waterStatus = pData.water_status || 'none';
-        const color = STATUS_COLORS[waterStatus] || STATUS_COLORS['none'];
+        const waterStatus = pData.water_status === 'supplying' ? 'supplying' : 'stopped';
+        const color = STATUS_COLORS[waterStatus];
 
         const poly = new google.maps.Polygon({
             paths: coords,
@@ -243,7 +242,7 @@ let currentEditPoly = null;
 
 function openWaterStatusModal(pData) {
     currentEditPoly = pData;
-    const currentStatus = pData.water_status || 'none';
+    const currentStatus = pData.water_status === 'supplying' ? 'supplying' : 'stopped';
 
     let html = `
         <h3 style="color:#1565C0; margin-top:0;">💧 水管理ステータス変更</h3>
@@ -276,7 +275,7 @@ async function saveWaterStatus(btnElement) {
         btn.innerText = '保存中...';
     }
 
-    const oldStatus = currentEditPoly.water_status || 'none';
+    const oldStatus = currentEditPoly.water_status === 'supplying' ? 'supplying' : 'stopped';
     if (oldStatus !== status) {
         // 履歴に追加
         addHistory(currentEditPoly.name, oldStatus, status);
@@ -285,7 +284,7 @@ async function saveWaterStatus(btnElement) {
     currentEditPoly.water_status = status;
 
     try {
-        await callGAS('savePolygon', { polygon: currentEditPoly });
+        await callGAS('updatePolygon', { id: currentEditPoly.id, water_status: status });
         closeModal();
         loadInitData();
     } catch (e) {

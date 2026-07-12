@@ -831,7 +831,8 @@ function getSavedPolygons() {
         toukiId: data[i][11],
         ridgeDir: data[i][13],
         ridgeWidth: data[i][14],
-        uneSimData: data[i][15]
+        uneSimData: data[i][15],
+        water_status: data[i][16] || 'stopped'
       });
     }
   }
