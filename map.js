@@ -733,6 +733,18 @@ function openMyPage() {
             <div style="font-size:16px; font-weight:bold;">${currentUserRole}</div>
         </div>
         
+        
+        <button onclick="toggleIdForm()" style="width:100%; background:#2196F3; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; margin-bottom:15px; cursor:pointer;">🆔 IDを変更する</button>
+        <div id="idFormContainer" style="display:none; border-top:1px solid #ccc; padding-top:10px; margin-bottom:15px;">
+            <h4 style="color:#555; margin-bottom:10px;">🆔 ID変更</h4>
+            <label class="form-label">新しいID</label>
+            <input type="text" id="myNewId" class="form-input" placeholder="新しいID">
+            <label class="form-label">現在のパスワード</label>
+            <input type="password" id="myPwForIdChange" class="form-input" placeholder="認証のため入力">
+            <button id="changeIdBtn" onclick="doChangeId()" style="width:100%; background:#2196F3; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:10px;">IDを変更する</button>
+            <div id="changeIdResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
+        </div>
+
         <button onclick="togglePasswordForm()" style="width:100%; background:#795548; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; margin-bottom:15px; cursor:pointer;">🔑 パスワードを変更する</button>
         
         <div id="passwordFormContainer" style="display:none; border-top:1px solid #ccc; padding-top:10px; margin-bottom:15px;">
@@ -800,3 +812,9 @@ window.togglePasswordForm = function() {
         container.style.display = container.style.display === 'none' ? 'block' : 'none';
     }
 };
+function toggleIdForm() {
+    const div = document.getElementById('idFormContainer');
+    div.style.display = div.style.display === 'none' ? 'block' : 'none';
+}
+
+

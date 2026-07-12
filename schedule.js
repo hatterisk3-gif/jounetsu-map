@@ -1290,10 +1290,49 @@ window.openMyPage = function() {
         <input type="password" id="myNewPwConfirm" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="もう一度入力">
         <button id="changePwBtn" onclick="doChangePassword()" style="width:100%; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">パスワードを変更する</button>
         <div id="changePwResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
+
+        <h4 style="color:#555; margin-bottom:10px; margin-top:20px;">🆔 ID変更</h4>
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいID</label>
+        <input type="text" id="myNewId" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="新しいID">
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">現在のパスワード</label>
+        <input type="password" id="myPwForIdChange" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="認証のため入力">
+        <button id="changeIdBtn" onclick="doChangeId()" style="width:100%; background:#2196F3; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">IDを変更する</button>
+        <div id="changeIdResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
+ style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
         <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">閉じる</button>
     `;
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('modal').style.display = 'flex';
+};
+
+
+window.doChangeId = async function() {
+    const newId = document.getElementById('myNewId').value;
+    const currentPw = document.getElementById('myPwForIdChange').value;
+    const resultDiv = document.getElementById('changeIdResult');
+    const btn = document.getElementById('changeIdBtn');
+    const staffId = localStorage.getItem('passionMapUserId') || (typeof currentStaffId !== 'undefined' ? currentStaffId : '');
+
+    if (!newId || !currentPw) { resultDiv.innerText = '❌ すべての項目を入力してください'; resultDiv.style.color = 'red'; return; }
+    
+    btn.disabled = true; btn.innerText = '変更中...';
+    try {
+        const res = await callGAS('changeId', { userId: staffId, password: currentPw, newId: newId });
+        if (res.success) {
+            resultDiv.innerText = '✅ ' + res.message;
+            resultDiv.style.color = 'green';
+            localStorage.setItem('passionMapUserId', newId);
+            if (typeof currentStaffId !== 'undefined') currentStaffId = newId; // Update global var if it exists
+        } else {
+            resultDiv.innerText = '❌ ' + res.message;
+            resultDiv.style.color = 'red';
+            btn.disabled = false; btn.innerText = 'IDを変更する';
+        }
+    } catch (e) {
+        resultDiv.innerText = '❌ エラーが発生しました';
+        resultDiv.style.color = 'red';
+        btn.disabled = false; btn.innerText = 'IDを変更する';
+    }
 };
 
 window.doChangePassword = async function() {

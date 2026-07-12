@@ -72,6 +72,7 @@ function doPost(e) {
     else if (action === "getPolygonDrawingHistory") result = getPolygonDrawingHistory(params);
     else if (action === "saveTrackingData") result = saveTrackingData(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
+    else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
     else if (action === "changePassword") result = changePassword(params.userId, params.currentPassword, params.newPassword);
 
 
@@ -3243,4 +3244,33 @@ function saveVarietyWithFile(params) {
   } catch (e) {
     return { success: false, message: e.message };
   }
+}
+
+
+function changeId(userId, password, newId) {
+  if (!userId || !password || !newId) {
+    return { success: false, message: "必須項目が入力されていません" };
+  }
+  const ss = TENANT_SS;
+  if (!ss) return { success: false, message: "データベースに接続できません" };
+  const sheet = ss.getSheetByName('名簿');
+  if (!sheet) return { success: false, message: "名簿シートが見つかりません" };
+  const data = sheet.getDataRange().getValues();
+  
+  // Check if newId already exists
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(newId)) {
+      return { success: false, message: "指定された新しいIDは既に使用されています" };
+    }
+  }
+
+  // Find user and change ID
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(userId) && String(data[i][1]) === String(password)) {
+      sheet.getRange(i + 1, 1).setValue(newId); // A列(ID)を更新
+      writeLog(data[i][2], "ID変更", "システム", "IDを変更しました");
+      return { success: true, message: "IDを変更しました" };
+    }
+  }
+  return { success: false, message: "現在のパスワードが正しくありません" };
 }
