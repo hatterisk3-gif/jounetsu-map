@@ -1079,6 +1079,7 @@ function updatePolygon(params) {
     sheet.getRange(targetRow, 7).setValue(color); // G列: 色
     if (params.status !== undefined) sheet.getRange(targetRow, 11).setValue(params.status); // K列: 稼働状況
     if (params.toukiId !== undefined) sheet.getRange(targetRow, 12).setValue(params.toukiId); // L列: 登記ID
+    if (params.water_status !== undefined) sheet.getRange(targetRow, 17).setValue(params.water_status); // Q列: 水管理ステータス
     
     if (params.ridgeDir !== undefined) sheet.getRange(targetRow, 14).setValue(params.ridgeDir); // N列(あれば)
     if (params.ridgeWidth !== undefined) sheet.getRange(targetRow, 15).setValue(params.ridgeWidth); // O列(あれば)
