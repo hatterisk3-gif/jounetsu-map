@@ -301,7 +301,7 @@ function writeLog(user, action, target, detail) {
 }
 
 function checkLogin(orgId, userId, password) {
-  if (!orgId) return { success: false, message: "組織IDが入力されていません" };
+  // 組織IDは無効化されているためチェックをスキップします
   
   let masterSS;
   try {
@@ -324,11 +324,12 @@ function checkLogin(orgId, userId, password) {
   }
   
   if (!targetSpreadsheetId) {
-    // 組織IDが無効でも、組織ID廃止の対応として1行目のスプレッドシートを利用する
+    // 組織ID撤廃のため、1行目のスプレッドシートを利用するか、マスター自体を利用する
     if (masterData.length > 1) {
       targetSpreadsheetId = masterData[1][2];
-    } else {
-      return { success: false, message: "無効な組織IDです（さらにマスターデータが存在しません）" };
+    }
+    if (!targetSpreadsheetId) {
+      targetSpreadsheetId = MASTER_SPREADSHEET_ID; // 組織一覧が空の場合はマスター自体をDBとして扱う
     }
   }
   
