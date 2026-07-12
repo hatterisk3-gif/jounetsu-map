@@ -248,7 +248,7 @@ function openManureStatusModal(pData) {
     const cancelReason = pData.manure_cancel_reason || '';
 
     let html = `
-        <h3 style="color:#795548; margin-top:0;">💩 鶏糞散布ステータス変更</h3>
+        <h3 style="color:#795548; margin-top:0;">🐓 鶏糞散布ステータス変更</h3>
         <p><strong>圃場名:</strong> ${pData.name}</p>
         
         <label class="form-label">ステータス</label>
