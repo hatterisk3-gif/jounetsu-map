@@ -301,7 +301,7 @@ function openManureStatusModal(pData) {
         </div>
 
         <div style="display:flex; gap:10px; margin-top:20px;">
-            <button onclick="saveManureStatus()" style="flex:1; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">保存</button>
+            <button onclick="saveManureStatus(this)" style="flex:1; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">保存</button>
             <button onclick="closeModal()" style="flex:1; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">キャンセル</button>
         </div>
     `;
@@ -318,7 +318,7 @@ function toggleDateInputs() {
     if (cc) cc.style.display = (val === 'canceled') ? 'block' : 'none';
 }
 
-async function saveManureStatus() {
+async function saveManureStatus(btnElement) {
     if (!currentEditPoly) return;
 
     const status = document.getElementById('manureStatusSelect').value;
@@ -326,9 +326,11 @@ async function saveManureStatus() {
     const scheduled = document.getElementById('manureScheduledDate') ? document.getElementById('manureScheduledDate').value : '';
     const cancelReason = document.getElementById('manureCancelReason') ? document.getElementById('manureCancelReason').value : '';
 
-    const btn = event.target;
-    btn.disabled = true;
-    btn.innerText = '保存中...';
+    const btn = btnElement || (typeof event !== 'undefined' ? event.target : null);
+    if(btn) {
+        btn.disabled = true;
+        btn.innerText = '保存中...';
+    }
 
     const oldStatus = currentEditPoly.manure_status || 'none';
     if (oldStatus !== status) {
@@ -347,8 +349,10 @@ async function saveManureStatus() {
         closeModal();
         loadInitData();
     } catch (e) {
-        btn.disabled = false;
-        btn.innerText = '保存';
+        if(btn) {
+            btn.disabled = false;
+            btn.innerText = '保存';
+        }
     }
 }
 
