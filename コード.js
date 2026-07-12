@@ -324,7 +324,12 @@ function checkLogin(orgId, userId, password) {
   }
   
   if (!targetSpreadsheetId) {
-    return { success: false, message: "無効な組織IDです" };
+    // 組織IDが無効でも、組織ID廃止の対応として1行目のスプレッドシートを利用する
+    if (masterData.length > 1) {
+      targetSpreadsheetId = masterData[1][2];
+    } else {
+      return { success: false, message: "無効な組織IDです（さらにマスターデータが存在しません）" };
+    }
   }
   
   // URL形式の場合はスプレッドシートIDを抽出する
