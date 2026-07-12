@@ -16,4 +16,11 @@ cultivation.js
 cultivation_modal.html
 map.js
 map.css
+worker.css
+admin.css
 admin2.js
+
+scratch/**
+*.js
+!コード.js
+!scratch/tmp_fix_id.js
