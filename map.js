@@ -22,8 +22,8 @@ const STATUS_COLORS = {
 
 const STATUS_LABELS = {
     'none': '依頼なし',
-    'request': '散布依頼',
-    'accepted': '散布受託',
+    'request': '散布依頼中',
+    'accepted': '散布予定',
     'inprogress': '散布途中',
     'completed': '散布完了',
     'canceled': '中止'
@@ -292,7 +292,7 @@ function openManureStatusModal(pData) {
             <input type="date" id="manureDeadline" class="form-input" value="${deadline}">
         </div>
         <div id="scheduledContainer" style="display: ${currentStatus === 'accepted' ? 'block' : 'none'};">
-            <label class="form-label">予定日 (散布受託時)</label>
+            <label class="form-label">予定日 (散布予定時)</label>
             <input type="date" id="manureScheduledDate" class="form-input" value="${scheduled}">
         </div>
         <div id="cancelContainer" style="display: ${currentStatus === 'canceled' ? 'block' : 'none'};">
