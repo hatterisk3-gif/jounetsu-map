@@ -196,7 +196,7 @@ async function executeLogin(isAuto = false) {
             localStorage.setItem('passionMapUserName', res.name);
             localStorage.setItem('passionMapUserRole', res.role || '管理者');
             localStorage.setItem('spreadsheetId', res.spreadsheetId);
-            localStorage.setItem('pMapAdminOrgId', orgId);
+            localStorage.setItem('pMapAdminOrgId', 'default');
             localStorage.setItem('pMapAdminId', id);
             localStorage.setItem('pMapAdminPw', pw);
             localStorage.setItem('pMapAdminName', res.name);

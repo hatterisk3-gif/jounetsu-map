@@ -8,6 +8,7 @@ let currentUserRole = localStorage.getItem('passionMapUserRole') || '';
 let currentUserName = localStorage.getItem('passionMapUserName') || '';
 let manureHistory = JSON.parse(localStorage.getItem('manureHistory') || '[]');
 let lastWeatherFetchPos = null;
+let isFirstBoundsFit = true;
 
 // Status colors
 const STATUS_COLORS = {
@@ -140,8 +141,14 @@ async function loadInitData() {
     try {
         const data = await callGAS('getInitData');
         if (data && data.polygons) {
+            const newDataStr = JSON.stringify(data.polygons);
+            const oldDataStr = localStorage.getItem('manureMapData');
+            if (newDataStr === oldDataStr) {
+                console.log("変更なし：再描画をスキップしました");
+                return;
+            }
             // キャッシュに保存
-            localStorage.setItem('manureMapData', JSON.stringify(data.polygons));
+            localStorage.setItem('manureMapData', newDataStr);
             drawPolygons(data.polygons);
         }
     } catch (e) {
@@ -230,8 +237,9 @@ function drawPolygons(dataList) {
         }
     });
 
-    if (hasPolygons) {
+    if (hasPolygons && isFirstBoundsFit) {
         map.fitBounds(bounds);
+        isFirstBoundsFit = false;
     }
     applyFilter(); // 初回描画時にもフィルタを適用
 }
@@ -642,15 +650,19 @@ function openMyPage() {
             <div style="font-size:16px; font-weight:bold;">${currentUserRole}</div>
         </div>
         
-        <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
-        <label class="form-label">現在のパスワード</label>
-        <input type="password" id="myCurrentPw" class="form-input" placeholder="現在のパスワード">
-        <label class="form-label">新しいパスワード</label>
-        <input type="password" id="myNewPw" class="form-input" placeholder="新しいパスワード (4文字以上)">
-        <label class="form-label">新しいパスワード (確認)</label>
-        <input type="password" id="myNewPwConfirm" class="form-input" placeholder="もう一度入力">
-        <button id="changePwBtn" onclick="doChangePassword()" style="width:100%; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:10px;">パスワードを変更する</button>
-        <div id="changePwResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
+        <button onclick="togglePasswordForm()" style="width:100%; background:#795548; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; margin-bottom:15px; cursor:pointer;">🔑 パスワードを変更する</button>
+        
+        <div id="passwordFormContainer" style="display:none; border-top:1px solid #ccc; padding-top:10px; margin-bottom:15px;">
+            <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
+            <label class="form-label">現在のパスワード</label>
+            <input type="password" id="myCurrentPw" class="form-input" placeholder="現在のパスワード">
+            <label class="form-label">新しいパスワード</label>
+            <input type="password" id="myNewPw" class="form-input" placeholder="新しいパスワード (4文字以上)">
+            <label class="form-label">新しいパスワード (確認)</label>
+            <input type="password" id="myNewPwConfirm" class="form-input" placeholder="もう一度入力">
+            <button id="changePwBtn" onclick="doChangePassword()" style="width:100%; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:10px;">パスワードを変更する</button>
+            <div id="changePwResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
+        </div>
 
         <h4 style="color:#555; margin-top:20px; margin-bottom:10px;">📋 最近の操作履歴</h4>
     `;
@@ -698,3 +710,10 @@ async function doChangePassword() {
     }
     btn.disabled = false; btn.innerText = 'パスワードを変更する';
 }
+
+window.togglePasswordForm = function() {
+    const container = document.getElementById('passwordFormContainer');
+    if (container) {
+        container.style.display = container.style.display === 'none' ? 'block' : 'none';
+    }
+};
