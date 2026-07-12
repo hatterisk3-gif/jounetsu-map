@@ -72,6 +72,7 @@ function doPost(e) {
     else if (action === "getPolygonDrawingHistory") result = getPolygonDrawingHistory(params);
     else if (action === "saveTrackingData") result = saveTrackingData(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
+    else if (action === "changePassword") result = changePassword(params.userId, params.currentPassword, params.newPassword);
 
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
@@ -352,6 +353,32 @@ function checkLogin(orgId, userId, password) {
   }
   return { success: false, message: "IDまたはパスワードが正しくありません" };
 }
+
+// ==========================================
+// パスワード変更
+// ==========================================
+function changePassword(userId, currentPassword, newPassword) {
+  if (!userId || !currentPassword || !newPassword) {
+    return { success: false, message: "必須項目が入力されていません" };
+  }
+  if (newPassword.length < 4) {
+    return { success: false, message: "新しいパスワードは4文字以上で入力してください" };
+  }
+  const ss = TENANT_SS;
+  if (!ss) return { success: false, message: "データベースに接続できません" };
+  const sheet = ss.getSheetByName('名簿');
+  if (!sheet) return { success: false, message: "名簿シートが見つかりません" };
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(userId) && String(data[i][1]) === String(currentPassword)) {
+      sheet.getRange(i + 1, 2).setValue(newPassword); // B列(パスワード)を更新
+      writeLog(data[i][2], "パスワード変更", "システム", "パスワードを変更しました");
+      return { success: true, message: "パスワードを変更しました" };
+    }
+  }
+  return { success: false, message: "現在のパスワードが正しくありません" };
+}
+
 // ==========================================
 // 初期データ取得
 // ==========================================

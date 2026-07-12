@@ -35,6 +35,8 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                   document.getElementById('loginScreen').style.display = 'none';
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
+                  localStorage.setItem('passionMapUserName', result.data.name);
+                  localStorage.setItem('passionMapUserRole', result.data.role || '管理者');
                   localStorage.setItem('spreadsheetId', result.data.spreadsheetId);
                   
                   // Reload or init map data
@@ -1262,3 +1264,66 @@ window.closeRadarModal = function() {
   if (modal) modal.style.display = `none`;
 };
 
+// ====== マイページ ======
+window.openMyPage = function() {
+    const staffId = localStorage.getItem('passionMapUserId') || '';
+    const userName = localStorage.getItem('passionMapUserName') || '';
+    const userRole = localStorage.getItem('passionMapUserRole') || '管理者';
+
+    let html = `
+        <h3 style="color:#7B1FA2; margin-top:0;">👤 マイページ</h3>
+        <div style="background:#f5f5f5; padding:15px; border-radius:8px; margin-bottom:15px;">
+            <div style="font-size:13px; color:#999;">スタッフID</div>
+            <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${staffId}</div>
+            <div style="font-size:13px; color:#999;">名前</div>
+            <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${userName}</div>
+            <div style="font-size:13px; color:#999;">権限</div>
+            <div style="font-size:16px; font-weight:bold;">${userRole}</div>
+        </div>
+        
+        <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">現在のパスワード</label>
+        <input type="password" id="myCurrentPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="現在のパスワード">
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいパスワード</label>
+        <input type="password" id="myNewPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="新しいパスワード (4文字以上)">
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいパスワード (確認)</label>
+        <input type="password" id="myNewPwConfirm" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="もう一度入力">
+        <button id="changePwBtn" onclick="doChangePassword()" style="width:100%; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">パスワードを変更する</button>
+        <div id="changePwResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
+        <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">閉じる</button>
+    `;
+    document.getElementById('modalBody').innerHTML = html;
+    document.getElementById('modal').style.display = 'flex';
+};
+
+window.doChangePassword = async function() {
+    const current = document.getElementById('myCurrentPw').value;
+    const newPw = document.getElementById('myNewPw').value;
+    const confirmPw = document.getElementById('myNewPwConfirm').value;
+    const resultDiv = document.getElementById('changePwResult');
+    const btn = document.getElementById('changePwBtn');
+    const staffId = localStorage.getItem('passionMapUserId');
+
+    if (!current || !newPw) { resultDiv.innerText = '❌ すべての項目を入力してください'; resultDiv.style.color = 'red'; return; }
+    if (newPw !== confirmPw) { resultDiv.innerText = '❌ 新しいパスワードが一致しません'; resultDiv.style.color = 'red'; return; }
+    if (newPw.length < 4) { resultDiv.innerText = '❌ 4文字以上で入力してください'; resultDiv.style.color = 'red'; return; }
+
+    btn.disabled = true; btn.innerText = '変更中...';
+    try {
+        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'changePassword', userId: staffId, currentPassword: current, newPassword: newPw, spreadsheetId: localStorage.getItem('spreadsheetId') }) });
+        const json = await res.json();
+        const result = json.data || json;
+        if (result.success || json.status === 'success') {
+            resultDiv.innerText = '✅ ' + (result.message || '変更しました');
+            resultDiv.style.color = 'green';
+            localStorage.setItem('passionMapUserPw', newPw);
+        } else {
+            resultDiv.innerText = '❌ ' + (result.message || '変更失敗');
+            resultDiv.style.color = 'red';
+        }
+    } catch (e) {
+        resultDiv.innerText = '❌ 通信エラー: ' + e.message;
+        resultDiv.style.color = 'red';
+    }
+    btn.disabled = false; btn.innerText = 'パスワードを変更する';
+};
