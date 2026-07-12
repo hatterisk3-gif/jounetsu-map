@@ -730,6 +730,7 @@ function initMap() {
         center: centerPos,
         zoom: zoomLevel,
         maxZoom: 45,
+        mapTypeId: 'hybrid',
         gestureHandling: 'greedy',
         mapTypeControl: false,
         fullscreenControl: false,
@@ -737,8 +738,8 @@ function initMap() {
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
-    map.mapTypes.set('hybrid_stretched', new StretchedMapType());
-    map.setMapTypeId('hybrid_stretched');
+    // map.mapTypes.set('hybrid_stretched', new StretchedMapType());
+    // map.setMapTypeId('hybrid_stretched');
 
     infoWindow = new google.maps.InfoWindow();
     google.maps.event.addListener(map, 'click', () => infoWindow.close());
