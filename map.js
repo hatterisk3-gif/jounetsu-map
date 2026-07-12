@@ -257,6 +257,11 @@ window.applyFilter = function() {
     });
 };
 
+window.toggleFilterMenu = function() {
+    const menu = document.getElementById('filterMenu');
+    menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
+};
+
 function getPolygonCenter(paths) {
     let bounds = new google.maps.LatLngBounds();
     paths.forEach(p => bounds.extend(p));

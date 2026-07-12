@@ -6,8 +6,8 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
 .login-input { width: 90%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
 .login-btn { background: #795548; color: white; border: none; padding: 14px; width: 90%; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
 
-.control-panel { position: absolute; top: 0; left: 0; width: 100%; box-sizing: border-box; padding: 10px; background-color: rgba(255,255,255,0.9); z-index: 10; display: flex; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-.control-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
+.control-panel { position: absolute; top: 0; left: 0; width: 100%; box-sizing: border-box; padding: 10px; background-color: transparent; z-index: 10; display: flex; justify-content: center; box-shadow: none; pointer-events: none; }
+.control-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; pointer-events: auto; }
 
 .ctrl-btn { padding: 8px 12px; font-size: 12px; font-weight: bold; cursor: pointer; border-radius: 5px; box-sizing: border-box; }
 
