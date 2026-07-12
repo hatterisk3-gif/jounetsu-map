@@ -19,7 +19,6 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
 
       
       async function executeLogin() {
-          const orgId = document.getElementById('loginOrgId').value;
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
           const btn = document.querySelector('.login-btn');
@@ -30,11 +29,10 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
           }
 
           try {
-              const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'login', orgId: orgId, userId: id, password: pw}) });
+              const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'login', orgId: 'default', userId: id, password: pw}) });
               const result = await res.json();
               if (result.status === 'success' && result.data.success) {
                   document.getElementById('loginScreen').style.display = 'none';
-                  localStorage.setItem('passionMapOrgId', orgId);
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
                   localStorage.setItem('spreadsheetId', result.data.spreadsheetId);

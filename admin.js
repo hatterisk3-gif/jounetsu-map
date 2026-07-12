@@ -161,20 +161,16 @@ function saveAdminCredentials(id, pw, name) {
 }
 
 function restoreAdminLoginForm() {
-    const orgId = localStorage.getItem('pMapAdminOrgId');
     const id = localStorage.getItem('pMapAdminId');
     const pw = localStorage.getItem('pMapAdminPw');
-    const loginOrgId = document.getElementById('loginOrgId');
     const loginId = document.getElementById('loginId');
     const loginPw = document.getElementById('loginPw');
-    if (orgId && loginOrgId) loginOrgId.value = orgId;
     if (id && loginId) loginId.value = id;
     if (pw && loginPw) loginPw.value = pw;
-    return !!(id && pw && orgId);
+    return !!(id && pw);
 }
 
 async function executeLogin(isAuto = false) {
-    const orgId = document.getElementById('loginOrgId').value;
     const id = document.getElementById('loginId').value;
     const pw = document.getElementById('loginPw').value;
     const btn = document.getElementById('loginBtn');
@@ -183,7 +179,7 @@ async function executeLogin(isAuto = false) {
     if (!isAuto && btn) { btn.innerText = "認証中..."; btn.disabled = true; }
 
     try {
-        const res = await callGAS('login', { orgId: orgId, userId: id, password: pw });
+        const res = await callGAS('login', { orgId: 'default', userId: id, password: pw });
         if (res.success) {
             if (res.role !== "管理者") {
                 document.getElementById('loginScreen').style.display = 'flex';
@@ -195,7 +191,6 @@ async function executeLogin(isAuto = false) {
             document.getElementById('loginScreen').style.display = 'none';
             if (err) err.innerText = '';
 
-            localStorage.setItem('passionMapOrgId', orgId);
             localStorage.setItem('passionMapUserId', id);
             localStorage.setItem('passionMapUserPw', pw);
             localStorage.setItem('spreadsheetId', res.spreadsheetId);

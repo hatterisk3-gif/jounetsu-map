@@ -197,7 +197,6 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
    // 🌟 1. ログイン処理（完全版） 🌟
       async function executeLogin(isAuto = false) {
-          const orgId = document.getElementById('loginOrgId').value;
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
           const btn = document.querySelector('.login-btn');
@@ -209,11 +208,10 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
 
           try {
-              const result = await callGAS('login', {orgId: orgId, userId: id, password: pw});
+              const result = await callGAS('login', {orgId: 'default', userId: id, password: pw});
               if (result.success) {
                   currentUser = result.name;
                   document.getElementById('loginScreen').style.display = 'none';
-                  localStorage.setItem('passionMapOrgId', orgId);
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
@@ -3590,15 +3588,13 @@ window.executeAutoRecord = async () => {
 // 🌟 4. アプリ起動時の爆速処理（window.onloadをやめる！） 🌟
       document.addEventListener('DOMContentLoaded', () => {
           initMap();
-          const orgId = localStorage.getItem('passionMapOrgId');
           const id = localStorage.getItem('passionMapUserId');
           const pw = localStorage.getItem('passionMapUserPw');
           
-          if(document.getElementById('loginOrgId') && orgId) document.getElementById('loginOrgId').value = orgId;
           if(document.getElementById('loginId') && id) document.getElementById('loginId').value = id; 
           if(document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw; 
           
-          if(orgId && id && pw) { 
+          if(id && pw) { 
               // 画面を即座に隠す
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
