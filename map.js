@@ -777,6 +777,36 @@ function openMyPage() {
     document.getElementById('modal').style.display = 'flex';
 }
 
+
+window.doChangeId = async function() {
+    const newId = document.getElementById('myNewId').value;
+    const currentPw = document.getElementById('myPwForIdChange').value;
+    const resultDiv = document.getElementById('changeIdResult');
+    const btn = document.getElementById('changeIdBtn');
+    const staffId = localStorage.getItem('passionMapUserId') || (typeof currentStaffId !== 'undefined' ? currentStaffId : '');
+
+    if (!newId || !currentPw) { resultDiv.innerText = '❌ すべての項目を入力してください'; resultDiv.style.color = 'red'; return; }
+    
+    btn.disabled = true; btn.innerText = '変更中...';
+    try {
+        const res = await callGAS('changeId', { userId: staffId, password: currentPw, newId: newId });
+        if (res.success) {
+            resultDiv.innerText = '✅ ' + res.message;
+            resultDiv.style.color = 'green';
+            localStorage.setItem('passionMapUserId', newId);
+            if (typeof currentStaffId !== 'undefined') currentStaffId = newId;
+        } else {
+            resultDiv.innerText = '❌ ' + res.message;
+            resultDiv.style.color = 'red';
+            btn.disabled = false; btn.innerText = 'IDを変更する';
+        }
+    } catch (e) {
+        resultDiv.innerText = '❌ エラーが発生しました';
+        resultDiv.style.color = 'red';
+        btn.disabled = false; btn.innerText = 'IDを変更する';
+    }
+};
+
 async function doChangePassword() {
     const current = document.getElementById('myCurrentPw').value;
     const newPw = document.getElementById('myNewPw').value;
