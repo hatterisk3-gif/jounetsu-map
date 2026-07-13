@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [管理者用] v1.74</title>
+  <title>情熱MAP [管理者用] v1.75</title>
   <link rel="apple-touch-icon" href="icon_admin.png">
   <link rel="icon" href="icon_admin.png">
   <link rel="manifest" href="manifest_admin.json">
@@ -19,7 +19,7 @@
 <body>
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v1.72)</h2>
+      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v1.73)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div>
       <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
       <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -421,6 +421,17 @@
       <button id="editLoadFudeBtn" style="display:none; background:#673AB7; color:white; margin:0 5px; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">🤖 筆ポリから</button>
       <button id="saveShapeBtn" style="background:#d32f2f; color:white; margin:0 5px; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">確定</button>
       <button id="cancelShapeBtn" style="background:#666; color:#fff; border:none; margin:0 5px; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">戻す</button>
+    </div>
+  </div>
+  <div id="batchDeleteModePanel"
+    style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#d32f2f; color:#fff; padding:10px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:400px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
+    🗑️ 一括削除モード中（<span id="batchDeleteCount">0</span>件選択）
+    <div style="font-size:11px; margin-top:5px; color:#ffcdd2;">削除する圃場をタップしてください</div>
+    <div style="margin-top:10px; display:flex; gap:10px;">
+      <button onclick="execBatchDelete()"
+        style="flex:1; background:#b71c1c; color:#fff; border:1px solid #ffcdd2; padding:8px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">削除実行</button>
+      <button onclick="cancelBatchDeleteMode()"
+        style="flex:1; background:#666; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">キャンセル</button>
     </div>
   </div>
   <div id="mergeModePanel"
