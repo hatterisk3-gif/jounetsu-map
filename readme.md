@@ -9,6 +9,44 @@
 | 4 | 対象 |
 | 5 | 詳細 |
 
+## 📄 シート名: MachineMaintenance
+| 列番号 | 項目名（ヘッダー） |
+| --- | --- |
+| 1 | id |
+| 2 | machineId |
+| 3 | date |
+| 4 | material |
+| 5 | replaceParts |
+| 6 | comment |
+
+## 📄 シート名: MachineFuel
+| 列番号 | 項目名（ヘッダー） |
+| --- | --- |
+| 1 | id |
+| 2 | machineId |
+| 3 | date |
+| 4 | hourMeter |
+| 5 | fuelAmount |
+| 6 | fuelCanStatus |
+| 7 | capCheck |
+
+## 📄 シート名: MachineMaster
+| 列番号 | 項目名（ヘッダー） |
+| --- | --- |
+| 1 | id |
+| 2 | name |
+| 3 | group |
+| 4 | location |
+| 5 | photo |
+| 6 | purchaseDate |
+| 7 | modelType |
+| 8 | type |
+| 9 | serialNo |
+| 10 | status |
+| 11 | lat |
+| 12 | lng |
+| 13 | maintenanceSettings |
+
 ## 📄 シート名: 作型DB
 | 列番号 | 項目名（ヘッダー） |
 | --- | --- |
