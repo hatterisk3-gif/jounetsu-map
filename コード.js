@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 情熱MAP 統合API (管理者・作業員 共通)
  */
 const MASTER_SPREADSHEET_ID = "1Kfg5JzNE8pZVQuyuHExz1Q00vzd75MmWrtKLLHUG89c"; // マスター・スプレッドシートのID
