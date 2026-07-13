@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [管理者用] v1.72</title>
+  <title>情熱MAP [管理者用] v1.73</title>
   <link rel="apple-touch-icon" href="icon_admin.png">
   <link rel="icon" href="icon_admin.png">
   <link rel="manifest" href="manifest_admin.json">
@@ -19,7 +19,7 @@
 <body>
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v1.70)</h2>
+      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v1.71)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div>
       <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
       <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -341,6 +341,7 @@
       <div class="search-container">
         <input type="text" id="mapSearchInput" class="search-input" placeholder="🌍 住所・地域...">
       </div>
+
       <button onclick="promptLineUrl()"
         style="background:rgba(156, 39, 176, 0.8); color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:11px;">📍
         座標検索</button>
@@ -360,6 +361,9 @@
       <button id="btnViewMode" class="mode-btn active">👀 閲覧</button>
       <button id="btnDrawMode" class="mode-btn">✏️ 圃場</button>
       <button id="btnMarkerMode" class="mode-btn">📍 看板</button>
+      <button onclick="openMasterModal()"
+        style="background:rgba(33, 150, 243, 0.8); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️
+        マスタ</button>
     </div>
     <div id="drawArea" class="action-bar" style="display:none;">
       <div id="drawStep1">

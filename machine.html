@@ -1,0 +1,140 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>諠・・MAP [讖滓｢ｰ邂｡逅・</title>
+  <link rel="stylesheet" href="admin.css">
+  <style>
+    body { margin: 0; padding: 0; font-family: sans-serif; }
+    #map { width: 100%; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+    .control-panel { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+    .btn { padding: 10px 15px; margin: 5px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; color: white; font-size: 14px; }
+    .btn-register { background-color: #4CAF50; }
+    .btn-settings { background-color: #2196F3; }
+    .btn-close { background-color: #f44336; }
+    
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center; }
+    .modal-content { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 13px; color: #555; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+    
+    #toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 16px; position: fixed; z-index: 10000; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 14px; }
+    #toast.show { visibility: visible; -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div class="control-panel">
+    <h3 style="margin:0 0 10px 0; color:#333;">囿 讖滓｢ｰ邂｡逅・/h3>
+    <div style="display: flex; flex-direction: column;">
+      <button class="btn btn-register" onclick="openMachineRegisterModal()">笞呻ｸ・讖滓｢ｰ逋ｻ骭ｲ</button>
+      <button class="btn btn-settings" onclick="openMachineSettingsModal()">肌 讖滓｢ｰ險ｭ螳・/button>
+      <button class="btn btn-close" onclick="location.href='index2.html'" style="background:#795548;">漠 繝昴・繧ｿ繝ｫ縺ｸ謌ｻ繧・/button>
+    </div>
+  </div>
+  
+  <div id="pickingModeUI" style="display:none; position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:1000; background:rgba(255,255,255,0.9); padding:15px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.3); text-align:center;">
+    <h4 style="margin:0 0 10px 0; color:#E91E63;">桃 鄂ｮ縺榊ｴ謇繧帝∈謚槭＠縺ｦ縺上□縺輔＞</h4>
+    <p style="margin:0 0 10px 0; font-size:12px;">蝨ｰ蝗ｳ荳翫ｒ繧ｿ繝・・縺励※繝斐Φ繧堤ｫ九※縺ｦ縺上□縺輔＞縲・/p>
+    <button class="btn btn-register" onclick="savePickedLocation()">豎ｺ螳・/button>
+    <button class="btn btn-close" onclick="cancelPicking()">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
+  </div>
+
+  <!-- 讖滓｢ｰ逋ｻ骭ｲ繝｢繝ｼ繝繝ｫ -->
+  <div id="modalMachineRegister" class="modal-overlay">
+    <div class="modal-content">
+      <h3 style="margin-top:0; color:#4CAF50;">笞呻ｸ・讖滓｢ｰ逋ｻ骭ｲ</h3>
+      <div class="form-group">
+        <label>讖滓｢ｰ蜷・/label>
+        <input type="text" id="regMachineName" placeholder="萓具ｼ壹Ζ繝ｳ繝槭・ 繝医Λ繧ｯ繧ｿ繝ｼ">
+      </div>
+      <div class="form-group">
+        <label>讖滓｢ｰ繧ｰ繝ｫ繝ｼ繝・/label>
+        <div style="display:flex; gap:5px;">
+          <select id="regMachineGroup" style="flex:1;"></select>
+          <button onclick="addNewItem('MachineGroup')" style="padding:8px; border-radius:4px; border:1px solid #ccc;">筐・/button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>諡轤ｹ</label>
+        <input type="text" id="regLocation" placeholder="萓具ｼ夂ｬｬ1蛟牙ｺｫ">
+      </div>
+      <div class="form-group">
+        <label>蜀咏悄逋ｻ骭ｲ</label>
+        <input type="file" id="regPhoto" accept="image/*">
+        <div id="photoPreview" style="margin-top:10px; max-height:150px; overflow:hidden;"></div>
+      </div>
+      <div class="form-group">
+        <label>雉ｼ蜈･譌･・育匳骭ｲ譌･・・/label>
+        <input type="date" id="regPurchaseDate">
+      </div>
+      <div class="form-group">
+        <label>蝙句ｼ・/label>
+        <input type="text" id="regModelType" placeholder="蝙句ｼ上ｒ蜈･蜉・>
+      </div>
+      <div class="form-group">
+        <label>讖溽ｨｮ</label>
+        <div style="display:flex; gap:5px;">
+          <select id="regMachineType" style="flex:1;"></select>
+          <button onclick="addNewItem('MachineType')" style="padding:8px; border-radius:4px; border:1px solid #ccc;">筐・/button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>讖溽分</label>
+        <input type="text" id="regSerialNo" placeholder="讖溽分繧貞・蜉・>
+      </div>
+      
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button class="btn btn-register" style="flex:1;" onclick="saveMachineRegistration()">菫晏ｭ・/button>
+        <button class="btn btn-close" style="flex:1;" onclick="closeModal('modalMachineRegister')">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 讖滓｢ｰ險ｭ螳壹Δ繝ｼ繝繝ｫ -->
+  <div id="modalMachineSettings" class="modal-overlay">
+    <div class="modal-content">
+      <h3 style="margin-top:0; color:#2196F3;">肌 讖滓｢ｰ險ｭ螳・/h3>
+      
+      <div class="form-group">
+        <label>蟇ｾ雎｡縺ｮ讖滓｢ｰ繧帝∈謚・/label>
+        <select id="settingMachineSelect" onchange="loadMachineSettings()">
+          <option value="">-- 讖滓｢ｰ繧帝∈謚・--</option>
+        </select>
+      </div>
+      
+      <div id="machineActionPanel" style="display:none; margin-top:20px; border-top:1px solid #eee; padding-top:15px;">
+        <h4 id="selectedMachineTitle" style="margin:0 0 10px 0; color:#333;"></h4>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <button class="btn" style="background:#FF9800;" onclick="openStatusModal()">売 遞ｼ蜒咲憾豕∫匳骭ｲ</button>
+          <button class="btn" style="background:#9C27B0;" onclick="startLocationPick()">桃 鄂ｮ縺榊ｴ謇逋ｻ骭ｲ</button>
+          <button class="btn" style="background:#607D8B;" onclick="openMaintenanceHistoryModal()">搭 謨ｴ蛯吝ｱ･豁ｴ</button>
+          <button class="btn" style="background:#3F51B5;" onclick="openMaintenanceRegisterModal()">屏 謨ｴ蛯咏匳骭ｲ</button>
+          <button class="btn" style="background:#009688;" onclick="openMaintenanceSettingsModal()">笞呻ｸ・謨ｴ蛯呵ｨｭ螳・/button>
+          <button class="btn" style="background:#E91E63;" onclick="openFuelRegisterModal()">笵ｽ 邨ｦ豐ｹ逋ｻ骭ｲ</button>
+        </div>
+      </div>
+      
+      <div style="margin-top:20px;">
+        <button class="btn btn-close" style="width:100%;" onclick="closeModal('modalMachineSettings')">髢峨§繧・/button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 蜍慕噪逕滓・逕ｨ繝｢繝ｼ繝繝ｫ繧ｳ繝ｳ繝・リ -->
+  <div id="dynamicModals"></div>
+
+  <div id="toast">菫晏ｭ倥＠縺ｾ縺励◆</div>
+
+  <!-- 縺薙％縺ｯ莉悶・HTML縺九ｉAPI繧ｭ繝ｼ隱ｭ縺ｿ霎ｼ縺ｿ蜃ｦ逅・ｒ繧ｳ繝斐・縺励※縺上ｋ縺九√ム繝溘・繧貞・繧後ｋ -->
+  <!-- 螳滄圀縺ｫ縺ｯ admin.html 遲峨→蜷後§GAS荳翫・蜃ｺ蜉帙〒API繧ｭ繝ｼ縺悟沂繧∬ｾｼ縺ｾ繧後∪縺・-->
+  <script>
+    // 繝繝溘・縺ｮ繧ｭ繝ｼ繝ｭ繝ｼ繝峨ょｮ滄圀縺ｫ縺ｯ邂｡逅・判髱｢蜷梧ｧ倥↓蜍穂ｽ懊＆縺帙ｋ縺溘ａ
+    // GAS蛛ｴ縺ｧ <?!= GOOGLE_MAPS_API_KEY ?> 遲峨ｒ蜃ｺ蜉帙＠縺ｦ縺・ｋ縺九・    // js縺ｧ蜍慕噪縺ｫ繧ｹ繧ｯ繝ｪ繝励ヨ繧ｿ繧ｰ繧定ｿｽ蜉縺励∪縺吶・  </script>
+  <script src="machine.js" defer></script>
+</body>
+</html>
