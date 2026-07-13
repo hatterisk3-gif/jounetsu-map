@@ -74,6 +74,14 @@ function doPost(e) {
     else if (action === "getTrackingData") result = getTrackingData(params);
     else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
     else if (action === "changePassword") result = changePassword(params.userId, params.currentPassword, params.newPassword);
+    else if (action === "machine_loadAll") result = machine_loadAll();
+    else if (action === "machine_saveMachine") result = machine_saveMachine(params);
+    else if (action === "machine_saveStatus") result = machine_saveStatus(params);
+    else if (action === "machine_saveLocation") result = machine_saveLocation(params);
+    else if (action === "machine_saveMaintenance") result = machine_saveMaintenance(params);
+    else if (action === "machine_saveMaintenanceSetting") result = machine_saveMaintenanceSetting(params);
+    else if (action === "machine_saveFuel") result = machine_saveFuel(params);
+
 
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
@@ -3275,4 +3283,125 @@ function changeId(userId, password, newId) {
     }
   }
   return { success: false, message: "現在のパスワードが正しくありません" };
+}
+
+// ==========================================
+// 機械管理機能
+// ==========================================
+function getOrCreateSheet(sheetName, headers) {
+  let sheet = TENANT_SS.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = TENANT_SS.insertSheet(sheetName);
+    if (headers) sheet.appendRow(headers);
+  }
+  return sheet;
+}
+
+function machine_loadAll() {
+  const masterSheet = getOrCreateSheet('MachineMaster', ['id', 'name', 'group', 'location', 'photo', 'purchaseDate', 'modelType', 'type', 'serialNo', 'status', 'lat', 'lng', 'maintenanceSettings']);
+  const maintSheet = getOrCreateSheet('MachineMaintenance', ['id', 'machineId', 'date', 'material', 'replaceParts', 'comment']);
+  const fuelSheet = getOrCreateSheet('MachineFuel', ['id', 'machineId', 'date', 'hourMeter', 'fuelAmount', 'fuelCanStatus', 'capCheck']);
+
+  let machines = {};
+  let mData = masterSheet.getDataRange().getValues();
+  for (let i = 1; i < mData.length; i++) {
+    if(!mData[i][0]) continue;
+    let settings = [];
+    try { settings = JSON.parse(mData[i][12] || '[]'); } catch(e){}
+    machines[mData[i][0]] = {
+      id: mData[i][0], name: mData[i][1], group: mData[i][2], location: mData[i][3], photo: mData[i][4],
+      purchaseDate: mData[i][5], modelType: mData[i][6], type: mData[i][7], serialNo: mData[i][8],
+      status: mData[i][9], lat: mData[i][10] || null, lng: mData[i][11] || null,
+      maintenanceSettings: settings
+    };
+  }
+
+  let maintenanceRecords = [];
+  let maintData = maintSheet.getDataRange().getValues();
+  for (let i = 1; i < maintData.length; i++) {
+    if(!maintData[i][0]) continue;
+    maintenanceRecords.push({
+      id: maintData[i][0], machineId: maintData[i][1], date: maintData[i][2], material: maintData[i][3], replaceParts: maintData[i][4], comment: maintData[i][5]
+    });
+  }
+
+  let fuelRecords = [];
+  let fData = fuelSheet.getDataRange().getValues();
+  for (let i = 1; i < fData.length; i++) {
+    if(!fData[i][0]) continue;
+    fuelRecords.push({
+      id: fData[i][0], machineId: fData[i][1], date: fData[i][2], hourMeter: fData[i][3], fuelAmount: fData[i][4], fuelCanStatus: fData[i][5], capCheck: fData[i][6]
+    });
+  }
+
+  return { machines: machines, maintenanceRecords: maintenanceRecords, fuelRecords: fuelRecords };
+}
+
+function machine_saveMachine(p) {
+  const sheet = getOrCreateSheet('MachineMaster', ['id', 'name', 'group', 'location', 'photo', 'purchaseDate', 'modelType', 'type', 'serialNo', 'status', 'lat', 'lng', 'maintenanceSettings']);
+  const data = sheet.getDataRange().getValues();
+  let rowIdx = -1;
+  for(let i=1; i<data.length; i++){
+    if(data[i][0] === p.id) { rowIdx = i + 1; break; }
+  }
+  
+  let rowData = [
+    p.id, p.name, p.group, p.location, p.photo || '', p.purchaseDate || '', p.modelType || '', p.type || '', p.serialNo || '',
+    p.status || '使用可能', p.lat || '', p.lng || '', JSON.stringify(p.maintenanceSettings || [])
+  ];
+
+  if(rowIdx !== -1) {
+    sheet.getRange(rowIdx, 1, 1, rowData.length).setValues([rowData]);
+  } else {
+    sheet.appendRow(rowData);
+  }
+  return { success: true };
+}
+
+function updateMachineField(machineId, colIndex, value) {
+  const sheet = TENANT_SS.getSheetByName('MachineMaster');
+  if(!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  for(let i=1; i<data.length; i++){
+    if(data[i][0] === machineId) {
+      sheet.getRange(i+1, colIndex).setValue(value);
+      break;
+    }
+  }
+}
+
+function machine_saveStatus(p) {
+  updateMachineField(p.id, 10, p.status);
+  return { success: true };
+}
+
+function machine_saveLocation(p) {
+  const sheet = TENANT_SS.getSheetByName('MachineMaster');
+  if(!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  for(let i=1; i<data.length; i++){
+    if(data[i][0] === p.id) {
+      sheet.getRange(i+1, 11).setValue(p.lat);
+      sheet.getRange(i+1, 12).setValue(p.lng);
+      break;
+    }
+  }
+  return { success: true };
+}
+
+function machine_saveMaintenanceSetting(p) {
+  updateMachineField(p.id, 13, JSON.stringify(p.maintenanceSettings));
+  return { success: true };
+}
+
+function machine_saveMaintenance(p) {
+  const sheet = getOrCreateSheet('MachineMaintenance');
+  sheet.appendRow([p.id, p.machineId, p.date, p.material, p.replaceParts, p.comment]);
+  return { success: true };
+}
+
+function machine_saveFuel(p) {
+  const sheet = getOrCreateSheet('MachineFuel');
+  sheet.appendRow([p.id, p.machineId, p.date, p.hourMeter, p.fuelAmount, p.fuelCanStatus, p.capCheck]);
+  return { success: true };
 }
