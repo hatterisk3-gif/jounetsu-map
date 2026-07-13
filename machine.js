@@ -48,6 +48,9 @@ let isPickingLocation = false;
 let pendingLocation = null;
 let pendingBadgeAction = null; // 'maintenance' | 'fuel' | 'location'
 
+let latestUserPos = null;
+let userLocationMarker = null;
+
 // ======================
 // 初期化
 // ======================
@@ -66,6 +69,36 @@ function initMap() {
             handleLocationPicked(e.latLng);
         }
     });
+
+    // GPS現在地取得ボタン
+    let btnGPS = document.getElementById('btnCurrentLocation');
+    if(btnGPS) {
+        btnGPS.onclick = () => {
+            if (latestUserPos) { map.setCenter(latestUserPos); map.setZoom(18); }
+            else if (navigator.geolocation) {
+                const orgText = btnGPS.innerHTML;
+                btnGPS.innerHTML = "⌛"; btnGPS.disabled = true;
+                navigator.geolocation.getCurrentPosition(p => {
+                    latestUserPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+                    map.setCenter(latestUserPos); map.setZoom(18);
+                    if (!userLocationMarker) { 
+                        userLocationMarker = new google.maps.Marker({ 
+                            position: latestUserPos, 
+                            map: map, 
+                            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 }, 
+                            zIndex: 999 
+                        }); 
+                    } else { 
+                        userLocationMarker.setPosition(latestUserPos); 
+                    }
+                    btnGPS.innerHTML = orgText; btnGPS.disabled = false;
+                }, function () { 
+                    alert("現在地を取得できませんでした。"); 
+                    btnGPS.innerHTML = orgText; btnGPS.disabled = false; 
+                }, { enableHighAccuracy: true });
+            }
+        };
+    }
 
     loadAllData();
 }
