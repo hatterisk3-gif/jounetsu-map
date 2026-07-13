@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+﻿const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 
 let map;
 let polygons = [];
@@ -176,7 +176,26 @@ function drawPolygons(dataList) {
         if (!coords || coords.length === 0) return;
         if (coords.length === 1) return; // 看板アイコンは全て表示しない
 
-        const waterStatus = pData.water_status === 'supplying' ? 'supplying' : 'stopped';
+        let parsedStatus = {};
+        try {
+            if (pData.water_status && pData.water_status.startsWith('{')) {
+                parsedStatus = JSON.parse(pData.water_status);
+            } else {
+                parsedStatus = { "1": pData.water_status === 'supplying' ? 'supplying' : 'stopped' };
+            }
+        } catch(e) {
+            parsedStatus = { "1": 'stopped' };
+        }
+        
+        let waterStatus = 'stopped';
+        for (let key in parsedStatus) {
+            if (parsedStatus[key] === 'supplying') {
+                waterStatus = 'supplying';
+                break;
+            }
+        }
+        pData._parsed_water_status = parsedStatus;
+
         const color = STATUS_COLORS[waterStatus];
 
         const poly = new google.maps.Polygon({
@@ -242,19 +261,51 @@ let currentEditPoly = null;
 
 function openWaterStatusModal(pData) {
     currentEditPoly = pData;
-    const currentStatus = pData.water_status === 'supplying' ? 'supplying' : 'stopped';
+    // CADデータから給水栓の数をカウント
+    let waterInCount = 0;
+    try {
+        if (pData.uneSimData) {
+            const cadData = JSON.parse(pData.uneSimData);
+            if (cadData.pins) {
+                waterInCount = cadData.pins.filter(p => p.type === 'water_in').length;
+            }
+        }
+    } catch(e) { console.warn(e); }
+    
+    // 最低1つは表示する
+    if (waterInCount === 0) waterInCount = 1;
+    
+    const parsedStatus = pData._parsed_water_status || { "1": 'stopped' };
+    
+    let valvesHtml = '';
+    for(let i = 1; i <= waterInCount; i++) {
+        const vStatus = parsedStatus[i] === 'supplying' ? 'supplying' : 'stopped';
+        valvesHtml += `
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; padding:10px; border:1px solid #ddd; border-radius:6px;">
+                <span style="font-weight:bold; font-size:16px;">💧 給水栓 ${i}</span>
+                <select class="form-input valve-status-select" data-valve="${i}" style="width:auto; margin-bottom:0; padding:8px;">
+                    <option value="supplying" ${vStatus === 'supplying' ? 'selected' : ''}>💧 給水中</option>
+                    <option value="stopped" ${vStatus === 'stopped' ? 'selected' : ''}>🚫 止水中</option>
+                </select>
+            </div>
+        `;
+    }
 
     let html = `
         <h3 style="color:#1565C0; margin-top:0;">💧 水管理ステータス変更</h3>
-        <p><strong>圃場名:</strong> ${pData.name}</p>
+        <p style="margin-bottom:5px;"><strong>圃場名:</strong> ${pData.name}</p>
+        <button onclick="showWaterPinsOnMap('${pData.id}')" style="background:#FFF3E0; color:#E65100; border:1px solid #FF9800; padding:8px 12px; border-radius:6px; margin-bottom:15px; width:100%; cursor:pointer; font-weight:bold;">📍 給水栓の位置をマップで確認</button>
         
-        <label class="form-label">ステータス</label>
-        <select id="waterStatusSelect" class="form-input">
-            <option value="supplying" ${currentStatus === 'supplying' ? 'selected' : ''}>💧 ${STATUS_LABELS['supplying']}</option>
-            <option value="stopped" ${currentStatus === 'stopped' ? 'selected' : ''}>🚫 ${STATUS_LABELS['stopped']}</option>
-        </select>
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+            <button onclick="setAllValves('supplying')" style="background:#E3F2FD; color:#1976D2; border:1px solid #2196F3; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px;">すべて給水中にする</button>
+            <button onclick="setAllValves('stopped')" style="background:#FFEBEE; color:#D32F2F; border:1px solid #F44336; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px;">すべて止水中にする</button>
+        </div>
+        
+        <div id="valvesContainer" style="max-height: 40vh; overflow-y:auto; margin-bottom:15px;">
+            ${valvesHtml}
+        </div>
 
-        <div style="display:flex; gap:10px; margin-top:20px;">
+        <div style="display:flex; gap:10px; margin-top:10px;">
             <button onclick="saveWaterStatus(this)" style="flex:1; background:#1565C0; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">保存</button>
             <button onclick="closeModal()" style="flex:1; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold;">キャンセル</button>
         </div>
@@ -267,7 +318,19 @@ function openWaterStatusModal(pData) {
 async function saveWaterStatus(btnElement) {
     if (!currentEditPoly) return;
 
-    const status = document.getElementById('waterStatusSelect').value;
+    const selectElements = document.querySelectorAll('.valve-status-select');
+    let newStatusObj = {};
+    let isSupplyingAny = false;
+    
+    selectElements.forEach(el => {
+        const valveId = el.getAttribute('data-valve');
+        const val = el.value;
+        newStatusObj[valveId] = val;
+        if (val === 'supplying') isSupplyingAny = true;
+    });
+    
+    const status = JSON.stringify(newStatusObj);
+    const summaryStatus = isSupplyingAny ? 'supplying' : 'stopped';
 
     const btn = btnElement || (typeof event !== 'undefined' ? event.target : null);
     if(btn) {
@@ -275,10 +338,13 @@ async function saveWaterStatus(btnElement) {
         btn.innerText = '保存中...';
     }
 
-    const oldStatus = currentEditPoly.water_status === 'supplying' ? 'supplying' : 'stopped';
-    if (oldStatus !== status) {
-        // 履歴に追加
-        addHistory(currentEditPoly.name, oldStatus, status);
+    const oldSummary = currentEditPoly._parsed_water_status 
+        ? (Object.values(currentEditPoly._parsed_water_status).includes('supplying') ? 'supplying' : 'stopped') 
+        : (currentEditPoly.water_status === 'supplying' ? 'supplying' : 'stopped');
+        
+    if (oldSummary !== summaryStatus || currentEditPoly.water_status !== status) {
+        // 履歴に追加 (全体のサマリーで記録)
+        addHistory(currentEditPoly.name, oldSummary, summaryStatus);
     }
 
     currentEditPoly.water_status = status;
@@ -298,6 +364,68 @@ async function saveWaterStatus(btnElement) {
 function closeModal() {
     document.getElementById('modal').style.display = 'none';
 }
+
+// ====== 追加機能 (バルブ個別・マップピン確認) ======
+window.setAllValves = function(status) {
+    const selects = document.querySelectorAll('.valve-status-select');
+    selects.forEach(sel => {
+        sel.value = status;
+    });
+};
+
+let tempCadMarkers = [];
+window.showWaterPinsOnMap = function(polyId) {
+    // 既存のテンポラリマーカーをクリア
+    tempCadMarkers.forEach(m => m.setMap(null));
+    tempCadMarkers = [];
+    
+    if (!currentEditPoly || currentEditPoly.id !== polyId) return;
+    
+    try {
+        if (!currentEditPoly.uneSimData) {
+            alert('この圃場にはCADのピン情報がありません。');
+            return;
+        }
+        const cadData = JSON.parse(currentEditPoly.uneSimData);
+        if (!cadData.pins || cadData.pins.length === 0) {
+            alert('この圃場には給水栓ピンが設定されていません。');
+            return;
+        }
+        
+        let waterInCount = 0;
+        let bounds = new google.maps.LatLngBounds();
+        
+        cadData.pins.forEach(pin => {
+            if (pin.type === 'water_in') {
+                waterInCount++;
+                const mk = new google.maps.Marker({
+                    position: { lat: pin.lat, lng: pin.lng },
+                    map: map,
+                    label: { text: '💧' + waterInCount, fontSize: '14px', fontWeight: 'bold' },
+                    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+                    zIndex: 9999
+                });
+                tempCadMarkers.push(mk);
+                bounds.extend(mk.getPosition());
+            }
+        });
+        
+        if (waterInCount > 0) {
+            map.fitBounds(bounds);
+            closeModal(); // マップを見やすくするためモーダルを閉じる
+            
+            // 少しズームアウトする
+            setTimeout(() => {
+                if (map.getZoom() > 19) map.setZoom(19);
+            }, 300);
+        } else {
+            alert('給水栓ピンがありません。');
+        }
+    } catch(e) {
+        alert('ピン情報の読み込みに失敗しました。');
+        console.error(e);
+    }
+};
 
 // ====== GPS ======
 function moveToCurrentLocation() {

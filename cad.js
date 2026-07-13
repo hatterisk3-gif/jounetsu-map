@@ -1,4 +1,4 @@
-// 🚜 農業CAD専用JavaScript（admin.htmlから切り出し）
+﻿// 🚜 農業CAD専用JavaScript（admin.htmlから切り出し）
 // 🚜 新・農業CADシステム（地形設計特化版）
 window.cadMap = null;
 window.cadTargetId = null;
@@ -524,14 +524,27 @@ window.updateCadSvgOverlay = () => {
         pinsGroup.innerHTML = '';
         
         if (window.cadPins) {
+            let waterInCount = 0;
+            let waterOutCount = 0;
             window.cadPins.forEach((mk, idx) => {
                 let fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
-                fo.setAttribute('width', '60');
+                fo.setAttribute('width', '100');
                 fo.setAttribute('height', '60');
                 fo.setAttribute('style', 'overflow:visible; pointer-events:none;');
                 
                 let div = document.createElement('div');
-                const iconStr = mk.cadPinType === 'water_in' ? '💧' : mk.cadPinType === 'water_out' ? '🕳️' : mk.cadPinType === 'parking_truck' ? '🛻' : '🚜';
+                let iconStr = '';
+                if (mk.cadPinType === 'water_in') {
+                    waterInCount++;
+                    iconStr = '💧<span style="font-size:16px;">' + waterInCount + '</span>';
+                } else if (mk.cadPinType === 'water_out') {
+                    waterOutCount++;
+                    iconStr = '🕳️<span style="font-size:16px;">' + waterOutCount + '</span>';
+                } else if (mk.cadPinType === 'parking_truck') {
+                    iconStr = '🛻';
+                } else {
+                    iconStr = '🚜';
+                }
                 
                 let iconSpan = document.createElement('span');
                 iconSpan.innerHTML = iconStr;
