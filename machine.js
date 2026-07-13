@@ -8,7 +8,7 @@ async function callGAS(action, params = {}, retries = 2) {
     if (action !== 'login') {
         const spreadsheetId = localStorage.getItem('spreadsheetId');
         if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
-            throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
+            throw new Error("ログインセッションが無効です。一度ログアウトし、ログインし直してください。");
         }
         params.spreadsheetId = spreadsheetId;
     }
@@ -20,31 +20,37 @@ async function callGAS(action, params = {}, retries = 2) {
             let j;
             try { j = JSON.parse(text); } catch (e) {
                 if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                    throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
+                    throw new Error("Googleサーバーの一時的な通信エラーが発生しました。");
                 }
-                throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
+                throw new Error("サーバーから不正な応答がありました。");
             }
             if (j.status === "error") throw new Error(j.message);
             return j.data;
         } catch (e) {
             if (i === retries) throw e;
-            await new Promise(r => setTimeout(r, 2000 * (i + 1))); // 指数バックオフ
+            await new Promise(r => setTimeout(r, 2000 * (i + 1)));
         }
     }
 }
 
 let map;
-let loadedPolygons = {}; // もし他画面と共有の圃場データを取得できればここに格納
+let fieldPolygons = []; // 圃場表示用
+let pdlLocations = []; // 拠点マスタ
 let machines = {};
 let machineGroups = ["農業機械", "農機インプルメント", "出荷機械"];
 let machineTypes = ["トラクター", "ドローン"];
 let maintenanceRecords = [];
 let fuelRecords = [];
-let machineMarkers = {}; // 地図上のピン
+let machineMarkers = {};
 
-let currentMachineId = null; // 現在設定中の機械
+let currentMachineId = null;
 let isPickingLocation = false;
+let pendingLocation = null;
+let pendingBadgeAction = null; // 'maintenance' | 'fuel' | 'location'
 
+// ======================
+// 初期化
+// ======================
 function initMap() {
     map = new google.maps.Map(document.getElementById('map'), {
         center: { lat: 35.6895, lng: 139.6917 },
@@ -61,25 +67,72 @@ function initMap() {
         }
     });
 
-    loadMachineData();
+    loadAllData();
 }
 
-async function loadMachineData() {
+async function loadAllData() {
     showToast("データ読み込み中...");
     try {
-        const data = await callGAS('machine_loadAll');
-        if (data.machines) machines = data.machines;
-        if (data.maintenanceRecords) maintenanceRecords = data.maintenanceRecords;
-        if (data.fuelRecords) fuelRecords = data.fuelRecords;
+        // 圃場＋マスタデータ取得
+        const initData = await callGAS('getInitData');
+        if (initData && initData.pdl) {
+            pdlLocations = initData.pdl.locations || [];
+        }
+        if (initData && initData.polygons) {
+            renderFieldPolygons(initData.polygons);
+        }
+        
+        // 機械データ取得
+        const machineData = await callGAS('machine_loadAll');
+        if (machineData.machines) machines = machineData.machines;
+        if (machineData.maintenanceRecords) maintenanceRecords = machineData.maintenanceRecords;
+        if (machineData.fuelRecords) fuelRecords = machineData.fuelRecords;
+        
         renderMachineMarkers();
         showToast("読み込み完了");
     } catch (e) {
+        console.error("Data load error:", e);
         alert("データの読み込みに失敗しました: " + e.message);
     }
 }
 
 // ======================
-// 地図描画・ピン操作
+// 圃場ポリゴン描画（閲覧のみ）
+// ======================
+function renderFieldPolygons(polygons) {
+    fieldPolygons.forEach(p => p.setMap(null));
+    fieldPolygons = [];
+    
+    let bounds = new google.maps.LatLngBounds();
+    let hasPoint = false;
+    
+    polygons.forEach(p => {
+        if (!p.coords || p.coords.length < 3) return;
+        let coords;
+        try {
+            coords = (typeof p.coords === 'string') ? JSON.parse(p.coords) : p.coords;
+        } catch(e) { return; }
+        if (!Array.isArray(coords) || coords.length < 3) return;
+        
+        const poly = new google.maps.Polygon({
+            paths: coords,
+            map: map,
+            fillColor: '#4CAF50',
+            fillOpacity: 0.15,
+            strokeColor: '#4CAF50',
+            strokeOpacity: 0.6,
+            strokeWeight: 2,
+            clickable: false
+        });
+        fieldPolygons.push(poly);
+        coords.forEach(c => { bounds.extend(c); hasPoint = true; });
+    });
+    
+    if (hasPoint) map.fitBounds(bounds);
+}
+
+// ======================
+// 機械ピン描画
 // ======================
 function renderMachineMarkers() {
     for (let id in machineMarkers) {
@@ -87,15 +140,14 @@ function renderMachineMarkers() {
     }
     machineMarkers = {};
 
-    let bounds = new google.maps.LatLngBounds();
-    let hasPoint = false;
+    let bounds = map.getBounds() || new google.maps.LatLngBounds();
 
     for (let id in machines) {
         let m = machines[id];
         if (m.lat && m.lng) {
-            let color = (m.status === "使用可能") ? "blue" : "red";
+            let color = (m.status === "修理中") ? "red" : "blue";
             let marker = new google.maps.Marker({
-                position: { lat: m.lat, lng: m.lng },
+                position: { lat: parseFloat(m.lat), lng: parseFloat(m.lng) },
                 map: map,
                 title: m.name,
                 icon: {
@@ -107,19 +159,14 @@ function renderMachineMarkers() {
                     scale: 10
                 }
             });
-            bounds.extend(marker.getPosition());
-            hasPoint = true;
             marker.addListener('click', () => {
-                document.getElementById('settingMachineSelect').value = id;
+                currentMachineId = id;
                 openMachineSettingsModal();
+                document.getElementById('settingMachineSelect').value = id;
                 loadMachineSettings();
             });
             machineMarkers[id] = marker;
         }
-    }
-
-    if (hasPoint) {
-        map.fitBounds(bounds);
     }
 }
 
@@ -143,10 +190,102 @@ function removeDynamicModal(id) {
     if(el) el.remove();
 }
 
-// --- 機械登録 ---
+// ======================
+// バッジ選択UI
+// ======================
+function openBadgeSelect(actionType) {
+    pendingBadgeAction = actionType;
+    let title = '';
+    let filterFuel = false;
+    
+    if (actionType === 'maintenance') {
+        title = '🛠 整備登録 - 機械を選択';
+    } else if (actionType === 'fuel') {
+        title = '⛽ 給油登録 - 機械を選択';
+        filterFuel = true;
+    } else if (actionType === 'location') {
+        title = '📍 置き場所登録 - 機械を選択';
+    }
+    
+    document.getElementById('badgeModalTitle').innerText = title;
+    
+    // グループ→機種で分類
+    let grouped = {};
+    for (let id in machines) {
+        let m = machines[id];
+        if (filterFuel && m.fuelType !== '軽油') continue;
+        
+        let grp = m.group || '未分類';
+        let typ = m.type || '未分類';
+        if (!grouped[grp]) grouped[grp] = {};
+        if (!grouped[grp][typ]) grouped[grp][typ] = [];
+        grouped[grp][typ].push({ id, name: m.name, status: m.status });
+    }
+    
+    let html = '';
+    let groupKeys = Object.keys(grouped);
+    
+    if (groupKeys.length === 0) {
+        html = '<p style="text-align:center; color:#888; padding:20px;">対象の機械がありません。</p>';
+        if (filterFuel) {
+            html += '<p style="text-align:center; font-size:12px; color:#aaa;">（燃料属性が「軽油」の機械のみ表示されます）</p>';
+        }
+    } else {
+        groupKeys.forEach(grp => {
+            html += `<div class="badge-group-title">━━ ${grp} ━━</div>`;
+            let types = grouped[grp];
+            Object.keys(types).forEach(typ => {
+                html += `<div class="badge-type-title">${typ}</div>`;
+                html += '<div class="badge-grid">';
+                types[typ].forEach(m => {
+                    let statusIcon = m.status === '修理中' ? '🔴' : '🟢';
+                    html += `<div class="badge-item" onclick="onBadgeSelected('${m.id}')">${statusIcon} ${m.name}</div>`;
+                });
+                html += '</div>';
+            });
+        });
+    }
+    
+    document.getElementById('badgeContainer').innerHTML = html;
+    document.getElementById('modalBadgeSelect').style.display = 'flex';
+}
+
+function onBadgeSelected(machineId) {
+    currentMachineId = machineId;
+    closeModal('modalBadgeSelect');
+    
+    if (pendingBadgeAction === 'maintenance') {
+        openMaintenanceRegisterModal();
+    } else if (pendingBadgeAction === 'fuel') {
+        openFuelRegisterModal();
+    } else if (pendingBadgeAction === 'location') {
+        startLocationPick();
+    }
+}
+
+// ======================
+// 機械登録
+// ======================
 function openMachineRegisterModal() {
     updateSelectOptions('regMachineGroup', machineGroups);
     updateSelectOptions('regMachineType', machineTypes);
+    
+    // 拠点プルダウン設定
+    let locSel = document.getElementById('regLocation');
+    if (locSel) {
+        locSel.innerHTML = '<option value="">-- 選択 --</option>' + 
+            pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
+    }
+    
+    // フォームリセット
+    document.getElementById('regMachineName').value = '';
+    document.getElementById('regLocation').value = '';
+    document.getElementById('regPurchaseDate').value = '';
+    document.getElementById('regModelType').value = '';
+    document.getElementById('regSerialNo').value = '';
+    document.getElementById('regFuelType').value = '';
+    document.getElementById('photoPreview').innerHTML = '';
+    
     document.getElementById('modalMachineRegister').style.display = "flex";
 }
 
@@ -182,6 +321,7 @@ async function saveMachineRegistration() {
         modelType: document.getElementById('regModelType').value,
         type: document.getElementById('regMachineType').value,
         serialNo: document.getElementById('regSerialNo').value,
+        fuelType: document.getElementById('regFuelType').value,
         status: "使用可能",
         lat: null, lng: null,
         maintenanceSettings: []
@@ -201,7 +341,9 @@ async function saveMachineRegistration() {
     }
 }
 
-// --- 機械設定メイン ---
+// ======================
+// 機械設定メイン
+// ======================
 function openMachineSettingsModal() {
     updateMachineSettingsDropdown();
     document.getElementById('machineActionPanel').style.display = "none";
@@ -232,7 +374,9 @@ function loadMachineSettings() {
     }
 }
 
-// --- 稼働状況 ---
+// ======================
+// 稼働状況
+// ======================
 function openStatusModal() {
     let m = machines[currentMachineId];
     if (!m) return;
@@ -272,10 +416,12 @@ async function saveStatus(btn) {
     }
 }
 
-// --- 置き場所 ---
-let pendingLocation = null;
+// ======================
+// 置き場所
+// ======================
 function startLocationPick() {
     closeModal('modalMachineSettings');
+    closeModal('modalBadgeSelect');
     isPickingLocation = true;
     document.getElementById('pickingModeUI').style.display = "block";
 }
@@ -300,23 +446,24 @@ async function savePickedLocation() {
             showToast("置き場所を保存しました");
             renderMachineMarkers();
             cancelPicking();
-            openMachineSettingsModal();
         } catch(e) {
             alert("保存に失敗しました: " + e.message);
         }
     } else {
         cancelPicking();
-        openMachineSettingsModal();
     }
 }
 
 function cancelPicking() {
     isPickingLocation = false;
+    pendingLocation = null;
     document.getElementById('pickingModeUI').style.display = "none";
     if(machineMarkers["_preview"]) machineMarkers["_preview"].setMap(null);
 }
 
-// --- 整備履歴 ---
+// ======================
+// 整備履歴
+// ======================
 function openMaintenanceHistoryModal() {
     let m = machines[currentMachineId];
     if (!m) return;
@@ -347,7 +494,9 @@ function openMaintenanceHistoryModal() {
     document.getElementById('dynamicModals').innerHTML = html;
 }
 
-// --- 整備登録 ---
+// ======================
+// 整備登録
+// ======================
 function openMaintenanceRegisterModal() {
     let m = machines[currentMachineId];
     if (!m) return;
@@ -409,7 +558,9 @@ async function saveMaintenance(btn) {
     }
 }
 
-// --- 整備設定 ---
+// ======================
+// 整備設定
+// ======================
 function openMaintenanceSettingsModal() {
     let m = machines[currentMachineId];
     if (!m) return;
@@ -491,7 +642,9 @@ async function saveMaintenanceSetting(btn) {
     }
 }
 
-// --- 給油登録 ---
+// ======================
+// 給油登録
+// ======================
 function openFuelRegisterModal() {
     let m = machines[currentMachineId];
     if (!m) return;
@@ -587,11 +740,3 @@ async function saveFuel(btn) {
         alert("保存に失敗しました: " + e.message);
     }
 }
-
-window.onload = () => {
-    if (typeof google !== 'undefined' && google.maps) {
-        initMap();
-    } else {
-        window.initMap = initMap;
-    }
-};

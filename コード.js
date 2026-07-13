@@ -3298,7 +3298,7 @@ function getOrCreateSheet(sheetName, headers) {
 }
 
 function machine_loadAll() {
-  const masterSheet = getOrCreateSheet('MachineMaster', ['id', 'name', 'group', 'location', 'photo', 'purchaseDate', 'modelType', 'type', 'serialNo', 'status', 'lat', 'lng', 'maintenanceSettings']);
+  const masterSheet = getOrCreateSheet('MachineMaster', ['id', 'name', 'group', 'location', 'photo', 'purchaseDate', 'modelType', 'type', 'serialNo', 'status', 'lat', 'lng', 'maintenanceSettings', 'fuelType']);
   const maintSheet = getOrCreateSheet('MachineMaintenance', ['id', 'machineId', 'date', 'material', 'replaceParts', 'comment']);
   const fuelSheet = getOrCreateSheet('MachineFuel', ['id', 'machineId', 'date', 'hourMeter', 'fuelAmount', 'fuelCanStatus', 'capCheck']);
 
@@ -3312,7 +3312,7 @@ function machine_loadAll() {
       id: mData[i][0], name: mData[i][1], group: mData[i][2], location: mData[i][3], photo: mData[i][4],
       purchaseDate: mData[i][5], modelType: mData[i][6], type: mData[i][7], serialNo: mData[i][8],
       status: mData[i][9], lat: mData[i][10] || null, lng: mData[i][11] || null,
-      maintenanceSettings: settings
+      maintenanceSettings: settings, fuelType: mData[i][13] || ''
     };
   }
 
@@ -3338,7 +3338,7 @@ function machine_loadAll() {
 }
 
 function machine_saveMachine(p) {
-  const sheet = getOrCreateSheet('MachineMaster', ['id', 'name', 'group', 'location', 'photo', 'purchaseDate', 'modelType', 'type', 'serialNo', 'status', 'lat', 'lng', 'maintenanceSettings']);
+  const sheet = getOrCreateSheet('MachineMaster', ['id', 'name', 'group', 'location', 'photo', 'purchaseDate', 'modelType', 'type', 'serialNo', 'status', 'lat', 'lng', 'maintenanceSettings', 'fuelType']);
   const data = sheet.getDataRange().getValues();
   let rowIdx = -1;
   for(let i=1; i<data.length; i++){
@@ -3347,7 +3347,7 @@ function machine_saveMachine(p) {
   
   let rowData = [
     p.id, p.name, p.group, p.location, p.photo || '', p.purchaseDate || '', p.modelType || '', p.type || '', p.serialNo || '',
-    p.status || '使用可能', p.lat || '', p.lng || '', JSON.stringify(p.maintenanceSettings || [])
+    p.status || '使用可能', p.lat || '', p.lng || '', JSON.stringify(p.maintenanceSettings || []), p.fuelType || ''
   ];
 
   if(rowIdx !== -1) {
@@ -3391,6 +3391,11 @@ function machine_saveLocation(p) {
 
 function machine_saveMaintenanceSetting(p) {
   updateMachineField(p.id, 13, JSON.stringify(p.maintenanceSettings));
+  return { success: true };
+}
+
+function machine_saveFuelType(p) {
+  updateMachineField(p.id, 14, p.fuelType);
   return { success: true };
 }
 
