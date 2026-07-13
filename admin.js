@@ -322,6 +322,7 @@ function updateAdminLegend() {
     let html = '<div style="font-weight:bold; margin-bottom:5px; font-size:13px; color:#333;">🚜 稼働状況</div>';
     html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#9E9E9E; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">未使用</span></div>`;
     for (let status in adminStatusColors) {
+        if (status === '使用中' || status === '苗床 野菜 兼用') continue;
         html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:${adminStatusColors[status]}; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">${status}</span></div>`;
     }
     legendDiv.innerHTML = html;
@@ -2808,4 +2809,50 @@ window.doChangePassword = async function() {
         resultDiv.style.color = 'red';
     }
     btn.disabled = false; btn.innerText = 'パスワードを変更する';
-};
+};
+
+window.openBatchDeleteModal = () => {
+    let html = '<div style="padding:15px; text-align:center;">';
+    html += '<h3 style="margin-top:0; color:#d32f2f;">🗑️ 圃場の一括削除</h3>';
+    html += '<p style="font-size:13px; color:#555;">削除したい圃場を選択してください。<br>（※マーカー等も含まれます）</p>';
+    html += '<div style="margin-bottom:10px;"><button onclick="document.querySelectorAll(\'.batch-del-cb\').forEach(cb => cb.checked=true)" style="padding:5px 10px; margin-right:5px; cursor:pointer;">すべて選択</button>';
+    html += '<button onclick="document.querySelectorAll(\'.batch-del-cb\').forEach(cb => cb.checked=false)" style="padding:5px 10px; cursor:pointer;">選択解除</button></div>';
+    html += '<div style="max-height: 300px; overflow-y: auto; background:#f9f9f9; border:1px solid #ccc; border-radius:4px; padding:10px; margin-bottom:15px; text-align:left;">';
+    
+    let polyKeys = Object.keys(loadedPolygons);
+    if (polyKeys.length === 0) {
+        html += '<div style="color:#888; text-align:center; padding:20px;">データがありません</div>';
+    } else {
+        polyKeys.forEach(id => {
+            let p = loadedPolygons[id];
+            let typeIcon = p.isMarker ? '📍' : '✏️';
+            let name = p.name || '名称未設定';
+            html += '<label style="display:block; padding:8px 5px; border-bottom:1px solid #eee; cursor:pointer;">';
+            html += '<input type="checkbox" class="batch-del-cb" value="' + id + '" style="transform:scale(1.2); margin-right:8px;"> ' + typeIcon + ' ' + name;
+            html += '</label>';
+        });
+    }
+    
+    html += '</div>';
+    html += '<button id="btnExecuteBatchDelete" style="width:100%; padding:12px; margin-bottom:10px; background:#d32f2f; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">選択したものを削除</button>';
+    html += '<button onclick="document.getElementById(\'modal\').style.display=\'none\'" style="width:100%; padding:12px; background:#ccc; color:#333; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">キャンセル</button>';
+    html += '</div>';
+
+    document.getElementById('modalBody').innerHTML = html;
+    document.getElementById('modal').style.display = 'flex';
+
+    let btnExec = document.getElementById('btnExecuteBatchDelete');
+    if (btnExec) {
+        btnExec.onclick = async () => {
+            let selected = Array.from(document.querySelectorAll('.batch-del-cb:checked')).map(cb => cb.value);
+            if (selected.length === 0) {
+                customAlert('削除する項目が選択されていません。');
+                return;
+            }
+            document.getElementById('modal').style.display = 'none';
+            if (await customConfirm('選択した ' + selected.length + '件 を完全に削除しますか？\n(※この操作は取り消せません)')) {
+                await doDeletePolygons(selected);
+            }
+        };
+    }
+};
