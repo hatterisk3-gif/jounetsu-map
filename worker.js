@@ -19,7 +19,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
         trackingWatchId = null;
         btn.style.backgroundColor = 'white';
         btn.style.color = '#4CAF50';
-        btn.innerHTML = '🏃';
+        btn.innerHTML = '🏃‍♂️';
         
         // ローカルストレージをクリア
         localStorage.removeItem('passionMapClockIn');
@@ -43,6 +43,48 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                 console.warn("GPSエラー: 退勤時");
             }, { enableHighAccuracy: true });
         }
+    } else {
+        // 出勤（トラッキング開始）
+        if (!navigator.geolocation) {
+            if (window.customAlert) customAlert("お使いの端末ではGPSがサポートされていません。");
+            return;
+        }
+        btn.style.backgroundColor = '#4CAF50';
+        btn.style.color = 'white';
+        btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
+        
+        // 現在位置を取得して出勤処理
+        navigator.geolocation.getCurrentPosition((p) => {
+            const lat = p.coords.latitude;
+            const lng = p.coords.longitude;
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            
+            // ローカルストレージに保存
+            const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
+            localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+            
+            // マーカーをプロット
+            if (window.plotClockInMarker) {
+                window.plotClockInMarker(clockInState, true);
+            }
+
+            // 出勤をGASへ送信
+            if (currentUser) {
+                callGAS('saveTrackingData', {
+                    userName: currentUser,
+                    lat: lat,
+                    lng: lng,
+                    type: '出勤'
+                }).catch(e => console.warn("出勤送信エラー", e));
+            }
+        }, (err) => {
+            if (window.customAlert) customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
+            btn.style.backgroundColor = 'white';
+            btn.style.color = '#4CAF50';
+            btn.innerHTML = '🏃‍♂️';
+            return;
+        }, { enableHighAccuracy: true });
         
         // 移動トラッキングを開始
         trackingWatchId = navigator.geolocation.watchPosition((p) => {
@@ -3690,6 +3732,7 @@ window.executeAutoRecord = async () => {
                       if(btn) {
                           btn.style.backgroundColor = '#4CAF50';
                           btn.style.color = 'white';
+                          btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
                       }
                       // マーカー表示（mapはinitMap()で作成済み）
                       if (window.plotClockInMarker) {
