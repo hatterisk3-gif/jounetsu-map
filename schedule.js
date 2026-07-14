@@ -354,108 +354,15 @@ async function fetchWeatherAndUpdateUI() {
                     }
                     throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
                 }
-    html += `<div id="contentForecast">`;
-    let now = new Date();
-    let currentHourStr = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0') + "T" + String(now.getHours()).padStart(2, '0') + ":00";
-    let startIndex = data.hourly ? data.hourly.time.indexOf(currentHourStr) : -1;
-    if (startIndex === -1) startIndex = 0;
-    
-    if (data.hourly) {
-      html += `<div style="margin-bottom:15px;">`;
-      html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕒 今後の天気 (1時間ごと)</div>`;
-      html += `<div style="display:flex; overflow-x:auto; padding-bottom:5px; gap:10px;">`;
-      for(let i = startIndex; i < startIndex + 12 && i < data.hourly.time.length; i++) {
-          let t = new Date(data.hourly.time[i]);
-          let hStr = t.getHours() + "時";
-          let hCode = data.hourly.weathercode[i];
-          let hTemp = Math.round(data.hourly.temperature_2m[i] * 10) / 10;
-          let hPrecip = data.hourly.precipitation[i];
-          let hEmoji = getWeatherEmoji(hCode);
-          html += `<div style="min-width:50px; text-align:center; background:#f9f9f9; padding:5px; border-radius:5px; border:1px solid #eee;">
-                     <div style="font-size:12px; color:#666;">${hStr}</div>
-                     <div style="font-size:18px; margin:3px 0;">${hEmoji}</div>
-                     <div style="font-size:13px; font-weight:bold;">${hTemp}℃</div>
-                     <div style="font-size:11px; color:#2196F3;">${hPrecip}mm</div>
-                   </div>`;
+                if (json && json.status === "error") throw new Error(json.message || "エラーが発生しました");
+                return json && json.data !== undefined ? json.data : json;
+            } catch (e) {
+                lastError = e;
+                if (i === retries) throw e;
+                await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+            }
+        }
       }
-      html += `</div></div>`;
-    }
-
-    html += `<div style="margin-bottom:15px; text-align:center;">`;
-    html += `<button onclick="openRadarModal(${lat}, ${lng})" style="width:100%; max-width:300px; padding:12px; background:#2196F3; color:white; border:none; border-radius:6px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2);">🌧️ 雨雲レーダーを大画面で見る</button>`;
-    html += `</div>`;
-
-    html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 週間予報</div>`;
-    html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
-    html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
-               <th style="padding: 8px; text-align: left;">日付</th>
-               <th style="padding: 8px; text-align: center;">天気</th>
-               <th style="padding: 8px; text-align: right;">最高/最低</th>
-             </tr>`;
-    
-    for (let i = 0; i < data.daily.time.length; i++) {
-      let dateStr = data.daily.time[i];
-      let d = new Date(dateStr);
-      let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
-      let code = data.daily.weathercode[i];
-      let maxT = data.daily.temperature_2m_max[i];
-      let minT = data.daily.temperature_2m_min[i];
-      let dEmoji = getWeatherEmoji(code);
-      let dDesc = getWeatherDescription(code);
-      
-      html += `<tr style="border-bottom: 1px solid #eee;">
-                 <td style="padding: 8px; text-align: left;">${shortDate}</td>
-                 <td style="padding: 8px; text-align: center;" title="${dDesc}">${dEmoji}</td>
-                 <td style="padding: 8px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
-               </tr>`;
-    }
-    html += `</table>`;
-    html += `<div style="font-size: 11px; color: #999; text-align: right; margin-top: 10px;">Data: Open-Meteo</div>`;
-    html += `</div>`; 
-
-    html += `<div id="contentHistory" style="display:none;">`;
-    if (historyData && historyData.daily) {
-       html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 昨年の天気 (${lastYearStart.getFullYear()}年)</div>`;
-       html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
-       html += `<tr style="background: #fff8e1; border-bottom: 1px solid #ccc;">
-                  <th style="padding: 8px; text-align: left;">日付</th>
-                  <th style="padding: 8px; text-align: center;">天気</th>
-                  <th style="padding: 8px; text-align: right;">最高/最低</th>
-                  <th style="padding: 8px; text-align: right;">降水</th>
-                </tr>`;
-       for (let i = 0; i < historyData.daily.time.length; i++) {
-          let dateStr = historyData.daily.time[i];
-          let d = new Date(dateStr);
-          let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
-          let code = historyData.daily.weathercode[i];
-          let maxT = historyData.daily.temperature_2m_max[i];
-          let minT = historyData.daily.temperature_2m_min[i];
-          let pcp = historyData.daily.precipitation_sum[i];
-          let dEmoji = getWeatherEmoji(code);
-          let dDesc = getWeatherDescription(code);
-          
-          html += `<tr style="border-bottom: 1px solid #eee;">
-                     <td style="padding: 8px; text-align: left;">${shortDate}</td>
-                     <td style="padding: 8px; text-align: center;" title="${dDesc}">${dEmoji}</td>
-                     <td style="padding: 8px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
-                     <td style="padding: 8px; text-align: right; color:#2196F3;">${pcp}mm</td>
-                   </tr>`;
-       }
-       html += `</table>`;
-       html += `<div style="font-size: 11px; color: #999; text-align: right; margin-top: 10px;">Historical Data: Open-Meteo</div>`;
-    } else {
-       html += `<div style="text-align:center; padding:20px; color:#666;">昨年のデータが取得できませんでした。</div>`;
-    }
-    html += `</div>`; 
-
-    html += `</div>`; 
-    
-    window.cachedWeatherHtml = html;
-
-  } catch (e) {
-    console.error("天気取得エラー:", e);
-  }
-}
 
       window.openWeatherModal = function() {
         let contentDiv = document.getElementById('weatherContent');
