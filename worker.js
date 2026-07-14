@@ -37,46 +37,8 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                     lat: p.coords.latitude,
                     lng: p.coords.longitude,
                     type: '退勤'
-                }).catch(e => console.warn("退勤送信エラー", e));
-            }, (err) => {
-                callGAS('saveTrackingData', { userName: currentUser, lat: 0, lng: 0, type: '退勤' }).catch(e => console.warn("退勤送信エラー", e));
-            });
-        }
-        
-        customAlert("退勤しました。トラッキングを終了します。");
-    } else {
-        // 出勤（トラッキング開始）
-        if (!navigator.geolocation) {
-            customAlert("お使いの端末ではGPSがサポートされていません。");
-            return;
-        }
-        btn.style.backgroundColor = '#4CAF50';
-        btn.style.color = 'white';
-        
-        // 現在位置を取得して出勤処理
-        navigator.geolocation.getCurrentPosition((p) => {
-            const lat = p.coords.latitude;
-            const lng = p.coords.longitude;
-            const now = new Date();
-            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-            
-            // ローカルストレージに保存
-            const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
-            localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
-            
-            // マーカーをプロット
-            plotClockInMarker(clockInState, true);
-
-            // 出勤をGASへ送信
-            if (currentUser) {
-                callGAS('saveTrackingData', {
-                    userName: currentUser,
-                    lat: lat,
-                    lng: lng,
-                    type: '出勤'
                 }).catch(e => console.warn("出勤送信エラー", e));
             }
-            customAlert("出勤しました！このアプリを開いたときに場所が記録されます。");
         }, (err) => {
             customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
             btn.style.backgroundColor = 'white';
