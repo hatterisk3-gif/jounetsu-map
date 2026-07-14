@@ -65,7 +65,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
             localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
             
             // マーカーをプロット
-            plotClockInMarker(clockInState);
+            plotClockInMarker(clockInState, true);
 
             // 出勤をGASへ送信
             if (currentUser) {
@@ -76,7 +76,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                     type: '出勤'
                 }).catch(e => console.warn("出勤送信エラー", e));
             }
-            customAlert("出勤しました。1日中トラッキングが記録されます。");
+            customAlert("出勤しました！このアプリを開いたときに場所が記録されます。");
         }, (err) => {
             customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
             btn.style.backgroundColor = 'white';
@@ -113,7 +113,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
     }
 };
 
-window.plotClockInMarker = (state) => {
+window.plotClockInMarker = (state, doCenter) => {
     if (window.clockInMarker) window.clockInMarker.setMap(null);
     const pos = new google.maps.LatLng(state.lat, state.lng);
     window.clockInMarker = new google.maps.Marker({
@@ -135,6 +135,10 @@ window.plotClockInMarker = (state) => {
     });
     // 常に開いておくか、クリックで開くか（ここでは開いたままにする）
     info.open(map, window.clockInMarker);
+    if (doCenter) {
+        map.setCenter(pos);
+        map.setZoom(18);
+    }
     // クリック時にも開くようにする
     window.clockInMarker.addListener('click', () => {
         info.open(map, window.clockInMarker);
