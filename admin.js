@@ -1,4 +1,4 @@
-﻿const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 let currentUser = "", loadedPolygons = {}, editingId = null, originalCoordsForEdit = [], pdlLocations = [], pdlConditions = [], pdlStatuses = [], toukiList = [], map, drawingManager, infoWindow, currentPolygon = null, currentMarker = null, isMergeMode = false, mergeBaseId = null, userLocationMarker = null, isBatchDeleteMode = false, selectedForDelete = [];
 let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [];
 let mapInitPromise, resolveMapInit;
@@ -768,8 +768,8 @@ function initMap() {
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
-    // map.mapTypes.set('hybrid_stretched', new StretchedMapType());
-    // map.setMapTypeId('hybrid_stretched');
+    map.mapTypes.set('hybrid_stretched', new StretchedMapType());
+    map.setMapTypeId('hybrid_stretched');
 
     infoWindow = new google.maps.InfoWindow();
     google.maps.event.addListener(map, 'click', () => infoWindow.close());
