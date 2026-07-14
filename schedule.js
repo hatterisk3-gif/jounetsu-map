@@ -1532,12 +1532,11 @@ window.doChangePassword = async function() {
     }
     btn.disabled = false; btn.innerText = 'パスワードを変更する';
 };
-\n
-// === トラッキング同期関連の共通変数 (上書き・競合回避用) ===
+
+
 window.passionWatchId = null;
 window.passionLastTime = 0;
 
-// === トラッキングUI更新関数 ===
 window.syncTrackingUI = function() {
     const clockInStr = localStorage.getItem('passionMapClockIn');
     const btn = document.getElementById('btnTracking');
@@ -1553,7 +1552,6 @@ window.syncTrackingUI = function() {
                 if (typeof window.plotClockInMarker === 'function') {
                     window.plotClockInMarker(state, false);
                 }
-                // トラッキング監視がまだなら開始
                 if (navigator.geolocation && window.passionWatchId === null) {
                     window.passionWatchId = navigator.geolocation.watchPosition((p) => {
                         const now = Date.now();
@@ -1566,7 +1564,7 @@ window.syncTrackingUI = function() {
                                     lat: p.coords.latitude,
                                     lng: p.coords.longitude,
                                     type: '移動'
-                                }).catch(e => console.warn("移動送信エラー", e));
+                                }).catch(e => console.warn(e));
                             }
                         }
                     }, (err) => {}, { enableHighAccuracy: true });
@@ -1576,7 +1574,6 @@ window.syncTrackingUI = function() {
         } catch(e) {}
     }
 
-    // 非アクティブ・またはデータなしの場合
     if (btn) {
         btn.style.backgroundColor = 'white';
         btn.style.color = '#4CAF50';
@@ -1592,10 +1589,8 @@ window.syncTrackingUI = function() {
     }
 };
 
-// === トラッキングボタンクリック時 (上書き) ===
 window.toggleTracking = () => {
     if (window.passionWatchId !== null || localStorage.getItem('passionMapClockIn')) {
-        // 退勤処理
         localStorage.removeItem('passionMapClockIn');
         window.syncTrackingUI();
         if (typeof currentUser !== 'undefined' && currentUser) {
@@ -1606,15 +1601,12 @@ window.toggleTracking = () => {
                         lat: p.coords.latitude,
                         lng: p.coords.longitude,
                         type: '退勤'
-                    }).catch(e => console.warn("退勤送信エラー", e));
+                    }).catch(e => console.warn(e));
                 }
-            }, (err) => { console.warn("GPSエラー: 退勤時"); }, { enableHighAccuracy: true });
+            }, (err) => { console.warn(err); }, { enableHighAccuracy: true });
         }
     } else {
-        // 出勤処理
         if (!navigator.geolocation) {
-            if (typeof customAlert === 'function') customAlert("お使いの端末ではGPSがサポートされていません。");
-            else alert("GPSがサポートされていません。");
             return;
         }
         
@@ -1642,12 +1634,10 @@ window.toggleTracking = () => {
                         lat: lat,
                         lng: lng,
                         type: '出勤'
-                    }).catch(e => console.warn("出勤送信エラー", e));
+                    }).catch(e => console.warn(e));
                 }
             }
         }, (err) => {
-            if (typeof customAlert === 'function') customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
-            else alert("現在地が取得できません。");
             if (btn) {
                 btn.style.backgroundColor = 'white';
                 btn.style.color = '#4CAF50';
@@ -1664,7 +1654,6 @@ window.addEventListener('storage', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    // UI初期化待ち
     setTimeout(() => {
         if(typeof window.syncTrackingUI === 'function') {
             window.syncTrackingUI();
