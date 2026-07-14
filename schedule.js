@@ -1533,13 +1533,13 @@ window.doChangePassword = async function() {
     btn.disabled = false; btn.innerText = 'パスワードを変更する';
 };
 \n
-// === トラッキング同期関連の共通変数 ===
-window.window.trackingWatchId = null;
-window.window.lastTrackingTime = 0;
+// === トラッキング同期関連の共通変数 (上書き・競合回避用) ===
+window.passionWatchId = null;
+window.passionLastTime = 0;
 
 // === トラッキングUI更新関数 ===
 window.syncTrackingUI = function() {
-    const clockInStr = localStorage.getItem('passionMapClockIn_disabled');
+    const clockInStr = localStorage.getItem('passionMapClockIn');
     const btn = document.getElementById('btnTracking');
     if (clockInStr) {
         try {
@@ -1554,11 +1554,11 @@ window.syncTrackingUI = function() {
                     window.plotClockInMarker(state, false);
                 }
                 // トラッキング監視がまだなら開始
-                if (navigator.geolocation && window.window.trackingWatchId === null) {
-                    window.window.trackingWatchId = navigator.geolocation.watchPosition((p) => {
+                if (navigator.geolocation && window.passionWatchId === null) {
+                    window.passionWatchId = navigator.geolocation.watchPosition((p) => {
                         const now = Date.now();
-                        if (now - window.window.lastTrackingTime < 10000) return;
-                        window.window.lastTrackingTime = now;
+                        if (now - window.passionLastTime < 10000) return;
+                        window.passionLastTime = now;
                         if (typeof currentUser !== 'undefined' && currentUser) {
                             if (typeof callGAS === 'function') {
                                 callGAS('saveTrackingData', {
@@ -1582,9 +1582,9 @@ window.syncTrackingUI = function() {
         btn.style.color = '#4CAF50';
         btn.innerHTML = '🏃‍♂️';
     }
-    if (window.window.trackingWatchId !== null) {
-        navigator.geolocation.clearWatch(window.window.trackingWatchId);
-        window.window.trackingWatchId = null;
+    if (window.passionWatchId !== null) {
+        navigator.geolocation.clearWatch(window.passionWatchId);
+        window.passionWatchId = null;
     }
     if (window.clockInMarker) {
         window.clockInMarker.setMap(null);
@@ -1592,9 +1592,9 @@ window.syncTrackingUI = function() {
     }
 };
 
-// === トラッキングボタンクリック時 ===
+// === トラッキングボタンクリック時 (上書き) ===
 window.toggleTracking = () => {
-    if (window.window.trackingWatchId !== null) {
+    if (window.passionWatchId !== null || localStorage.getItem('passionMapClockIn')) {
         // 退勤処理
         localStorage.removeItem('passionMapClockIn');
         window.syncTrackingUI();
@@ -1664,7 +1664,7 @@ window.addEventListener('storage', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    // wait slightly so UI finishes loading
+    // UI初期化待ち
     setTimeout(() => {
         if(typeof window.syncTrackingUI === 'function') {
             window.syncTrackingUI();

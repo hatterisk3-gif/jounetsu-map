@@ -911,15 +911,15 @@ function toggleIdForm() {
 
 
       // トラッキング（移動履歴）用
-      
-      
+      let trackingWatchId = null;
+      let lastTrackingTime = 0;
 
       window.toggleTracking = () => {
     const btn = document.getElementById('btnTracking');
-    if (window.trackingWatchId !== null) {
+    if (trackingWatchId !== null) {
         // 退勤（トラッキング停止）
-        navigator.geolocation.clearWatch(window.trackingWatchId);
-        window.trackingWatchId = null;
+        navigator.geolocation.clearWatch(trackingWatchId);
+        trackingWatchId = null;
         if(btn) {
             btn.style.backgroundColor = 'white';
             btn.style.color = '#4CAF50';
@@ -1000,11 +1000,11 @@ function toggleIdForm() {
         }, { enableHighAccuracy: true });
         
         // 移動トラッキングを開始
-        window.trackingWatchId = navigator.geolocation.watchPosition((p) => {
+        trackingWatchId = navigator.geolocation.watchPosition((p) => {
             const now = Date.now();
             // 10秒に1回程度の頻度に制限（GASの呼び出し過多を防ぐ）
-            if (now - window.lastTrackingTime < 10000) return;
-            window.lastTrackingTime = now;
+            if (now - lastTrackingTime < 10000) return;
+            lastTrackingTime = now;
 
             const lat = p.coords.latitude;
             const lng = p.coords.longitude;
@@ -1060,13 +1060,13 @@ window.plotClockInMarker = (state, doCenter) => {
     }
 };
 \n
-// === トラッキング同期関連の共通変数 ===
-window.window.trackingWatchId = null;
-window.window.lastTrackingTime = 0;
+// === トラッキング同期関連の共通変数 (上書き・競合回避用) ===
+window.passionWatchId = null;
+window.passionLastTime = 0;
 
 // === トラッキングUI更新関数 ===
 window.syncTrackingUI = function() {
-    const clockInStr = localStorage.getItem('passionMapClockIn_disabled');
+    const clockInStr = localStorage.getItem('passionMapClockIn');
     const btn = document.getElementById('btnTracking');
     if (clockInStr) {
         try {
@@ -1081,11 +1081,11 @@ window.syncTrackingUI = function() {
                     window.plotClockInMarker(state, false);
                 }
                 // トラッキング監視がまだなら開始
-                if (navigator.geolocation && window.window.trackingWatchId === null) {
-                    window.window.trackingWatchId = navigator.geolocation.watchPosition((p) => {
+                if (navigator.geolocation && window.passionWatchId === null) {
+                    window.passionWatchId = navigator.geolocation.watchPosition((p) => {
                         const now = Date.now();
-                        if (now - window.window.lastTrackingTime < 10000) return;
-                        window.window.lastTrackingTime = now;
+                        if (now - window.passionLastTime < 10000) return;
+                        window.passionLastTime = now;
                         if (typeof currentUser !== 'undefined' && currentUser) {
                             if (typeof callGAS === 'function') {
                                 callGAS('saveTrackingData', {
@@ -1109,9 +1109,9 @@ window.syncTrackingUI = function() {
         btn.style.color = '#4CAF50';
         btn.innerHTML = '🏃‍♂️';
     }
-    if (window.window.trackingWatchId !== null) {
-        navigator.geolocation.clearWatch(window.window.trackingWatchId);
-        window.window.trackingWatchId = null;
+    if (window.passionWatchId !== null) {
+        navigator.geolocation.clearWatch(window.passionWatchId);
+        window.passionWatchId = null;
     }
     if (window.clockInMarker) {
         window.clockInMarker.setMap(null);
@@ -1119,9 +1119,9 @@ window.syncTrackingUI = function() {
     }
 };
 
-// === トラッキングボタンクリック時 ===
+// === トラッキングボタンクリック時 (上書き) ===
 window.toggleTracking = () => {
-    if (window.window.trackingWatchId !== null) {
+    if (window.passionWatchId !== null || localStorage.getItem('passionMapClockIn')) {
         // 退勤処理
         localStorage.removeItem('passionMapClockIn');
         window.syncTrackingUI();
@@ -1191,7 +1191,7 @@ window.addEventListener('storage', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    // wait slightly so UI finishes loading
+    // UI初期化待ち
     setTimeout(() => {
         if(typeof window.syncTrackingUI === 'function') {
             window.syncTrackingUI();
