@@ -844,7 +844,7 @@ function getSavedPolygons() {
         condition: data[i][3],
         area: data[i][4],
         coords: JSON.parse(data[i][5] || "[]"),
-        color: data[i][6],
+        color: (JSON.parse(data[i][5] || "[]").length === 1) ? data[i][6] : "",
         author: data[i][8],
         photos: photos,
         status: data[i][10],
