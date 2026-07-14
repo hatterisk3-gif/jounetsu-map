@@ -1865,13 +1865,33 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
           `;
 
-          html = `${targetSection}<label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;"><label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}">
-                  <label class="form-label">🚜 作業名</label>
-                  ${recentChipsHTML}
-                  ${allChipsHTML}
+          html = `<label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;">
+                  <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}">
+                  ${timeUI}
+                  ${workTimeUI}
+                  <label class="form-label" style="margin-top:15px;">📁 カテゴリ</label>
+                  <select id="rec_work_category" class="form-input" onchange="if(window.filterWorkChips) window.filterWorkChips()">
+                      <option value="すべて">すべて</option>
+                      <option value="圃場作業">圃場作業</option>
+                      <option value="事務作業">事務作業</option>
+                      <option value="保全・整備">保全・整備</option>
+                  </select>
+                  <label class="form-label" style="margin-top:10px;">🚜 作業名</label>
+                  <div id="work_chips_wrapper">
+                    ${recentChipsHTML}
+                    ${allChipsHTML}
+                  </div>
                   <select id="rec_work_name" class="form-input" style="display:none;" onchange="handleWorkNameChange()">${wNames}</select>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
-                  ${cropSection}${ridgeUI}<div id="used_items_section"></div><div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div><div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>${timeUI}${workTimeUI}<label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label><select id="rec_progress_status" class="form-input">${wStats}</select>${exPhotos}${photoUI}`;
+                  ${targetSection}
+                  ${cropSection}
+                  ${ridgeUI}
+                  <div id="used_items_section"></div>
+                  <div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div>
+                  <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
+                  <label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label><select id="rec_progress_status" class="form-input">${wStats}</select>
+                  ${exPhotos}
+                  ${photoUI}`;
         } else if (p.isMarker) {
           html = `${targetSection}${timeUI}${exPhotos}${photoUI}`;
         } else {
