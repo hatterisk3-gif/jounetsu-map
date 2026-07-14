@@ -776,15 +776,15 @@ async function saveFuel(btn) {
 
 
       // トラッキング（移動履歴）用
-      let trackingWatchId = null;
-      let lastTrackingTime = 0;
+      
+      
 
       window.toggleTracking = () => {
     const btn = document.getElementById('btnTracking');
-    if (trackingWatchId !== null) {
+    if (window.trackingWatchId !== null) {
         // 退勤（トラッキング停止）
-        navigator.geolocation.clearWatch(trackingWatchId);
-        trackingWatchId = null;
+        navigator.geolocation.clearWatch(window.trackingWatchId);
+        window.trackingWatchId = null;
         if(btn) {
             btn.style.backgroundColor = 'white';
             btn.style.color = '#4CAF50';
@@ -865,11 +865,11 @@ async function saveFuel(btn) {
         }, { enableHighAccuracy: true });
         
         // 移動トラッキングを開始
-        trackingWatchId = navigator.geolocation.watchPosition((p) => {
+        window.trackingWatchId = navigator.geolocation.watchPosition((p) => {
             const now = Date.now();
             // 10秒に1回程度の頻度に制限（GASの呼び出し過多を防ぐ）
-            if (now - lastTrackingTime < 10000) return;
-            lastTrackingTime = now;
+            if (now - window.lastTrackingTime < 10000) return;
+            window.lastTrackingTime = now;
 
             const lat = p.coords.latitude;
             const lng = p.coords.longitude;
@@ -928,7 +928,7 @@ window.plotClockInMarker = (state, doCenter) => {
 document.addEventListener("DOMContentLoaded", () => {
 
           // 出勤状態の復元とトラッキング自動再開
-          const clockInStr = localStorage.getItem('passionMapClockIn');
+          const clockInStr = localStorage.getItem('passionMapClockIn_disabled');
           if (clockInStr) {
               try {
                   const state = JSON.parse(clockInStr);
@@ -945,11 +945,11 @@ document.addEventListener("DOMContentLoaded", () => {
                       }
                       
                       // 移動トラッキング再開
-                      if (navigator.geolocation && typeof trackingWatchId !== 'undefined' && trackingWatchId === null) {
-                          trackingWatchId = navigator.geolocation.watchPosition((p) => {
+                      if (navigator.geolocation && typeof window.trackingWatchId !== 'undefined' && window.trackingWatchId === null) {
+                          window.trackingWatchId = navigator.geolocation.watchPosition((p) => {
                               const now = Date.now();
-                              if (now - lastTrackingTime < 10000) return;
-                              lastTrackingTime = now;
+                              if (now - window.lastTrackingTime < 10000) return;
+                              window.lastTrackingTime = now;
                               if (typeof currentUser !== 'undefined' && currentUser && typeof callGAS !== 'undefined') {
                                   callGAS('saveTrackingData', { 
                                       userName: currentUser, 
@@ -966,4 +966,143 @@ document.addEventListener("DOMContentLoaded", () => {
               }
           }
 
+});
+\n
+// === トラッキング同期関連の共通変数 ===
+window.window.trackingWatchId = null;
+window.window.lastTrackingTime = 0;
+
+// === トラッキングUI更新関数 ===
+window.syncTrackingUI = function() {
+    const clockInStr = localStorage.getItem('passionMapClockIn_disabled');
+    const btn = document.getElementById('btnTracking');
+    if (clockInStr) {
+        try {
+            const state = JSON.parse(clockInStr);
+            if (state.active) {
+                if (btn) {
+                    btn.style.backgroundColor = '#4CAF50';
+                    btn.style.color = 'white';
+                    btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
+                }
+                if (typeof window.plotClockInMarker === 'function') {
+                    window.plotClockInMarker(state, false);
+                }
+                // トラッキング監視がまだなら開始
+                if (navigator.geolocation && window.window.trackingWatchId === null) {
+                    window.window.trackingWatchId = navigator.geolocation.watchPosition((p) => {
+                        const now = Date.now();
+                        if (now - window.window.lastTrackingTime < 10000) return;
+                        window.window.lastTrackingTime = now;
+                        if (typeof currentUser !== 'undefined' && currentUser) {
+                            if (typeof callGAS === 'function') {
+                                callGAS('saveTrackingData', {
+                                    userName: currentUser,
+                                    lat: p.coords.latitude,
+                                    lng: p.coords.longitude,
+                                    type: '移動'
+                                }).catch(e => console.warn("移動送信エラー", e));
+                            }
+                        }
+                    }, (err) => {}, { enableHighAccuracy: true });
+                }
+                return;
+            }
+        } catch(e) {}
+    }
+
+    // 非アクティブ・またはデータなしの場合
+    if (btn) {
+        btn.style.backgroundColor = 'white';
+        btn.style.color = '#4CAF50';
+        btn.innerHTML = '🏃‍♂️';
+    }
+    if (window.window.trackingWatchId !== null) {
+        navigator.geolocation.clearWatch(window.window.trackingWatchId);
+        window.window.trackingWatchId = null;
+    }
+    if (window.clockInMarker) {
+        window.clockInMarker.setMap(null);
+        window.clockInMarker = null;
+    }
+};
+
+// === トラッキングボタンクリック時 ===
+window.toggleTracking = () => {
+    if (window.window.trackingWatchId !== null) {
+        // 退勤処理
+        localStorage.removeItem('passionMapClockIn');
+        window.syncTrackingUI();
+        if (typeof currentUser !== 'undefined' && currentUser) {
+            navigator.geolocation.getCurrentPosition((p) => {
+                if(typeof callGAS === 'function') {
+                    callGAS('saveTrackingData', {
+                        userName: currentUser,
+                        lat: p.coords.latitude,
+                        lng: p.coords.longitude,
+                        type: '退勤'
+                    }).catch(e => console.warn("退勤送信エラー", e));
+                }
+            }, (err) => { console.warn("GPSエラー: 退勤時"); }, { enableHighAccuracy: true });
+        }
+    } else {
+        // 出勤処理
+        if (!navigator.geolocation) {
+            if (typeof customAlert === 'function') customAlert("お使いの端末ではGPSがサポートされていません。");
+            else alert("GPSがサポートされていません。");
+            return;
+        }
+        
+        const btn = document.getElementById('btnTracking');
+        if (btn) {
+            btn.style.backgroundColor = '#4CAF50';
+            btn.style.color = 'white';
+            btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
+        }
+
+        navigator.geolocation.getCurrentPosition((p) => {
+            const lat = p.coords.latitude;
+            const lng = p.coords.longitude;
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            
+            const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
+            localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+            window.syncTrackingUI();
+
+            if (typeof currentUser !== 'undefined' && currentUser) {
+                if(typeof callGAS === 'function') {
+                    callGAS('saveTrackingData', {
+                        userName: currentUser,
+                        lat: lat,
+                        lng: lng,
+                        type: '出勤'
+                    }).catch(e => console.warn("出勤送信エラー", e));
+                }
+            }
+        }, (err) => {
+            if (typeof customAlert === 'function') customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
+            else alert("現在地が取得できません。");
+            if (btn) {
+                btn.style.backgroundColor = 'white';
+                btn.style.color = '#4CAF50';
+                btn.innerHTML = '🏃‍♂️';
+            }
+        }, { enableHighAccuracy: true });
+    }
+};
+
+window.addEventListener('storage', (e) => {
+    if (e.key === 'passionMapClockIn') {
+        window.syncTrackingUI();
+    }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    // wait slightly so UI finishes loading
+    setTimeout(() => {
+        if(typeof window.syncTrackingUI === 'function') {
+            window.syncTrackingUI();
+        }
+    }, 500);
 });
