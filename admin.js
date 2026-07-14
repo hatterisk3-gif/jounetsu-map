@@ -2843,8 +2843,7 @@ window.executeSplitPolygon = () => {
     if (customDrawingLabelMarker) customDrawingLabelMarker.setMap(null);
     if (typeof customDrawingMarkers !== 'undefined') customDrawingMarkers.forEach(m => m.setMap(null));
     if (window.selectedFudePolygons) {
-        window.selectedFudePolygons.forEach(p => p.setMap(null));
-        window.selectedFudePolygons = [];
+        window.selectedFudePolygons.forEach(p => p.setVisible(false));
     }
     
     document.getElementById('splitPolygonPanel').style.display = 'none';
