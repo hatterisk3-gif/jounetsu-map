@@ -2750,7 +2750,9 @@ window.executeSplitPolygon = () => {
             rotAngle = (rotAngle + 90) % 360;
         }
         
-        let rad = rotAngle * Math.PI / 180;
+        // Convert bearing to mathematical angle
+        let mathAngle = 90 - rotAngle;
+        let rad = mathAngle * Math.PI / 180;
         let centerPt = turf.center(poly).geometry.coordinates;
         let cLng = centerPt[0], cLat = centerPt[1];
         let cosLat = Math.cos(cLat * Math.PI / 180);
