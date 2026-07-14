@@ -3050,3 +3050,154 @@ window.handleStatusSelect = async (sel) => {
         }
     }
 };
+
+
+      // トラッキング（移動履歴）用
+      let trackingWatchId = null;
+      let lastTrackingTime = 0;
+
+      window.toggleTracking = () => {
+    const btn = document.getElementById('btnTracking');
+    if (trackingWatchId !== null) {
+        // 退勤（トラッキング停止）
+        navigator.geolocation.clearWatch(trackingWatchId);
+        trackingWatchId = null;
+        if(btn) {
+            btn.style.backgroundColor = 'white';
+            btn.style.color = '#4CAF50';
+            btn.innerHTML = '🏃‍♂️';
+        }
+        
+        // ローカルストレージをクリア
+        localStorage.removeItem('passionMapClockIn');
+        
+        // 出勤マーカーを消去
+        if (window.clockInMarker) {
+            window.clockInMarker.setMap(null);
+            window.clockInMarker = null;
+        }
+
+        // 退勤をGASへ送信
+        if (typeof currentUser !== 'undefined' && currentUser) {
+            navigator.geolocation.getCurrentPosition((p) => {
+                if(typeof callGAS !== 'undefined') {
+                    callGAS('saveTrackingData', {
+                        userName: currentUser,
+                        lat: p.coords.latitude,
+                        lng: p.coords.longitude,
+                        type: '退勤'
+                    }).catch(e => console.warn("退勤送信エラー", e));
+                }
+            }, (err) => {
+                console.warn("GPSエラー: 退勤時");
+            }, { enableHighAccuracy: true });
+        }
+    } else {
+        // 出勤（トラッキング開始）
+        if (!navigator.geolocation) {
+            if (window.customAlert) customAlert("お使いの端末ではGPSがサポートされていません。");
+            return;
+        }
+        if(btn) {
+            btn.style.backgroundColor = '#4CAF50';
+            btn.style.color = 'white';
+            btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
+        }
+        
+        // 現在位置を取得して出勤処理
+        navigator.geolocation.getCurrentPosition((p) => {
+            const lat = p.coords.latitude;
+            const lng = p.coords.longitude;
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            
+            // ローカルストレージに保存
+            const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
+            localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+            
+            // マーカーをプロット
+            if (window.plotClockInMarker) {
+                window.plotClockInMarker(clockInState, true);
+            }
+
+            // 出勤をGASへ送信
+            if (typeof currentUser !== 'undefined' && currentUser) {
+                if(typeof callGAS !== 'undefined') {
+                    callGAS('saveTrackingData', {
+                        userName: currentUser,
+                        lat: lat,
+                        lng: lng,
+                        type: '出勤'
+                    }).catch(e => console.warn("出勤送信エラー", e));
+                }
+            }
+        }, (err) => {
+            if (window.customAlert) customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
+            if(btn) {
+                btn.style.backgroundColor = 'white';
+                btn.style.color = '#4CAF50';
+                btn.innerHTML = '🏃‍♂️';
+            }
+            return;
+        }, { enableHighAccuracy: true });
+        
+        // 移動トラッキングを開始
+        trackingWatchId = navigator.geolocation.watchPosition((p) => {
+            const now = Date.now();
+            // 10秒に1回程度の頻度に制限（GASの呼び出し過多を防ぐ）
+            if (now - lastTrackingTime < 10000) return;
+            lastTrackingTime = now;
+
+            const lat = p.coords.latitude;
+            const lng = p.coords.longitude;
+            
+            // GASへ送信
+            if (typeof currentUser !== 'undefined' && currentUser) {
+                if(typeof callGAS !== 'undefined') {
+                    callGAS('saveTrackingData', {
+                        userName: currentUser,
+                        lat: lat,
+                        lng: lng,
+                        type: '移動'
+                    }).catch(e => console.warn("トラッキング送信エラー", e));
+                }
+            }
+        }, (err) => {
+            console.warn("GPSエラー: ", err);
+        }, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        });
+    }
+};
+
+window.plotClockInMarker = (state, doCenter) => {
+    if (window.clockInMarker) window.clockInMarker.setMap(null);
+    if (typeof map === 'undefined' || !map || typeof google === 'undefined') return;
+    const pos = new google.maps.LatLng(state.lat, state.lng);
+    window.clockInMarker = new google.maps.Marker({
+        position: pos,
+        map: map,
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: '#FF9800',
+            fillOpacity: 1,
+            strokeWeight: 2,
+            strokeColor: 'white'
+        },
+        title: '出勤: ' + state.time,
+        zIndex: 9999
+    });
+    const infoWindow = new google.maps.InfoWindow({
+        content: `<div style="padding:5px;font-weight:bold;">出勤時間: ${state.time}</div>`
+    });
+    window.clockInMarker.addListener('click', () => {
+        infoWindow.open(map, window.clockInMarker);
+    });
+    if (doCenter) {
+        map.setCenter(pos);
+        map.setZoom(18);
+    }
+};
