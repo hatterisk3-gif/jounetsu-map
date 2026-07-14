@@ -575,10 +575,37 @@ async function fetchWeatherAndUpdateUI() {
           }
 
           try {
-              const data = await callGAS('getTrackingData');
+              const targetDate = document.getElementById('trackingDate') ? document.getElementById('trackingDate').value : null;
+              const res = await callGAS('getTrackingData', { targetDate: targetDate });
+              
+              const data = (res && res.trackingData) ? res.trackingData : (Array.isArray(res) ? res : []);
+              const allUsers = (res && res.allUsers) ? res.allUsers : [];
+              
               if (!data || data.length === 0) {
-                  customAlert("移動履歴のデータがありません。");
+                  customAlert(targetDate ? `${targetDate}の移動履歴のデータがありません。` : "移動履歴のデータがありません。");
                   return;
+              }
+              
+              // リストの計算とモーダルの表示
+              const clockedInUsers = new Set();
+              data.forEach(d => {
+                  if (d.type === '出勤' || d.type === 'アプリ起動') {
+                      clockedInUsers.add(d.userName);
+                  }
+              });
+              
+              const uniqueAllUsers = [...new Set(allUsers)];
+              const notClockedInUsers = uniqueAllUsers.filter(u => !clockedInUsers.has(u) && u !== 'システム');
+              
+              const clockedInListEl = document.getElementById('clockedInList');
+              const notClockedInListEl = document.getElementById('notClockedInList');
+              
+              if (clockedInListEl && notClockedInListEl) {
+                  clockedInListEl.innerHTML = Array.from(clockedInUsers).map(u => `<li style="padding: 5px 0;">👨‍🌾 ${u}</li>`).join('');
+                  notClockedInListEl.innerHTML = notClockedInUsers.length > 0 ? notClockedInUsers.map(u => `<li style="padding: 5px 0;">💤 ${u}</li>`).join('') : '<li style="padding: 5px 0;">全員が出勤しています🎉</li>';
+                  const titleEl = document.getElementById('trackingListModalTitle');
+                  if (titleEl) titleEl.innerText = `📅 ${targetDate ? targetDate : '直近24時間'} の出勤・未出勤リスト`;
+                  document.getElementById('trackingListModal').style.display = 'flex';
               }
               
               // 出勤マーカーの表示ロジック

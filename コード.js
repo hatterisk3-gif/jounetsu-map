@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 情熱MAP 統合API (管理者・作業員 共通)
  */
 const MASTER_SPREADSHEET_ID = "1Kfg5JzNE8pZVQuyuHExz1Q00vzd75MmWrtKLLHUG89c"; // マスター・スプレッドシートのID
@@ -2621,17 +2621,39 @@ function getTrackingData(params) {
   try {
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('トラッキング');
-    if (!sheet) return [];
+    
+    const allUsers = [];
+    const meiboSheet = ss.getSheetByName('名簿');
+    if (meiboSheet) {
+      const meiboData = meiboSheet.getDataRange().getValues();
+      for (let i = 1; i < meiboData.length; i++) {
+        const userName = String(meiboData[i][2] || '').trim();
+        if (userName) {
+          allUsers.push(userName);
+        }
+      }
+    }
+
+    if (!sheet) return { trackingData: [], allUsers: allUsers };
     
     const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return [];
+    if (lastRow <= 1) return { trackingData: [], allUsers: allUsers };
     
-    // 最大で直近2000件を取得
-    const startRow = Math.max(2, lastRow - 1999);
-    const numRows = lastRow - startRow + 1;
+    let startRow = 2;
+    let numRows = lastRow - 1;
+    let targetDateStr = null;
+    
+    if (params && params.targetDate) {
+      targetDateStr = params.targetDate;
+      startRow = Math.max(2, lastRow - 9999);
+      numRows = lastRow - startRow + 1;
+    } else {
+      startRow = Math.max(2, lastRow - 1999);
+      numRows = lastRow - startRow + 1;
+    }
+    
     const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
     
-    // 24時間以内のデータのみを抽出
     const now = new Date().getTime();
     const oneDay = 24 * 60 * 60 * 1000;
     
@@ -2642,18 +2664,24 @@ function getTrackingData(params) {
       const lat = values[i][2];
       const lng = values[i][3];
       
-      const t = new Date(timeStr).getTime();
-      if (now - t <= oneDay) {
-        data.push({ type: values[i][4],
-          time: timeStr,
-          userName: userName,
-          lat: lat,
-          lng: lng
-        });
+      const tObj = new Date(timeStr);
+      if (isNaN(tObj.getTime())) continue;
+      
+      if (targetDateStr) {
+        const y = tObj.getFullYear();
+        const m = String(tObj.getMonth() + 1).padStart(2, '0');
+        const d = String(tObj.getDate()).padStart(2, '0');
+        if (`${y}-${m}-${d}` === targetDateStr) {
+          data.push({ type: values[i][4], time: timeStr, userName: userName, lat: lat, lng: lng });
+        }
+      } else {
+        if (now - tObj.getTime() <= oneDay) {
+          data.push({ type: values[i][4], time: timeStr, userName: userName, lat: lat, lng: lng });
+        }
       }
     }
     
-    return data;
+    return { trackingData: data, allUsers: allUsers };
   } catch(e) {
     throw new Error("トラッキング取得エラー: " + e.message);
   }
