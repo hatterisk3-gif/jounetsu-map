@@ -3897,58 +3897,82 @@ window.doChangePassword = async function() {
 };
 
 
+
 window.passionWatchId = null;
 window.passionLastTime = 0;
 
 window.syncTrackingUI = function() {
     const clockInStr = localStorage.getItem('passionMapClockIn');
+    const clockInTodayStr = localStorage.getItem('passionMapClockInToday');
     const btn = document.getElementById('btnTracking');
+    
+    let isCurrentlyClockedIn = false;
+    let clockInState = null;
+
     if (clockInStr) {
         try {
-            const state = JSON.parse(clockInStr);
-            if (state.active) {
-                if (btn) {
-                    btn.style.backgroundColor = '#4CAF50';
-                    btn.style.color = 'white';
-                    btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
-                }
-                if (typeof window.plotClockInMarker === 'function') {
-                    window.plotClockInMarker(state, false);
-                }
-                if (navigator.geolocation && window.passionWatchId === null) {
-                    window.passionWatchId = navigator.geolocation.watchPosition((p) => {
-                        const now = Date.now();
-                        if (now - window.passionLastTime < 10000) return;
-                        window.passionLastTime = now;
-                        if (typeof currentUser !== 'undefined' && currentUser) {
-                            if (typeof callGAS === 'function') {
-                                callGAS('saveTrackingData', {
-                                    userName: currentUser,
-                                    lat: p.coords.latitude,
-                                    lng: p.coords.longitude,
-                                    type: '移動'
-                                }).catch(e => console.warn(e));
-                            }
-                        }
-                    }, (err) => {}, { enableHighAccuracy: true });
-                }
-                return;
+            clockInState = JSON.parse(clockInStr);
+            if (clockInState.active) {
+                isCurrentlyClockedIn = true;
             }
         } catch(e) {}
     }
 
-    if (btn) {
-        btn.style.backgroundColor = 'white';
-        btn.style.color = '#4CAF50';
-        btn.innerHTML = '🏃‍♂️';
-    }
-    if (window.passionWatchId !== null) {
-        navigator.geolocation.clearWatch(window.passionWatchId);
-        window.passionWatchId = null;
-    }
-    if (window.clockInMarker) {
-        window.clockInMarker.setMap(null);
-        window.clockInMarker = null;
+    if (isCurrentlyClockedIn) {
+        if (btn) {
+            btn.style.backgroundColor = '#4CAF50';
+            btn.style.color = 'white';
+            btn.innerHTML = '\uD83C\uDFC3\u200D\u2642\uFE0F<br><span style="font-size:10px; line-height:1;">\u51FA\u52E4\u4E2D</span>';
+        }
+        if (typeof window.plotClockInMarker === 'function') {
+            window.plotClockInMarker(clockInState, false);
+        }
+        if (navigator.geolocation && window.passionWatchId === null) {
+            window.passionWatchId = navigator.geolocation.watchPosition((p) => {
+                const now = Date.now();
+                if (now - window.passionLastTime < 10000) return;
+                window.passionLastTime = now;
+                if (typeof currentUser !== 'undefined' && currentUser) {
+                    if (typeof callGAS === 'function') {
+                        callGAS('saveTrackingData', {
+                            userName: currentUser,
+                            lat: p.coords.latitude,
+                            lng: p.coords.longitude,
+                            type: '\u79FB\u52D5'
+                        }).catch(e => console.warn(e));
+                    }
+                }
+            }, (err) => {}, { enableHighAccuracy: true });
+        }
+    } else {
+        if (btn) {
+            btn.style.backgroundColor = 'white';
+            btn.style.color = '#4CAF50';
+            btn.innerHTML = '\uD83C\uDFC3\u200D\u2642\uFE0F';
+        }
+        if (window.passionWatchId !== null) {
+            navigator.geolocation.clearWatch(window.passionWatchId);
+            window.passionWatchId = null;
+        }
+        
+        let showTodayPin = false;
+        if (clockInTodayStr) {
+            try {
+                const todayState = JSON.parse(clockInTodayStr);
+                const todayStr = new Date().toLocaleDateString();
+                if (todayState.date === todayStr) {
+                    showTodayPin = true;
+                    if (typeof window.plotClockInMarker === 'function') {
+                        window.plotClockInMarker(todayState, false);
+                    }
+                }
+            } catch(e) {}
+        }
+        
+        if (!showTodayPin && window.clockInMarker) {
+            window.clockInMarker.setMap(null);
+            window.clockInMarker = null;
+        }
     }
 };
 
@@ -3963,7 +3987,7 @@ window.toggleTracking = () => {
                         userName: currentUser,
                         lat: p.coords.latitude,
                         lng: p.coords.longitude,
-                        type: '退勤'
+                        type: '\u9000\u52E4'
                     }).catch(e => console.warn(e));
                 }
             }, (err) => { console.warn(err); }, { enableHighAccuracy: true });
@@ -3977,7 +4001,7 @@ window.toggleTracking = () => {
         if (btn) {
             btn.style.backgroundColor = '#4CAF50';
             btn.style.color = 'white';
-            btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
+            btn.innerHTML = '\uD83C\uDFC3\u200D\u2642\uFE0F<br><span style="font-size:10px; line-height:1;">\u51FA\u52E4\u4E2D</span>';
         }
 
         navigator.geolocation.getCurrentPosition((p) => {
@@ -3985,9 +4009,13 @@ window.toggleTracking = () => {
             const lng = p.coords.longitude;
             const now = new Date();
             const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            const dateStr = now.toLocaleDateString();
             
             const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
+            const clockInTodayState = { lat: lat, lng: lng, time: timeStr, date: dateStr };
+            
             localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+            localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
             window.syncTrackingUI();
 
             if (typeof currentUser !== 'undefined' && currentUser) {
@@ -3996,7 +4024,7 @@ window.toggleTracking = () => {
                         userName: currentUser,
                         lat: lat,
                         lng: lng,
-                        type: '出勤'
+                        type: '\u51FA\u52E4'
                     }).catch(e => console.warn(e));
                 }
             }
@@ -4004,14 +4032,14 @@ window.toggleTracking = () => {
             if (btn) {
                 btn.style.backgroundColor = 'white';
                 btn.style.color = '#4CAF50';
-                btn.innerHTML = '🏃‍♂️';
+                btn.innerHTML = '\uD83C\uDFC3\u200D\u2642\uFE0F';
             }
         }, { enableHighAccuracy: true });
     }
 };
 
 window.addEventListener('storage', (e) => {
-    if (e.key === 'passionMapClockIn') {
+    if (e.key === 'passionMapClockIn' || e.key === 'passionMapClockInToday') {
         window.syncTrackingUI();
     }
 });
