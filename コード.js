@@ -24,6 +24,7 @@ function doPost(e) {
     else if (action === "saveRecord") result = saveRecord(params.id, params.name, params.author, params.recordType, params.data, params.photos);
     else if (action === "updateRecordItem") result = updateRecordItem(params.id, params.recordId, params.recordType, params.data, params.photos, params.keptUrls, params.userName);
     else if (action === "deleteRecordItem") result = deleteRecordItem(params.id, params.recordId, params.userName);
+    else if (action === "addFieldStatus") result = addFieldStatusToMaster(params.statusName);
     else if (action === "addCrop") result = addCropToMaster(params.cropData);
     else if (action === "deleteCrop") result = deleteCropFromMaster(params.cropName);
     else if (action === "mergeFields") result = mergeFields(params.baseId, params.targetId, params.userName);
@@ -754,6 +755,17 @@ function saveReportData(polyId, nameStr, author, reportText, photosBase64) {
 
   writeLog(author, "問題報告", nameStr, `内容: ${reportText}`);
   return true;
+}
+
+function addFieldStatusToMaster(statusName) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('圃場設定マスタ');
+  if (!sheet) return statusName;
+  const data = sheet.getDataRange().getValues();
+  let emptyRow = 2;
+  while (emptyRow <= data.length && (data[emptyRow-1] && data[emptyRow-1][2])) emptyRow++;
+  sheet.getRange(emptyRow, 3).setValue(statusName);
+  return statusName;
 }
 
 function addCropToMaster(cropData) {

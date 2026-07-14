@@ -274,7 +274,10 @@ function renderInitData(data) {
     const statEl = document.getElementById('fieldStatus');
     if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + html(pdlLocations);
     if (condEl) condEl.innerHTML = '<option value="">条件</option>' + html(pdlConditions);
-    if (statEl) statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses);
+    if (statEl) {
+        statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:blue;">➕ 新規項目追加...</option>';
+        statEl.setAttribute('onchange', 'handleStatusSelect(this)');
+    }
 
     for (let id in loadedPolygons) {
         if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
@@ -412,7 +415,7 @@ function openAttr(id) {
              </div>
            `);
     } else {
-        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">稼働状況</label><select id="edS" class="form-input"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}</select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
+        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">稼働状況</label><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:blue;">➕ 新規項目追加...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
 }
 
@@ -2998,5 +3001,43 @@ window.execBatchDelete = async () => {
         let targets = [...selectedForDelete];
         cancelBatchDeleteMode();
         await doDeletePolygons(targets);
+    }
+};
+
+window.handleStatusSelect = async (sel) => {
+    if (sel.value === 'ADD_NEW') {
+        let newVal = prompt("新しい稼働状況を入力してください:");
+        if (newVal && newVal.trim() !== '') {
+            newVal = newVal.trim();
+            pdlStatuses.push(newVal);
+            
+            const html = (list) => list.map(l => `<option value="${l}">${l}</option>`).join('');
+            
+            const statEl = document.getElementById('fieldStatus');
+            if (statEl) {
+                statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:blue;">➕ 新規項目追加...</option>';
+                if (sel.id === 'fieldStatus') statEl.value = newVal;
+            }
+            
+            const edS = document.getElementById('edS');
+            if (edS) {
+                edS.innerHTML = '<option value="">未設定</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:blue;">➕ 新規項目追加...</option>';
+                if (sel.id === 'edS') edS.value = newVal;
+            }
+            
+            sel.value = newVal;
+            
+            try {
+                document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px;'><div class='spinner'></div><div style='margin-top:20px;'>稼働状況を追加中...</div></div>";
+                document.getElementById('modal').style.display = 'flex';
+                await callGAS('addFieldStatus', { statusName: newVal });
+                document.getElementById('modal').style.display = 'none';
+            } catch(e) {
+                document.getElementById('modal').style.display = 'none';
+                customAlert("稼働状況の追加に失敗しました");
+            }
+        } else {
+            sel.value = '';
+        }
     }
 };
