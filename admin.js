@@ -853,6 +853,11 @@ function initMap() {
                     document.getElementById('undoDrawBtn').disabled = true;
                     document.getElementById('addressHint').style.display = 'none';
                 }
+                let splitPanel = document.getElementById('splitPolygonPanel');
+                if (splitPanel) {
+                    splitPanel.style.display = 'none';
+                    if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+                }
                 return; // 処理を終了する
             }
 
@@ -871,6 +876,15 @@ function initMap() {
 
             if (window.selectedFudePaths.length === 1) {
                 fetchAddressHint(e.latLng);
+            }
+            let splitPanel = document.getElementById('splitPolygonPanel');
+            if (splitPanel) {
+                if (window.selectedFudePaths.length === 1) {
+                    splitPanel.style.display = 'block';
+                } else {
+                    splitPanel.style.display = 'none';
+                    if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+                }
             }
         }
     });
@@ -1159,6 +1173,11 @@ if (undoBtn) {
                 document.getElementById('step1SaveBtn').disabled = true;
                 undoBtn.disabled = true;
                 document.getElementById('addressHint').style.display = 'none';
+                let splitPanel = document.getElementById('splitPolygonPanel');
+                if (splitPanel) {
+                    splitPanel.style.display = 'none';
+                    if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+                }
             }
         } else if (customDrawingPath.length > 0) {
             customDrawingPath.pop();
@@ -2653,80 +2672,178 @@ window.executeSplitPolygon = () => {
     let axis = document.getElementById('splitTargetAxis').value;
     if (count < 2) count = 2;
     
-    if (customDrawingPath.length !== 4) return;
+    let pathToSplit = null;
+    let isFude = false;
     
-    let p1 = customDrawingPath[0];
-    let p2 = customDrawingPath[1];
-    let p3 = customDrawingPath[2];
-    let p4 = customDrawingPath[3];
-    
-    let t1 = turf.point([p1.lng(), p1.lat()]);
-    let t2 = turf.point([p2.lng(), p2.lat()]);
-    let t3 = turf.point([p3.lng(), p3.lat()]);
-    let t4 = turf.point([p4.lng(), p4.lat()]);
-    
-    let d12 = turf.distance(t1, t2, {units: 'kilometers'});
-    let d23 = turf.distance(t2, t3, {units: 'kilometers'});
-    let d34 = turf.distance(t3, t4, {units: 'kilometers'});
-    let d41 = turf.distance(t4, t1, {units: 'kilometers'});
-    
-    let avgA = (d12 + d34) / 2;
-    let avgB = (d23 + d41) / 2;
-    
-    let splitA = false;
-    if (axis === 'long') {
-        splitA = avgA > avgB;
-    } else {
-        splitA = avgA <= avgB;
+    if (window.selectedFudePaths && window.selectedFudePaths.length === 1) {
+        pathToSplit = window.selectedFudePaths[0];
+        isFude = true;
+    } else if (customDrawingPath && customDrawingPath.length > 2) {
+        pathToSplit = customDrawingPath;
     }
     
-    let line1Start, line1End, line2Start, line2End;
-    if (splitA) {
-        line1Start = t1; line1End = t2;
-        line2Start = t4; line2End = t3;
+    if (!pathToSplit) return;
+    
+    if (!isFude && pathToSplit.length === 4) {
+        let p1 = pathToSplit[0];
+        let p2 = pathToSplit[1];
+        let p3 = pathToSplit[2];
+        let p4 = pathToSplit[3];
+        
+        let t1 = turf.point([p1.lng(), p1.lat()]);
+        let t2 = turf.point([p2.lng(), p2.lat()]);
+        let t3 = turf.point([p3.lng(), p3.lat()]);
+        let t4 = turf.point([p4.lng(), p4.lat()]);
+        
+        let d12 = turf.distance(t1, t2, {units: 'kilometers'});
+        let d23 = turf.distance(t2, t3, {units: 'kilometers'});
+        let d34 = turf.distance(t3, t4, {units: 'kilometers'});
+        let d41 = turf.distance(t4, t1, {units: 'kilometers'});
+        
+        let avgA = (d12 + d34) / 2;
+        let avgB = (d23 + d41) / 2;
+        
+        let splitA = false;
+        if (axis === 'long') {
+            splitA = avgA > avgB;
+        } else {
+            splitA = avgA <= avgB;
+        }
+        
+        let line1Start, line1End, line2Start, line2End;
+        if (splitA) {
+            line1Start = t1; line1End = t2;
+            line2Start = t4; line2End = t3;
+        } else {
+            line1Start = t2; line1End = t3;
+            line2Start = t1; line2End = t4;
+        }
+        
+        let bearing1 = turf.bearing(line1Start, line1End);
+        let dist1 = turf.distance(line1Start, line1End, {units: 'kilometers'});
+        
+        let bearing2 = turf.bearing(line2Start, line2End);
+        let dist2 = turf.distance(line2Start, line2End, {units: 'kilometers'});
+        
+        window.gridGeneratedPaths = [];
+        if (!window.gridDrawTempMarkers) window.gridDrawTempMarkers = [];
+        
+        for (let i = 0; i < count; i++) {
+            let f1 = i / count;
+            let f2 = (i + 1) / count;
+            
+            let c1 = turf.destination(line1Start, dist1 * f1, bearing1, {units: 'kilometers'});
+            let c2 = turf.destination(line1Start, dist1 * f2, bearing1, {units: 'kilometers'});
+            
+            let c4 = turf.destination(line2Start, dist2 * f1, bearing2, {units: 'kilometers'});
+            let c3 = turf.destination(line2Start, dist2 * f2, bearing2, {units: 'kilometers'});
+            
+            let pathData = [
+                {lng: c1.geometry.coordinates[0], lat: c1.geometry.coordinates[1]},
+                {lng: c2.geometry.coordinates[0], lat: c2.geometry.coordinates[1]},
+                {lng: c3.geometry.coordinates[0], lat: c3.geometry.coordinates[1]},
+                {lng: c4.geometry.coordinates[0], lat: c4.geometry.coordinates[1]}
+            ];
+            
+            window.gridGeneratedPaths.push(pathData);
+            
+            let gPoly = new google.maps.Polygon({ 
+                paths: pathData, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: 2, map: map, clickable: false
+            });
+            window.gridDrawTempMarkers.push(gPoly);
+        }
     } else {
-        line1Start = t2; line1End = t3;
-        line2Start = t1; line2End = t4;
-    }
-    
-    let bearing1 = turf.bearing(line1Start, line1End);
-    let dist1 = turf.distance(line1Start, line1End, {units: 'kilometers'});
-    
-    let bearing2 = turf.bearing(line2Start, line2End);
-    let dist2 = turf.distance(line2Start, line2End, {units: 'kilometers'});
-    
-    window.gridGeneratedPaths = [];
-    if (!window.gridDrawTempMarkers) window.gridDrawTempMarkers = [];
-    
-    for (let i = 0; i < count; i++) {
-        let f1 = i / count;
-        let f2 = (i + 1) / count;
+        let coords = pathToSplit.map(p => [p.lng(), (typeof p.lat === 'function') ? p.lat() : p.lat]);
+        if (coords[0][0] !== coords[coords.length-1][0] || coords[0][1] !== coords[coords.length-1][1]) {
+            coords.push([...coords[0]]);
+        }
+        let poly = turf.polygon([coords]);
         
-        let c1 = turf.destination(line1Start, dist1 * f1, bearing1, {units: 'kilometers'});
-        let c2 = turf.destination(line1Start, dist1 * f2, bearing1, {units: 'kilometers'});
+        let hull = turf.convex(poly);
+        let hullCoords = hull.geometry.coordinates[0];
+        let longestDist = 0;
+        let rotAngle = 0;
+        for (let i = 0; i < hullCoords.length - 1; i++) {
+            let d = turf.distance(turf.point(hullCoords[i]), turf.point(hullCoords[i+1]));
+            if (d > longestDist) {
+                longestDist = d;
+                rotAngle = turf.bearing(turf.point(hullCoords[i]), turf.point(hullCoords[i+1]));
+            }
+        }
         
-        let c4 = turf.destination(line2Start, dist2 * f1, bearing2, {units: 'kilometers'});
-        let c3 = turf.destination(line2Start, dist2 * f2, bearing2, {units: 'kilometers'});
+        if (axis === 'short') {
+            rotAngle = (rotAngle + 90) % 360;
+        }
         
-        let pathData = [
-            {lng: c1.geometry.coordinates[0], lat: c1.geometry.coordinates[1]},
-            {lng: c2.geometry.coordinates[0], lat: c2.geometry.coordinates[1]},
-            {lng: c3.geometry.coordinates[0], lat: c3.geometry.coordinates[1]},
-            {lng: c4.geometry.coordinates[0], lat: c4.geometry.coordinates[1]}
-        ];
+        let rad = rotAngle * Math.PI / 180;
+        let centerPt = turf.center(poly).geometry.coordinates;
+        let cLng = centerPt[0], cLat = centerPt[1];
+        let cosLat = Math.cos(cLat * Math.PI / 180);
+        let LAT_TO_METER = 111320;
         
-        window.gridGeneratedPaths.push(pathData);
-        
-        let gPoly = new google.maps.Polygon({ 
-            paths: pathData, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: 2, map: map, clickable: false
+        let minX = Infinity, maxX = -Infinity;
+        let localCoords = coords.map(pt => {
+            let dx = (pt[0] - cLng) * cosLat * LAT_TO_METER;
+            let dy = (pt[1] - cLat) * LAT_TO_METER;
+            let rx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
+            let ry = dx * Math.sin(-rad) + dy * Math.cos(-rad);
+            
+            if (rx < minX) minX = rx;
+            if (rx > maxX) maxX = rx;
+            return [rx, ry];
         });
-        window.gridDrawTempMarkers.push(gPoly);
+        
+        window.gridGeneratedPaths = [];
+        if (!window.gridDrawTempMarkers) window.gridDrawTempMarkers = [];
+        
+        let sliceWidth = (maxX - minX) / count;
+        
+        for (let i = 0; i < count; i++) {
+            let startX = minX + i * sliceWidth;
+            let endX = startX + sliceWidth;
+            
+            let slicePolyLocal = turf.polygon([[
+                [startX, -9999999],
+                [endX, -9999999],
+                [endX, 9999999],
+                [startX, 9999999],
+                [startX, -9999999]
+            ]]);
+            
+            let localPoly = turf.polygon([localCoords]);
+            let intersected = turf.intersect(localPoly, slicePolyLocal);
+            
+            if (intersected && (intersected.geometry.type === 'Polygon' || intersected.geometry.type === 'MultiPolygon')) {
+                let polys = intersected.geometry.type === 'Polygon' ? [intersected.geometry.coordinates] : intersected.geometry.coordinates;
+                
+                polys.forEach(pCoords => {
+                    let pathData = pCoords[0].map(pt => {
+                        let rx = pt[0], ry = pt[1];
+                        let dx = rx * Math.cos(rad) - ry * Math.sin(rad);
+                        let dy = rx * Math.sin(rad) + ry * Math.cos(rad);
+                        let lat = cLat + (dy / LAT_TO_METER);
+                        let lng = cLng + (dx / (cosLat * LAT_TO_METER));
+                        return {lat: lat, lng: lng};
+                    });
+                    
+                    window.gridGeneratedPaths.push(pathData);
+                    let gPoly = new google.maps.Polygon({ 
+                        paths: pathData, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: 2, map: map, clickable: false
+                    });
+                    window.gridDrawTempMarkers.push(gPoly);
+                });
+            }
+        }
     }
     
     if (currentPolygon) currentPolygon.setMap(null);
     if (customDrawingPolyline) customDrawingPolyline.setMap(null);
     if (customDrawingLabelMarker) customDrawingLabelMarker.setMap(null);
     if (typeof customDrawingMarkers !== 'undefined') customDrawingMarkers.forEach(m => m.setMap(null));
+    if (window.selectedFudePolygons) {
+        window.selectedFudePolygons.forEach(p => p.setMap(null));
+        window.selectedFudePolygons = [];
+    }
     
     document.getElementById('splitPolygonPanel').style.display = 'none';
     document.getElementById('splitCountModal').style.display = 'none';
