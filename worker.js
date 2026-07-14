@@ -4051,3 +4051,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 500);
 });
+
+window.filterWorkChips = function() {
+    const cat = document.getElementById('rec_work_category') ? document.getElementById('rec_work_category').value : 'すべて';
+    const chips = document.querySelectorAll('.work-chip');
+    let recentVisible = 0;
+    let allVisible = 0;
+    chips.forEach(c => {
+        if (cat === 'すべて' || c.getAttribute('data-category') === cat) {
+            c.style.display = 'inline-block';
+            if (c.classList.contains('recent-work-chip')) recentVisible++;
+            if (c.classList.contains('all-work-chip')) allVisible++;
+        } else {
+            c.style.display = 'none';
+        }
+    });
+    const recentContainer = document.getElementById('recent_chips_container');
+    if (recentContainer) {
+        recentContainer.style.display = (recentVisible > 0) ? 'block' : 'none';
+    }
+    const allContainer = document.getElementById('all_chips_container');
+    if (allContainer) {
+        if (allVisible === 0) {
+            if(!document.getElementById('no_work_msg')) {
+                const msg = document.createElement('div');
+                msg.id = 'no_work_msg';
+                msg.style.cssText = "color:#888; font-size:12px; width:100%; text-align:center; margin-top:10px;";
+                msg.innerText = "このカテゴリの作業はありません";
+                allContainer.appendChild(msg);
+            } else {
+                document.getElementById('no_work_msg').style.display = 'block';
+            }
+        } else {
+            if(document.getElementById('no_work_msg')) document.getElementById('no_work_msg').style.display = 'none';
+        }
+    }
+};
