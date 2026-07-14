@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>情熱MAP 総合案内所 v1.07</title>
     
-    <link rel="apple-touch-icon" href="/icon_index.png">
-    <link rel="icon" href="/icon_index.png">
-    <link rel="manifest" href="/manifest_portal.json">
+    <link rel="apple-touch-icon" href="icon_index.png">
+    <link rel="icon" href="icon_index.png">
+    <link rel="manifest" href="manifest_portal.json">
     
     <style>
         body { font-family: sans-serif; background-color: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
@@ -67,7 +67,7 @@
 
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js?v=portal', { scope: './' });
+        navigator.serviceWorker.register('/sw.js?v=portal', { scope: './' });
       }
 
       // 🌟URLのパラメータ（共有機能で送られてきたテキスト）を取得
