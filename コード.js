@@ -2582,11 +2582,12 @@ function saveTrackingData(params) {
     let sheet = ss.getSheetByName('トラッキング');
     if (!sheet) {
       sheet = ss.insertSheet('トラッキング');
-      sheet.appendRow(['日時', 'ユーザー名', '緯度', '経度']);
+      sheet.appendRow(['日時', 'ユーザー名', '緯度', '経度', '種類']);
     }
     
     const timeStr = new Date().toISOString();
-    sheet.appendRow([timeStr, params.userName, params.lat, params.lng]);
+    const type = params.type || '移動';
+    sheet.appendRow([timeStr, params.userName, params.lat, params.lng, type]);
     
     return "success";
   } catch(e) {

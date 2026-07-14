@@ -12,51 +12,135 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let lastTrackingTime = 0;
 
       window.toggleTracking = () => {
-          const btn = document.getElementById('btnTracking');
-          if (trackingWatchId !== null) {
-              // トラッキング停止
-              navigator.geolocation.clearWatch(trackingWatchId);
-              trackingWatchId = null;
-              btn.style.backgroundColor = 'white';
-              btn.style.color = '#4CAF50';
-              customAlert("トラッキング（移動履歴の記録）を終了しました。");
-          } else {
-              // トラッキング開始
-              if (!navigator.geolocation) {
-                  customAlert("お使いの端末ではGPSがサポートされていません。");
-                  return;
-              }
-              btn.style.backgroundColor = '#4CAF50';
-              btn.style.color = 'white';
-              customAlert("トラッキングを開始しました。移動履歴が自動で記録されます。");
-              
-              trackingWatchId = navigator.geolocation.watchPosition((p) => {
-                  const now = Date.now();
-                  // 10秒に1回程度の頻度に制限（GASの呼び出し過多を防ぐ）
-                  if (now - lastTrackingTime < 10000) return;
-                  lastTrackingTime = now;
+    const btn = document.getElementById('btnTracking');
+    if (trackingWatchId !== null) {
+        // 退勤（トラッキング停止）
+        navigator.geolocation.clearWatch(trackingWatchId);
+        trackingWatchId = null;
+        btn.style.backgroundColor = 'white';
+        btn.style.color = '#4CAF50';
+        
+        // ローカルストレージをクリア
+        localStorage.removeItem('passionMapClockIn');
+        
+        // 出勤マーカーを消去
+        if (window.clockInMarker) {
+            window.clockInMarker.setMap(null);
+            window.clockInMarker = null;
+        }
 
-                  const lat = p.coords.latitude;
-                  const lng = p.coords.longitude;
-                  
-                  // GASへ送信
-                  if (currentUser) {
-                      callGAS('saveTrackingData', {
-                          userName: currentUser,
-                          lat: lat,
-                          lng: lng
-                      }).catch(e => console.warn("トラッキング送信エラー", e));
-                  }
-              }, (err) => {
-                  console.warn("GPSエラー: ", err);
-              }, {
-                  enableHighAccuracy: true,
-                  timeout: 10000,
-                  maximumAge: 0
-              });
-          }
-      };
-      // 共通UI系
+        // 退勤をGASへ送信
+        if (currentUser) {
+            navigator.geolocation.getCurrentPosition((p) => {
+                callGAS('saveTrackingData', {
+                    userName: currentUser,
+                    lat: p.coords.latitude,
+                    lng: p.coords.longitude,
+                    type: '退勤'
+                }).catch(e => console.warn("退勤送信エラー", e));
+            }, (err) => {
+                callGAS('saveTrackingData', { userName: currentUser, lat: 0, lng: 0, type: '退勤' }).catch(e => console.warn("退勤送信エラー", e));
+            });
+        }
+        
+        customAlert("退勤しました。トラッキングを終了します。");
+    } else {
+        // 出勤（トラッキング開始）
+        if (!navigator.geolocation) {
+            customAlert("お使いの端末ではGPSがサポートされていません。");
+            return;
+        }
+        btn.style.backgroundColor = '#4CAF50';
+        btn.style.color = 'white';
+        
+        // 現在位置を取得して出勤処理
+        navigator.geolocation.getCurrentPosition((p) => {
+            const lat = p.coords.latitude;
+            const lng = p.coords.longitude;
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            
+            // ローカルストレージに保存
+            const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
+            localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+            
+            // マーカーをプロット
+            plotClockInMarker(clockInState);
+
+            // 出勤をGASへ送信
+            if (currentUser) {
+                callGAS('saveTrackingData', {
+                    userName: currentUser,
+                    lat: lat,
+                    lng: lng,
+                    type: '出勤'
+                }).catch(e => console.warn("出勤送信エラー", e));
+            }
+            customAlert("出勤しました。1日中トラッキングが記録されます。");
+        }, (err) => {
+            customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
+            btn.style.backgroundColor = 'white';
+            btn.style.color = '#4CAF50';
+            return;
+        }, { enableHighAccuracy: true });
+        
+        // 移動トラッキングを開始
+        trackingWatchId = navigator.geolocation.watchPosition((p) => {
+            const now = Date.now();
+            // 10秒に1回程度の頻度に制限（GASの呼び出し過多を防ぐ）
+            if (now - lastTrackingTime < 10000) return;
+            lastTrackingTime = now;
+
+            const lat = p.coords.latitude;
+            const lng = p.coords.longitude;
+            
+            // GASへ送信
+            if (currentUser) {
+                callGAS('saveTrackingData', {
+                    userName: currentUser,
+                    lat: lat,
+                    lng: lng,
+                    type: '移動'
+                }).catch(e => console.warn("トラッキング送信エラー", e));
+            }
+        }, (err) => {
+            console.warn("GPSエラー: ", err);
+        }, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        });
+    }
+};
+
+window.plotClockInMarker = (state) => {
+    if (window.clockInMarker) window.clockInMarker.setMap(null);
+    const pos = new google.maps.LatLng(state.lat, state.lng);
+    window.clockInMarker = new google.maps.Marker({
+        position: pos,
+        map: map,
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: '#FF9800',
+            fillOpacity: 1,
+            strokeColor: 'white',
+            strokeWeight: 2
+        },
+        zIndex: 10000
+    });
+    
+    const info = new google.maps.InfoWindow({
+        content: `<div style="padding:5px; font-weight:bold; color:#FF9800;">👨‍🌾 出勤時間: ${state.time}</div>`
+    });
+    // 常に開いておくか、クリックで開くか（ここでは開いたままにする）
+    info.open(map, window.clockInMarker);
+    // クリック時にも開くようにする
+    window.clockInMarker.addListener('click', () => {
+        info.open(map, window.clockInMarker);
+    });
+};
+// 共通UI系
       window.customAlert = (msg) => {
         document.getElementById('customAlertMessage').innerText = msg;
         document.getElementById('customAlertModal').style.display = 'flex';
@@ -782,11 +866,20 @@ function createSignboardMarker(name, pos, icon, id) {
         const hasWork = !p.isMarker || availableWorks.length > 0;
 
         let actions = `<div style="display:flex; gap:4px; width:100%; margin-bottom:6px;">`;
+        const isWorker2 = document.title.includes('プロ情熱MAP');
+        const hideGrowth = isWorker2 && !p.isMarker;
+
         if (hasWork) {
-            actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#4CAF50; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${growthIcon} ${growthText} (${growthCount})</button>
-                        <button onclick="openFieldWorkRecordSelect('${id}')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#FF9800; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${workIcon} ${workText} (${workCount})</button>`;
+            if (hideGrowth) {
+                actions += `<button onclick="openFieldWorkRecordSelect('${id}')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#FF9800; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${workIcon} ${workText} (${workCount})</button>`;
+            } else {
+                actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#4CAF50; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${growthIcon} ${growthText} (${growthCount})</button>
+                            <button onclick="openFieldWorkRecordSelect('${id}')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#FF9800; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${workIcon} ${workText} (${workCount})</button>`;
+            }
         } else {
-            actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#4CAF50; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${growthIcon} ${growthText} (${growthCount})</button>`;
+            if (!hideGrowth) {
+                actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#4CAF50; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${growthIcon} ${growthText} (${growthCount})</button>`;
+            }
         }
         actions += `</div>`;
 
@@ -3590,6 +3683,42 @@ window.executeAutoRecord = async () => {
 // 🌟 4. アプリ起動時の爆速処理（window.onloadをやめる！） 🌟
       document.addEventListener('DOMContentLoaded', () => {
           initMap();
+          
+          // 出勤状態の復元とトラッキング自動再開
+          const clockInStr = localStorage.getItem('passionMapClockIn');
+          if (clockInStr) {
+              try {
+                  const state = JSON.parse(clockInStr);
+                  if (state.active) {
+                      const btn = document.getElementById('btnTracking');
+                      if(btn) {
+                          btn.style.backgroundColor = '#4CAF50';
+                          btn.style.color = 'white';
+                      }
+                      // マーカー表示（mapはinitMap()で作成済み）
+                      if (window.plotClockInMarker) {
+                          window.plotClockInMarker(state);
+                      }
+                      
+                      // 移動トラッキング再開
+                      if (navigator.geolocation && trackingWatchId === null) {
+                          trackingWatchId = navigator.geolocation.watchPosition((p) => {
+                              const now = Date.now();
+                              if (now - lastTrackingTime < 10000) return;
+                              lastTrackingTime = now;
+                              if (currentUser) {
+                                  callGAS('saveTrackingData', { 
+                                      userName: currentUser, 
+                                      lat: p.coords.latitude, 
+                                      lng: p.coords.longitude, 
+                                      type: '移動' 
+                                  }).catch(e=>console.warn(e));
+                              }
+                          }, (err) => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+                      }
+                  }
+              } catch(e) { console.warn("Clock-in restore error", e); }
+          }
           const id = localStorage.getItem('passionMapUserId');
           const pw = localStorage.getItem('passionMapUserPw');
           

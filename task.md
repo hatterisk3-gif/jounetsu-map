@@ -1,6 +1,0 @@
-- `[ ]` cultivation_modal.html: 「名前変更」ボタンを追加
-- `[ ]` cultivation.js: renameCultivationPresetUI 関数を実装
-- `[ ]` コード.js: renameCultivationPreset の GAS エンドポイントを実装
-- `[ ]` cultivation.js: toggleCpCell にて「播種」「定植」を1セルのみに制限
-- `[ ]` cultivation.js: toggleCrCell にて「播種」「定植」を1セルのみに制限
-- `[ ]` テスト検証とバージョン更新
