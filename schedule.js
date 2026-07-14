@@ -372,7 +372,7 @@ async function fetchWeatherAndUpdateUI() {
       let animationFrameId = null;
       let tripTime = 0;
 
-      async function loadTrackingData() {
+      window.loadTrackingData = async function loadTrackingData() {
           // 既存のアニメーションをキャンセル
           if (animationFrameId) {
               cancelAnimationFrame(animationFrameId);
@@ -453,7 +453,9 @@ async function fetchWeatherAndUpdateUI() {
                   return [(hash & 0xFF0000) >> 16, (hash & 0x00FF00) >> 8, hash & 0x0000FF];
               };
 
-              const pathData = Object.keys(pathsByUser).map(userName => {
+              const pathData = Object.keys(pathsByUser)
+                  .filter(userName => pathsByUser[userName].path.length > 1) // deck.gl needs at least 2 points
+                  .map(userName => {
                   return {
                       name: userName,
                       path: pathsByUser[userName].path,
