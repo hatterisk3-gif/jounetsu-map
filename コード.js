@@ -1257,6 +1257,7 @@ function mergeFields(baseId, targetId, userName) {
 }
 
 function deletePolygonData(id, user) { 
+  if (!checkAdminRole(user)) throw new Error("管理者権限がないため、削除できません。"); 
   const found = findSheetAndRowById(id); 
   if (found) { 
     const name = found.rowData[1];
@@ -1269,6 +1270,7 @@ function deletePolygonData(id, user) {
 }
 
 function deletePolygonBatchData(ids, user) {
+  if (!checkAdminRole(user)) throw new Error("管理者権限がないため、削除できません。");
   const ss = TENANT_SS;
   const sheets = ['圃場', '看板'];
   
@@ -3410,4 +3412,16 @@ function machine_saveFuel(p) {
   const sheet = getOrCreateSheet('MachineFuel');
   sheet.appendRow([p.id, p.machineId, p.date, p.hourMeter, p.fuelAmount, p.fuelCanStatus, p.capCheck]);
   return { success: true };
+}
+
+function checkAdminRole(userName) {
+  const sheet = TENANT_SS.getSheetByName('名簿');
+  if (!sheet) return false;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][2]) === String(userName)) {
+      return String(data[i][3]) === '管理者';
+    }
+  }
+  return false;
 }

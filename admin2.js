@@ -473,6 +473,11 @@ function actionEditShape(id) {
     map.setZoom(map.getZoom());
 }
 async function actionDelete(id) {
+    if ((localStorage.getItem('passionMapUserRole') || '作業員') !== '管理者') {
+        customAlert('管理者権限がないため、圃場の削除はできません。');
+        return;
+    }
+
     const p = loadedPolygons[id];
     if (!p) return;
 
@@ -2811,6 +2816,11 @@ window.doChangePassword = async function() {
 };
 
 window.openBatchDeleteModal = () => {
+    if ((localStorage.getItem('passionMapUserRole') || '作業員') !== '管理者') {
+        customAlert('管理者権限がないため、圃場の削除はできません。');
+        return;
+    }
+
     let html = '<div style="padding:15px; text-align:center;">';
     html += '<h3 style="margin-top:0; color:#d32f2f;">🗑️ 圃場の一括削除</h3>';
     html += '<p style="font-size:13px; color:#555;">削除したい圃場を選択してください。<br>（※マーカー等も含まれます）</p>';

@@ -473,6 +473,11 @@ function actionEditShape(id) {
     map.setZoom(map.getZoom());
 }
 async function actionDelete(id) {
+    if ((localStorage.getItem('passionMapUserRole') || '作業員') !== '管理者') {
+        customAlert('管理者権限がないため、圃場の削除はできません。');
+        return;
+    }
+
     const p = loadedPolygons[id];
     if (!p) return;
 
@@ -2836,6 +2841,11 @@ window.doChangePassword = async function() {
 };
 
 window.openBatchDeleteModal = () => {
+    if ((localStorage.getItem('passionMapUserRole') || '作業員') !== '管理者') {
+        customAlert('管理者権限がないため、圃場の削除はできません。');
+        return;
+    }
+
     isBatchDeleteMode = true;
     selectedForDelete = [];
     document.getElementById('batchDeleteCount').innerText = '0';
