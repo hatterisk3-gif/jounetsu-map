@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 情熱MAP 統合API (管理者・作業員 共通)
  */
 const MASTER_SPREADSHEET_ID = "1Kfg5JzNE8pZVQuyuHExz1Q00vzd75MmWrtKLLHUG89c"; // マスター・スプレッドシートのID
@@ -2610,7 +2610,7 @@ function getTrackingData(params) {
     // 最大で直近2000件を取得
     const startRow = Math.max(2, lastRow - 1999);
     const numRows = lastRow - startRow + 1;
-    const values = sheet.getRange(startRow, 1, numRows, 4).getValues();
+    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
     
     // 24時間以内のデータのみを抽出
     const now = new Date().getTime();

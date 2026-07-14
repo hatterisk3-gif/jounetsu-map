@@ -386,6 +386,42 @@ async function fetchWeatherAndUpdateUI() {
                   return;
               }
               
+              // 出勤マーカーの表示ロジック
+              if (window.clockInMarkers) {
+                  window.clockInMarkers.forEach(m => m.setMap(null));
+              }
+              window.clockInMarkers = [];
+              
+              data.filter(d => d.type === '出勤').forEach(d => {
+                  const pos = new google.maps.LatLng(parseFloat(d.lat), parseFloat(d.lng));
+                  const m = new google.maps.Marker({
+                      position: pos,
+                      map: map,
+                      icon: {
+                          path: google.maps.SymbolPath.CIRCLE,
+                          scale: 10,
+                          fillColor: '#FF9800',
+                          fillOpacity: 1,
+                          strokeColor: 'white',
+                          strokeWeight: 2
+                      },
+                      zIndex: 10000
+                  });
+                  
+                  let timeStr = '';
+                  try {
+                      const dObj = new Date(d.time);
+                      timeStr = dObj.getHours().toString().padStart(2, '0') + ':' + dObj.getMinutes().toString().padStart(2, '0');
+                  } catch(e) { timeStr = d.time; }
+                  
+                  const info = new google.maps.InfoWindow({
+                      content: `<div style="padding:5px; font-weight:bold; color:#FF9800;">👨‍🌾 ${d.userName} - 出勤: ${timeStr}</div>`
+                  });
+                  info.open(map, m);
+                  m.addListener('click', () => info.open(map, m));
+                  window.clockInMarkers.push(m);
+              });
+
               const mode = document.getElementById('trackingMode').value || 'path';
               
               // ユーザーごとにデータをグループ化し、タイムスタンプを計算
