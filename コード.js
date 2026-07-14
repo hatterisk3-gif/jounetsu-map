@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 情熱MAP 統合API (管理者・作業員 共通)
  */
 const MASTER_SPREADSHEET_ID = "1Kfg5JzNE8pZVQuyuHExz1Q00vzd75MmWrtKLLHUG89c"; // マスター・スプレッドシートのID
@@ -474,11 +474,16 @@ function getInitData() {
       const idxStatus = headers.indexOf('進捗状況');
       const idxContainer = headers.indexOf('コンテナ名');
       const idxMaintenance = headers.indexOf('整備内容'); 
+      const idxCategory = headers.indexOf('作業カテゴリ');
 
       for (let i = 1; i < data.length; i++) {
         let wName = idxName >= 0 ? data[i][idxName] : "";
         if (wName) {
+          let cat = idxCategory >= 0 && data[i][idxCategory] ? String(data[i][idxCategory]).trim() : "";
+          if (!cat) cat = "圃場作業"; // デフォルト
+
           workMaster.push({ 
+            category: cat, 
             name: wName, 
             displayPlace: idxPlace >= 0 ? data[i][idxPlace] : "", 
             targetFunction: idxFunc >= 0 && data[i][idxFunc] ? String(data[i][idxFunc]).trim() : "",
@@ -2639,7 +2644,7 @@ function getTrackingData(params) {
       
       const t = new Date(timeStr).getTime();
       if (now - t <= oneDay) {
-        data.push({
+        data.push({ type: values[i][4],
           time: timeStr,
           userName: userName,
           lat: lat,

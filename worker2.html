@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>プロ情熱MAP [作業記録用] v1.0</title>
+  <title>繝励Ο諠・・MAP [菴懈･ｭ險倬鹸逕ｨ] v1.0</title>
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
   <link rel="manifest" href="manifest.json">
@@ -16,45 +16,45 @@
 </head>
 
 <body>
-    <!-- プロポータルに戻る×ボタン -->
+    <!-- 繝励Ο繝昴・繧ｿ繝ｫ縺ｫ謌ｻ繧凝励・繧ｿ繝ｳ -->
     
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">プロ情熱MAP (v1.0)</h2>
+      <h2 style="color:#4CAF50;">繝励Ο諠・・MAP (v1.0)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px;"></div>
-      <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
-      <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
-      <button class="login-btn" onclick="executeLogin()">ログイン</button>
+      <input type="text" id="loginId" class="login-input" placeholder="繧ｹ繧ｿ繝・ヵID">
+      <input type="password" id="loginPw" class="login-input" placeholder="繝代せ繝ｯ繝ｼ繝・>
+      <button class="login-btn" onclick="executeLogin()">繝ｭ繧ｰ繧､繝ｳ</button>
     </div>
   </div>
 
   <button id="btnGpsWorkRecord" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'"
-    style="position: fixed; bottom: 158px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: all 0.3s ease; padding: 0;">
-    📝
+    style="position: fixed; bottom: 158px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; transition: all 0.3s ease; padding: 0;">
+    統
   </button>
 
   <button id="btnTracking" onclick="toggleTracking()"
-    style="position: fixed; bottom: 302px; right: 10px; width: 50px; height: 50px; background: white; color: #4CAF50; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
-    🏃‍♂️
+    style="position: fixed; bottom: 302px; right: 10px; width: 50px; height: 50px; background: white; color: #4CAF50; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
+    純窶坂凾・・
   </button>
 
   <button id="btnTyphoon" onclick="openTyphoonModal()"
-    style="display: none; position: fixed; bottom: 446px; right: 10px; width: 50px; height: 50px; background: #ffebee; color: #d32f2f; border: 2px solid #d32f2f; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
-    🌀
+    style="display: none; position: fixed; bottom: 446px; right: 10px; width: 50px; height: 50px; background: #ffebee; color: #d32f2f; border: 2px solid #d32f2f; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
+    劇
   </button>
 
   <button id="btnWeather" onclick="openWeatherModal()"
-    style="position: fixed; bottom: 374px; right: 10px; width: 50px; height: 50px; background: white; color: #ff9800; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
-    ☁️
+    style="position: fixed; bottom: 374px; right: 10px; width: 50px; height: 50px; background: white; color: #ff9800; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
+    笘・ｸ・
   </button>
 
   <button id="btnCurrentLocation"
-    style="position: fixed; bottom: 230px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
-    📍
+    style="position: fixed; bottom: 230px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
+    桃
   </button>
-  <!-- カスタムダイアログ群 -->
+  <!-- 繧ｫ繧ｹ繧ｿ繝繝繧､繧｢繝ｭ繧ｰ鄒､ -->
   <div id="customAlertModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
       <div id="customAlertMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;">
@@ -65,22 +65,22 @@
   </div>
 
   <div id="customConfirmModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
       <div id="customConfirmMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5;">
       </div>
       <div style="display: flex; gap: 10px;">
         <button id="customConfirmOk"
-          style="flex: 1; background: #d32f2f; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">はい</button>
+          style="flex: 1; background: #d32f2f; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">縺ｯ縺・/button>
         <button id="customConfirmCancel"
-          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">いいえ</button>
+          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">縺・＞縺・/button>
       </div>
     </div>
   </div>
 
   <div id="customPromptModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
       <div id="customPromptMessage" style="margin-bottom: 10px; font-size: 15px; font-weight: bold; line-height: 1.5;">
@@ -91,65 +91,65 @@
         <button id="customPromptOk"
           style="flex: 1; background: #4CAF50; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
         <button id="customPromptCancel"
-          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">キャンセル</button>
+          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
       </div>
     </div>
   </div>
 
   <div id="weatherModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h3 style="margin: 0; color: #2196F3;">⛅ 週間天気予報</h3>
+        <h3 style="margin: 0; color: #2196F3;">笵・騾ｱ髢灘､ｩ豌嶺ｺ亥ｱ</h3>
         <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
-          onclick="document.getElementById('weatherModal').style.display='none'">×</span>
+          onclick="document.getElementById('weatherModal').style.display='none'">ﾃ・/span>
       </div>
       <div id="weatherContent" style="overflow-y: auto; flex: 1;">
-        <div style="text-align:center; padding:20px;">読み込み中...</div>
+        <div style="text-align:center; padding:20px;">隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</div>
       </div>
     </div>
   </div>
 
   <div id="typhoonModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
+        <h3 style="margin: 0; color: #d32f2f;">劇 蜿ｰ鬚ｨ諠・ｱ</h3>
         <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
-          onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
+          onclick="document.getElementById('typhoonModal').style.display='none'">ﾃ・/span>
       </div>
       <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
-        <div style="text-align:center; padding:20px;">読み込み中...</div>
+        <div style="text-align:center; padding:20px;">隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</div>
       </div>
     </div>
   </div>
 
   <div id="recordTypeSelectModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 320px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-      <div style="margin-bottom: 15px; font-size: 16px; font-weight: bold; line-height: 1.5;">記録方法を選んでください</div>
+      <div style="margin-bottom: 15px; font-size: 16px; font-weight: bold; line-height: 1.5;">險倬鹸譁ｹ豕輔ｒ驕ｸ繧薙〒縺上□縺輔＞</div>
 
       <div
         style="background: #E0F7FA; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #00BCD4; text-align: left;">
-        <div style="font-size: 13px; font-weight: bold; color: #00838F; margin-bottom: 8px;">🤖 AIオート作業記録</div>
-        <input type="text" id="autoRecordInput" placeholder="自由記述 (例: 第1で草刈り 2時間)"
+        <div style="font-size: 13px; font-weight: bold; color: #00838F; margin-bottom: 8px;">､・AI繧ｪ繝ｼ繝井ｽ懈･ｭ險倬鹸</div>
+        <input type="text" id="autoRecordInput" placeholder="閾ｪ逕ｱ險倩ｿｰ (萓・ 隨ｬ1縺ｧ闕牙・繧・2譎る俣)"
           style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; margin-bottom: 10px; font-size: 14px;"
           onkeydown="if(event.key==='Enter') { document.getElementById('recordTypeSelectModal').style.display='none'; executeAutoRecord(); }">
         <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'; executeAutoRecord()"
-          style="width: 100%; background: #00BCD4; color: white; padding: 12px; border-radius: 6px; border: none; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">✨
-          解析して開く</button>
+          style="width: 100%; background: #00BCD4; color: white; padding: 12px; border-radius: 6px; border: none; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">笨ｨ
+          隗｣譫舌＠縺ｦ髢九￥</button>
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; findCurrentFieldAndOpenForm('work')"
-          style="background: #FF9800; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜
-          現在地で作業記録</button>
+          style="background: #FF9800; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">囿
+          迴ｾ蝨ｨ蝨ｰ縺ｧ菴懈･ｭ險倬鹸</button>
         <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'"
-          style="background: #eee; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 5px;">キャンセル</button>
+          style="background: #eee; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 5px;">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
       </div>
     </div>
   </div>
@@ -161,54 +161,54 @@
   <div id="mapSelectUI"
     style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); color:white; padding:15px; border-radius:12px; z-index:5000; align-items:center; gap:10px; width: 90%; max-width: 350px; box-shadow:0 4px 15px rgba(0,0,0,0.3); flex-wrap: wrap; justify-content: center;">
     <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;"
-      id="mapSelectCount">🗺️ 記録する対象をタップしてください</div>
+      id="mapSelectCount">亮・・險倬鹸縺吶ｋ蟇ｾ雎｡繧偵ち繝・・縺励※縺上□縺輔＞</div>
     <button onclick="applyMapSelect()"
-      style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定する</button>
+      style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">豎ｺ螳壹☆繧・/button>
     <button onclick="cancelMapSelect()"
-      style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">キャンセル</button>
+      style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
   </div>
 
   <div id="feedbackModal">
     <div
       style="background:#222; color:#fff; width:90%; max-width:400px; border-radius:8px; display:flex; flex-direction:column; padding:20px; box-sizing:border-box; border:1px solid #444;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-        <h3 style="margin:0; color:#4CAF50; font-size:18px;">✉️ システム管理者へ連絡</h3>
-        <span onclick="closeFeedback()" style="cursor:pointer; font-size:24px; color:#999; line-height:1;">×</span>
+        <h3 style="margin:0; color:#4CAF50; font-size:18px;">笨会ｸ・繧ｷ繧ｹ繝・Β邂｡逅・・∈騾｣邨｡</h3>
+        <span onclick="closeFeedback()" style="cursor:pointer; font-size:24px; color:#999; line-height:1;">ﾃ・/span>
       </div>
-      <p style="font-size:12px; color:#aaa; margin-top:0;">バグの報告や機能追加の要望などをご記入ください。</p>
-      <textarea id="feedbackText" rows="6" placeholder="例：〇〇の画面でエラーが出ます。〇〇の機能を追加してほしいです。"
+      <p style="font-size:12px; color:#aaa; margin-top:0;">繝舌げ縺ｮ蝣ｱ蜻翫ｄ讖溯・霑ｽ蜉縺ｮ隕∵悍縺ｪ縺ｩ繧偵＃險伜・縺上□縺輔＞縲・/p>
+      <textarea id="feedbackText" rows="6" placeholder="萓具ｼ壹・・・逕ｻ髱｢縺ｧ繧ｨ繝ｩ繝ｼ縺悟・縺ｾ縺吶ゅ・・・讖溯・繧定ｿｽ蜉縺励※縺ｻ縺励＞縺ｧ縺吶・
         style="width:100%; padding:10px; border-radius:4px; border:1px solid #555; background:#333; color:#fff; box-sizing:border-box; margin-bottom:15px; resize:none;"></textarea>
       <button id="sendFeedbackBtn" onclick="sendFeedback()"
-        style="width:100%; background:#4CAF50; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold; font-size:16px;">送信する</button>
+        style="width:100%; background:#4CAF50; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold; font-size:16px;">騾∽ｿ｡縺吶ｋ</button>
     </div>
   </div>
 
   <div class="control-panel">
     <div class="control-row">
       <div class="search-container">
-        <input type="text" id="searchInput" placeholder="🔍 圃場・看板を検索...">
+        <input type="text" id="searchInput" placeholder="剥 蝨・ｴ繝ｻ逵区攸繧呈､懃ｴ｢...">
         <div id="searchSuggestions"></div>
       </div>
       <button onclick="promptLineUrl()"
-        style="background:#9C27B0; color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:11px;">📍
-        座標検索</button>
+        style="background:#9C27B0; color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:11px;">桃
+        蠎ｧ讓呎､懃ｴ｢</button>
       <button onclick="location.reload()"
-        style="background:#fff; color:#333; border:1px solid #ccc; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
-        更新</button>
+        style="background:#fff; color:#333; border:1px solid #ccc; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">売
+        譖ｴ譁ｰ</button>
       <button onclick="openScheduleList()"
-        style="background:#FFF9C4; color:#F57F17; border:1px solid #F57F17; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📅
-        予定一覧</button>
+        style="background:#FFF9C4; color:#F57F17; border:1px solid #F57F17; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">套
+        莠亥ｮ壻ｸ隕ｧ</button>
       <button onclick="openAllHistory()"
-        style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📋
-        履歴</button>
+        style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">搭
+        螻･豁ｴ</button>
       <button onclick="openFeedback()"
-        style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️
-        連絡</button>
+        style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">笨会ｸ・
+        騾｣邨｡</button>
       <button onclick="openMyPage()"
-        style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">👤
-        マイページ</button>
+        style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">側
+        繝槭う繝壹・繧ｸ</button>
       <button onclick="executeLogout()"
-        style="background:#F44336; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">ログアウト</button>
+        style="background:#F44336; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">繝ｭ繧ｰ繧｢繧ｦ繝・/button>
     </div>
   </div>
 
@@ -217,7 +217,7 @@
   <div id="rightPanel">
     <div class="panel-header">
       <span id="rightPanelTitle"></span>
-      <span style="cursor:pointer; font-size:24px; padding-left:10px;" onclick="closeRightPanel()">×</span>
+      <span style="cursor:pointer; font-size:24px; padding-left:10px;" onclick="closeRightPanel()">ﾃ・/span>
     </div>
     <div class="panel-content" id="rightPanelContent"></div>
     <div class="panel-footer" id="rightPanelFooter"></div>
@@ -236,13 +236,13 @@
 
   <!-- Radar Modal -->
   <div id="radarModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; width: 95%; height: 90vh; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden;">
       <div
         style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #2196F3; color: white;">
-        <h3 style="margin: 0; font-size: 18px;">🌧️ 雨雲レーダー</h3>
-        <span style="cursor: pointer; font-size: 28px; line-height: 1;" onclick="closeRadarModal()">×</span>
+        <h3 style="margin: 0; font-size: 18px;">県・・髮ｨ髮ｲ繝ｬ繝ｼ繝繝ｼ</h3>
+        <span style="cursor: pointer; font-size: 28px; line-height: 1;" onclick="closeRadarModal()">ﾃ・/span>
       </div>
       <div id="radarContent" style="flex: 1; position: relative; -webkit-overflow-scrolling: touch;"></div>
     </div>

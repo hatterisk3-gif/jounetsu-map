@@ -40,10 +40,10 @@
         
         <a href="javascript:location.reload()" class="reload-btn" title="画面を更新">🔄</a>
         
-        <a href="/worker.html" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
-        <a href="/schedule" class="btn btn-schedule">📅 予定 MAP を開く</a>
-        <a href="javascript:location.replace('/index2.html')" class="btn btn-portal2">🚪 プロポータルを開く</a>
-        <a href="/admin.html" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
+        <a href="worker.html" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
+        <a href="schedule" class="btn btn-schedule">📅 予定 MAP を開く</a>
+        <a href="javascript:location.replace('index2.html')" class="btn btn-portal2">🚪 プロポータルを開く</a>
+        <a href="admin.html" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
         
         <div class="share-box">
             <h3 style="margin-top:0; color:#4CAF50; font-size: 16px;">📍 URLから直接地図を開く</h3>
@@ -67,7 +67,7 @@
 
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=portal', { scope: '/' });
+        navigator.serviceWorker.register('sw.js?v=portal', { scope: './' });
       }
 
       // 🌟URLのパラメータ（共有機能で送られてきたテキスト）を取得
@@ -96,9 +96,9 @@
 
         // 行き先に応じて遷移（admin.htmlとworker.htmlがそれぞれバトンを受け取る！）
         if (mode === 'admin') {
-          window.location.href = '/admin.html' + finalParams;
+          window.location.href = 'admin.html' + finalParams;
         } else {
-          window.location.href = '/worker.html' + finalParams; 
+          window.location.href = 'worker.html' + finalParams; 
         }
       }
     </script>

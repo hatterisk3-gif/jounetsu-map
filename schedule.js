@@ -354,6 +354,201 @@ async function fetchWeatherAndUpdateUI() {
                     }
                     throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
                 }
+    html += `<div id="contentForecast">`;
+    let now = new Date();
+    let currentHourStr = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0') + "T" + String(now.getHours()).padStart(2, '0') + ":00";
+    let startIndex = data.hourly ? data.hourly.time.indexOf(currentHourStr) : -1;
+    if (startIndex === -1) startIndex = 0;
+    
+    if (data.hourly) {
+      html += `<div style="margin-bottom:15px;">`;
+      html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕒 今後の天気 (1時間ごと)</div>`;
+      html += `<div style="display:flex; overflow-x:auto; padding-bottom:5px; gap:10px;">`;
+      for(let i = startIndex; i < startIndex + 12 && i < data.hourly.time.length; i++) {
+          let t = new Date(data.hourly.time[i]);
+          let hStr = t.getHours() + "時";
+          let hCode = data.hourly.weathercode[i];
+          let hTemp = Math.round(data.hourly.temperature_2m[i] * 10) / 10;
+          let hPrecip = data.hourly.precipitation[i];
+          let hEmoji = getWeatherEmoji(hCode);
+          html += `<div style="min-width:50px; text-align:center; background:#f9f9f9; padding:5px; border-radius:5px; border:1px solid #eee;">
+                     <div style="font-size:12px; color:#666;">${hStr}</div>
+                     <div style="font-size:18px; margin:3px 0;">${hEmoji}</div>
+                     <div style="font-size:13px; font-weight:bold;">${hTemp}℃</div>
+                     <div style="font-size:11px; color:#2196F3;">${hPrecip}mm</div>
+                   </div>`;
+      }
+      html += `</div></div>`;
+    }
+
+    html += `<div style="margin-bottom:15px; text-align:center;">`;
+    html += `<button onclick="openRadarModal(${lat}, ${lng})" style="width:100%; max-width:300px; padding:12px; background:#2196F3; color:white; border:none; border-radius:6px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2);">🌧️ 雨雲レーダーを大画面で見る</button>`;
+    html += `</div>`;
+
+    html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 週間予報</div>`;
+    html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
+    html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
+               <th style="padding: 8px; text-align: left;">日付</th>
+               <th style="padding: 8px; text-align: center;">天気</th>
+               <th style="padding: 8px; text-align: right;">最高/最低</th>
+             </tr>`;
+    
+    for (let i = 0; i < data.daily.time.length; i++) {
+      let dateStr = data.daily.time[i];
+      let d = new Date(dateStr);
+      let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
+      let code = data.daily.weathercode[i];
+      let maxT = data.daily.temperature_2m_max[i];
+      let minT = data.daily.temperature_2m_min[i];
+      let dEmoji = getWeatherEmoji(code);
+      let dDesc = getWeatherDescription(code);
+      
+      html += `<tr style="border-bottom: 1px solid #eee;">
+                 <td style="padding: 8px; text-align: left;">${shortDate}</td>
+                 <td style="padding: 8px; text-align: center;" title="${dDesc}">${dEmoji}</td>
+                 <td style="padding: 8px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+               </tr>`;
+    }
+    html += `</table>`;
+    html += `<div style="font-size: 11px; color: #999; text-align: right; margin-top: 10px;">Data: Open-Meteo</div>`;
+    html += `</div>`; 
+
+    html += `<div id="contentHistory" style="display:none;">`;
+    if (historyData && historyData.daily) {
+       html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 昨年の天気 (${lastYearStart.getFullYear()}年)</div>`;
+       html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
+       html += `<tr style="background: #fff8e1; border-bottom: 1px solid #ccc;">
+                  <th style="padding: 8px; text-align: left;">日付</th>
+                  <th style="padding: 8px; text-align: center;">天気</th>
+                  <th style="padding: 8px; text-align: right;">最高/最低</th>
+                  <th style="padding: 8px; text-align: right;">降水</th>
+                </tr>`;
+       for (let i = 0; i < historyData.daily.time.length; i++) {
+          let dateStr = historyData.daily.time[i];
+          let d = new Date(dateStr);
+          let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
+          let code = historyData.daily.weathercode[i];
+          let maxT = historyData.daily.temperature_2m_max[i];
+          let minT = historyData.daily.temperature_2m_min[i];
+          let pcp = historyData.daily.precipitation_sum[i];
+          let dEmoji = getWeatherEmoji(code);
+          let dDesc = getWeatherDescription(code);
+          
+          html += `<tr style="border-bottom: 1px solid #eee;">
+                     <td style="padding: 8px; text-align: left;">${shortDate}</td>
+                     <td style="padding: 8px; text-align: center;" title="${dDesc}">${dEmoji}</td>
+                     <td style="padding: 8px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                     <td style="padding: 8px; text-align: right; color:#2196F3;">${pcp}mm</td>
+                   </tr>`;
+       }
+       html += `</table>`;
+       html += `<div style="font-size: 11px; color: #999; text-align: right; margin-top: 10px;">Historical Data: Open-Meteo</div>`;
+    } else {
+       html += `<div style="text-align:center; padding:20px; color:#666;">昨年のデータが取得できませんでした。</div>`;
+    }
+    html += `</div>`; 
+
+    html += `</div>`; 
+    
+    window.cachedWeatherHtml = html;
+
+  } catch (e) {
+    console.error("天気取得エラー:", e);
+  }
+}
+
+      window.openWeatherModal = function() {
+        let contentDiv = document.getElementById('weatherContent');
+        if (window.cachedWeatherHtml) {
+          contentDiv.innerHTML = window.cachedWeatherHtml;
+        } else {
+          contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#333;">天気情報を取得できませんでした。</div>';
+        }
+        document.getElementById('weatherModal').style.display = 'flex';
+      };
+
+      async function fetchTyphoonInfo() {
+        try {
+          let url = "https://www.jma.go.jp/bosai/typhoon/data/targetTc.json";
+          let res = await fetch(url);
+          let btnTyphoon = document.getElementById('btnTyphoon');
+          
+          if (!res.ok) {
+            if (btnTyphoon) btnTyphoon.style.display = 'none';
+            return;
+          }
+          
+          let data = await res.json();
+          if (data && data.length > 0) {
+            if (btnTyphoon) btnTyphoon.style.display = 'flex';
+            
+            let html = `<div style="padding: 10px; text-align: center;">`;
+            html += `<h4 style="color:#d32f2f; margin-top:0; margin-bottom:15px; font-size:18px;">⚠️ 現在台風が発生しています</h4>`;
+            html += `<p style="font-size:14px; color:#333; line-height:1.6; text-align:left;">現在、気象庁より台風情報が発表されています。最新の進路予想や警報については、気象庁の公式ページをご確認ください。</p>`;
+            
+            try {
+              let typhoons = data.map(t => {
+                let num = t.typhoonNumber ? parseInt(t.typhoonNumber.substring(2)) : 0;
+                return num ? `台風${num}号` : null;
+              }).filter(Boolean);
+              
+              if (typhoons.length > 0) {
+                html += `<div style="background:#ffebee; padding:10px; border-radius:5px; margin:15px 0; font-weight:bold; color:#d32f2f;">`;
+                html += `発表中: ${typhoons.join('、 ')}`;
+                html += `</div>`;
+              }
+            } catch(e) {}
+            
+            html += `<a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" style="display:inline-block; margin-top:15px; padding:12px 20px; background:#d32f2f; color:white; font-weight:bold; border-radius:8px; text-decoration:none; box-shadow:0 2px 5px rgba(0,0,0,0.2);">👉 気象庁の台風情報を見る</a>`;
+            html += `</div>`;
+            
+            window.cachedTyphoonHtml = html;
+          } else {
+            if (btnTyphoon) btnTyphoon.style.display = 'none';
+          }
+        } catch (e) {
+          console.error("台風情報取得エラー:", e);
+          let btn = document.getElementById('btnTyphoon');
+          if (btn) btn.style.display = 'none';
+        }
+      }
+
+      window.openTyphoonModal = function() {
+        let contentDiv = document.getElementById('typhoonContent');
+        if (window.cachedTyphoonHtml) {
+          contentDiv.innerHTML = window.cachedTyphoonHtml;
+        }
+        document.getElementById('typhoonModal').style.display = 'flex';
+      };
+
+      window.customAlert = (msg) => {
+        document.getElementById('customAlertMessage').innerText = msg;
+        document.getElementById('customAlertModal').style.display = 'flex';
+        document.getElementById('customAlertOk').onclick = () => { document.getElementById('customAlertModal').style.display = 'none'; };
+      };
+
+      async function callGAS(action, params = {}, retries = 2) {
+        const spreadsheetId = localStorage.getItem('spreadsheetId');
+        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
+          throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
+        }
+        params.action = action;
+        params.spreadsheetId = spreadsheetId;
+        
+        let lastError = null;
+        for (let i = 0; i <= retries; i++) {
+            try {
+                const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
+                const text = await res.text();
+                let json;
+                try {
+                    json = JSON.parse(text);
+                } catch (e) {
+                    if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+                        throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
+                    }
+                    throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
+                }
                 if (json.status !== "success") throw new Error(json.message);
                 return json.data;
             } catch (err) {
@@ -392,7 +587,7 @@ async function fetchWeatherAndUpdateUI() {
               }
               window.clockInMarkers = [];
               
-              data.filter(d => d.type === '出勤').forEach(d => {
+              data.filter(d => d.type === '出勤' || d.type === 'アプリ起動').forEach(d => {
                   const pos = new google.maps.LatLng(parseFloat(d.lat), parseFloat(d.lng));
                   const m = new google.maps.Marker({
                       position: pos,
@@ -415,7 +610,7 @@ async function fetchWeatherAndUpdateUI() {
                   } catch(e) { timeStr = d.time; }
                   
                   const info = new google.maps.InfoWindow({
-                      content: `<div style="padding:5px; font-weight:bold; color:#FF9800;">👨‍🌾 ${d.userName} - 出勤: ${timeStr}</div>`
+                      content: `<div style="padding:5px; font-weight:bold; color:#FF9800;">👨‍🌾 ${d.userName} - ${d.type}: ${timeStr}</div>`
                   });
                   info.open(map, m);
                   m.addListener('click', () => info.open(map, m));

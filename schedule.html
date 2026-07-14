@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.30</title>
+  <title>諠・・MAP [莠亥ｮ夂｢ｺ隱咲畑] v1.30</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -17,18 +17,18 @@
 <body>
 
   <div id="loginScreen"
-    style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 10000; justify-content: center; align-items: center;">
+    style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #222; padding: 30px; border-radius: 8px; width: 80%; max-width: 320px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP</h2>
+      <h2 style="color:#4CAF50; margin-top: 0;">諠・・MAP</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px;"></div>
 
-      <input type="text" id="loginId" placeholder="スタッフID"
+      <input type="text" id="loginId" placeholder="繧ｹ繧ｿ繝・ヵID"
         style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; font-size: 16px; background:#333; color:white;">
-      <input type="password" id="loginPw" placeholder="パスワード"
+      <input type="password" id="loginPw" placeholder="繝代せ繝ｯ繝ｼ繝・
         style="width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; font-size: 16px; background:#333; color:white;">
       <button class="login-btn" onclick="executeLogin()"
-        style="width: 100%; padding: 14px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer;">ログイン</button>
+        style="width: 100%; padding: 14px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer;">繝ｭ繧ｰ繧､繝ｳ</button>
     </div>
   </div>
 
@@ -36,52 +36,52 @@
     <div class="control-panel-buttons" style="display:flex; align-items:center;">
       <div class="legend">
         <div class="leg-item">
-          <div class="leg-color" style="background:#4CAF50;"></div>平和
+          <div class="leg-color" style="background:#4CAF50;"></div>蟷ｳ蜥・
         </div>
         <div class="leg-item">
-          <div class="leg-color" style="background:#FFEB3B;"></div>予定有
+          <div class="leg-color" style="background:#FFEB3B;"></div>莠亥ｮ壽怏
         </div>
         <div class="leg-item">
-          <div class="leg-color" style="background:#F44336;"></div>問題/遅延
+          <div class="leg-color" style="background:#F44336;"></div>蝠城｡・驕・ｻｶ
         </div>
         <div class="leg-item">
-          <div class="leg-color" style="background:#FF9800;"></div>収穫中
+          <div class="leg-color" style="background:#FF9800;"></div>蜿守ｩｫ荳ｭ
         </div>
         <div class="leg-item">
-          <div class="leg-color" style="background:#777777;"></div>対象外
+          <div class="leg-color" style="background:#777777;"></div>蟇ｾ雎｡螟・
         </div>
       </div>
       <button id="btnTyphoon" onclick="openTyphoonModal()"
-        style="display:none; margin-right:10px; background:#ffebee; color:#d32f2f; border:2px solid #d32f2f; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; align-items:center; cursor:pointer;">🌀
-        台風</button>
+        style="display:none; margin-right:10px; background:#ffebee; color:#d32f2f; border:2px solid #d32f2f; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; align-items:center; cursor:pointer;">劇
+        蜿ｰ鬚ｨ</button>
       <button id="btnWeather" onclick="openWeatherModal()"
-        style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
-      <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
+        style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">笘・ｸ・/button>
+      <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">売 譖ｴ譁ｰ</button>
       <select id="trackingMode" class="desktop-only"
         style="margin-right:10px; padding:8px; border-radius:5px; background:#555; color:white; border:1px solid #777; font-weight:bold; font-size:11px;">
-        <option value="path">線(Path)</option>
-        <option value="trip">アニメ(Trip)</option>
+        <option value="path">邱・Path)</option>
+        <option value="trip">繧｢繝九Γ(Trip)</option>
       </select>
       <button class="btn-primary desktop-only" onclick="loadTrackingData()"
-        style="background:#4CAF50; margin-right:10px;">🏃‍♂️ 表示</button>
+        style="background:#4CAF50; margin-right:10px;">純窶坂凾・・陦ｨ遉ｺ</button>
       <div class="desktop-only" style="position: relative; display: inline-block; margin-right: 10px;">
-        <button class="btn-primary" onclick="toggleCultivationMenu()" style="background:#8BC34A;">🌱 栽培計画 ▼</button>
+        <button class="btn-primary" onclick="toggleCultivationMenu()" style="background:#8BC34A;">験 譬ｽ蝓ｹ險育判 笆ｼ</button>
         <div id="cultivationMenu"
           style="display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 1000; min-width: 170px; flex-direction: column;">
           <button onclick="openCultivationPlanModal(); toggleCultivationMenu()"
-            style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; border-bottom: 1px solid #eee; font-size: 13px; font-weight: bold; color: #333;">📝
-            栽培計画を立てる</button>
+            style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; border-bottom: 1px solid #eee; font-size: 13px; font-weight: bold; color: #333;">統
+            譬ｽ蝓ｹ險育判繧堤ｫ九※繧・/button>
           <button onclick="startFieldCultivationMode(); toggleCultivationMenu()"
-            style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; border-bottom: 1px solid #eee; font-size: 13px; font-weight: bold; color: #333;">📍
-            圃場から栽培計画</button>
+            style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; border-bottom: 1px solid #eee; font-size: 13px; font-weight: bold; color: #333;">桃
+            蝨・ｴ縺九ｉ譬ｽ蝓ｹ險育判</button>
           <button onclick="openCroptypeRegistrationModal(); toggleCultivationMenu()"
-            style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; font-size: 13px; font-weight: bold; color: #333;">🏷️
-            品種作型を登録する</button>
+            style="padding: 10px; background: none; border: none; text-align: left; cursor: pointer; width: 100%; font-size: 13px; font-weight: bold; color: #333;">捷・・
+            蜩∫ｨｮ菴懷梛繧堤匳骭ｲ縺吶ｋ</button>
         </div>
       </div>
-      <button class="btn-primary desktop-only" onclick="openScheduleTable()" style="margin-right:10px;">📋 作業一覧</button>
-      <button class="btn-primary desktop-only" onclick="openMyPage()" style="background:#7B1FA2; margin-right:10px;">👤 マイページ</button>
-      <button class="btn-primary desktop-only" onclick="executeLogout()" style="background:#f44336;">🚪 ログアウト</button>
+      <button class="btn-primary desktop-only" onclick="openScheduleTable()" style="margin-right:10px;">搭 菴懈･ｭ荳隕ｧ</button>
+      <button class="btn-primary desktop-only" onclick="openMyPage()" style="background:#7B1FA2; margin-right:10px;">側 繝槭う繝壹・繧ｸ</button>
+      <button class="btn-primary desktop-only" onclick="executeLogout()" style="background:#f44336;">坎 繝ｭ繧ｰ繧｢繧ｦ繝・/button>
     </div>
   </div>
 
@@ -90,9 +90,9 @@
 
   <div id="fieldCultivationModeBanner"
     style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,150,136,0.95); color:white; padding:15px; border-radius:12px; z-index:5000; align-items:center; gap:10px; width: 90%; max-width: 350px; box-shadow:0 4px 15px rgba(0,0,0,0.3); flex-direction: column; justify-content: center; font-weight:bold; font-size:14px; text-align:center;">
-    <div id="fieldCultivationModeMessage">🗺️ 栽培計画を立てる圃場をタップしてください</div>
+    <div id="fieldCultivationModeMessage">亮・・譬ｽ蝓ｹ險育判繧堤ｫ九※繧句怎蝣ｴ繧偵ち繝・・縺励※縺上□縺輔＞</div>
     <button onclick="cancelFieldCultivationMode()"
-      style="width:100%; margin-top:10px; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor: pointer;">キャンセル</button>
+      style="width:100%; margin-top:10px; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor: pointer;">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
   </div>
 
   <div id="map"></div>
@@ -100,22 +100,22 @@
   <div id="scheduleModal">
     <div class="modal-content">
       <div class="modal-header">
-        <span>📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
+        <span>搭 <span id="tableDeptName">縺吶∋縺ｦ</span>縺ｮ菴懈･ｭ荳隕ｧ</span>
         <span style="cursor:pointer; font-size:24px;"
-          onclick="document.getElementById('scheduleModal').style.display='none'">×</span>
+          onclick="document.getElementById('scheduleModal').style.display='none'">ﾃ・/span>
       </div>
       <div class="modal-body">
         <table id="scheduleTable">
           <thead>
             <tr>
-              <th>作業名</th>
-              <th>部署</th>
-              <th>品目</th>
-              <th>圃場/看板名</th>
-              <th>予定日</th>
-              <th>期限日</th>
-              <th>時間(h)</th>
-              <th>適合者</th>
+              <th>菴懈･ｭ蜷・/th>
+              <th>驛ｨ鄂ｲ</th>
+              <th>蜩∫岼</th>
+              <th>蝨・ｴ/逵区攸蜷・/th>
+              <th>莠亥ｮ壽律</th>
+              <th>譛滄剞譌･</th>
+              <th>譎る俣(h)</th>
+              <th>驕ｩ蜷郁・/th>
             </tr>
           </thead>
           <tbody id="scheduleTableBody">
@@ -126,31 +126,31 @@
   </div>
 
   <div id="weatherModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h3 style="margin: 0; color: #2196F3;">⛅ 週間天気予報</h3>
+        <h3 style="margin: 0; color: #2196F3;">笵・騾ｱ髢灘､ｩ豌嶺ｺ亥ｱ</h3>
         <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
-          onclick="document.getElementById('weatherModal').style.display='none'">×</span>
+          onclick="document.getElementById('weatherModal').style.display='none'">ﾃ・/span>
       </div>
       <div id="weatherContent" style="overflow-y: auto; flex: 1;">
-        <div style="text-align:center; padding:20px;">読み込み中...</div>
+        <div style="text-align:center; padding:20px;">隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</div>
       </div>
     </div>
   </div>
 
   <div id="typhoonModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
+        <h3 style="margin: 0; color: #d32f2f;">劇 蜿ｰ鬚ｨ諠・ｱ</h3>
         <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
-          onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
+          onclick="document.getElementById('typhoonModal').style.display='none'">ﾃ・/span>
       </div>
       <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
-        <div style="text-align:center; padding:20px;">読み込み中...</div>
+        <div style="text-align:center; padding:20px;">隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</div>
       </div>
     </div>
   </div>
@@ -159,60 +159,60 @@
 
   <div id="cultivationModalContainer"></div>
 
-  <!-- モバイル用下部ナビゲーション -->
+  <!-- 繝｢繝舌う繝ｫ逕ｨ荳矩Κ繝翫ン繧ｲ繝ｼ繧ｷ繝ｧ繝ｳ -->
   <div class="mobile-bottom-bar">
     <button onclick="openScheduleTable()">
-      <div style="font-size:20px;">📋</div>
-      <div style="font-weight:bold;">作業一覧</div>
+      <div style="font-size:20px;">搭</div>
+      <div style="font-weight:bold;">菴懈･ｭ荳隕ｧ</div>
     </button>
     <button onclick="document.getElementById('mobileCultivationMenu').style.display='flex'">
-      <div style="font-size:20px;">🌱</div>
-      <div style="font-weight:bold;">栽培計画</div>
+      <div style="font-size:20px;">験</div>
+      <div style="font-weight:bold;">譬ｽ蝓ｹ險育判</div>
     </button>
     <button onclick="document.getElementById('mobileTrackingMenu').style.display='flex'">
-      <div style="font-size:20px;">🏃‍♂️</div>
-      <div style="font-weight:bold;">軌跡表示</div>
+      <div style="font-size:20px;">純窶坂凾・・/div>
+      <div style="font-weight:bold;">霆瑚ｷ｡陦ｨ遉ｺ</div>
     </button>
     <button onclick="executeLogout()">
-      <div style="font-size:20px;">🚪</div>
-      <div style="font-weight:bold;">ログアウト</div>
+      <div style="font-size:20px;">坎</div>
+      <div style="font-weight:bold;">繝ｭ繧ｰ繧｢繧ｦ繝・/div>
     </button>
   </div>
 
-  <!-- モバイル用アクションシート: 栽培計画 -->
+  <!-- 繝｢繝舌う繝ｫ逕ｨ繧｢繧ｯ繧ｷ繝ｧ繝ｳ繧ｷ繝ｼ繝・ 譬ｽ蝓ｹ險育判 -->
   <div id="mobileCultivationMenu" class="mobile-action-sheet" style="display:none;" onclick="this.style.display='none'">
     <div class="action-sheet-content" onclick="event.stopPropagation()">
       <button
-        onclick="openCultivationPlanModal(); document.getElementById('mobileCultivationMenu').style.display='none'">📝
-        栽培計画を立てる</button>
+        onclick="openCultivationPlanModal(); document.getElementById('mobileCultivationMenu').style.display='none'">統
+        譬ｽ蝓ｹ險育判繧堤ｫ九※繧・/button>
       <button
-        onclick="startFieldCultivationMode(); document.getElementById('mobileCultivationMenu').style.display='none'">📍
-        圃場から栽培計画</button>
+        onclick="startFieldCultivationMode(); document.getElementById('mobileCultivationMenu').style.display='none'">桃
+        蝨・ｴ縺九ｉ譬ｽ蝓ｹ險育判</button>
       <button
-        onclick="openCroptypeRegistrationModal(); document.getElementById('mobileCultivationMenu').style.display='none'">🏷️
-        品種作型を登録する</button>
+        onclick="openCroptypeRegistrationModal(); document.getElementById('mobileCultivationMenu').style.display='none'">捷・・
+        蜩∫ｨｮ菴懷梛繧堤匳骭ｲ縺吶ｋ</button>
       <button class="cancel-btn"
-        onclick="document.getElementById('mobileCultivationMenu').style.display='none'">キャンセル</button>
+        onclick="document.getElementById('mobileCultivationMenu').style.display='none'">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
     </div>
   </div>
 
-  <!-- モバイル用アクションシート: 軌跡表示 -->
+  <!-- 繝｢繝舌う繝ｫ逕ｨ繧｢繧ｯ繧ｷ繝ｧ繝ｳ繧ｷ繝ｼ繝・ 霆瑚ｷ｡陦ｨ遉ｺ -->
   <div id="mobileTrackingMenu" class="mobile-action-sheet" style="display:none;" onclick="this.style.display='none'">
     <div class="action-sheet-content" onclick="event.stopPropagation()">
       <div style="padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; text-align: center; color: #333;">
-        軌跡表示モード</div>
+        霆瑚ｷ｡陦ｨ遉ｺ繝｢繝ｼ繝・/div>
       <div style="padding: 15px;">
         <select id="trackingModeMobile"
           style="width:100%; padding: 10px; font-size:16px; border:1px solid #ccc; border-radius:5px;">
-          <option value="path">線 (Path)</option>
-          <option value="trip">アニメ (Trip)</option>
+          <option value="path">邱・(Path)</option>
+          <option value="trip">繧｢繝九Γ (Trip)</option>
         </select>
       </div>
       <button
-        onclick="document.getElementById('trackingMode').value = document.getElementById('trackingModeMobile').value; loadTrackingData(); document.getElementById('mobileTrackingMenu').style.display='none'">🏃‍♂️
-        表示する</button>
+        onclick="document.getElementById('trackingMode').value = document.getElementById('trackingModeMobile').value; loadTrackingData(); document.getElementById('mobileTrackingMenu').style.display='none'">純窶坂凾・・
+        陦ｨ遉ｺ縺吶ｋ</button>
       <button class="cancel-btn"
-        onclick="document.getElementById('mobileTrackingMenu').style.display='none'">キャンセル</button>
+        onclick="document.getElementById('mobileTrackingMenu').style.display='none'">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
     </div>
   </div>
 
@@ -223,18 +223,18 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
 
   <script>
-    // 栽培計画モーダルのHTMLを動的読み込み
+    // 譬ｽ蝓ｹ險育判繝｢繝ｼ繝繝ｫ縺ｮHTML繧貞虚逧・ｪｭ縺ｿ霎ｼ縺ｿ
     fetch('cultivation_modal.html?v=' + new Date().getTime())
       .then(res => res.text())
       .then(html => {
         document.getElementById('cultivationModalContainer').innerHTML = html;
       });
 
-    // キャッシュバスターを付与して動的に読み込む
+    // 繧ｭ繝｣繝・す繝･繝舌せ繧ｿ繝ｼ繧剃ｻ倅ｸ弱＠縺ｦ蜍慕噪縺ｫ隱ｭ縺ｿ霎ｼ繧
     const script = document.createElement('script');
     script.src = "schedule.js?v=" + new Date().getTime();
     script.onload = () => {
-      // schedule.js読み込み後にcultivation.jsを読み込む
+      // schedule.js隱ｭ縺ｿ霎ｼ縺ｿ蠕後↓cultivation.js繧定ｪｭ縺ｿ霎ｼ繧
       const scriptCul = document.createElement('script');
       scriptCul.src = "cultivation.js?v=" + new Date().getTime();
       document.body.appendChild(scriptCul);
@@ -244,13 +244,13 @@
 
   <!-- Radar Modal -->
   <div id="radarModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; justify-content: center; align-items: center;">
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #fff; width: 95%; height: 90vh; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden;">
       <div
         style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #2196F3; color: white;">
-        <h3 style="margin: 0; font-size: 18px;">🌧️ 雨雲レーダー</h3>
-        <span style="cursor: pointer; font-size: 28px; line-height: 1;" onclick="closeRadarModal()">×</span>
+        <h3 style="margin: 0; font-size: 18px;">県・・髮ｨ髮ｲ繝ｬ繝ｼ繝繝ｼ</h3>
+        <span style="cursor: pointer; font-size: 28px; line-height: 1;" onclick="closeRadarModal()">ﾃ・/span>
       </div>
       <div id="radarContent" style="flex: 1; position: relative; -webkit-overflow-scrolling: touch;"></div>
     </div>

@@ -19,6 +19,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
         trackingWatchId = null;
         btn.style.backgroundColor = 'white';
         btn.style.color = '#4CAF50';
+        btn.innerHTML = '🏃';
         
         // ローカルストレージをクリア
         localStorage.removeItem('passionMapClockIn');
@@ -37,14 +38,11 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                     lat: p.coords.latitude,
                     lng: p.coords.longitude,
                     type: '退勤'
-                }).catch(e => console.warn("出勤送信エラー", e));
-            }
-        }, (err) => {
-            customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
-            btn.style.backgroundColor = 'white';
-            btn.style.color = '#4CAF50';
-            return;
-        }, { enableHighAccuracy: true });
+                }).catch(e => console.warn("退勤送信エラー", e));
+            }, (err) => {
+                console.warn("GPSエラー: 退勤時");
+            }, { enableHighAccuracy: true });
+        }
         
         // 移動トラッキングを開始
         trackingWatchId = navigator.geolocation.watchPosition((p) => {
@@ -1516,6 +1514,31 @@ function createSignboardMarker(name, pos, icon, id) {
           handleWorkNameChange();
       };
 
+      window.renderWorkOptions = (category) => {
+          const p = loadedPolygons[activePolyId];
+          if (!p) return;
+          let allWorks = p.isMarker 
+              ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) 
+              : pdlWorkMaster.filter(w => w.displayPlace === '圃場');
+          const filteredWorks = allWorks.filter(w => (w.category || '圃場作業') === category);
+          
+          let allChipsHTML = '<div style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">' + 
+                filteredWorks.map(w => `<button type="button" class="work-chip" data-recent="false" data-wname="${w.name}" onclick="selectWorkChip('${w.name}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`).join('') + '</div>';
+          
+          let wNames = '<option value="">選択してください</option>' + filteredWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
+          
+          const container = document.getElementById('work_chips_container');
+          if (container) container.innerHTML = allChipsHTML;
+          const select = document.getElementById('rec_work_name');
+          if (select) select.innerHTML = wNames;
+      };
+
+      window.handleCategoryChange = () => {
+          const cat = document.getElementById('rec_work_category').value;
+          renderWorkOptions(cat);
+          handleWorkNameChange();
+      };
+
       window.handleWorkNameChange = () => {
         const wName = document.getElementById('rec_work_name')?.value || "";
         
@@ -1824,7 +1847,14 @@ function createSignboardMarker(name, pos, icon, id) {
         if (isEdit && tgt && tgt.data) {
           const d = tgt.data;
           if (currentRecordType === 'work') {
-            document.getElementById('rec_work_date').value = d.workDate || ''; document.getElementById('rec_work_name').value = d.workName || ''; if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value = d.crop || ''; if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || ''; document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
+            document.getElementById('rec_work_date').value = d.workDate || ''; 
+            const wObj = pdlWorkMaster.find(w => w.name === d.workName);
+            const wCat = (wObj && wObj.category) ? wObj.category : "圃場作業";
+            if (document.getElementById('rec_work_category')) {
+                document.getElementById('rec_work_category').value = wCat;
+                if (typeof renderWorkOptions === 'function') renderWorkOptions(wCat);
+            }
+            document.getElementById('rec_work_name').value = d.workName || ''; if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value = d.crop || ''; if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || ''; document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
             if(document.getElementById('rec_worked_ridges')) document.getElementById('rec_worked_ridges').value = d.workedRidges || '';
             if(document.getElementById('rec_next_ridge')) document.getElementById('rec_next_ridge').value = d.nextRidge || '';
             

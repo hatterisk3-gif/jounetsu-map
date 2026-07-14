@@ -1271,15 +1271,18 @@ document.getElementById('backToStep1Btn').onclick = () => {
         window.isMergedFude = false;
     } else {
         // 手動描画モードの場合、クリアせずにそのまま状態を復元する
-        if (window.gridGeneratedPaths && window.gridGeneratedPaths.length > 0) {
-            window.gridGeneratedPaths = [];
-            if (window.gridDrawTempMarkers) {
-                window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
-                window.gridDrawTempMarkers = [];
-            }
-        }
         // マーカーやポリゴンを再描画（分割パネルも条件を満たせば再表示される）
         updateCustomDrawingVisuals();
+    }
+
+    window.gridGeneratedPaths = [];
+    if (window.gridDrawTempMarkers) {
+        window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
+        window.gridDrawTempMarkers = [];
+    }
+    if (window.gridDrawTempLine) {
+        window.gridDrawTempLine.setMap(null);
+        window.gridDrawTempLine = null;
     }
 
     if (window.loadedFudeRegion) setFudeVisibility(true);

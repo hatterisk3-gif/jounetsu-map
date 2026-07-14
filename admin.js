@@ -1298,15 +1298,19 @@ document.getElementById('backToStep1Btn').onclick = () => {
         window.isMergedFude = false;
     } else {
         // 手動描画モードの場合、クリアせずにそのまま状態を復元する
-        if (window.gridGeneratedPaths && window.gridGeneratedPaths.length > 0) {
-            window.gridGeneratedPaths = [];
-            if (window.gridDrawTempMarkers) {
-                window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
-                window.gridDrawTempMarkers = [];
-            }
-        }
         // マーカーやポリゴンを再描画（分割パネルも条件を満たせば再表示される）
         updateCustomDrawingVisuals();
+    }
+
+    // ★追加：分割シミュレーション（緑ポリゴン）をクリアする（手動・筆ポリ共通）
+    window.gridGeneratedPaths = [];
+    if (window.gridDrawTempMarkers) {
+        window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
+        window.gridDrawTempMarkers = [];
+    }
+    if (window.gridDrawTempLine) {
+        window.gridDrawTempLine.setMap(null);
+        window.gridDrawTempLine = null;
     }
 
     if (window.loadedFudeRegion) setFudeVisibility(true);
@@ -2768,11 +2772,14 @@ window.executeSplitPolygon = () => {
         let hullCoords = hull.geometry.coordinates[0];
         let longestDist = 0;
         let rotAngle = 0;
-        for (let i = 0; i < hullCoords.length - 1; i++) {
-            let d = turf.distance(turf.point(hullCoords[i]), turf.point(hullCoords[i+1]));
-            if (d > longestDist) {
-                longestDist = d;
-                rotAngle = turf.bearing(turf.point(hullCoords[i]), turf.point(hullCoords[i+1]));
+        // 🌟変更：筆ポリゴンのようなギザギザな辺でも「一番長い全体の向き（主軸）」を正しく計算するため、全頂点間の最大距離の角度を使用する
+        for (let i = 0; i < hullCoords.length; i++) {
+            for (let j = i + 1; j < hullCoords.length; j++) {
+                let d = turf.distance(turf.point(hullCoords[i]), turf.point(hullCoords[j]));
+                if (d > longestDist) {
+                    longestDist = d;
+                    rotAngle = turf.bearing(turf.point(hullCoords[i]), turf.point(hullCoords[j]));
+                }
             }
         }
         
