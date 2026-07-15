@@ -224,7 +224,14 @@ function drawPolygons(dataList) {
                     markers[pinIdx].setMap(null);
                     markers.splice(pinIdx, 1);
                 }
-                callGAS('savePolygon', { polygon: pData }).catch(() => {});
+                const manureData = {
+                    manure_status: pData.manure_status || 'none',
+                    manure_deadline: pData.manure_deadline || '',
+                    manure_scheduled_date: pData.manure_scheduled_date || '',
+                    manure_cancel_reason: pData.manure_cancel_reason || '',
+                    manure_has_pin: false
+                };
+                callGAS('updatePolygon', { id: pData.id, manureData: JSON.stringify(manureData) }).catch(() => {});
             }
             openManureStatusModal(pData);
         });
@@ -350,7 +357,14 @@ async function saveManureStatus(btnElement) {
     currentEditPoly.manure_cancel_reason = (status === 'canceled') ? cancelReason : '';
 
     try {
-        await callGAS('savePolygon', { polygon: currentEditPoly });
+        const manureData = {
+            manure_status: currentEditPoly.manure_status,
+            manure_deadline: currentEditPoly.manure_deadline,
+            manure_scheduled_date: currentEditPoly.manure_scheduled_date,
+            manure_cancel_reason: currentEditPoly.manure_cancel_reason,
+            manure_has_pin: currentEditPoly.manure_has_pin
+        };
+        await callGAS('updatePolygon', { id: currentEditPoly.id, manureData: JSON.stringify(manureData) });
         closeModal();
         loadInitData();
     } catch (e) {
