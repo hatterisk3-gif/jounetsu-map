@@ -427,7 +427,7 @@ function openHistoryModal() {
         manureHistory.forEach(h => {
             html += `<div style="border-bottom:1px solid #eee; padding:10px 0;">
                 <div style="font-size:12px; color:#999;">${h.date} / ${h.user}</div>
-                <div style="font-size:14px; font-weight:bold;">${h.field}</div>
+                <div style="font-size:14px; font-weight:bold; color:#1976D2; cursor:pointer; text-decoration:underline;" onclick="flyToField('${h.field}')">${h.field}</div>
                 <div style="font-size:13px;">${h.from} → ${h.to}</div>
             </div>`;
         });
@@ -436,6 +436,18 @@ function openHistoryModal() {
     html += `<button onclick="closeModal()" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">閉じる</button>`;
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('modal').style.display = 'flex';
+}
+
+function flyToField(fieldName) {
+    closeModal();
+    const targetPoly = polygons.find(p => p.pData && p.pData.name === fieldName);
+    if (targetPoly && targetPoly.pData && targetPoly.pData.coords && targetPoly.pData.coords.length > 0) {
+        const center = getPolygonCenter(targetPoly.pData.coords);
+        map.setCenter(center);
+        map.setZoom(18);
+    } else {
+        alert('該当の圃場が見つかりません');
+    }
 }
 
 // ====== 天気予報 ======
