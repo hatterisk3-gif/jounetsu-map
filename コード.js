@@ -449,6 +449,7 @@ function getInitData() {
 
   const pdl = {
     locations: Array.from(new Set(getCol(['拠点マスタ'], 0))),
+    workCategories: Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))).length > 0 ? Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))) : ["圃場作業", "事務作業", "保全・整備"],
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
@@ -652,6 +653,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'work') sheetName = '作業マスタ';
   else if (masterType === 'sign') sheetName = '看板マスタ';
   else if (masterType === 'location') sheetName = '拠点マスタ';
+  else if (masterType === 'workCategory') sheetName = '作業カテゴリマスタ';
   
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error(`${sheetName}が見つかりません`);
@@ -720,7 +722,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       let match = false;
       if (masterType === 'work') {
           if (keyIdx >= 0 && data[i][keyIdx] === targetVal) match = true;
-      } else if (masterType === 'location' || masterType === 'sign') {
+      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory') {
           if (data[i][0] === targetVal) match = true;
       } else {
           if (data[i][0] === targetVal || data[i][1] === targetVal) match = true;

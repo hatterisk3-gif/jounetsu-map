@@ -1,7 +1,7 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
       let currentUser = "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
       let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], activeLots = [];
-      let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [];
+      let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [];
       let selectedPolyIds = [], isMapSelecting = false, backupSelectedPolyIds = [];
       let pendingFiles = [];
       let latestUserPos = null;
@@ -375,6 +375,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           pdlSymptoms=data.pdl.symptoms||[];
           window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
           pdlSignFunctions = data.pdl.signFunctionsMaster || [];
+          pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
 
           for(let id in loadedPolygons) { 
               if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
@@ -1872,9 +1873,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <label class="form-label" style="margin-top:15px;">📁 カテゴリ</label>
                   <select id="rec_work_category" class="form-input" onchange="if(window.filterWorkChips) window.filterWorkChips()">
                       <option value="すべて">すべて</option>
-                      <option value="圃場作業">圃場作業</option>
-                      <option value="事務作業">事務作業</option>
-                      <option value="保全・整備">保全・整備</option>
+                      ${(window.pdlWorkCategories || ["圃場作業", "事務作業", "保全・整備"]).map(c => `<option value="${c}">${c}</option>`).join('')}
                   </select>
                   <label class="form-label" style="margin-top:10px;">🚜 作業名</label>
                   <div id="work_chips_wrapper">
@@ -1911,7 +1910,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (currentRecordType === 'work') {
             document.getElementById('rec_work_date').value = d.workDate || ''; 
             const wObj = pdlWorkMaster.find(w => w.name === d.workName);
-            const wCat = (wObj && wObj.category) ? wObj.category : "圃場作業";
+            const wCat = (wObj && wObj.category) ? wObj.category : (window.pdlWorkCategories[0] || "圃場作業");
             if (document.getElementById('rec_work_category')) {
                 document.getElementById('rec_work_category').value = wCat;
                 if (typeof renderWorkOptions === 'function') renderWorkOptions(wCat);
