@@ -558,6 +558,9 @@ async function fetchWeatherAndUpdateUI() {
               let minTime = Infinity;
               let maxTime = -Infinity;
 
+              // ネットワーク遅延等によるデータの順序逆転（ジグザグ描画）を防ぐため、時間順にソートする
+              data.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
               data.forEach(d => {
                   if (!pathsByUser[d.userName]) pathsByUser[d.userName] = { path: [], timestamps: [] };
                   // 時刻をミリ秒から秒に変換
