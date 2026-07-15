@@ -285,9 +285,18 @@ function openManureStatusModal(pData) {
     const scheduled = pData.manure_scheduled_date || '';
     const cancelReason = pData.manure_cancel_reason || '';
 
+    let navUrl = '';
+    if (pData.coords && pData.coords.length > 0) {
+        const center = getPolygonCenter(pData.coords);
+        navUrl = `https://www.google.com/maps/dir/?api=1&destination=${center.lat()},${center.lng()}&travelmode=driving`;
+    }
+
     let html = `
         <h3 style="color:#795548; margin-top:0;">🐓 鶏糞散布ステータス変更</h3>
-        <p><strong>圃場名:</strong> ${pData.name}</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <div><strong>圃場名:</strong> ${pData.name}</div>
+            ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="background:#1976D2; color:white; border:none; padding:8px 16px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🧭 ナビを開く</button>` : ''}
+        </div>
         
         <label class="form-label">ステータス</label>
         <select id="manureStatusSelect" class="form-input" onchange="toggleDateInputs()">
