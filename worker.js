@@ -1873,7 +1873,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <label class="form-label" style="margin-top:15px;">📁 カテゴリ</label>
                   <select id="rec_work_category" class="form-input" onchange="if(window.filterWorkChips) window.filterWorkChips()">
                       <option value="すべて">すべて</option>
-                      ${(window.pdlWorkCategories || ["圃場作業", "事務作業", "保全・整備"]).map(c => `<option value="${c}">${c}</option>`).join('')}
+                      ${(pdlWorkCategories || ["圃場作業", "事務作業", "保全・整備"]).map(c => `<option value="${c}">${c}</option>`).join('')}
                   </select>
                   <label class="form-label" style="margin-top:10px;">🚜 作業名</label>
                   <div id="work_chips_wrapper">
@@ -1910,7 +1910,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (currentRecordType === 'work') {
             document.getElementById('rec_work_date').value = d.workDate || ''; 
             const wObj = pdlWorkMaster.find(w => w.name === d.workName);
-            const wCat = (wObj && wObj.category) ? wObj.category : (window.pdlWorkCategories[0] || "圃場作業");
+            const wCat = (wObj && wObj.category) ? wObj.category : (pdlWorkCategories[0] || "圃場作業");
             if (document.getElementById('rec_work_category')) {
                 document.getElementById('rec_work_category').value = wCat;
                 if (typeof renderWorkOptions === 'function') renderWorkOptions(wCat);
