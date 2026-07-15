@@ -1621,16 +1621,24 @@ window.toggleTracking = () => {
         localStorage.removeItem('passionMapClockIn');
         window.syncTrackingUI();
         if (typeof currentUser !== 'undefined' && currentUser) {
+            if(typeof callGAS === 'function') {
+                callGAS('saveTrackingData', {
+                    userName: currentUser,
+                    lat: '',
+                    lng: '',
+                    type: '退勤'
+                }).catch(e => console.warn(e));
+            }
             navigator.geolocation.getCurrentPosition((p) => {
                 if(typeof callGAS === 'function') {
                     callGAS('saveTrackingData', {
                         userName: currentUser,
                         lat: p.coords.latitude,
                         lng: p.coords.longitude,
-                        type: '\u9000\u52E4'
+                        type: '退勤'
                     }).catch(e => console.warn(e));
                 }
-            }, (err) => { console.warn(err); }, { enableHighAccuracy: true });
+            }, (err) => { console.warn(err); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
         }
     } else {
         if (!navigator.geolocation) {
@@ -1638,22 +1646,23 @@ window.toggleTracking = () => {
         }
         
         const btn = document.getElementById('btnTracking');
-        if (btn) {
-            btn.style.backgroundColor = '#4CAF50';
-            btn.style.color = 'white';
-            btn.innerHTML = '\uD83C\uDFC3\u200D\u2642\uFE0F<br><span style="font-size:10px; line-height:1;">\u51FA\u52E4\u4E2D</span>';
-        }
+        const now = new Date();
+        const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        const dateStr = now.toLocaleDateString();
+        
+        const clockInState = { lat: '', lng: '', time: timeStr, active: true };
+        const clockInTodayState = { lat: '', lng: '', time: timeStr, date: dateStr };
+        localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+        localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
+        window.syncTrackingUI();
 
         navigator.geolocation.getCurrentPosition((p) => {
             const lat = p.coords.latitude;
             const lng = p.coords.longitude;
-            const now = new Date();
-            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-            const dateStr = now.toLocaleDateString();
-            
-            const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
-            const clockInTodayState = { lat: lat, lng: lng, time: timeStr, date: dateStr };
-            
+            clockInState.lat = lat;
+            clockInState.lng = lng;
+            clockInTodayState.lat = lat;
+            clockInTodayState.lng = lng;
             localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
             localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
             window.syncTrackingUI();
@@ -1664,17 +1673,26 @@ window.toggleTracking = () => {
                         userName: currentUser,
                         lat: lat,
                         lng: lng,
-                        type: '\u51FA\u52E4'
+                        type: '出勤'
                     }).catch(e => console.warn(e));
                 }
             }
         }, (err) => {
-            if (btn) {
-                btn.style.backgroundColor = 'white';
-                btn.style.color = '#4CAF50';
-                btn.innerHTML = '\uD83C\uDFC3\u200D\u2642\uFE0F';
+            console.warn('GPSエラー', err);
+            if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') {
+                customAlert('GPSの取得に失敗しましたが、出勤時間は記録しました。');
             }
-        }, { enableHighAccuracy: true });
+            if (typeof currentUser !== 'undefined' && currentUser) {
+                if(typeof callGAS === 'function') {
+                    callGAS('saveTrackingData', {
+                        userName: currentUser,
+                        lat: '',
+                        lng: '',
+                        type: '出勤'
+                    }).catch(e => console.warn(e));
+                }
+            }
+        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
     }
 };
 
