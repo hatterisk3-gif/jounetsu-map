@@ -655,8 +655,18 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'location') sheetName = '拠点マスタ';
   else if (masterType === 'workCategory') sheetName = '作業カテゴリマスタ';
   
-  const sheet = ss.getSheetByName(sheetName);
-  if (!sheet) throw new Error(`${sheetName}が見つかりません`);
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+      if (masterType === 'workCategory') {
+          sheet = ss.insertSheet(sheetName);
+          sheet.appendRow(["カテゴリ名"]);
+          sheet.appendRow(["圃場作業"]);
+          sheet.appendRow(["事務作業"]);
+          sheet.appendRow(["保全・整備"]);
+      } else {
+          throw new Error(`${sheetName}が見つかりません`);
+      }
+  }
 
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(String);
 
