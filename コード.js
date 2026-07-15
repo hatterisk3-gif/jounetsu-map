@@ -2652,7 +2652,7 @@ function saveTrackingData(params) {
       sheet.appendRow(['日時', 'ユーザー名', '緯度', '経度', '種類']);
     }
     
-    const timeStr = new Date().toISOString();
+    const timeStr = params.time ? new Date(params.time).toISOString() : new Date().toISOString();
     const type = params.type || '移動';
     sheet.appendRow([timeStr, params.userName, params.lat, params.lng, type]);
     

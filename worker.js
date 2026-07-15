@@ -11,6 +11,55 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let trackingWatchId = null;
       let lastTrackingTime = 0;
 
+      window.confirmClockOut = () => {
+          const timeInput = document.getElementById('clockOutTime').value;
+          if (!timeInput) {
+              if (window.customAlert) customAlert("時間を入力してください");
+              return;
+          }
+          document.getElementById('modal').style.display = 'none';
+
+          navigator.geolocation.clearWatch(trackingWatchId);
+          trackingWatchId = null;
+          const btn = document.getElementById('btnTracking');
+          btn.style.backgroundColor = 'white';
+          btn.style.color = '#4CAF50';
+          btn.innerHTML = '🏃‍♂️';
+          
+          localStorage.removeItem('passionMapClockIn');
+          if (window.clockInMarker) {
+              window.clockInMarker.setMap(null);
+              window.clockInMarker = null;
+          }
+
+          // Combine today's date with timeInput
+          const now = new Date();
+          const [hh, mm] = timeInput.split(':');
+          now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+
+          if (currentUser) {
+              navigator.geolocation.getCurrentPosition((p) => {
+                  callGAS('saveTrackingData', {
+                      userName: currentUser,
+                      lat: p.coords.latitude,
+                      lng: p.coords.longitude,
+                      type: '退勤',
+                      time: now.getTime()
+                  }).catch(e => console.warn("退勤送信エラー", e));
+              }, (err) => {
+                  console.warn("GPSエラー: 退勤時");
+                  // Fallback if GPS fails
+                  callGAS('saveTrackingData', {
+                      userName: currentUser,
+                      lat: 0,
+                      lng: 0,
+                      type: '退勤',
+                      time: now.getTime()
+                  }).catch(e => console.warn("退勤送信エラー", e));
+              }, { enableHighAccuracy: true });
+          }
+      };
+
       window.toggleTracking = () => {
     const btn = document.getElementById('btnTracking');
     if (trackingWatchId !== null) {
