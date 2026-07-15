@@ -351,12 +351,52 @@ window.renderMasterSection = () => {
             if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${v.workCategory || '汎用'}</span>`;
             if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8;">単位:${v.unit}</span>`;
             if (type === 'work') { subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 4px; border-radius:4px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${v.displayPlace}</span>`; if (v.targetFunction) subInfo += ` <span style="font-size:11px; color:#f57c00;">[看板:${v.targetFunction}]</span>`; if (v.detailWorks) subInfo += `<br><span style="font-size:11px; color:#666;">詳細: ${v.detailWorks}</span>`; }
-            html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div>`;
+            if (type === 'work') {
+                const safeV = encodeURIComponent(JSON.stringify(v));
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditWorkMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
+            } else {
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div>`;
+            }
         });
         return html + `</div></div>`;
     };
     let content = buildHTML('🌱 作物マスタ', 'crop', pdlCrops) + buildHTML('🪧 看板マスタ', 'sign', pdlSignFunctions) + buildHTML('🏢 拠点マスタ', 'location', pdlLocations) + buildHTML('🚜 作業記録マスタ', 'work', pdlWorkMaster) + buildHTML('🔧 道具マスタ', 'tool', pdlTools) + buildHTML('📦 資材マスタ', 'material', pdlMaterials);
     document.getElementById('masterSections').innerHTML = content;
+};
+
+window.openEditWorkMaster = (encodedStr) => {
+    const v = JSON.parse(decodeURIComponent(encodedStr));
+    const funcOpts = '<option value="">+ 対応看板機能...</option>' + pdlSignFunctions.map(f => `<option value="${f}" ${f===v.targetFunction?'selected':''}>${f}</option>`).join('');
+    
+    const html = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h3 style="margin-top:0; color:#2196F3;">✏️ 作業マスタの編集</h3>
+            <input type="hidden" id="edit_work_original_name" value="${v.name}">
+            <label class="form-label">カテゴリ</label>
+            <select id="edit_work_category" class="form-input">
+                <option value="圃場作業" ${v.category==='圃場作業'?'selected':''}>圃場作業</option>
+                <option value="事務作業" ${v.category==='事務作業'?'selected':''}>事務作業</option>
+                <option value="保全・整備" ${v.category==='保全・整備'?'selected':''}>保全・整備</option>
+            </select>
+            <label class="form-label">作業名</label>
+            <input type="text" id="edit_work_name" class="form-input" value="${v.name}">
+            <label class="form-label">表示場所</label>
+            <select id="edit_work_place" class="form-input">
+                <option value="圃場" ${v.displayPlace==='圃場'?'selected':''}>圃場</option>
+                <option value="看板" ${v.displayPlace==='看板'?'selected':''}>看板</option>
+                <option value="全て" ${v.displayPlace==='全て'?'selected':''}>全て</option>
+            </select>
+            <label class="form-label">詳細作業 (カンマ区切り)</label>
+            <input type="text" id="edit_work_details" class="form-input" value="${v.detailWorks||''}">
+            <label class="form-label">対応看板機能</label>
+            <select id="edit_work_func" class="form-input">${funcOpts}</select>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('work', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold;">更新する</button>
+                <button onclick="renderMasterSection()" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    document.getElementById('masterSections').innerHTML = html;
 };
 
 window.execMaster = async (type, act, val) => {
@@ -368,6 +408,23 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'material') { const name = document.getElementById('add_mat_name').value.trim(); if (!name) { customAlert("資材名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_mat_cat').value.trim(), size: document.getElementById('add_mat_size').value.trim(), unit: document.getElementById('add_mat_unit').value.trim() }; }
         else if (type === 'work') { const name = document.getElementById('add_work_name').value.trim(); if (!name) { customAlert("作業名を入力してください"); return; } value = { name: name, category: document.getElementById('add_work_category').value, displayPlace: document.getElementById('add_work_place').value, targetFunction: document.getElementById('add_work_func').value.trim(), detailWorks: document.getElementById('add_work_details').value.trim() }; }
+    } else if (act === 'edit') {
+        if (!await customConfirm(`更新しますか？`)) return;
+        if (type === 'work') {
+            const originalName = document.getElementById('edit_work_original_name').value;
+            const newName = document.getElementById('edit_work_name').value.trim();
+            if (!newName) { customAlert("作業名を入力してください"); return; }
+            value = {
+                originalName: originalName,
+                newData: {
+                    name: newName,
+                    category: document.getElementById('edit_work_category').value,
+                    displayPlace: document.getElementById('edit_work_place').value,
+                    targetFunction: document.getElementById('edit_work_func').value.trim(),
+                    detailWorks: document.getElementById('edit_work_details').value.trim()
+                }
+            };
+        }
     } else { if (!await customConfirm(`削除しますか？`)) return; value = { id: val }; }
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
     try {

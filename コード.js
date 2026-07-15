@@ -671,6 +671,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const newRow = new Array(headers.length).fill("");
       const map = {
         '作業名': value.name,
+        'カテゴリ': value.category || "圃場作業",
         '表示場所': value.displayPlace || "圃場",
         '対応看板機能': value.targetFunction || "",
         '詳細作業名': value.detailWorks || ""
@@ -684,6 +685,30 @@ function manageMasterData(masterType, manageAction, value, userName) {
       sheet.appendRow([value]);
     }
     writeLog(userName, "マスタ追加", value.name || value, `対象: ${sheetName}`);
+  } 
+  else if (manageAction === 'edit') {
+    const data = sheet.getDataRange().getValues();
+    if (masterType === 'work') {
+      const keyIdx = headers.indexOf('作業名');
+      for (let i = 1; i < data.length; i++) {
+        if (keyIdx >= 0 && data[i][keyIdx] === value.originalName) {
+          const map = {
+            '作業名': value.newData.name,
+            'カテゴリ': value.newData.category || "圃場作業",
+            '表示場所': value.newData.displayPlace || "圃場",
+            '対応看板機能': value.newData.targetFunction || "",
+            '詳細作業名': value.newData.detailWorks || ""
+          };
+          for(let col = 0; col < headers.length; col++) {
+            if(map[headers[col]] !== undefined) {
+              sheet.getRange(i + 1, col + 1).setValue(map[headers[col]]);
+            }
+          }
+          writeLog(userName, "マスタ編集", value.newData.name, `対象: ${sheetName} (元: ${value.originalName})`);
+          break;
+        }
+      }
+    }
   } 
   else if (manageAction === 'delete') {
     const data = sheet.getDataRange().getValues();
@@ -718,11 +743,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
   } else if (masterType === 'work') {
     const idxName = headers.indexOf('作業名');
+    const idxCategory = headers.indexOf('カテゴリ');
     const idxPlace = headers.indexOf('表示場所');
     const idxFunc = headers.indexOf('対応看板機能');
     const idxDetail = headers.indexOf('詳細作業名');
     return newData.slice(1).filter(r => idxName >= 0 && r[idxName]).map(r => ({
       name: r[idxName],
+      category: idxCategory >= 0 ? (r[idxCategory] || "圃場作業") : "圃場作業",
       displayPlace: idxPlace >= 0 ? r[idxPlace] : "",
       targetFunction: idxFunc >= 0 ? r[idxFunc] : "",
       detailWorks: idxDetail >= 0 ? r[idxDetail] : ""
