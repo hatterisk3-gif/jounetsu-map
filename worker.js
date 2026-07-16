@@ -60,6 +60,30 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
           }
       };
 
+      window.cancelClockIn = () => {
+          document.getElementById('modal').style.display = 'none';
+          
+          localStorage.removeItem('passionMapClockIn');
+          localStorage.removeItem('passionMapClockInToday');
+          
+          if (window.clockInMarker) {
+              window.clockInMarker.setMap(null);
+              window.clockInMarker = null;
+          }
+          
+          window.syncTrackingUI();
+
+          if (currentUser && typeof callGAS === 'function') {
+              callGAS('saveTrackingData', {
+                  userName: currentUser,
+                  lat: 0,
+                  lng: 0,
+                  type: '出勤取消',
+                  time: Date.now()
+              }).catch(e => console.warn("出勤取消送信エラー", e));
+          }
+      };
+
       window.toggleTracking = () => {
     const btn = document.getElementById('btnTracking');
     if (trackingWatchId !== null) {
@@ -4046,27 +4070,28 @@ window.syncTrackingUI = function() {
 
 window.toggleTracking = () => {
     if (window.passionWatchId !== null || localStorage.getItem('passionMapClockIn')) {
-        localStorage.removeItem('passionMapClockIn');
-        window.syncTrackingUI();
-        if (typeof currentUser !== 'undefined' && currentUser) {
-            if(typeof callGAS === 'function') {
-                callGAS('saveTrackingData', {
-                    userName: currentUser,
-                    lat: '',
-                    lng: '',
-                    type: '退勤'
-                }).catch(e => console.warn(e));
-            }
-            navigator.geolocation.getCurrentPosition((p) => {
-                if(typeof callGAS === 'function') {
-                    callGAS('saveTrackingData', {
-                        userName: currentUser,
-                        lat: p.coords.latitude,
-                        lng: p.coords.longitude,
-                        type: '退勤'
-                    }).catch(e => console.warn(e));
-                }
-            }, (err) => { console.warn(err); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+        // 退勤（トラッキング停止） - ポップアップ表示
+        const now = new Date();
+        const defaultTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        
+        let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 退勤処理</h3>`;
+        html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
+        html += `<input type="time" id="clockOutTime" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px;" value="${defaultTime}">`;
+        html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">`;
+        html += `  <div style="display:flex; gap:10px;">`;
+        html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤する</button>`;
+        html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
+        html += `  </div>`;
+        html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
+        html += `</div>`;
+        
+        const modalBody = document.getElementById('modalBody');
+        const modal = document.getElementById('modal');
+        if (modalBody && modal) {
+            modalBody.innerHTML = html;
+            modal.style.display = 'flex';
+        } else {
+            console.error('Modal elements not found.');
         }
     } else {
         if (!navigator.geolocation) {

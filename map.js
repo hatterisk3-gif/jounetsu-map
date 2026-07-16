@@ -293,9 +293,9 @@ function openManureStatusModal(pData) {
 
     let html = `
         <h3 style="color:#795548; margin-top:0;">🐓 鶏糞散布ステータス変更</h3>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-            <div><strong>圃場名:</strong> ${pData.name}</div>
-            ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="background:#1976D2; color:white; border:none; padding:8px 16px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🧭 ナビを開く</button>` : ''}
+        <div style="margin-bottom:15px;">
+            <div style="margin-bottom:10px;"><strong>圃場名:</strong> ${pData.name}</div>
+            ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🚗 ナビ開始</button>` : ''}
         </div>
         
         <label class="form-label">ステータス</label>
@@ -418,21 +418,68 @@ function addHistory(fieldName, fromStatus, toStatus) {
     localStorage.setItem('manureHistory', JSON.stringify(manureHistory));
 }
 
-function openHistoryModal() {
-    let html = `<h3 style="color:#1A73E8; margin-top:0;">📋 登録履歴</h3>`;
-    if (manureHistory.length === 0) {
-        html += `<p style="color:#999; text-align:center;">まだ履歴がありません。</p>`;
+window.openHistoryModal = function(activeTab = 'history') {
+    const tabs = [
+        { id: 'history', label: '履歴' },
+        { id: 'request', label: '依頼中' },
+        { id: 'accepted', label: '予定' },
+        { id: 'inprogress', label: '途中' },
+        { id: 'completed', label: '完了' },
+        { id: 'canceled', label: '中止' }
+    ];
+
+    let html = `<div style="display:flex; overflow-x:auto; margin-bottom:15px; border-bottom:1px solid #ccc;">`;
+    tabs.forEach(t => {
+        const isActive = activeTab === t.id;
+        const color = isActive ? '#1976D2' : '#666';
+        const border = isActive ? 'border-bottom:3px solid #1976D2;' : 'border-bottom:3px solid transparent;';
+        const weight = isActive ? 'bold' : 'normal';
+        html += `<div onclick="openHistoryModal('${t.id}')" style="padding:10px 12px; cursor:pointer; color:${color}; font-weight:${weight}; ${border} white-space:nowrap; font-size:14px;">${t.label}</div>`;
+    });
+    html += `</div>`;
+
+    if (activeTab === 'history') {
+        if (manureHistory.length === 0) {
+            html += `<p style="color:#999; text-align:center;">まだ履歴がありません。</p>`;
+        } else {
+            html += `<div style="max-height:60vh; overflow-y:auto;">`;
+            manureHistory.forEach(h => {
+                html += `<div style="border-bottom:1px solid #eee; padding:10px 0; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="font-size:12px; color:#999;">${h.date} / ${h.user}</div>
+                        <div style="font-size:14px; font-weight:bold; color:#333;">${h.field}</div>
+                        <div style="font-size:13px;">${h.from} → ${h.to}</div>
+                    </div>
+                    <button onclick="flyToField('${h.field}')" style="background:#1976D2; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; white-space:nowrap; margin-left:10px;">📍 場所を見る</button>
+                </div>`;
+            });
+            html += `</div>`;
+        }
     } else {
-        html += `<div style="max-height:60vh; overflow-y:auto;">`;
-        manureHistory.forEach(h => {
-            html += `<div style="border-bottom:1px solid #eee; padding:10px 0;">
-                <div style="font-size:12px; color:#999;">${h.date} / ${h.user}</div>
-                <div style="font-size:14px; font-weight:bold; color:#1976D2; cursor:pointer; text-decoration:underline;" onclick="flyToField('${h.field}')">${h.field}</div>
-                <div style="font-size:13px;">${h.from} → ${h.to}</div>
-            </div>`;
-        });
-        html += `</div>`;
+        const list = polygons.filter(p => p.pData && p.pData.manure_status === activeTab);
+        if (list.length === 0) {
+            html += `<p style="color:#999; text-align:center;">該当する圃場はありません。</p>`;
+        } else {
+            html += `<div style="max-height:60vh; overflow-y:auto;">`;
+            list.forEach(p => {
+                const pData = p.pData;
+                let subtext = '';
+                if (activeTab === 'request' && pData.manure_deadline) subtext = `期限: ${pData.manure_deadline}`;
+                if (activeTab === 'accepted' && pData.manure_scheduled_date) subtext = `予定日: ${pData.manure_scheduled_date}`;
+                if (activeTab === 'canceled' && pData.manure_cancel_reason) subtext = `理由: ${pData.manure_cancel_reason}`;
+
+                html += `<div style="border-bottom:1px solid #eee; padding:10px 0; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="font-size:14px; font-weight:bold; color:#333;">${pData.name}</div>
+                        ${subtext ? `<div style="font-size:12px; color:#666; margin-top:3px;">${subtext}</div>` : ''}
+                    </div>
+                    <button onclick="flyToField('${pData.name}')" style="background:#1976D2; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; white-space:nowrap; margin-left:10px;">📍 場所を見る</button>
+                </div>`;
+            });
+            html += `</div>`;
+        }
     }
+
     html += `<button onclick="closeModal()" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">閉じる</button>`;
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('modal').style.display = 'flex';
