@@ -4095,58 +4095,99 @@ window.toggleTracking = () => {
         }
     } else {
         if (!navigator.geolocation) {
+            if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') {
+                customAlert("お使いの端末ではGPSがサポートされていません。");
+            }
             return;
         }
         
-        const btn = document.getElementById('btnTracking');
+        // 出勤（トラッキング開始） - ポップアップ表示
         const now = new Date();
-        const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-        const dateStr = now.toLocaleDateString();
+        const defaultTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         
-        const clockInState = { lat: '', lng: '', time: timeStr, active: true };
-        const clockInTodayState = { lat: '', lng: '', time: timeStr, date: dateStr };
+        let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>`;
+        html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
+        html += `<input type="time" id="clockInTime" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px;" value="${defaultTime}">`;
+        html += `<div style="display:flex; gap:10px;">`;
+        html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
+        html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
+        html += `</div>`;
+        
+        const modalBody = document.getElementById('modalBody');
+        const modal = document.getElementById('modal');
+        if (modalBody && modal) {
+            modalBody.innerHTML = html;
+            modal.style.display = 'flex';
+        } else {
+            console.error('Modal elements not found.');
+        }
+    }
+};
+
+window.confirmClockIn = () => {
+    const timeInput = document.getElementById('clockInTime').value;
+    if (!timeInput) {
+        if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') customAlert("時間を入力してください");
+        return;
+    }
+    document.getElementById('modal').style.display = 'none';
+
+    if (!navigator.geolocation) {
+        return;
+    }
+
+    const now = new Date();
+    const [hh, mm] = timeInput.split(':');
+    now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+
+    const timeStr = timeInput;
+    const dateStr = now.toLocaleDateString();
+    
+    const clockInState = { lat: '', lng: '', time: timeStr, active: true };
+    const clockInTodayState = { lat: '', lng: '', time: timeStr, date: dateStr };
+    localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+    localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
+    window.syncTrackingUI();
+
+    navigator.geolocation.getCurrentPosition((p) => {
+        const lat = p.coords.latitude;
+        const lng = p.coords.longitude;
+        clockInState.lat = lat;
+        clockInState.lng = lng;
+        clockInTodayState.lat = lat;
+        clockInTodayState.lng = lng;
         localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
         localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
         window.syncTrackingUI();
 
-        navigator.geolocation.getCurrentPosition((p) => {
-            const lat = p.coords.latitude;
-            const lng = p.coords.longitude;
-            clockInState.lat = lat;
-            clockInState.lng = lng;
-            clockInTodayState.lat = lat;
-            clockInTodayState.lng = lng;
-            localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
-            localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
-            window.syncTrackingUI();
-
-            if (typeof currentUser !== 'undefined' && currentUser) {
-                if(typeof callGAS === 'function') {
-                    callGAS('saveTrackingData', {
-                        userName: currentUser,
-                        lat: lat,
-                        lng: lng,
-                        type: '出勤'
-                    }).catch(e => console.warn(e));
-                }
+        if (typeof currentUser !== 'undefined' && currentUser) {
+            if(typeof callGAS === 'function') {
+                callGAS('saveTrackingData', {
+                    userName: currentUser,
+                    lat: lat,
+                    lng: lng,
+                    type: '出勤',
+                    time: now.getTime()
+                }).catch(e => console.warn(e));
             }
-        }, (err) => {
-            console.warn('GPSエラー', err);
-            if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') {
-                customAlert('GPSの取得に失敗しましたが、出勤時間は記録しました。');
+        }
+    }, (err) => {
+        console.warn('GPSエラー', err);
+        if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') {
+            customAlert('GPSの取得に失敗しましたが、出勤時間は記録しました。');
+        }
+        if (typeof currentUser !== 'undefined' && currentUser) {
+            if(typeof callGAS === 'function') {
+                callGAS('saveTrackingData', {
+                    userName: currentUser,
+                    lat: '',
+                    lng: '',
+                    type: '出勤',
+                    time: now.getTime()
+                }).catch(e => console.warn(e));
             }
-            if (typeof currentUser !== 'undefined' && currentUser) {
-                if(typeof callGAS === 'function') {
-                    callGAS('saveTrackingData', {
-                        userName: currentUser,
-                        lat: '',
-                        lng: '',
-                        type: '出勤'
-                    }).catch(e => console.warn(e));
-                }
-            }
-        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-    }
+        }
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
 };
 
 window.addEventListener('storage', (e) => {
