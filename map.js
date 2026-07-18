@@ -9,6 +9,8 @@ let currentUserName = localStorage.getItem('passionMapUserName') || '';
 let manureHistory = JSON.parse(localStorage.getItem('manureHistory') || '[]');
 let lastWeatherFetchPos = null;
 let isFirstBoundsFit = true;
+let latestUserPos = null;
+let userLocationMarker = null;
 
 // Status colors
 const STATUS_COLORS = {
@@ -208,6 +210,7 @@ function drawPolygons(dataList) {
         const labelMarker = new google.maps.Marker({
             position: center,
             map: map,
+            clickable: false,
             icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
             label: { text: pData.name || '', color: '#fff', fontSize: '11px', fontWeight: 'bold',
                      className: 'polygon-label' }
@@ -215,7 +218,7 @@ function drawPolygons(dataList) {
         labelMarker._manureStatus = manureStatus;
         markers.push(labelMarker);
 
-        poly.addListener('click', () => {
+        const handleFieldClick = () => {
             if (pData.manure_has_pin) {
                 pData.manure_has_pin = false;
                 // ピンを消す
@@ -234,7 +237,8 @@ function drawPolygons(dataList) {
                 callGAS('updatePolygon', { id: pData.id, manureData: JSON.stringify(manureData) }).catch(() => {});
             }
             openManureStatusModal(pData);
-        });
+        };
+        poly.addListener('click', handleFieldClick);
 
         // 通知ピン
         if (pData.manure_has_pin) {
@@ -242,11 +246,13 @@ function drawPolygons(dataList) {
                 position: center,
                 map: map,
                 icon: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
-                title: '状態更新あり'
+                title: '状態更新あり',
+                zIndex: 100
             });
             pinMarker._isPinMarker = true;
             pinMarker._fieldId = pData.id || pData.name;
             pinMarker._manureStatus = manureStatus;
+            pinMarker.addListener('click', handleFieldClick);
             markers.push(pinMarker);
         }
     });
@@ -389,19 +395,52 @@ function closeModal() {
 }
 
 // ====== GPS ======
-function moveToCurrentLocation() {
-    if (navigator.geolocation && map) {
-        const btn = document.getElementById('btnCurrentLocation');
-        if (btn) btn.innerHTML = '...';
-        navigator.geolocation.getCurrentPosition(position => {
-            map.setCenter({ lat: position.coords.latitude, lng: position.coords.longitude });
-            map.setZoom(18);
-            if (btn) btn.innerHTML = '📍';
-        }, () => {
-            alert('現在地を取得できませんでした');
-            if (btn) btn.innerHTML = '📍';
-        }, { enableHighAccuracy: true });
+function showUserLocationMarker(pos) {
+    if (!userLocationMarker) {
+        userLocationMarker = new google.maps.Marker({
+            position: pos,
+            map: map,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#4285F4',
+                fillOpacity: 1,
+                strokeColor: 'white',
+                strokeWeight: 2
+            },
+            zIndex: 999
+        });
+    } else {
+        userLocationMarker.setPosition(pos);
+        userLocationMarker.setMap(map);
     }
+}
+
+function moveToCurrentLocation() {
+    if (!map) return;
+    const btn = document.getElementById('btnCurrentLocation');
+    if (latestUserPos) {
+        map.setCenter(latestUserPos);
+        map.setZoom(18);
+        showUserLocationMarker(latestUserPos);
+        return;
+    }
+    if (!navigator.geolocation) {
+        alert('お使いの端末ではGPSがサポートされていません。');
+        return;
+    }
+    const orgText = btn ? btn.innerHTML : '📍';
+    if (btn) { btn.innerHTML = '⌛'; btn.disabled = true; }
+    navigator.geolocation.getCurrentPosition(position => {
+        latestUserPos = { lat: position.coords.latitude, lng: position.coords.longitude };
+        map.setCenter(latestUserPos);
+        map.setZoom(18);
+        showUserLocationMarker(latestUserPos);
+        if (btn) { btn.innerHTML = orgText; btn.disabled = false; }
+    }, () => {
+        alert('現在地を取得できませんでした。位置情報を許可してください。');
+        if (btn) { btn.innerHTML = orgText; btn.disabled = false; }
+    }, { enableHighAccuracy: true });
 }
 
 // ====== 履歴 ======

@@ -837,7 +837,7 @@ async function fetchWeatherAndUpdateUI() {
             if (!p.polygon) {
               p.polygon = new google.maps.Polygon({ paths: p.coords, map, fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeOpacity: 1, strokeWeight: hasProblem ? 4 : (isActiveForDept ? 3 : 1) });
               const bounds = new google.maps.LatLngBounds(); p.coords.forEach(pt => bounds.extend(pt));
-              p.marker = new google.maps.Marker({ position: bounds.getCenter(), map, visible: map.getZoom() >= 14, label: {text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label'}, icon: {path: google.maps.SymbolPath.CIRCLE, scale: 0} });
+              p.marker = new google.maps.Marker({ position: bounds.getCenter(), map, visible: map.getZoom() >= 14, clickable: false, label: {text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label'}, icon: {path: google.maps.SymbolPath.CIRCLE, scale: 0} });
               google.maps.event.addListener(p.polygon, 'click', (e) => {
                 if (window.isFieldCultivationMode) {
                   handleFieldCultivationClick(p);

@@ -220,6 +220,7 @@ function drawPolygons(dataList) {
         const labelMarker = new google.maps.Marker({
             position: center,
             map: map,
+            clickable: false,
             icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
             label: { text: pData.name || '', color: '#fff', fontSize: '11px', fontWeight: 'bold',
                      className: 'polygon-label' }

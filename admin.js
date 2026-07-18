@@ -689,7 +689,7 @@ function createPolygonObject(p) {
         loadedPolygons[p.id] = { ...p, polygon: poly, marker: m };
     }
 }
-function createLabelMarker(n, c, col, a) { const b = new google.maps.LatLngBounds(); c.forEach(pt => b.extend(pt)); return new google.maps.Marker({ position: b.getCenter(), map, visible: map.getZoom() >= 16, label: { text: `${n} / ${a}a`, color: 'white', fontSize: '13px', fontWeight: 'bold', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 } }); }
+function createLabelMarker(n, c, col, a) { const b = new google.maps.LatLngBounds(); c.forEach(pt => b.extend(pt)); return new google.maps.Marker({ position: b.getCenter(), map, visible: map.getZoom() >= 16, clickable: false, label: { text: `${n} / ${a}a`, color: 'white', fontSize: '13px', fontWeight: 'bold', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 } }); }
 
 window.calcRidges = (coords, dir, widthCm) => {
     if (!dir || !widthCm || widthCm <= 0 || !coords || coords.length < 3) return "--";
