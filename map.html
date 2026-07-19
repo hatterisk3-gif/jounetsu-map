@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>情熱MAP [鶏糞散布用] v1.19</title>
+    <title>情熱MAP [鶏糞散布用] v1.20</title>
     <link rel="apple-touch-icon" href="icon.png">
     <link rel="icon" href="icon.png">
     <link rel="manifest" href="manifest.json">
@@ -33,6 +33,10 @@
 
     <div class="control-panel">
         <div class="control-row">
+            <div class="search-container">
+                <input type="text" id="searchInput" placeholder="🔍 圃場名を検索...">
+                <div id="searchSuggestions"></div>
+            </div>
             <button onclick="location.reload()" class="ctrl-btn" style="background:#fff; color:#333; border:1px solid #ccc;">🔄 更新</button>
             <button onclick="openHistoryModal()" class="ctrl-btn" style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8;">📋 登録履歴</button>
             <button id="btnWeather" onclick="openWeatherModal()" class="ctrl-btn" style="background:#fff; color:#ff9800; border:1px solid #ff9800;">☁️ 天気</button>

@@ -142,6 +142,12 @@ function initMap() {
         fetchWeatherAndUpdateUI();
     });
 
+    map.addListener('click', () => {
+        const sug = document.getElementById('searchSuggestions');
+        if (sug) sug.style.display = 'none';
+    });
+
+    setupSearch();
     fetchTyphoonInfo();
 }
 
@@ -279,6 +285,44 @@ function getPolygonCenter(paths) {
     let bounds = new google.maps.LatLngBounds();
     paths.forEach(p => bounds.extend(p));
     return bounds.getCenter();
+}
+
+function setupSearch() {
+    const input = document.getElementById('searchInput');
+    const sug = document.getElementById('searchSuggestions');
+    if (!input || !sug) return;
+    input.oninput = () => {
+        const val = input.value.toLowerCase().trim();
+        sug.innerHTML = '';
+        if (!val) {
+            sug.style.display = 'none';
+            return;
+        }
+        const matches = polygons.filter(p => p.pData && p.pData.name && p.pData.name.toLowerCase().includes(val));
+        matches.forEach(p => {
+            const d = document.createElement('div');
+            d.className = 'suggestion-item';
+            d.innerHTML = '🌿 ' + p.pData.name;
+            d.onclick = () => {
+                input.value = p.pData.name;
+                sug.style.display = 'none';
+                focusFieldFromSearch(p.pData);
+            };
+            sug.appendChild(d);
+        });
+        sug.style.display = matches.length ? 'block' : 'none';
+    };
+}
+
+function focusFieldFromSearch(pData) {
+    if (!pData || !pData.coords || pData.coords.length === 0) {
+        alert('該当の圃場が見つかりません');
+        return;
+    }
+    const center = getPolygonCenter(pData.coords);
+    map.setZoom(18);
+    map.panTo(center);
+    setTimeout(() => openManureStatusModal(pData), 300);
 }
 
 // ====== 散布ステータスモーダル ======
