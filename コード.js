@@ -706,7 +706,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
     if (masterType === 'work') {
       const keyIdx = headers.indexOf('作業名');
       for (let i = 1; i < data.length; i++) {
-        if (keyIdx >= 0 && data[i][keyIdx] === value.originalName) {
+        if (keyIdx >= 0 && String(data[i][keyIdx]) === String(value.originalName)) {
           const map = {
             '作業名': value.newData.name,
             'カテゴリ': value.newData.category || "圃場作業",
@@ -750,6 +750,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
     }
   }
 
+  SpreadsheetApp.flush();
   const newData = sheet.getDataRange().getValues();
   if (masterType === 'crop') {
     return newData.slice(1).filter(r => r[0]).map(r => ({ name: r[0], density: r[1] || 0 }));

@@ -375,16 +375,19 @@ window.openEditWorkMaster = (encodedStr) => {
     const funcOpts = '<option value="">+ 対応看板機能...</option>' + pdlSignFunctions.map(f => `<option value="${f}" ${f===v.targetFunction?'selected':''}>${f}</option>`).join('');
     const catOpts = pdlWorkCategories.map(c => `<option value="${c}" ${c===v.category?'selected':''}>${c}</option>`).join('');
     
+    const safeName = (v.name || "").replace(/"/g, '&quot;');
+    const safeDetails = (v.detailWorks || "").replace(/"/g, '&quot;');
+
     const html = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h3 style="margin-top:0; color:#2196F3;">✏️ 作業マスタの編集</h3>
-            <input type="hidden" id="edit_work_original_name" value="${v.name}">
+            <input type="hidden" id="edit_work_original_name" value="${safeName}">
             <label class="form-label">カテゴリ</label>
             <select id="edit_work_category" class="form-input">
                 ${catOpts}
             </select>
             <label class="form-label">作業名</label>
-            <input type="text" id="edit_work_name" class="form-input" value="${v.name}">
+            <input type="text" id="edit_work_name" class="form-input" value="${safeName}">
             <label class="form-label">表示場所</label>
             <select id="edit_work_place" class="form-input">
                 <option value="圃場" ${v.displayPlace==='圃場'?'selected':''}>圃場</option>
@@ -392,7 +395,7 @@ window.openEditWorkMaster = (encodedStr) => {
                 <option value="全て" ${v.displayPlace==='全て'?'selected':''}>全て</option>
             </select>
             <label class="form-label">詳細作業 (カンマ区切り)</label>
-            <input type="text" id="edit_work_details" class="form-input" value="${v.detailWorks||''}">
+            <input type="text" id="edit_work_details" class="form-input" value="${safeDetails}">
             <label class="form-label">対応看板機能</label>
             <select id="edit_work_func" class="form-input">${funcOpts}</select>
             <div style="display:flex; gap:10px; margin-top:15px;">
