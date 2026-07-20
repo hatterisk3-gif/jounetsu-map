@@ -466,7 +466,7 @@ function getInitData() {
   if (workSheet) {
     const data = workSheet.getDataRange().getValues();
     if (data.length > 0) {
-      const headers = data[0].map(String); 
+      const headers = data[0].map(h => String(h).trim()); 
       
       const idxName = headers.indexOf('作業名');
       const idxPlace = headers.indexOf('表示場所');
@@ -670,7 +670,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       }
   }
 
-  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(String);
+  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
 
   if (manageAction === 'add') {
     if (masterType === 'crop') {
@@ -752,6 +752,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
 
   SpreadsheetApp.flush();
   const newData = sheet.getDataRange().getValues();
+  const returnHeaders = newData[0].map(h => String(h).trim());
   if (masterType === 'crop') {
     return newData.slice(1).filter(r => r[0]).map(r => ({ name: r[0], density: r[1] || 0 }));
   } else if (masterType === 'tool') {
@@ -759,13 +760,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
   } else if (masterType === 'material') {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
   } else if (masterType === 'work') {
-    const idxName = headers.indexOf('作業名');
-    const idxCat1 = headers.indexOf('カテゴリ');
-    const idxCat2 = headers.indexOf('作業カテゴリ');
+    const idxName = returnHeaders.indexOf('作業名');
+    const idxCat1 = returnHeaders.indexOf('カテゴリ');
+    const idxCat2 = returnHeaders.indexOf('作業カテゴリ');
     const idxCategory = idxCat1 >= 0 ? idxCat1 : idxCat2;
-    const idxPlace = headers.indexOf('表示場所');
-    const idxFunc = headers.indexOf('対応看板機能');
-    const idxDetail = headers.indexOf('詳細作業名');
+    const idxPlace = returnHeaders.indexOf('表示場所');
+    const idxFunc = returnHeaders.indexOf('対応看板機能');
+    const idxDetail = returnHeaders.indexOf('詳細作業名');
     return newData.slice(1).filter(r => idxName >= 0 && r[idxName]).map(r => ({
       name: r[idxName],
       category: idxCategory >= 0 ? (r[idxCategory] || "圃場作業") : "圃場作業",
@@ -3118,7 +3119,8 @@ function saveCroptypeDB(params) {
       sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)', 'メーカー']);
     } else {
       // 既存シートに「特性(タグ)」「メーカー」カラムがない場合は追加
-      let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const rawHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const headers = rawHeaders.map(h => h ? String(h).trim() : "");
       if (headers.indexOf('特性(タグ)') === -1) {
         sheet.getRange(1, headers.length + 1).setValue('特性(タグ)');
         headers.push('特性(タグ)');
