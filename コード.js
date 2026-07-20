@@ -477,7 +477,9 @@ function getInitData() {
       const idxMaintenance = headers.indexOf('整備内容'); 
       const idxCat1 = headers.indexOf('カテゴリ');
       const idxCat2 = headers.indexOf('作業カテゴリ');
-      const idxCategory = idxCat1 >= 0 ? idxCat1 : idxCat2;
+      const idxCat3 = headers.indexOf('カテゴリー');
+      const idxCat4 = headers.indexOf('作業カテゴリー');
+      const idxCategory = idxCat1 >= 0 ? idxCat1 : (idxCat2 >= 0 ? idxCat2 : (idxCat3 >= 0 ? idxCat3 : idxCat4));
 
       for (let i = 1; i < data.length; i++) {
         let wName = idxName >= 0 ? data[i][idxName] : "";
@@ -687,6 +689,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
         '作業名': value.name,
         'カテゴリ': value.category || "圃場作業",
         '作業カテゴリ': value.category || "圃場作業",
+        'カテゴリー': value.category || "圃場作業",
+        '作業カテゴリー': value.category || "圃場作業",
         '表示場所': value.displayPlace || "圃場",
         '対応看板機能': value.targetFunction || "",
         '詳細作業名': value.detailWorks || ""
@@ -706,11 +710,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
     if (masterType === 'work') {
       const keyIdx = headers.indexOf('作業名');
       for (let i = 1; i < data.length; i++) {
-        if (keyIdx >= 0 && String(data[i][keyIdx]) === String(value.originalName)) {
+        if (keyIdx >= 0 && String(data[i][keyIdx]).trim() === String(value.originalName).trim()) {
           const map = {
             '作業名': value.newData.name,
             'カテゴリ': value.newData.category || "圃場作業",
             '作業カテゴリ': value.newData.category || "圃場作業",
+            'カテゴリー': value.newData.category || "圃場作業",
+            '作業カテゴリー': value.newData.category || "圃場作業",
             '表示場所': value.newData.displayPlace || "圃場",
             '対応看板機能': value.newData.targetFunction || "",
             '詳細作業名': value.newData.detailWorks || ""
@@ -763,7 +769,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
     const idxName = returnHeaders.indexOf('作業名');
     const idxCat1 = returnHeaders.indexOf('カテゴリ');
     const idxCat2 = returnHeaders.indexOf('作業カテゴリ');
-    const idxCategory = idxCat1 >= 0 ? idxCat1 : idxCat2;
+    const idxCat3 = returnHeaders.indexOf('カテゴリー');
+    const idxCat4 = returnHeaders.indexOf('作業カテゴリー');
+    const idxCategory = idxCat1 >= 0 ? idxCat1 : (idxCat2 >= 0 ? idxCat2 : (idxCat3 >= 0 ? idxCat3 : idxCat4));
     const idxPlace = returnHeaders.indexOf('表示場所');
     const idxFunc = returnHeaders.indexOf('対応看板機能');
     const idxDetail = returnHeaders.indexOf('詳細作業名');
