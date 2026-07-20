@@ -762,9 +762,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
 }
 
-/** 作業マスタのカテゴリ列を解決（実シートは「担当部署」） */
+/** 作業マスタのカテゴリ列を解決（専用の「カテゴリ」列。担当部署列とは別物） */
 function findWorkCategoryColumnIndex_(headers) {
-  const candidates = ['担当部署', 'カテゴリ', '作業カテゴリ', 'カテゴリー', '作業カテゴリー'];
+  const candidates = ['カテゴリ', '作業カテゴリ', 'カテゴリー', '作業カテゴリー'];
   for (let i = 0; i < candidates.length; i++) {
     const idx = headers.indexOf(candidates[i]);
     if (idx >= 0) return idx;
@@ -772,12 +772,11 @@ function findWorkCategoryColumnIndex_(headers) {
   return -1;
 }
 
-/** 作業マスタ追加/編集用の列名→値マップ */
+/** 作業マスタ追加/編集用の列名→値マップ（担当部署列は部署用のため変更しない） */
 function buildWorkMasterColumnMap_(value) {
   const category = value.category || "圃場作業";
   return {
     '作業名': value.name,
-    '担当部署': category,
     'カテゴリ': category,
     '作業カテゴリ': category,
     'カテゴリー': category,
