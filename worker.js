@@ -12,30 +12,33 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let lastTrackingTime = 0;
 
       window.confirmClockOut = () => {
+          const dateInput = document.getElementById('clockOutDate') ? document.getElementById('clockOutDate').value : '';
           const timeInput = document.getElementById('clockOutTime').value;
-          if (!timeInput) {
-              if (window.customAlert) customAlert("時間を入力してください");
+          if (!dateInput || !timeInput) {
+              if (window.customAlert) customAlert("日付と時間を入力してください");
               return;
           }
           document.getElementById('modal').style.display = 'none';
 
-          navigator.geolocation.clearWatch(trackingWatchId);
-          trackingWatchId = null;
-          const btn = document.getElementById('btnTracking');
-          btn.style.backgroundColor = 'white';
-          btn.style.color = '#4CAF50';
-          btn.innerHTML = '🏃‍♂️';
-          
+          if (window.passionWatchId !== null) {
+              navigator.geolocation.clearWatch(window.passionWatchId);
+              window.passionWatchId = null;
+          }
+          if (typeof trackingWatchId !== 'undefined' && trackingWatchId !== null) {
+              navigator.geolocation.clearWatch(trackingWatchId);
+              trackingWatchId = null;
+          }
+
           localStorage.removeItem('passionMapClockIn');
           if (window.clockInMarker) {
               window.clockInMarker.setMap(null);
               window.clockInMarker = null;
           }
+          if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
 
-          // Combine today's date with timeInput
-          const now = new Date();
-          const [hh, mm] = timeInput.split(':');
-          now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+          const [y, mo, d] = dateInput.split('-').map(Number);
+          const [hh, mm] = timeInput.split(':').map(Number);
+          const clockAt = new Date(y, mo - 1, d, hh, mm, 0, 0);
 
           if (currentUser) {
               navigator.geolocation.getCurrentPosition((p) => {
@@ -44,17 +47,16 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                       lat: p.coords.latitude,
                       lng: p.coords.longitude,
                       type: '退勤',
-                      time: now.getTime()
+                      time: clockAt.getTime()
                   }).catch(e => console.warn("退勤送信エラー", e));
               }, (err) => {
                   console.warn("GPSエラー: 退勤時");
-                  // Fallback if GPS fails
                   callGAS('saveTrackingData', {
                       userName: currentUser,
                       lat: 0,
                       lng: 0,
                       type: '退勤',
-                      time: now.getTime()
+                      time: clockAt.getTime()
                   }).catch(e => console.warn("退勤送信エラー", e));
               }, { enableHighAccuracy: true });
           }
@@ -4199,9 +4201,12 @@ window.toggleTracking = () => {
     if (window.passionWatchId !== null || localStorage.getItem('passionMapClockIn')) {
         // 退勤（トラッキング停止） - ポップアップ表示
         const now = new Date();
+        const defaultDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const defaultTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         
         let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 退勤処理</h3>`;
+        html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
+        html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
         html += `<input type="time" id="clockOutTime" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px;" value="${defaultTime}">`;
         html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">`;
@@ -4230,9 +4235,12 @@ window.toggleTracking = () => {
         
         // 出勤（トラッキング開始） - ポップアップ表示
         const now = new Date();
+        const defaultDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const defaultTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         
         let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>`;
+        html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
+        html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
         html += `<input type="time" id="clockInTime" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px;" value="${defaultTime}">`;
         html += `<div style="display:flex; gap:10px;">`;
@@ -4252,9 +4260,10 @@ window.toggleTracking = () => {
 };
 
 window.confirmClockIn = () => {
+    const dateInput = document.getElementById('clockInDate') ? document.getElementById('clockInDate').value : '';
     const timeInput = document.getElementById('clockInTime').value;
-    if (!timeInput) {
-        if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') customAlert("時間を入力してください");
+    if (!dateInput || !timeInput) {
+        if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') customAlert("日付と時間を入力してください");
         return;
     }
     document.getElementById('modal').style.display = 'none';
@@ -4263,12 +4272,12 @@ window.confirmClockIn = () => {
         return;
     }
 
-    const now = new Date();
-    const [hh, mm] = timeInput.split(':');
-    now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+    const [y, mo, d] = dateInput.split('-').map(Number);
+    const [hh, mm] = timeInput.split(':').map(Number);
+    const clockAt = new Date(y, mo - 1, d, hh, mm, 0, 0);
 
     const timeStr = timeInput;
-    const dateStr = now.toLocaleDateString();
+    const dateStr = clockAt.toLocaleDateString();
     
     const clockInState = { lat: '', lng: '', time: timeStr, active: true };
     const clockInTodayState = { lat: '', lng: '', time: timeStr, date: dateStr };
@@ -4294,7 +4303,7 @@ window.confirmClockIn = () => {
                     lat: lat,
                     lng: lng,
                     type: '出勤',
-                    time: now.getTime()
+                    time: clockAt.getTime()
                 }).catch(e => console.warn(e));
             }
         }
@@ -4310,7 +4319,7 @@ window.confirmClockIn = () => {
                     lat: '',
                     lng: '',
                     type: '出勤',
-                    time: now.getTime()
+                    time: clockAt.getTime()
                 }).catch(e => console.warn(e));
             }
         }
