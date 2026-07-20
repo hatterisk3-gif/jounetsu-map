@@ -241,12 +241,16 @@ function startLocationWatch() {
 }
 
 function loadInitData() {
+    const cached = localStorage.getItem('pMapAdminInitData');
+    if (cached) {
+        try { renderInitData(JSON.parse(cached)); } catch(e){}
+    }
     callGAS('getInitData').then(data => {
         const newDataStr = JSON.stringify(data);
-        const oldDataStr = localStorage.getItem('pMapAdminInitData');
-        if (newDataStr === oldDataStr) return;
-        localStorage.setItem('pMapAdminInitData', newDataStr);
-        renderInitData(data);
+        if (newDataStr !== cached) {
+            localStorage.setItem('pMapAdminInitData', newDataStr);
+            renderInitData(data);
+        }
     }).catch(e => console.log("InitData Error:", e));
 }
 

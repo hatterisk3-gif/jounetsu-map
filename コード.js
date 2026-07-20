@@ -475,7 +475,9 @@ function getInitData() {
       const idxStatus = headers.indexOf('進捗状況');
       const idxContainer = headers.indexOf('コンテナ名');
       const idxMaintenance = headers.indexOf('整備内容'); 
-      const idxCategory = headers.indexOf('作業カテゴリ');
+      const idxCat1 = headers.indexOf('カテゴリ');
+      const idxCat2 = headers.indexOf('作業カテゴリ');
+      const idxCategory = idxCat1 >= 0 ? idxCat1 : idxCat2;
 
       for (let i = 1; i < data.length; i++) {
         let wName = idxName >= 0 ? data[i][idxName] : "";
@@ -684,6 +686,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const map = {
         '作業名': value.name,
         'カテゴリ': value.category || "圃場作業",
+        '作業カテゴリ': value.category || "圃場作業",
         '表示場所': value.displayPlace || "圃場",
         '対応看板機能': value.targetFunction || "",
         '詳細作業名': value.detailWorks || ""
@@ -707,6 +710,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
           const map = {
             '作業名': value.newData.name,
             'カテゴリ': value.newData.category || "圃場作業",
+            '作業カテゴリ': value.newData.category || "圃場作業",
             '表示場所': value.newData.displayPlace || "圃場",
             '対応看板機能': value.newData.targetFunction || "",
             '詳細作業名': value.newData.detailWorks || ""
@@ -755,7 +759,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
   } else if (masterType === 'work') {
     const idxName = headers.indexOf('作業名');
-    const idxCategory = headers.indexOf('カテゴリ');
+    const idxCat1 = headers.indexOf('カテゴリ');
+    const idxCat2 = headers.indexOf('作業カテゴリ');
+    const idxCategory = idxCat1 >= 0 ? idxCat1 : idxCat2;
     const idxPlace = headers.indexOf('表示場所');
     const idxFunc = headers.indexOf('対応看板機能');
     const idxDetail = headers.indexOf('詳細作業名');
