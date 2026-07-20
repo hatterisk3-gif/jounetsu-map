@@ -1638,16 +1638,19 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!p) return;
           let allWorks = p.isMarker 
               ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) 
-              : pdlWorkMaster.filter(w => w.displayPlace === '圃場');
+              : pdlWorkMaster.filter(w => w.displayPlace === '圃場' || w.displayPlace === '全て');
           const filteredWorks = allWorks.filter(w => (w.category || '圃場作業') === category);
           
-          let allChipsHTML = '<div style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">' + 
-                filteredWorks.map(w => `<button type="button" class="work-chip" data-recent="false" data-wname="${w.name}" onclick="selectWorkChip('${w.name}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`).join('') + '</div>';
+          let allChipsHTML = '<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">' + 
+                filteredWorks.map(w => `<button type="button" class="work-chip all-work-chip" data-recent="false" data-category="${w.category || '圃場作業'}" data-wname="${w.name}" onclick="selectWorkChip('${w.name}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`).join('') + '</div>';
           
           let wNames = '<option value="">選択してください</option>' + filteredWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
           
-          const container = document.getElementById('work_chips_container');
-          if (container) container.innerHTML = allChipsHTML;
+          const container = document.getElementById('all_chips_container') || document.getElementById('work_chips_container');
+          if (container) {
+              if (container.id === 'all_chips_container') container.outerHTML = allChipsHTML;
+              else container.innerHTML = allChipsHTML;
+          }
           const select = document.getElementById('rec_work_name');
           if (select) select.innerHTML = wNames;
       };
@@ -1896,7 +1899,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           let ridgeUI = p.isMarker ? '' : `<div style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #80deea;"><label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗 (伝達事項)</label><div style="font-size:12px; color:#00695c; margin-bottom:8px;">📌 現在の畝数: <b>${currentUneCount}</b></div><div style="display:flex; gap:10px;"><div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" id="rec_worked_ridges" class="form-input" placeholder="例: 1-5" style="margin-bottom:0;"></div><div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" id="rec_next_ridge" class="form-input" placeholder="例: 6" value="${lastNextRidge}" style="margin-bottom:0;"></div></div></div>`;
           
-          let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster.filter(w => w.displayPlace === '圃場');
+          let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster.filter(w => w.displayPlace === '圃場' || w.displayPlace === '全て');
           
           let recentWorks = [];
           for (let id in loadedPolygons) {
@@ -1913,12 +1916,16 @@ function createSignboardMarker(name, pos, icon, id) {
           
           let recentChipsHTML = '';
           if (uniqueRecent.length > 0) {
-              recentChipsHTML = `<div style="margin-bottom:10px;"><div style="font-size:11px; color:#888; margin-bottom:5px;">🕒 最近使った作業</div><div style="display:flex; flex-wrap:wrap; gap:8px;">` + 
-                  uniqueRecent.map(wName => `<button type="button" class="work-chip" data-recent="true" data-wname="${wName}" onclick="selectWorkChip('${wName}')" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>`).join('') + `</div></div>`;
+              recentChipsHTML = `<div id="recent_chips_container" style="margin-bottom:10px;"><div style="font-size:11px; color:#888; margin-bottom:5px;">🕒 最近使った作業</div><div style="display:flex; flex-wrap:wrap; gap:8px;">` + 
+                  uniqueRecent.map(wName => {
+                      const wObj = pdlWorkMaster.find(w => w.name === wName);
+                      const wCat = (wObj && wObj.category) ? wObj.category : '圃場作業';
+                      return `<button type="button" class="work-chip recent-work-chip" data-recent="true" data-category="${wCat}" data-wname="${wName}" onclick="selectWorkChip('${wName}')" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>`;
+                  }).join('') + `</div></div>`;
           }
 
-          let allChipsHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">` + 
-              availableWorks.map(w => `<button type="button" class="work-chip" data-recent="false" data-wname="${w.name}" onclick="selectWorkChip('${w.name}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`).join('') + `</div>`;
+          let allChipsHTML = `<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">` + 
+              availableWorks.map(w => `<button type="button" class="work-chip all-work-chip" data-recent="false" data-category="${w.category || '圃場作業'}" data-wname="${w.name}" onclick="selectWorkChip('${w.name}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`).join('') + `</div>`;
 
           let wNames = '<option value="">選択してください</option>' + availableWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
           let wStats = '<option value="">選択してください</option>' + pdlWorkStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -4346,22 +4353,28 @@ window.filterWorkChips = function() {
     let recentVisible = 0;
     let allVisible = 0;
     chips.forEach(c => {
-        if (cat === 'すべて' || c.getAttribute('data-category') === cat) {
+        let chipCat = c.getAttribute('data-category');
+        if (!chipCat) {
+            const wName = c.getAttribute('data-wname');
+            const wObj = (typeof pdlWorkMaster !== 'undefined') ? pdlWorkMaster.find(w => w.name === wName) : null;
+            chipCat = (wObj && wObj.category) ? wObj.category : '圃場作業';
+        }
+        if (cat === 'すべて' || chipCat === cat) {
             c.style.display = 'inline-block';
-            if (c.classList.contains('recent-work-chip')) recentVisible++;
-            if (c.classList.contains('all-work-chip')) allVisible++;
+            if (c.classList.contains('recent-work-chip') || c.getAttribute('data-recent') === 'true') recentVisible++;
+            if (c.classList.contains('all-work-chip') || c.getAttribute('data-recent') === 'false') allVisible++;
         } else {
             c.style.display = 'none';
         }
     });
     const recentContainer = document.getElementById('recent_chips_container');
     if (recentContainer) {
-        recentContainer.style.display = (recentVisible > 0) ? 'block' : 'none';
+        recentContainer.style.display = (cat === 'すべて' || recentVisible > 0) ? 'block' : 'none';
     }
     const allContainer = document.getElementById('all_chips_container');
     if (allContainer) {
-        if (allVisible === 0) {
-            if(!document.getElementById('no_work_msg')) {
+        if (allVisible === 0 && cat !== 'すべて') {
+            if (!document.getElementById('no_work_msg')) {
                 const msg = document.createElement('div');
                 msg.id = 'no_work_msg';
                 msg.style.cssText = "color:#888; font-size:12px; width:100%; text-align:center; margin-top:10px;";
@@ -4371,7 +4384,21 @@ window.filterWorkChips = function() {
                 document.getElementById('no_work_msg').style.display = 'block';
             }
         } else {
-            if(document.getElementById('no_work_msg')) document.getElementById('no_work_msg').style.display = 'none';
+            if (document.getElementById('no_work_msg')) document.getElementById('no_work_msg').style.display = 'none';
+        }
+    }
+    // 非表示の select もカテゴリに合わせて同期
+    const select = document.getElementById('rec_work_name');
+    if (select && typeof pdlWorkMaster !== 'undefined' && typeof activePolyId !== 'undefined') {
+        const p = loadedPolygons[activePolyId];
+        if (p) {
+            let allWorks = p.isMarker
+                ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板')))
+                : pdlWorkMaster.filter(w => w.displayPlace === '圃場' || w.displayPlace === '全て');
+            const filtered = cat === 'すべて' ? allWorks : allWorks.filter(w => (w.category || '圃場作業') === cat);
+            const current = select.value;
+            select.innerHTML = '<option value="">選択してください</option>' + filtered.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
+            if (filtered.some(w => w.name === current)) select.value = current;
         }
     }
 };
