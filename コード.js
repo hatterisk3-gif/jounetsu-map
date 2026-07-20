@@ -475,11 +475,8 @@ function getInitData() {
       const idxStatus = headers.indexOf('進捗状況');
       const idxContainer = headers.indexOf('コンテナ名');
       const idxMaintenance = headers.indexOf('整備内容'); 
-      const idxCat1 = headers.indexOf('カテゴリ');
-      const idxCat2 = headers.indexOf('作業カテゴリ');
-      const idxCat3 = headers.indexOf('カテゴリー');
-      const idxCat4 = headers.indexOf('作業カテゴリー');
-      const idxCategory = idxCat1 >= 0 ? idxCat1 : (idxCat2 >= 0 ? idxCat2 : (idxCat3 >= 0 ? idxCat3 : idxCat4));
+      // 実シートの列名は「担当部署」。過去互換でカテゴリ系ヘッダーも許容する
+      const idxCategory = findWorkCategoryColumnIndex_(headers);
 
       for (let i = 1; i < data.length; i++) {
         let wName = idxName >= 0 ? data[i][idxName] : "";
@@ -685,16 +682,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       sheet.appendRow([newId, value.name, value.workCategory, value.size, value.unit, "", "", "", "", "", "", userName]);
     } else if (masterType === 'work') {
       const newRow = new Array(headers.length).fill("");
-      const map = {
-        '作業名': value.name,
-        'カテゴリ': value.category || "圃場作業",
-        '作業カテゴリ': value.category || "圃場作業",
-        'カテゴリー': value.category || "圃場作業",
-        '作業カテゴリー': value.category || "圃場作業",
-        '表示場所': value.displayPlace || "圃場",
-        '対応看板機能': value.targetFunction || "",
-        '詳細作業名': value.detailWorks || ""
-      };
+      const map = buildWorkMasterColumnMap_(value);
       for(let i=0; i<headers.length; i++) {
         if(map[headers[i]] !== undefined) newRow[i] = map[headers[i]];
       }
@@ -711,16 +699,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const keyIdx = headers.indexOf('作業名');
       for (let i = 1; i < data.length; i++) {
         if (keyIdx >= 0 && String(data[i][keyIdx]).trim() === String(value.originalName).trim()) {
-          const map = {
-            '作業名': value.newData.name,
-            'カテゴリ': value.newData.category || "圃場作業",
-            '作業カテゴリ': value.newData.category || "圃場作業",
-            'カテゴリー': value.newData.category || "圃場作業",
-            '作業カテゴリー': value.newData.category || "圃場作業",
-            '表示場所': value.newData.displayPlace || "圃場",
-            '対応看板機能': value.newData.targetFunction || "",
-            '詳細作業名': value.newData.detailWorks || ""
-          };
+          const map = buildWorkMasterColumnMap_(value.newData);
           for(let col = 0; col < headers.length; col++) {
             if(map[headers[col]] !== undefined) {
               sheet.getRange(i + 1, col + 1).setValue(map[headers[col]]);
@@ -767,11 +746,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
   } else if (masterType === 'work') {
     const idxName = returnHeaders.indexOf('作業名');
-    const idxCat1 = returnHeaders.indexOf('カテゴリ');
-    const idxCat2 = returnHeaders.indexOf('作業カテゴリ');
-    const idxCat3 = returnHeaders.indexOf('カテゴリー');
-    const idxCat4 = returnHeaders.indexOf('作業カテゴリー');
-    const idxCategory = idxCat1 >= 0 ? idxCat1 : (idxCat2 >= 0 ? idxCat2 : (idxCat3 >= 0 ? idxCat3 : idxCat4));
+    const idxCategory = findWorkCategoryColumnIndex_(returnHeaders);
     const idxPlace = returnHeaders.indexOf('表示場所');
     const idxFunc = returnHeaders.indexOf('対応看板機能');
     const idxDetail = returnHeaders.indexOf('詳細作業名');
@@ -785,6 +760,32 @@ function manageMasterData(masterType, manageAction, value, userName) {
   } else {
     return newData.slice(1).map(r=>r[0]).filter(String);
   }
+}
+
+/** 作業マスタのカテゴリ列を解決（実シートは「担当部署」） */
+function findWorkCategoryColumnIndex_(headers) {
+  const candidates = ['担当部署', 'カテゴリ', '作業カテゴリ', 'カテゴリー', '作業カテゴリー'];
+  for (let i = 0; i < candidates.length; i++) {
+    const idx = headers.indexOf(candidates[i]);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+/** 作業マスタ追加/編集用の列名→値マップ */
+function buildWorkMasterColumnMap_(value) {
+  const category = value.category || "圃場作業";
+  return {
+    '作業名': value.name,
+    '担当部署': category,
+    'カテゴリ': category,
+    '作業カテゴリ': category,
+    'カテゴリー': category,
+    '作業カテゴリー': category,
+    '表示場所': value.displayPlace || "圃場",
+    '対応看板機能': value.targetFunction || "",
+    '詳細作業名': value.detailWorks || ""
+  };
 }
 // ==========================================
 // 問題報告の保存（K列に看板/圃場のIDを記録するように変更）

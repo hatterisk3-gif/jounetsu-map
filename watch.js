@@ -123,7 +123,7 @@ async function watch() {
             summaryForLine = `✅ ${pendingImages.length}枚目の画像を基地にセットしました！\n続けて画像を送るか、テキストで指示をお願いします。`;
           }
         }
-        // 💬 【通常/復元モード】テキスト指示の処理
+        // 💬 テキスト指示の処理
         else {
           const cleanCommand = rawCommand.replace(/\r?\n/g, '、').replace(/"/g, '”');
           let imageContext = "";
@@ -136,23 +136,8 @@ async function watch() {
             pendingImages = []; // 基地のメモリをリセット
           }
 
-          // ⏪ 【復元モード】「元に戻して」コマンド
-          if (cleanCommand.includes("元に戻") || cleanCommand.includes("前に戻") || cleanCommand.includes("ロールバック")) {
-            console.log('⏪ 「元に戻して」コマンドを検知！直前の状態へ巻き戻します...');
-            try {
-              execSync('git reset --hard HEAD~1', { stdio: 'inherit' });
-              console.log('☁️ claspで過去の状態をGASへ反映中...');
-              try { execSync('clasp push -f', { stdio: 'inherit' }); } catch (e) { }
-              console.log('🐙 GitHubの歴史を巻き戻し中...');
-              try { execSync('git push -f', { stdio: 'inherit' }); } catch (e) { }
-              summaryForLine = "⏪ 【復元完了】直前の修正をすべて取り消し、GASとGitHubを1つ前の安全な状態に完全に巻き戻しました！";
-            } catch (e) {
-              summaryForLine = "❌ 復元処理に失敗しました。ターミナルを確認してください。";
-              console.error(e);
-            }
-          }
-          // 💬 【通常モード】AIによる自動修正・自己修復ルート
-          else {
+          // 💬 AIによる自動修正・自己修復ルート
+          {
             const modifyPrompt = `${imageContext}${cleanCommand}。
 【最後に行うことのリスト】
  1.修正したら、個所が正しく動作するか自律的にテスト・再修正してください。
