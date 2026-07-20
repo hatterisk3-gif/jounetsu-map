@@ -681,6 +681,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const newId = "MAT-" + Utilities.getUuid().substring(0,6);
       sheet.appendRow([newId, value.name, value.workCategory, value.size, value.unit, "", "", "", "", "", "", userName]);
     } else if (masterType === 'work') {
+      const workName = String(value.name || "").trim();
+      if (workMasterNameExists_(sheet, headers, workName)) {
+        throw new Error(`作業名「${workName}」は既に登録されています`);
+      }
       const newRow = new Array(headers.length).fill("");
       const map = buildWorkMasterColumnMap_(value);
       for(let i=0; i<headers.length; i++) {
@@ -697,8 +701,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
     const data = sheet.getDataRange().getValues();
     if (masterType === 'work') {
       const keyIdx = headers.indexOf('作業名');
+      const originalName = String(value.originalName || "").trim();
+      const newName = String((value.newData && value.newData.name) || "").trim();
+      if (newName && newName !== originalName && workMasterNameExists_(sheet, headers, newName, originalName)) {
+        throw new Error(`作業名「${newName}」は既に登録されています`);
+      }
       for (let i = 1; i < data.length; i++) {
-        if (keyIdx >= 0 && String(data[i][keyIdx]).trim() === String(value.originalName).trim()) {
+        if (keyIdx >= 0 && String(data[i][keyIdx]).trim() === originalName) {
           const map = buildWorkMasterColumnMap_(value.newData);
           for(let col = 0; col < headers.length; col++) {
             if(map[headers[col]] !== undefined) {
@@ -762,6 +771,23 @@ function manageMasterData(masterType, manageAction, value, userName) {
   } else {
     return newData.slice(1).map(r=>r[0]).filter(String);
   }
+}
+
+/** 作業マスタに同名の作業名があるか（excludeName は編集時の自分自身を除外） */
+function workMasterNameExists_(sheet, headers, name, excludeName) {
+  const keyIdx = headers.indexOf('作業名');
+  if (keyIdx < 0) return false;
+  const target = String(name || "").trim();
+  if (!target) return false;
+  const exclude = excludeName != null ? String(excludeName).trim() : null;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    const n = String(data[i][keyIdx] || "").trim();
+    if (!n) continue;
+    if (exclude !== null && n === exclude) continue;
+    if (n === target) return true;
+  }
+  return false;
 }
 
 /** 作業マスタのカテゴリ列を解決（専用の「カテゴリ」列。担当部署列とは別物） */

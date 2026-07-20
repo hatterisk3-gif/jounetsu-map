@@ -142,9 +142,13 @@ async function callGAS(action, params = {}, retries = 2) {
             return j.data;
         } catch (err) {
             lastError = err;
-            if (i < retries) {
+            const msg = String(err && err.message || "");
+            // 業務エラー（重複登録など）はリトライしない
+            if (i < retries && !msg.includes("既に登録") && !msg.includes("ログインセッション")) {
                 console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${retries})`, err);
                 await new Promise(r => setTimeout(r, 1500));
+            } else if (msg.includes("既に登録") || msg.includes("ログインセッション")) {
+                break;
             }
         }
     }
@@ -421,13 +425,25 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'workCategory') { const name = document.getElementById('add_workCategory_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } value = name; }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'material') { const name = document.getElementById('add_mat_name').value.trim(); if (!name) { customAlert("資材名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_mat_cat').value.trim(), size: document.getElementById('add_mat_size').value.trim(), unit: document.getElementById('add_mat_unit').value.trim() }; }
-        else if (type === 'work') { const name = document.getElementById('add_work_name').value.trim(); if (!name) { customAlert("作業名を入力してください"); return; } value = { name: name, category: document.getElementById('add_work_category').value, displayPlace: document.getElementById('add_work_place').value, targetFunction: document.getElementById('add_work_func').value.trim(), detailWorks: document.getElementById('add_work_details').value.trim() }; }
+        else if (type === 'work') {
+            const name = document.getElementById('add_work_name').value.trim();
+            if (!name) { customAlert("作業名を入力してください"); return; }
+            if (pdlWorkMaster.some(w => String(w.name || "").trim() === name)) {
+                customAlert(`作業名「${name}」は既に登録されています`);
+                return;
+            }
+            value = { name: name, category: document.getElementById('add_work_category').value, displayPlace: document.getElementById('add_work_place').value, targetFunction: document.getElementById('add_work_func').value.trim(), detailWorks: document.getElementById('add_work_details').value.trim() };
+        }
     } else if (act === 'edit') {
         if (!await customConfirm(`更新しますか？`)) return;
         if (type === 'work') {
             const originalName = document.getElementById('edit_work_original_name').value;
             const newName = document.getElementById('edit_work_name').value.trim();
             if (!newName) { customAlert("作業名を入力してください"); return; }
+            if (newName !== String(originalName || "").trim() && pdlWorkMaster.some(w => String(w.name || "").trim() === newName)) {
+                customAlert(`作業名「${newName}」は既に登録されています`);
+                return;
+            }
             value = {
                 originalName: originalName,
                 newData: {
@@ -448,7 +464,7 @@ window.execMaster = async (type, act, val) => {
         localStorage.removeItem('pMapAdminInitData');
         renderMasterSection();
         customAlert(act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！"));
-    } catch (e) { customAlert("エラーが発生しました。再度お試しください。"); renderMasterSection(); }
+    } catch (e) { customAlert(e.message || "エラーが発生しました。再度お試しください。"); renderMasterSection(); }
 };
 
 function showToukiInfo(id) {

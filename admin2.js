@@ -368,7 +368,15 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'location') { const name = document.getElementById('add_location_name').value.trim(); if (!name) { customAlert("拠点名を入力してください"); return; } value = name; }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'material') { const name = document.getElementById('add_mat_name').value.trim(); if (!name) { customAlert("資材名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_mat_cat').value.trim(), size: document.getElementById('add_mat_size').value.trim(), unit: document.getElementById('add_mat_unit').value.trim() }; }
-        else if (type === 'work') { const name = document.getElementById('add_work_name').value.trim(); if (!name) { customAlert("作業名を入力してください"); return; } value = { name: name, category: document.getElementById('add_work_category').value, displayPlace: document.getElementById('add_work_place').value, targetFunction: document.getElementById('add_work_func').value.trim(), detailWorks: document.getElementById('add_work_details').value.trim() }; }
+        else if (type === 'work') {
+            const name = document.getElementById('add_work_name').value.trim();
+            if (!name) { customAlert("作業名を入力してください"); return; }
+            if (pdlWorkMaster.some(w => String(w.name || "").trim() === name)) {
+                customAlert(`作業名「${name}」は既に登録されています`);
+                return;
+            }
+            value = { name: name, category: document.getElementById('add_work_category').value, displayPlace: document.getElementById('add_work_place').value, targetFunction: document.getElementById('add_work_func').value.trim(), detailWorks: document.getElementById('add_work_details').value.trim() };
+        }
     } else { if (!await customConfirm(`削除しますか？`)) return; value = { id: val }; }
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
     try {
@@ -378,7 +386,7 @@ window.execMaster = async (type, act, val) => {
         localStorage.removeItem('pMapAdminInitData');
         renderMasterSection();
         customAlert(act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！"));
-    } catch (e) { customAlert("エラーが発生しました。再度お試しください。"); renderMasterSection(); }
+    } catch (e) { customAlert(e.message || "エラーが発生しました。再度お試しください。"); renderMasterSection(); }
 };
 
 function showToukiInfo(id) {
