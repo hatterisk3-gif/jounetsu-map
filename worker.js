@@ -1972,9 +1972,14 @@ function createSignboardMarker(name, pos, icon, id) {
           html = `${targetSection}<label class="form-label">🌱 作物名</label><div style="display:flex; gap:5px; margin-bottom:15px;"><select id="rec_crop" class="form-input" style="margin-bottom:0; flex-grow:1;" onchange="handleCropSelection()">${crops}</select><button onclick="addNewCrop()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">＋</button></div><div style="background:#e8f4fd; padding:10px; border-radius:8px; border:1px solid #bbdefb; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#555; font-weight:bold;">📍 この圃場(${p.area}a)の推定栽植本数:</span><span id="disp_plant_density" style="font-size:16px; font-weight:bold; color:#1a73e8;">-- 本</span></div>${timeUI}<label class="form-label">✅ 作業・状態チェック</label><div class="form-grid"><label class="checkbox-label"><input type="checkbox" id="rec_mowing"> 草刈り</label><label class="checkbox-label"><input type="checkbox" id="rec_weeding"> 草抜き</label><label class="checkbox-label"><input type="checkbox" id="rec_drainage"> 排水</label><label class="checkbox-label"><input type="checkbox" id="rec_bug"> 虫食い有</label><label class="checkbox-label"><input type="checkbox" id="rec_disease"> 病気有</label><label class="checkbox-label"><input type="checkbox" id="rec_flower"> 花芽有</label></div><div class="form-grid"><div><label class="form-label">📅 収穫見込</label><input type="date" id="rec_harvest" class="form-input"></div><div><label class="form-label">💯 残存率(%)</label><input type="number" id="rec_survival" class="form-input" placeholder="80"></div><div><label class="form-label">📏 葉長(cm)</label><input type="number" id="rec_leaf" class="form-input" placeholder="15"></div><div><label class="form-label">🍎 収穫ｻｲｽﾞ(cm)</label><input type="number" id="rec_harvest_size" class="form-input" placeholder="10"></div><div><label class="form-label">📦 収穫可能量</label><input type="number" id="rec_harvest_amount" class="form-input" placeholder="100"></div><div><label class="form-label">🧪 土壌pH</label><input type="number" step="0.1" id="rec_ph" class="form-input" placeholder="6.5"></div></div><label class="form-label">📊 栽培ステージ</label><select id="rec_field_status" class="form-input" style="padding: 10px;">${stages}</select><label class="form-label">📝 気づいたこと</label><textarea id="rec_notes" class="form-input" rows="3" placeholder="コメントを入力..."></textarea>${exPhotos}${photoUI}`;
         }
 
-        document.getElementById('rightPanelContent').innerHTML = `<div style="background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.05);">${html}</div>`;
+        let tempLoadBtn = '';
+        if (localStorage.getItem('jmap_temp_work_record')) {
+            tempLoadBtn = `<button type="button" onclick="loadTempRecord()" style="width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;">📂 一時保存データを復元する</button>`;
+        }
+
+        document.getElementById('rightPanelContent').innerHTML = `<div style="background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.05);">${tempLoadBtn}${html}</div>`;
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
-        document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
+        document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
         
         if (currentRecordType === 'work' && !p.isMarker) setTimeout(() => updateSelectedPolysDisplay(), 50);
 
@@ -2061,6 +2066,78 @@ function createSignboardMarker(name, pos, icon, id) {
            if(currentRecordType === 'work') handleWorkNameChange();
         }
         if (currentRecordType === 'work') calcTotalTime();
+      };
+
+      window.saveTempRecord = () => {
+          const container = document.getElementById('rightPanelContent');
+          if (!container) return;
+          const inputs = container.querySelectorAll('input, select, textarea');
+          let tempData = [];
+          inputs.forEach(el => {
+              if (el.type === 'file') return;
+              tempData.push({
+                  id: el.id,
+                  name: el.name,
+                  value: el.value,
+                  type: el.type,
+                  checked: el.checked
+              });
+          });
+          localStorage.setItem('jmap_temp_work_record', JSON.stringify({
+              type: currentRecordType,
+              polyId: activePolyId,
+              data: tempData
+          }));
+          if(typeof customAlert !== 'undefined') customAlert("✅ 入力内容を一時保存しました！");
+          else alert("✅ 入力内容を一時保存しました！");
+          
+          // 一時保存後、読み込みボタンを再描画するためにフォームを描画し直す
+          renderRecordForm();
+      };
+
+      window.loadTempRecord = () => {
+          const dataStr = localStorage.getItem('jmap_temp_work_record');
+          if (!dataStr) return;
+          const parsed = JSON.parse(dataStr);
+          
+          const container = document.getElementById('rightPanelContent');
+          if(!container) return;
+          
+          parsed.data.forEach(savedEl => {
+              let el;
+              if (savedEl.id) {
+                  el = document.getElementById(savedEl.id);
+              } else if (savedEl.name && savedEl.value) {
+                  let els = document.getElementsByName(savedEl.name);
+                  for (let e of els) {
+                      if (e.value === savedEl.value) {
+                          el = e;
+                          break;
+                      }
+                  }
+              }
+              
+              if (el) {
+                  if (el.type === 'checkbox' || el.type === 'radio') {
+                      el.checked = savedEl.checked;
+                  } else {
+                      el.value = savedEl.value;
+                  }
+                  // イベント発火して関連UIを更新
+                  el.dispatchEvent(new Event('change'));
+              }
+          });
+          
+          // 特定のUI更新処理を手動呼び出し
+          if (typeof handleWorkNameChange === 'function' && document.getElementById('rec_work_name')) handleWorkNameChange();
+          if (typeof calcTotalTime === 'function') calcTotalTime();
+          
+          // 復元後、一時保存データは消すか残すか？残しておいた方が安全。
+          if(typeof customAlert !== 'undefined') customAlert("✅ 一時保存データを復元しました！");
+          else alert("✅ 一時保存データを復元しました！");
+          
+          // 読み込みボタンを消すためにローカルストレージをクリアしてから再描画してもいいが、
+          // 念のためユーザーが送信するまで残すことにする。（クリアは送信完了時）
       };
 
       async function submitRecord() {
