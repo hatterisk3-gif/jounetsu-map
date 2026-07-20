@@ -190,6 +190,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
 
 window.plotClockInMarker = (state, doCenter) => {
     if (window.clockInMarker) window.clockInMarker.setMap(null);
+    if (!state.lat || !state.lng) return;
     const pos = new google.maps.LatLng(state.lat, state.lng);
     window.clockInMarker = new google.maps.Marker({
         position: pos,
@@ -1836,6 +1837,15 @@ function createSignboardMarker(name, pos, icon, id) {
         const now = new Date(); const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         let defaultStartTime = (now.getHours() < 13) ? "08:00" : "13:00";
+        try {
+            const clockInJson = localStorage.getItem('passionMapClockInToday');
+            if (clockInJson) {
+                const clockInData = JSON.parse(clockInJson);
+                if (clockInData.date === now.toLocaleDateString() && clockInData.time) {
+                    defaultStartTime = clockInData.time;
+                }
+            }
+        } catch(e) {}
         let latestEndTime = "";
         for (let id in loadedPolygons) {
            if (loadedPolygons[id].photos) {
@@ -1853,7 +1863,13 @@ function createSignboardMarker(name, pos, icon, id) {
             <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア(記録しない)</button>
           </div>
           <div class="form-grid" style="margin-bottom:15px;">
-            <div><label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label><input type="time" id="rec_start_time" class="form-input" style="margin-bottom:0;" value="${isEdit ? '' : defaultStartTime}" onchange="calcTotalTime()"></div>
+            <div>
+              <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
+              <input type="time" id="rec_start_time" class="form-input" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" onchange="calcTotalTime()">
+              <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
+                <input type="checkbox" id="sync_clockin" ${!latestEndTime ? 'checked' : ''}>出勤時間と同期
+              </label>
+            </div>
             <div><label class="form-label" style="font-size:11px; margin-bottom:2px;">⏹️ 終了</label><input type="time" id="rec_end_time" class="form-input" style="margin-bottom:0;" value="${isEdit ? '' : currentTimeStr}" onchange="calcTotalTime()"></div>
           </div>
         `;
@@ -2158,6 +2174,40 @@ function createSignboardMarker(name, pos, icon, id) {
              let eMins = parseInt(eTime.split(':')[0]) * 60 + parseInt(eTime.split(':')[1]);
              let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
              totalTimeStr = Math.floor(diff / 60) + "時間" + (diff % 60) + "分";
+          }
+          
+          let syncClockin = document.getElementById('sync_clockin') ? document.getElementById('sync_clockin').checked : false;
+          if (syncClockin && sTime) {
+              const now = new Date();
+              const dateStr = now.toLocaleDateString();
+              const [hh, mm] = sTime.split(':');
+              now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+
+              const existingStr = localStorage.getItem('passionMapClockIn');
+              let exLat = '', exLng = '';
+              if (existingStr) {
+                  try {
+                      const ex = JSON.parse(existingStr);
+                      exLat = ex.lat || '';
+                      exLng = ex.lng || '';
+                  } catch(e) {}
+              }
+
+              const clockInState = { lat: exLat, lng: exLng, time: sTime, active: true };
+              const clockInTodayState = { lat: exLat, lng: exLng, time: sTime, date: dateStr };
+              localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+              localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
+              if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+
+              if (typeof callGAS === 'function' && typeof currentUser !== 'undefined' && currentUser) {
+                  callGAS('saveTrackingData', {
+                      userName: currentUser,
+                      lat: exLat,
+                      lng: exLng,
+                      type: '出勤',
+                      time: now.getTime()
+                  }).catch(e => console.warn(e));
+              }
           }
           
           let detailedWorks = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked')).map(cb => cb.value);
