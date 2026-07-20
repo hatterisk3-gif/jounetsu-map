@@ -705,6 +705,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
               sheet.getRange(i + 1, col + 1).setValue(map[headers[col]]);
             }
           }
+          // ヘッダー名に関係なく、H列(8番目)にカテゴリを強制的に書き込む
+          sheet.getRange(i + 1, 8).setValue(value.newData.category || "圃場作業");
           writeLog(userName, "マスタ編集", value.newData.name, `対象: ${sheetName} (元: ${value.originalName})`);
           break;
         }

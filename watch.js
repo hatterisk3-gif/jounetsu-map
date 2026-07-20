@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 
 // ⚠️ URLは藤田さんの現在の最新のものをそのまま使っています
-const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec';
 
 // 🌟 画像URLとIDを一時的に記憶しておくための変数
 let pendingImages = [];
