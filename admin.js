@@ -250,6 +250,11 @@ function loadInitData() {
         if (newDataStr !== cached) {
             localStorage.setItem('pMapAdminInitData', newDataStr);
             renderInitData(data);
+            // マスタ設定画面を開いたまま最新データが届いた場合は再描画して古い表示を防ぐ
+            const mm = document.getElementById('masterModal');
+            if (mm && mm.style.display === 'flex' && typeof renderMasterSection === 'function') {
+                renderMasterSection();
+            }
         }
     }).catch(e => console.log("InitData Error:", e));
 }
