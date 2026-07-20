@@ -439,6 +439,8 @@ window.execMaster = async (type, act, val) => {
     try {
         const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
         if (type === 'crop') pdlCrops = updatedList; else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') pdlLocations = updatedList; else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList;
+        // 再読み込み時に古い値が表示されないよう、初期データキャッシュを破棄して次回は最新を取得させる
+        localStorage.removeItem('pMapAdminInitData');
         renderMasterSection();
         customAlert(act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！"));
     } catch (e) { customAlert("エラーが発生しました。再度お試しください。"); renderMasterSection(); }
