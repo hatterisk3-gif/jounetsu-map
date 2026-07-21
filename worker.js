@@ -1998,9 +1998,18 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         let tempLoadBtn = '';
-        if (localStorage.getItem('jmap_temp_work_record')) {
-            tempLoadBtn = `<button type="button" onclick="loadTempRecord()" style="width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;">📂 一時保存データを復元する</button>`;
-        }
+        try {
+            const tempStr = localStorage.getItem('jmap_temp_work_record');
+            if (tempStr) {
+                const tempParsed = JSON.parse(tempStr);
+                // 現在のrecordTypeと一致する一時保存データがある場合のみ復元ボタンを表示
+                if (tempParsed.type === currentRecordType) {
+                    const savedPolyName = tempParsed.polyId && loadedPolygons[tempParsed.polyId] ? loadedPolygons[tempParsed.polyId].name : '未選択';
+                    const savedTime = tempParsed.savedAt || '';
+                    tempLoadBtn = `<button type="button" id="tempLoadBtn" onclick="loadTempRecord()" style="width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;">📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${savedPolyName} ${savedTime ? '(' + savedTime + ')' : ''}</span></button>`;
+                }
+            }
+        } catch(e) {}
 
         document.getElementById('rightPanelContent').innerHTML = `<div style="background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.05);">${tempLoadBtn}${html}</div>`;
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
@@ -2098,6 +2107,10 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!container) return;
           const inputs = container.querySelectorAll('input, select, textarea');
           let tempData = [];
+          // 選択中の作業チップ名も保存する
+          let selectedChipName = '';
+          const selectedChip = container.querySelector('.work-chip[style*="#1976d2"]');
+          if (selectedChip) selectedChipName = selectedChip.dataset.wname || '';
           inputs.forEach(el => {
               if (el.type === 'file') return;
               tempData.push({
@@ -2108,16 +2121,33 @@ function createSignboardMarker(name, pos, icon, id) {
                   checked: el.checked
               });
           });
+          const now = new Date();
+          const savedAt = `${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
           localStorage.setItem('jmap_temp_work_record', JSON.stringify({
               type: currentRecordType,
               polyId: activePolyId,
-              data: tempData
+              data: tempData,
+              selectedChipName: selectedChipName,
+              savedAt: savedAt
           }));
           if(typeof customAlert !== 'undefined') customAlert("✅ 入力内容を一時保存しました！");
           else alert("✅ 入力内容を一時保存しました！");
           
-          // 一時保存後、読み込みボタンを再描画するためにフォームを描画し直す
-          renderRecordForm();
+          // フォーム再描画せず、復元ボタンだけ追加する（入力内容を維持）
+          const existingBtn = document.getElementById('tempLoadBtn');
+          if (!existingBtn) {
+              const formWrapper = container.querySelector('div');
+              if (formWrapper) {
+                  const btn = document.createElement('button');
+                  btn.type = 'button';
+                  btn.id = 'tempLoadBtn';
+                  btn.onclick = loadTempRecord;
+                  btn.style.cssText = 'width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;';
+                  const polyName = activePolyId && loadedPolygons[activePolyId] ? loadedPolygons[activePolyId].name : '未選択';
+                  btn.innerHTML = `📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${polyName} (${savedAt})</span>`;
+                  formWrapper.insertBefore(btn, formWrapper.firstChild);
+              }
+          }
       };
 
       window.loadTempRecord = () => {
@@ -2157,12 +2187,14 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof handleWorkNameChange === 'function' && document.getElementById('rec_work_name')) handleWorkNameChange();
           if (typeof calcTotalTime === 'function') calcTotalTime();
           
-          // 復元後、一時保存データは消すか残すか？残しておいた方が安全。
+          // 作業チップのハイライトも復元する
+          if (parsed.selectedChipName && typeof selectWorkChip === 'function') {
+              selectWorkChip(parsed.selectedChipName);
+          }
+          
+          // 復元後、一時保存データは送信完了まで残す（安全のため）
           if(typeof customAlert !== 'undefined') customAlert("✅ 一時保存データを復元しました！");
           else alert("✅ 一時保存データを復元しました！");
-          
-          // 読み込みボタンを消すためにローカルストレージをクリアしてから再描画してもいいが、
-          // 念のためユーザーが送信するまで残すことにする。（クリアは送信完了時）
       };
 
       async function submitRecord() {
@@ -2336,6 +2368,8 @@ function createSignboardMarker(name, pos, icon, id) {
         if (currentEditRecordId && activePolyId && !selectedPolyIds.includes(activePolyId)) {
             updatePolygonColor(activePolyId);
         }
+        // 送信成功時に一時保存データをクリア
+        localStorage.removeItem('jmap_temp_work_record');
         customAlert("記録を保存しました！"); closeRightPanel();
         } catch(e) { customAlert("エラーが発生しました: " + e.message); btn.disabled=false; btn.innerText="保存する"; }
       }

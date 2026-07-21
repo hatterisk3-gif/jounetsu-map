@@ -89,8 +89,18 @@ async function runCLIAgent(promptText) {
 async function watch() {
   try {
     const response = await fetch(GAS_WEBAPP_URL);
-    if (!response.ok) return;
-    const data = await response.json();
+    if (!response.ok) {
+      console.warn(`⚠️ GAS応答異常: HTTP ${response.status}`);
+      return;
+    }
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      console.warn(`⚠️ GASからJSON以外が返りました: ${text.substring(0, 120)}`);
+      return;
+    }
 
     if (data.readmeContent) {
       const readmePath = path.join(__dirname, 'README.md');
@@ -101,7 +111,8 @@ async function watch() {
       }
     }
 
-    if (data.rowIndex && data.command) {
+    if (data.rowIndex > 0 && data.command) {
+      lastQueueStatus = `row=${data.rowIndex}`;
       console.log(`🤖 LINEからの指示を検知: "${data.command}"`);
       const rawCommand = data.command;
       let summaryForLine = "✅ 処理完了";
@@ -354,17 +365,34 @@ async function watch() {
       } catch (cmdError) {
         console.error('❌ 予期せぬエラー:', cmdError.message);
       }
+    } else {
+      lastQueueStatus = '空 (rowIndex=-1)';
     }
   } catch (error) {
-    // ネットワークエラーなどを無視
+    lastQueueStatus = `エラー: ${error.message}`;
+    console.warn(`⚠️ watchポーリングエラー: ${error.message}`);
   }
 }
 
 let isProcessing = false;
+let pollCount = 0;
+let lastQueueStatus = 'unknown';
+
 async function loop() {
-  if (!isProcessing) { isProcessing = true; await watch(); isProcessing = false; }
+  if (!isProcessing) {
+    isProcessing = true;
+    await watch();
+    isProcessing = false;
+  }
+  pollCount++;
+  // 約30秒ごとに生存確認
+  if (pollCount % 30 === 0) {
+    console.log(`💓 待機中... (ポーリング ${pollCount} 回 / 直近キュー: ${lastQueueStatus})`);
+  }
   setTimeout(loop, 1000);
 }
 
 console.log('👀 基地システム起動：LINEからの指示・画像を待機中...');
+console.log(`🔗 GAS: ${GAS_WEBAPP_URL}`);
+console.log('💡 シートに「処理中」のまま残っている行は再取得されません。ステータスを空／未処理に戻すか、LINEで新規送信してください。');
 loop();
