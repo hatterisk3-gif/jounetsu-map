@@ -534,12 +534,15 @@ window.updateCadSvgOverlay = () => {
                 
                 let div = document.createElement('div');
                 let iconStr = '';
+                let numStr = '';
                 if (mk.cadPinType === 'water_in') {
                     waterInCount++;
-                    iconStr = '💧<span style="font-size:16px;">' + waterInCount + '</span>';
+                    iconStr = '💧';
+                    numStr = String(waterInCount);
                 } else if (mk.cadPinType === 'water_out') {
                     waterOutCount++;
-                    iconStr = '🕳️<span style="font-size:16px;">' + waterOutCount + '</span>';
+                    iconStr = '🕳️';
+                    numStr = String(waterOutCount);
                 } else if (mk.cadPinType === 'parking_truck') {
                     iconStr = '🛻';
                 } else {
@@ -547,8 +550,18 @@ window.updateCadSvgOverlay = () => {
                 }
                 
                 let iconSpan = document.createElement('span');
-                iconSpan.innerHTML = iconStr;
+                iconSpan.className = 'cad-pin-icon';
+                iconSpan.textContent = iconStr;
+                iconSpan.style.cssText = 'display:block; line-height:1;';
                 div.appendChild(iconSpan);
+
+                if (numStr) {
+                    let numSpan = document.createElement('span');
+                    numSpan.className = 'cad-pin-num';
+                    numSpan.textContent = numStr;
+                    numSpan.style.cssText = 'position:absolute; left:50%; top:0; transform:translate(-50%, -110%); font-size:0.7em; font-weight:bold; color:#111; line-height:1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                    div.appendChild(numSpan);
+                }
                 
                 div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                 fo.appendChild(div);
