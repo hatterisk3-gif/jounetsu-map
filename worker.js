@@ -1522,7 +1522,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.removePendingPhoto = (idx) => { pendingFiles.splice(idx, 1); renderPendingPhotos(); };
 
       window.openMapSelect = () => { backupSelectedPolyIds = [...selectedPolyIds]; isMapSelecting = true; infoWindow.close(); document.getElementById('rightPanel').style.display = 'none'; document.getElementById('mapSelectUI').style.display = 'flex'; updateMapSelectVisuals(); };
-      window.applyMapSelect = () => { if(selectedPolyIds.length === 0) selectedPolyIds = [activePolyId]; isMapSelecting = false; document.getElementById('rightPanel').style.display = 'flex'; document.getElementById('mapSelectUI').style.display = 'none'; updateMapSelectVisuals(); updateSelectedPolysDisplay(); };
+      window.applyMapSelect = () => { isMapSelecting = false; document.getElementById('rightPanel').style.display = 'flex'; document.getElementById('mapSelectUI').style.display = 'none'; updateMapSelectVisuals(); updateSelectedPolysDisplay(); };
       window.cancelMapSelect = () => { selectedPolyIds = [...backupSelectedPolyIds]; isMapSelecting = false; document.getElementById('rightPanel').style.display = 'flex'; document.getElementById('mapSelectUI').style.display = 'none'; updateMapSelectVisuals(); };
       
       window.updateMapSelectVisuals = () => {
@@ -1560,17 +1560,110 @@ function createSignboardMarker(name, pos, icon, id) {
         const disp = document.getElementById('selected_polys_display');
         if(!disp) return;
         if(selectedPolyIds.length === 0) {
-          disp.innerHTML = `<span style="color:#999; font-size:13px; font-weight:bold; padding:4px 0;">対象が選択されていません</span>`;
+          disp.innerHTML = `<span style="color:#999; font-size:13px; font-weight:bold; padding:4px 0;">対象なし（任意）</span>`;
         } else if(selectedPolyIds.length === 1) { 
           const id = selectedPolyIds[0];
           const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "不明な圃場";
-          disp.innerHTML = `<span style="color:#555; font-size:13px; font-weight:bold; padding:4px 0;">${name} (単独)</span>`; 
+          disp.innerHTML = `<span style="color:#555; font-size:13px; font-weight:bold; padding:4px 0;">${name}</span>`; 
         } else { 
           disp.innerHTML = selectedPolyIds.map(id => {
             const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "不明な圃場";
             return `<span style="background:#e8f0fe; color:#1a73e8; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid #aecbfa; margin-top:4px;">${name}</span>`;
           }).join(''); 
         }
+        if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
+      };
+
+      window.getCadUneCount = (poly) => {
+        if (!poly || poly.isMarker || !poly.uneSimData) return 0;
+        try {
+          const savedCad = JSON.parse(poly.uneSimData);
+          return parseInt(savedCad.uneCount, 10) || 0;
+        } catch (e) { return 0; }
+      };
+
+      window.refreshRidgeProgressUI = () => {
+        const box = document.getElementById('ridge_progress_section');
+        if (!box) return;
+        const catEl = document.getElementById('rec_work_category');
+        const cat = catEl ? catEl.value : '';
+        const show = selectedPolyIds.length > 0 && cat === '圃場作業';
+        if (!show) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        box.style.display = 'block';
+        let html = `<label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗（圃場別）</label>`;
+        selectedPolyIds.forEach((pid, idx) => {
+          const poly = loadedPolygons[pid];
+          if (!poly || poly.isMarker) return;
+          const uneCount = window.getCadUneCount(poly);
+          const uneLabel = uneCount > 0 ? `${uneCount}畝` : '登録なし';
+          let lastNext = '';
+          if (poly.photos) {
+            const pastWorks = poly.photos.filter(ph => ph.type === 'work' && ph.data && ph.data.nextRidge).sort((a,b) => {
+              const da = new Date((a.date||'').replace(/\//g,'-') + 'T' + (a.time||'00:00') + ':00');
+              const db = new Date((b.date||'').replace(/\//g,'-') + 'T' + (b.time||'00:00') + ':00');
+              return db - da;
+            });
+            if (pastWorks.length > 0) lastNext = pastWorks[0].data.nextRidge || '';
+          }
+          html += `<div class="ridge-field-block" data-poly-id="${pid}" style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:10px; border:1px solid #80deea;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px;">
+              <div style="font-weight:bold; color:#00695c; font-size:13px;">📍 ${poly.name || pid}</div>
+              <div style="font-size:12px; color:#00695c;">CAD畝数: <b>${uneLabel}</b></div>
+            </div>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#00695c; margin-bottom:8px; cursor:pointer;">
+              <input type="checkbox" class="ridge-complete-check" data-poly-id="${pid}" data-une-count="${uneCount}" onchange="onRidgeCompleteToggle(this)"> 完了（全畝をセット）
+            </label>
+            <div style="display:flex; gap:10px;">
+              <div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" class="form-input ridge-worked" data-poly-id="${pid}" placeholder="${uneCount > 0 ? '例: 1-' + uneCount : '例: 1-5'}" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" class="form-input ridge-next" data-poly-id="${pid}" placeholder="例: 6" value="${lastNext}" style="margin-bottom:0;"></div>
+            </div>
+          </div>`;
+        });
+        box.innerHTML = html;
+      };
+
+      window.onRidgeCompleteToggle = (chk) => {
+        const pid = chk.getAttribute('data-poly-id');
+        const uneCount = parseInt(chk.getAttribute('data-une-count'), 10) || 0;
+        const block = chk.closest('.ridge-field-block');
+        if (!block) return;
+        const worked = block.querySelector('.ridge-worked');
+        const next = block.querySelector('.ridge-next');
+        if (chk.checked) {
+          if (uneCount > 0) {
+            if (worked) worked.value = `1-${uneCount}`;
+            if (next) next.value = String(uneCount + 1);
+          } else {
+            customAlert('この圃場はCAD畝数が登録なしのため、完了セットできません。');
+            chk.checked = false;
+          }
+        } else {
+          if (worked) worked.value = '';
+        }
+      };
+
+      window.collectRidgeProgressData = () => {
+        const rows = [];
+        document.querySelectorAll('.ridge-field-block').forEach(block => {
+          const pid = block.getAttribute('data-poly-id');
+          const poly = loadedPolygons[pid];
+          const worked = block.querySelector('.ridge-worked');
+          const next = block.querySelector('.ridge-next');
+          const done = block.querySelector('.ridge-complete-check');
+          rows.push({
+            polyId: pid,
+            name: poly ? poly.name : pid,
+            uneCount: window.getCadUneCount(poly),
+            workedRidges: worked ? worked.value.trim() : '',
+            nextRidge: next ? next.value.trim() : '',
+            completed: !!(done && done.checked)
+          });
+        });
+        return rows;
       };
 
       window.calcTotalTime = () => {
@@ -1836,7 +1929,7 @@ function createSignboardMarker(name, pos, icon, id) {
         
         let targetSection = '';
         if (currentRecordType === 'work' && !p.isMarker) {
-           targetSection = `<div style="margin-bottom:15px; background:white; padding:10px; border-radius:8px; border:1px solid #ddd;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><label class="form-label" style="margin:0; color:#2196F3;">📍 圃場記録対象 (複数選択)</label><button onclick="openMapSelect()" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = `<div style="margin-bottom:15px; background:white; padding:10px; border-radius:8px; border:1px solid #ddd;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><label class="form-label" style="margin:0; color:#2196F3;">📍 圃場記録対象 <span style="font-size:11px; color:#888; font-weight:normal;">（任意・複数可）</span></label><button onclick="openMapSelect()" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
         }
         
         const now = new Date(); const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -1881,23 +1974,8 @@ function createSignboardMarker(name, pos, icon, id) {
 
         let html = '';
         if (currentRecordType === 'work') {
-          let lastNextRidge = "";
-          if (!isEdit && p.photos) {
-             const pastWorks = p.photos.filter(ph => ph.type === 'work' && ph.data && ph.data.nextRidge).sort((a,b) => {
-                 const da = new Date(a.date.replace(/\//g,'-') + 'T' + (a.time||'00:00') + ':00');
-                 const db = new Date(b.date.replace(/\//g,'-') + 'T' + (b.time||'00:00') + ':00');
-                 return db - da;
-             });
-             if (pastWorks.length > 0) lastNextRidge = pastWorks[0].data.nextRidge;
-          }
-          let currentUneCount = 0;
-          if (!p.isMarker && p.uneSimData) {
-              try {
-                  const savedCad = JSON.parse(p.uneSimData);
-                  if (savedCad.uneCount) currentUneCount = parseInt(savedCad.uneCount) || 0;
-              } catch(e) {}
-          }
-          let ridgeUI = p.isMarker ? '' : `<div style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #80deea;"><label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗 (伝達事項)</label><div style="font-size:12px; color:#00695c; margin-bottom:8px;">📌 現在の畝数: <b>${currentUneCount}</b></div><div style="display:flex; gap:10px;"><div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" id="rec_worked_ridges" class="form-input" placeholder="例: 1-5" style="margin-bottom:0;"></div><div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" id="rec_next_ridge" class="form-input" placeholder="例: 6" value="${lastNextRidge}" style="margin-bottom:0;"></div></div></div>`;
+          // 畝UIはカテゴリ×圃場選択に応じて動的表示（placeholder）
+          let ridgeUI = p.isMarker ? '' : `<div id="ridge_progress_section" style="display:none; margin-bottom:15px;"></div>`;
           
           let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster.filter(w => w.displayPlace === '圃場' || w.displayPlace === '全て');
           
@@ -1969,7 +2047,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   ${timeUI}
                   ${workTimeUI}
                   <label class="form-label" style="margin-top:15px;">📁 カテゴリ</label>
-                  <select id="rec_work_category" class="form-input" onchange="if(window.filterWorkChips) window.filterWorkChips()">
+                  <select id="rec_work_category" class="form-input" onchange="if(window.filterWorkChips) window.filterWorkChips(); if(window.refreshRidgeProgressUI) window.refreshRidgeProgressUI();">
                       <option value="すべて">すべて</option>
                       ${(pdlWorkCategories || ["圃場作業", "事務作業", "保全・整備"]).map(c => `<option value="${c}">${c}</option>`).join('')}
                   </select>
@@ -1983,6 +2061,8 @@ function createSignboardMarker(name, pos, icon, id) {
                   ${targetSection}
                   ${cropSection}
                   ${ridgeUI}
+                  <label class="form-label" style="margin-top:10px;">💬 コメント</label>
+                  <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="伝達事項・メモなど"></textarea>
                   <div id="used_items_section"></div>
                   <div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div>
                   <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
@@ -2015,7 +2095,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
         document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
         
-        if (currentRecordType === 'work' && !p.isMarker) setTimeout(() => updateSelectedPolysDisplay(), 50);
+        if (currentRecordType === 'work' && !p.isMarker) setTimeout(() => {
+            updateSelectedPolysDisplay();
+            if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
+        }, 50);
 
         if (isEdit && tgt && tgt.data) {
           const d = tgt.data;
@@ -2026,10 +2109,27 @@ function createSignboardMarker(name, pos, icon, id) {
             if (document.getElementById('rec_work_category')) {
                 document.getElementById('rec_work_category').value = wCat;
                 if (typeof renderWorkOptions === 'function') renderWorkOptions(wCat);
+                if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
             }
             document.getElementById('rec_work_name').value = d.workName || ''; if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value = d.crop || ''; if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || ''; document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
-            if(document.getElementById('rec_worked_ridges')) document.getElementById('rec_worked_ridges').value = d.workedRidges || '';
-            if(document.getElementById('rec_next_ridge')) document.getElementById('rec_next_ridge').value = d.nextRidge || '';
+            if (document.getElementById('rec_work_comment')) document.getElementById('rec_work_comment').value = d.comment || d.notes || '';
+            setTimeout(() => {
+              if (d.ridgeProgress && Array.isArray(d.ridgeProgress)) {
+                d.ridgeProgress.forEach(rp => {
+                  const worked = document.querySelector(`.ridge-worked[data-poly-id="${rp.polyId}"]`);
+                  const next = document.querySelector(`.ridge-next[data-poly-id="${rp.polyId}"]`);
+                  const done = document.querySelector(`.ridge-complete-check[data-poly-id="${rp.polyId}"]`);
+                  if (worked) worked.value = rp.workedRidges || '';
+                  if (next) next.value = rp.nextRidge || '';
+                  if (done) done.checked = !!rp.completed;
+                });
+              } else {
+                const worked = document.querySelector('.ridge-worked');
+                const next = document.querySelector('.ridge-next');
+                if (worked) worked.value = d.workedRidges || '';
+                if (next) next.value = d.nextRidge || '';
+              }
+            }, 80);
             
             if (d.workName && typeof selectWorkChip === 'function') {
                 selectWorkChip(d.workName);
@@ -2198,7 +2298,20 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       async function submitRecord() {
-        if (selectedPolyIds.length === 0) { customAlert("⚠️ 記録対象の圃場を1つ以上選択してください。"); return; }
+        // 圃場記録対象は任意。未選択なら紐づけ先がないため保存不可（技術制約）
+        let targetIds = [...selectedPolyIds].filter(id => id && loadedPolygons[id]);
+        if (targetIds.length === 0 && activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker) {
+          targetIds = [activePolyId];
+        }
+        if (targetIds.length === 0 && currentRecordType === 'work') {
+          // 看板起点など active がある場合はそれを使う
+          if (activePolyId && loadedPolygons[activePolyId]) targetIds = [activePolyId];
+        }
+        if (targetIds.length === 0) {
+          customAlert("記録を保存するには、紐づける圃場（または看板）が必要です。マップから選択してください。");
+          return;
+        }
+        selectedPolyIds = targetIds;
         if (currentRecordType === 'work') { const prog = document.getElementById('rec_progress_status').value; if (!prog) { customAlert("進捗状況は必須項目です。選択してください。"); return; } }
         const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
         const files = pendingFiles;
@@ -2253,6 +2366,8 @@ function createSignboardMarker(name, pos, icon, id) {
           
           let detailedWorks = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked')).map(cb => cb.value);
           let usedItemsText = getUsedItemsText();
+          const ridgeProgress = (typeof window.collectRidgeProgressData === 'function') ? window.collectRidgeProgressData() : [];
+          const firstRidge = ridgeProgress[0] || {};
 
           const wName = document.getElementById('rec_work_name').value;
           data = { 
@@ -2264,8 +2379,10 @@ function createSignboardMarker(name, pos, icon, id) {
             progressStatus: document.getElementById('rec_progress_status').value,
             usedTools: "", 
             usedMaterials: usedItemsText,
-            workedRidges: document.getElementById('rec_worked_ridges') ? document.getElementById('rec_worked_ridges').value : "",
-            nextRidge: document.getElementById('rec_next_ridge') ? document.getElementById('rec_next_ridge').value : ""
+            workedRidges: firstRidge.workedRidges || "",
+            nextRidge: firstRidge.nextRidge || "",
+            ridgeProgress: ridgeProgress,
+            comment: document.getElementById('rec_work_comment') ? document.getElementById('rec_work_comment').value.trim() : ""
           };
 
          if ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")) {

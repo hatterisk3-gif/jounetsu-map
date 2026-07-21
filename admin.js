@@ -879,7 +879,7 @@ function initMap() {
     map.data.addListener('click', (e) => {
         if (window.isMapLoadingFude) return; // ★読込中バリア
 
-        // ★ 形状変更中の筆ポリゴン適用
+        // ★ 形状変更中の筆ポリゴン適用（複数選択→確定で合体）
         if (window.isEditingFude && editingId && document.getElementById('editShapePanel').style.display === 'block') {
             let geom = e.feature.getGeometry();
             let targetArray = null;
@@ -892,12 +892,36 @@ function initMap() {
             if (targetArray) {
                 let path = [];
                 targetArray.forEach(latLng => path.push(latLng));
-                
-                if (loadedPolygons[editingId] && loadedPolygons[editingId].polygon) {
-                    loadedPolygons[editingId].polygon.setPath(path);
-                    customAlert("筆ポリゴンの形状を適用しました。「確定」ボタンで保存してください。");
-                    setFudeVisibility(false);
-                    window.isEditingFude = false;
+
+                if (!window.selectedFudePaths) window.selectedFudePaths = [];
+                if (!window.selectedFudePolygons) window.selectedFudePolygons = [];
+
+                let existingIndex = window.selectedFudePaths.findIndex(p =>
+                    p.length > 0 && path.length > 0 &&
+                    p[0].lat() === path[0].lat() && p[0].lng() === path[0].lng()
+                );
+
+                if (existingIndex !== -1) {
+                    window.selectedFudePaths.splice(existingIndex, 1);
+                    let removedPoly = window.selectedFudePolygons.splice(existingIndex, 1)[0];
+                    if (removedPoly) removedPoly.setMap(null);
+                } else {
+                    window.selectedFudePaths.push(path);
+                    let poly = new google.maps.Polygon({
+                        map: map, paths: path,
+                        fillColor: '#d32f2f', fillOpacity: 0.3,
+                        strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3,
+                        zIndex: 9998, clickable: false
+                    });
+                    window.selectedFudePolygons.push(poly);
+                }
+
+                const hint = document.getElementById('editFudeHint');
+                if (hint) {
+                    const n = window.selectedFudePaths.length;
+                    hint.innerText = n > 0
+                        ? `筆ポリ ${n} 件選択中 →「確定」で合体適用`
+                        : '筆ポリを複数タップして選択し、「確定」で合体';
                 }
             }
             return;
@@ -1297,74 +1321,38 @@ document.getElementById('btnManualDraw').onclick = () => {
 
 // 🌟修正：微細な隙間を無視して、複数の畑を美しく1つに結合する！
 document.getElementById('step1SaveBtn').onclick = () => {
-    if (window.selectedFudePaths && window.selectedFudePaths.length > 1) {
+    if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
         try {
-            let turfPolys = window.selectedFudePaths.map(path => {
-                let coords = path.map(p => [p.lng(), p.lat()]);
-                coords.push([path[0].lng(), path[0].lat()]);
-                return turf.polygon([coords]);
+            const mergedPath = mergeFudePathsToLatLngs(window.selectedFudePaths);
+            if (!mergedPath) return;
+
+            window.selectedFudePolygons.forEach(p => p.setVisible(false));
+
+            if (window.mergedPreviewPolygon) window.mergedPreviewPolygon.setMap(null);
+            window.mergedPreviewPolygon = new google.maps.Polygon({
+                map: map, paths: mergedPath,
+                fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3,
+                zIndex: 9999, clickable: false
             });
 
-            // ★ここがミソ！微細な隙間を埋めるために見えないレベルで「膨張」させる
-            let bufferedPolys = turfPolys;
-            try {
-                bufferedPolys = turfPolys.map(p => turf.buffer(p, 0.005, { units: 'kilometers' }));
-            } catch (e) { console.warn("膨張スキップ"); }
-
-            let unionPoly = bufferedPolys[0];
-            for (let i = 1; i < bufferedPolys.length; i++) {
-                try {
-                    unionPoly = turf.union(unionPoly, bufferedPolys[i]);
-                } catch (e) { console.warn("結合スキップ"); }
-            }
-
-            // ★膨らませた分だけ「縮小」して元のサイズに戻す
-            try {
-                let shrunkPoly = turf.buffer(unionPoly, -0.005, { units: 'kilometers' });
-                if (shrunkPoly) unionPoly = shrunkPoly;
-            } catch (e) { console.warn("縮小スキップ"); }
-
-            // 一番外側の枠（外郭）だけを抽出する
-            let bestCoords = null;
-            if (unionPoly.geometry.type === 'Polygon') {
-                bestCoords = unionPoly.geometry.coordinates[0];
-            } else if (unionPoly.geometry.type === 'MultiPolygon') {
-                // それでも離れている場合は、一番面積の大きいものを採用
-                let largestArea = -1;
-                unionPoly.geometry.coordinates.forEach(polyCoords => {
-                    let pArea = turf.area(turf.polygon([polyCoords[0]]));
-                    if (pArea > largestArea) { largestArea = pArea; bestCoords = polyCoords[0]; }
-                });
-            }
-
-            if (bestCoords) {
-                let mergedPath = bestCoords.map(c => new google.maps.LatLng(c[1], c[0]));
-                mergedPath.pop();
-
-                window.selectedFudePolygons.forEach(p => p.setVisible(false));
-
-                if (window.mergedPreviewPolygon) window.mergedPreviewPolygon.setMap(null);
-                window.mergedPreviewPolygon = new google.maps.Polygon({
-                    map: map, paths: mergedPath,
-                    fillColor: '#d32f2f', fillOpacity: 0.3, strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3,
-                    zIndex: 9999, clickable: false
-                });
-
-                customDrawingPath = mergedPath;
-                window.isMergedFude = true;
+            customDrawingPath = mergedPath;
+            window.isMergedFude = window.selectedFudePaths.length > 1;
+            if (window.selectedFudePaths.length > 1) {
+                customAlert(`${window.selectedFudePaths.length}件の筆ポリゴンを合体しました。「次へ」で圃場情報を入力してください。`);
             }
         } catch (err) {
             console.error("結合エラー:", err);
             customAlert("図形の結合に失敗しました。");
             return;
         }
-    } else if (window.selectedFudePaths && window.selectedFudePaths.length === 1) {
-        customDrawingPath = window.selectedFudePaths[0];
-        window.isMergedFude = true;
+    } else if (customDrawingPath.length < 3) {
+        customAlert("図形が未完成です。");
+        return;
     }
 
     document.getElementById('drawStep1').style.display = 'none';
     document.getElementById('drawStep2').style.display = 'block';
+    if (document.getElementById('addressHint').innerHTML) document.getElementById('addressHint').style.display = 'block';
     if (document.getElementById('fieldStartNumber')) document.getElementById('fieldStartNumber').style.display = 'none';
     setFudeVisibility(false);
 };
@@ -2038,6 +2026,69 @@ window.saveM = () => {
     callGAS('savePolygon', { name: n, coords: JSON.stringify(coords), color: ic, signFunction: funcType, userName: currentUser }).then(id => { infoWindow.close(); createPolygonObject({ id, name: n, coords, color: ic, signFunction: funcType, isMarker: true }); document.getElementById('btnViewMode').click(); });
 };
 
+// 選択中の筆ポリゴンパスを合体して LatLng 配列を返す
+function mergeFudePathsToLatLngs(paths) {
+    if (!paths || paths.length === 0) return null;
+    if (paths.length === 1) {
+        return paths[0].map(p => new google.maps.LatLng(p.lat(), p.lng()));
+    }
+    if (typeof turf === 'undefined') {
+        customAlert("図形結合ライブラリ(turf)が読み込まれていません。");
+        return null;
+    }
+    try {
+        let turfPolys = paths.map(path => {
+            let coords = path.map(p => [p.lng(), p.lat()]);
+            coords.push([path[0].lng(), path[0].lat()]);
+            return turf.polygon([coords]);
+        });
+        let bufferedPolys = turfPolys;
+        try {
+            bufferedPolys = turfPolys.map(p => turf.buffer(p, 0.005, { units: 'kilometers' }));
+        } catch (e) { console.warn("膨張スキップ"); }
+
+        let unionPoly = bufferedPolys[0];
+        for (let i = 1; i < bufferedPolys.length; i++) {
+            try {
+                unionPoly = turf.union(unionPoly, bufferedPolys[i]);
+            } catch (e) { console.warn("結合スキップ"); }
+        }
+        try {
+            let shrunkPoly = turf.buffer(unionPoly, -0.005, { units: 'kilometers' });
+            if (shrunkPoly) unionPoly = shrunkPoly;
+        } catch (e) { console.warn("縮小スキップ"); }
+
+        let bestCoords = null;
+        if (unionPoly.geometry.type === 'Polygon') {
+            bestCoords = unionPoly.geometry.coordinates[0];
+        } else if (unionPoly.geometry.type === 'MultiPolygon') {
+            let largestArea = -1;
+            unionPoly.geometry.coordinates.forEach(polyCoords => {
+                let pArea = turf.area(turf.polygon([polyCoords[0]]));
+                if (pArea > largestArea) { largestArea = pArea; bestCoords = polyCoords[0]; }
+            });
+        }
+        if (!bestCoords) return null;
+        let mergedPath = bestCoords.map(c => new google.maps.LatLng(c[1], c[0]));
+        mergedPath.pop();
+        return mergedPath;
+    } catch (err) {
+        console.error("結合エラー:", err);
+        customAlert("図形の結合に失敗しました。");
+        return null;
+    }
+}
+
+function clearEditFudeSelection() {
+    if (window.selectedFudePolygons) {
+        window.selectedFudePolygons.forEach(p => { if (p) p.setMap(null); });
+    }
+    window.selectedFudePolygons = [];
+    window.selectedFudePaths = [];
+    const hint = document.getElementById('editFudeHint');
+    if (hint) hint.innerText = '';
+}
+
 document.getElementById('editLoadFudeBtn').onclick = () => {
     const btn = document.getElementById('editLoadFudeBtn');
     const originalText = "🤖 筆ポリから";
@@ -2045,6 +2096,9 @@ document.getElementById('editLoadFudeBtn').onclick = () => {
     btn.disabled = true;
     window.isMapLoadingFude = true;
     window.isEditingFude = true;
+    clearEditFudeSelection();
+    const hint = document.getElementById('editFudeHint');
+    if (hint) hint.innerText = '筆ポリを複数タップして選択し、「確定」で合体';
 
     const center = map.getCenter();
     new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
@@ -2126,9 +2180,21 @@ document.getElementById('editLoadFudeBtn').onclick = () => {
 };
 
 document.getElementById('saveShapeBtn').onclick = () => {
+    const p = loadedPolygons[editingId];
+    if (!p) return;
+
+    // 筆ポリ複数選択がある場合は合体して適用してから保存
+    if (window.isEditingFude && window.selectedFudePaths && window.selectedFudePaths.length > 0 && p.polygon) {
+        const selCount = window.selectedFudePaths.length;
+        const merged = mergeFudePathsToLatLngs(window.selectedFudePaths);
+        if (!merged) return;
+        p.polygon.setPath(merged);
+        clearEditFudeSelection();
+        if (selCount > 1) customAlert(`${selCount}件の筆ポリゴンを合体して適用しました。`);
+    }
+
     window.isEditingFude = false;
     setFudeVisibility(false);
-    const p = loadedPolygons[editingId];
     if (p.isMarker) {
         const pos = p.marker.getPosition(); p.marker.setDraggable(false);
         p.coords = [{ lat: pos.lat(), lng: pos.lng() }];
@@ -2146,7 +2212,15 @@ document.getElementById('saveShapeBtn').onclick = () => {
     }
     document.getElementById('editShapePanel').style.display = 'none'; editingId = null;
 };
-document.getElementById('cancelShapeBtn').onclick = () => { window.isEditingFude = false; setFudeVisibility(false); const p = loadedPolygons[editingId]; if (p.isMarker) { p.marker.setDraggable(false); p.marker.setPosition(originalCoordsForEdit[0]); } else { p.polygon.setEditable(false); p.polygon.setPath(originalCoordsForEdit); } document.getElementById('editShapePanel').style.display = 'none'; editingId = null; };
+document.getElementById('cancelShapeBtn').onclick = () => {
+    window.isEditingFude = false;
+    clearEditFudeSelection();
+    setFudeVisibility(false);
+    const p = loadedPolygons[editingId];
+    if (p.isMarker) { p.marker.setDraggable(false); p.marker.setPosition(originalCoordsForEdit[0]); }
+    else { p.polygon.setEditable(false); p.polygon.setPath(originalCoordsForEdit); }
+    document.getElementById('editShapePanel').style.display = 'none'; editingId = null;
+};
 
 window.executeNavigation = (id) => { const p = loadedPolygons[id]; let lat, lng; if (p.isMarker) { lat = p.marker.getPosition().lat(); lng = p.marker.getPosition().lng(); } else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); lat = b.getCenter().lat(); lng = b.getCenter().lng(); } window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank'); };
 
