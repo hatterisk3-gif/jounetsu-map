@@ -236,10 +236,14 @@
     const script = document.createElement('script');
     script.src = "schedule.js?v=" + new Date().getTime();
     script.onload = () => {
-      // schedule.js読み込み後にcultivation.jsを読み込む
-      const scriptCul = document.createElement('script');
-      scriptCul.src = "cultivation.js?v=" + new Date().getTime();
-      document.body.appendChild(scriptCul);
+      const scriptTrack = document.createElement('script');
+      scriptTrack.src = "tracking.js?v=1784584000001";
+      scriptTrack.onload = () => {
+        const scriptCul = document.createElement('script');
+        scriptCul.src = "cultivation.js?v=" + new Date().getTime();
+        document.body.appendChild(scriptCul);
+      };
+      document.body.appendChild(scriptTrack);
     };
     document.body.appendChild(script);
   </script>
