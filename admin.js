@@ -347,6 +347,42 @@ function updateAdminLegend() {
 
 window.openMasterModal = () => { renderMasterSection(); document.getElementById('masterModal').style.display = 'flex'; };
 
+/** 詳細作業の複数枠 → カンマ区切り文字列 */
+window.collectDetailWorksFromInputs = (containerId) => {
+    const box = document.getElementById(containerId);
+    if (!box) return '';
+    return Array.from(box.querySelectorAll('.detail-work-input'))
+        .map(el => (el.value || '').trim())
+        .filter(Boolean)
+        .join(',');
+};
+
+window.addDetailWorkRow = (containerId, value = '') => {
+    const box = document.getElementById(containerId);
+    if (!box) return;
+    const row = document.createElement('div');
+    row.className = 'detail-work-row';
+    row.style.cssText = 'display:flex; gap:6px; align-items:center; margin-bottom:6px;';
+    const safeVal = String(value || '').replace(/"/g, '&quot;');
+    row.innerHTML = `<input type="text" class="form-input detail-work-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="詳細作業名" value="${safeVal}"><button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>`;
+    box.appendChild(row);
+    const input = row.querySelector('input');
+    if (input && !value) input.focus();
+};
+
+window.buildDetailWorksEditorHtml = (containerId, detailWorksStr) => {
+    const items = String(detailWorksStr || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const rows = (items.length ? items : ['']).map((item, idx) => {
+        const safe = String(item).replace(/"/g, '&quot;');
+        return `<div class="detail-work-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+            <input type="text" class="form-input detail-work-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="詳細作業名 ${idx + 1}" value="${safe}">
+            <button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>
+        </div>`;
+    }).join('');
+    return `<div id="${containerId}" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:8px;">${rows}</div>
+        <button type="button" onclick="addDetailWorkRow('${containerId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ 詳細作業を追加</button>`;
+};
+
 window.renderMasterSection = () => {
     const buildHTML = (title, type, list) => {
         let html = `<div style="background:#f4f6f8; padding:10px; margin-bottom:10px; border-radius:6px; color:#333;"><b style="color:#d32f2f;">${title}</b><br>`;
@@ -356,7 +392,7 @@ window.renderMasterSection = () => {
         else if (type === 'workCategory') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_workCategory_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="カテゴリ名 (例: 圃場作業)"><button onclick="execMaster('workCategory', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
         else if (type === 'tool') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_tool_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="道具名 (例:草刈機)"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_tool_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select><button onclick="execMaster('tool', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div><input type="text" id="add_tool_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）">`; }
         else if (type === 'material') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_mat_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="資材名"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_mat_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select></div><input type="text" id="add_mat_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）"><div style="display:flex; gap:5px; margin-bottom:5px;"><input type="text" id="add_mat_size" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="容量 (例:20)"><input type="text" id="add_mat_unit" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="単位 (例:kg)"><button onclick="execMaster('material', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
-        else if (type === 'work') { const funcOpts = '<option value="">+ 対応看板機能...</option>' + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join(''); const catOpts = pdlWorkCategories.map(c => `<option value="${c}">${c}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><select id="add_work_category" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${catOpts}</select><input type="text" id="add_work_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作業名"><select id="add_work_place" class="form-input" style="flex:1; margin-bottom:0; padding:6px;"><option value="圃場">圃場</option><option value="看板">看板</option><option value="全て">全て</option></select></div><div style="display:flex; gap:5px; margin-bottom:5px;"><input type="text" id="add_work_details" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="詳細作業 (カンマ区切り)"><select id="add_work_func" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${funcOpts}</select></div><button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; width:100%; border-radius:4px; border:none; padding:8px; font-weight:bold; margin-bottom:5px;">作業マスタを追加</button>`; }
+        else if (type === 'work') { const funcOpts = '<option value="">+ 対応看板機能...</option>' + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join(''); const catOpts = pdlWorkCategories.map(c => `<option value="${c}">${c}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><select id="add_work_category" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${catOpts}</select><input type="text" id="add_work_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作業名"><select id="add_work_place" class="form-input" style="flex:1; margin-bottom:0; padding:6px;"><option value="圃場">圃場</option><option value="看板">看板</option><option value="全て">全て</option></select></div><div style="margin-bottom:5px;"><div style="font-size:11px; color:#666; margin-bottom:4px;">詳細作業（各枠に1つ）</div>${buildDetailWorksEditorHtml('add_work_details_list', '')}<select id="add_work_func" class="form-input" style="width:100%; margin-bottom:0; padding:6px;">${funcOpts}</select></div><button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; width:100%; border-radius:4px; border:none; padding:8px; font-weight:bold; margin-bottom:5px;">作業マスタを追加</button>`; }
 
         html += `<div style="max-height:140px; overflow-y:auto; border:1px solid #ddd; background:#fff; border-radius:4px; padding:5px;">`;
         if (list.length === 0) html += `<div style="color:#888; font-size:12px; text-align:center;">データがありません</div>`;
@@ -385,7 +421,6 @@ window.openEditWorkMaster = (encodedStr) => {
     const catOpts = pdlWorkCategories.map(c => `<option value="${c}" ${c===v.category?'selected':''}>${c}</option>`).join('');
     
     const safeName = (v.name || "").replace(/"/g, '&quot;');
-    const safeDetails = (v.detailWorks || "").replace(/"/g, '&quot;');
 
     const html = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
@@ -403,8 +438,8 @@ window.openEditWorkMaster = (encodedStr) => {
                 <option value="看板" ${v.displayPlace==='看板'?'selected':''}>看板</option>
                 <option value="全て" ${v.displayPlace==='全て'?'selected':''}>全て</option>
             </select>
-            <label class="form-label">詳細作業 (カンマ区切り)</label>
-            <input type="text" id="edit_work_details" class="form-input" value="${safeDetails}">
+            <label class="form-label">詳細作業（各枠に1つ入力）</label>
+            ${buildDetailWorksEditorHtml('edit_work_details_list', v.detailWorks || '')}
             <label class="form-label">対応看板機能</label>
             <select id="edit_work_func" class="form-input">${funcOpts}</select>
             <div style="display:flex; gap:10px; margin-top:15px;">
@@ -432,7 +467,7 @@ window.execMaster = async (type, act, val) => {
                 customAlert(`作業名「${name}」は既に登録されています`);
                 return;
             }
-            value = { name: name, category: document.getElementById('add_work_category').value, displayPlace: document.getElementById('add_work_place').value, targetFunction: document.getElementById('add_work_func').value.trim(), detailWorks: document.getElementById('add_work_details').value.trim() };
+            value = { name: name, category: document.getElementById('add_work_category').value, displayPlace: document.getElementById('add_work_place').value, targetFunction: document.getElementById('add_work_func').value.trim(), detailWorks: collectDetailWorksFromInputs('add_work_details_list') };
         }
     } else if (act === 'edit') {
         if (!await customConfirm(`更新しますか？`)) return;
@@ -451,7 +486,7 @@ window.execMaster = async (type, act, val) => {
                     category: document.getElementById('edit_work_category').value,
                     displayPlace: document.getElementById('edit_work_place').value,
                     targetFunction: document.getElementById('edit_work_func').value.trim(),
-                    detailWorks: document.getElementById('edit_work_details').value.trim()
+                    detailWorks: collectDetailWorksFromInputs('edit_work_details_list')
                 }
             };
         }
