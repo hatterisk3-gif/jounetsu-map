@@ -2017,9 +2017,10 @@ window.cadExecuteAddMakura = (latLng) => {
     
     let makuraRect = turf.polygon([[c1, c2, c3, c4, c1]]);
     
+    // ※ CDN は @turf/turf@6。intersect/difference は2引数API（v7の featureCollection 形式は不可）
     let finalPoly = null;
     try {
-        finalPoly = turf.intersect(turf.featureCollection([tPoly, makuraRect]));
+        finalPoly = turf.intersect(tPoly, makuraRect);
     } catch(e) { console.error(e); }
     
     if (!finalPoly) {
@@ -2043,7 +2044,7 @@ window.cadExecuteAddMakura = (latLng) => {
     for (let av of avoidPolys) {
         if (!finalPoly) break;
         try {
-            finalPoly = turf.difference(turf.featureCollection([finalPoly, av]));
+            finalPoly = turf.difference(finalPoly, av);
         } catch(e) { console.error(e); }
     }
     
