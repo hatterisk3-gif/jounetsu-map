@@ -1742,7 +1742,17 @@ function createSignboardMarker(name, pos, icon, id) {
       };
       
       window.selectWorkChip = (wName) => {
-          document.getElementById('rec_work_name').value = wName;
+          const sel = document.getElementById('rec_work_name');
+          if (sel) {
+              const exists = Array.from(sel.options).some(o => o.value === wName);
+              if (!exists) {
+                  const opt = document.createElement('option');
+                  opt.value = wName;
+                  opt.textContent = wName;
+                  sel.appendChild(opt);
+              }
+              sel.value = wName;
+          }
           document.querySelectorAll('.work-chip').forEach(el => {
               const isRecent = el.dataset.recent === "true";
               el.style.background = isRecent ? '#fff3e0' : '#f4f6f8';
@@ -1756,7 +1766,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   el.style.fontWeight = 'bold';
               }
           });
-          handleWorkNameChange();
+          handleWorkNameChange(wName);
       };
 
       window.renderWorkOptions = (category) => {
@@ -1765,12 +1775,15 @@ function createSignboardMarker(name, pos, icon, id) {
           let allWorks = p.isMarker 
               ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) 
               : pdlWorkMaster.filter(w => w.displayPlace === '圃場' || w.displayPlace === '全て');
-          const filteredWorks = allWorks.filter(w => (w.category || '圃場作業') === category);
+          const filteredWorks = category === 'すべて' ? allWorks : allWorks.filter(w => (w.category || '圃場作業') === category);
           
           let allChipsHTML = '<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">' + 
-                filteredWorks.map(w => `<button type="button" class="work-chip all-work-chip" data-recent="false" data-category="${w.category || '圃場作業'}" data-wname="${w.name}" onclick="selectWorkChip('${w.name}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`).join('') + '</div>';
+                filteredWorks.map(w => {
+                  const safeName = String(w.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                  return `<button type="button" class="work-chip all-work-chip" data-recent="false" data-category="${w.category || '圃場作業'}" data-wname="${String(w.name || '').replace(/"/g, '&quot;')}" data-details="${encodeURIComponent(w.detailWorks || '')}" onclick="selectWorkChip('${safeName}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`;
+                }).join('') + '</div>';
           
-          let wNames = '<option value="">選択してください</option>' + filteredWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
+          let wNames = '<option value="">選択してください</option>' + filteredWorks.map(w => `<option value="${String(w.name || '').replace(/"/g, '&quot;')}">${w.name}</option>`).join('');
           
           const container = document.getElementById('all_chips_container') || document.getElementById('work_chips_container');
           if (container) {
@@ -1787,8 +1800,14 @@ function createSignboardMarker(name, pos, icon, id) {
           handleWorkNameChange();
       };
 
-      window.handleWorkNameChange = () => {
-        const wName = document.getElementById('rec_work_name')?.value || "";
+      window.parseDetailWorksList = (raw) => {
+        if (!raw) return [];
+        return String(raw).split(/[,、，\n]/).map(s => s.trim()).filter(Boolean);
+      };
+
+      window.handleWorkNameChange = (forcedName) => {
+        const sel = document.getElementById('rec_work_name');
+        const wName = String(forcedName != null ? forcedName : (sel ? sel.value : '') || '').trim();
         
         const genSec = document.getElementById('lot_generate_section'), useSec = document.getElementById('lot_use_section');
         if(genSec) genSec.style.display = 'none'; 
@@ -1799,19 +1818,33 @@ function createSignboardMarker(name, pos, icon, id) {
         
         const detailSec = document.getElementById('detailed_works_section');
         if (detailSec) {
-           const workData = pdlWorkMaster.find(w => w.name === wName);
-           if (workData && workData.detailWorks) {
-              const details = workData.detailWorks.split(/[,、]/).map(s => s.trim()).filter(String);
-              if (details.length > 0) {
-                 let dHtml = `<div style="font-size:12px; font-weight:bold; color:#1a73e8; margin-bottom:5px;">✅ 詳細作業を選択</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-                 details.forEach(d => {
-                    dHtml += `<label class="checkbox-label" style="padding:6px 10px; background:#fff; border-color:#aecbfa;"><input type="checkbox" name="detail_work_ids" value="${d}"> ${d}</label>`;
-                 });
-                 dHtml += `</div>`;
-                 detailSec.innerHTML = dHtml;
-                 detailSec.style.display = 'block';
-              } else { detailSec.style.display = 'none'; }
-           } else { detailSec.style.display = 'none'; }
+           let rawDetails = '';
+           const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
+           if (workData) rawDetails = workData.detailWorks || '';
+           // チップ側の data-details もフォールバック
+           if (!rawDetails) {
+             const chip = Array.from(document.querySelectorAll('.work-chip')).find(c => c.dataset.wname === wName);
+             if (chip && chip.dataset.details) {
+               try { rawDetails = decodeURIComponent(chip.dataset.details); } catch (e) { rawDetails = chip.dataset.details; }
+             }
+           }
+           const details = window.parseDetailWorksList(rawDetails);
+           if (details.length > 0) {
+              let dHtml = `<div style="font-size:13px; font-weight:bold; color:#1a73e8; margin-bottom:8px;">✅ 詳細作業を選択（複数可）</div><div style="display:flex; flex-direction:column; gap:8px;">`;
+              details.forEach(d => {
+                 const safeVal = String(d).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+                 dHtml += `<label class="checkbox-label" style="padding:10px 12px; background:#fff; border:1px solid #90caf9; border-radius:6px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                    <input type="checkbox" name="detail_work_ids" value="${safeVal}" style="width:18px; height:18px; flex-shrink:0;">
+                    <span style="font-size:14px; color:#333;">${safeVal}</span>
+                 </label>`;
+              });
+              dHtml += `</div>`;
+              detailSec.innerHTML = dHtml;
+              detailSec.style.display = 'block';
+           } else {
+              detailSec.innerHTML = '';
+              detailSec.style.display = 'none';
+           }
         }
         window.renderUsedItems(wName);
       };
@@ -2031,12 +2064,17 @@ function createSignboardMarker(name, pos, icon, id) {
                   uniqueRecent.map(wName => {
                       const wObj = pdlWorkMaster.find(w => w.name === wName);
                       const wCat = (wObj && wObj.category) ? wObj.category : '圃場作業';
-                      return `<button type="button" class="work-chip recent-work-chip" data-recent="true" data-category="${wCat}" data-wname="${wName}" onclick="selectWorkChip('${wName}')" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>`;
+                      const details = (wObj && wObj.detailWorks) ? wObj.detailWorks : '';
+                      const safeName = String(wName).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                      return `<button type="button" class="work-chip recent-work-chip" data-recent="true" data-category="${wCat}" data-wname="${String(wName).replace(/"/g, '&quot;')}" data-details="${encodeURIComponent(details)}" onclick="selectWorkChip('${safeName}')" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>`;
                   }).join('') + `</div></div>`;
           }
 
           let allChipsHTML = `<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">` + 
-              availableWorks.map(w => `<button type="button" class="work-chip all-work-chip" data-recent="false" data-category="${w.category || '圃場作業'}" data-wname="${w.name}" onclick="selectWorkChip('${w.name}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`).join('') + `</div>`;
+              availableWorks.map(w => {
+                  const safeName = String(w.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                  return `<button type="button" class="work-chip all-work-chip" data-recent="false" data-category="${w.category || '圃場作業'}" data-wname="${String(w.name || '').replace(/"/g, '&quot;')}" data-details="${encodeURIComponent(w.detailWorks || '')}" onclick="selectWorkChip('${safeName}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`;
+              }).join('') + `</div>`;
 
           let wNames = '<option value="">選択してください</option>' + availableWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
           let wStats = '<option value="">選択してください</option>' + pdlWorkStatuses.map(s => `<option value="${s}">${s}</option>`).join('');

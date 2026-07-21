@@ -471,7 +471,7 @@ function getInitData() {
       const idxName = headers.indexOf('作業名');
       const idxPlace = headers.indexOf('表示場所');
       const idxFunc = headers.indexOf('対応看板機能');
-      const idxDetail = headers.indexOf('詳細作業名');
+      const idxDetail = findWorkDetailColumnIndex_(headers);
       const idxStatus = headers.indexOf('進捗状況');
       const idxContainer = headers.indexOf('コンテナ名');
       const idxMaintenance = headers.indexOf('整備内容'); 
@@ -479,7 +479,7 @@ function getInitData() {
       const idxCategory = findWorkCategoryColumnIndex_(headers);
 
       for (let i = 1; i < data.length; i++) {
-        let wName = idxName >= 0 ? data[i][idxName] : "";
+        let wName = idxName >= 0 ? String(data[i][idxName] || "").trim() : "";
         if (wName) {
           let cat = idxCategory >= 0 && data[i][idxCategory] ? String(data[i][idxCategory]).trim() : "";
           if (!cat) cat = "圃場作業"; // デフォルト
@@ -760,13 +760,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
     const idxCategory = findWorkCategoryColumnIndex_(returnHeaders);
     const idxPlace = returnHeaders.indexOf('表示場所');
     const idxFunc = returnHeaders.indexOf('対応看板機能');
-    const idxDetail = returnHeaders.indexOf('詳細作業名');
+    const idxDetail = findWorkDetailColumnIndex_(returnHeaders);
     return newData.slice(1).filter(r => idxName >= 0 && r[idxName]).map(r => ({
-      name: r[idxName],
+      name: String(r[idxName] || "").trim(),
       category: idxCategory >= 0 ? (r[idxCategory] || "圃場作業") : "圃場作業",
       displayPlace: idxPlace >= 0 ? r[idxPlace] : "",
       targetFunction: idxFunc >= 0 ? r[idxFunc] : "",
-      detailWorks: idxDetail >= 0 ? r[idxDetail] : ""
+      detailWorks: idxDetail >= 0 && r[idxDetail] ? String(r[idxDetail]).trim() : ""
     }));
   } else {
     return newData.slice(1).map(r=>r[0]).filter(String);
@@ -800,9 +800,20 @@ function findWorkCategoryColumnIndex_(headers) {
   return -1;
 }
 
+/** 作業マスタの詳細作業列を解決 */
+function findWorkDetailColumnIndex_(headers) {
+  const candidates = ['詳細作業名', '詳細作業', '詳細', '詳細作業（カンマ区切り）'];
+  for (let i = 0; i < candidates.length; i++) {
+    const idx = headers.indexOf(candidates[i]);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
 /** 作業マスタ追加/編集用の列名→値マップ（担当部署列は部署用のため変更しない） */
 function buildWorkMasterColumnMap_(value) {
   const category = value.category || "圃場作業";
+  const details = value.detailWorks || "";
   return {
     '作業名': value.name,
     'カテゴリ': category,
@@ -811,7 +822,10 @@ function buildWorkMasterColumnMap_(value) {
     '作業カテゴリー': category,
     '表示場所': value.displayPlace || "圃場",
     '対応看板機能': value.targetFunction || "",
-    '詳細作業名': value.detailWorks || ""
+    '詳細作業名': details,
+    '詳細作業': details,
+    '詳細': details,
+    '詳細作業（カンマ区切り）': details
   };
 }
 // ==========================================
