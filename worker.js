@@ -1863,6 +1863,50 @@ function createSignboardMarker(name, pos, icon, id) {
         return rows;
       };
 
+      window.selectWorkCategory = (catName) => {
+        const hiddenInput = document.getElementById('rec_work_category');
+        if (hiddenInput) hiddenInput.value = catName;
+
+        document.querySelectorAll('.work-category-btn').forEach(btn => {
+           const isSelected = (btn.dataset.category === catName);
+           if (isSelected) {
+              btn.style.background = '#2196F3';
+              btn.style.color = '#fff';
+              btn.style.borderColor = '#1976D2';
+              btn.style.fontWeight = 'bold';
+           } else {
+              btn.style.background = '#f4f6f8';
+              btn.style.color = '#333';
+              btn.style.borderColor = '#ccc';
+              btn.style.fontWeight = 'normal';
+           }
+        });
+
+        if (typeof window.filterWorkChips === 'function') window.filterWorkChips();
+        if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
+      };
+
+      window.renderCategoryButtons = (selectedCategory) => {
+        const wrapper = document.getElementById('work_category_buttons_wrapper');
+        if (!wrapper) return;
+
+        const categories = ["すべて", ...(pdlWorkCategories || ["圃場作業", "事務作業", "保全・整備"])];
+        const currentCat = selectedCategory || (document.getElementById('rec_work_category') ? document.getElementById('rec_work_category').value : 'すべて') || 'すべて';
+
+        wrapper.innerHTML = categories.map(c => {
+           const isSelected = (c === currentCat);
+           const bg = isSelected ? '#2196F3' : '#f4f6f8';
+           const color = isSelected ? '#fff' : '#333';
+           const border = isSelected ? '1px solid #1976D2' : '1px solid #ccc';
+           const fontWeight = isSelected ? 'bold' : 'normal';
+           const safeCat = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+           return `<button type="button" class="work-category-btn" data-category="${String(c).replace(/"/g, '&quot;')}" onclick="selectWorkCategory('${safeCat}')" style="background:${bg}; color:${color}; border:${border}; font-weight:${fontWeight}; padding:8px 14px; border-radius:20px; font-size:13px; cursor:pointer;">${c}</button>`;
+        }).join('');
+
+        const hiddenInput = document.getElementById('rec_work_category');
+        if (hiddenInput) hiddenInput.value = currentCat;
+      };
+
       window.getTotalWorkMinutes = () => {
         const s = document.getElementById('rec_start_time')?.value, e = document.getElementById('rec_end_time')?.value;
         if(s && e) {
@@ -2385,10 +2429,8 @@ function createSignboardMarker(name, pos, icon, id) {
                   ${timeUI}
                   ${workTimeUI}
                   <label class="form-label" style="margin-top:15px;">📁 カテゴリ</label>
-                  <select id="rec_work_category" class="form-input" onchange="if(window.filterWorkChips) window.filterWorkChips(); if(window.refreshFieldTargetUI) window.refreshFieldTargetUI();">
-                      <option value="すべて">すべて</option>
-                      ${(pdlWorkCategories || ["圃場作業", "事務作業", "保全・整備"]).map(c => `<option value="${c}">${c}</option>`).join('')}
-                  </select>
+                  <input type="hidden" id="rec_work_category" value="すべて">
+                  <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
                   <label class="form-label" style="margin-top:10px;">🚜 作業名</label>
                   <div id="work_chips_wrapper">
                     ${recentChipsHTML}
@@ -2434,6 +2476,7 @@ function createSignboardMarker(name, pos, icon, id) {
         document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
         
         if (currentRecordType === 'work' && !p.isMarker) setTimeout(() => {
+            if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons();
             updateSelectedPolysDisplay();
             if (typeof window.renderCropChips === 'function') window.renderCropChips();
             if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
@@ -2446,7 +2489,9 @@ function createSignboardMarker(name, pos, icon, id) {
             document.getElementById('rec_work_date').value = d.workDate || ''; 
             const wObj = pdlWorkMaster.find(w => w.name === d.workName);
             const wCat = (wObj && wObj.category) ? wObj.category : (pdlWorkCategories[0] || "圃場作業");
-            if (document.getElementById('rec_work_category')) {
+            if (typeof window.selectWorkCategory === 'function') {
+                window.selectWorkCategory(wCat);
+            } else if (document.getElementById('rec_work_category')) {
                 document.getElementById('rec_work_category').value = wCat;
                 if (typeof renderWorkOptions === 'function') renderWorkOptions(wCat);
                 if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
