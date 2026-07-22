@@ -1863,6 +1863,110 @@ function createSignboardMarker(name, pos, icon, id) {
         return rows;
       };
 
+      window.getTotalWorkMinutes = () => {
+        const s = document.getElementById('rec_start_time')?.value, e = document.getElementById('rec_end_time')?.value;
+        if(s && e) {
+           let sMins = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]), eMins = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
+           let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
+           return diff;
+        }
+        return 0;
+      };
+
+      window.parseDetailedWorkWithMinutes = (str) => {
+        if (!str) return [];
+        return str.split(',').map(s => {
+           const item = s.trim();
+           if (!item) return null;
+           const match = item.match(/^(.+?)\s*[\(（](\d+(?:\.\d+)?)\s*分?[\)）]$/);
+           if (match) {
+              return { name: match[1].trim(), minutes: match[2] };
+           }
+           return { name: item, minutes: '' };
+        }).filter(Boolean);
+      };
+
+      window.toggleDetailWorkMinutes = (cb) => {
+        const row = cb.closest('.detail-work-item-row');
+        if (!row) return;
+        const minWrapper = row.querySelector('.detail-work-min-wrapper');
+        const minInput = row.querySelector('.detail-work-min-input');
+        if (cb.checked) {
+          if (minWrapper) minWrapper.style.display = 'inline-flex';
+          row.style.background = '#e3f2fd';
+          row.style.borderColor = '#2196f3';
+        } else {
+          if (minWrapper) minWrapper.style.display = 'none';
+          if (minInput) minInput.value = '';
+          row.style.background = '#fff';
+          row.style.borderColor = '#90caf9';
+        }
+      };
+
+      window.restoreDetailedWorksWithMinutes = (detailedWorksStr) => {
+        if (!detailedWorksStr) return;
+        const parsedItems = window.parseDetailedWorkWithMinutes(detailedWorksStr);
+        parsedItems.forEach(item => {
+           document.querySelectorAll('input[name="detail_work_ids"]').forEach(cb => {
+              if (cb.value === item.name) {
+                 cb.checked = true;
+                 window.toggleDetailWorkMinutes(cb);
+                 if (item.minutes !== '' && item.minutes !== null && item.minutes !== undefined) {
+                    const row = cb.closest('.detail-work-item-row');
+                    if (row) {
+                       const minInput = row.querySelector('.detail-work-min-input');
+                       if (minInput) minInput.value = item.minutes;
+                    }
+                 }
+              }
+           });
+        });
+      };
+
+      window.buildDetailedWorksFormattedString = () => {
+        const checkedCbs = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked'));
+        if (checkedCbs.length === 0) return '';
+
+        const totalWorkMins = (typeof window.getTotalWorkMinutes === 'function') ? window.getTotalWorkMinutes() : 0;
+        
+        let manualSum = 0;
+        const items = checkedCbs.map(cb => {
+           const name = cb.value;
+           const row = cb.closest('.detail-work-item-row');
+           let userVal = '';
+           if (row) {
+              const minInput = row.querySelector('.detail-work-min-input');
+              if (minInput) userVal = minInput.value.trim();
+           }
+           const minNum = parseFloat(userVal);
+           const isManual = !isNaN(minNum) && minNum >= 0 && userVal !== '';
+           if (isManual) {
+              manualSum += minNum;
+           }
+           return { name, isManual, minNum: isManual ? minNum : 0 };
+        });
+
+        const unenteredItems = items.filter(item => !item.isManual);
+        const remainingMins = Math.max(0, totalWorkMins - manualSum);
+        const autoMinPerItem = (unenteredItems.length > 0 && totalWorkMins > 0)
+           ? Math.round(remainingMins / unenteredItems.length)
+           : 0;
+
+        const formattedList = items.map(item => {
+           if (item.isManual) {
+              return `${item.name} (${item.minNum}分)`;
+           } else {
+              if (totalWorkMins > 0 || unenteredItems.length < items.length) {
+                 return `${item.name} (${autoMinPerItem}分)`;
+              } else {
+                 return item.name;
+              }
+           }
+        });
+
+        return formattedList.join(', ');
+      };
+
       window.calcTotalTime = () => {
         const s = document.getElementById('rec_start_time')?.value, e = document.getElementById('rec_end_time')?.value, disp = document.getElementById('rec_total_time_display');
         if(s && e && disp) {
@@ -1994,12 +2098,18 @@ function createSignboardMarker(name, pos, icon, id) {
            }
            const details = window.parseDetailWorksList(rawDetails);
            if (details.length > 0) {
-              let dHtml = `<div style="font-size:13px; font-weight:bold; color:#1a73e8; margin-bottom:8px;">✅ 詳細作業を選択（複数可）</div><div style="display:flex; flex-direction:column; gap:8px;">`;
+              let dHtml = `<div style="font-size:13px; font-weight:bold; color:#1a73e8; margin-bottom:8px;">✅ 詳細作業を選択（複数可・任意で分数指定）</div><div style="display:flex; flex-direction:column; gap:8px;">`;
               details.forEach(d => {
                  const safeVal = String(d).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-                 dHtml += `<label class="checkbox-label" style="padding:10px 12px; background:#fff; border:1px solid #90caf9; border-radius:6px; display:flex; align-items:center; gap:10px; cursor:pointer;">
-                    <input type="checkbox" name="detail_work_ids" value="${safeVal}" style="width:18px; height:18px; flex-shrink:0;">
-                    <span style="font-size:14px; color:#333;">${safeVal}</span>
+                 dHtml += `<label class="checkbox-label detail-work-item-row" style="padding:10px 12px; background:#fff; border:1px solid #90caf9; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer;">
+                    <div style="display:flex; align-items:center; gap:10px; flex:1;">
+                       <input type="checkbox" name="detail_work_ids" value="${safeVal}" onchange="toggleDetailWorkMinutes(this)" style="width:18px; height:18px; flex-shrink:0;">
+                       <span style="font-size:14px; color:#333;">${safeVal}</span>
+                    </div>
+                    <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
+                       <input type="number" name="detail_work_min_${safeVal}" class="detail-work-min-input" data-work="${safeVal}" placeholder="自動" min="0" style="width:65px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()">
+                       <span style="font-size:12px; color:#666;">分</span>
+                    </div>
                  </label>`;
               });
               dHtml += `</div>`;
@@ -2368,11 +2478,10 @@ function createSignboardMarker(name, pos, icon, id) {
             }
             
             if (d.detailedWorks) {
-               const savedDetails = d.detailedWorks.split(',').map(s=>s.trim());
                setTimeout(() => {
-                  document.querySelectorAll('input[name="detail_work_ids"]').forEach(cb => {
-                     if (savedDetails.includes(cb.value)) cb.checked = true;
-                  });
+                  if (typeof window.restoreDetailedWorksWithMinutes === 'function') {
+                     window.restoreDetailedWorksWithMinutes(d.detailedWorks);
+                  }
                }, 50);
             }
            // ★追加：使ったもの（農機・資材）のチェックと数値を復元する処理
@@ -2600,7 +2709,9 @@ function createSignboardMarker(name, pos, icon, id) {
               }
           }
           
-          let detailedWorks = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked')).map(cb => cb.value);
+          let detailedWorksStr = (typeof window.buildDetailedWorksFormattedString === 'function')
+            ? window.buildDetailedWorksFormattedString()
+            : Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked')).map(cb => cb.value).join(', ');
           let usedItemsText = getUsedItemsText();
           const ridgeProgress = (typeof window.collectRidgeProgressData === 'function') ? window.collectRidgeProgressData() : [];
           const firstRidge = ridgeProgress[0] || {};
@@ -2609,7 +2720,7 @@ function createSignboardMarker(name, pos, icon, id) {
           data = { 
             workDate: document.getElementById('rec_work_date').value, 
             workName: wName, 
-            detailedWorks: detailedWorks.join(', '), 
+            detailedWorks: detailedWorksStr, 
             crop: (typeof window.getSelectedWorkCropsText === 'function') ? window.getSelectedWorkCropsText() : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : ""), 
             startTime: sTime, endTime: eTime, totalTime: totalTimeStr, 
             progressStatus: document.getElementById('rec_progress_status').value,
