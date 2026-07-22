@@ -2974,7 +2974,6 @@ function createSignboardMarker(name, pos, icon, id) {
           if (btn) { btn.disabled = false; btn.innerText = "保存する"; }
         }
       }
-      }
 
       window.openGlobalHarvest = () => {
          let locOpts = pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
