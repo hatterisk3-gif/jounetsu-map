@@ -974,7 +974,10 @@ function getSavedPolygons() {
     for (let i = 1; i < data.length; i++) {
       if (!data[i][0]) continue;
       let photos = [];
-      try { if (data[i][9]) photos = JSON.parse(data[i][9]); } catch(e){}
+      try {
+        if (data[i][9] && data[i][9] !== "[]") photos = JSON.parse(data[i][9]);
+        else if (data[i][6] && data[i][6] !== "[]") photos = JSON.parse(data[i][6]);
+      } catch(e){}
       
       result.push({
         id: data[i][0],
@@ -1520,8 +1523,9 @@ if (recordType === 'work') rs.appendRow([today+" "+time, nameStr, author, record
     const found = findSheetAndRowById(ids[i]);
     if (!found) continue;
     const isHojo = found.sheet.getName() === '圃場';
-    const pc = isHojo ? 10 : 7;
+    const pc = 10;
     let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} }
+    if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch(e) {} }
     ex.push({ id: recordId, type: recordType || 'growth', date: today, time, author, urls, data: recordData }); 
     found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
     
@@ -1563,7 +1567,7 @@ if (recordType === 'work') rs.appendRow([today+" "+time, nameStr, author, record
 }
 function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64, keptUrls, user) {
   const found = findSheetAndRowById(polyId); if (!found) throw new Error("対象なし");
-  const pType = found.sheet.getName(), pc = pType === '圃場' ? 10 : 7; let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} }
+  const pType = found.sheet.getName(), pc = 10; let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} } if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch(e) {} }
   let tgt = ex.find(item => item.id === recordId || item.url === recordId); if (!tgt) throw new Error("記録が見つかりません");
   let newUrls = [];
   if (newPhotosBase64 && newPhotosBase64.length > 0) {
@@ -1604,7 +1608,7 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
 
 function deleteRecordItem(polyId, recordId, user) {
   const found = findSheetAndRowById(polyId); if (!found) throw new Error("対象なし");
-  const pc = found.sheet.getName() === '圃場' ? 10 : 7; let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} }
+  const pc = 10; let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} } if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch(e) {} }
   const updated = ex.filter(item => item.id !== recordId && item.url !== recordId); found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(updated)); 
   writeLog(user, "記録削除", found.rowData[1], `対象ID: ${recordId}`);
   return updated;
