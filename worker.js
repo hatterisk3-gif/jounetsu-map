@@ -1601,18 +1601,39 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!box) return;
         const catEl = document.getElementById('rec_work_category');
         const cat = catEl ? catEl.value : '';
-        const show = cat === '圃場作業';
+        // 圃場作業・「すべて」のときは圃場記録対象を表示
+        const show = cat === '圃場作業' || cat === 'すべて';
         box.style.display = show ? 'block' : 'none';
         if (!show) {
-          // 非圃場作業では複数圃場選択を解除し、起点圃場のみ残す
+          // 事務・保全などでは複数圃場選択を解除し、起点があればそれのみ残す
           if (activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker) {
+            selectedPolyIds = [activePolyId];
+          } else if (activePolyId && loadedPolygons[activePolyId]) {
             selectedPolyIds = [activePolyId];
           } else {
             selectedPolyIds = [];
           }
           if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+        } else if (selectedPolyIds.length === 0 && activePolyId && loadedPolygons[activePolyId]) {
+          selectedPolyIds = [activePolyId];
+          if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
         }
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
+      };
+
+      window.getSelectedWorkCategory = () => {
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        if (!wName || typeof pdlWorkMaster === 'undefined') return '';
+        const wObj = pdlWorkMaster.find(w => String(w.name || '').trim() === wName);
+        return wObj ? (wObj.category || '圃場作業') : '';
+      };
+
+      window.workRecordRequiresField = () => {
+        const catEl = document.getElementById('rec_work_category');
+        const cat = catEl ? catEl.value : '';
+        if (cat === '圃場作業') return true;
+        if (cat === 'すべて') return window.getSelectedWorkCategory() === '圃場作業';
+        return false;
       };
 
       window.refreshRidgeProgressUI = () => {
@@ -2370,18 +2391,30 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       async function submitRecord() {
-        // 圃場記録対象は任意。未選択なら紐づけ先がないため保存不可（技術制約）
+        // 紐づけ先の解決（圃場作業のときだけ圃場必須）
         let targetIds = [...selectedPolyIds].filter(id => id && loadedPolygons[id]);
         if (targetIds.length === 0 && activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker) {
           targetIds = [activePolyId];
         }
         if (targetIds.length === 0 && currentRecordType === 'work') {
-          // 看板起点など active がある場合はそれを使う
           if (activePolyId && loadedPolygons[activePolyId]) targetIds = [activePolyId];
         }
         if (targetIds.length === 0) {
-          customAlert("記録を保存するには、紐づける圃場（または看板）が必要です。マップから選択してください。");
-          return;
+          const requiresField = currentRecordType === 'work' && typeof window.workRecordRequiresField === 'function'
+            ? window.workRecordRequiresField()
+            : (currentRecordType === 'work');
+          if (requiresField) {
+            customAlert("記録を保存するには、紐づける圃場（または看板）が必要です。マップから選択してください。");
+            return;
+          }
+          // 非圃場作業: 技術上の保存先として看板を1つ使う（なければエラー）
+          const signId = Object.keys(loadedPolygons).find(id => loadedPolygons[id] && loadedPolygons[id].isMarker);
+          if (signId) {
+            targetIds = [signId];
+          } else {
+            customAlert("保存先となる看板が見つかりません。地図に看板を登録するか、拠点看板から記録を開いてください。");
+            return;
+          }
         }
         selectedPolyIds = targetIds;
         if (currentRecordType === 'work') { const prog = document.getElementById('rec_progress_status').value; if (!prog) { customAlert("進捗状況は必須項目です。選択してください。"); return; } }
