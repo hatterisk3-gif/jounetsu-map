@@ -4792,7 +4792,7 @@ window.openMyPage = function() {
                     ${d.crop ? `<div style="font-size:11px; color:#555;">🌱 作物: ${d.crop}</div>` : ''}
                     ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
                     <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
-                        <span onclick="document.getElementById('modal').style.display='none'; window.deleteRecordFromMyPage('${rec.polyId}', '${rec.id}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
+                        <span onclick="window.deleteRecordFromMyPage('${rec.polyId}', '${rec.id}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
                         <span onclick="document.getElementById('modal').style.display='none'; window.editRecordFromMyPage('${rec.polyId}', '${rec.id}')" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
                     </div>
                 </div>
