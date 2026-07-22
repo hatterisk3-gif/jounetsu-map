@@ -945,7 +945,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (p.isMarker) {
           const func = p.signFunction || '一般看板';
           availableWorks = pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === func || String(w.targetFunction).includes(func)));
-        } else { availableWorks = pdlWorkMaster.filter(w => w.displayPlace === '圃場'); }
+        } else { availableWorks = pdlWorkMaster; }
         const hasWork = !p.isMarker || availableWorks.length > 0;
 
         let actions = `<div style="display:flex; gap:4px; width:100%; margin-bottom:6px;">`;
@@ -5117,7 +5117,7 @@ window.filterWorkChips = function() {
         if (p) {
             let allWorks = p.isMarker
                 ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板')))
-                : pdlWorkMaster.filter(w => w.displayPlace === '圃場' || w.displayPlace === '全て');
+                : pdlWorkMaster;
             const filtered = cat === 'すべて' ? allWorks : allWorks.filter(w => (w.category || '圃場作業') === cat);
             const current = select.value;
             select.innerHTML = '<option value="">選択してください</option>' + filtered.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
