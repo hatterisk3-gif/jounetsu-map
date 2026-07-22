@@ -4690,14 +4690,17 @@ window.deleteRecordFromMyPage = async function(polyId, recordId) {
             if (loadedPolygons[polyId]) {
                 loadedPolygons[polyId].photos = updatedPhotos;
             }
-            if (typeof alertMsg === 'function') alertMsg("記録を削除しました");
-            if (typeof renderMyPage === 'function') renderMyPage();
+            if (typeof customAlert === 'function') customAlert("記録を削除しました");
+            else if (typeof alertMsg === 'function') alertMsg("記録を削除しました");
+            if (typeof openMyPage === 'function') openMyPage();
         } else {
-            if (typeof alertMsg === 'function') alertMsg("削除に失敗しました", true);
+            if (typeof customAlert === 'function') customAlert("削除に失敗しました");
+            else if (typeof alertMsg === 'function') alertMsg("削除に失敗しました", true);
         }
     } catch (e) {
         console.error("deleteRecordFromMyPage Error:", e);
-        if (typeof alertMsg === 'function') alertMsg("通信エラーが発生しました", true);
+        if (typeof customAlert === 'function') customAlert("通信エラーが発生しました");
+        else if (typeof alertMsg === 'function') alertMsg("通信エラーが発生しました", true);
     } finally {
         if (typeof hideLoader === 'function') hideLoader();
     }

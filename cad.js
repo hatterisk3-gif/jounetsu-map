@@ -28,6 +28,7 @@ window.isHistoryNavigating = false;
 let realScaleTimeout = null;
 let labelPositionsTimeout = null;
 let lastLabelPositionsTime = 0;
+window.cadSuppressPathEvents = false; // 一括変形中は path の set_at 連鎖を抑制
 
 // 🌟 ラベル位置更新のスロットリング用関数
 window.updateCadLabelPositionsThrottled = () => {
@@ -1002,6 +1003,8 @@ window.bindShapeHistoryEvents = (poly) => {
     let editTimeout = null;
     ['set_at', 'insert_at', 'remove_at'].forEach(eventName => {
         google.maps.event.addListener(poly.getPath(), eventName, () => {
+            // 一括変形中は頂点イベントを無視（100畝調整時のフリーズ防止）
+            if (window.cadSuppressPathEvents) return;
             window.updateSingleLabelPosition(poly); // 変形時にもリアルタイム追従
             if(window.updateCadSvgOverlay) window.updateCadSvgOverlay();
             clearTimeout(editTimeout);
@@ -2088,53 +2091,59 @@ window.cadAdjustRidgeGap = (delta) => {
         return;
     }
 
-    targetPolygons.forEach(poly => {
-        let path = poly.getPath(); 
-        let coords = [];
-        for (let i = 0; i < path.getLength(); i++) { 
-            let pt = path.getAt(i); 
-            coords.push([pt.lng(), pt.lat()]); 
-        }
-        coords.push([path.getAt(0).lng(), path.getAt(0).lat()]);
-        
-        let tPoly = turf.polygon([coords]);
-        let centerTurf = turf.center(tPoly);
-        
-        const angleEl = document.getElementById('cadAngle');
-        const L = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0; // Length bearing
-        
-        let newCoords = [];
-        // path.getLength() vertices (not including the closed one)
-        for (let i = 0; i < path.getLength(); i++) {
-            let ptTurf = turf.point([path.getAt(i).lng(), path.getAt(i).lat()]);
-            let D = turf.distance(centerTurf, ptTurf, {units: 'kilometers'});
-            let B = turf.bearing(centerTurf, ptTurf);
-            
-            let theta = B - L;
-            let thetaRad = theta * Math.PI / 180;
-            
-            let dL = D * Math.cos(thetaRad); // Length component
-            let dW = D * Math.sin(thetaRad); // Width component
-            
-            let new_dW = dW * scaleFactor;
-            
-            let new_D = Math.sqrt(dL * dL + new_dW * new_dW);
-            let new_thetaRad = Math.atan2(new_dW, dL);
-            let new_theta = new_thetaRad * 180 / Math.PI;
-            
-            let new_B = L + new_theta;
-            
-            let newPt = turf.destination(centerTurf, new_D, new_B, {units: 'kilometers'});
-            newCoords.push(new google.maps.LatLng(newPt.geometry.coordinates[1], newPt.geometry.coordinates[0]));
-        }
-        
-        for (let i = 0; i < path.getLength(); i++) {
-            path.setAt(i, newCoords[i]);
-        }
-    });
+    const angleEl = document.getElementById('cadAngle');
+    const L = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+    const Lrad = L * Math.PI / 180;
+    const cosL = Math.cos(Lrad);
+    const sinL = Math.sin(Lrad);
+    const METERS_PER_DEG_LAT = 111320;
 
-    if (typeof window.reassignLabels === 'function') window.reassignLabels();
-    window.cadSvgNeedsRebuild = true;
+    // 頂点ごとの set_at → 全畝SVG更新の連鎖を止め、平面近似で一括変形する
+    window.cadSuppressPathEvents = true;
+    try {
+        for (let p = 0; p < targetPolygons.length; p++) {
+            const path = targetPolygons[p].getPath();
+            const len = path.getLength();
+            if (len === 0) continue;
+
+            let sumLat = 0, sumLng = 0;
+            const lats = new Array(len);
+            const lngs = new Array(len);
+            for (let i = 0; i < len; i++) {
+                const pt = path.getAt(i);
+                lats[i] = pt.lat();
+                lngs[i] = pt.lng();
+                sumLat += lats[i];
+                sumLng += lngs[i];
+            }
+            const cLat = sumLat / len;
+            const cLng = sumLng / len;
+            const metersPerDegLng = METERS_PER_DEG_LAT * Math.cos(cLat * Math.PI / 180) || METERS_PER_DEG_LAT;
+
+            for (let i = 0; i < len; i++) {
+                const dx = (lngs[i] - cLng) * metersPerDegLng; // east (m)
+                const dy = (lats[i] - cLat) * METERS_PER_DEG_LAT; // north (m)
+                const dL = dx * sinL + dy * cosL;
+                const dW = dx * cosL - dy * sinL;
+                const new_dW = dW * scaleFactor;
+                const new_dx = dL * sinL + new_dW * cosL;
+                const new_dy = dL * cosL - new_dW * sinL;
+                path.setAt(i, new google.maps.LatLng(
+                    cLat + new_dy / METERS_PER_DEG_LAT,
+                    cLng + new_dx / metersPerDegLng
+                ));
+            }
+        }
+    } finally {
+        window.cadSuppressPathEvents = false;
+    }
+
+    // 番号の付け直しは不要。位置だけ更新してからSVG/履歴を1回だけ反映
+    for (let p = 0; p < targetPolygons.length; p++) {
+        if (typeof window.updateSingleLabelPosition === 'function') {
+            window.updateSingleLabelPosition(targetPolygons[p]);
+        }
+    }
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 };
