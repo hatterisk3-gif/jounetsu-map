@@ -2087,6 +2087,57 @@ function createSignboardMarker(name, pos, icon, id) {
         } else if (disp) { disp.innerText = "--"; }
       };
 
+      // スマホでネイティブ time ピッカーの「設定」が見切れる対策（独自ピッカー）
+      let _timePickerTargetId = null;
+      window.openAppTimePicker = (inputId, title) => {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        _timePickerTargetId = inputId;
+        const modal = document.getElementById('timePickerModal');
+        const hourSel = document.getElementById('timePickerHour');
+        const minSel = document.getElementById('timePickerMinute');
+        const titleEl = document.getElementById('timePickerTitle');
+        if (!modal || !hourSel || !minSel) return;
+
+        if (titleEl) titleEl.textContent = title || '時間を設定';
+
+        if (!hourSel.options.length) {
+          for (let h = 0; h < 24; h++) {
+            const v = String(h).padStart(2, '0');
+            hourSel.innerHTML += `<option value="${v}">${v}</option>`;
+          }
+          for (let m = 0; m < 60; m++) {
+            const v = String(m).padStart(2, '0');
+            minSel.innerHTML += `<option value="${v}">${v}</option>`;
+          }
+        }
+
+        const now = new Date();
+        const fallback = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const cur = (input.value && /^\d{1,2}:\d{2}$/.test(input.value)) ? input.value : fallback;
+        const [hh, mm] = cur.split(':');
+        hourSel.value = String(parseInt(hh, 10)).padStart(2, '0');
+        minSel.value = String(parseInt(mm, 10)).padStart(2, '0');
+        modal.style.display = 'flex';
+      };
+      window.closeAppTimePicker = () => {
+        const modal = document.getElementById('timePickerModal');
+        if (modal) modal.style.display = 'none';
+        _timePickerTargetId = null;
+      };
+      window.applyAppTimePicker = () => {
+        if (!_timePickerTargetId) return;
+        const input = document.getElementById(_timePickerTargetId);
+        const hourSel = document.getElementById('timePickerHour');
+        const minSel = document.getElementById('timePickerMinute');
+        if (input && hourSel && minSel) {
+          input.value = `${hourSel.value}:${minSel.value}`;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          if (typeof calcTotalTime === 'function') calcTotalTime();
+        }
+        window.closeAppTimePicker();
+      };
+
       window.updatePartsList = () => {
          const toolId = document.getElementById('m_tool').value;
          const partsSelect = document.getElementById('m_parts');
@@ -2407,12 +2458,15 @@ function createSignboardMarker(name, pos, icon, id) {
           <div class="form-grid" style="margin-bottom:15px;">
             <div>
               <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
-              <input type="time" id="rec_start_time" class="form-input" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" onchange="calcTotalTime()">
+              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" onclick="openAppTimePicker('rec_start_time', '開始時間')" onchange="calcTotalTime()">
               <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
                 <input type="checkbox" id="sync_clockin" ${!latestEndTime ? 'checked' : ''}>出勤時間と同期
               </label>
             </div>
-            <div><label class="form-label" style="font-size:11px; margin-bottom:2px;">⏹️ 終了</label><input type="time" id="rec_end_time" class="form-input" style="margin-bottom:0;" value="${isEdit ? '' : currentTimeStr}" onchange="calcTotalTime()"></div>
+            <div>
+              <label class="form-label" style="font-size:11px; margin-bottom:2px;">⏹️ 終了</label>
+              <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:0;" value="${isEdit ? '' : currentTimeStr}" onclick="openAppTimePicker('rec_end_time', '終了時間')" onchange="calcTotalTime()">
+            </div>
           </div>
         `;
 

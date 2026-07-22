@@ -252,6 +252,7 @@
           name: data.workName || '作業',
           polyName: p.name || id,
           polyId: id,
+          multiFieldNames: (data.multiFieldNames || '').trim(),
           totalTime: data.totalTime || ''
         });
       });
@@ -391,7 +392,10 @@
       html += `<div style="max-height:120px; overflow-y:auto; margin-bottom:12px; border:1px solid #eee; border-radius:6px;">`;
       a.records.forEach((r) => {
         html += `<div style="padding:8px 10px; border-bottom:1px solid #f0f0f0; font-size:12px;">`;
-        html += `<b>${minsToHm(r.start)}〜${minsToHm(r.end)}</b> ${r.name} <span style="color:#888;">(${r.polyName})</span>`;
+        html += `<b>${minsToHm(r.start)}〜${minsToHm(r.end)}</b> ${r.name}`;
+        if (r.multiFieldNames) {
+          html += ` <span style="color:#1565c0;">（${r.multiFieldNames}）</span>`;
+        }
         html += `</div>`;
       });
       html += `</div>`;
@@ -400,31 +404,31 @@
     }
 
     if (!a.matched && a.diff > 0) {
-      // 不足分を埋める提案（最大ギャップ、なければ退勤側にまとめる）
-      let fillStart;
-      let fillEnd;
-      const usableGaps = a.gaps.slice().sort((x, y) => y.end - y.start - (x.end - x.start));
-      if (usableGaps.length) {
-        const g = usableGaps[0];
-        const need = a.diff;
-        fillStart = g.start;
-        fillEnd = Math.min(g.end, g.start + need);
-        if (fillEnd - fillStart < need && usableGaps.length === 1) {
-          fillEnd = fillStart + need;
-        }
-      } else {
-        fillEnd = a.clockOutMins;
-        fillStart = fillEnd - a.diff;
+      // 不足分を空き時間帯ごとに提案（昼休憩をまたがないよう分割）
+      const fillPlans = [];
+      let remaining = a.diff;
+      const orderedGaps = a.gaps.slice().sort((x, y) => x.start - y.start);
+      orderedGaps.forEach((g) => {
+        if (remaining <= 0) return;
+        const take = Math.min(g.end - g.start, remaining);
+        if (take < TOLERANCE_MIN) return;
+        fillPlans.push({ start: g.start, end: g.start + take });
+        remaining -= take;
+      });
+      if (!fillPlans.length) {
+        const fillEnd = a.clockOutMins;
+        const fillStart = fillEnd - a.diff;
+        fillPlans.push({ start: fillStart, end: fillEnd });
       }
-      const fs = minsToHm(fillStart);
-      const fe = minsToHm(Math.min(fillEnd, a.clockOutMins));
-      html += `<button onclick="openGapWorkRecord('${fs}','${fe}')" style="background:#FF9800; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; margin-bottom:8px;">📝 不足時間（${fs}〜${fe}）を作業記録する</button>`;
-      if (a.gaps.length > 1) {
-        html += `<div style="font-size:11px; color:#888; margin-bottom:8px;">他の空き時間帯: ${a.gaps
-          .slice(0, 4)
-          .map((g) => minsToHm(g.start) + '〜' + minsToHm(g.end))
-          .join(' / ')}</div>`;
+      if (fillPlans.length > 1) {
+        html += `<div style="font-size:12px; color:#e65100; margin-bottom:8px;">不足 ${formatDuration(a.diff)} は ${fillPlans.length} つの空き時間帯に分かれています。それぞれ記録してください。</div>`;
       }
+      fillPlans.forEach((plan) => {
+        const fs = minsToHm(plan.start);
+        const fe = minsToHm(plan.end);
+        const dur = formatDuration(plan.end - plan.start);
+        html += `<button onclick="openGapWorkRecord('${fs}','${fe}')" style="background:#FF9800; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; margin-bottom:8px;">📝 不足時間（${fs}〜${fe} / ${dur}）を作業記録する</button>`;
+      });
     }
 
     html += `<div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">`;

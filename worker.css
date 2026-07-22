@@ -39,5 +39,10 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
 
 #modal, #lightbox, #feedbackModal { display: none; position: fixed; z-index: 9999; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); justify-content: center; align-items: center; }
 .modal-content { background: #fff; color: #333; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; max-height: 85vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+
+/* 作業記録の時刻入力（カスタムピッカー起動） */
+.app-time-input { background: #fff; cursor: pointer; caret-color: transparent; text-align: center; font-weight: bold; letter-spacing: 0.05em; }
+.app-time-input:focus { outline: 2px solid #2196F3; outline-offset: -1px; }
+.app-time-select { flex: 1; max-width: 120px; padding: 12px 8px; font-size: 22px; font-weight: bold; border: 1px solid #ccc; border-radius: 8px; background: #fafafa; text-align: center; }
 #lightbox img { max-width: 95%; max-height: 90%; border-radius: 4px; }
 .lot-section { background: #e3f2fd; border: 1px solid #90caf9; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
