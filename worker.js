@@ -1596,6 +1596,86 @@ function createSignboardMarker(name, pos, icon, id) {
         } catch (e) { return 0; }
       };
 
+      window.normalizeDateStr = (str) => {
+        if (!str) return '';
+        const parts = String(str).trim().replace(/\//g, '-').split('-');
+        if (parts.length < 3) return str;
+        const y = parts[0];
+        const m = String(parts[1]).padStart(2, '0');
+        const d = String(parts[2]).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      };
+
+      window.getLatestEndTimeForDate = (targetDateStr) => {
+        const normTarget = window.normalizeDateStr(targetDateStr);
+        if (!normTarget) return '';
+        let latestEnd = '';
+        const seenIds = new Set();
+        const normUser = (currentUser || '').replace(/\s+/g, '');
+
+        for (let id in loadedPolygons) {
+          const p = loadedPolygons[id];
+          if (p && p.photos && Array.isArray(p.photos)) {
+            p.photos.forEach(ph => {
+              if (!ph) return;
+              const recId = ph.id || (ph.data && ph.data.recordId);
+              if (recId && seenIds.has(recId)) return;
+              if (recId) seenIds.add(recId);
+
+              const phAuthor = (ph.author || '').replace(/\s+/g, '');
+              const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser === 'システム';
+              if (isAuthorMatch) {
+                const phWorkDate = window.normalizeDateStr(ph.data && ph.data.workDate);
+                const phDate = window.normalizeDateStr(ph.date);
+
+                if (phWorkDate === normTarget || phDate === normTarget) {
+                  const endTime = ph.data && ph.data.endTime;
+                  if (endTime && endTime > latestEnd) {
+                    latestEnd = endTime;
+                  }
+                }
+              }
+            });
+          }
+        }
+        return latestEnd;
+      };
+
+      window.handleWorkDateChange = () => {
+        const dateEl = document.getElementById('rec_work_date');
+        const startEl = document.getElementById('rec_start_time');
+        const syncEl = document.getElementById('sync_clockin');
+        if (!dateEl || !startEl) return;
+        const selectedDate = dateEl.value;
+        if (!selectedDate) return;
+
+        const latestEnd = window.getLatestEndTimeForDate(selectedDate);
+        if (latestEnd) {
+          startEl.value = latestEnd;
+          if (syncEl) syncEl.checked = false;
+        } else {
+          const now = new Date();
+          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+          if (selectedDate === todayStr) {
+            let clockInTime = "";
+            try {
+              const clockInJson = localStorage.getItem('passionMapClockInToday');
+              if (clockInJson) {
+                const clockInData = JSON.parse(clockInJson);
+                if (clockInData.date === now.toLocaleDateString() && clockInData.time) {
+                  clockInTime = clockInData.time;
+                }
+              }
+            } catch(e) {}
+            if (clockInTime) {
+              startEl.value = clockInTime;
+              if (syncEl) syncEl.checked = true;
+            }
+          }
+        }
+        if (typeof calcTotalTime === 'function') calcTotalTime();
+      };
+
       window.refreshFieldTargetUI = () => {
         const box = document.getElementById('field_target_section');
         if (!box) return;
@@ -2031,15 +2111,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 }
             }
         } catch(e) {}
-        let latestEndTime = "";
-        for (let id in loadedPolygons) {
-           if (loadedPolygons[id].photos) {
-              loadedPolygons[id].photos.forEach(ph => {
-                 if (ph.author === currentUser && ph.data && ph.data.workDate === todayStr) { if (ph.data.endTime && ph.data.endTime > latestEndTime) latestEndTime = ph.data.endTime; } 
-                 else if (ph.author === currentUser && ph.date === todayStr.replace(/-/g,'/')) { if (ph.data && ph.data.endTime && ph.data.endTime > latestEndTime) latestEndTime = ph.data.endTime; }
-              });
-           }
-        }
+        const latestEndTime = window.getLatestEndTimeForDate(todayStr);
         if (latestEndTime) defaultStartTime = latestEndTime;
 
         let timeUI = `
@@ -2135,7 +2207,7 @@ function createSignboardMarker(name, pos, icon, id) {
           `;
 
           html = `<label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;">
-                  <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}">
+                  <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
                   ${timeUI}
                   ${workTimeUI}
                   <label class="form-label" style="margin-top:15px;">📁 カテゴリ</label>
