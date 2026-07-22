@@ -1913,6 +1913,66 @@ function createSignboardMarker(name, pos, icon, id) {
         if (hiddenInput) hiddenInput.value = currentCat;
       };
 
+      window.selectProgressStatus = (statusName) => {
+        const hiddenInput = document.getElementById('rec_progress_status');
+        if (hiddenInput) hiddenInput.value = statusName;
+
+        document.querySelectorAll('.progress-status-btn').forEach(btn => {
+           const isSelected = (btn.dataset.status === statusName);
+           if (isSelected) {
+              if (statusName === '完了') {
+                 btn.style.background = '#4CAF50';
+                 btn.style.color = '#fff';
+                 btn.style.borderColor = '#388E3C';
+              } else if (statusName === '途中' || statusName === '作業中') {
+                 btn.style.background = '#FF9800';
+                 btn.style.color = '#fff';
+                 btn.style.borderColor = '#F57C00';
+              } else {
+                 btn.style.background = '#2196F3';
+                 btn.style.color = '#fff';
+                 btn.style.borderColor = '#1976D2';
+              }
+              btn.style.fontWeight = 'bold';
+           } else {
+              btn.style.background = '#f4f6f8';
+              btn.style.color = '#333';
+              btn.style.borderColor = '#ccc';
+              btn.style.fontWeight = 'normal';
+           }
+        });
+      };
+
+      window.renderProgressStatusButtons = (selectedStatus) => {
+        const wrapper = document.getElementById('progress_status_buttons_wrapper');
+        if (!wrapper) return;
+
+        const statuses = (pdlWorkStatuses && pdlWorkStatuses.length > 0) ? pdlWorkStatuses : ["途中", "完了"];
+        const currentStatus = selectedStatus || (document.getElementById('rec_progress_status') ? document.getElementById('rec_progress_status').value : '') || '';
+
+        wrapper.innerHTML = statuses.map(s => {
+           const isSelected = (s === currentStatus);
+           let bg = '#f4f6f8';
+           let color = '#333';
+           let border = '1px solid #ccc';
+           if (isSelected) {
+              if (s === '完了') {
+                 bg = '#4CAF50'; color = '#fff'; border = '1px solid #388E3C';
+              } else if (s === '途中' || s === '作業中') {
+                 bg = '#FF9800'; color = '#fff'; border = '1px solid #F57C00';
+              } else {
+                 bg = '#2196F3'; color = '#fff'; border = '1px solid #1976D2';
+              }
+           }
+           const fontWeight = isSelected ? 'bold' : 'normal';
+           const safeStatus = String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+           return `<button type="button" class="progress-status-btn" data-status="${String(s).replace(/"/g, '&quot;')}" onclick="selectProgressStatus('${safeStatus}')" style="background:${bg}; color:${color}; border:${border}; font-weight:${fontWeight}; padding:10px 18px; border-radius:20px; font-size:14px; cursor:pointer; flex:1; text-align:center; min-width:80px;">${s}</button>`;
+        }).join('');
+
+        const hiddenInput = document.getElementById('rec_progress_status');
+        if (hiddenInput) hiddenInput.value = currentStatus;
+      };
+
       window.getTotalWorkMinutes = () => {
         const s = document.getElementById('rec_start_time')?.value, e = document.getElementById('rec_end_time')?.value;
         if(s && e) {
@@ -2452,9 +2512,11 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="used_items_section"></div>
                   <div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div>
                   <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
-                  <label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label><select id="rec_progress_status" class="form-input">${wStats}</select>
-                  ${exPhotos}
-                  ${photoUI}`;
+                   <label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label>
+                   <input type="hidden" id="rec_progress_status" value="">
+                   <div id="progress_status_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
+                   ${exPhotos}
+                   ${photoUI}`;
         } else if (p.isMarker) {
           html = `${targetSection}${timeUI}${exPhotos}${photoUI}`;
         } else {
@@ -2483,6 +2545,7 @@ function createSignboardMarker(name, pos, icon, id) {
         
         if (currentRecordType === 'work' && !p.isMarker) setTimeout(() => {
             if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons();
+            if (typeof window.renderProgressStatusButtons === 'function') window.renderProgressStatusButtons();
             updateSelectedPolysDisplay();
             if (typeof window.renderCropChips === 'function') window.renderCropChips();
             if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
@@ -2502,7 +2565,8 @@ function createSignboardMarker(name, pos, icon, id) {
                 if (typeof renderWorkOptions === 'function') renderWorkOptions(wCat);
                 if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
             }
-            document.getElementById('rec_work_name').value = d.workName || ''; if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value = d.crop || ''; if (d.crop && typeof window.setSelectedWorkCropsFromText === 'function') window.setSelectedWorkCropsFromText(d.crop); if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || ''; document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
+            document.getElementById('rec_work_name').value = d.workName || ''; if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value = d.crop || ''; if (d.crop && typeof window.setSelectedWorkCropsFromText === 'function') window.setSelectedWorkCropsFromText(d.crop); if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || '';
+            if (d.progressStatus && typeof window.selectProgressStatus === 'function') window.selectProgressStatus(d.progressStatus); else if (document.getElementById('rec_progress_status')) document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
             if (document.getElementById('rec_work_comment')) document.getElementById('rec_work_comment').value = d.comment || d.notes || '';
             setTimeout(() => {
               if (d.ridgeProgress && Array.isArray(d.ridgeProgress)) {
