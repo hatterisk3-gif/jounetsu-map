@@ -1308,8 +1308,9 @@ function createSignboardMarker(name, pos, icon, id) {
           h = '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
         } else {
           const filtered = p.photos.filter(item => {
-             if(currentRecordType === 'work') return item.type === 'work';
-             return item.type !== 'work';
+             const isWork = (item.type === 'work') || (item.data && item.data.workName);
+             if(currentRecordType === 'work') return isWork;
+             return !isWork;
           });
           
           if(filtered.length === 0) {
@@ -2947,8 +2948,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (currentEditRecordId && activePolyId && !selectedPolyIds.includes(activePolyId)) {
             updatePolygonColor(activePolyId);
         }
-        // 送信成功時に一時保存データをクリア
+        // 送信成功時に一時保存データおよび古い初期表示キャッシュをクリア
         localStorage.removeItem('jmap_temp_work_record');
+        localStorage.removeItem('passionMapInitData');
         closeRightPanel();
         const resumeClock = typeof window.resumeClockOutAfterWorkSave === 'function' && sessionStorage.getItem('passionMapPendingClockOut');
         if (resumeClock) {
@@ -4663,6 +4665,19 @@ window.editRecordFromMyPage = function(polyId, recordId) {
     if (rightPanel) rightPanel.classList.add('open');
 };
 
+window.normalizeDateStr = function(dateStr) {
+    if (!dateStr) return '';
+    const str = String(dateStr).trim().replace(/\//g, '-');
+    const parts = str.split('-');
+    if (parts.length === 3) {
+        const y = parts[0];
+        const m = parts[1].padStart(2, '0');
+        const d = parts[2].split('T')[0].split(' ')[0].padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+    return str;
+};
+
 window.openMyPage = function() {
     const staffId = localStorage.getItem('passionMapUserId') || '';
     const userName = localStorage.getItem('passionMapUserName') || currentUser || '';
@@ -4685,12 +4700,13 @@ window.openMyPage = function() {
                 if (recId && seenIds.has(recId)) return;
                 if (recId) seenIds.add(recId);
 
-                if (ph.type === 'work' && ph.data) {
+                const isWorkRecord = (ph.type === 'work') || (ph.data && ph.data.workName);
+                if (isWorkRecord && ph.data) {
                     const phAuthor = (ph.author || '').replace(/\s+/g, '');
                     const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
                     if (isAuthorMatch) {
-                        const phWorkDate = window.normalizeDateStr ? window.normalizeDateStr(ph.data.workDate) : (ph.data.workDate || '');
-                        const phDate = window.normalizeDateStr ? window.normalizeDateStr(ph.date) : (ph.date || '');
+                        const phWorkDate = window.normalizeDateStr(ph.data.workDate);
+                        const phDate = window.normalizeDateStr(ph.date);
                         if (phWorkDate === todayStr || phDate === todayStr) {
                             myTodayRecords.push({
                                 ...ph,
