@@ -1664,12 +1664,18 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.normalizeDateStr = (str) => {
         if (!str) return '';
-        const parts = String(str).trim().replace(/\//g, '-').split('-');
-        if (parts.length < 3) return str;
-        const y = parts[0];
-        const m = String(parts[1]).padStart(2, '0');
-        const d = String(parts[2]).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+        const s = String(str).trim();
+        const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+        if (m) {
+          const y = m[1];
+          const month = String(m[2]).padStart(2, '0');
+          const day = String(m[3]).padStart(2, '0');
+          return `${y}-${month}-${day}`;
+        }
+        if (s.length >= 10 && s.charAt(4) === '-' && s.charAt(7) === '-') {
+          return s.substring(0, 10);
+        }
+        return s;
       };
 
       window.getLatestEndTimeForDate = (targetDateStr) => {
@@ -4617,7 +4623,7 @@ window.openMyPage = function() {
 
                 if (ph.type === 'work' && ph.data) {
                     const phAuthor = (ph.author || '').replace(/\s+/g, '');
-                    const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser === 'システム';
+                    const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
                     if (isAuthorMatch) {
                         const phWorkDate = window.normalizeDateStr ? window.normalizeDateStr(ph.data.workDate) : (ph.data.workDate || '');
                         const phDate = window.normalizeDateStr ? window.normalizeDateStr(ph.date) : (ph.date || '');
