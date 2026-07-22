@@ -466,6 +466,10 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   const linkedSigns = window.pdlSignLinks[f.id] || ""; // ★看板マスタにセット
                   // ★修正：f.location や f.signFunction など、元の変数名に完全一致させました！
                   createPolygonObject(f.id, f.name, f.coords, f.color, f.photos, f.author, f.location, f.condition, f.area, f.status, f.signFunction, linkedSigns);
+                  if (loadedPolygons[f.id] && !loadedPolygons[f.id].isMarker) {
+                      loadedPolygons[f.id].uneSimData = f.uneSimData || '';
+                      loadedPolygons[f.id].water_status = f.water_status || 'stopped';
+                  }
               });
               updateWorkerLegend();
           }
@@ -1339,6 +1343,10 @@ function createSignboardMarker(name, pos, icon, id) {
                  const workLabel = p.isMarker ? "作業登録" : "作業記録";
                  h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
                  if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
+                 if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
+                   const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
+                   h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 給水栓: ${irrigText}</div>`;
+                 }
                  if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
                  
                  if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
@@ -1420,6 +1428,10 @@ function createSignboardMarker(name, pos, icon, id) {
                  const workLabel = item.isMarker ? "作業登録" : "作業記録";
                  h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
                  if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
+                 if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
+                   const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
+                   h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 給水栓: ${irrigText}</div>`;
+                 }
                  if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
 
                  if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
@@ -1598,7 +1610,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.removePendingPhoto = (idx) => { pendingFiles.splice(idx, 1); renderPendingPhotos(); };
 
       window.openMapSelect = () => { backupSelectedPolyIds = [...selectedPolyIds]; isMapSelecting = true; infoWindow.close(); document.getElementById('rightPanel').style.display = 'none'; document.getElementById('mapSelectUI').style.display = 'flex'; updateMapSelectVisuals(); };
-      window.applyMapSelect = () => { isMapSelecting = false; document.getElementById('rightPanel').style.display = 'flex'; document.getElementById('mapSelectUI').style.display = 'none'; updateMapSelectVisuals(); updateSelectedPolysDisplay(); };
+      window.applyMapSelect = () => { isMapSelecting = false; document.getElementById('rightPanel').style.display = 'flex'; document.getElementById('mapSelectUI').style.display = 'none'; updateMapSelectVisuals(); updateSelectedPolysDisplay(); if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI(); };
       window.cancelMapSelect = () => { selectedPolyIds = [...backupSelectedPolyIds]; isMapSelecting = false; document.getElementById('rightPanel').style.display = 'flex'; document.getElementById('mapSelectUI').style.display = 'none'; updateMapSelectVisuals(); };
       
       window.updateMapSelectVisuals = () => {
@@ -1636,6 +1648,7 @@ function createSignboardMarker(name, pos, icon, id) {
         selectedPolyIds = selectedPolyIds.filter(i => i !== id);
         updateSelectedPolysDisplay();
         if (typeof window.updateMapSelectVisuals === 'function') window.updateMapSelectVisuals();
+        if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
       };
 
       window.updateSelectedPolysDisplay = () => {
@@ -1653,6 +1666,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }).join(''); 
         }
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
+        if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
       };
 
       window.getCadUneCount = (poly) => {
@@ -1868,6 +1882,127 @@ function createSignboardMarker(name, pos, icon, id) {
           });
         });
         return rows;
+      };
+
+      // ===== 潅水作業：給水栓 開/閉 =====
+      window.isIrrigationWork = (wName) => {
+        const n = String(wName || '');
+        return n.includes('潅水') || n.includes('灌水');
+      };
+
+      window.parseWaterStatusObj = (raw) => {
+        if (!raw) return {};
+        try {
+          if (typeof raw === 'string' && raw.trim().startsWith('{')) return JSON.parse(raw);
+          if (typeof raw === 'object') return raw;
+          return { "1": raw === 'supplying' ? 'supplying' : 'stopped' };
+        } catch (e) {
+          return { "1": String(raw) === 'supplying' ? 'supplying' : 'stopped' };
+        }
+      };
+
+      window.getWaterInPins = (poly) => {
+        if (!poly || poly.isMarker || !poly.uneSimData) return [];
+        try {
+          const cad = JSON.parse(poly.uneSimData);
+          if (!cad || !Array.isArray(cad.pins)) return [];
+          return cad.pins.filter(p => p && p.type === 'water_in');
+        } catch (e) { return []; }
+      };
+
+      window.setAllIrrigationValves = (polyId, status) => {
+        document.querySelectorAll(`.irrig-valve-select[data-poly-id="${polyId}"]`).forEach(sel => {
+          sel.value = status;
+        });
+      };
+
+      window.refreshIrrigationValveUI = () => {
+        const box = document.getElementById('irrigation_valve_section');
+        if (!box) return;
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        if (!window.isIrrigationWork(wName)) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+
+        const prev = {};
+        document.querySelectorAll('.irrig-valve-select').forEach(el => {
+          prev[`${el.getAttribute('data-poly-id')}_${el.getAttribute('data-valve')}`] = el.value;
+        });
+
+        const fieldIds = (selectedPolyIds || []).filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker);
+        if (fieldIds.length === 0) {
+          box.style.display = 'block';
+          box.innerHTML = `<div style="background:#e3f2fd; padding:12px; border-radius:8px; border:1px solid #90caf9;">
+            <div style="font-weight:bold; color:#1565C0; margin-bottom:6px;">💧 給水栓 開・閉</div>
+            <div style="font-size:12px; color:#555;">圃場を選択すると、CAD登録の給水栓番号が表示されます。</div>
+          </div>`;
+          return;
+        }
+
+        let html = `<div style="background:#e3f2fd; padding:12px; border-radius:8px; border:1px solid #90caf9;">
+          <div style="font-weight:bold; color:#1565C0; margin-bottom:8px;">💧 給水栓 開・閉登録</div>
+          <div style="font-size:11px; color:#546e7a; margin-bottom:10px;">農業CADの吸水ピン番号に対応しています（開＝給水中 / 閉＝止水中）</div>`;
+
+        let anyValve = false;
+        fieldIds.forEach(pid => {
+          const poly = loadedPolygons[pid];
+          const pins = window.getWaterInPins(poly);
+          const statusObj = window.parseWaterStatusObj(poly.water_status);
+          html += `<div class="irrig-field-block" data-poly-id="${pid}" style="background:#fff; padding:10px; border-radius:8px; margin-bottom:10px; border:1px solid #bbdefb;">
+            <div style="font-weight:bold; color:#0d47a1; font-size:13px; margin-bottom:8px;">📍 ${poly.name || pid}</div>`;
+          if (pins.length === 0) {
+            html += `<div style="font-size:12px; color:#888;">この圃場にはCADの給水栓（吸水ピン）が登録されていません。</div>`;
+          } else {
+            anyValve = true;
+            html += `<div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+              <button type="button" onclick="setAllIrrigationValves('${pid}', 'supplying')" style="background:#E3F2FD; color:#1976D2; border:1px solid #2196F3; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">すべて開</button>
+              <button type="button" onclick="setAllIrrigationValves('${pid}', 'stopped')" style="background:#FFEBEE; color:#D32F2F; border:1px solid #F44336; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">すべて閉</button>
+            </div>`;
+            for (let i = 1; i <= pins.length; i++) {
+              const key = `${pid}_${i}`;
+              const cur = prev[key] || (statusObj[String(i)] === 'supplying' ? 'supplying' : 'stopped');
+              html += `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; padding:8px; border:1px solid #e3f2fd; border-radius:6px; background:#fafcff;">
+                <span style="font-weight:bold; font-size:14px; color:#1565C0;">💧 給水栓 ${i}</span>
+                <select class="form-input irrig-valve-select" data-poly-id="${pid}" data-valve="${i}" style="width:auto; min-width:110px; margin-bottom:0; padding:8px; font-weight:bold;">
+                  <option value="supplying" ${cur === 'supplying' ? 'selected' : ''}>🔓 開</option>
+                  <option value="stopped" ${cur === 'stopped' ? 'selected' : ''}>🔒 閉</option>
+                </select>
+              </div>`;
+            }
+          }
+          html += `</div>`;
+        });
+
+        if (!anyValve) {
+          html += `<div style="font-size:12px; color:#c62828; margin-top:4px;">選択中の圃場に給水栓がありません。農業CADで吸水ピンを登録してください。</div>`;
+        }
+        html += `</div>`;
+        box.style.display = 'block';
+        box.innerHTML = html;
+      };
+
+      window.collectIrrigationValveData = () => {
+        const byPoly = {};
+        document.querySelectorAll('.irrig-valve-select').forEach(el => {
+          const pid = el.getAttribute('data-poly-id');
+          const valve = el.getAttribute('data-valve');
+          if (!pid || !valve) return;
+          if (!byPoly[pid]) {
+            const poly = loadedPolygons[pid];
+            byPoly[pid] = {
+              polyId: pid,
+              name: poly ? poly.name : pid,
+              status: {},
+              summary: []
+            };
+          }
+          const val = el.value === 'supplying' ? 'supplying' : 'stopped';
+          byPoly[pid].status[String(valve)] = val;
+          byPoly[pid].summary.push(`栓${valve}:${val === 'supplying' ? '開' : '閉'}`);
+        });
+        return Object.values(byPoly);
       };
 
       window.selectWorkCategory = (catName) => {
@@ -2283,6 +2418,7 @@ function createSignboardMarker(name, pos, icon, id) {
            }
         }
         window.renderUsedItems(wName);
+        if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
       };
 
       window.renderUsedItems = (workName) => {
@@ -2474,6 +2610,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (currentRecordType === 'work') {
           // 畝UIはカテゴリ×圃場選択に応じて動的表示（placeholder）
           let ridgeUI = p.isMarker ? '' : `<div id="ridge_progress_section" style="display:none; margin-bottom:15px;"></div>`;
+          let irrigationUI = p.isMarker ? '' : `<div id="irrigation_valve_section" style="display:none; margin-bottom:15px;"></div>`;
           
           let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster;
           
@@ -2562,6 +2699,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   ${targetSection}
                   ${cropSection}
                   ${ridgeUI}
+                  ${irrigationUI}
                   <label class="form-label" style="margin-top:10px;">💬 コメント</label>
                   <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="伝達事項・メモなど"></textarea>
                   <div id="used_items_section"></div>
@@ -2605,6 +2743,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof window.renderCropChips === 'function') window.renderCropChips();
             if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
             if (typeof window.applyPrefillWorkTime === 'function') window.applyPrefillWorkTime();
+            if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
         }, 50);
 
         if (isEdit && tgt && tgt.data) {
@@ -2638,6 +2777,16 @@ function createSignboardMarker(name, pos, icon, id) {
                 const next = document.querySelector('.ridge-next');
                 if (worked) worked.value = d.workedRidges || '';
                 if (next) next.value = d.nextRidge || '';
+              }
+              if (d.irrigationValves && Array.isArray(d.irrigationValves) && typeof window.refreshIrrigationValveUI === 'function') {
+                window.refreshIrrigationValveUI();
+                d.irrigationValves.forEach(row => {
+                  if (!row || !row.polyId || !row.status) return;
+                  Object.keys(row.status).forEach(valveNo => {
+                    const sel = document.querySelector(`.irrig-valve-select[data-poly-id="${row.polyId}"][data-valve="${valveNo}"]`);
+                    if (sel) sel.value = row.status[valveNo] === 'supplying' ? 'supplying' : 'stopped';
+                  });
+                });
               }
             }, 80);
             
@@ -2907,6 +3056,25 @@ function createSignboardMarker(name, pos, icon, id) {
               ridgeProgress: ridgeProgress,
               comment: document.getElementById('rec_work_comment') ? document.getElementById('rec_work_comment').value.trim() : ""
             };
+
+            if (typeof window.isIrrigationWork === 'function' && window.isIrrigationWork(wName)) {
+              const valveRows = (typeof window.collectIrrigationValveData === 'function') ? window.collectIrrigationValveData() : [];
+              if (valveRows.length > 0) {
+                data.irrigationValves = valveRows.map(r => ({
+                  polyId: r.polyId,
+                  name: r.name,
+                  status: r.status,
+                  summary: r.summary.join(' / ')
+                }));
+                for (const row of valveRows) {
+                  const statusStr = JSON.stringify(row.status);
+                  await callGAS('updatePolygon', { id: row.polyId, water_status: statusStr });
+                  if (loadedPolygons[row.polyId]) {
+                    loadedPolygons[row.polyId].water_status = statusStr;
+                  }
+                }
+              }
+            }
 
            if ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")) {
                const tId = document.getElementById('m_tool')?.value || "";

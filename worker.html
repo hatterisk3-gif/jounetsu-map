@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <link rel="stylesheet" href="worker.css?v=1784621000001">
+  <link rel="stylesheet" href="worker.css?v=1784622000001">
 </head>
 
 <body>
@@ -205,8 +205,13 @@
     </div>
   </div>
 
-  <div class="control-panel">
-    <div class="control-row">
+  <div class="control-panel" id="mainControlPanel">
+    <div style="width: 100%; display: flex; justify-content: flex-end; padding-right: 15px; pointer-events: auto;">
+      <button onclick="toggleControlPanel()" id="togglePanelBtn" style="background: rgba(255,255,255,0.8); border: 1px solid #ccc; font-size: 18px; padding: 4px 8px; border-radius: 5px; cursor: pointer; color: #333; z-index: 2000;">
+        🔼
+      </button>
+    </div>
+    <div class="control-row" id="mainControlRow">
       <div class="search-container">
         <input type="text" id="searchInput" placeholder="🔍 圃場・看板を検索...">
         <div id="searchSuggestions"></div>
@@ -255,9 +260,21 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-  <script src="worker.js?v=1784621000001"></script>
+  <script src="worker.js?v=1784622000001"></script>
   <script src="tracking.js?v=1784615000001"></script>
   <script>
+    function toggleControlPanel() {
+      const row = document.getElementById('mainControlRow');
+      const btn = document.getElementById('togglePanelBtn');
+      if (row.style.display === 'none') {
+        row.style.display = 'flex';
+        btn.innerHTML = '🔼';
+      } else {
+        row.style.display = 'none';
+        btn.innerHTML = '🔽';
+      }
+    }
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js?v=worker', { scope: '/worker.html' });
     }
