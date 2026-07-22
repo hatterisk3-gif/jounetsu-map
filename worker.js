@@ -1510,7 +1510,68 @@ function createSignboardMarker(name, pos, icon, id) {
             customAlert("新しい部品を追加しました！");
          } catch(e) { customAlert("失敗しました: " + e.message); }
       };
-      window.addNewCrop = async () => { const n = await customPrompt("新規作物名:"); if(!n)return; if(pdlCrops.some(c=>c.name===n)){customAlert("登録済み");return;} try{ await callGAS('addCrop',{cropData:{name:n.trim(), density:0}}); pdlCrops.push({name:n.trim(), density:0}); renderRecordForm(); setTimeout(()=> { if(document.getElementById('rec_crop')) {document.getElementById('rec_crop').value=n.trim(); handleCropSelection();} if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value=n.trim(); },50); }catch(e){customAlert("失敗");} };
+      window.selectedWorkCrops = [];
+
+      window.renderCropChips = (selectedArray) => {
+        if (Array.isArray(selectedArray)) {
+          window.selectedWorkCrops = [...selectedArray];
+        }
+        const container = document.getElementById('crop_chips_container');
+        if (!container) return;
+
+        if (!pdlCrops || pdlCrops.length === 0) {
+          container.innerHTML = `<span style="color:#999; font-size:12px; padding:4px;">登録されている作物がありません</span>`;
+          return;
+        }
+
+        container.innerHTML = pdlCrops.map(c => {
+          const isSelected = window.selectedWorkCrops.includes(c.name);
+          const bg = isSelected ? '#e8f5e9' : '#fff';
+          const color = isSelected ? '#2e7d32' : '#333';
+          const border = isSelected ? '1px solid #81c784' : '1px solid #ccc';
+          const icon = isSelected ? '✅ ' : '🌱 ';
+          const safeName = String(c.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" class="work-crop-chip" data-crop="${String(c.name).replace(/"/g, '&quot;')}" onclick="toggleWorkCropChip('${safeName}')" style="background:${bg}; color:${color}; border:${border}; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:${isSelected ? 'bold' : 'normal'}; cursor:pointer;">${icon}${c.name}</button>`;
+        }).join('');
+      };
+
+      window.toggleWorkCropChip = (cropName) => {
+        if (!cropName) return;
+        if (window.selectedWorkCrops.includes(cropName)) {
+          window.selectedWorkCrops = window.selectedWorkCrops.filter(c => c !== cropName);
+        } else {
+          window.selectedWorkCrops.push(cropName);
+        }
+        window.renderCropChips();
+      };
+
+      window.setSelectedWorkCropsFromText = (cropText) => {
+        if (!cropText) {
+          window.selectedWorkCrops = [];
+        } else {
+          window.selectedWorkCrops = String(cropText).split(',').map(s => s.trim()).filter(Boolean);
+        }
+        window.renderCropChips();
+      };
+
+      window.getSelectedWorkCropsText = () => {
+        return (window.selectedWorkCrops || []).join(', ');
+      };
+
+      window.addNewCrop = async () => { 
+        const n = await customPrompt("新規作物名:"); 
+        if(!n) return; 
+        if(pdlCrops.some(c=>c.name===n.trim())){customAlert("登録済み"); return;} 
+        try { 
+          await callGAS('addCrop',{cropData:{name:n.trim(), density:0}}); 
+          pdlCrops.push({name:n.trim(), density:0}); 
+          if (!window.selectedWorkCrops.includes(n.trim())) {
+            window.selectedWorkCrops.push(n.trim());
+          }
+          if(document.getElementById('rec_crop')) {document.getElementById('rec_crop').value=n.trim(); if(typeof handleCropSelection==='function') handleCropSelection();}
+          if (typeof window.renderCropChips === 'function') window.renderCropChips();
+        } catch(e) { customAlert("失敗"); } 
+      };
 
       window.addPhotoFromInput = (input) => {
         if(!input.files || input.files.length === 0) return;
@@ -2072,6 +2133,7 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.renderRecordForm = () => {
+        window.selectedWorkCrops = [];
         const p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [], area: 0 };
         const isEdit = !!currentEditRecordId;
         selectedPolyIds = activePolyId ? [activePolyId] : []; pendingFiles = []; 
@@ -2177,7 +2239,7 @@ function createSignboardMarker(name, pos, icon, id) {
           let cNames = '<option value="">選択してください</option>' + pdlContainerNames.map(c => `<option value="${c}">${c}</option>`).join('');
           let lotsHtml = activeLots.map(l => `<div><label class="checkbox-label"><input type="checkbox" name="use_lots" value="${l.lotId}"> ${l.lotId} <span style="color:#2196F3; margin-left:5px;">(${l.containerType||'種類不明'} 残:${l.remain})</span></label></div>`).join('');
           if(!lotsHtml) lotsHtml = '<div style="color:#888; font-size:12px;">使用可能なロットがありません</div>';
-          let cropSection = ''; if (!p.isMarker) { cropSection = `<label class="form-label">🌱 作物名 (任意)</label><div style="display:flex; gap:5px; margin-bottom:15px;"><select id="rec_work_crop" class="form-input" style="margin-bottom:0; flex-grow:1;">${crops}</select><button onclick="addNewCrop()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">＋</button></div>`; }
+          let cropSection = ''; if (!p.isMarker) { cropSection = `<label class="form-label" style="margin-top:10px;">🌱 作物名 (複数選択可・任意)</label><div id="crop_chips_wrapper" style="margin-bottom:15px;"><div id="crop_chips_container" style="display:flex; flex-wrap:wrap; gap:6px; max-height:150px; overflow-y:auto; padding:8px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:8px;"></div><button type="button" onclick="addNewCrop()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:6px 12px; font-weight:bold; font-size:12px; cursor:pointer;">＋ 新規作物を追加</button></div>`; }
           
          let workTimeUI = `
             <div style="background:#f4f6f8; padding:10px; border-radius:8px; margin-bottom:15px; text-align:center;">
@@ -2263,6 +2325,7 @@ function createSignboardMarker(name, pos, icon, id) {
         
         if (currentRecordType === 'work' && !p.isMarker) setTimeout(() => {
             updateSelectedPolysDisplay();
+            if (typeof window.renderCropChips === 'function') window.renderCropChips();
             if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
             if (typeof window.applyPrefillWorkTime === 'function') window.applyPrefillWorkTime();
         }, 50);
@@ -2278,7 +2341,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 if (typeof renderWorkOptions === 'function') renderWorkOptions(wCat);
                 if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
             }
-            document.getElementById('rec_work_name').value = d.workName || ''; if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value = d.crop || ''; if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || ''; document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
+            document.getElementById('rec_work_name').value = d.workName || ''; if(document.getElementById('rec_work_crop')) document.getElementById('rec_work_crop').value = d.crop || ''; if (d.crop && typeof window.setSelectedWorkCropsFromText === 'function') window.setSelectedWorkCropsFromText(d.crop); if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || ''; document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
             if (document.getElementById('rec_work_comment')) document.getElementById('rec_work_comment').value = d.comment || d.notes || '';
             setTimeout(() => {
               if (d.ridgeProgress && Array.isArray(d.ridgeProgress)) {
@@ -2547,7 +2610,7 @@ function createSignboardMarker(name, pos, icon, id) {
             workDate: document.getElementById('rec_work_date').value, 
             workName: wName, 
             detailedWorks: detailedWorks.join(', '), 
-            crop: document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : "", 
+            crop: (typeof window.getSelectedWorkCropsText === 'function') ? window.getSelectedWorkCropsText() : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : ""), 
             startTime: sTime, endTime: eTime, totalTime: totalTimeStr, 
             progressStatus: document.getElementById('rec_progress_status').value,
             usedTools: "", 
@@ -4250,8 +4313,12 @@ window.executeAutoRecord = async () => {
                 if (typeof handleWorkNameChange === 'function') handleWorkNameChange();
                 changed = true;
             }
-            if (d.cropName && document.getElementById('rec_work_crop')) {
-                document.getElementById('rec_work_crop').value = d.cropName;
+            if (d.cropName) {
+                if (typeof window.setSelectedWorkCropsFromText === 'function') {
+                    window.setSelectedWorkCropsFromText(d.cropName);
+                } else if (document.getElementById('rec_work_crop')) {
+                    document.getElementById('rec_work_crop').value = d.cropName;
+                }
                 changed = true;
             }
             if (d.startTime && document.getElementById('rec_start_time')) {
