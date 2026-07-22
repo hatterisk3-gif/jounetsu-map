@@ -4363,10 +4363,99 @@ window.closeRadarModal = function() {
 };
 
 // ====== マイページ ======
+window.editRecordFromMyPage = function(polyId, recordId) {
+    if (polyId && loadedPolygons[polyId]) {
+        activePolyId = polyId;
+    }
+    currentEditRecordId = recordId;
+    currentRecordType = 'work';
+    if (typeof renderRecordForm === 'function') renderRecordForm();
+    const rightPanel = document.getElementById('rightPanel');
+    if (rightPanel) rightPanel.classList.add('open');
+};
+
 window.openMyPage = function() {
     const staffId = localStorage.getItem('passionMapUserId') || '';
     const userName = localStorage.getItem('passionMapUserName') || currentUser || '';
     const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayDisplayStr = `${now.getMonth() + 1}/${now.getDate()}`;
+    const normUser = (userName || '').replace(/\s+/g, '');
+
+    let myTodayRecords = [];
+    const seenIds = new Set();
+
+    for (let pid in loadedPolygons) {
+        const p = loadedPolygons[pid];
+        if (p && p.photos && Array.isArray(p.photos)) {
+            p.photos.forEach(ph => {
+                if (!ph) return;
+                const recId = ph.id || (ph.data && ph.data.recordId);
+                if (recId && seenIds.has(recId)) return;
+                if (recId) seenIds.add(recId);
+
+                if (ph.type === 'work' && ph.data) {
+                    const phAuthor = (ph.author || '').replace(/\s+/g, '');
+                    const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser === 'システム';
+                    if (isAuthorMatch) {
+                        const phWorkDate = window.normalizeDateStr ? window.normalizeDateStr(ph.data.workDate) : (ph.data.workDate || '');
+                        const phDate = window.normalizeDateStr ? window.normalizeDateStr(ph.date) : (ph.date || '');
+                        if (phWorkDate === todayStr || phDate === todayStr) {
+                            myTodayRecords.push({
+                                ...ph,
+                                polyId: pid,
+                                polyName: p.name,
+                                isMarker: p.isMarker
+                            });
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    myTodayRecords.sort((a, b) => {
+        const tA = (a.data && a.data.startTime) ? a.data.startTime : (a.time || '00:00');
+        const tB = (b.data && b.data.startTime) ? b.data.startTime : (b.time || '00:00');
+        return tB.localeCompare(tA);
+    });
+
+    let recordsHtml = '';
+    if (myTodayRecords.length === 0) {
+        recordsHtml = `<div style="background:#f9f9f9; padding:15px; border-radius:8px; text-align:center; color:#888; font-size:13px; margin-bottom:15px; border:1px dashed #ccc;">本日の作業記録はまだありません。</div>`;
+    } else {
+        recordsHtml = `<div style="display:flex; flex-direction:column; gap:10px; margin-bottom:15px; max-height:250px; overflow-y:auto; padding-right:2px;">`;
+        myTodayRecords.forEach(rec => {
+            const d = rec.data || {};
+            const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `🕒 ${rec.time}` : '');
+            const fieldLabel = rec.isMarker ? '🪧 看板' : '🌿 圃場';
+            const placeName = d.multiFieldNames || rec.polyName || '未選択';
+            
+            recordsHtml += `
+                <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #4CAF50; border-radius:6px; padding:10px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <span style="font-size:11px; color:#1565C0; font-weight:bold; cursor:pointer;" onclick="document.getElementById('modal').style.display='none'; focusAndOpen('${rec.polyId}')">
+                            ${fieldLabel}: ${placeName} ↗
+                        </span>
+                        <span style="font-size:11px; color:#666;">${timeSpan}</span>
+                    </div>
+                    <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:3px;">
+                        🚜 ${d.workName || '作業'}
+                        <span style="background:#fff3e0; color:#e65100; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:normal; margin-left:5px;">${d.progressStatus || '記録'}</span>
+                    </div>
+                    ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">✅ 詳細: ${d.detailedWorks}</div>` : ''}
+                    ${d.crop ? `<div style="font-size:11px; color:#555;">🌱 作物: ${d.crop}</div>` : ''}
+                    ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
+                        <span onclick="document.getElementById('modal').style.display='none'; window.editRecordFromMyPage('${rec.polyId}', '${rec.id}')" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
+                    </div>
+                </div>
+            `;
+        });
+        recordsHtml += `</div>`;
+    }
 
     let html = `
         <h3 style="color:#4CAF50; margin-top:0;">👤 マイページ</h3>
@@ -4379,6 +4468,12 @@ window.openMyPage = function() {
             <div style="font-size:16px; font-weight:bold;">${userRole}</div>
         </div>
         
+        <h4 style="color:#2e7d32; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+            <span>📋 本日の作業記録 (${myTodayRecords.length}件)</span>
+            <span style="font-size:12px; color:#666; font-weight:normal;">${todayDisplayStr}</span>
+        </h4>
+        ${recordsHtml}
+
         <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
         <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">現在のパスワード</label>
         <input type="password" id="myCurrentPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="現在のパスワード">
