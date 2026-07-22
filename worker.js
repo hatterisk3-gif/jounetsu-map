@@ -534,7 +534,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
                if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ★追加
                if (selectedPolyIds.includes(id)) {
-                  if (id !== activePolyId) { selectedPolyIds = selectedPolyIds.filter(i=>i!==id); }
+                  selectedPolyIds = selectedPolyIds.filter(i=>i!==id);
                } else { selectedPolyIds.push(id); }
                updateMapSelectVisuals(); return;
             }
@@ -1570,19 +1570,24 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
+      window.removeSelectedPoly = (id) => {
+        selectedPolyIds = selectedPolyIds.filter(i => i !== id);
+        updateSelectedPolysDisplay();
+        if (typeof window.updateMapSelectVisuals === 'function') window.updateMapSelectVisuals();
+      };
+
       window.updateSelectedPolysDisplay = () => {
         const disp = document.getElementById('selected_polys_display');
         if(!disp) return;
         if(selectedPolyIds.length === 0) {
           disp.innerHTML = `<span style="color:#999; font-size:13px; font-weight:bold; padding:4px 0;">対象なし（任意）</span>`;
-        } else if(selectedPolyIds.length === 1) { 
-          const id = selectedPolyIds[0];
-          const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "不明な圃場";
-          disp.innerHTML = `<span style="color:#555; font-size:13px; font-weight:bold; padding:4px 0;">${name}</span>`; 
         } else { 
           disp.innerHTML = selectedPolyIds.map(id => {
             const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "不明な圃場";
-            return `<span style="background:#e8f0fe; color:#1a73e8; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid #aecbfa; margin-top:4px;">${name}</span>`;
+            return `<span style="display:inline-flex; align-items:center; gap:4px; background:#e8f0fe; color:#1a73e8; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid #aecbfa; margin-top:4px;">
+              ${name}
+              <span onclick="removeSelectedPoly('${id}')" style="cursor:pointer; font-weight:bold; color:#d32f2f; margin-left:2px; font-size:14px; line-height:1;" title="対象から外す">×</span>
+            </span>`;
           }).join(''); 
         }
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
@@ -1693,9 +1698,6 @@ function createSignboardMarker(name, pos, icon, id) {
           } else {
             selectedPolyIds = [];
           }
-          if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
-        } else if (selectedPolyIds.length === 0 && activePolyId && loadedPolygons[activePolyId]) {
-          selectedPolyIds = [activePolyId];
           if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
         }
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
@@ -2465,12 +2467,6 @@ function createSignboardMarker(name, pos, icon, id) {
       async function submitRecord() {
         // 紐づけ先の解決（圃場作業のときだけ圃場必須）
         let targetIds = [...selectedPolyIds].filter(id => id && loadedPolygons[id]);
-        if (targetIds.length === 0 && activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker) {
-          targetIds = [activePolyId];
-        }
-        if (targetIds.length === 0 && currentRecordType === 'work') {
-          if (activePolyId && loadedPolygons[activePolyId]) targetIds = [activePolyId];
-        }
         if (targetIds.length === 0) {
           const requiresField = currentRecordType === 'work' && typeof window.workRecordRequiresField === 'function'
             ? window.workRecordRequiresField()
