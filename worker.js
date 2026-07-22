@@ -2775,195 +2775,205 @@ function createSignboardMarker(name, pos, icon, id) {
         selectedPolyIds = targetIds;
         if (currentRecordType === 'work') { const prog = document.getElementById('rec_progress_status').value; if (!prog) { customAlert("進捗状況は必須項目です。選択してください。"); return; } }
         const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
-        const files = pendingFiles;
-        btn.disabled = true; btn.innerText = "通信中...";
-        let photos = []; for(let f of files) { const b64 = await resizeImg(f); photos.push({filename:f.name, base64:b64}); }
-        let data = null;
+        if (btn) { btn.disabled = true; btn.innerText = "通信中..."; }
         
-        if (currentRecordType === 'work') {
-          let totalTimeStr = "";
-          let sTime = document.getElementById('rec_start_time').value;
-          let eTime = document.getElementById('rec_end_time').value;
-          if(sTime && eTime) {
-             let sMins = parseInt(sTime.split(':')[0]) * 60 + parseInt(sTime.split(':')[1]);
-             let eMins = parseInt(eTime.split(':')[0]) * 60 + parseInt(eTime.split(':')[1]);
-             let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
-             totalTimeStr = Math.floor(diff / 60) + "時間" + (diff % 60) + "分";
-          }
-          
-          let syncClockin = document.getElementById('sync_clockin') ? document.getElementById('sync_clockin').checked : false;
-          if (syncClockin && sTime) {
-              const now = new Date();
-              const dateStr = now.toLocaleDateString();
-              const [hh, mm] = sTime.split(':');
-              now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
-
-              const existingStr = localStorage.getItem('passionMapClockIn');
-              let exLat = '', exLng = '';
-              if (existingStr) {
-                  try {
-                      const ex = JSON.parse(existingStr);
-                      exLat = ex.lat || '';
-                      exLng = ex.lng || '';
-                  } catch(e) {}
-              }
-
-              const clockInState = { lat: exLat, lng: exLng, time: sTime, active: true };
-              const clockInTodayState = { lat: exLat, lng: exLng, time: sTime, date: dateStr };
-              localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
-              localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
-              if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
-
-              if (typeof callGAS === 'function' && typeof currentUser !== 'undefined' && currentUser) {
-                  callGAS('saveTrackingData', {
-                      userName: currentUser,
-                      lat: exLat,
-                      lng: exLng,
-                      type: '出勤',
-                      time: now.getTime()
-                  }).catch(e => console.warn(e));
-              }
-          }
-          
-          let detailedWorksStr = (typeof window.buildDetailedWorksFormattedString === 'function')
-            ? window.buildDetailedWorksFormattedString()
-            : Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked')).map(cb => cb.value).join(', ');
-          let usedItemsText = getUsedItemsText();
-          const ridgeProgress = (typeof window.collectRidgeProgressData === 'function') ? window.collectRidgeProgressData() : [];
-          const firstRidge = ridgeProgress[0] || {};
-
-          const wName = document.getElementById('rec_work_name').value;
-          data = { 
-            workDate: document.getElementById('rec_work_date').value, 
-            workName: wName, 
-            detailedWorks: detailedWorksStr, 
-            crop: (typeof window.getSelectedWorkCropsText === 'function') ? window.getSelectedWorkCropsText() : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : ""), 
-            startTime: sTime, endTime: eTime, totalTime: totalTimeStr, 
-            progressStatus: document.getElementById('rec_progress_status').value,
-            usedTools: "", 
-            usedMaterials: usedItemsText,
-            workedRidges: firstRidge.workedRidges || "",
-            nextRidge: firstRidge.nextRidge || "",
-            ridgeProgress: ridgeProgress,
-            comment: document.getElementById('rec_work_comment') ? document.getElementById('rec_work_comment').value.trim() : ""
-          };
-
-         if ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")) {
-             const tId = document.getElementById('m_tool').value;
-             const toolObj = pdlMachines.find(t => t.id === tId); 
-             data.maintenanceToolId = tId; data.maintenanceTool = toolObj ? toolObj.name : "";
-             
-             const inputSymptom = document.getElementById('m_symptom').value.trim();
-             data.maintenanceSymptom = inputSymptom; 
-             
-             // ★追加：入力された症状が既存リストになければ裏でマスタに追加する！
-             if (toolObj && inputSymptom) {
-                 const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,、]/).map(s => s.trim()) : [];
-                 if (!currentSymp.includes(inputSymptom)) {
-                     await callGAS('addMachineSymptom', { machineId: tId, newSymptom: inputSymptom });
-                     toolObj.symptoms = toolObj.symptoms ? toolObj.symptoms + "," + inputSymptom : inputSymptom;
-                 }
-             }
-
-             data.maintenanceContent = document.getElementById('m_content').value; 
-             data.maintenanceParts = document.getElementById('m_parts').value;
-          }
-          if (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')) { 
-            data.lotAction = 'use'; 
-            const checked = Array.from(document.querySelectorAll('input[name="use_lots"]:checked')).map(cb => cb.value); 
-            data.selectedLots = checked.join(','); 
-            data.lotRemain = document.getElementById('rec_lot_use_remain').value || 0; 
-            data.lotStatus = document.getElementById('rec_lot_use_status').value; 
-          }
-        } else if (!p.isMarker) {
-          data = { crop: document.getElementById('rec_crop').value, mowing: document.getElementById('rec_mowing').checked, weeding: document.getElementById('rec_weeding').checked, drainage: document.getElementById('rec_drainage').checked, bug: document.getElementById('rec_bug').checked, disease: document.getElementById('rec_disease').checked, flower: document.getElementById('rec_flower').checked, harvestDate: document.getElementById('rec_harvest').value, survivalRate: document.getElementById('rec_survival').value, leafLength: document.getElementById('rec_leaf').value, harvestSize: document.getElementById('rec_harvest_size').value, harvestAmount: document.getElementById('rec_harvest_amount').value, fieldStatus: document.getElementById('rec_field_status').value, ph: document.getElementById('rec_ph').value, notes: document.getElementById('rec_notes').value };
-        } else { data = { startTime: document.getElementById('rec_start_time').value, endTime: document.getElementById('rec_end_time').value }; }
-
         try {
+          const files = pendingFiles || [];
+          let photos = []; 
+          for(let f of files) { 
+            const b64 = await resizeImg(f); 
+            photos.push({filename: f.name, base64: b64}); 
+          }
+          let data = null;
+          
+          if (currentRecordType === 'work') {
+            let totalTimeStr = "";
+            let sTime = document.getElementById('rec_start_time')?.value || "";
+            let eTime = document.getElementById('rec_end_time')?.value || "";
+            if(sTime && eTime) {
+               let sMins = parseInt(sTime.split(':')[0]) * 60 + parseInt(sTime.split(':')[1]);
+               let eMins = parseInt(eTime.split(':')[0]) * 60 + parseInt(eTime.split(':')[1]);
+               let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
+               totalTimeStr = Math.floor(diff / 60) + "時間" + (diff % 60) + "分";
+            }
+            
+            let syncClockin = document.getElementById('sync_clockin') ? document.getElementById('sync_clockin').checked : false;
+            if (syncClockin && sTime) {
+                const now = new Date();
+                const dateStr = now.toLocaleDateString();
+                const [hh, mm] = sTime.split(':');
+                now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+
+                const existingStr = localStorage.getItem('passionMapClockIn');
+                let exLat = '', exLng = '';
+                if (existingStr) {
+                    try {
+                        const ex = JSON.parse(existingStr);
+                        exLat = ex.lat || '';
+                        exLng = ex.lng || '';
+                    } catch(e) {}
+                }
+
+                const clockInState = { lat: exLat, lng: exLng, time: sTime, active: true };
+                const clockInTodayState = { lat: exLat, lng: exLng, time: sTime, date: dateStr };
+                localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+                localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
+                if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+
+                if (typeof callGAS === 'function' && typeof currentUser !== 'undefined' && currentUser) {
+                    callGAS('saveTrackingData', {
+                        userName: currentUser,
+                        lat: exLat,
+                        lng: exLng,
+                        type: '出勤',
+                        time: now.getTime()
+                    }).catch(e => console.warn(e));
+                }
+            }
+            
+            let detailedWorksStr = (typeof window.buildDetailedWorksFormattedString === 'function')
+              ? window.buildDetailedWorksFormattedString()
+              : Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked')).map(cb => cb.value).join(', ');
+            let usedItemsText = (typeof getUsedItemsText === 'function') ? getUsedItemsText() : "";
+            const ridgeProgress = (typeof window.collectRidgeProgressData === 'function') ? window.collectRidgeProgressData() : [];
+            const firstRidge = ridgeProgress[0] || {};
+
+            const wName = document.getElementById('rec_work_name')?.value || "";
+            data = { 
+              workDate: document.getElementById('rec_work_date')?.value || "", 
+              workName: wName, 
+              detailedWorks: detailedWorksStr, 
+              crop: (typeof window.getSelectedWorkCropsText === 'function') ? window.getSelectedWorkCropsText() : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : ""), 
+              startTime: sTime, endTime: eTime, totalTime: totalTimeStr, 
+              progressStatus: document.getElementById('rec_progress_status')?.value || "",
+              usedTools: "", 
+              usedMaterials: usedItemsText,
+              workedRidges: firstRidge.workedRidges || "",
+              nextRidge: firstRidge.nextRidge || "",
+              ridgeProgress: ridgeProgress,
+              comment: document.getElementById('rec_work_comment') ? document.getElementById('rec_work_comment').value.trim() : ""
+            };
+
+           if ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")) {
+               const tId = document.getElementById('m_tool')?.value || "";
+               const toolObj = (pdlMachines || []).find(t => t.id === tId); 
+               data.maintenanceToolId = tId; data.maintenanceTool = toolObj ? toolObj.name : "";
+               
+               const inputSymptom = document.getElementById('m_symptom')?.value?.trim() || "";
+               data.maintenanceSymptom = inputSymptom; 
+               
+               if (toolObj && inputSymptom) {
+                   const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,、]/).map(s => s.trim()) : [];
+                   if (!currentSymp.includes(inputSymptom)) {
+                       await callGAS('addMachineSymptom', { machineId: tId, newSymptom: inputSymptom });
+                       toolObj.symptoms = toolObj.symptoms ? toolObj.symptoms + "," + inputSymptom : inputSymptom;
+                   }
+               }
+
+               data.maintenanceContent = document.getElementById('m_content')?.value || ""; 
+               data.maintenanceParts = document.getElementById('m_parts')?.value || "";
+            }
+            if (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')) { 
+              data.lotAction = 'use'; 
+              const checked = Array.from(document.querySelectorAll('input[name="use_lots"]:checked')).map(cb => cb.value); 
+              data.selectedLots = checked.join(','); 
+              data.lotRemain = document.getElementById('rec_lot_use_remain')?.value || 0; 
+              data.lotStatus = document.getElementById('rec_lot_use_status')?.value || ""; 
+            }
+          } else if (!p.isMarker) {
+            data = { crop: document.getElementById('rec_crop')?.value || "", mowing: document.getElementById('rec_mowing')?.checked || false, weeding: document.getElementById('rec_weeding')?.checked || false, drainage: document.getElementById('rec_drainage')?.checked || false, bug: document.getElementById('rec_bug')?.checked || false, disease: document.getElementById('rec_disease')?.checked || false, flower: document.getElementById('rec_flower')?.checked || false, harvestDate: document.getElementById('rec_harvest')?.value || "", survivalRate: document.getElementById('rec_survival')?.value || "", leafLength: document.getElementById('rec_leaf')?.value || "", harvestSize: document.getElementById('rec_harvest_size')?.value || "", harvestAmount: document.getElementById('rec_harvest_amount')?.value || "", fieldStatus: document.getElementById('rec_field_status')?.value || "", ph: document.getElementById('rec_ph')?.value || "", notes: document.getElementById('rec_notes')?.value || "" };
+          } else { data = { startTime: document.getElementById('rec_start_time')?.value || "", endTime: document.getElementById('rec_end_time')?.value || "" }; }
+
           if (currentRecordType === 'work') {
              let machineUpdates = [];
              document.querySelectorAll('.used-machine-check:checked').forEach(chk => {
                 const mId = chk.value;
                 const locRadio = document.querySelector(`input[name="loc_${mId}"]:checked`);
                 let sId = "", sName = "";
-                if (locRadio.value === "keep" || locRadio.value === "here") {
-                   sId = locRadio.getAttribute('data-signid');
-                   sName = locRadio.getAttribute('data-signname');
-                } else if (locRadio.value === "other") {
-                   // ★変更：ボタンで選んだ値を取得する
-                   sId = document.getElementById(`val_loc_other_${mId}`).value;
-                   if (sId && loadedPolygons[sId]) sName = loadedPolygons[sId].name;
+                if (locRadio) {
+                   if (locRadio.value === "keep" || locRadio.value === "here") {
+                      sId = locRadio.getAttribute('data-signid');
+                      sName = locRadio.getAttribute('data-signname');
+                   } else if (locRadio.value === "other") {
+                      const otherEl = document.getElementById(`val_loc_other_${mId}`);
+                      sId = otherEl ? otherEl.value : "";
+                      if (sId && loadedPolygons[sId]) sName = loadedPolygons[sId].name;
+                   }
                 }
                 
                 if (sId && sName) { machineUpdates.push({ id: mId, signId: sId, signName: sName }); }
              });
 
-           if (machineUpdates.length > 0) {
-                await callGAS('updateMachineLocations', { updates: machineUpdates });
-                machineUpdates.forEach(upd => {
-                   const m = pdlMachines.find(x => x.id === upd.id);
-                   // ★変更：定位置（signId）は変えず、現在地（currentLoc）だけを更新する！
-                   if (m) { m.currentLocId = upd.signId; m.currentLocName = upd.signName; }
-                });
+             if (machineUpdates.length > 0) {
+                 await callGAS('updateMachineLocations', { updates: machineUpdates });
+                 machineUpdates.forEach(upd => {
+                    const m = (pdlMachines || []).find(x => x.id === upd.id);
+                    if (m) { m.currentLocId = upd.signId; m.currentLocName = upd.signName; }
+                 });
              }
           }
 
           const keptUrls = existingUrlsInEdit.filter(u=>u!==null);
-         // ★全選択された圃場の名前を結合しておく（一括記録用）
-        const nameStr = selectedPolyIds.map(i => loadedPolygons[i].name).join(', ');
-        data.multiFieldNames = nameStr;
+          const nameStr = selectedPolyIds.map(i => loadedPolygons[i] ? loadedPolygons[i].name : "").join(', ');
+          data.multiFieldNames = nameStr;
 
-        if (currentEditRecordId) {
-            // 【編集モード】まず元の圃場の記録を更新する
-            let updated = await callGAS('updateRecordItem', {id: activePolyId, recordId: currentEditRecordId, recordType: currentRecordType, data, photos, keptUrls, userName: currentUser});
-            loadedPolygons[activePolyId].photos = updated;
-            updatePolygonColor(activePolyId);
+          if (currentEditRecordId) {
+              let updated = await callGAS('updateRecordItem', {id: activePolyId, recordId: currentEditRecordId, recordType: currentRecordType, data, photos, keptUrls, userName: currentUser});
+              if (loadedPolygons[activePolyId]) loadedPolygons[activePolyId].photos = updated;
+              updatePolygonColor(activePolyId);
 
-            // ★追加機能：編集時に後から追加された「他の圃場」があれば、それらには新規作成としてデータを送る
-            const newlyAddedIds = selectedPolyIds.filter(id => id !== activePolyId);
-            if (newlyAddedIds.length > 0) {
-                const newIdStr = newlyAddedIds.join(',');
-                let addedItems = await callGAS('saveRecord', {id: newIdStr, name: nameStr, author: currentUser, recordType: currentRecordType, data, photos});
-                const newItem = addedItems[addedItems.length - 1];
-                for (let pid of newlyAddedIds) {
-                    if (!loadedPolygons[pid].photos) loadedPolygons[pid].photos = [];
-                    loadedPolygons[pid].photos.push(newItem);
-                    updatePolygonColor(pid);
-                }
-            }
-        } else {
-            // 【新規作成モード】
-            const idStr = selectedPolyIds.join(',');
-            let updatedItems = await callGAS('saveRecord', {id: idStr, name: nameStr, author: currentUser, recordType: currentRecordType, data, photos});
-            const newItem = updatedItems[updatedItems.length - 1];
-            for (let pid of selectedPolyIds) {
-                if (pid === activePolyId) { loadedPolygons[pid].photos = updatedItems; }
-                else { 
-                    if (!loadedPolygons[pid].photos) loadedPolygons[pid].photos = [];
-                    loadedPolygons[pid].photos.push(newItem); 
-                }
-                updatePolygonColor(pid);
-            }
+              const newlyAddedIds = selectedPolyIds.filter(id => id !== activePolyId);
+              if (newlyAddedIds.length > 0) {
+                  const newIdStr = newlyAddedIds.join(',');
+                  let addedItems = await callGAS('saveRecord', {id: newIdStr, name: nameStr, author: currentUser, recordType: currentRecordType, data, photos});
+                  const newItem = addedItems[addedItems.length - 1];
+                  for (let pid of newlyAddedIds) {
+                      if (loadedPolygons[pid]) {
+                          if (!loadedPolygons[pid].photos) loadedPolygons[pid].photos = [];
+                          loadedPolygons[pid].photos.push(newItem);
+                          updatePolygonColor(pid);
+                      }
+                  }
+              }
+          } else {
+              const idStr = selectedPolyIds.join(',');
+              let updatedItems = await callGAS('saveRecord', {id: idStr, name: nameStr, author: currentUser, recordType: currentRecordType, data, photos});
+              const newItem = updatedItems[updatedItems.length - 1];
+              for (let pid of selectedPolyIds) {
+                  if (loadedPolygons[pid]) {
+                      if (pid === activePolyId) { loadedPolygons[pid].photos = updatedItems; }
+                      else { 
+                          if (!loadedPolygons[pid].photos) loadedPolygons[pid].photos = [];
+                          loadedPolygons[pid].photos.push(newItem); 
+                      }
+                      updatePolygonColor(pid);
+                  }
+              }
+          }
+          if (currentEditRecordId && activePolyId && !selectedPolyIds.includes(activePolyId)) {
+              updatePolygonColor(activePolyId);
+          }
+          localStorage.removeItem('jmap_temp_work_record');
+          localStorage.removeItem('passionMapInitData');
+          closeRightPanel();
+          const resumeClock = typeof window.resumeClockOutAfterWorkSave === 'function' && sessionStorage.getItem('passionMapPendingClockOut');
+          if (resumeClock) {
+            document.getElementById('customAlertMessage').innerText = "記録を保存しました！続けて退勤時間の確認を行います。";
+            document.getElementById('customAlertModal').style.display = 'flex';
+            document.getElementById('customAlertOk').onclick = () => {
+              document.getElementById('customAlertModal').style.display = 'none';
+              window.resumeClockOutAfterWorkSave();
+            };
+          } else {
+            customAlert("記録を保存しました！");
+          }
+        } catch(e) {
+          console.error("submitRecord error:", e);
+          customAlert("保存中にエラーが発生しました: " + e.message);
+        } finally {
+          if (btn) { btn.disabled = false; btn.innerText = "保存する"; }
         }
-        if (currentEditRecordId && activePolyId && !selectedPolyIds.includes(activePolyId)) {
-            updatePolygonColor(activePolyId);
-        }
-        // 送信成功時に一時保存データおよび古い初期表示キャッシュをクリア
-        localStorage.removeItem('jmap_temp_work_record');
-        localStorage.removeItem('passionMapInitData');
-        closeRightPanel();
-        const resumeClock = typeof window.resumeClockOutAfterWorkSave === 'function' && sessionStorage.getItem('passionMapPendingClockOut');
-        if (resumeClock) {
-          document.getElementById('customAlertMessage').innerText = "記録を保存しました！続けて退勤時間の確認を行います。";
-          document.getElementById('customAlertModal').style.display = 'flex';
-          document.getElementById('customAlertOk').onclick = () => {
-            document.getElementById('customAlertModal').style.display = 'none';
-            window.resumeClockOutAfterWorkSave();
-          };
-        } else {
-          customAlert("記録を保存しました！");
-        }
-        } catch(e) { customAlert("エラーが発生しました: " + e.message); btn.disabled=false; btn.innerText="保存する"; }
+      }
       }
 
       window.openGlobalHarvest = () => {
