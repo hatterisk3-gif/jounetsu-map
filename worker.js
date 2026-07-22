@@ -2152,7 +2152,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!p) return;
           let allWorks = p.isMarker 
               ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) 
-              : pdlWorkMaster.filter(w => w.displayPlace === '圃場' || w.displayPlace === '全て');
+              : pdlWorkMaster;
           const filteredWorks = category === 'すべて' ? allWorks : allWorks.filter(w => (w.category || '圃場作業') === category);
           
           let allChipsHTML = '<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">' + 
@@ -2420,7 +2420,7 @@ function createSignboardMarker(name, pos, icon, id) {
           // 畝UIはカテゴリ×圃場選択に応じて動的表示（placeholder）
           let ridgeUI = p.isMarker ? '' : `<div id="ridge_progress_section" style="display:none; margin-bottom:15px;"></div>`;
           
-          let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster.filter(w => w.displayPlace === '圃場' || w.displayPlace === '全て');
+          let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster;
           
           let recentWorks = [];
           for (let id in loadedPolygons) {
