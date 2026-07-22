@@ -4674,6 +4674,35 @@ window.editRecordFromMyPage = function(polyId, recordId) {
     if (rightPanel) rightPanel.classList.add('open');
 };
 
+window.deleteRecordFromMyPage = async function(polyId, recordId) {
+    if (!await customConfirm("本当にこの記録を削除しますか？\n※復元できません")) return;
+
+    if (typeof showLoader === 'function') showLoader("削除中...");
+
+    try {
+        const updatedPhotos = await callGAS('deleteRecordItem', {
+            id: polyId,
+            recordId: recordId,
+            userName: currentUser
+        });
+
+        if (Array.isArray(updatedPhotos)) {
+            if (loadedPolygons[polyId]) {
+                loadedPolygons[polyId].photos = updatedPhotos;
+            }
+            if (typeof alertMsg === 'function') alertMsg("記録を削除しました");
+            if (typeof renderMyPage === 'function') renderMyPage();
+        } else {
+            if (typeof alertMsg === 'function') alertMsg("削除に失敗しました", true);
+        }
+    } catch (e) {
+        console.error("deleteRecordFromMyPage Error:", e);
+        if (typeof alertMsg === 'function') alertMsg("通信エラーが発生しました", true);
+    } finally {
+        if (typeof hideLoader === 'function') hideLoader();
+    }
+};
+
 window.normalizeDateStr = function(dateStr) {
     if (!dateStr) return '';
     const str = String(dateStr).trim().replace(/\//g, '-');
@@ -4763,6 +4792,7 @@ window.openMyPage = function() {
                     ${d.crop ? `<div style="font-size:11px; color:#555;">🌱 作物: ${d.crop}</div>` : ''}
                     ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
                     <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
+                        <span onclick="document.getElementById('modal').style.display='none'; window.deleteRecordFromMyPage('${rec.polyId}', '${rec.id}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
                         <span onclick="document.getElementById('modal').style.display='none'; window.editRecordFromMyPage('${rec.polyId}', '${rec.id}')" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
                     </div>
                 </div>
