@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.17</title>
+  <title>情熱MAP [予定確認用] v1.18</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -93,12 +93,12 @@
             <tr>
               <th>作業名</th>
               <th>部署</th>
-              <th>品目</th>
+              <th>品種</th>
               <th>圃場/看板名</th>
               <th>予定日</th>
               <th>期限日</th>
-              <th>時間(h)</th>
-              <th>適合者</th>
+              <th>枚数・時間</th>
+              <th>タグ・担当</th>
             </tr>
           </thead>
           <tbody id="scheduleTableBody">
@@ -209,6 +209,9 @@
       <button
         onclick="startFieldCultivationMode(); document.getElementById('mobileCultivationMenu').style.display='none'">📍
         圃場から栽培計画</button>
+      <button
+        onclick="showExecutePlanListModal(); document.getElementById('mobileCultivationMenu').style.display='none'">▶️
+        計画実行</button>
       <button
         onclick="openCroptypeRegistrationModal(); document.getElementById('mobileCultivationMenu').style.display='none'">🏷️
         品種作型を登録する</button>
@@ -356,12 +359,12 @@
               </div>
             </div>
             <div id="fieldSatNdviLegend" style="display:none; padding:6px 12px; background:#1a1a1a; color:#aaa; font-size:10px; text-align:center;">
-              NDVI: 茶〜黄＝裸地・弱い植生　／　緑が濃い＝生育が旺盛　（Sentinel-2・約10m・周辺約1kmを表示）
+              NDVI: 茶〜黄＝裸地・弱い植生　／　緑が濃い＝生育が旺盛　（無料衛星の上限は約10m）
             </div>
           </div>
         </div>
         <div style="padding:8px 12px; background:#222; color:#aaa; font-size:11px; text-align:center;">
-          出典: Copernicus Sentinel-2（約10m）／圃場だけ拡大すると粗くなるため周辺を含めて地図表示・黄枠が対象圃場
+          Sentinel-2は約10mが上限です（畝一本は見えません）。高精細タイル表示／黄枠＝対象圃場／細部の見た目は「現状確認」へ
         </div>
       </div>
     </div>

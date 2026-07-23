@@ -187,9 +187,13 @@
           </div>
         </div>
         
-        <div style="text-align: center; margin-top: 15px;">
-          <button type="button" onclick="assignTags()" style="padding: 10px 20px; background: #2196F3; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; margin-right: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">タグ割り当て</button>
-          <button type="button" onclick="saveCultivationPlan()" style="padding: 10px 40px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">保存</button>
+        <div style="text-align: center; margin-top: 15px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px;">
+          <button type="button" onclick="assignTags()" style="padding: 10px 20px; background: #2196F3; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">タグ割り当て</button>
+          <button type="button" id="btnCpDraftSave" onclick="saveCultivationPlanDraft()" style="padding: 10px 24px; background: #607D8B; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">一時保存</button>
+          <button type="button" id="btnCpDraftLoad" onclick="loadCultivationPlanDraft()" style="padding: 10px 16px; background: #fff; color: #455A64; border: 2px solid #607D8B; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: none;">📂 下書きを読込</button>
+          <button type="button" onclick="saveCultivationPlan()" style="padding: 10px 28px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span></button>
+          <button type="button" onclick="executeCultivationPlanFromModal()" style="padding: 10px 28px; background: #4CAF50; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">▶️ 計画実行<br><span style="font-size:10px;font-weight:normal;">作業予定へ</span></button>
+          <div id="cpDraftStatus" style="width: 100%; font-size: 11px; color: #607D8B; margin-top: 2px;"></div>
         </div>
       </div>
     </div>
@@ -338,20 +342,39 @@
     </div>
 
     <!-- 地図上での圃場複数選択バナー -->
-    <div id="fieldSelectionMapBanner" style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(33,150,243,0.95); color:white; padding:15px; border-radius:12px; z-index:10010; align-items:center; gap:10px; width: 90%; max-width: 350px; box-shadow:0 4px 15px rgba(0,0,0,0.3); flex-direction: column; justify-content: center; font-weight:bold; font-size:14px; text-align:center;">
+    <div id="fieldSelectionMapBanner" style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(33,150,243,0.95); color:white; padding:15px; border-radius:12px; z-index:10010; align-items:center; gap:10px; width: 90%; max-width: 380px; box-shadow:0 4px 15px rgba(0,0,0,0.3); flex-direction: column; justify-content: center; font-weight:bold; font-size:14px; text-align:center;">
       <div style="font-size: 16px; margin-bottom: 5px;">🗺️ 圃場選択モード</div>
+      <div id="fieldSelectionModeHint" style="font-size: 11px; color: #e3f2fd; margin-bottom: 4px; font-weight: normal;">農業CAD登録がある圃場は畝単位で選べます</div>
       <div id="fieldSelectionVarietyInfo" style="font-size: 12px; color: #e3f2fd; margin-bottom: 8px;">品種: - (計画: -a)</div>
       <div style="display:flex; justify-content:space-around; width:100%; font-size:15px; margin-bottom:12px; background:rgba(0,0,0,0.15); padding:8px; border-radius:6px; box-sizing:border-box;">
          <div>選択済: <span id="fsSelectedArea" style="font-size:18px; color:#fff;">0</span>a</div>
          <div>あと: <span id="fsDiffArea" style="font-size:18px; color:#ffeb3b;">0</span>a</div>
       </div>
       <div id="fsSelectedFieldsList" style="font-size:11px; max-height:60px; overflow-y:auto; width:100%; text-align:left; background:rgba(255,255,255,0.1); padding:4px; border-radius:4px; margin-bottom:10px; box-sizing:border-box; white-space: normal; word-break: break-all;">選択中の圃場: なし</div>
+      <div id="fsRidgeActions" style="display:none; gap:8px; width:100%; margin-bottom:8px;">
+         <button type="button" onclick="selectWholeFieldInRidgeMode()" style="flex:1; background:#FF9800; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">圃場を全体選択</button>
+         <button type="button" onclick="exitRidgeSelectionView()" style="flex:1; background:#455A64; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">別の圃場へ</button>
+      </div>
       <div style="display:flex; gap:10px; width:100%;">
          <button onclick="confirmFieldSelection()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor: pointer;">確定</button>
          <button onclick="cancelFieldSelection()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor: pointer;">キャンセル</button>
       </div>
     </div>
     
+    <!-- 計画実行一覧モーダル -->
+    <div id="executePlanListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11000; align-items:center; justify-content:center;">
+      <div style="background:#fff; width:90%; max-width:420px; border-radius:12px; padding:20px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+        <h3 style="margin:0 0 8px 0; font-size:18px; color:#333; text-align:center; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">▶️ 計画実行</h3>
+        <p style="font-size:12px; color:#666; margin:0 0 12px 0; text-align:center;">未実行の栽培計画を選び、播種を作業予定に登録します</p>
+        <div id="executePlanListContainer" style="overflow-y:auto; flex:1; margin-bottom: 15px; padding-right: 5px;">
+          <div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">読み込み中...</div>
+        </div>
+        <div style="text-align:center;">
+          <button type="button" onclick="closeExecutePlanListModal()" style="padding: 10px 30px; background: #666; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; width: 100%;">閉じる</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 保存済み計画一覧モーダル -->
     <div id="historyListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11000; align-items:center; justify-content:center;">
       <div style="background:#fff; width:90%; max-width:400px; border-radius:12px; padding:20px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">

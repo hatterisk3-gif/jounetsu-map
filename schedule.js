@@ -863,10 +863,13 @@ async function fetchWeatherAndUpdateUI() {
         const tasks = p.filteredTasks; // フィルター済みのタスクを使用
         let tasksHtml = tasks.length === 0 ? '<div style="color:#aaa; font-size:12px;">現在の予定はありません</div>' : tasks.map(t => {
           let cl = String(t.workName).includes('⚠️') ? 'color:#d32f2f; font-weight:bold; background:#ffebee;' : (t.isOverdue ? 'color:#d32f2f; font-weight:bold;' : 'color:#333;');
+          const tagPart = (t.tag || t.person) ? ` / <span style="color:#e91e63;font-weight:bold;">${t.tag || t.person}</span>` : '';
+          const traysPart = (t.trays || t.hours) ? ` · ${t.trays || t.hours}` : '';
           return `<div style="${cl} border-bottom:1px solid #eee; padding:6px;">
                     <span style="background:#e3f2fd; color:#1a73e8; padding:2px 4px; border-radius:4px; font-size:10px; margin-right:4px;">${t.dept}</span>
-                    <b>${t.workName}</b> ${t.cropName ? `(${t.cropName})` : ''}<br>
-                    <small>期限: ${t.deadline}</small>
+                    <b>${t.workName}</b><br>
+                    <small>${t.cropName ? t.cropName : ''}${tagPart}${traysPart}</small><br>
+                    <small>期間: ${t.schedDate}〜${t.deadline}</small>
                   </div>`;
         }).join('');
 
@@ -902,15 +905,21 @@ async function fetchWeatherAndUpdateUI() {
 
           tbody.innerHTML = sorted.map(t => {
             const rowClass = String(t.workName).includes('⚠️') ? 'style="background-color:#ffebee; color:#d32f2f; font-weight:bold;"' : (t.isOverdue ? 'class="overdue-row"' : '');
+            const isCp = t.isCultivation || String(t.workName || '').indexOf('播種') === 0;
+            const cropCell = isCp
+              ? `${t.cropName || '-'}${t.tag ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.tag + '</span>' : (t.person ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.person + '</span>' : '')}`
+              : (t.cropName || '-');
+            const traysCell = t.trays || t.hours || '-';
+            const tagCell = isCp ? (t.tag || t.person || '-') : (t.person || '-');
             return `<tr ${rowClass}>
                       <td>${t.workName}</td>
                       <td>${t.dept}</td>
-                      <td>${t.cropName || '-'}</td>
+                      <td>${cropCell}</td>
                       <td>${t.fieldName}</td>
                       <td>${t.schedDate}</td>
                       <td>${t.deadline}</td>
-                      <td>${t.hours || '-'}</td>
-                      <td>${t.person || '-'}</td>
+                      <td>${traysCell}</td>
+                      <td>${tagCell}</td>
                     </tr>`;
           }).join('');
         }
@@ -957,7 +966,32 @@ window.updatePlanRatio = function(planId, index, value) {
     const plan = cpPlans.find(p => p.id === planId);
     if (!plan) return;
     if (!plan.harvestRatios) plan.harvestRatios = [];
-    plan.harvestRatios[index] = parseFloat(value) || 0;
+
+    let usedBefore = 0;
+    for (let j = 0; j < index; j++) usedBefore += (plan.harvestRatios[j] || 0);
+    usedBefore = Math.round(usedBefore * 10) / 10;
+    const maxForThis = index === 0 ? 1 : Math.round((1 - usedBefore) * 10) / 10;
+
+    let v = parseFloat(value);
+    if (isNaN(v) || v <= 0) {
+        plan.harvestRatios[index] = 0;
+    } else {
+        plan.harvestRatios[index] = Math.min(Math.round(v * 10) / 10, maxForThis);
+    }
+
+    // 以降の枠が残りを超えないよう丸め・クリア
+    let used = 0;
+    for (let j = 0; j <= index; j++) used += (plan.harvestRatios[j] || 0);
+    used = Math.round(used * 10) / 10;
+    for (let j = index + 1; j < plan.harvestRatios.length; j++) {
+        const rem = Math.round((1 - used) * 10) / 10;
+        if ((plan.harvestRatios[j] || 0) > rem) {
+            plan.harvestRatios[j] = rem > 0 ? rem : 0;
+        }
+        used += (plan.harvestRatios[j] || 0);
+        used = Math.round(used * 10) / 10;
+    }
+
     updateCpCellsText(planId);
 };
 
@@ -1186,8 +1220,8 @@ function getPolygonCenter(coords) {
 }
 
 window.handleFieldCultivationClick = function(p) {
-    // 畝データがない圃場のチェック
-    if (!p.uneSimData || String(p.uneSimData).trim() === '' || String(p.uneSimData).trim() === '[]') {
+    const ridges = getCadRidgeShapes(p);
+    if (!ridges.length) {
         customAlert('この圃場には畝データが登録されていません。');
         return;
     }
@@ -1200,27 +1234,17 @@ window.handleFieldCultivationClick = function(p) {
     // 既存の畝描画をクリア
     clearDrawnRidges();
 
-    let uneData = [];
-    try {
-        uneData = JSON.parse(p.uneSimData);
-    } catch (e) {
-        console.error('Failed to parse uneSimData', e);
-        customAlert('畝データの読み込みに失敗しました。');
-        return;
-    }
-
-    if (uneData.length === 0) {
-        customAlert('この圃場には畝データが登録されていません。');
-        return;
-    }
-
     document.getElementById('fieldCultivationModeMessage').innerText = '🌱 栽培計画を登録する畝をタップしてください';
 
     // 畝ポリゴンを描画
-    uneData.forEach((une, index) => {
-        if (!une.polygon || une.polygon.length < 3) return;
+    ridges.forEach((entry) => {
+        const coords = entry.coords;
+        const index = entry.index;
+        const une = entry.une;
+        if (!coords || coords.length < 3) return;
 
-        const ridgeName = p.name + ' (畝' + (index + 1) + ')';
+        const label = getCadRidgeLabel(une, index);
+        const ridgeName = p.name + ' (' + label + ')';
 
         // 既存の計画があるか確認（俯瞰表示用）
         const ridgeTasks = globalSchedules.filter(t => t.fieldName === ridgeName);
@@ -1228,7 +1252,7 @@ window.handleFieldCultivationClick = function(p) {
         const fillColor = hasPlan ? '#FF9800' : '#8BC34A';
 
         const ridgePoly = new google.maps.Polygon({
-            paths: une.polygon,
+            paths: coords,
             map: map,
             fillColor: fillColor,
             fillOpacity: 0.8,
@@ -1238,8 +1262,8 @@ window.handleFieldCultivationClick = function(p) {
         });
 
         // ラベル表示
-        const labelText = hasPlan ? (ridgeTasks[0].cropName || '計画あり') : ('畝' + (index + 1));
-        const ridgeCenter = getPolygonCenter(une.polygon);
+        const labelText = hasPlan ? (ridgeTasks[0].cropName || '計画あり') : label;
+        const ridgeCenter = getPolygonCenter(coords);
         const marker = new google.maps.Marker({
             position: ridgeCenter,
             map: map,
@@ -1269,21 +1293,16 @@ window.handleFieldCultivationClick = function(p) {
                                 const newRow = tbody.lastElementChild;
                                 const planId = newRow.dataset.planId;
                                 if (planId) {
+                                    const plan = cpPlans.find(x => x.id === planId);
                                     // 面積をセット
                                     const areaInput = document.getElementById('area_' + planId);
                                     if (areaInput) areaInput.value = areaAres;
-
-                                    // 圃場名をセット
-                                    const fieldSelect = document.getElementById('fieldSelect_' + planId);
-                                    if (fieldSelect) {
-                                        const exists = Array.from(fieldSelect.options).some(opt => opt.text === ridgeName);
-                                        if (!exists) {
-                                            const opt = document.createElement('option');
-                                            opt.value = ridgeName;
-                                            opt.text = ridgeName;
-                                            fieldSelect.add(opt);
+                                    if (plan) {
+                                        plan.areaA = parseFloat(areaAres) || 0;
+                                        plan.fieldIds = [makeRidgeSelectionId(p.id, index)];
+                                        if (typeof updateVarietyCardFieldsDisplay === 'function') {
+                                            updateVarietyCardFieldsDisplay(planId);
                                         }
-                                        fieldSelect.value = ridgeName;
                                     }
 
                                     if (typeof updateRowParams === 'function') updateRowParams(planId);
@@ -1301,11 +1320,137 @@ window.handleFieldCultivationClick = function(p) {
 };
 
 // =============================================
-// 🗺️ 圃場複数選択モード (地図上での選択)
+// 🗺️ 圃場複数選択モード (地図上での選択 / CAD畝対応)
 // =============================================
 window.isMapSelectingField = false;
 window.mapSelectionPlanId = null;
 window.mapSelectedFieldIds = [];
+window.mapSelectingRidgesForFieldId = null;
+
+/** 農業CADのuneSimDataを正規化して畝配列を返す */
+function parseCadUneSimData(uneSimData) {
+    if (!uneSimData || String(uneSimData).trim() === '' || String(uneSimData).trim() === '[]') {
+        return null;
+    }
+    let data;
+    try {
+        data = (typeof uneSimData === 'string') ? JSON.parse(uneSimData) : uneSimData;
+    } catch (e) {
+        return null;
+    }
+    if (!data) return null;
+
+    // 新形式: { unePolygons: [{ coords, group, customLabel }, ...] }
+    if (!Array.isArray(data) && Array.isArray(data.unePolygons)) {
+        return data;
+    }
+    // 旧形式: [{ polygon: [...] }, ...] → 新形式に寄せる
+    if (Array.isArray(data)) {
+        return {
+            unePolygons: data.map(item => {
+                if (!item) return { coords: [] };
+                if (item.coords) return item;
+                if (item.polygon) return { coords: item.polygon, group: item.group || '', customLabel: item.customLabel || '' };
+                if (Array.isArray(item)) return { coords: item };
+                return { coords: [] };
+            })
+        };
+    }
+    return null;
+}
+
+function getCadRidgeShapes(p) {
+    if (!p) return [];
+    const data = parseCadUneSimData(p.uneSimData);
+    if (!data || !Array.isArray(data.unePolygons)) return [];
+    // 元のインデックスを保持（選択IDがずれないように）
+    return data.unePolygons.map((u, index) => ({
+        une: u,
+        index: index,
+        coords: getCadRidgeCoords(u)
+    })).filter(e => e.coords && e.coords.length >= 3);
+}
+
+function getCadRidgeCoords(une) {
+    if (!une) return null;
+    if (Array.isArray(une.coords)) return une.coords;
+    if (Array.isArray(une.polygon)) return une.polygon;
+    if (Array.isArray(une)) return une;
+    return null;
+}
+
+function getCadRidgeLabel(une, index) {
+    if (une && une.customLabel) return String(une.customLabel);
+    if (une && une.group) return String(une.group) + '-' + (index + 1);
+    return '畝' + (index + 1);
+}
+
+function makeRidgeSelectionId(fieldId, uneIndex) {
+    return String(fieldId) + '#une#' + uneIndex;
+}
+
+function parseFieldSelectionId(selId) {
+    const m = String(selId).match(/^(.+)#une#(\d+)$/);
+    if (m) {
+        return { type: 'une', fieldId: m[1], uneIndex: parseInt(m[2], 10) };
+    }
+    return { type: 'field', fieldId: String(selId), uneIndex: null };
+}
+
+function computeCoordsAreaAres(coords) {
+    if (!coords || coords.length < 3 || !google.maps || !google.maps.geometry) return 0;
+    try {
+        const path = coords.map(c => new google.maps.LatLng(
+            typeof c.lat === 'function' ? c.lat() : parseFloat(c.lat),
+            typeof c.lng === 'function' ? c.lng() : parseFloat(c.lng)
+        ));
+        const sqm = google.maps.geometry.spherical.computeArea(path);
+        return Math.round((sqm / 100) * 10) / 10;
+    } catch (e) {
+        return 0;
+    }
+}
+
+/** 選択ID → 面積(a)と表示名 */
+window.resolveFieldSelectionInfo = function(selId) {
+    const parsed = parseFieldSelectionId(selId);
+    const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[parsed.fieldId] : null;
+    if (!p) {
+        return { area: 0, name: String(selId), fieldId: parsed.fieldId, type: parsed.type };
+    }
+    if (parsed.type === 'field') {
+        return {
+            area: parseFloat(p.area) || 0,
+            name: p.name || parsed.fieldId,
+            fieldId: parsed.fieldId,
+            type: 'field'
+        };
+    }
+    const data = parseCadUneSimData(p.uneSimData);
+    const une = (data && data.unePolygons) ? data.unePolygons[parsed.uneIndex] : null;
+    const coords = getCadRidgeCoords(une);
+    const label = getCadRidgeLabel(une, parsed.uneIndex);
+    return {
+        area: computeCoordsAreaAres(coords),
+        name: (p.name || parsed.fieldId) + '(' + label + ')',
+        fieldId: parsed.fieldId,
+        type: 'une',
+        uneIndex: parsed.uneIndex
+    };
+};
+
+function removeSelectionsForField(fieldId) {
+    const fid = String(fieldId);
+    window.mapSelectedFieldIds = window.mapSelectedFieldIds.filter(id => {
+        const parsed = parseFieldSelectionId(id);
+        return parsed.fieldId !== fid;
+    });
+}
+
+function fieldHasAnySelection(fieldId) {
+    const fid = String(fieldId);
+    return window.mapSelectedFieldIds.some(id => parseFieldSelectionId(id).fieldId === fid);
+}
 
 window.openFieldSelectMap = function(planId) {
     const plan = cpPlans.find(p => p.id === planId);
@@ -1313,6 +1458,7 @@ window.openFieldSelectMap = function(planId) {
 
     window.mapSelectionPlanId = planId;
     window.mapSelectedFieldIds = [...(plan.fieldIds || [])];
+    window.mapSelectingRidgesForFieldId = null;
     window.isMapSelectingField = true;
 
     // 栽培計画モーダルを一旦非表示にする
@@ -1320,6 +1466,8 @@ window.openFieldSelectMap = function(planId) {
 
     // 圃場選択バナーを表示
     document.getElementById('fieldSelectionMapBanner').style.display = 'flex';
+    const ridgeActions = document.getElementById('fsRidgeActions');
+    if (ridgeActions) ridgeActions.style.display = 'none';
 
     // マップ上のポリゴンをハイライト
     window.highlightSelectedFieldsOnMap();
@@ -1332,16 +1480,22 @@ window.highlightSelectedFieldsOnMap = function() {
         if (p.isMarker || !p.polygon) continue;
 
         const val = String(p.id);
-        const isSelected = window.mapSelectedFieldIds.includes(val);
+        const isSelected = fieldHasAnySelection(val);
+        const isFocus = window.mapSelectingRidgesForFieldId && String(window.mapSelectingRidgesForFieldId) === val;
 
-        if (isSelected) {
+        if (isFocus) {
+            p.polygon.setOptions({
+                strokeColor: '#FFEB3B',
+                strokeWeight: 4,
+                fillOpacity: 0.15
+            });
+        } else if (isSelected) {
             p.polygon.setOptions({
                 strokeColor: '#FFEB3B',
                 strokeWeight: 4,
                 fillOpacity: 0.8
             });
         } else {
-            // 通常時のカラーに戻す
             const originalColor = p.color || '#4CAF50';
             p.polygon.setOptions({
                 strokeColor: originalColor,
@@ -1358,29 +1512,34 @@ window.updateFieldSelectionBanner = function() {
     const plan = cpPlans.find(p => p.id === planId);
     if (!plan) return;
 
-    // 目標面積
     const areaInput = document.getElementById('area_' + planId);
     const targetArea = areaInput ? (parseFloat(areaInput.value) || 0) : (plan.areaA || 0);
 
-    // 選択された合計面積
     let selectedArea = 0;
     let selectedNames = [];
     window.mapSelectedFieldIds.forEach(id => {
-        const p = loadedPolygons[id];
-        if (p) {
-            selectedArea += parseFloat(p.area) || 0;
-            selectedNames.push(p.name);
-        }
+        const info = window.resolveFieldSelectionInfo(id);
+        selectedArea += info.area || 0;
+        selectedNames.push(info.name);
     });
 
     selectedArea = Math.round(selectedArea * 10) / 10;
     let diffArea = targetArea - selectedArea;
     diffArea = Math.round(diffArea * 10) / 10;
 
-    // バナーUIを更新
     const varInfo = document.getElementById('fieldSelectionVarietyInfo');
     if (varInfo) {
         varInfo.innerText = `品種: ${plan.crop} - ${plan.variety} (目標: ${targetArea}a)`;
+    }
+
+    const hintEl = document.getElementById('fieldSelectionModeHint');
+    if (hintEl) {
+        if (window.mapSelectingRidgesForFieldId) {
+            const fp = loadedPolygons[window.mapSelectingRidgesForFieldId];
+            hintEl.innerText = (fp ? fp.name : '') + ' の畝をタップして選択/解除';
+        } else {
+            hintEl.innerText = '農業CAD登録がある圃場は畝単位で選べます';
+        }
     }
 
     const selAreaEl = document.getElementById('fsSelectedArea');
@@ -1389,32 +1548,156 @@ window.updateFieldSelectionBanner = function() {
     const diffAreaEl = document.getElementById('fsDiffArea');
     if (diffAreaEl) {
         diffAreaEl.innerText = diffArea;
-        if (diffArea > 0) {
-            diffAreaEl.style.color = '#ffeb3b'; // 不足している
-        } else {
-            diffAreaEl.style.color = '#fff'; // 満たしている
-        }
+        diffAreaEl.style.color = diffArea > 0 ? '#ffeb3b' : '#fff';
     }
 
     const listEl = document.getElementById('fsSelectedFieldsList');
     if (listEl) {
         listEl.innerText = selectedNames.length > 0 ? '選択中: ' + selectedNames.join(', ') : '選択中の圃場: なし';
     }
+
+    const ridgeActions = document.getElementById('fsRidgeActions');
+    if (ridgeActions) {
+        ridgeActions.style.display = window.mapSelectingRidgesForFieldId ? 'flex' : 'none';
+    }
 };
 
 window.handleMapSelectFieldToggle = function(p) {
     if (!window.isMapSelectingField) return;
+
+    // 畝選択ビュー中に別圃場をタップ → そちらへ切替
+    const ridges = getCadRidgeShapes(p);
+    if (ridges.length > 0) {
+        window.enterRidgeSelectionView(p);
+        return;
+    }
+
+    // CADなし → 従来どおり圃場全体トグル
+    window.exitRidgeSelectionView(true);
     const val = String(p.id);
     const idx = window.mapSelectedFieldIds.indexOf(val);
-    
+
     if (idx > -1) {
         window.mapSelectedFieldIds.splice(idx, 1);
     } else {
+        // 念のため同圃場の畝選択を除去してから全体追加
+        removeSelectionsForField(val);
         window.mapSelectedFieldIds.push(val);
     }
-    
+
     window.highlightSelectedFieldsOnMap();
     window.updateFieldSelectionBanner();
+};
+
+window.enterRidgeSelectionView = function(p) {
+    const ridges = getCadRidgeShapes(p);
+    if (!ridges.length) return;
+
+    window.mapSelectingRidgesForFieldId = String(p.id);
+    clearDrawnRidges();
+
+    const bounds = new google.maps.LatLngBounds();
+    if (p.coords) p.coords.forEach(pt => bounds.extend(pt));
+
+    ridges.forEach((entry) => {
+        const coords = entry.coords;
+        const index = entry.index;
+        const une = entry.une;
+        if (!coords || coords.length < 3) return;
+        coords.forEach(pt => bounds.extend(pt));
+
+        const selId = makeRidgeSelectionId(p.id, index);
+        const isSelected = window.mapSelectedFieldIds.includes(selId);
+        const label = getCadRidgeLabel(une, index);
+
+        const ridgePoly = new google.maps.Polygon({
+            paths: coords,
+            map: map,
+            fillColor: isSelected ? '#FFEB3B' : '#8BC34A',
+            fillOpacity: isSelected ? 0.85 : 0.55,
+            strokeColor: isSelected ? '#F57F17' : '#33691E',
+            strokeWeight: isSelected ? 3 : 2,
+            zIndex: 120,
+            clickable: true
+        });
+
+        const marker = new google.maps.Marker({
+            position: getPolygonCenter(coords),
+            map: map,
+            label: { text: label, color: '#000', fontSize: '11px', fontWeight: 'bold' },
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+            zIndex: 121,
+            clickable: false
+        });
+
+        google.maps.event.addListener(ridgePoly, 'click', function(e) {
+            if (typeof e.stop === 'function') e.stop();
+            window.toggleRidgeSelection(p.id, index, ridgePoly, marker, label);
+        });
+
+        drawnRidgePolygons.push({ polygon: ridgePoly, label: marker, selId: selId, uneIndex: index });
+    });
+
+    if (!bounds.isEmpty()) map.fitBounds(bounds);
+    window.highlightSelectedFieldsOnMap();
+    window.updateFieldSelectionBanner();
+};
+
+window.toggleRidgeSelection = function(fieldId, uneIndex, ridgePoly, marker, label) {
+    const selId = makeRidgeSelectionId(fieldId, uneIndex);
+    // 圃場全体選択と畝選択は排他
+    const wholeIdx = window.mapSelectedFieldIds.indexOf(String(fieldId));
+    if (wholeIdx > -1) window.mapSelectedFieldIds.splice(wholeIdx, 1);
+
+    const idx = window.mapSelectedFieldIds.indexOf(selId);
+    let nowSelected;
+    if (idx > -1) {
+        window.mapSelectedFieldIds.splice(idx, 1);
+        nowSelected = false;
+    } else {
+        window.mapSelectedFieldIds.push(selId);
+        nowSelected = true;
+    }
+
+    if (ridgePoly) {
+        ridgePoly.setOptions({
+            fillColor: nowSelected ? '#FFEB3B' : '#8BC34A',
+            fillOpacity: nowSelected ? 0.85 : 0.55,
+            strokeColor: nowSelected ? '#F57F17' : '#33691E',
+            strokeWeight: nowSelected ? 3 : 2
+        });
+    }
+    window.highlightSelectedFieldsOnMap();
+    window.updateFieldSelectionBanner();
+};
+
+window.selectWholeFieldInRidgeMode = function() {
+    const fieldId = window.mapSelectingRidgesForFieldId;
+    if (!fieldId) return;
+    removeSelectionsForField(fieldId);
+    window.mapSelectedFieldIds.push(String(fieldId));
+    // 畝ハイライトを未選択色に戻す
+    drawnRidgePolygons.forEach(item => {
+        if (item.polygon) {
+            item.polygon.setOptions({
+                fillColor: '#8BC34A',
+                fillOpacity: 0.55,
+                strokeColor: '#33691E',
+                strokeWeight: 2
+            });
+        }
+    });
+    window.highlightSelectedFieldsOnMap();
+    window.updateFieldSelectionBanner();
+};
+
+window.exitRidgeSelectionView = function(silent) {
+    window.mapSelectingRidgesForFieldId = null;
+    clearDrawnRidges();
+    if (!silent) {
+        window.highlightSelectedFieldsOnMap();
+        window.updateFieldSelectionBanner();
+    }
 };
 
 window.confirmFieldSelection = function() {
@@ -1426,9 +1709,9 @@ window.confirmFieldSelection = function() {
         if (typeof updateVarietyCardFieldsDisplay === 'function') {
             updateVarietyCardFieldsDisplay(planId);
         }
-        // 圃場選択が変更されたので、データベース（GAS）に栽培計画を保存する
+        // 圃場選択が変更されたので、未実行計画として保存する
         if (typeof saveCultivationPlan === 'function') {
-            saveCultivationPlan();
+            saveCultivationPlan({ keepOpen: true, silent: true });
         }
     }
     window.exitFieldSelectionMode();
@@ -1442,12 +1725,18 @@ window.exitFieldSelectionMode = function() {
     window.isMapSelectingField = false;
     window.mapSelectionPlanId = null;
     window.mapSelectedFieldIds = [];
+    window.mapSelectingRidgesForFieldId = null;
+    clearDrawnRidges();
 
     // バナーを非表示
-    document.getElementById('fieldSelectionMapBanner').style.display = 'none';
+    const banner = document.getElementById('fieldSelectionMapBanner');
+    if (banner) banner.style.display = 'none';
+    const ridgeActions = document.getElementById('fsRidgeActions');
+    if (ridgeActions) ridgeActions.style.display = 'none';
 
     // 栽培計画モーダルを再表示
-    document.getElementById('cultivationPlanModal').style.display = 'flex';
+    const modal = document.getElementById('cultivationPlanModal');
+    if (modal) modal.style.display = 'flex';
 
     // マップ表示を元に戻す
     if (typeof updateMapVisuals === 'function') {
@@ -1739,8 +2028,8 @@ window.buildFieldSatImageUrl = function(itemId, bboxStr, mode) {
   const params = new URLSearchParams({
     collection: 'sentinel-2-l2a',
     item: itemId,
-    width: '1024',
-    height: '1024',
+    width: '2048',
+    height: '2048',
     resampling: 'bilinear'
   });
   if (mode === 'ndvi') {
@@ -1751,11 +2040,36 @@ window.buildFieldSatImageUrl = function(itemId, bboxStr, mode) {
     params.set('colormap_name', 'rdylgn');
     params.set('asset_as_band', 'true');
   } else {
-    params.append('assets', 'visual');
-    params.set('asset_bidx', 'visual|1,2,3');
+    // 10mバンドを直接合成（visualよりシャープに出ることが多い）
+    params.append('assets', 'B04');
+    params.append('assets', 'B03');
+    params.append('assets', 'B02');
+    params.set('color_formula', 'Gamma RGB 3.2 Saturation 1.1 Sigmoidal RGB 10 0.35');
     params.set('nodata', '0');
   }
   return base + '?' + params.toString();
+};
+
+window.buildFieldSatTileQuery = function(itemId, mode) {
+  const params = new URLSearchParams({
+    collection: 'sentinel-2-l2a',
+    item: itemId
+  });
+  if (mode === 'ndvi') {
+    params.append('assets', 'B04');
+    params.append('assets', 'B08');
+    params.set('expression', '(B08-B04)/(B08+B04)');
+    params.set('rescale', '-0.1,0.9');
+    params.set('colormap_name', 'rdylgn');
+    params.set('asset_as_band', 'true');
+  } else {
+    params.append('assets', 'B04');
+    params.append('assets', 'B03');
+    params.append('assets', 'B02');
+    params.set('color_formula', 'Gamma RGB 3.2 Saturation 1.1 Sigmoidal RGB 10 0.35');
+    params.set('nodata', '0');
+  }
+  return params.toString();
 };
 
 window.formatFieldSatDate = function(iso) {
@@ -1814,6 +2128,10 @@ window.selectFieldSatScene = function(itemId) {
 };
 
 window.clearFieldSatGrowthLayer = function(slot) {
+  const gmap = window._fieldSat.growthMaps[slot];
+  if (gmap && gmap.overlayMapTypes) {
+    try { gmap.overlayMapTypes.clear(); } catch (e) {}
+  }
   const ov = window._fieldSat.growthOverlays[slot];
   if (ov) {
     try { ov.setMap(null); } catch (e) {}
@@ -1835,22 +2153,51 @@ window.ensureFieldSatGrowthMap = function(slot) {
     } catch (e) {}
     window._fieldSat.growthMaps[slot] = new google.maps.Map(el, {
       center,
-      zoom: 16,
-      maxZoom: 19,
-      mapTypeId: 'hybrid',
+      zoom: 15,
+      minZoom: 12,
+      maxZoom: 17, // 10m解像度を超えて拡大しすぎない
+      mapTypeId: 'roadmap',
       tilt: 0,
       gestureHandling: 'greedy',
       disableDefaultUI: true,
       zoomControl: true,
       mapTypeControl: false,
       streetViewControl: false,
-      fullscreenControl: false
+      fullscreenControl: false,
+      styles: [
+        { elementType: 'geometry', stylers: [{ color: '#1d1d1d' }] },
+        { elementType: 'labels.text.stroke', stylers: [{ color: '#1d1d1d' }] },
+        { elementType: 'labels.text.fill', stylers: [{ color: '#8a8a8a' }] },
+        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2c2c2c' }] },
+        { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
+        { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+        { featureType: 'transit', stylers: [{ visibility: 'off' }] }
+      ]
     });
   }
   setTimeout(() => {
     try { google.maps.event.trigger(window._fieldSat.growthMaps[slot], 'resize'); } catch (e) {}
   }, 60);
   return window._fieldSat.growthMaps[slot];
+};
+
+window.createFieldSatTileLayer = function(itemId, mode) {
+  const qs = window.buildFieldSatTileQuery(itemId, mode);
+  const tpl = 'https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{z}/{x}/{y}@2x?' + qs;
+  return new google.maps.ImageMapType({
+    getTileUrl: function(coord, zoom) {
+      if (zoom < 10 || zoom > 17) return null;
+      const n = Math.pow(2, zoom);
+      if (coord.y < 0 || coord.y >= n) return null;
+      const x = ((coord.x % n) + n) % n;
+      return tpl.replace('{z}', zoom).replace('{x}', x).replace('{y}', coord.y);
+    },
+    tileSize: new google.maps.Size(256, 256),
+    maxZoom: 17,
+    minZoom: 10,
+    name: 'Sentinel-2',
+    opacity: 1
+  });
 };
 
 window.renderFieldSatImages = function() {
@@ -1876,46 +2223,41 @@ window.renderFieldSatImages = function() {
     }
 
     const bbox = window.getFieldSatBbox(field);
-    const url = window.buildFieldSatImageUrl(item.id, bbox.str, mode);
     const bounds = new google.maps.LatLngBounds(
       { lat: bbox.south, lng: bbox.west },
       { lat: bbox.north, lng: bbox.east }
     );
 
-    if (ph) { ph.style.display = 'flex'; ph.innerText = '読み込み中...'; }
+    if (ph) { ph.style.display = 'flex'; ph.innerText = '高解像タイル読込中...'; }
     if (label) {
       const cloud = item.cloud != null ? ` 雲${Number(item.cloud).toFixed(0)}%` : '';
       label.innerText = `${window.formatFieldSatDate(item.datetime)}${cloud} (${mode === 'ndvi' ? 'NDVI' : '真色'})`;
     }
 
-    // 画像の読み込み確認後に GroundOverlay を載せる
-    const probe = new Image();
-    probe.onload = () => {
-      window.clearFieldSatGrowthLayer(slot);
-      const overlay = new google.maps.GroundOverlay(url, bounds, { opacity: 0.92, clickable: false });
-      overlay.setMap(gmap);
-      window._fieldSat.growthOverlays[slot] = overlay;
+    const layer = window.createFieldSatTileLayer(item.id, mode);
+    gmap.overlayMapTypes.push(layer);
+    window._fieldSat.growthOverlays[slot] = layer;
 
-      const poly = new google.maps.Polygon({
-        paths: field.coords,
-        map: gmap,
-        fillColor: '#FFEB3B',
-        fillOpacity: 0.12,
-        strokeColor: '#FFEB3B',
-        strokeOpacity: 1,
-        strokeWeight: 2.5,
-        clickable: false
-      });
-      window._fieldSat.growthPolys[slot] = [poly];
+    const poly = new google.maps.Polygon({
+      paths: field.coords,
+      map: gmap,
+      fillColor: '#FFEB3B',
+      fillOpacity: 0.1,
+      strokeColor: '#FFEB3B',
+      strokeOpacity: 1,
+      strokeWeight: 2.5,
+      clickable: false
+    });
+    window._fieldSat.growthPolys[slot] = [poly];
 
-      google.maps.event.trigger(gmap, 'resize');
-      gmap.fitBounds(bounds, 12);
+    google.maps.event.trigger(gmap, 'resize');
+    gmap.fitBounds(bounds, 20);
+    google.maps.event.addListenerOnce(gmap, 'idle', () => {
+      if (gmap.getZoom() > 16) gmap.setZoom(16);
       if (ph) ph.style.display = 'none';
-    };
-    probe.onerror = () => {
-      if (ph) { ph.style.display = 'flex'; ph.innerText = '画像の取得に失敗しました'; }
-    };
-    probe.src = url;
+    });
+    // タイル遅延時もプレースホルダを消す
+    setTimeout(() => { if (ph) ph.style.display = 'none'; }, 1800);
   };
 
   setPane('A', window._fieldSat.itemA);

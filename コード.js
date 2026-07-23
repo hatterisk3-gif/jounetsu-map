@@ -54,8 +54,10 @@ function doPost(e) {
     else if (action === "updateToolStatus") result = updateToolStatus(params);
     else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray);
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop);
+    else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
     else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
     else if (action === "getCultivationMaster") result = getCultivationMaster();
+    else if (action === "appendCultivationMaster") result = appendCultivationMaster(params);
     else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
     else if (action === "deleteCultivationPreset") result = deleteCultivationPreset(params);
     else if (action === "renameCultivationPreset") result = renameCultivationPreset(params);
@@ -1669,7 +1671,20 @@ function getScheduleData() {
           dlDate.setHours(0,0,0,0);
           if (dlDate < today) isOverdue = true;
         }
-        activeSchedules.push({ workName, dept, cropName, fieldName, schedDate: schedDateStr, deadline: deadlineStr, hours, person, isOverdue });
+        activeSchedules.push({
+          workName,
+          dept,
+          cropName,
+          fieldName,
+          schedDate: schedDateStr,
+          deadline: deadlineStr,
+          hours,
+          person,
+          isOverdue,
+          isCultivation: String(sData[i][10] || '').indexOf('cp:') === 0,
+          trays: hours,
+          tag: person
+        });
       }
     }
     // 空欄を自動補完
@@ -2777,14 +2792,12 @@ function saveCultivationPlans(year, crop, planDataArray) {
       sheet = ss.insertSheet('栽培計画');
       sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
     } else {
-      // 既存のヘッダーが古い場合は更新する（任意ですがここでは列構成が変わるため）
       const lastCol = sheet.getLastColumn();
       if (lastCol === 0) {
         sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
       } else {
         const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
         if (headers.length < 3 || headers[1] !== '年度' || headers[2] !== 'ID') {
-           // 列構成をリセット
            sheet.clear();
            sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
         }
@@ -2793,7 +2806,7 @@ function saveCultivationPlans(year, crop, planDataArray) {
     
     // 1. Delete existing rows for this year and crop
     if (sheet.getLastRow() > 1) {
-      const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+      const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
       for (let i = data.length - 1; i >= 0; i--) {
         if (String(data[i][1]) === String(year) && String(data[i][3]) === String(crop)) {
           sheet.deleteRow(i + 2);
@@ -2801,9 +2814,11 @@ function saveCultivationPlans(year, crop, planDataArray) {
       }
     }
     
-    // 2. Append new rows
+    // 2. Append new rows（常に未実行=planned として保存。実行は executeCultivationPlans）
     const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
     for (const plan of planDataArray) {
+       plan.status = 'planned';
+       delete plan.executedAt;
        sheet.appendRow([
           timestamp,
           year,
@@ -2812,9 +2827,21 @@ function saveCultivationPlans(year, crop, planDataArray) {
           plan.variety,
           JSON.stringify(plan)
        ]);
+       try {
+         appendCultivationMaster({
+           crop: plan.crop,
+           variety: plan.variety,
+           holes: plan.holes,
+           rows: plan.rows,
+           pSpace: plan.pSpace,
+           rSpace: plan.rSpace,
+           yieldPerSeedling: plan.yieldPerPlant || plan.yieldPerSeedling || '',
+           itemsPerPack: plan.itemsPerPack || ''
+         });
+       } catch (appendErr) {}
     }
     
-    return { status: 'success', message: '栽培計画を保存しました' };
+    return { status: 'success', message: '栽培計画を未実行計画として保存しました' };
   } catch(e) {
     throw new Error("栽培計画保存エラー: " + e.message);
   }
@@ -2828,14 +2855,14 @@ function getCultivationPlans(year, crop) {
     
     if (sheet.getLastRow() <= 1) return [];
     
-    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+    const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
     const results = [];
     
     for (let i = 0; i < data.length; i++) {
        const row = data[i];
        if (String(row[1]) === String(year) && String(row[3]) === String(crop)) {
           try {
-             const planData = JSON.parse(row[5]); // JSON is in 6th column (index 5)
+             const planData = JSON.parse(row[5]);
              results.push(planData);
           } catch(e) {}
        }
@@ -2852,7 +2879,7 @@ function getSavedCultivationPlanList() {
     const sheet = ss.getSheetByName('栽培計画');
     if (!sheet || sheet.getLastRow() <= 1) return [];
     
-    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+    const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
     const map = {};
     
     for (let i = 0; i < data.length; i++) {
@@ -2861,12 +2888,26 @@ function getSavedCultivationPlanList() {
        const crop = String(row[3]);
        if (!year || !crop) continue;
        
+       let status = 'planned';
+       try {
+         const planData = JSON.parse(row[5]);
+         if (planData && planData.status === 'executed') status = 'executed';
+       } catch (e) {}
+       
        const key = year + "_" + crop;
        if (!map[key]) {
-           map[key] = { year: year, crop: crop, count: 0, lastUpdated: row[0] };
+           map[key] = {
+             year: year,
+             crop: crop,
+             count: 0,
+             plannedCount: 0,
+             executedCount: 0,
+             lastUpdated: row[0]
+           };
        }
        map[key].count++;
-       // Update last updated if newer
+       if (status === 'executed') map[key].executedCount++;
+       else map[key].plannedCount++;
        if (new Date(row[0]) > new Date(map[key].lastUpdated)) {
            map[key].lastUpdated = row[0];
        }
@@ -2875,6 +2916,203 @@ function getSavedCultivationPlanList() {
     return Object.values(map).sort((a, b) => b.year.localeCompare(a.year));
   } catch(e) {
     throw new Error("栽培計画リスト取得エラー: " + e.message);
+  }
+}
+
+/** 栽培カレンダーの periodIndex(0-5) → 月内の開始日・終了日 */
+function cpPeriodDayRange(year, month, periodIndex) {
+  const lastDay = new Date(year, month, 0).getDate();
+  const startDay = Math.min(periodIndex * 5 + 1, lastDay);
+  let endDay = (periodIndex >= 5) ? lastDay : Math.min(periodIndex * 5 + 5, lastDay);
+  return { startDay: startDay, endDay: endDay };
+}
+
+function cpCellToDateParts(planYear, cell) {
+  const monthIndex = (cell.monthIndex != null) ? Number(cell.monthIndex) : 0;
+  const month = Number(cell.month) || ((monthIndex % 12) + 1);
+  const periodIndex = (cell.periodIndex != null) ? Number(cell.periodIndex) : Number(cell.period) || 0;
+  const y = monthIndex >= 12 ? (Number(planYear) + 1) : Number(planYear);
+  const range = cpPeriodDayRange(y, month, periodIndex);
+  return {
+    year: y,
+    month: month,
+    periodIndex: periodIndex,
+    start: new Date(y, month - 1, range.startDay),
+    end: new Date(y, month - 1, range.endDay)
+  };
+}
+
+function formatCpPeriodLabel(planYear, sowingCells) {
+  if (!sowingCells || sowingCells.length === 0) return '';
+  const periodNames = ['上前', '上後', '中前', '中後', '下前', '下後'];
+  const parts = sowingCells.map(c => cpCellToDateParts(planYear, c));
+  parts.sort((a, b) => a.start - b.start);
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  const fLabel = first.month + '月' + (periodNames[first.periodIndex] || '');
+  const lLabel = last.month + '月' + (periodNames[last.periodIndex] || '');
+  if (fLabel === lLabel) return fLabel;
+  return fLabel + '〜' + lLabel;
+}
+
+function resolveCpFieldDisplayName_(fieldId) {
+  const ss = TENANT_SS;
+  const idStr = String(fieldId || '');
+  const m = idStr.match(/^(.+)#une#(\d+)$/);
+  const baseId = m ? m[1] : idStr;
+  const uneIndex = m ? parseInt(m[2], 10) : null;
+
+  const sheet = ss.getSheetByName('圃場');
+  if (!sheet || sheet.getLastRow() <= 1) return idStr;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(baseId)) {
+      const name = String(data[i][1] || baseId);
+      if (uneIndex == null) return name;
+      // 畝ラベル（CADデータから）
+      let uneLabel = '畝' + (uneIndex + 1);
+      try {
+        const uneSim = data[i][15];
+        if (uneSim) {
+          const parsed = (typeof uneSim === 'string') ? JSON.parse(uneSim) : uneSim;
+          const list = parsed && parsed.unePolygons ? parsed.unePolygons : (Array.isArray(parsed) ? parsed : []);
+          const une = list[uneIndex];
+          if (une && une.customLabel) uneLabel = String(une.customLabel);
+          else if (une && une.group) uneLabel = String(une.group) + '-' + (uneIndex + 1);
+        }
+      } catch (e) {}
+      return name + '(' + uneLabel + ')';
+    }
+  }
+  return idStr;
+}
+
+/**
+ * 未実行の栽培計画を「実行」し、播種を作業予定へ登録する
+ * params: { year, crop, planIds?: string[] }
+ */
+function executeCultivationPlans(params) {
+  try {
+    const year = params.year;
+    const crop = params.crop;
+    if (!year || !crop) throw new Error('年度と作物が必要です');
+
+    const plans = getCultivationPlans(year, crop);
+    if (!plans || plans.length === 0) {
+      return { success: false, message: '対象の栽培計画がありません' };
+    }
+
+    let targets = plans.filter(p => p.status !== 'executed');
+    if (params.planIds && params.planIds.length > 0) {
+      const idSet = {};
+      params.planIds.forEach(id => { idSet[String(id)] = true; });
+      targets = plans.filter(p => idSet[String(p.id)]);
+    }
+
+    if (targets.length === 0) {
+      return { success: false, message: '実行対象の未実行計画がありません（既に実行済みの可能性があります）' };
+    }
+
+    // タグ未設定チェック
+    const noTag = targets.filter(p => !p.tag);
+    if (noTag.length > 0) {
+      return { success: false, message: 'タグ未設定の作型があります。タグ割り当て後に保存してから実行してください。' };
+    }
+
+    const ss = TENANT_SS;
+    let schedSheet = ss.getSheetByName('作業予定');
+    if (!schedSheet) {
+      schedSheet = ss.insertSheet('作業予定');
+      schedSheet.appendRow(['作業名', '担当部署', '作物名', '圃場名', '予定日', '期限日', '時間', '適合者', '完了日', '写真URL', '場所ID']);
+    }
+
+    // 既存の同一計画由来の播種行を削除（再実行用）
+    if (schedSheet.getLastRow() > 1) {
+      const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow(), 11).getValues();
+      const targetIds = {};
+      targets.forEach(p => { targetIds['cp:' + p.id] = true; });
+      for (let i = sData.length - 1; i >= 0; i--) {
+        const placeId = String(sData[i][10] || '');
+        const marker = placeId.split('|')[0];
+        if (targetIds[marker]) {
+          schedSheet.deleteRow(i + 2);
+        }
+      }
+    }
+
+    let created = 0;
+    const executedAt = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+
+    targets.forEach(plan => {
+      const sowing = (plan.tasks && plan.tasks.sowing) ? plan.tasks.sowing : [];
+      if (sowing.length === 0) return;
+
+      const parts = sowing.map(c => cpCellToDateParts(year, c));
+      parts.sort((a, b) => a.start - b.start);
+      const startDate = parts[0].start;
+      const endDate = parts[parts.length - 1].end;
+      const periodLabel = formatCpPeriodLabel(year, sowing);
+
+      const trays = plan.trays || 0;
+      const unit = (Number(plan.holes) === 1) ? '粒' : '枚';
+      const traysLabel = trays + unit;
+
+      const fieldIds = plan.fieldIds || [];
+      const fieldNames = fieldIds.length > 0
+        ? fieldIds.map(resolveCpFieldDisplayName_).join(', ')
+        : '(圃場未選択)';
+
+      const placeId = 'cp:' + plan.id + (fieldIds.length ? '|' + fieldIds.join(',') : '');
+
+      // A作業名 B部署 C作物(品種) D圃場 E予定 F期限 G枚数 Hタグ I完了 J写真 K場所ID
+      // 作業名に期間を含め、一覧で品種・タグ・枚数・期間が分かるようにする
+      const workName = '播種 ' + traysLabel + ' [' + periodLabel + ']';
+      schedSheet.appendRow([
+        workName,
+        '',
+        plan.variety || plan.crop || '',
+        fieldNames,
+        startDate,
+        endDate,
+        traysLabel,
+        plan.tag || '',
+        '',
+        '',
+        placeId
+      ]);
+      created++;
+
+      plan.status = 'executed';
+      plan.executedAt = executedAt;
+    });
+
+    // 計画シートを更新（実行済みステータスを反映）
+    const planSheet = ss.getSheetByName('栽培計画');
+    if (planSheet && planSheet.getLastRow() > 1) {
+      const data = planSheet.getRange(2, 1, planSheet.getLastRow(), 6).getValues();
+      const planMap = {};
+      plans.forEach(p => { planMap[String(p.id)] = p; });
+      targets.forEach(p => { planMap[String(p.id)] = p; });
+
+      for (let i = 0; i < data.length; i++) {
+        if (String(data[i][1]) === String(year) && String(data[i][3]) === String(crop)) {
+          const pid = String(data[i][2]);
+          if (planMap[pid]) {
+            planSheet.getRange(i + 2, 6).setValue(JSON.stringify(planMap[pid]));
+          }
+        }
+      }
+    }
+
+    SpreadsheetApp.flush();
+    return {
+      success: true,
+      message: created + '件の播種を作業予定に登録しました',
+      created: created,
+      executed: targets.length
+    };
+  } catch (e) {
+    return { success: false, message: e.message };
   }
 }
 
@@ -3051,8 +3289,23 @@ function getCultivationMaster() {
           if (r[5] !== '' && !master.rSpace.includes(r[5])) master.rSpace.push(r[5]);
           if (r[6] !== undefined && r[6] !== '' && !master.yieldPerSeedling.includes(r[6])) master.yieldPerSeedling.push(r[6]);
           if (r[7] !== undefined && r[7] !== '' && !master.itemsPerPack.includes(r[7])) master.itemsPerPack.push(r[7]);
+          // プリセットの作物も作物選択肢に反映
+          if (!master.crops[pc]) master.crops[pc] = [];
+          const pname = String(r[1]).trim();
+          if (pname && !master.crops[pc].includes(pname)) master.crops[pc].push(pname);
         }
       }
+    }
+
+    // 作型DBの作物・品種も選択肢へ反映
+    if (master.croptypesDB && master.croptypesDB.length > 0) {
+      master.croptypesDB.forEach(ct => {
+        const c = String(ct.crop || '').trim();
+        const v = String(ct.variety || '').trim();
+        if (!c) return;
+        if (!master.crops[c]) master.crops[c] = [];
+        if (v && !master.crops[c].includes(v)) master.crops[c].push(v);
+      });
     }
 
     return master;
@@ -3203,6 +3456,18 @@ function saveCroptypeDB(params) {
       sheet.appendRow(newRow);
     }
     SpreadsheetApp.flush();
+    try {
+      appendCultivationMaster({
+        crop: params.crop,
+        variety: params.variety,
+        holes: '',
+        rows: '',
+        pSpace: '',
+        rSpace: '',
+        yieldPerSeedling: '',
+        itemsPerPack: ''
+      });
+    } catch (e) {}
     return { success: true, message: "作型DBを更新しました" };
   } catch(e) {
     return { success: false, message: e.message };
@@ -3377,6 +3642,20 @@ function saveVarietyWithFile(params) {
     }
     
     SpreadsheetApp.flush();
+
+    // 作物・品種を栽培計画マスタの選択肢にも反映
+    try {
+      appendCultivationMaster({
+        crop: params.crop,
+        variety: params.name,
+        holes: params.holes,
+        rows: params.rows,
+        pSpace: params.pSpace,
+        rSpace: params.rSpace,
+        yieldPerSeedling: params.yieldPerSeedling,
+        itemsPerPack: params.itemsPerPack
+      });
+    } catch (e) {}
     
     return { success: true, message: "品種情報とファイルを保存しました", fileUrl: fileUrl };
   } catch (e) {
