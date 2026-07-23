@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.12</title>
+  <title>情熱MAP [予定確認用] v1.14</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -56,6 +56,8 @@
         台風</button>
       <button id="btnWeather" onclick="openWeatherModal()"
         style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
+      <button id="btnSatellite" onclick="openSatelliteModal()"
+        style="margin-right:10px; background:white; color:#1565C0; border:1px solid #90CAF9; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;" title="気象衛星ひまわり">🛰️</button>
       <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
       <select id="trackingMode" class="desktop-only"
         style="margin-right:10px; padding:8px; border-radius:5px; background:#555; color:white; border:1px solid #777; font-weight:bold; font-size:11px;">
@@ -81,6 +83,7 @@
         </div>
       </div>
       <button class="btn-primary desktop-only" onclick="openScheduleTable()" style="margin-right:10px;">📋 作業一覧</button>
+      <button class="btn-primary desktop-only" onclick="openCropMarketModal()" style="background:#E65100; margin-right:10px;">📈 市況情報</button>
       <button class="btn-primary desktop-only" onclick="openMyPage()" style="background:#7B1FA2; margin-right:10px;">👤 マイページ</button>
       <button class="btn-primary desktop-only" onclick="executeLogout()" style="background:#f44336;">🚪 ログアウト</button>
     </div>
@@ -156,6 +159,40 @@
     </div>
   </div>
 
+  <!-- 作物別市況情報 -->
+  <div id="cropMarketModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
+    <div
+      style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 90%; max-width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column; box-sizing: border-box;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="margin: 0; color: #E65100;">📈 作物別市況情報</h3>
+        <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
+          onclick="document.getElementById('cropMarketModal').style.display='none'">×</span>
+      </div>
+      <div style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;">
+        作物を選ぶと、その品目の市況・卸売価格を確認できます。
+      </div>
+      <div style="display:flex; gap:6px; margin-bottom:12px;">
+        <input type="text" id="cropMarketSearchInput" placeholder="作物名を入力（例: キャベツ）"
+          style="flex:1; padding:10px; border:1px solid #ccc; border-radius:6px; font-size:15px; box-sizing:border-box;"
+          onkeydown="if(event.key==='Enter'){ openCropMarketForName(document.getElementById('cropMarketSearchInput').value); }">
+        <button type="button" onclick="openCropMarketForName(document.getElementById('cropMarketSearchInput').value)"
+          style="background:#E65100; color:#fff; border:none; border-radius:6px; padding:10px 14px; font-weight:bold; cursor:pointer; white-space:nowrap;">検索</button>
+      </div>
+      <div id="cropMarketCropList" style="overflow-y:auto; flex:1; margin-bottom:12px;"></div>
+      <div id="cropMarketExtraLinks"></div>
+      <div style="border-top:1px solid #eee; padding-top:12px; display:flex; flex-direction:column; gap:8px;">
+        <div style="font-size:11px; color:#888; font-weight:bold;">公式サイト（全体）</div>
+        <button type="button" onclick="window.open('https://www.maff.go.jp/j/tokei/syohi/oroshi_kakaku/seika.html','_blank')"
+          style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; text-align:left;">📊 農水省 日別情報グラフ（青果物）</button>
+        <button type="button" onclick="window.open('https://www.maff.go.jp/j/tokei/syohi/shunbetu/index.html','_blank')"
+          style="background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; text-align:left;">📋 農水省 旬別結果</button>
+        <button type="button" onclick="window.open('https://vegetan.alic.go.jp/','_blank')"
+          style="background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; text-align:left;">🥬 ベジ探（ALIC）</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Cultivation Plan Modal -->
 
   <div id="cultivationModalContainer"></div>
@@ -165,6 +202,10 @@
     <button onclick="openScheduleTable()">
       <div style="font-size:20px;">📋</div>
       <div style="font-weight:bold;">作業一覧</div>
+    </button>
+    <button onclick="openCropMarketModal()">
+      <div style="font-size:20px;">📈</div>
+      <div style="font-weight:bold;">市況情報</div>
     </button>
     <button onclick="document.getElementById('mobileCultivationMenu').style.display='flex'">
       <div style="font-size:20px;">🌱</div>
@@ -259,6 +300,42 @@
         <span style="cursor: pointer; font-size: 28px; line-height: 1;" onclick="closeRadarModal()">×</span>
       </div>
       <div id="radarContent" style="flex: 1; position: relative; -webkit-overflow-scrolling: touch;"></div>
+    </div>
+  </div>
+
+  <!-- 気象衛星ひまわり -->
+  <div id="satelliteModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; flex-direction: column; justify-content: center; align-items: center;">
+    <div
+      style="background: #111; width: 96%; height: 92vh; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #0D47A1; color: white; gap: 8px; flex-wrap: wrap;">
+        <h3 style="margin: 0; font-size: 16px; white-space: nowrap;">🛰️ 気象衛星ひまわり</h3>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+          <button type="button" onclick="setSatelliteBand('b13')" id="satBand_b13"
+            style="background:#1565C0; color:#fff; border:1px solid #90CAF9; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">赤外</button>
+          <button type="button" onclick="setSatelliteBand('b03')" id="satBand_b03"
+            style="background:#333; color:#fff; border:1px solid #666; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">可視</button>
+          <button type="button" onclick="setSatelliteBand('dnc')" id="satBand_dnc"
+            style="background:#333; color:#fff; border:1px solid #666; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">カラー</button>
+          <button type="button" onclick="refreshSatelliteImage()"
+            style="background:#4CAF50; color:#fff; border:none; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">🔄 最新</button>
+          <span style="cursor: pointer; font-size: 28px; line-height: 1; padding-left:4px;" onclick="closeSatelliteModal()">×</span>
+        </div>
+      </div>
+      <div style="padding:6px 12px; background:#1a237e; color:#bbdefb; font-size:12px; display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+        <span id="satelliteTimeLabel">観測時刻を取得中...</span>
+        <a href="https://www.data.jma.go.jp/mscweb/data/himawari/sat_img.php?area=jpn" target="_blank" rel="noopener"
+          style="color:#90CAF9; font-weight:bold;">気象庁MSCで開く ↗</a>
+      </div>
+      <div id="satelliteContent"
+        style="flex: 1; position: relative; background:#000; display:flex; align-items:center; justify-content:center; overflow:auto; -webkit-overflow-scrolling: touch;">
+        <img id="satelliteImage" alt="ひまわり衛星画像" style="max-width:100%; max-height:100%; object-fit:contain; display:none;">
+        <div id="satelliteLoading" style="color:#90CAF9; font-weight:bold; padding:20px;">読み込み中...</div>
+      </div>
+      <div style="padding:8px 12px; background:#222; color:#aaa; font-size:11px; text-align:center;">
+        出典: 気象庁 気象衛星センター（ひまわり）／約10分間隔で更新
+      </div>
     </div>
   </div>
 

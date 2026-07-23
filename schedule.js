@@ -913,6 +913,69 @@ async function fetchWeatherAndUpdateUI() {
         document.getElementById('scheduleModal').style.display = 'flex';
       };
 
+      window.getScheduleCropNames = () => {
+        const names = new Set();
+        (globalSchedules || []).forEach(t => {
+          const n = String(t.cropName || '').trim();
+          if (n && n !== '-' && n !== 'なし') names.add(n);
+        });
+        // 栽培計画からも拾う（あれば）
+        try {
+          if (typeof cpPlans !== 'undefined' && Array.isArray(cpPlans)) {
+            cpPlans.forEach(p => {
+              const n = String(p.crop || '').trim();
+              if (n) names.add(n);
+            });
+          }
+        } catch (e) {}
+        return Array.from(names).sort((a, b) => a.localeCompare(b, 'ja'));
+      };
+
+      window.openCropMarketModal = () => {
+        const list = document.getElementById('cropMarketCropList');
+        const crops = window.getScheduleCropNames();
+        if (!list) return;
+        if (crops.length === 0) {
+          list.innerHTML = `<div style="text-align:center; padding:20px; color:#888; font-size:13px;">予定の品目がまだありません。<br>上の入力欄で作物名を検索してください。</div>`;
+        } else {
+          list.innerHTML = `<div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:8px;">予定・計画にある作物</div>` +
+            `<div style="display:flex; flex-wrap:wrap; gap:8px;">` +
+            crops.map(c => {
+              const safe = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+              return `<button type="button" onclick="openCropMarketForName('${safe}')" style="background:#fff; color:#E65100; border:1px solid #FFB74D; padding:8px 12px; border-radius:20px; font-size:13px; font-weight:bold; cursor:pointer;">${c}</button>`;
+            }).join('') +
+            `</div>`;
+        }
+        const input = document.getElementById('cropMarketSearchInput');
+        if (input) input.value = '';
+        const extra = document.getElementById('cropMarketExtraLinks');
+        if (extra) extra.innerHTML = '';
+        document.getElementById('cropMarketModal').style.display = 'flex';
+      };
+
+      window.openCropMarketForName = (cropName) => {
+        const name = String(cropName || '').trim();
+        if (!name) {
+          if (typeof customAlert === 'function') customAlert('作物名を入力してください');
+          else alert('作物名を入力してください');
+          return;
+        }
+        // 作物名付きで市況を検索（別タブ）
+        const q = encodeURIComponent(`${name} 青果物 卸売価格 市況`);
+        window.open(`https://www.google.com/search?q=${q}`, '_blank');
+        // あわせてベジ探トップも開く（品目検索の入口）
+        // 連続で2つ開くとブロックされる端末があるため、確認ダイアログで追加リンクを提示
+        const extra = document.getElementById('cropMarketExtraLinks');
+        if (extra) {
+          extra.innerHTML = `<div style="margin-top:10px; padding:10px; background:#fff8e1; border-radius:6px; border:1px solid #ffe082; font-size:12px;">
+            「${name}」の市況検索を開きました。<br>
+            <a href="https://vegetan.alic.go.jp/" target="_blank" rel="noopener" style="color:#E65100; font-weight:bold;">ベジ探で詳しく見る →</a>
+            ／
+            <a href="https://www.maff.go.jp/j/tokei/syohi/oroshi_kakaku/seika.html" target="_blank" rel="noopener" style="color:#1565C0; font-weight:bold;">農水省グラフ →</a>
+          </div>`;
+        }
+      };
+
       if (document.readyState === 'complete' || document.readyState === 'interactive') {
         setTimeout(initMap, 1);
       } else {
@@ -1432,6 +1495,86 @@ window.openRadarModal = function(lat, lng) {
 window.closeRadarModal = function() {
   const modal = document.getElementById(`radarModal`);
   if (modal) modal.style.display = `none`;
+};
+
+// ====== 気象衛星ひまわり（気象庁MSC 日本域） ======
+window._satBand = 'b13';
+window._satRetry = 0;
+
+window.getHimawariJapanUrl = function(band, lagSteps) {
+  const steps = (typeof lagSteps === 'number') ? lagSteps : 2; // 既定: 20分遅れ
+  let t = Date.now();
+  t = t - (t % 600000) - (steps * 600000); // 10分グリッド＋遅延
+  const d = new Date(t);
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const safeBand = ['b13', 'b03', 'dnc', 'b08', 'arm'].includes(band) ? band : 'b13';
+  return {
+    url: `https://www.data.jma.go.jp/mscweb/data/himawari/img/jpn/jpn_${safeBand}_${hh}${mm}.jpg`,
+    utc: d,
+    stamp: `${hh}${mm}`
+  };
+};
+
+window.openSatelliteModal = function() {
+  const modal = document.getElementById('satelliteModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  window._satBand = window._satBand || 'b13';
+  window._satRetry = 0;
+  window.refreshSatelliteImage();
+};
+
+window.closeSatelliteModal = function() {
+  const modal = document.getElementById('satelliteModal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.setSatelliteBand = function(band) {
+  window._satBand = band;
+  window._satRetry = 0;
+  ['b13', 'b03', 'dnc'].forEach(b => {
+    const btn = document.getElementById('satBand_' + b);
+    if (!btn) return;
+    const active = b === band;
+    btn.style.background = active ? '#1565C0' : '#333';
+    btn.style.borderColor = active ? '#90CAF9' : '#666';
+  });
+  window.refreshSatelliteImage();
+};
+
+window.refreshSatelliteImage = function() {
+  const img = document.getElementById('satelliteImage');
+  const loading = document.getElementById('satelliteLoading');
+  const label = document.getElementById('satelliteTimeLabel');
+  if (!img) return;
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerText = '読み込み中...';
+  }
+  img.style.display = 'none';
+
+  const info = window.getHimawariJapanUrl(window._satBand || 'b13', 2 + (window._satRetry || 0));
+  const jst = new Date(info.utc.getTime() + 9 * 60 * 60 * 1000);
+  const jstLabel = `${jst.getUTCFullYear()}/${String(jst.getUTCMonth()+1).padStart(2,'0')}/${String(jst.getUTCDate()).padStart(2,'0')} ${String(jst.getUTCHours()).padStart(2,'0')}:${String(jst.getUTCMinutes()).padStart(2,'0')} JST`;
+  if (label) label.innerText = `観測: ${jstLabel}（UTC ${info.stamp.slice(0,2)}:${info.stamp.slice(2)}）`;
+
+  img.onload = function() {
+    if (loading) loading.style.display = 'none';
+    img.style.display = 'block';
+    window._satRetry = 0;
+  };
+  img.onerror = function() {
+    if ((window._satRetry || 0) < 6) {
+      window._satRetry = (window._satRetry || 0) + 1;
+      window.refreshSatelliteImage();
+    } else if (loading) {
+      loading.innerText = '画像を取得できませんでした。下の「気象庁MSCで開く」から確認してください。';
+      loading.style.display = 'block';
+    }
+  };
+  // キャッシュ回避
+  img.src = info.url + '?t=' + Date.now();
 };
 
 // ====== マイページ ======
