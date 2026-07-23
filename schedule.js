@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+﻿const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
       
       // Check login on script load
       function checkLoginStatus() {
@@ -919,7 +919,6 @@ async function fetchWeatherAndUpdateUI() {
           const n = String(t.cropName || '').trim();
           if (n && n !== '-' && n !== 'なし') names.add(n);
         });
-        // 栽培計画からも拾う（あれば）
         try {
           if (typeof cpPlans !== 'undefined' && Array.isArray(cpPlans)) {
             cpPlans.forEach(p => {
@@ -932,47 +931,12 @@ async function fetchWeatherAndUpdateUI() {
       };
 
       window.openCropMarketModal = () => {
-        const list = document.getElementById('cropMarketCropList');
-        const crops = window.getScheduleCropNames();
-        if (!list) return;
-        if (crops.length === 0) {
-          list.innerHTML = `<div style="text-align:center; padding:20px; color:#888; font-size:13px;">予定の品目がまだありません。<br>上の入力欄で作物名を検索してください。</div>`;
+        if (window.MarketInfo && typeof window.MarketInfo.open === 'function') {
+          window.MarketInfo.open({ suggestedCrops: window.getScheduleCropNames() });
+        } else if (typeof customAlert === 'function') {
+          customAlert('市況モジュールの読み込み中です。少し待って再度お試しください。');
         } else {
-          list.innerHTML = `<div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:8px;">予定・計画にある作物</div>` +
-            `<div style="display:flex; flex-wrap:wrap; gap:8px;">` +
-            crops.map(c => {
-              const safe = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-              return `<button type="button" onclick="openCropMarketForName('${safe}')" style="background:#fff; color:#E65100; border:1px solid #FFB74D; padding:8px 12px; border-radius:20px; font-size:13px; font-weight:bold; cursor:pointer;">${c}</button>`;
-            }).join('') +
-            `</div>`;
-        }
-        const input = document.getElementById('cropMarketSearchInput');
-        if (input) input.value = '';
-        const extra = document.getElementById('cropMarketExtraLinks');
-        if (extra) extra.innerHTML = '';
-        document.getElementById('cropMarketModal').style.display = 'flex';
-      };
-
-      window.openCropMarketForName = (cropName) => {
-        const name = String(cropName || '').trim();
-        if (!name) {
-          if (typeof customAlert === 'function') customAlert('作物名を入力してください');
-          else alert('作物名を入力してください');
-          return;
-        }
-        // 作物名付きで市況を検索（別タブ）
-        const q = encodeURIComponent(`${name} 青果物 卸売価格 市況`);
-        window.open(`https://www.google.com/search?q=${q}`, '_blank');
-        // あわせてベジ探トップも開く（品目検索の入口）
-        // 連続で2つ開くとブロックされる端末があるため、確認ダイアログで追加リンクを提示
-        const extra = document.getElementById('cropMarketExtraLinks');
-        if (extra) {
-          extra.innerHTML = `<div style="margin-top:10px; padding:10px; background:#fff8e1; border-radius:6px; border:1px solid #ffe082; font-size:12px;">
-            「${name}」の市況検索を開きました。<br>
-            <a href="https://vegetan.alic.go.jp/" target="_blank" rel="noopener" style="color:#E65100; font-weight:bold;">ベジ探で詳しく見る →</a>
-            ／
-            <a href="https://www.maff.go.jp/j/tokei/syohi/oroshi_kakaku/seika.html" target="_blank" rel="noopener" style="color:#1565C0; font-weight:bold;">農水省グラフ →</a>
-          </div>`;
+          alert('市況モジュールの読み込み中です。少し待って再度お試しください。');
         }
       };
 
@@ -1497,260 +1461,6 @@ window.closeRadarModal = function() {
   if (modal) modal.style.display = `none`;
 };
 
-// ====== 気象衛星ひまわり（気象庁MSC 日本域・現在地寄り拡大） ======
-window._satBand = 'b13';
-window._satRetry = 0;
-window._satZoom = 4; // 初期は「もっと接近」
-window._satPan = { x: 0, y: 0 };
-window._satDrag = null;
-window._satPinch = null;
-// 日本域画像の地理範囲（気象庁MSC Japan area）
-window._satBounds = { west: 115, east: 155, north: 48, south: 22 };
-
-window.getHimawariJapanUrl = function(band, lagSteps) {
-  const steps = (typeof lagSteps === 'number') ? lagSteps : 2;
-  let t = Date.now();
-  t = t - (t % 600000) - (steps * 600000);
-  const d = new Date(t);
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-  const safeBand = ['b13', 'b03', 'dnc', 'b08', 'arm'].includes(band) ? band : 'b13';
-  return {
-    url: `https://www.data.jma.go.jp/mscweb/data/himawari/img/jpn/jpn_${safeBand}_${hh}${mm}.jpg`,
-    utc: d,
-    stamp: `${hh}${mm}`
-  };
-};
-
-window.getSatelliteFocusLatLng = function() {
-  try {
-    if (typeof map !== 'undefined' && map && map.getCenter) {
-      const c = map.getCenter();
-      return { lat: c.lat(), lng: c.lng() };
-    }
-  } catch (e) {}
-  const lat = parseFloat(localStorage.getItem('lastLat'));
-  const lng = parseFloat(localStorage.getItem('lastLng'));
-  if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
-  return { lat: 34.0, lng: 134.5 }; // 四国付近のフォールバック
-};
-
-window.latLngToSatImageRatio = function(lat, lng) {
-  const b = window._satBounds;
-  const x = (lng - b.west) / (b.east - b.west);
-  const y = (b.north - lat) / (b.north - b.south);
-  return {
-    x: Math.min(1, Math.max(0, x)),
-    y: Math.min(1, Math.max(0, y))
-  };
-};
-
-window.applySatelliteTransform = function(centerOnFocus) {
-  const content = document.getElementById('satelliteContent');
-  const viewport = document.getElementById('satelliteViewport');
-  const img = document.getElementById('satelliteImage');
-  if (!content || !viewport || !img || !img.naturalWidth) return;
-
-  const cw = content.clientWidth;
-  const ch = content.clientHeight;
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
-  const fit = Math.min(cw / iw, ch / ih);
-  const baseW = iw * fit;
-  const baseH = ih * fit;
-  const z = window._satZoom || 1;
-
-  // object-fit:contain 相当の余白を考慮した画像表示領域
-  const offsetX = (cw - baseW) / 2;
-  const offsetY = (ch - baseH) / 2;
-
-  if (centerOnFocus) {
-    const focus = window.getSatelliteFocusLatLng();
-    const r = window.latLngToSatImageRatio(focus.lat, focus.lng);
-    const imgX = offsetX + r.x * baseW;
-    const imgY = offsetY + r.y * baseH;
-    window._satPan.x = cw / 2 - imgX * z;
-    window._satPan.y = ch / 2 - imgY * z;
-  }
-
-  // はみ出しすぎ防止
-  const maxX = Math.max(0, (baseW * z - cw) / 2 + cw * 0.2);
-  const maxY = Math.max(0, (baseH * z - ch) / 2 + ch * 0.2);
-  window._satPan.x = Math.min(maxX, Math.max(-maxX - (baseW * z - cw), window._satPan.x));
-  window._satPan.y = Math.min(maxY, Math.max(-maxY - (baseH * z - ch), window._satPan.y));
-
-  viewport.style.width = cw + 'px';
-  viewport.style.height = ch + 'px';
-  img.style.width = baseW + 'px';
-  img.style.height = baseH + 'px';
-  img.style.position = 'absolute';
-  img.style.left = offsetX + 'px';
-  img.style.top = offsetY + 'px';
-  viewport.style.transform = `translate(${window._satPan.x}px, ${window._satPan.y}px) scale(${z})`;
-
-  const mark = document.getElementById('satelliteCenterMark');
-  if (mark) mark.style.display = z > 1.2 ? 'block' : 'none';
-};
-
-window.setSatelliteZoom = function(z, keepCenter) {
-  const prev = window._satZoom || 1;
-  window._satZoom = z;
-  const mapBtn = { 1: 'satZoom_1', 2.5: 'satZoom_2', 4: 'satZoom_3', 6: 'satZoom_4' };
-  Object.keys(mapBtn).forEach(k => {
-    const btn = document.getElementById(mapBtn[k]);
-    if (!btn) return;
-    const active = Math.abs(parseFloat(k) - z) < 0.01;
-    btn.style.background = active ? '#1565C0' : '#333';
-    btn.style.borderColor = active ? '#90CAF9' : '#666';
-  });
-  if (keepCenter) {
-    const content = document.getElementById('satelliteContent');
-    if (content) {
-      const cx = content.clientWidth / 2;
-      const cy = content.clientHeight / 2;
-      // 画面中央を維持したまま倍率変更
-      const wx = (cx - window._satPan.x) / prev;
-      const wy = (cy - window._satPan.y) / prev;
-      window._satPan.x = cx - wx * z;
-      window._satPan.y = cy - wy * z;
-    }
-    window.applySatelliteTransform(false);
-  } else {
-    window.applySatelliteTransform(true);
-  }
-};
-
-window.initSatellitePanZoom = function() {
-  const content = document.getElementById('satelliteContent');
-  if (!content || content.dataset.satReady === '1') return;
-  content.dataset.satReady = '1';
-
-  content.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button') || e.target.closest('a')) return;
-    content.setPointerCapture(e.pointerId);
-    window._satDrag = { x: e.clientX, y: e.clientY, panX: window._satPan.x, panY: window._satPan.y };
-    content.style.cursor = 'grabbing';
-  });
-  content.addEventListener('pointermove', (e) => {
-    if (!window._satDrag) return;
-    window._satPan.x = window._satDrag.panX + (e.clientX - window._satDrag.x);
-    window._satPan.y = window._satDrag.panY + (e.clientY - window._satDrag.y);
-    window.applySatelliteTransform(false);
-  });
-  const endDrag = () => {
-    window._satDrag = null;
-    content.style.cursor = 'grab';
-  };
-  content.addEventListener('pointerup', endDrag);
-  content.addEventListener('pointercancel', endDrag);
-
-  content.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const steps = [1, 2.5, 4, 6];
-    let idx = steps.findIndex(s => Math.abs(s - (window._satZoom || 1)) < 0.01);
-    if (idx < 0) idx = 2;
-    if (e.deltaY < 0 && idx < steps.length - 1) window.setSatelliteZoom(steps[idx + 1], true);
-    else if (e.deltaY > 0 && idx > 0) window.setSatelliteZoom(steps[idx - 1], true);
-  }, { passive: false });
-
-  // ピンチズーム
-  content.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 2) {
-      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      window._satPinch = { dist: d, zoom: window._satZoom || 1 };
-      window._satDrag = null;
-    }
-  }, { passive: true });
-  content.addEventListener('touchmove', (e) => {
-    if (e.touches.length === 2 && window._satPinch) {
-      e.preventDefault();
-      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      let z = window._satPinch.zoom * (d / window._satPinch.dist);
-      z = Math.min(6, Math.max(1, z));
-      // 近いプリセットにスナップせず連続ズーム
-      window._satZoom = z;
-      window.applySatelliteTransform(false);
-    }
-  }, { passive: false });
-  content.addEventListener('touchend', () => {
-    if (window._satPinch) {
-      const steps = [1, 2.5, 4, 6];
-      let nearest = steps[0];
-      let best = Infinity;
-      steps.forEach(s => {
-        const d = Math.abs(s - (window._satZoom || 1));
-        if (d < best) { best = d; nearest = s; }
-      });
-      window.setSatelliteZoom(nearest, true);
-      window._satPinch = null;
-    }
-  });
-};
-
-window.openSatelliteModal = function() {
-  const modal = document.getElementById('satelliteModal');
-  if (!modal) return;
-  modal.style.display = 'flex';
-  window._satBand = window._satBand || 'b13';
-  window._satRetry = 0;
-  window._satZoom = window._satZoom || 4;
-  window.initSatellitePanZoom();
-  window.refreshSatelliteImage();
-};
-
-window.closeSatelliteModal = function() {
-  const modal = document.getElementById('satelliteModal');
-  if (modal) modal.style.display = 'none';
-};
-
-window.setSatelliteBand = function(band) {
-  window._satBand = band;
-  window._satRetry = 0;
-  ['b13', 'b03', 'dnc'].forEach(b => {
-    const btn = document.getElementById('satBand_' + b);
-    if (!btn) return;
-    const active = b === band;
-    btn.style.background = active ? '#1565C0' : '#333';
-    btn.style.borderColor = active ? '#90CAF9' : '#666';
-  });
-  window.refreshSatelliteImage();
-};
-
-window.refreshSatelliteImage = function() {
-  const img = document.getElementById('satelliteImage');
-  const loading = document.getElementById('satelliteLoading');
-  const label = document.getElementById('satelliteTimeLabel');
-  if (!img) return;
-  if (loading) {
-    loading.style.display = 'flex';
-    loading.innerText = '読み込み中...';
-  }
-  img.style.display = 'none';
-
-  const info = window.getHimawariJapanUrl(window._satBand || 'b13', 2 + (window._satRetry || 0));
-  const jst = new Date(info.utc.getTime() + 9 * 60 * 60 * 1000);
-  const jstLabel = `${jst.getUTCFullYear()}/${String(jst.getUTCMonth()+1).padStart(2,'0')}/${String(jst.getUTCDate()).padStart(2,'0')} ${String(jst.getUTCHours()).padStart(2,'0')}:${String(jst.getUTCMinutes()).padStart(2,'0')} JST`;
-  const focus = window.getSatelliteFocusLatLng();
-  if (label) label.innerText = `観測: ${jstLabel} ／ 中心: ${focus.lat.toFixed(2)}N ${focus.lng.toFixed(2)}E`;
-
-  img.onload = function() {
-    if (loading) loading.style.display = 'none';
-    img.style.display = 'block';
-    window._satRetry = 0;
-    window.setSatelliteZoom(window._satZoom || 4, false);
-  };
-  img.onerror = function() {
-    if ((window._satRetry || 0) < 6) {
-      window._satRetry = (window._satRetry || 0) + 1;
-      window.refreshSatelliteImage();
-    } else if (loading) {
-      loading.innerText = '画像を取得できませんでした。「MSC」リンクから確認してください。';
-      loading.style.display = 'flex';
-    }
-  };
-  img.src = info.url + '?t=' + Date.now();
-};
-
 // ====== 畑の衛星確認（現状: Google衛星 / 生育: Sentinel-2） ======
 window._fieldSat = {
   tab: 'now',
@@ -1762,7 +1472,10 @@ window._fieldSat = {
   compare: false,
   itemA: null,
   itemB: null,
-  pickSlot: 'A'
+  pickSlot: 'A',
+  growthMaps: { A: null, B: null },
+  growthOverlays: { A: null, B: null },
+  growthPolys: { A: [], B: [] }
 };
 
 window.getFieldSatFields = function() {
@@ -1783,7 +1496,7 @@ window.getFieldSatBounds = function(field) {
 };
 
 window.getFieldSatBbox = function(field, padRatio) {
-  const pad = typeof padRatio === 'number' ? padRatio : 0.35;
+  const pad = typeof padRatio === 'number' ? padRatio : 0.5;
   let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
   (field.coords || []).forEach(pt => {
     minLat = Math.min(minLat, pt.lat);
@@ -1791,14 +1504,20 @@ window.getFieldSatBbox = function(field, padRatio) {
     minLng = Math.min(minLng, pt.lng);
     maxLng = Math.max(maxLng, pt.lng);
   });
-  const dLat = Math.max((maxLat - minLat) * pad, 0.0008);
-  const dLng = Math.max((maxLng - minLng) * pad, 0.0008);
+  const midLat = (minLat + maxLat) / 2;
+  // Sentinel-2は約10m。圃場だけ切り出すと数ピクセルしかなく粗くなるため、最低約1.2km四方にする
+  const minMeters = 1200;
+  const minDegLat = minMeters / 111320;
+  const minDegLng = minMeters / (111320 * Math.max(0.2, Math.cos(midLat * Math.PI / 180)));
+  let halfLat = Math.max((maxLat - minLat) * (0.5 + pad), minDegLat / 2);
+  let halfLng = Math.max((maxLng - minLng) * (0.5 + pad), minDegLng / 2);
+  const west = ((minLng + maxLng) / 2) - halfLng;
+  const east = ((minLng + maxLng) / 2) + halfLng;
+  const south = midLat - halfLat;
+  const north = midLat + halfLat;
   return {
-    west: minLng - dLng,
-    south: minLat - dLat,
-    east: maxLng + dLng,
-    north: maxLat + dLat,
-    str: `${(minLng - dLng).toFixed(6)},${(minLat - dLat).toFixed(6)},${(maxLng + dLng).toFixed(6)},${(maxLat + dLat).toFixed(6)}`
+    west, south, east, north,
+    str: `${west.toFixed(6)},${south.toFixed(6)},${east.toFixed(6)},${north.toFixed(6)}`
   };
 };
 
@@ -1946,8 +1665,14 @@ window.setFieldSatTab = function(tab) {
   }
   if (tab === 'now') {
     window.initFieldSatMap();
-  } else if (tab === 'growth' && window._fieldSat.selectedFieldId && !(window._fieldSat.scenes || []).length) {
-    window.searchFieldSatScenes();
+  } else if (tab === 'growth') {
+    window.ensureFieldSatGrowthMap('A');
+    if (window._fieldSat.compare) window.ensureFieldSatGrowthMap('B');
+    if (window._fieldSat.selectedFieldId && !(window._fieldSat.scenes || []).length) {
+      window.searchFieldSatScenes();
+    } else {
+      window.renderFieldSatImages();
+    }
   }
 };
 
@@ -1993,7 +1718,7 @@ window.setFieldSatViewMode = function(mode) {
 window.toggleFieldSatCompare = function(on) {
   window._fieldSat.compare = !!on;
   const paneB = document.getElementById('fieldSatPaneB');
-  if (paneB) paneB.style.display = on ? 'flex' : 'none';
+  if (paneB) paneB.style.display = on ? 'block' : 'none';
   if (!on) {
     window._fieldSat.itemB = null;
     window._fieldSat.pickSlot = 'A';
@@ -2010,8 +1735,9 @@ window.buildFieldSatImageUrl = function(itemId, bboxStr, mode) {
   const params = new URLSearchParams({
     collection: 'sentinel-2-l2a',
     item: itemId,
-    width: '768',
-    height: '768'
+    width: '1024',
+    height: '1024',
+    resampling: 'bilinear'
   });
   if (mode === 'ndvi') {
     params.append('assets', 'B04');
@@ -2083,44 +1809,117 @@ window.selectFieldSatScene = function(itemId) {
   window.renderFieldSatImages();
 };
 
+window.clearFieldSatGrowthLayer = function(slot) {
+  const ov = window._fieldSat.growthOverlays[slot];
+  if (ov) {
+    try { ov.setMap(null); } catch (e) {}
+    window._fieldSat.growthOverlays[slot] = null;
+  }
+  (window._fieldSat.growthPolys[slot] || []).forEach(p => {
+    try { p.setMap(null); } catch (e) {}
+  });
+  window._fieldSat.growthPolys[slot] = [];
+};
+
+window.ensureFieldSatGrowthMap = function(slot) {
+  const el = document.getElementById('fieldSatGrowthMap' + slot);
+  if (!el || typeof google === 'undefined') return null;
+  if (!window._fieldSat.growthMaps[slot]) {
+    let center = { lat: 33.91, lng: 134.66 };
+    try {
+      if (map && map.getCenter) center = { lat: map.getCenter().lat(), lng: map.getCenter().lng() };
+    } catch (e) {}
+    window._fieldSat.growthMaps[slot] = new google.maps.Map(el, {
+      center,
+      zoom: 16,
+      maxZoom: 19,
+      mapTypeId: 'hybrid',
+      tilt: 0,
+      gestureHandling: 'greedy',
+      disableDefaultUI: true,
+      zoomControl: true,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false
+    });
+  }
+  setTimeout(() => {
+    try { google.maps.event.trigger(window._fieldSat.growthMaps[slot], 'resize'); } catch (e) {}
+  }, 60);
+  return window._fieldSat.growthMaps[slot];
+};
+
 window.renderFieldSatImages = function() {
   const field = window.getSelectedFieldSatField();
   const mode = window._fieldSat.viewMode || 'visual';
-  const setPane = (suffix, item) => {
-    const img = document.getElementById('fieldSatImg' + suffix);
-    const ph = document.getElementById('fieldSatImgPlaceholder' + suffix);
-    const label = document.getElementById('fieldSatImgLabel' + suffix);
-    if (!img) return;
+  const setPane = (slot, item) => {
+    const ph = document.getElementById('fieldSatImgPlaceholder' + slot);
+    const label = document.getElementById('fieldSatImgLabel' + slot);
+    const gmap = window.ensureFieldSatGrowthMap(slot);
+    window.clearFieldSatGrowthLayer(slot);
+
     if (!field || !item) {
-      img.style.display = 'none';
-      img.removeAttribute('src');
       if (ph) {
-        ph.style.display = 'block';
-        ph.innerText = !field ? '圃場を選択してください' : (suffix === 'B' ? '比較する日付を選択' : '画像を検索してください');
+        ph.style.display = 'flex';
+        ph.innerText = !field ? '圃場を選択してください' : (slot === 'B' ? '比較する日付を選択' : '画像を検索してください');
       }
-      if (label) label.innerText = suffix === 'A' ? '日付A' : '日付B';
+      if (label) label.innerText = slot === 'A' ? '日付A' : '日付B';
       return;
     }
+    if (!gmap) {
+      if (ph) { ph.style.display = 'flex'; ph.innerText = '地図を初期化できませんでした'; }
+      return;
+    }
+
     const bbox = window.getFieldSatBbox(field);
     const url = window.buildFieldSatImageUrl(item.id, bbox.str, mode);
-    if (ph) { ph.style.display = 'block'; ph.innerText = '読み込み中...'; }
-    img.style.display = 'none';
-    img.onload = () => {
-      img.style.display = 'block';
-      if (ph) ph.style.display = 'none';
-    };
-    img.onerror = () => {
-      img.style.display = 'none';
-      if (ph) { ph.style.display = 'block'; ph.innerText = '画像の取得に失敗しました'; }
-    };
-    img.src = url;
+    const bounds = new google.maps.LatLngBounds(
+      { lat: bbox.south, lng: bbox.west },
+      { lat: bbox.north, lng: bbox.east }
+    );
+
+    if (ph) { ph.style.display = 'flex'; ph.innerText = '読み込み中...'; }
     if (label) {
       const cloud = item.cloud != null ? ` 雲${Number(item.cloud).toFixed(0)}%` : '';
       label.innerText = `${window.formatFieldSatDate(item.datetime)}${cloud} (${mode === 'ndvi' ? 'NDVI' : '真色'})`;
     }
+
+    // 画像の読み込み確認後に GroundOverlay を載せる
+    const probe = new Image();
+    probe.onload = () => {
+      window.clearFieldSatGrowthLayer(slot);
+      const overlay = new google.maps.GroundOverlay(url, bounds, { opacity: 0.92, clickable: false });
+      overlay.setMap(gmap);
+      window._fieldSat.growthOverlays[slot] = overlay;
+
+      const poly = new google.maps.Polygon({
+        paths: field.coords,
+        map: gmap,
+        fillColor: '#FFEB3B',
+        fillOpacity: 0.12,
+        strokeColor: '#FFEB3B',
+        strokeOpacity: 1,
+        strokeWeight: 2.5,
+        clickable: false
+      });
+      window._fieldSat.growthPolys[slot] = [poly];
+
+      google.maps.event.trigger(gmap, 'resize');
+      gmap.fitBounds(bounds, 12);
+      if (ph) ph.style.display = 'none';
+    };
+    probe.onerror = () => {
+      if (ph) { ph.style.display = 'flex'; ph.innerText = '画像の取得に失敗しました'; }
+    };
+    probe.src = url;
   };
+
   setPane('A', window._fieldSat.itemA);
-  setPane('B', window._fieldSat.compare ? window._fieldSat.itemB : null);
+  if (window._fieldSat.compare) {
+    setPane('B', window._fieldSat.itemB);
+  } else {
+    window.clearFieldSatGrowthLayer('B');
+  }
 };
 
 window.searchFieldSatScenes = async function() {
