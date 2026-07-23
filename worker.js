@@ -7,6 +7,22 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let latestUserPos = null;
       let map, infoWindow, loadedPolygons = {}, userLocationMarker = null;
 
+      // 全画面表示切替
+      function toggleFullScreen() {
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+          } else if (document.documentElement.webkitRequestFullscreen) {
+            document.documentElement.webkitRequestFullscreen();
+          }
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+          }
+        }
+      }
       // トラッキング（移動履歴）用
       let trackingWatchId = null;
       let lastTrackingTime = 0;
