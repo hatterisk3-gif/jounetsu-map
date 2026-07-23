@@ -751,16 +751,16 @@
       html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
       html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
       html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
-      html += `<input type="time" id="clockOutTime" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:12px;" value="${dt.time}">`;
+      html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:12px;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '退勤時間')">`;
 
       html += `<div style="background:#f9fbe7; border:1px solid #e6ee9c; border-radius:8px; padding:12px; margin-bottom:12px;">`;
       html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
       html += `<input type="checkbox" id="clockLunchEnabled" ${pref.lunchEnabled ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
       html += `</label>`;
       html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center; opacity:${pref.lunchEnabled ? '1' : '0.45'};">`;
-      html += `<input type="time" id="clockLunchStart" class="form-input" style="flex:1; margin:0; padding:8px;" value="${pref.lunchStart || '12:00'}">`;
+      html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${pref.lunchStart || '12:00'}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
       html += `<span style="color:#666;">〜</span>`;
-      html += `<input type="time" id="clockLunchEnd" class="form-input" style="flex:1; margin:0; padding:8px;" value="${pref.lunchEnd || '13:00'}">`;
+      html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${pref.lunchEnd || '13:00'}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
       html += `</div>`;
       html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（分）</label>`;
       html += `<input type="number" id="clockMidBreak" class="form-input" min="0" step="5" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin:0;" value="${pref.midBreakMins || 0}" placeholder="例: 30">`;
