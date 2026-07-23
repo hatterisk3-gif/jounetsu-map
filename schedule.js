@@ -1497,14 +1497,20 @@ window.closeRadarModal = function() {
   if (modal) modal.style.display = `none`;
 };
 
-// ====== 気象衛星ひまわり（気象庁MSC 日本域） ======
+// ====== 気象衛星ひまわり（気象庁MSC 日本域・現在地寄り拡大） ======
 window._satBand = 'b13';
 window._satRetry = 0;
+window._satZoom = 4; // 初期は「もっと接近」
+window._satPan = { x: 0, y: 0 };
+window._satDrag = null;
+window._satPinch = null;
+// 日本域画像の地理範囲（気象庁MSC Japan area）
+window._satBounds = { west: 115, east: 155, north: 48, south: 22 };
 
 window.getHimawariJapanUrl = function(band, lagSteps) {
-  const steps = (typeof lagSteps === 'number') ? lagSteps : 2; // 既定: 20分遅れ
+  const steps = (typeof lagSteps === 'number') ? lagSteps : 2;
   let t = Date.now();
-  t = t - (t % 600000) - (steps * 600000); // 10分グリッド＋遅延
+  t = t - (t % 600000) - (steps * 600000);
   const d = new Date(t);
   const hh = String(d.getUTCHours()).padStart(2, '0');
   const mm = String(d.getUTCMinutes()).padStart(2, '0');
@@ -1516,12 +1522,179 @@ window.getHimawariJapanUrl = function(band, lagSteps) {
   };
 };
 
+window.getSatelliteFocusLatLng = function() {
+  try {
+    if (typeof map !== 'undefined' && map && map.getCenter) {
+      const c = map.getCenter();
+      return { lat: c.lat(), lng: c.lng() };
+    }
+  } catch (e) {}
+  const lat = parseFloat(localStorage.getItem('lastLat'));
+  const lng = parseFloat(localStorage.getItem('lastLng'));
+  if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+  return { lat: 34.0, lng: 134.5 }; // 四国付近のフォールバック
+};
+
+window.latLngToSatImageRatio = function(lat, lng) {
+  const b = window._satBounds;
+  const x = (lng - b.west) / (b.east - b.west);
+  const y = (b.north - lat) / (b.north - b.south);
+  return {
+    x: Math.min(1, Math.max(0, x)),
+    y: Math.min(1, Math.max(0, y))
+  };
+};
+
+window.applySatelliteTransform = function(centerOnFocus) {
+  const content = document.getElementById('satelliteContent');
+  const viewport = document.getElementById('satelliteViewport');
+  const img = document.getElementById('satelliteImage');
+  if (!content || !viewport || !img || !img.naturalWidth) return;
+
+  const cw = content.clientWidth;
+  const ch = content.clientHeight;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const fit = Math.min(cw / iw, ch / ih);
+  const baseW = iw * fit;
+  const baseH = ih * fit;
+  const z = window._satZoom || 1;
+
+  // object-fit:contain 相当の余白を考慮した画像表示領域
+  const offsetX = (cw - baseW) / 2;
+  const offsetY = (ch - baseH) / 2;
+
+  if (centerOnFocus) {
+    const focus = window.getSatelliteFocusLatLng();
+    const r = window.latLngToSatImageRatio(focus.lat, focus.lng);
+    const imgX = offsetX + r.x * baseW;
+    const imgY = offsetY + r.y * baseH;
+    window._satPan.x = cw / 2 - imgX * z;
+    window._satPan.y = ch / 2 - imgY * z;
+  }
+
+  // はみ出しすぎ防止
+  const maxX = Math.max(0, (baseW * z - cw) / 2 + cw * 0.2);
+  const maxY = Math.max(0, (baseH * z - ch) / 2 + ch * 0.2);
+  window._satPan.x = Math.min(maxX, Math.max(-maxX - (baseW * z - cw), window._satPan.x));
+  window._satPan.y = Math.min(maxY, Math.max(-maxY - (baseH * z - ch), window._satPan.y));
+
+  viewport.style.width = cw + 'px';
+  viewport.style.height = ch + 'px';
+  img.style.width = baseW + 'px';
+  img.style.height = baseH + 'px';
+  img.style.position = 'absolute';
+  img.style.left = offsetX + 'px';
+  img.style.top = offsetY + 'px';
+  viewport.style.transform = `translate(${window._satPan.x}px, ${window._satPan.y}px) scale(${z})`;
+
+  const mark = document.getElementById('satelliteCenterMark');
+  if (mark) mark.style.display = z > 1.2 ? 'block' : 'none';
+};
+
+window.setSatelliteZoom = function(z, keepCenter) {
+  const prev = window._satZoom || 1;
+  window._satZoom = z;
+  const mapBtn = { 1: 'satZoom_1', 2.5: 'satZoom_2', 4: 'satZoom_3', 6: 'satZoom_4' };
+  Object.keys(mapBtn).forEach(k => {
+    const btn = document.getElementById(mapBtn[k]);
+    if (!btn) return;
+    const active = Math.abs(parseFloat(k) - z) < 0.01;
+    btn.style.background = active ? '#1565C0' : '#333';
+    btn.style.borderColor = active ? '#90CAF9' : '#666';
+  });
+  if (keepCenter) {
+    const content = document.getElementById('satelliteContent');
+    if (content) {
+      const cx = content.clientWidth / 2;
+      const cy = content.clientHeight / 2;
+      // 画面中央を維持したまま倍率変更
+      const wx = (cx - window._satPan.x) / prev;
+      const wy = (cy - window._satPan.y) / prev;
+      window._satPan.x = cx - wx * z;
+      window._satPan.y = cy - wy * z;
+    }
+    window.applySatelliteTransform(false);
+  } else {
+    window.applySatelliteTransform(true);
+  }
+};
+
+window.initSatellitePanZoom = function() {
+  const content = document.getElementById('satelliteContent');
+  if (!content || content.dataset.satReady === '1') return;
+  content.dataset.satReady = '1';
+
+  content.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button') || e.target.closest('a')) return;
+    content.setPointerCapture(e.pointerId);
+    window._satDrag = { x: e.clientX, y: e.clientY, panX: window._satPan.x, panY: window._satPan.y };
+    content.style.cursor = 'grabbing';
+  });
+  content.addEventListener('pointermove', (e) => {
+    if (!window._satDrag) return;
+    window._satPan.x = window._satDrag.panX + (e.clientX - window._satDrag.x);
+    window._satPan.y = window._satDrag.panY + (e.clientY - window._satDrag.y);
+    window.applySatelliteTransform(false);
+  });
+  const endDrag = () => {
+    window._satDrag = null;
+    content.style.cursor = 'grab';
+  };
+  content.addEventListener('pointerup', endDrag);
+  content.addEventListener('pointercancel', endDrag);
+
+  content.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const steps = [1, 2.5, 4, 6];
+    let idx = steps.findIndex(s => Math.abs(s - (window._satZoom || 1)) < 0.01);
+    if (idx < 0) idx = 2;
+    if (e.deltaY < 0 && idx < steps.length - 1) window.setSatelliteZoom(steps[idx + 1], true);
+    else if (e.deltaY > 0 && idx > 0) window.setSatelliteZoom(steps[idx - 1], true);
+  }, { passive: false });
+
+  // ピンチズーム
+  content.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      window._satPinch = { dist: d, zoom: window._satZoom || 1 };
+      window._satDrag = null;
+    }
+  }, { passive: true });
+  content.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && window._satPinch) {
+      e.preventDefault();
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      let z = window._satPinch.zoom * (d / window._satPinch.dist);
+      z = Math.min(6, Math.max(1, z));
+      // 近いプリセットにスナップせず連続ズーム
+      window._satZoom = z;
+      window.applySatelliteTransform(false);
+    }
+  }, { passive: false });
+  content.addEventListener('touchend', () => {
+    if (window._satPinch) {
+      const steps = [1, 2.5, 4, 6];
+      let nearest = steps[0];
+      let best = Infinity;
+      steps.forEach(s => {
+        const d = Math.abs(s - (window._satZoom || 1));
+        if (d < best) { best = d; nearest = s; }
+      });
+      window.setSatelliteZoom(nearest, true);
+      window._satPinch = null;
+    }
+  });
+};
+
 window.openSatelliteModal = function() {
   const modal = document.getElementById('satelliteModal');
   if (!modal) return;
   modal.style.display = 'flex';
   window._satBand = window._satBand || 'b13';
   window._satRetry = 0;
+  window._satZoom = window._satZoom || 4;
+  window.initSatellitePanZoom();
   window.refreshSatelliteImage();
 };
 
@@ -1549,7 +1722,7 @@ window.refreshSatelliteImage = function() {
   const label = document.getElementById('satelliteTimeLabel');
   if (!img) return;
   if (loading) {
-    loading.style.display = 'block';
+    loading.style.display = 'flex';
     loading.innerText = '読み込み中...';
   }
   img.style.display = 'none';
@@ -1557,23 +1730,24 @@ window.refreshSatelliteImage = function() {
   const info = window.getHimawariJapanUrl(window._satBand || 'b13', 2 + (window._satRetry || 0));
   const jst = new Date(info.utc.getTime() + 9 * 60 * 60 * 1000);
   const jstLabel = `${jst.getUTCFullYear()}/${String(jst.getUTCMonth()+1).padStart(2,'0')}/${String(jst.getUTCDate()).padStart(2,'0')} ${String(jst.getUTCHours()).padStart(2,'0')}:${String(jst.getUTCMinutes()).padStart(2,'0')} JST`;
-  if (label) label.innerText = `観測: ${jstLabel}（UTC ${info.stamp.slice(0,2)}:${info.stamp.slice(2)}）`;
+  const focus = window.getSatelliteFocusLatLng();
+  if (label) label.innerText = `観測: ${jstLabel} ／ 中心: ${focus.lat.toFixed(2)}N ${focus.lng.toFixed(2)}E`;
 
   img.onload = function() {
     if (loading) loading.style.display = 'none';
     img.style.display = 'block';
     window._satRetry = 0;
+    window.setSatelliteZoom(window._satZoom || 4, false);
   };
   img.onerror = function() {
     if ((window._satRetry || 0) < 6) {
       window._satRetry = (window._satRetry || 0) + 1;
       window.refreshSatelliteImage();
     } else if (loading) {
-      loading.innerText = '画像を取得できませんでした。下の「気象庁MSCで開く」から確認してください。';
-      loading.style.display = 'block';
+      loading.innerText = '画像を取得できませんでした。「MSC」リンクから確認してください。';
+      loading.style.display = 'flex';
     }
   };
-  // キャッシュ回避
   img.src = info.url + '?t=' + Date.now();
 };
 

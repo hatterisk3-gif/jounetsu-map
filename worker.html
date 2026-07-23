@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>プロ情熱MAP [作業記録用] v1.73</title>
+  <title>プロ情熱MAP [作業記録用] v1.74</title>
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
   <link rel="manifest" href="manifest.json">
@@ -18,7 +18,7 @@
 <body>
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">情熱MAP (v1.73)</h2>
+      <h2 style="color:#4CAF50;">情熱MAP (v1.74)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px;"></div>
       <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
       <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -210,9 +210,6 @@
       <button onclick="toggleFullScreen()" id="fullscreenBtn" style="background: rgba(255,255,255,0.8); border: 1px solid #ccc; font-size: 18px; padding: 4px 8px; border-radius: 5px; cursor: pointer; color: #333; z-index: 2000;" title="全画面表示切替">
         🔲
       </button>
-      <button onclick="toggleControlPanel()" id="togglePanelBtn" style="background: rgba(255,255,255,0.8); border: 1px solid #ccc; font-size: 18px; padding: 4px 8px; border-radius: 5px; cursor: pointer; color: #333; z-index: 2000;">
-        🔼
-      </button>
     </div>
     <div class="control-row" id="mainControlRow">
       <div class="search-container">
@@ -266,18 +263,6 @@
   <script src="worker.js?v=1784622000001"></script>
   <script src="tracking.js?v=1784615000001"></script>
   <script>
-    function toggleControlPanel() {
-      const row = document.getElementById('mainControlRow');
-      const btn = document.getElementById('togglePanelBtn');
-      if (row.style.display === 'none') {
-        row.style.display = 'flex';
-        btn.innerHTML = '🔼';
-      } else {
-        row.style.display = 'none';
-        btn.innerHTML = '🔽';
-      }
-    }
-
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js?v=worker', { scope: '/worker.html' });
     }

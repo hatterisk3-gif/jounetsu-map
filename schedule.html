@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.14</title>
+  <title>情熱MAP [予定確認用] v1.15</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -323,18 +323,29 @@
           <span style="cursor: pointer; font-size: 28px; line-height: 1; padding-left:4px;" onclick="closeSatelliteModal()">×</span>
         </div>
       </div>
-      <div style="padding:6px 12px; background:#1a237e; color:#bbdefb; font-size:12px; display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+      <div style="padding:6px 12px; background:#1a237e; color:#bbdefb; font-size:12px; display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center;">
         <span id="satelliteTimeLabel">観測時刻を取得中...</span>
-        <a href="https://www.data.jma.go.jp/mscweb/data/himawari/sat_img.php?area=jpn" target="_blank" rel="noopener"
-          style="color:#90CAF9; font-weight:bold;">気象庁MSCで開く ↗</a>
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <span style="color:#90CAF9; font-weight:bold;">拡大:</span>
+          <button type="button" id="satZoom_1" onclick="setSatelliteZoom(1)" style="background:#333; color:#fff; border:1px solid #666; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">広域</button>
+          <button type="button" id="satZoom_2" onclick="setSatelliteZoom(2.5)" style="background:#333; color:#fff; border:1px solid #666; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">接近</button>
+          <button type="button" id="satZoom_3" onclick="setSatelliteZoom(4)" style="background:#1565C0; color:#fff; border:1px solid #90CAF9; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">もっと接近</button>
+          <button type="button" id="satZoom_4" onclick="setSatelliteZoom(6)" style="background:#333; color:#fff; border:1px solid #666; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">最大</button>
+          <a href="https://www.data.jma.go.jp/mscweb/data/himawari/sat_img.php?area=jpn" target="_blank" rel="noopener"
+            style="color:#90CAF9; font-weight:bold; margin-left:4px;">MSC ↗</a>
+        </div>
       </div>
       <div id="satelliteContent"
-        style="flex: 1; position: relative; background:#000; display:flex; align-items:center; justify-content:center; overflow:auto; -webkit-overflow-scrolling: touch;">
-        <img id="satelliteImage" alt="ひまわり衛星画像" style="max-width:100%; max-height:100%; object-fit:contain; display:none;">
-        <div id="satelliteLoading" style="color:#90CAF9; font-weight:bold; padding:20px;">読み込み中...</div>
+        style="flex: 1; position: relative; background:#000; overflow:hidden; touch-action:none; cursor:grab; -webkit-user-select:none; user-select:none;">
+        <div id="satelliteViewport" style="position:absolute; left:0; top:0; width:100%; height:100%; transform-origin:0 0; will-change:transform;">
+          <img id="satelliteImage" alt="ひまわり衛星画像" draggable="false"
+            style="width:100%; height:100%; object-fit:contain; display:none; pointer-events:none;">
+        </div>
+        <div id="satelliteLoading" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#90CAF9; font-weight:bold; padding:20px; pointer-events:none;">読み込み中...</div>
+        <div id="satelliteCenterMark" style="display:none; position:absolute; left:50%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border:2px solid #FFEB3B; border-radius:50%; box-shadow:0 0 0 1px rgba(0,0,0,0.5); pointer-events:none; z-index:2;"></div>
       </div>
       <div style="padding:8px 12px; background:#222; color:#aaa; font-size:11px; text-align:center;">
-        出典: 気象庁 気象衛星センター（ひまわり）／約10分間隔で更新
+        地図の現在地付近を拡大表示／ドラッグで移動・ピンチで拡大縮小　出典: 気象庁MSC（ひまわり）
       </div>
     </div>
   </div>
