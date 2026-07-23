@@ -181,64 +181,22 @@ function parseCropImageWithGemini(params) {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
-const prompt = `
-あなたは農業の専門家として、提供された作型表（栽培カレンダー）の画像から、指定された産地の「播種（まき時期）」「定植（植え付け）」「収穫」のスケジュールを正確に読み取り、JSONフォーマットで出力してください。
-
-【指定された産地】
-${params.climate || '一般地'}（※もし画像から産地が特定できる場合は、画像の内容を優先して抽出してください）
-
-【抽出ルール】
-1. 画像内に複数の作型（例：春まき、夏まき、秋まきなど）の行が記載されている場合、それぞれを独立した作型としてすべて抽出してください。
-   ※特に「播種・定植・収穫のタイミングが少しずつズレている複数行（ずらし巻きなど）」がある場合や、1つの作型の中に離れた複数の播種期間・定植期間がある場合は、それらを配列にまとめるのではなく、1期間ごとに別の独立した作型（別の 'type' オブジェクト＝1行）として抽出してください。つまり、各 'type' には 'sowing' および 'planting' の期間がそれぞれ最大1つしか含まれないようにしてください。
-   作型の名称（type_name）は、「まき時期」を表します。必ず「春」「夏」「秋」「冬」「周年」のいずれかの季節表記のみを出力してください（例：「春」「秋」など）。詳細な条件（トンネル栽培や何月中旬など）は含めず、シンプルに季節のみに限定してください。
-   表内に記載されている「収穫時期の呼称（とる時期）」は「harvest_season」として抽出しますが、こちらも必ず「春」「夏」「秋」「冬」「周年」のいずれかの季節表記のみを出力してください（例：「初夏どり」なら「夏」とするなど、最も近い季節に変換してください）。
-2. 時期は「月」と「上/中/下（上旬/中旬/下旬）」で特定してください。
-3. 月は数値（1〜12）、時期は文字列（"上", "中", "下"）とします。
-4. 播種（sowing）、定植（planting）、収穫（harvesting）はすべて「期間（帯）」で示されることが多いため、開始（start_month, start_period）と終了（end_month, end_period）の配列として抽出してください。
-5. 必ず上記の通り、各配列には最大1つのオブジェクトのみを含めてください。
-6. 追加として、画像内に記載されている「メーカー名（maker）」「作物名（crop）」「産地（climate）」「品種名（variety）」があれば文字列として抽出してください。（メーカー名は、サカタのタネ、タキイ種苗などの種苗会社名です）
-7. さらに、品種の「特性（ネコブ耐病性、アントシアンレス、色、形などのアピールポイントや特徴）」の記載があれば、それを短い文字列の配列として「characteristics」に抽出してください。
-8. 画像内に該当データが存在しない項目は null にしてください。
-
-【出力フォーマット】
-以下のJSONフォーマットのみを出力してください（マークダウンのコードブロック \`\`\`json は不要です）。
-{
-  "maker": "サカタのタネ",
-  "crop": "キャベツ",
-  "climate": "一般地",
-  "variety": "初秋",
-  "characteristics": ["ネコブ耐病性", "アントシアンレス", "濃緑色"],
-  "types": [
-    {
-      "type_name": "冬春まき - トンネル栽培 - 1月中旬まき",
-      "harvest_season": "初夏どり",
-      "sowing": [
-        { "start_month": 1, "start_period": "中", "end_month": 2, "end_period": "上" }
-      ],
-      "planting": [
-        { "start_month": 3, "start_period": "上", "end_month": 3, "end_period": "中" }
-      ],
-      "harvesting": [
-        {
-          "start_month": 5, "start_period": "上",
-          "end_month": 6, "end_period": "下"
-        }
-      ]
-    },
-    {
-      "type_name": "夏まき",
-      "sowing": [ ... ],
-      "planting": [ ... ],
-      "harvesting": [ ... ]
-    }
-  ]
-}
-`;
+  // トークン節約: 指示は短く、スキーマは最小限
+  const prompt =
+`作型表画像から播種/定植/収穫を抽出。産地=${params.climate || '一般地'}（画像に産地があれば優先）。
+ルール:
+- ずらし巻き・複数期間は type を分割。各 type の sowing/planting は最大1期間。
+- 月=1-12, period="上"|"中"|"下"。期間は start_*/end_*。
+- maker/crop/climate/variety があれば文字列、characteristics は短い配列。無い項目は null。
+JSONのみ:
+{"maker":null,"crop":null,"climate":null,"variety":null,"characteristics":[],"types":[{"sowing":[{"start_month":1,"start_period":"中","end_month":2,"end_period":"上"}],"planting":[{"start_month":3,"start_period":"上","end_month":3,"end_period":"中"}],"harvesting":[{"start_month":5,"start_period":"上","end_month":6,"end_period":"下"}]}]}`;
 
   const payloadParts = [{ text: prompt }];
-  
+
+  // 画像は最大3枚まで（それ以上はトークン急増）
+  const MAX_AI_FILES = 3;
   if (params.files && Array.isArray(params.files)) {
-    params.files.forEach(f => {
+    params.files.slice(0, MAX_AI_FILES).forEach(f => {
       payloadParts.push({
         inlineData: {
           mimeType: f.mimeType,
@@ -247,7 +205,6 @@ ${params.climate || '一般地'}（※もし画像から産地が特定できる
       });
     });
   } else if (params.base64Data) {
-    // fallback for older client
     payloadParts.push({
       inlineData: {
         mimeType: params.mimeType,
@@ -257,11 +214,16 @@ ${params.climate || '一般地'}（※もし画像から産地が特定できる
   }
 
   const payload = {
-    contents: [
-      {
-        parts: payloadParts
-      }
-    ]
+    contents: [{ parts: payloadParts }],
+    generationConfig: {
+      // 作型表OCRは深い推論不要。デフォルト high thinking がトークンの主因
+      thinkingConfig: { thinkingLevel: 'minimal' },
+      // 表読み取りは medium で十分なことが多い（high=約2倍トークン）
+      mediaResolution: 'MEDIA_RESOLUTION_MEDIUM',
+      responseMimeType: 'application/json',
+      maxOutputTokens: 4096,
+      temperature: 0
+    }
   };
 
   const options = {
@@ -284,7 +246,14 @@ ${params.climate || '一般地'}（※もし画像から産地が特定できる
     throw new Error('Geminiから有効な回答が得られませんでした。');
   }
 
-  let text = json.candidates[0].content.parts[0].text.trim();
+  // thinking 有効時は text part 以外が混ざる場合がある
+  const parts = (json.candidates[0].content && json.candidates[0].content.parts) || [];
+  const textPart = parts.find(p => p.text && !p.thought) || parts.find(p => p.text);
+  if (!textPart || !textPart.text) {
+    throw new Error('Geminiからテキスト回答が得られませんでした。');
+  }
+
+  let text = textPart.text.trim();
   if (text.startsWith('\`\`\`json')) {
     text = text.replace(/^\`\`\`json/, '').replace(/\`\`\`$/, '').trim();
   } else if (text.startsWith('\`\`\`')) {

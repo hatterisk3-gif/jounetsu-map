@@ -8,7 +8,7 @@
         <!-- ステップ1: 基本設定 -->
         <details id="cpStep1" open style="margin-bottom: 8px; background: #f1f8e9; padding: 8px 12px; border-radius: 6px; border: 1px solid #c5e1a5;">
           <summary style="font-size: 14px; font-weight: bold; color: #33691E; cursor: pointer; outline: none; user-select: none;">
-            1. 基本設定 <span style="font-size: 11px; font-weight: normal; color: #555;">(年度, 拠点, 作物, まき時期, 産地)</span>
+            1. 基本設定 <span style="font-size: 11px; font-weight: normal; color: #555;">(年度, 拠点, 作物, 産地)</span>
           </summary>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: flex-end; padding-top: 10px; margin-top: 5px; border-top: 1px dashed #c5e1a5;">
             <div style="width: 100%;">
@@ -36,17 +36,6 @@
                 <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
                 <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList()" oninput="calcCp(); checkCroptypeDB()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
               </div>
-            </div>
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">まき時期</label>
-              <select id="cpSeason" onchange="checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
-                  <option value="">選択...</option>
-                  <option value="春">春</option>
-                  <option value="夏">夏</option>
-                  <option value="秋">秋</option>
-                  <option value="冬">冬</option>
-                  <option value="周年">周年まき</option>
-              </select>
             </div>
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">産地</label>
@@ -168,17 +157,22 @@
         <div style="margin-bottom: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px; border: 1px solid #ddd; display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap;">
           <span style="font-size: 12px; font-weight: bold; color:#666;">🖌 ペイントツール:</span>
           <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
-            <input type="radio" name="cpTool" value="sowing" checked> <span style="display:inline-block; width:12px; height:12px; background:#8D6E63; border-radius:2px;"></span>播種
+            <input type="radio" name="cpTool" value="semiauto" checked onchange="onCpToolChange()"> <span style="display:inline-block; width:12px; height:12px; background: linear-gradient(90deg, #8D6E63 0%, #8D6E63 33%, #4CAF50 33%, #4CAF50 66%, #FF9800 66%, #FF9800 100%); border-radius:2px;"></span>半自動
           </label>
           <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
-            <input type="radio" name="cpTool" value="planting"> <span style="display:inline-block; width:12px; height:12px; background:#4CAF50; border-radius:2px;"></span>定植
+            <input type="radio" name="cpTool" value="sowing" onchange="onCpToolChange()"> <span style="display:inline-block; width:12px; height:12px; background:#8D6E63; border-radius:2px;"></span>播種
           </label>
           <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
-            <input type="radio" name="cpTool" value="harvesting"> <span style="display:inline-block; width:12px; height:12px; background:#FF9800; border-radius:2px;"></span>収穫
+            <input type="radio" name="cpTool" value="planting" onchange="onCpToolChange()"> <span style="display:inline-block; width:12px; height:12px; background:#4CAF50; border-radius:2px;"></span>定植
           </label>
           <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
-            <input type="radio" name="cpTool" value="eraser"> <span style="display:inline-block; width:12px; height:12px; border:1px solid #ccc; background:#fff; border-radius:2px;"></span>消しゴム
+            <input type="radio" name="cpTool" value="harvesting" onchange="onCpToolChange()"> <span style="display:inline-block; width:12px; height:12px; background:#FF9800; border-radius:2px;"></span>収穫
           </label>
+          <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
+            <input type="radio" name="cpTool" value="eraser" onchange="onCpToolChange()"> <span style="display:inline-block; width:12px; height:12px; border:1px solid #ccc; background:#fff; border-radius:2px;"></span>消しゴム
+          </label>
+          <span id="cpSemiAutoHint" style="font-size: 11px; color: #1565C0; font-weight: bold; margin-left: 4px;">次: 播種</span>
+          <button type="button" id="cpSemiAutoResetBtn" onclick="resetCpSemiAutoSteps()" title="半自動の順序を播種からやり直す" style="font-size: 11px; padding: 2px 8px; border: 1px solid #90CAF9; background: #E3F2FD; color: #1565C0; border-radius: 4px; cursor: pointer;">順序リセット</button>
         </div>
         
         <div id="cpTwoColContainer" style="flex: 1; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 100px;">
@@ -247,7 +241,7 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; padding: 10px; background: #e3f2fd; border-radius: 6px; border: 1px solid #bbdefb;">
           <div>
             <label style="font-size: 11px; font-weight: bold; color: #1565c0; display: block; margin-bottom: 2px;">作物 (共通)</label>
-            <select id="crCrop" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+            <select id="crCrop" onchange="onCrCropChange()" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
               <option value="">選択...</option>
             </select>
           </div>
@@ -275,53 +269,46 @@
 
         <!-- 入力エリア -->
         <div style="padding: 10px; background: #fff3e0; border-radius: 6px; border: 1px solid #ffe0b2; margin-bottom: 15px;">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-            <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">品種</label>
-              <input type="text" id="crVariety" placeholder="例: 初秋" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
-            </div>
-            <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">まき時期</label>
-              <select id="crSeason" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
-                  <option value="">選択...</option>
-                  <option value="春">春</option>
-                  <option value="夏">夏</option>
-                  <option value="秋">秋</option>
-                  <option value="冬">冬</option>
-                  <option value="周年">周年まき</option>
-              </select>
-            </div>
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">品種</label>
+            <input type="text" id="crVariety" placeholder="例: 初秋" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
           </div>
           
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-            <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">メーカー</label>
-              <input type="text" id="crMaker" placeholder="例: サカタのタネ" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
-            </div>
-            <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">とる時期 (収穫期)</label>
-              <input type="text" id="crHarvestSeason" placeholder="例: 初夏どり" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
-            </div>
-            <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">特性タグ (AI抽出)</label>
-              <input type="text" id="crCharacteristics" placeholder="例: ネコブ耐病性" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">メーカー <span style="font-weight:normal; color:#888;">(共通で記憶)</span></label>
+            <input type="hidden" id="crMaker" value="">
+            <div id="crMakerBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
+            <button type="button" onclick="addNewMakerTag()" style="margin-top:6px; padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px dashed #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">＋ メーカーを新規登録</button>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">特性タグ <span style="font-weight:normal; color:#888;">(複数選択可・作物ごとに記憶)</span></label>
+            <input type="hidden" id="crCharacteristics" value="">
+            <div id="crCharacteristicsBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
+            <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+              <button type="button" onclick="addNewCharacteristicTag()" style="padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px dashed #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">＋ 特性を新規登録</button>
+              <span id="crCharHint" style="font-size:10px; color:#999;"></span>
             </div>
           </div>
 
           <div style="display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap; margin-bottom: 8px;">
             <span style="font-size: 12px; font-weight: bold; color:#666;">🖌 ペイント:</span>
             <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
-              <input type="radio" name="crTool" value="sowing" checked> <span style="display:inline-block; width:12px; height:12px; background:#8D6E63; border-radius:2px;"></span>播種
+              <input type="radio" name="crTool" value="semiauto" checked onchange="onCrToolChange()"> <span style="display:inline-block; width:12px; height:12px; background: linear-gradient(90deg, #8D6E63 0%, #8D6E63 33%, #4CAF50 33%, #4CAF50 66%, #FF9800 66%, #FF9800 100%); border-radius:2px;"></span>半自動
             </label>
             <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
-              <input type="radio" name="crTool" value="planting"> <span style="display:inline-block; width:12px; height:12px; background:#4CAF50; border-radius:2px;"></span>定植
+              <input type="radio" name="crTool" value="sowing" onchange="onCrToolChange()"> <span style="display:inline-block; width:12px; height:12px; background:#8D6E63; border-radius:2px;"></span>播種
             </label>
             <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
-              <input type="radio" name="crTool" value="harvesting"> <span style="display:inline-block; width:12px; height:12px; background:#FF9800; border-radius:2px;"></span>収穫
+              <input type="radio" name="crTool" value="planting" onchange="onCrToolChange()"> <span style="display:inline-block; width:12px; height:12px; background:#4CAF50; border-radius:2px;"></span>定植
             </label>
             <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
-              <input type="radio" name="crTool" value="eraser"> <span style="display:inline-block; width:12px; height:12px; border:1px solid #ccc; background:#fff; border-radius:2px;"></span>消しゴム
+              <input type="radio" name="crTool" value="harvesting" onchange="onCrToolChange()"> <span style="display:inline-block; width:12px; height:12px; background:#FF9800; border-radius:2px;"></span>収穫
             </label>
+            <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
+              <input type="radio" name="crTool" value="eraser" onchange="onCrToolChange()"> <span style="display:inline-block; width:12px; height:12px; border:1px solid #ccc; background:#fff; border-radius:2px;"></span>消しゴム
+            </label>
+            <span id="crSemiAutoHint" style="font-size: 11px; color: #1565C0; font-weight: bold; margin-left: 4px;">次: 播種</span>
+            <button type="button" id="crSemiAutoResetBtn" onclick="resetCrSemiAutoStep()" title="半自動の順序を播種からやり直す" style="font-size: 11px; padding: 2px 8px; border: 1px solid #90CAF9; background: #E3F2FD; color: #1565C0; border-radius: 4px; cursor: pointer;">順序リセット</button>
           </div>
           
           <div style="overflow-x: auto; border: 1px solid #ddd; margin-bottom: 10px; background: #fff;">

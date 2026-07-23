@@ -2,6 +2,97 @@
 
 let cpMasterData = null;
 
+// プルダウン→ボタン化する select
+const CHOICE_BUTTON_SELECT_IDS = [
+    'cpYear', 'cpLocation', 'cpCrop', 'cpClimate', 'cpFieldCondition',
+    'cpPreset', 'cpTrayHoles', 'cpRows', 'cpPlantSpacing', 'cpRidgeSpacing',
+    'cpYieldPerPlant', 'cpItemsPerPack', 'cpVariety',
+    'crCrop', 'crClimate'
+];
+
+function refreshChoiceButtons(selectId) {
+    const sel = document.getElementById(selectId);
+    if (!sel || sel.tagName !== 'SELECT') return;
+
+    sel.style.display = 'none';
+
+    let wrap = document.getElementById(selectId + '_btns');
+    if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.id = selectId + '_btns';
+        wrap.className = 'cp-choice-btns';
+        wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;width:100%;';
+
+        const parent = sel.parentNode;
+        if (parent && (parent.style.display === 'flex' || getComputedStyle(parent).display === 'flex')) {
+            parent.style.flexWrap = 'wrap';
+            wrap.style.flex = '1 1 100%';
+        }
+        sel.insertAdjacentElement('afterend', wrap);
+
+        const custom = document.getElementById(selectId + '_custom');
+        if (custom && custom.parentNode === parent) {
+            custom.style.width = '100%';
+            custom.style.marginTop = '4px';
+            custom.style.boxSizing = 'border-box';
+            custom.style.flex = '1 1 100%';
+            wrap.insertAdjacentElement('afterend', custom);
+        }
+    }
+
+    const isCr = selectId.startsWith('cr');
+    const accent = isCr ? '#FF9800' : '#4CAF50';
+    const accentDark = isCr ? '#EF6C00' : '#388E3C';
+    const current = sel.value;
+    wrap.innerHTML = '';
+
+    Array.from(sel.options).forEach(opt => {
+        if (opt.value === '') return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.value = opt.value;
+        btn.textContent = opt.textContent || opt.value;
+        const isActive = String(current) === String(opt.value);
+        const isCustom = opt.value === 'custom';
+        btn.style.cssText = isActive
+            ? `padding:5px 10px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;`
+            : `padding:5px 10px;border:1px solid #ccc;border-radius:4px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;`;
+        btn.onmouseenter = function() {
+            if (!isActive) btn.style.borderColor = accent;
+        };
+        btn.onmouseleave = function() {
+            if (!isActive) btn.style.borderColor = '#ccc';
+        };
+        btn.onclick = function() {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            refreshChoiceButtons(selectId);
+        };
+        wrap.appendChild(btn);
+    });
+}
+
+function refreshAllChoiceButtons() {
+    CHOICE_BUTTON_SELECT_IDS.forEach(id => refreshChoiceButtons(id));
+}
+
+function setChoiceValue(selectId, value, fireChange) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    if (value !== undefined && value !== null && value !== '' &&
+        !Array.from(sel.options).some(o => String(o.value) === String(value))) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.text = value;
+        const customOpt = Array.from(sel.options).find(o => o.value === 'custom');
+        if (customOpt) sel.insertBefore(opt, customOpt);
+        else sel.appendChild(opt);
+    }
+    sel.value = value;
+    refreshChoiceButtons(selectId);
+    if (fireChange) sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 // Utility to get the actual value, either from select or custom input
 function getCpVal(id, isNumber = false) {
     const sel = document.getElementById(id);
@@ -53,12 +144,16 @@ function populateSelect(id, arr, defaultOptions = []) {
     
     // 選択値を復元
     if (currentVal !== '') {
-        const exists = Array.from(sel.options).some(opt => opt.value === currentVal);
+        const exists = Array.from(sel.options).some(opt => opt.value == currentVal);
         if (exists) {
             sel.value = currentVal;
         } else if (currentVal === 'custom') {
             sel.value = 'custom';
         }
+    }
+
+    if (CHOICE_BUTTON_SELECT_IDS.includes(id)) {
+        refreshChoiceButtons(id);
     }
 }
 
@@ -144,6 +239,7 @@ function updatePresetList(crop) {
         presetSelect.value = presetSelect.options[1].value;
         loadCultivationPreset(presetSelect.value);
     }
+    refreshChoiceButtons('cpPreset');
 }
 
 // Removed duplicate loadCultivationPreset
@@ -156,6 +252,7 @@ function setCpVal(id, value) {
         sel.value = '';
         const cInp = document.getElementById(id + '_custom');
         if (cInp) cInp.style.display = 'none';
+        if (CHOICE_BUTTON_SELECT_IDS.includes(id)) refreshChoiceButtons(id);
         return;
     }
 
@@ -175,6 +272,7 @@ function setCpVal(id, value) {
             cInp.style.display = 'none';
         }
     }
+    if (CHOICE_BUTTON_SELECT_IDS.includes(id)) refreshChoiceButtons(id);
 }
 
 async function saveCultivationPresetFromUI() {
@@ -206,7 +304,7 @@ async function saveCultivationPresetFromUI() {
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         updatePresetList(crop);
-        document.getElementById('cpPreset').value = presetName;
+        setChoiceValue('cpPreset', presetName, false);
         
         alert("設定を保存しました。");
     } catch(e) {
@@ -236,7 +334,7 @@ async function deleteCultivationPresetUI() {
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         updatePresetList(crop);
-        document.getElementById('cpPreset').value = '';
+        setChoiceValue('cpPreset', '', false);
         loadCultivationPreset('');
         
         alert("プリセットを削除しました。");
@@ -268,7 +366,7 @@ async function renameCultivationPresetUI() {
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         updatePresetList(crop);
-        document.getElementById('cpPreset').value = newName;
+        setChoiceValue('cpPreset', newName, false);
         loadCultivationPreset(newName);
         
         alert("プリセット名を変更しました。");
@@ -426,7 +524,6 @@ function loadAndAddCroptype() {
 function checkCroptypeDB() {
     const crop = getCpVal('cpCrop');
     const variety = getCpVal('cpVariety');
-    const season = document.getElementById('cpSeason') ? document.getElementById('cpSeason').value : '';
     const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
     
     pendingCroptypeData = null;
@@ -436,7 +533,7 @@ function checkCroptypeDB() {
     if (cpMasterData && cpMasterData.croptypesDB) {
         const found = cpMasterData.croptypesDB.find(db => 
             db.crop === crop && db.variety === variety &&
-            db.season === season && db.climate === climate
+            (!climate || !db.climate || db.climate === climate)
         );
         
         if (found) {
@@ -629,6 +726,8 @@ function renderCpPlanRow(plan) {
 
 function removeCpPlanRow(planId) {
     cpPlans = cpPlans.filter(p => p.id !== planId);
+    delete cpSemiAutoSteps[planId];
+    if (cpSemiAutoActivePlanId === planId) cpSemiAutoActivePlanId = null;
     // 右テーブルの行を削除
     const tbody = document.getElementById('cpTableBody');
     const tr = tbody.querySelector(`tr[data-plan-id="${planId}"]`);
@@ -641,6 +740,7 @@ function removeCpPlanRow(planId) {
     if (leftCard) leftCard.parentNode.removeChild(leftCard);
     // 高さ再同期
     setTimeout(() => { syncAllRowHeights(); }, 50);
+    updateCpSemiAutoHint();
 }
 
 
@@ -651,16 +751,124 @@ const TOOL_COLORS = {
     'eraser': ''
 };
 
-function toggleCpCell(td, planId) {
-    const tool = document.querySelector('input[name="cpTool"]:checked').value;
+const SEMI_AUTO_LABELS = {
+    sowing: '播種',
+    planting: '定植',
+    harvesting: '収穫'
+};
+
+// 半自動: 作型行ごとのクリック回数（0=播種, 1=定植, 2以降=収穫）
+let cpSemiAutoSteps = {};
+let cpSemiAutoActivePlanId = null;
+// 半自動: 作型登録ペイント用
+let crSemiAutoStep = 0;
+
+function getSemiAutoTool(step) {
+    if (step <= 0) return 'sowing';
+    if (step === 1) return 'planting';
+    return 'harvesting';
+}
+
+function updateCpSemiAutoHint(planId) {
+    const hint = document.getElementById('cpSemiAutoHint');
+    const resetBtn = document.getElementById('cpSemiAutoResetBtn');
+    const checked = document.querySelector('input[name="cpTool"]:checked');
+    const isSemi = checked && checked.value === 'semiauto';
+    if (hint) {
+        if (isSemi) {
+            const pid = planId || cpSemiAutoActivePlanId;
+            const step = pid != null ? (cpSemiAutoSteps[pid] || 0) : 0;
+            const tool = getSemiAutoTool(step);
+            hint.style.display = '';
+            hint.textContent = '次: ' + SEMI_AUTO_LABELS[tool];
+            hint.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
+        } else {
+            hint.style.display = 'none';
+        }
+    }
+    if (resetBtn) resetBtn.style.display = isSemi ? '' : 'none';
+}
+
+function updateCrSemiAutoHint() {
+    const hint = document.getElementById('crSemiAutoHint');
+    const resetBtn = document.getElementById('crSemiAutoResetBtn');
+    const checked = document.querySelector('input[name="crTool"]:checked');
+    const isSemi = checked && checked.value === 'semiauto';
+    if (hint) {
+        if (isSemi) {
+            const tool = getSemiAutoTool(crSemiAutoStep);
+            hint.style.display = '';
+            hint.textContent = '次: ' + SEMI_AUTO_LABELS[tool];
+            hint.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
+        } else {
+            hint.style.display = 'none';
+        }
+    }
+    if (resetBtn) resetBtn.style.display = isSemi ? '' : 'none';
+}
+
+function onCpToolChange() {
+    const checked = document.querySelector('input[name="cpTool"]:checked');
+    if (checked && checked.value === 'semiauto') {
+        // 半自動を選び直したら順序を播種から
+        cpSemiAutoSteps = {};
+        cpSemiAutoActivePlanId = null;
+    }
+    updateCpSemiAutoHint();
+}
+
+function onCrToolChange() {
+    const checked = document.querySelector('input[name="crTool"]:checked');
+    if (checked && checked.value === 'semiauto') {
+        crSemiAutoStep = 0;
+    }
+    updateCrSemiAutoHint();
+}
+
+function resetCpSemiAutoSteps() {
+    cpSemiAutoSteps = {};
+    cpSemiAutoActivePlanId = null;
+    updateCpSemiAutoHint();
+}
+
+function resetCrSemiAutoStep() {
+    crSemiAutoStep = 0;
+    updateCrSemiAutoHint();
+}
+
+function applyPaintTool(td, tool) {
     const div = td.querySelector('div');
-    
     if (tool === 'eraser') {
         td.dataset.task = '';
         div.style.backgroundColor = '';
         div.innerHTML = '';
         td.dataset.amount = '';
+        return;
+    }
+    if (td.dataset.task === tool) {
+        td.dataset.task = '';
+        div.style.backgroundColor = '';
+        div.innerHTML = '';
+        td.dataset.amount = '';
     } else {
+        td.dataset.task = tool;
+        div.style.backgroundColor = TOOL_COLORS[tool];
+        if (tool !== 'harvesting') {
+            td.dataset.amount = '';
+        }
+    }
+}
+
+function toggleCpCell(td, planId) {
+    const selected = document.querySelector('input[name="cpTool"]:checked').value;
+    let tool = selected;
+    
+    if (selected === 'semiauto') {
+        cpSemiAutoActivePlanId = planId;
+        const step = cpSemiAutoSteps[planId] || 0;
+        tool = getSemiAutoTool(step);
+        const div = td.querySelector('div');
+        // 同じ種類が既にあるセル → 消す（ステップは進めない）
         if (td.dataset.task === tool) {
             td.dataset.task = '';
             div.style.backgroundColor = '';
@@ -669,9 +877,18 @@ function toggleCpCell(td, planId) {
         } else {
             td.dataset.task = tool;
             div.style.backgroundColor = TOOL_COLORS[tool];
+            if (tool !== 'harvesting') {
+                td.dataset.amount = '';
+                div.innerHTML = '';
+            }
+            cpSemiAutoSteps[planId] = step + 1;
         }
+        updateCpCellsText(planId);
+        updateCpSemiAutoHint(planId);
+        return;
     }
     
+    applyPaintTool(td, tool);
     updateCpCellsText(planId);
 }
 
@@ -829,12 +1046,11 @@ async function saveCultivationPlan() {
         await callGAS('saveCultivationPlans', { year: year, crop: crop, planDataArray: payloadPlans });
         
         // Batch save croptypes
-        const season = document.getElementById('cpSeason') ? document.getElementById('cpSeason').value : '';
         const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
         const croptypeParamsArray = payloadPlans.map(plan => ({
             crop: plan.crop,
             variety: plan.variety,
-            season: season,
+            season: '',
             climate: climate,
             sowing: plan.tasks.sowing || [],
             planting: plan.tasks.planting || [],
@@ -884,9 +1100,18 @@ function openCultivationPlanModal() {
     const leftBody = document.getElementById('cpLeftBody');
     if (leftBody) leftBody.innerHTML = '';
     cpPlans = [];
+    cpSemiAutoSteps = {};
+    cpSemiAutoActivePlanId = null;
+    
+    // デフォルトを半自動に合わせ、ヒント表示を更新
+    const semiRadio = document.querySelector('input[name="cpTool"][value="semiauto"]');
+    if (semiRadio) semiRadio.checked = true;
+    updateCpSemiAutoHint();
+    refreshAllChoiceButtons();
     
     fetchCultivationMaster().then(() => {
         calcCp();
+        refreshAllChoiceButtons();
     });
     
     // 左右パネルの縦スクロール同期
@@ -1096,11 +1321,19 @@ function openCroptypeRegistrationModal() {
     
     const currentCrop = getCpVal('cpCrop');
     if (currentCrop) {
-        document.getElementById('crCrop').value = currentCrop;
+        setChoiceValue('crCrop', currentCrop, false);
     }
     
     document.getElementById('croptypeRegistrationModal').style.display = 'flex';
+    crSemiAutoStep = 0;
+    const semiRadio = document.querySelector('input[name="crTool"][value="semiauto"]');
+    if (semiRadio) semiRadio.checked = true;
     renderCroptypePaintGrid();
+    updateCrSemiAutoHint();
+    refreshChoiceButtons('crClimate');
+    refreshChoiceButtons('crCrop');
+    renderCharacteristicButtons();
+    renderMakerButtons();
 }
 
 function closeCroptypeRegistrationModal() {
@@ -1161,7 +1394,25 @@ function renderCroptypePaintGrid() {
 }
 
 function toggleCrCell(td) {
-    const tool = document.querySelector('input[name="crTool"]:checked').value;
+    const selected = document.querySelector('input[name="crTool"]:checked').value;
+    
+    if (selected === 'semiauto') {
+        const tool = getSemiAutoTool(crSemiAutoStep);
+        const div = td.querySelector('div');
+        // 同じ種類が既にあるセル → 消す（ステップは進めない）
+        if (td.dataset.task === tool) {
+            td.dataset.task = '';
+            div.style.backgroundColor = '';
+        } else {
+            td.dataset.task = tool;
+            div.style.backgroundColor = TOOL_COLORS[tool];
+            crSemiAutoStep += 1;
+        }
+        updateCrSemiAutoHint();
+        return;
+    }
+    
+    const tool = selected;
     const div = td.querySelector('div');
     
     if (tool === 'eraser') {
@@ -1180,19 +1431,327 @@ function toggleCrCell(td) {
 
 let crPendingCroptypes = [];
 
-function addCroptypeToList() {
-    const variety = document.getElementById('crVariety').value;
-    const season = document.getElementById('crSeason').value;
-    const crop = document.getElementById('crCrop').value;
-    const climate = document.getElementById('crClimate').value;
-    const characteristics = document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '';
-    const maker = document.getElementById('crMaker') ? document.getElementById('crMaker').value : '';
-    const harvestSeason = document.getElementById('crHarvestSeason') ? document.getElementById('crHarvestSeason').value : '';
-    
-    if (!variety || !season) {
-        alert('品種とまき時期は必ず入力してください。');
+const CROP_CHAR_STORAGE_KEY = 'cropCharacteristicsMaster';
+
+function loadCropCharacteristicsMaster() {
+    try {
+        return JSON.parse(localStorage.getItem(CROP_CHAR_STORAGE_KEY) || '{}') || {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveCropCharacteristicsMaster(master) {
+    localStorage.setItem(CROP_CHAR_STORAGE_KEY, JSON.stringify(master || {}));
+}
+
+function getCharacteristicsForCrop(crop) {
+    if (!crop) return [];
+    const master = loadCropCharacteristicsMaster();
+    return Array.isArray(master[crop]) ? master[crop].slice() : [];
+}
+
+function registerCharacteristicsForCrop(crop, tags) {
+    if (!crop) return;
+    const list = (Array.isArray(tags) ? tags : [tags])
+        .map(t => String(t || '').trim())
+        .filter(Boolean);
+    if (list.length === 0) return;
+    const master = loadCropCharacteristicsMaster();
+    const existing = Array.isArray(master[crop]) ? master[crop] : [];
+    let changed = false;
+    list.forEach(tag => {
+        if (!existing.includes(tag)) {
+            existing.push(tag);
+            changed = true;
+        }
+    });
+    if (changed) {
+        master[crop] = existing;
+        saveCropCharacteristicsMaster(master);
+    }
+}
+
+function removeCharacteristicFromCrop(crop, tag) {
+    if (!crop || !tag) return;
+    const master = loadCropCharacteristicsMaster();
+    const existing = Array.isArray(master[crop]) ? master[crop] : [];
+    master[crop] = existing.filter(t => t !== tag);
+    saveCropCharacteristicsMaster(master);
+}
+
+function parseCharacteristicsList(val) {
+    if (!val) return [];
+    if (Array.isArray(val)) {
+        return val.map(t => String(t || '').trim()).filter(Boolean);
+    }
+    return String(val)
+        .split(/[,、，/／|｜]/
+        .map(t => t.trim())
+        .filter(Boolean);
+}
+
+function getSelectedCharacteristics() {
+    const hidden = document.getElementById('crCharacteristics');
+    return hidden ? hidden.value : '';
+}
+
+function getSelectedCharacteristicsList() {
+    return parseCharacteristicsList(getSelectedCharacteristics());
+}
+
+function setSelectedCharacteristics(val) {
+    const hidden = document.getElementById('crCharacteristics');
+    const list = parseCharacteristicsList(val);
+    if (hidden) hidden.value = list.join(', ');
+    renderCharacteristicButtons();
+}
+
+function onCrCropChange() {
+    // 作物切替時は選択肢を差し替え（選択中タグはクリア）
+    const hidden = document.getElementById('crCharacteristics');
+    if (hidden) hidden.value = '';
+    renderCharacteristicButtons();
+}
+
+function toggleCharacteristicTag(tag) {
+    const list = getSelectedCharacteristicsList();
+    const idx = list.indexOf(tag);
+    if (idx >= 0) list.splice(idx, 1);
+    else list.push(tag);
+    const hidden = document.getElementById('crCharacteristics');
+    if (hidden) hidden.value = list.join(', ');
+    renderCharacteristicButtons();
+}
+
+function addNewCharacteristicTag() {
+    const crop = document.getElementById('crCrop') ? document.getElementById('crCrop').value : '';
+    if (!crop) {
+        alert('先に作物を選択してください。特性は作物ごとに記憶されます。');
         return;
     }
+    const name = prompt('新しい特性タグ名を入力してください（例: ネコブ耐病性）');
+    if (!name) return;
+    const tag = name.trim();
+    if (!tag) return;
+    registerCharacteristicsForCrop(crop, [tag]);
+    const list = getSelectedCharacteristicsList();
+    if (!list.includes(tag)) list.push(tag);
+    const hidden = document.getElementById('crCharacteristics');
+    if (hidden) hidden.value = list.join(', ');
+    renderCharacteristicButtons();
+}
+
+function deleteCharacteristicTag(tag, ev) {
+    if (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+    }
+    const crop = document.getElementById('crCrop') ? document.getElementById('crCrop').value : '';
+    if (!crop) return;
+    if (!confirm(`作物「${crop}」の特性「${tag}」を選択肢から削除しますか？`)) return;
+    removeCharacteristicFromCrop(crop, tag);
+    const list = getSelectedCharacteristicsList().filter(t => t !== tag);
+    const hidden = document.getElementById('crCharacteristics');
+    if (hidden) hidden.value = list.join(', ');
+    renderCharacteristicButtons();
+}
+
+function renderCharacteristicButtons() {
+    const wrap = document.getElementById('crCharacteristicsBtns');
+    const hint = document.getElementById('crCharHint');
+    if (!wrap) return;
+
+    const crop = document.getElementById('crCrop') ? document.getElementById('crCrop').value : '';
+    const options = getCharacteristicsForCrop(crop);
+    const selected = getSelectedCharacteristicsList();
+
+    // 選択中だがマスタに無いタグも表示（編集読込・AI直後用）
+    selected.forEach(tag => {
+        if (!options.includes(tag)) options.push(tag);
+    });
+
+    wrap.innerHTML = '';
+    if (!crop) {
+        wrap.innerHTML = '<span style="font-size:11px;color:#999;">作物を選択すると特性ボタンが表示されます</span>';
+        if (hint) hint.textContent = '';
+        return;
+    }
+
+    if (options.length === 0) {
+        wrap.innerHTML = '<span style="font-size:11px;color:#999;">未登録です。「＋ 特性を新規登録」かAI抽出で追加できます</span>';
+    } else {
+        options.forEach(tag => {
+            const isOn = selected.includes(tag);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.style.cssText = isOn
+                ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #EF6C00;border-radius:4px;background:#FF9800;color:#fff;cursor:pointer;font-size:11px;font-weight:bold;line-height:1.2;'
+                : 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:11px;line-height:1.2;';
+            const label = document.createElement('span');
+            label.textContent = tag;
+            label.onclick = function(e) {
+                e.stopPropagation();
+                toggleCharacteristicTag(tag);
+            };
+            btn.appendChild(label);
+            const del = document.createElement('span');
+            del.textContent = '×';
+            del.title = 'この作物の選択肢から削除';
+            del.style.cssText = isOn
+                ? 'opacity:0.85;font-weight:bold;padding-left:2px;'
+                : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
+            del.onclick = function(e) { deleteCharacteristicTag(tag, e); };
+            btn.appendChild(del);
+            btn.onclick = function(e) {
+                if (e.target === del) return;
+                toggleCharacteristicTag(tag);
+            };
+            wrap.appendChild(btn);
+        });
+    }
+
+    if (hint) {
+        hint.textContent = selected.length > 0
+            ? `選択中: ${selected.length}件`
+            : `登録済: ${getCharacteristicsForCrop(crop).length}件`;
+    }
+}
+
+// --- メーカー（作物横断・単一選択・共通記憶） ---
+const MAKER_STORAGE_KEY = 'makerMasterList';
+const DEFAULT_MAKERS = ['サカタのタネ', 'タキイ種苗', 'カネコ種苗', '雪印種苗', '武蔵野種苗園'];
+
+function loadMakerMaster() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(MAKER_STORAGE_KEY) || 'null');
+        if (Array.isArray(raw) && raw.length > 0) return raw;
+    } catch (e) {}
+    // 初回は代表メーカーを入れておく
+    saveMakerMaster(DEFAULT_MAKERS.slice());
+    return DEFAULT_MAKERS.slice();
+}
+
+function saveMakerMaster(list) {
+    localStorage.setItem(MAKER_STORAGE_KEY, JSON.stringify(list || []));
+}
+
+function registerMaker(name) {
+    const tag = String(name || '').trim();
+    if (!tag) return;
+    const list = loadMakerMaster();
+    if (!list.includes(tag)) {
+        list.push(tag);
+        saveMakerMaster(list);
+    }
+}
+
+function removeMakerFromMaster(name) {
+    const list = loadMakerMaster().filter(t => t !== name);
+    saveMakerMaster(list);
+}
+
+function getSelectedMaker() {
+    const hidden = document.getElementById('crMaker');
+    return hidden ? (hidden.value || '') : '';
+}
+
+function setSelectedMaker(val) {
+    const hidden = document.getElementById('crMaker');
+    const name = String(val || '').trim();
+    if (hidden) hidden.value = name;
+    if (name) registerMaker(name);
+    renderMakerButtons();
+}
+
+function selectMakerTag(name) {
+    const hidden = document.getElementById('crMaker');
+    if (!hidden) return;
+    // 同じボタン再クリックで解除
+    hidden.value = (hidden.value === name) ? '' : name;
+    renderMakerButtons();
+}
+
+function addNewMakerTag() {
+    const name = prompt('新しいメーカー名を入力してください（例: サカタのタネ）');
+    if (!name) return;
+    const tag = name.trim();
+    if (!tag) return;
+    registerMaker(tag);
+    setSelectedMaker(tag);
+}
+
+function deleteMakerTag(name, ev) {
+    if (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+    }
+    if (!confirm(`メーカー「${name}」を選択肢から削除しますか？`)) return;
+    removeMakerFromMaster(name);
+    if (getSelectedMaker() === name) {
+        const hidden = document.getElementById('crMaker');
+        if (hidden) hidden.value = '';
+    }
+    renderMakerButtons();
+}
+
+function renderMakerButtons() {
+    const wrap = document.getElementById('crMakerBtns');
+    if (!wrap) return;
+
+    const options = loadMakerMaster();
+    const selected = getSelectedMaker();
+    if (selected && !options.includes(selected)) options.push(selected);
+
+    wrap.innerHTML = '';
+    if (options.length === 0) {
+        wrap.innerHTML = '<span style="font-size:11px;color:#999;">未登録です。「＋ メーカーを新規登録」で追加できます</span>';
+        return;
+    }
+
+    options.forEach(tag => {
+        const isOn = selected === tag;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.style.cssText = isOn
+            ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #EF6C00;border-radius:4px;background:#FF9800;color:#fff;cursor:pointer;font-size:11px;font-weight:bold;line-height:1.2;'
+            : 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:11px;line-height:1.2;';
+        const label = document.createElement('span');
+        label.textContent = tag;
+        btn.appendChild(label);
+        const del = document.createElement('span');
+        del.textContent = '×';
+        del.title = '選択肢から削除';
+        del.style.cssText = isOn
+            ? 'opacity:0.85;font-weight:bold;padding-left:2px;'
+            : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
+        del.onclick = function(e) { deleteMakerTag(tag, e); };
+        btn.appendChild(del);
+        btn.onclick = function(e) {
+            if (e.target === del) return;
+            selectMakerTag(tag);
+        };
+        wrap.appendChild(btn);
+    });
+}
+
+function addCroptypeToList() {
+    const variety = document.getElementById('crVariety').value;
+    const crop = document.getElementById('crCrop').value;
+    const climate = document.getElementById('crClimate').value;
+    const characteristics = getSelectedCharacteristics();
+    const maker = getSelectedMaker();
+    
+    if (!variety) {
+        alert('品種は必ず入力してください。');
+        return;
+    }
+
+    // 選択した特性を作物マスタに記憶
+    if (crop && characteristics) {
+        registerCharacteristicsForCrop(crop, parseCharacteristicsList(characteristics));
+    }
+    if (maker) registerMaker(maker);
     
     const tr = document.querySelector('#crTable tr:last-child');
     const tds = tr.querySelectorAll('td[data-month-index]');
@@ -1213,11 +1772,11 @@ function addCroptypeToList() {
     const payload = {
         crop: crop,
         variety: variety,
-        season: season,
+        season: '',
         climate: climate,
         characteristics: characteristics,
         maker: maker,
-        harvestSeason: harvestSeason,
+        harvestSeason: '',
         sowing: sowing,
         planting: planting,
         harvesting: harvesting,
@@ -1277,11 +1836,9 @@ function addCroptypeToList() {
 
 function resetCrInputArea() {
     document.getElementById('crVariety').value = '';
-    document.getElementById('crSeason').value = '';
     document.getElementById('crFile').value = '';
-    if (document.getElementById('crCharacteristics')) document.getElementById('crCharacteristics').value = '';
-    if (document.getElementById('crMaker')) document.getElementById('crMaker').value = '';
-    if (document.getElementById('crHarvestSeason')) document.getElementById('crHarvestSeason').value = '';
+    setSelectedCharacteristics('');
+    setSelectedMaker('');
     
     const tr = document.querySelector('#crTable tr:last-child');
     if (tr) {
@@ -1305,10 +1862,13 @@ function editPendingCroptype(index) {
     
     // Set UI values
     if (document.getElementById('crVariety')) document.getElementById('crVariety').value = item.variety || '';
-    if (document.getElementById('crSeason')) document.getElementById('crSeason').value = item.season || '';
-    if (document.getElementById('crMaker')) document.getElementById('crMaker').value = item.maker || '';
-    if (document.getElementById('crCharacteristics')) document.getElementById('crCharacteristics').value = item.characteristics || '';
-    if (document.getElementById('crHarvestSeason')) document.getElementById('crHarvestSeason').value = item.harvestSeason || '';
+    if (item.crop) setChoiceValue('crCrop', item.crop, false);
+    if (item.climate) setChoiceValue('crClimate', item.climate, false);
+    if (item.crop && item.characteristics) {
+        registerCharacteristicsForCrop(item.crop, parseCharacteristicsList(item.characteristics));
+    }
+    setSelectedCharacteristics(item.characteristics || '');
+    setSelectedMaker(item.maker || '');
     
     // Files are hard to re-attach to the file input (security limits). 
     // We can store them globally and re-attach when saving, but for simplicity we keep them if we just edit the UI?
@@ -1388,7 +1948,6 @@ function renderCrPendingList() {
         
         let makerText = item.maker ? ` <span style="font-size:10px; color:#388e3c; background:#e8f5e9; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏢 ${item.maker}</span>` : '';
         let charText = item.characteristics ? ` <span style="font-size:10px; color:#e65100; background:#fff3e0; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏷️ ${item.characteristics}</span>` : '';
-        let harvestSeasonText = item.harvestSeason ? ` <span style="font-size:10px; color:#1565c0; background:#e3f2fd; padding:2px 4px; border-radius:2px; margin-left: 4px;">🎯 ${item.harvestSeason}</span>` : '';
         
         // Build mini calendar
         let calendarHtml = '<div style="margin-top: 6px; overflow-x: auto;"><table style="border-collapse: collapse; font-size: 9px; min-width: 100%; text-align: center;">';
@@ -1411,7 +1970,7 @@ function renderCrPendingList() {
         div.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <div style="font-size: 13px; font-weight: bold; color: #333;">
-                    ${item.variety} <span style="font-size: 11px; color: #666; font-weight: normal;">(${item.season})</span>${filesText}${harvestSeasonText}${makerText}${charText}
+                    ${item.variety}${filesText}${makerText}${charText}
                 </div>
                 <div>
                     <button onclick="editPendingCroptype(${index})" style="background: #2196F3; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-left: 8px;">編集</button>
@@ -1645,7 +2204,7 @@ function selectHistoryPlan(year, crop) {
             opt.text = year;
             yearSelect.appendChild(opt);
         }
-        yearSelect.value = year;
+        setChoiceValue('cpYear', year, false);
     }
     
     // Set Crop
@@ -1656,15 +2215,15 @@ function selectHistoryPlan(year, crop) {
             if (cropSelect.options[i].value == crop) foundCrop = true;
         }
         if (!foundCrop) {
-            // custom crop
             const custom = document.getElementById('cpCrop_custom');
             if (custom) {
-                cropSelect.value = "その他(手入力)";
+                cropSelect.value = 'custom';
                 custom.style.display = 'block';
                 custom.value = crop;
+                refreshChoiceButtons('cpCrop');
             }
         } else {
-            cropSelect.value = crop;
+            setChoiceValue('cpCrop', crop, false);
             const custom = document.getElementById('cpCrop_custom');
             if (custom) custom.style.display = 'none';
         }
@@ -1673,6 +2232,55 @@ function selectHistoryPlan(year, crop) {
     if (typeof updateVarietyList === 'function') updateVarietyList();
     if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
     loadHistoryPlans();
+}
+
+/** AI送信用: 画像を縮小・JPEG圧縮してトークン/転送量を抑える（PDF等はそのまま） */
+function compressFileForAI(file, maxSide = 1600, quality = 0.72) {
+    return new Promise((resolve, reject) => {
+        if (!file.type || !file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const dataUrl = e.target.result;
+                resolve({
+                    base64Data: dataUrl.split(',')[1],
+                    mimeType: dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';')),
+                    fileName: file.name,
+                    fileType: file.type
+                });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+            return;
+        }
+
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = function() {
+            URL.revokeObjectURL(url);
+            let w = img.naturalWidth || img.width;
+            let h = img.naturalHeight || img.height;
+            const scale = Math.min(1, maxSide / Math.max(w, h));
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve({
+                base64Data: dataUrl.split(',')[1],
+                mimeType: 'image/jpeg',
+                fileName: file.name.replace(/\.\w+$/, '.jpg'),
+                fileType: 'image/jpeg'
+            });
+        };
+        img.onerror = function() {
+            URL.revokeObjectURL(url);
+            reject(new Error('画像の読み込みに失敗しました: ' + file.name));
+        };
+        img.src = url;
+    });
 }
 
 async function executeAICropExtraction() {
@@ -1686,31 +2294,17 @@ async function executeAICropExtraction() {
     }
     
     const climate = climateSelect.value || '一般地';
-    const files = Array.from(fileInput.files);
+    const allFiles = Array.from(fileInput.files);
+    const MAX_AI_FILES = 3;
+    const files = allFiles.slice(0, MAX_AI_FILES);
+    if (allFiles.length > MAX_AI_FILES) {
+        alert(`トークン節約のため、先頭${MAX_AI_FILES}ファイルのみAI解析します（選択: ${allFiles.length}件）。`);
+    }
     
     loadingDiv.style.display = 'block';
     
     try {
-        const filePromises = files.map(file => {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const dataUrl = e.target.result;
-                    const base64Data = dataUrl.split(',')[1];
-                    const mimeType = dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';'));
-                    resolve({
-                        base64Data: base64Data,
-                        mimeType: mimeType,
-                        fileName: file.name,
-                        fileType: file.type
-                    });
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
-        });
-
-        const fileDataArray = await Promise.all(filePromises);
+        const fileDataArray = await Promise.all(files.map(f => compressFileForAI(f)));
         
         try {
             const res = await callGAS('parseCropImageWithGemini', {
@@ -1766,19 +2360,17 @@ function applyAICropExtractionResult(data) {
             let found = false;
             for (let i = 0; i < crCrop.options.length; i++) {
                 if (crCrop.options[i].text === data.crop || crCrop.options[i].value === data.crop) {
-                    crCrop.selectedIndex = i;
                     found = true;
                     break;
                 }
             }
             if (!found) {
-                // if not found, we can add it as a new option and select it
                 let opt = document.createElement('option');
                 opt.value = data.crop;
                 opt.text = data.crop;
                 crCrop.add(opt);
-                crCrop.value = data.crop;
             }
+            setChoiceValue('crCrop', data.crop, false);
         }
     }
     
@@ -1787,7 +2379,7 @@ function applyAICropExtractionResult(data) {
         if (crClimate) {
             for (let i = 0; i < crClimate.options.length; i++) {
                 if (crClimate.options[i].text.includes(data.climate) || crClimate.options[i].value.includes(data.climate)) {
-                    crClimate.selectedIndex = i;
+                    setChoiceValue('crClimate', crClimate.options[i].value, false);
                     break;
                 }
             }
@@ -1802,21 +2394,20 @@ function applyAICropExtractionResult(data) {
     }
     
     if (data.characteristics) {
-        let crCharacteristics = document.getElementById('crCharacteristics');
-        if (crCharacteristics) {
-            if (Array.isArray(data.characteristics)) {
-                crCharacteristics.value = data.characteristics.join(', ');
-            } else {
-                crCharacteristics.value = data.characteristics;
-            }
+        const crop = document.getElementById('crCrop') ? document.getElementById('crCrop').value : '';
+        const tags = parseCharacteristicsList(data.characteristics);
+        if (crop && tags.length > 0) {
+            registerCharacteristicsForCrop(crop, tags);
         }
+        setSelectedCharacteristics(tags);
+    } else {
+        renderCharacteristicButtons();
     }
     
     if (data.maker) {
-        let crMaker = document.getElementById('crMaker');
-        if (crMaker) {
-            crMaker.value = data.maker;
-        }
+        setSelectedMaker(data.maker);
+    } else {
+        renderMakerButtons();
     }
     
     // Process multiple types if available
@@ -1881,11 +2472,11 @@ function applyAICropExtractionResult(data) {
                     const payload = {
                         crop: document.getElementById('crCrop') ? document.getElementById('crCrop').value : '',
                         variety: document.getElementById('crVariety') ? document.getElementById('crVariety').value : '',
-                        season: t.type_name || '',
+                        season: '',
                         climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
-                        characteristics: document.getElementById('crCharacteristics') ? document.getElementById('crCharacteristics').value : '',
-                        maker: document.getElementById('crMaker') ? document.getElementById('crMaker').value : '',
-                        harvestSeason: t.harvest_season || '',
+                        characteristics: getSelectedCharacteristics(),
+                        maker: getSelectedMaker(),
+                        harvestSeason: '',
                         sowing: s_arr,
                         planting: p_arr,
                         harvesting: h_arr,
