@@ -1486,7 +1486,7 @@ function parseCharacteristicsList(val) {
         return val.map(t => String(t || '').trim()).filter(Boolean);
     }
     return String(val)
-        .split(/[,、，/／|｜]/
+        .split(/[,、，／|｜\/]/)
         .map(t => t.trim())
         .filter(Boolean);
 }
