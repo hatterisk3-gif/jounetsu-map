@@ -150,6 +150,14 @@
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; findCurrentFieldAndOpenForm('work')"
           style="background: #FF9800; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜
           現在地で作業記録</button>
+        <button
+          onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openGlobalHarvest()"
+          style="background: #66BB6A; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜
+          収穫記録</button>
+        <button
+          onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openGlobalShipping()"
+          style="background: #FB8C00; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📦
+          出荷記録</button>
         <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'"
           style="background: #eee; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 5px;">キャンセル</button>
       </div>
@@ -225,12 +233,6 @@
       <button onclick="openScheduleList()"
         style="background:#FFF9C4; color:#F57F17; border:1px solid #F57F17; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📅
         予定一覧</button>
-      <button onclick="openGlobalHarvest()"
-        style="background:#4CAF50; color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:12px;">🚜
-        収穫記録</button>
-      <button onclick="openGlobalShipping()"
-        style="background:#FF9800; color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:12px;">📦
-        出荷記録</button>
       <button onclick="openAllHistory()"
         style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📋
         履歴</button>

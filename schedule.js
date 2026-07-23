@@ -1751,6 +1751,439 @@ window.refreshSatelliteImage = function() {
   img.src = info.url + '?t=' + Date.now();
 };
 
+// ====== 畑の衛星確認（現状: Google衛星 / 生育: Sentinel-2） ======
+window._fieldSat = {
+  tab: 'now',
+  map: null,
+  overlays: [],
+  selectedFieldId: null,
+  scenes: [],
+  viewMode: 'visual',
+  compare: false,
+  itemA: null,
+  itemB: null,
+  pickSlot: 'A'
+};
+
+window.getFieldSatFields = function() {
+  const list = [];
+  for (const id in loadedPolygons) {
+    const p = loadedPolygons[id];
+    if (!p || p.isMarker || !p.coords || p.coords.length < 3) continue;
+    list.push(p);
+  }
+  list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+  return list;
+};
+
+window.getFieldSatBounds = function(field) {
+  const bounds = new google.maps.LatLngBounds();
+  (field.coords || []).forEach(pt => bounds.extend(pt));
+  return bounds;
+};
+
+window.getFieldSatBbox = function(field, padRatio) {
+  const pad = typeof padRatio === 'number' ? padRatio : 0.35;
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  (field.coords || []).forEach(pt => {
+    minLat = Math.min(minLat, pt.lat);
+    maxLat = Math.max(maxLat, pt.lat);
+    minLng = Math.min(minLng, pt.lng);
+    maxLng = Math.max(maxLng, pt.lng);
+  });
+  const dLat = Math.max((maxLat - minLat) * pad, 0.0008);
+  const dLng = Math.max((maxLng - minLng) * pad, 0.0008);
+  return {
+    west: minLng - dLng,
+    south: minLat - dLat,
+    east: maxLng + dLng,
+    north: maxLat + dLat,
+    str: `${(minLng - dLng).toFixed(6)},${(minLat - dLat).toFixed(6)},${(maxLng + dLng).toFixed(6)},${(maxLat + dLat).toFixed(6)}`
+  };
+};
+
+window.populateFieldSatSelect = function() {
+  const sel = document.getElementById('fieldSatFieldSelect');
+  if (!sel) return;
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const fields = window.getFieldSatFields();
+  const prev = window._fieldSat.selectedFieldId || sel.value;
+  sel.innerHTML = '<option value="">地図中心付近（圃場未選択）</option>' +
+    fields.map(f => `<option value="${esc(f.id)}">${esc(f.name || f.id)}</option>`).join('');
+  if (prev && fields.some(f => String(f.id) === String(prev))) {
+    sel.value = prev;
+    window._fieldSat.selectedFieldId = prev;
+  } else if (!prev && fields.length === 1) {
+    sel.value = fields[0].id;
+    window._fieldSat.selectedFieldId = fields[0].id;
+  }
+};
+
+window.getSelectedFieldSatField = function() {
+  const id = window._fieldSat.selectedFieldId || document.getElementById('fieldSatFieldSelect')?.value;
+  if (!id) return null;
+  return loadedPolygons[id] || null;
+};
+
+window.clearFieldSatOverlays = function() {
+  (window._fieldSat.overlays || []).forEach(o => {
+    try { o.setMap(null); } catch (e) {}
+  });
+  window._fieldSat.overlays = [];
+};
+
+window.drawFieldSatOverlays = function() {
+  const fmap = window._fieldSat.map;
+  if (!fmap) return;
+  window.clearFieldSatOverlays();
+  const selectedId = window._fieldSat.selectedFieldId;
+  const fields = window.getFieldSatFields();
+  fields.forEach(f => {
+    const isSel = selectedId && String(f.id) === String(selectedId);
+    const poly = new google.maps.Polygon({
+      paths: f.coords,
+      map: fmap,
+      fillColor: isSel ? '#FFEB3B' : '#4CAF50',
+      fillOpacity: isSel ? 0.15 : 0.08,
+      strokeColor: isSel ? '#FFEB3B' : '#81C784',
+      strokeOpacity: 1,
+      strokeWeight: isSel ? 3 : 1.5,
+      clickable: true
+    });
+    poly.addListener('click', () => {
+      window._fieldSat.selectedFieldId = f.id;
+      const sel = document.getElementById('fieldSatFieldSelect');
+      if (sel) sel.value = f.id;
+      window.drawFieldSatOverlays();
+      window.focusFieldSatOnSelection();
+      if (window._fieldSat.tab === 'growth') {
+        window.searchFieldSatScenes();
+      }
+    });
+    window._fieldSat.overlays.push(poly);
+  });
+};
+
+window.initFieldSatMap = function() {
+  const el = document.getElementById('fieldSatMap');
+  if (!el || typeof google === 'undefined') return;
+  if (!window._fieldSat.map) {
+    let center = { lat: 33.91, lng: 134.66 };
+    try {
+      if (map && map.getCenter) center = { lat: map.getCenter().lat(), lng: map.getCenter().lng() };
+    } catch (e) {}
+    window._fieldSat.map = new google.maps.Map(el, {
+      center,
+      zoom: 18,
+      maxZoom: 22,
+      mapTypeId: 'satellite',
+      tilt: 0,
+      heading: 0,
+      gestureHandling: 'greedy',
+      disableDefaultUI: true,
+      zoomControl: true,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false
+    });
+  }
+  setTimeout(() => {
+    google.maps.event.trigger(window._fieldSat.map, 'resize');
+    window.drawFieldSatOverlays();
+    window.focusFieldSatOnSelection();
+  }, 80);
+};
+
+window.focusFieldSatOnSelection = function() {
+  const field = window.getSelectedFieldSatField();
+  const fmap = window._fieldSat.map;
+  if (!fmap) return;
+  if (field) {
+    const bounds = window.getFieldSatBounds(field);
+    fmap.fitBounds(bounds, 48);
+    const listener = google.maps.event.addListenerOnce(fmap, 'idle', () => {
+      if (fmap.getZoom() > 20) fmap.setZoom(20);
+    });
+    void listener;
+  } else {
+    try {
+      if (map && map.getCenter) {
+        fmap.setCenter(map.getCenter());
+        fmap.setZoom(Math.max(17, map.getZoom() || 17));
+      }
+    } catch (e) {}
+  }
+};
+
+window.onFieldSatFieldChange = function() {
+  const sel = document.getElementById('fieldSatFieldSelect');
+  window._fieldSat.selectedFieldId = sel ? sel.value : null;
+  window.drawFieldSatOverlays();
+  window.focusFieldSatOnSelection();
+  if (window._fieldSat.tab === 'growth' && window._fieldSat.selectedFieldId) {
+    window.searchFieldSatScenes();
+  }
+};
+
+window.setFieldSatTab = function(tab) {
+  window._fieldSat.tab = tab;
+  const nowBtn = document.getElementById('fieldSatTab_now');
+  const growthBtn = document.getElementById('fieldSatTab_growth');
+  const nowPanel = document.getElementById('fieldSatPanel_now');
+  const growthPanel = document.getElementById('fieldSatPanel_growth');
+  const hint = document.getElementById('fieldSatHint');
+  const active = { background: '#2E7D32', borderColor: '#A5D6A7' };
+  const idle = { background: '#333', borderColor: '#666' };
+  if (nowBtn) Object.assign(nowBtn.style, tab === 'now' ? active : idle);
+  if (growthBtn) Object.assign(growthBtn.style, tab === 'growth' ? active : idle);
+  if (nowPanel) nowPanel.style.display = tab === 'now' ? 'flex' : 'none';
+  if (growthPanel) growthPanel.style.display = tab === 'growth' ? 'flex' : 'none';
+  if (hint) {
+    hint.innerText = tab === 'now'
+      ? '高解像度の衛星写真で畑の見た目を確認'
+      : 'Sentinel-2で植生の変化を日付比較（約10m）';
+  }
+  if (tab === 'now') {
+    window.initFieldSatMap();
+  } else if (tab === 'growth' && window._fieldSat.selectedFieldId && !(window._fieldSat.scenes || []).length) {
+    window.searchFieldSatScenes();
+  }
+};
+
+window.openFieldSatModal = function() {
+  const modal = document.getElementById('fieldSatModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  window.populateFieldSatSelect();
+  // 地図上で見ている圃場があれば優先
+  if (!window._fieldSat.selectedFieldId && map) {
+    try {
+      const c = map.getCenter();
+      let best = null, bestD = Infinity;
+      window.getFieldSatFields().forEach(f => {
+        const b = window.getFieldSatBounds(f);
+        const ctr = b.getCenter();
+        const d = Math.hypot(ctr.lat() - c.lat(), ctr.lng() - c.lng());
+        if (d < bestD) { bestD = d; best = f; }
+      });
+      if (best && bestD < 0.05) {
+        window._fieldSat.selectedFieldId = best.id;
+        const sel = document.getElementById('fieldSatFieldSelect');
+        if (sel) sel.value = best.id;
+      }
+    } catch (e) {}
+  }
+  window.setFieldSatTab(window._fieldSat.tab || 'now');
+  if (window._fieldSat.tab === 'now') window.initFieldSatMap();
+};
+
+window.closeFieldSatModal = function() {
+  const modal = document.getElementById('fieldSatModal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.setFieldSatViewMode = function(mode) {
+  window._fieldSat.viewMode = mode;
+  const legend = document.getElementById('fieldSatNdviLegend');
+  if (legend) legend.style.display = mode === 'ndvi' ? 'block' : 'none';
+  window.renderFieldSatImages();
+};
+
+window.toggleFieldSatCompare = function(on) {
+  window._fieldSat.compare = !!on;
+  const paneB = document.getElementById('fieldSatPaneB');
+  if (paneB) paneB.style.display = on ? 'flex' : 'none';
+  if (!on) {
+    window._fieldSat.itemB = null;
+    window._fieldSat.pickSlot = 'A';
+  } else if (!window._fieldSat.itemB && (window._fieldSat.scenes || []).length > 1) {
+    window._fieldSat.itemB = window._fieldSat.scenes[1];
+    window._fieldSat.pickSlot = 'B';
+  }
+  window.renderFieldSatSceneList();
+  window.renderFieldSatImages();
+};
+
+window.buildFieldSatImageUrl = function(itemId, bboxStr, mode) {
+  const base = 'https://planetarycomputer.microsoft.com/api/data/v1/item/bbox/' + bboxStr + '.png';
+  const params = new URLSearchParams({
+    collection: 'sentinel-2-l2a',
+    item: itemId,
+    width: '768',
+    height: '768'
+  });
+  if (mode === 'ndvi') {
+    params.append('assets', 'B04');
+    params.append('assets', 'B08');
+    params.set('expression', '(B08-B04)/(B08+B04)');
+    params.set('rescale', '-0.1,0.9');
+    params.set('colormap_name', 'rdylgn');
+    params.set('asset_as_band', 'true');
+  } else {
+    params.append('assets', 'visual');
+    params.set('asset_bidx', 'visual|1,2,3');
+    params.set('nodata', '0');
+  }
+  return base + '?' + params.toString();
+};
+
+window.formatFieldSatDate = function(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso).slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}/${m}/${day}`;
+};
+
+window.renderFieldSatSceneList = function() {
+  const box = document.getElementById('fieldSatSceneList');
+  if (!box) return;
+  const scenes = window._fieldSat.scenes || [];
+  if (!scenes.length) {
+    box.innerHTML = '<div style="padding:10px; color:#777; font-size:12px;">画像なし</div>';
+    return;
+  }
+  const idA = window._fieldSat.itemA && window._fieldSat.itemA.id;
+  const idB = window._fieldSat.itemB && window._fieldSat.itemB.id;
+  box.innerHTML = scenes.map(s => {
+    const cloud = (s.cloud != null) ? `雲${Number(s.cloud).toFixed(0)}%` : '';
+    const isA = idA === s.id;
+    const isB = idB === s.id;
+    let bg = '#222', border = '#444', tag = '';
+    if (isA) { bg = '#1B5E20'; border = '#81C784'; tag = 'A'; }
+    if (isB) { bg = '#E65100'; border = '#FFB74D'; tag = window._fieldSat.compare ? 'B' : tag; }
+    if (isA && isB) { bg = '#4A148C'; border = '#CE93D8'; tag = 'A/B'; }
+    return `<button type="button" onclick="selectFieldSatScene('${s.id}')"
+      style="display:block; width:100%; text-align:left; margin:0 0 4px 0; padding:8px; border-radius:4px; border:1px solid ${border}; background:${bg}; color:#eee; cursor:pointer; font-size:11px;">
+      <div style="font-weight:bold;">${tag ? '[' + tag + '] ' : ''}${window.formatFieldSatDate(s.datetime)}</div>
+      <div style="color:#90A4AE; margin-top:2px;">${cloud}</div>
+    </button>`;
+  }).join('');
+};
+
+window.selectFieldSatScene = function(itemId) {
+  const scene = (window._fieldSat.scenes || []).find(s => s.id === itemId);
+  if (!scene) return;
+  if (window._fieldSat.compare) {
+    if (window._fieldSat.pickSlot === 'B') {
+      window._fieldSat.itemB = scene;
+      window._fieldSat.pickSlot = 'A';
+    } else {
+      window._fieldSat.itemA = scene;
+      window._fieldSat.pickSlot = 'B';
+    }
+  } else {
+    window._fieldSat.itemA = scene;
+    window._fieldSat.itemB = null;
+  }
+  window.renderFieldSatSceneList();
+  window.renderFieldSatImages();
+};
+
+window.renderFieldSatImages = function() {
+  const field = window.getSelectedFieldSatField();
+  const mode = window._fieldSat.viewMode || 'visual';
+  const setPane = (suffix, item) => {
+    const img = document.getElementById('fieldSatImg' + suffix);
+    const ph = document.getElementById('fieldSatImgPlaceholder' + suffix);
+    const label = document.getElementById('fieldSatImgLabel' + suffix);
+    if (!img) return;
+    if (!field || !item) {
+      img.style.display = 'none';
+      img.removeAttribute('src');
+      if (ph) {
+        ph.style.display = 'block';
+        ph.innerText = !field ? '圃場を選択してください' : (suffix === 'B' ? '比較する日付を選択' : '画像を検索してください');
+      }
+      if (label) label.innerText = suffix === 'A' ? '日付A' : '日付B';
+      return;
+    }
+    const bbox = window.getFieldSatBbox(field);
+    const url = window.buildFieldSatImageUrl(item.id, bbox.str, mode);
+    if (ph) { ph.style.display = 'block'; ph.innerText = '読み込み中...'; }
+    img.style.display = 'none';
+    img.onload = () => {
+      img.style.display = 'block';
+      if (ph) ph.style.display = 'none';
+    };
+    img.onerror = () => {
+      img.style.display = 'none';
+      if (ph) { ph.style.display = 'block'; ph.innerText = '画像の取得に失敗しました'; }
+    };
+    img.src = url;
+    if (label) {
+      const cloud = item.cloud != null ? ` 雲${Number(item.cloud).toFixed(0)}%` : '';
+      label.innerText = `${window.formatFieldSatDate(item.datetime)}${cloud} (${mode === 'ndvi' ? 'NDVI' : '真色'})`;
+    }
+  };
+  setPane('A', window._fieldSat.itemA);
+  setPane('B', window._fieldSat.compare ? window._fieldSat.itemB : null);
+};
+
+window.searchFieldSatScenes = async function() {
+  const status = document.getElementById('fieldSatGrowthStatus');
+  const field = window.getSelectedFieldSatField();
+  if (!field) {
+    if (status) status.innerText = '先に圃場を選択してください';
+    return;
+  }
+  if (status) status.innerText = 'Sentinel-2を検索中...';
+  const bbox = window.getFieldSatBbox(field, 0.2);
+  const end = new Date();
+  const start = new Date();
+  start.setMonth(start.getMonth() - 12);
+  const body = {
+    collections: ['sentinel-2-l2a'],
+    bbox: [bbox.west, bbox.south, bbox.east, bbox.north],
+    datetime: `${start.toISOString()}/${end.toISOString()}`,
+    limit: 24,
+    query: { 'eo:cloud_cover': { lt: 40 } },
+    sortby: [{ field: 'datetime', direction: 'desc' }]
+  };
+  try {
+    const res = await fetch('https://planetarycomputer.microsoft.com/api/stac/v1/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('STAC ' + res.status);
+    const data = await res.json();
+    const scenes = (data.features || []).map(f => ({
+      id: f.id,
+      datetime: f.properties && f.properties.datetime,
+      cloud: f.properties ? f.properties['eo:cloud_cover'] : null
+    }));
+    // 同日の重複を間引き（最初の1件）
+    const seen = new Set();
+    const deduped = [];
+    scenes.forEach(s => {
+      const day = String(s.datetime || '').slice(0, 10);
+      if (seen.has(day)) return;
+      seen.add(day);
+      deduped.push(s);
+    });
+    window._fieldSat.scenes = deduped;
+    window._fieldSat.itemA = deduped[0] || null;
+    window._fieldSat.itemB = (window._fieldSat.compare && deduped[1]) ? deduped[1] : null;
+    window._fieldSat.pickSlot = 'A';
+    if (status) {
+      status.innerText = deduped.length
+        ? `${deduped.length}件（直近1年・雲量40%未満）`
+        : '条件に合う画像がありません（雲が多い可能性）';
+    }
+    window.renderFieldSatSceneList();
+    window.renderFieldSatImages();
+  } catch (e) {
+    console.error(e);
+    if (status) status.innerText = '検索に失敗しました。通信環境を確認してください';
+    window._fieldSat.scenes = [];
+    window.renderFieldSatSceneList();
+  }
+};
+
 // ====== マイページ ======
 window.openMyPage = function() {
     const staffId = localStorage.getItem('passionMapUserId') || '';
