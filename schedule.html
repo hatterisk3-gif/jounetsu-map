@@ -245,32 +245,33 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
 
   <script>
-    // 栽培計画モーダルのHTMLを動的読み込み
-    fetch('cultivation_modal.html?v=' + new Date().getTime())
-      .then(res => res.text())
+    // 栽培計画モーダルのHTMLを動的読み込みしてから JS を起動
+    const cacheBust = Date.now();
+    fetch('cultivation_modal.html?v=' + cacheBust)
+      .then(res => {
+        if (!res.ok) throw new Error('cultivation_modal.html HTTP ' + res.status);
+        return res.text();
+      })
       .then(html => {
         document.getElementById('cultivationModalContainer').innerHTML = html;
-      });
+      })
+      .catch(err => console.error('栽培モーダルHTMLの読み込み失敗', err));
 
-    // キャッシュバスターを付与して動的に読み込む
-    const script = document.createElement('script');
-    script.src = "schedule.js?v=" + new Date().getTime();
-    script.onload = () => {
-      const scriptMarket = document.createElement('script');
-      scriptMarket.src = "market.js?v=" + new Date().getTime();
-      scriptMarket.onload = () => {
-        const scriptTrack = document.createElement('script');
-        scriptTrack.src = "tracking.js?v=1784615000001";
-        scriptTrack.onload = () => {
-          const scriptCul = document.createElement('script');
-          scriptCul.src = "cultivation.js?v=" + new Date().getTime();
-          document.body.appendChild(scriptCul);
-        };
-        document.body.appendChild(scriptTrack);
-      };
-      document.body.appendChild(scriptMarket);
-    };
-    document.body.appendChild(script);
+    function appendScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('Failed to load ' + src));
+        document.body.appendChild(s);
+      });
+    }
+
+    appendScript('schedule.js?v=' + cacheBust)
+      .then(() => appendScript('market.js?v=' + cacheBust))
+      .then(() => appendScript('tracking.js?v=1784615000001'))
+      .then(() => appendScript('cultivation.js?v=' + cacheBust))
+      .catch(err => console.error('スクリプト読み込み失敗', err));
   </script>
 
   <!-- Radar Modal -->

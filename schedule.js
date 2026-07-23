@@ -700,42 +700,46 @@ async function fetchWeatherAndUpdateUI() {
 
       function loadData() {
         if (!checkLoginStatus()) return;
-        const btn = document.querySelector('.btn-primary');
-        const orgTxt = btn.innerText;
-        btn.innerText = "通信中..."; btn.disabled = true;
+        const btn = document.querySelector('.btn-primary') || document.querySelector('.btn-reload');
+        const orgTxt = btn ? btn.innerText : '';
+        if (btn) {
+          btn.innerText = "通信中...";
+          btn.disabled = true;
+        }
+
+        const applyScheduleData = (data) => {
+          if (!data) return;
+          globalSchedules = data.activeSchedules || [];
+          loadedPolygons = {};
+          (data.polygons || []).forEach(p => {
+             p.isMarker = p.coords && p.coords.length === 1;
+             loadedPolygons[p.id] = { ...p };
+          });
+          buildDeptFilter();
+          updateMapVisuals();
+        };
 
         const cachedStr = localStorage.getItem('passionMapScheduleData');
         if (cachedStr) {
           try {
-            const data = JSON.parse(cachedStr);
-            globalSchedules = data.activeSchedules || [];
-            loadedPolygons = {};
-            data.polygons.forEach(p => {
-               p.isMarker = p.coords && p.coords.length === 1;
-               loadedPolygons[p.id] = { ...p };
-            });
-            buildDeptFilter();
-            updateMapVisuals();
+            applyScheduleData(JSON.parse(cachedStr));
           } catch(e) { console.error("Cache parse error", e); }
         }
   
         callGAS('getScheduleData').then(data => {
           localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
-          globalSchedules = data.activeSchedules || [];
-          
-          loadedPolygons = {};
-          data.polygons.forEach(p => {
-             p.isMarker = p.coords && p.coords.length === 1;
-             loadedPolygons[p.id] = { ...p };
-          });
-          
-          buildDeptFilter();
-          updateMapVisuals(); // ここで描画と色付けを同時に行う
-          
-          btn.innerText = orgTxt; btn.disabled = false;
+          applyScheduleData(data);
+          if (btn) {
+            btn.innerText = orgTxt;
+            btn.disabled = false;
+          }
         }).catch(e => {
+          console.error('getScheduleData failed', e);
           customAlert("エラーが発生しました。");
-          btn.innerText = orgTxt; btn.disabled = false;
+          if (btn) {
+            btn.innerText = orgTxt;
+            btn.disabled = false;
+          }
         });
       }
 

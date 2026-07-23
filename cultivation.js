@@ -1087,7 +1087,7 @@ async function saveCultivationPlan() {
 function openCultivationPlanModal() {
     const modal = document.getElementById('cultivationPlanModal');
     if (!modal) {
-        console.warn("Cultivation modal not loaded yet.");
+        alert('栽培計画画面の読み込み中です。数秒待ってから再度お試しください。');
         return;
     }
     modal.style.display = 'flex';
@@ -1312,6 +1312,10 @@ document.addEventListener('click', function(e) {
 
 // --- CROPTYPE REGISTRATION ---
 function openCroptypeRegistrationModal() {
+    if (!document.getElementById('croptypeRegistrationModal')) {
+        alert('品種作型登録画面の読み込み中です。数秒待ってから再度お試しください。');
+        return;
+    }
     let customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
     let allCrops = [];
     if(cpMasterData && cpMasterData.crops) {
