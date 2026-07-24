@@ -24,7 +24,7 @@
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">拠点</label>
               <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpLocation" onchange="checkCustomInput(this, 'cpLocation_custom')" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
+                <select id="cpLocation" onchange="checkCustomInput(this, 'cpLocation_custom'); onCpLocationChange()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
                   <option value="">選択...</option>
                 </select>
                 <input type="text" id="cpLocation_custom" placeholder="手入力" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
@@ -46,6 +46,7 @@
                   <option value="一般地">一般地</option>
                   <option value="高冷地">高冷地</option>
               </select>
+              <div id="cpLocationClimateHint" style="font-size:10px; color:#2e7d32; margin-top:2px; min-height:14px;"></div>
             </div>
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">圃場条件</label>

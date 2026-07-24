@@ -1,5 +1,37 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
-let currentUser = "", loadedPolygons = {}, editingId = null, originalCoordsForEdit = [], pdlLocations = [], pdlConditions = [], pdlStatuses = [], toukiList = [], map, drawingManager, infoWindow, currentPolygon = null, currentMarker = null, isMergeMode = false, mergeBaseId = null, userLocationMarker = null, isBatchDeleteMode = false, selectedForDelete = [];
+let currentUser = "", loadedPolygons = {}, editingId = null, originalCoordsForEdit = [], pdlLocations = [], pdlLocationDetails = [], pdlConditions = [], pdlStatuses = [], toukiList = [], map, drawingManager, infoWindow, currentPolygon = null, currentMarker = null, isMergeMode = false, mergeBaseId = null, userLocationMarker = null, isBatchDeleteMode = false, selectedForDelete = [];
+
+const JP_PREFECTURES = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
+const CP_CLIMATE_OPTIONS = ['暖地', '温暖地', '一般地', '高冷地'];
+
+/** 県から産地の初期候補を返す（手動変更可） */
+function suggestClimateFromPrefecture(pref) {
+    const warm = ['沖縄県','鹿児島県','宮崎県','熊本県','長崎県','佐賀県','福岡県','大分県','高知県','愛媛県','香川県','徳島県','山口県','広島県','岡山県','和歌山県','三重県','静岡県','愛知県','千葉県','神奈川県','東京都','大阪府','兵庫県','京都府','滋賀県','奈良県'];
+    const cool = ['北海道','青森県','岩手県','秋田県','山形県','福島県','長野県','新潟県','富山県','石川県','福井県','山梨県','群馬県','栃木県'];
+    if (cool.includes(pref)) return '高冷地';
+    if (warm.includes(pref)) return '暖地';
+    if (pref) return '一般地';
+    return '';
+}
+
+function buildPrefectureOptionsHtml(selected) {
+    return '<option value="">県を選択</option>' + JP_PREFECTURES.map(p =>
+        `<option value="${p}" ${p === selected ? 'selected' : ''}>${p}</option>`
+    ).join('');
+}
+
+function buildClimateOptionsHtml(selected) {
+    return '<option value="">産地を選択</option>' + CP_CLIMATE_OPTIONS.map(c =>
+        `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`
+    ).join('');
+}
+
+window.onLocationPrefChange = function(sel) {
+    const climateEl = document.getElementById('add_location_climate') || document.getElementById('edit_location_climate');
+    if (!climateEl) return;
+    const suggested = suggestClimateFromPrefecture(sel.value);
+    if (suggested && !climateEl.value) climateEl.value = suggested;
+};
 let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [], pdlWorkCategories = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
@@ -272,6 +304,11 @@ function renderInitData(data) {
 
     window.pdlMachines = data.pdl.machines || [];
     pdlLocations = data.pdl.locations || [];
+    pdlLocationDetails = data.pdl.locationDetails || pdlLocations.map(n => ({ name: n, prefecture: '', city: '', climate: '' }));
+    // locationDetails がある場合は名前配列を同期
+    if (data.pdl.locationDetails && data.pdl.locationDetails.length) {
+        pdlLocations = data.pdl.locationDetails.map(l => l.name);
+    }
     pdlConditions = data.pdl.conditions || [];
     pdlStatuses = data.pdl.statuses || [];
     toukiList = data.toukiList || [];
@@ -388,7 +425,20 @@ window.renderMasterSection = () => {
         let html = `<div style="background:#f4f6f8; padding:10px; margin-bottom:10px; border-radius:6px; color:#333;"><b style="color:#d32f2f;">${title}</b><br>`;
         if (type === 'crop') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_crop_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作物名"><input type="number" id="add_crop_density" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="本/10a"><button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
         else if (type === 'sign') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_sign_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="看板機能名 (例: 育苗センター)"><button onclick="execMaster('sign', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
-        else if (type === 'location') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_location_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="拠点名 (例: 本社農場)"><button onclick="execMaster('location', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
+        else if (type === 'location') {
+            html += `<div style="display:flex; flex-direction:column; gap:5px; margin-top:5px; margin-bottom:5px;">
+              <input type="text" id="add_location_name" class="form-input" style="width:100%; margin-bottom:0; padding:6px;" placeholder="拠点名 (例: 本社農場)">
+              <div style="display:flex; gap:5px;">
+                <select id="add_location_pref" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml('')}</select>
+                <input type="text" id="add_location_city" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="市・町・村">
+              </div>
+              <div style="display:flex; gap:5px; align-items:center;">
+                <select id="add_location_climate" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${buildClimateOptionsHtml('')}</select>
+                <button onclick="execMaster('location', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold; height:34px;">追加</button>
+              </div>
+              <div style="font-size:11px; color:#666;">※県・市を設定すると、栽培計画で拠点選択時に産地が自動セットされます</div>
+            </div>`;
+        }
         else if (type === 'workCategory') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_workCategory_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="カテゴリ名 (例: 圃場作業)"><button onclick="execMaster('workCategory', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
         else if (type === 'tool') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_tool_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="道具名 (例:草刈機)"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_tool_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select><button onclick="execMaster('tool', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div><input type="text" id="add_tool_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）">`; }
         else if (type === 'material') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_mat_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="資材名"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_mat_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select></div><input type="text" id="add_mat_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）"><div style="display:flex; gap:5px; margin-bottom:5px;"><input type="text" id="add_mat_size" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="容量 (例:20)"><input type="text" id="add_mat_unit" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="単位 (例:kg)"><button onclick="execMaster('material', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
@@ -399,20 +449,51 @@ window.renderMasterSection = () => {
         list.forEach(v => {
             const dispName = v.name || v, deleteVal = v.id || v.name || v; let subInfo = "";
             if (type === 'crop') subInfo = `(${v.density}本/10a)`;
+            if (type === 'location' && typeof v === 'object') {
+                const bits = [v.prefecture, v.city, v.climate].filter(Boolean);
+                if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0;">${bits.join(' / ')}</span>`;
+            }
             if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${v.workCategory || '汎用'}</span>`;
             if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8;">単位:${v.unit}</span>`;
             if (type === 'work') { subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 4px; border-radius:4px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${v.displayPlace}</span>`; if (v.targetFunction) subInfo += ` <span style="font-size:11px; color:#f57c00;">[看板:${v.targetFunction}]</span>`; if (v.detailWorks) subInfo += `<br><span style="font-size:11px; color:#666;">詳細: ${v.detailWorks}</span>`; }
             if (type === 'work') {
                 const safeV = encodeURIComponent(JSON.stringify(v));
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditWorkMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
+            } else if (type === 'location' && typeof v === 'object') {
+                const safeV = encodeURIComponent(JSON.stringify(v));
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditLocationMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
             } else {
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div>`;
             }
         });
         return html + `</div></div>`;
     };
-    let content = buildHTML('🌱 作物マスタ', 'crop', pdlCrops) + buildHTML('🪧 看板マスタ', 'sign', pdlSignFunctions) + buildHTML('🏢 拠点マスタ', 'location', pdlLocations) + buildHTML('📂 作業カテゴリマスタ', 'workCategory', pdlWorkCategories) + buildHTML('🚜 作業記録マスタ', 'work', pdlWorkMaster) + buildHTML('🔧 道具マスタ', 'tool', pdlTools) + buildHTML('📦 資材マスタ', 'material', pdlMaterials);
+    let content = buildHTML('🌱 作物マスタ', 'crop', pdlCrops) + buildHTML('🪧 看板マスタ', 'sign', pdlSignFunctions) + buildHTML('🏢 拠点マスタ', 'location', pdlLocationDetails.length ? pdlLocationDetails : pdlLocations) + buildHTML('📂 作業カテゴリマスタ', 'workCategory', pdlWorkCategories) + buildHTML('🚜 作業記録マスタ', 'work', pdlWorkMaster) + buildHTML('🔧 道具マスタ', 'tool', pdlTools) + buildHTML('📦 資材マスタ', 'material', pdlMaterials);
     document.getElementById('masterSections').innerHTML = content;
+};
+
+window.openEditLocationMaster = (encodedStr) => {
+    const v = JSON.parse(decodeURIComponent(encodedStr));
+    const safeName = (v.name || "").replace(/"/g, '&quot;');
+    const html = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h3 style="margin-top:0; color:#2196F3;">✏️ 拠点マスタの編集</h3>
+            <input type="hidden" id="edit_location_original_name" value="${safeName}">
+            <label class="form-label">拠点名</label>
+            <input type="text" id="edit_location_name" class="form-input" value="${safeName}">
+            <label class="form-label">県</label>
+            <select id="edit_location_pref" class="form-input" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml(v.prefecture || '')}</select>
+            <label class="form-label">市・町・村</label>
+            <input type="text" id="edit_location_city" class="form-input" value="${(v.city || '').replace(/"/g, '&quot;')}" placeholder="例: 〇〇市">
+            <label class="form-label">産地（栽培計画で自動選択）</label>
+            <select id="edit_location_climate" class="form-input">${buildClimateOptionsHtml(v.climate || '')}</select>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('location', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold;">更新する</button>
+                <button onclick="renderMasterSection()" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    document.getElementById('masterSections').innerHTML = html;
 };
 
 window.openEditWorkMaster = (encodedStr) => {
@@ -456,7 +537,16 @@ window.execMaster = async (type, act, val) => {
     if (act === 'add') {
         if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0) }; }
         else if (type === 'sign') { const name = document.getElementById('add_sign_name').value.trim(); if (!name) { customAlert("看板機能名を入力してください"); return; } value = name; }
-        else if (type === 'location') { const name = document.getElementById('add_location_name').value.trim(); if (!name) { customAlert("拠点名を入力してください"); return; } value = name; }
+        else if (type === 'location') {
+            const name = document.getElementById('add_location_name').value.trim();
+            if (!name) { customAlert("拠点名を入力してください"); return; }
+            value = {
+                name: name,
+                prefecture: document.getElementById('add_location_pref').value,
+                city: document.getElementById('add_location_city').value.trim(),
+                climate: document.getElementById('add_location_climate').value
+            };
+        }
         else if (type === 'workCategory') { const name = document.getElementById('add_workCategory_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } value = name; }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'material') { const name = document.getElementById('add_mat_name').value.trim(); if (!name) { customAlert("資材名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_mat_cat').value.trim(), size: document.getElementById('add_mat_size').value.trim(), unit: document.getElementById('add_mat_unit').value.trim() }; }
@@ -471,7 +561,20 @@ window.execMaster = async (type, act, val) => {
         }
     } else if (act === 'edit') {
         if (!await customConfirm(`更新しますか？`)) return;
-        if (type === 'work') {
+        if (type === 'location') {
+            const originalName = document.getElementById('edit_location_original_name').value;
+            const newName = document.getElementById('edit_location_name').value.trim();
+            if (!newName) { customAlert("拠点名を入力してください"); return; }
+            value = {
+                originalName: originalName,
+                newData: {
+                    name: newName,
+                    prefecture: document.getElementById('edit_location_pref').value,
+                    city: document.getElementById('edit_location_city').value.trim(),
+                    climate: document.getElementById('edit_location_climate').value
+                }
+            };
+        } else if (type === 'work') {
             const originalName = document.getElementById('edit_work_original_name').value;
             const newName = document.getElementById('edit_work_name').value.trim();
             if (!newName) { customAlert("作業名を入力してください"); return; }
@@ -494,7 +597,7 @@ window.execMaster = async (type, act, val) => {
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
     try {
         const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
-        if (type === 'crop') pdlCrops = updatedList; else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') pdlLocations = updatedList; else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList;
+        if (type === 'crop') pdlCrops = updatedList; else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList;
         // 再読み込み時に古い値が表示されないよう、初期データキャッシュを破棄して次回は最新を取得させる
         localStorage.removeItem('pMapAdminInitData');
         renderMasterSection();

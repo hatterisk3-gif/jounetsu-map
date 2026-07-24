@@ -253,6 +253,48 @@ function applyCultivationMasterData() {
         
         updateVarietyList();
         calcCp();
+        // 拠点が既に選ばれていれば産地を同期
+        onCpLocationChange();
+    }
+}
+
+/** 拠点マスタの詳細（県・市・産地）を取得 */
+function getLocationDetailByName(name) {
+    if (!name || !cpMasterData) return null;
+    const details = cpMasterData.locationDetails || [];
+    return details.find(l => l && l.name === name) || null;
+}
+
+/** 拠点選択に応じて産地を自動セット */
+function onCpLocationChange() {
+    const location = getCpVal('cpLocation');
+    const hint = document.getElementById('cpLocationClimateHint');
+    const detail = getLocationDetailByName(location);
+
+    if (!detail) {
+        if (hint) {
+            hint.textContent = '';
+            hint.style.color = '#2e7d32';
+        }
+        return;
+    }
+
+    const bits = [detail.prefecture, detail.city].filter(Boolean);
+    if (detail.climate) {
+        setChoiceValue('cpClimate', detail.climate, true);
+        if (hint) {
+            hint.style.color = '#2e7d32';
+            hint.textContent = bits.length
+                ? `拠点設定: ${bits.join(' ')} → 産地「${detail.climate}」を自動選択`
+                : `拠点の産地「${detail.climate}」を自動選択`;
+        }
+    } else {
+        if (hint) {
+            hint.style.color = '#e65100';
+            hint.textContent = bits.length
+                ? `拠点: ${bits.join(' ')}（産地未設定。管理画面の拠点マスタで設定できます）`
+                : 'この拠点に産地が未設定です（管理画面の拠点マスタで設定）';
+        }
     }
 }
 

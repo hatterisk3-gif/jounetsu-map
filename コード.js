@@ -384,19 +384,8 @@ function getInitData() {
   };
 
   // 拠点マスタの自動移行処理
+  ensureLocationMasterSheet_();
   let locSheet = ss.getSheetByName('拠点マスタ');
-  if (!locSheet) {
-    locSheet = ss.insertSheet('拠点マスタ');
-    locSheet.appendRow(['拠点名']);
-    locSheet.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
-  } else {
-    // ユーザーがA1から直接拠点名を書いている場合に対応するため、ヘッダーを確認
-    const a1Val = String(locSheet.getRange(1, 1).getValue() || '').trim();
-    if (a1Val !== '拠点名' && a1Val !== '拠点') {
-      locSheet.insertRowBefore(1);
-      locSheet.getRange(1, 1).setValue('拠点名').setFontWeight('bold').setBackground('#e0e0e0');
-    }
-  }
   
   if (locSheet.getLastRow() <= 1) {
     const fieldSheet = ss.getSheetByName('圃場設定マスタ');
@@ -408,7 +397,7 @@ function getInitData() {
       }
       locs.forEach(l => {
         if (l !== '拠点名' && l !== '拠点') {
-          locSheet.appendRow([l]);
+          locSheet.appendRow([l, '', '', '']);
         }
       });
       // 移行後、圃場設定マスタのA列(値のみ)をクリアする（ヘッダー行は残す）
@@ -418,8 +407,10 @@ function getInitData() {
     }
   }
 
+  const locationDetails = readLocationMasterDetails_();
   const pdl = {
-    locations: Array.from(new Set(getCol(['拠点マスタ'], 0))),
+    locations: locationDetails.map(l => l.name),
+    locationDetails: locationDetails,
     workCategories: Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))).length > 0 ? Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))) : ["圃場作業", "事務作業", "保全・整備"],
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
@@ -613,6 +604,70 @@ pdl.materials = [];
 
 
 /// =========================================
+// 拠点マスタ（県・市・産地付き）
+// =========================================
+function ensureLocationMasterSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('拠点マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('拠点マスタ');
+    sheet.appendRow(['拠点名', '県', '市', '産地']);
+    sheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#e0e0e0');
+    return sheet;
+  }
+
+  const a1Val = String(sheet.getRange(1, 1).getValue() || '').trim();
+  if (a1Val !== '拠点名' && a1Val !== '拠点') {
+    sheet.insertRowBefore(1);
+    sheet.getRange(1, 1).setValue('拠点名').setFontWeight('bold').setBackground('#e0e0e0');
+  }
+
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
+  if (headers.indexOf('県') === -1) {
+    const col = headers.length + 1;
+    sheet.getRange(1, col).setValue('県').setFontWeight('bold').setBackground('#e0e0e0');
+    headers.push('県');
+  }
+  if (headers.indexOf('市') === -1) {
+    const col = headers.length + 1;
+    sheet.getRange(1, col).setValue('市').setFontWeight('bold').setBackground('#e0e0e0');
+    headers.push('市');
+  }
+  if (headers.indexOf('産地') === -1) {
+    const col = headers.length + 1;
+    sheet.getRange(1, col).setValue('産地').setFontWeight('bold').setBackground('#e0e0e0');
+  }
+  return sheet;
+}
+
+function readLocationMasterDetails_() {
+  const sheet = ensureLocationMasterSheet_();
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h || '').trim());
+  const idxName = 0;
+  const idxPref = headers.indexOf('県');
+  const idxCity = headers.indexOf('市');
+  const idxClimate = headers.indexOf('産地');
+  const results = [];
+  const seen = {};
+  for (let i = 1; i < data.length; i++) {
+    const name = String(data[i][idxName] || '').trim();
+    if (!name || name === '拠点名' || name === '拠点') continue;
+    if (seen[name]) continue;
+    seen[name] = true;
+    results.push({
+      name: name,
+      prefecture: idxPref >= 0 ? String(data[i][idxPref] || '').trim() : '',
+      city: idxCity >= 0 ? String(data[i][idxCity] || '').trim() : '',
+      climate: idxClimate >= 0 ? String(data[i][idxClimate] || '').trim() : ''
+    });
+  }
+  return results;
+}
+
+/// =========================================
 // マスタ管理（★看板マスタの処理を追加）
 // =========================================
 function manageMasterData(masterType, manageAction, value, userName) {
@@ -635,9 +690,15 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet.appendRow(["圃場作業"]);
           sheet.appendRow(["事務作業"]);
           sheet.appendRow(["保全・整備"]);
+      } else if (masterType === 'location') {
+          sheet = ensureLocationMasterSheet_();
       } else {
           throw new Error(`${sheetName}が見つかりません`);
       }
+  }
+
+  if (masterType === 'location') {
+    sheet = ensureLocationMasterSheet_();
   }
 
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
@@ -662,11 +723,31 @@ function manageMasterData(masterType, manageAction, value, userName) {
         if(map[headers[i]] !== undefined) newRow[i] = map[headers[i]];
       }
       sheet.appendRow(newRow);
+    } else if (masterType === 'location') {
+      const loc = (typeof value === 'object' && value) ? value : { name: value };
+      const name = String(loc.name || '').trim();
+      if (!name) throw new Error('拠点名を入力してください');
+      const existing = readLocationMasterDetails_();
+      if (existing.some(l => l.name === name)) {
+        throw new Error(`拠点名「${name}」は既に登録されています`);
+      }
+      const row = new Array(headers.length).fill('');
+      row[0] = name;
+      const prefIdx = headers.indexOf('県');
+      const cityIdx = headers.indexOf('市');
+      const climIdx = headers.indexOf('産地');
+      if (prefIdx >= 0) row[prefIdx] = String(loc.prefecture || '').trim();
+      if (cityIdx >= 0) row[cityIdx] = String(loc.city || '').trim();
+      if (climIdx >= 0) row[climIdx] = String(loc.climate || '').trim();
+      sheet.appendRow(row);
+      writeLog(userName, "マスタ追加", name, `対象: ${sheetName}`);
     } else {
       // ★看板マスタなど、1列だけのシンプルなマスタ用
       sheet.appendRow([value]);
     }
-    writeLog(userName, "マスタ追加", value.name || value, `対象: ${sheetName}`);
+    if (masterType !== 'location') {
+      writeLog(userName, "マスタ追加", (value && value.name) || value, `対象: ${sheetName}`);
+    }
   } 
   else if (manageAction === 'edit') {
     const data = sheet.getDataRange().getValues();
@@ -688,6 +769,30 @@ function manageMasterData(masterType, manageAction, value, userName) {
           // ヘッダー名に関係なく、H列(8番目)にカテゴリを強制的に書き込む
           sheet.getRange(i + 1, 8).setValue(value.newData.category || "圃場作業");
           writeLog(userName, "マスタ編集", value.newData.name, `対象: ${sheetName} (元: ${value.originalName})`);
+          break;
+        }
+      }
+    } else if (masterType === 'location') {
+      const originalName = String(value.originalName || '').trim();
+      const loc = value.newData || {};
+      const newName = String(loc.name || '').trim();
+      if (!newName) throw new Error('拠点名を入力してください');
+      if (newName !== originalName) {
+        const existing = readLocationMasterDetails_();
+        if (existing.some(l => l.name === newName)) {
+          throw new Error(`拠点名「${newName}」は既に登録されています`);
+        }
+      }
+      const prefIdx = headers.indexOf('県');
+      const cityIdx = headers.indexOf('市');
+      const climIdx = headers.indexOf('産地');
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === originalName) {
+          sheet.getRange(i + 1, 1).setValue(newName);
+          if (prefIdx >= 0) sheet.getRange(i + 1, prefIdx + 1).setValue(String(loc.prefecture || '').trim());
+          if (cityIdx >= 0) sheet.getRange(i + 1, cityIdx + 1).setValue(String(loc.city || '').trim());
+          if (climIdx >= 0) sheet.getRange(i + 1, climIdx + 1).setValue(String(loc.climate || '').trim());
+          writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
           break;
         }
       }
@@ -718,6 +823,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
 
   SpreadsheetApp.flush();
+  if (masterType === 'location') {
+    return readLocationMasterDetails_();
+  }
   const newData = sheet.getDataRange().getValues();
   const returnHeaders = newData[0].map(h => String(h).trim());
   if (masterType === 'crop') {
@@ -3170,46 +3278,9 @@ function getCultivationMaster() {
     }
     
     // 拠点マスタから拠点リストを取得して返す（栽培計画モーダル用）
-    let locSheetForMaster = ss.getSheetByName('拠点マスタ');
-    if (!locSheetForMaster) {
-      locSheetForMaster = ss.insertSheet('拠点マスタ');
-      locSheetForMaster.appendRow(['拠点名']);
-      locSheetForMaster.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
-    } else {
-      // ユーザーがA1から直接拠点名を書いている場合に対応するため、ヘッダーを確認
-      const a1Val = String(locSheetForMaster.getRange(1, 1).getValue() || '').trim();
-      if (a1Val !== '拠点名' && a1Val !== '拠点') {
-        locSheetForMaster.insertRowBefore(1);
-        locSheetForMaster.getRange(1, 1).setValue('拠点名').setFontWeight('bold').setBackground('#e0e0e0');
-      }
-    }
-    
-    // データがない場合は圃場設定マスタから移行
-    if (locSheetForMaster.getLastRow() <= 1) {
-      const fieldSheet = ss.getSheetByName('圃場設定マスタ');
-      if (fieldSheet) {
-        const fieldData = fieldSheet.getDataRange().getValues();
-        let locs = new Set();
-        for (let i = 1; i < fieldData.length; i++) {
-          if (fieldData[i][0]) locs.add(String(fieldData[i][0]).trim());
-        }
-        locs.forEach(l => {
-          if (l !== '拠点名' && l !== '拠点') locSheetForMaster.appendRow([l]);
-        });
-        if (fieldData.length > 1) fieldSheet.getRange(2, 1, fieldData.length - 1, 1).clearContent();
-      }
-    }
-
-    // 拠点マスタから拠点を集める
-    let locs = new Set();
-    if (locSheetForMaster) {
-      const locData = locSheetForMaster.getDataRange().getValues();
-      for (let i = 1; i < locData.length; i++) {
-        const val = String(locData[i][0] || '').trim();
-        if (val && val !== '拠点名' && val !== '拠点') locs.add(val);
-      }
-    }
-    master.locations = Array.from(locs);
+    const locationDetails = readLocationMasterDetails_();
+    master.locations = locationDetails.map(l => l.name);
+    master.locationDetails = locationDetails;
     
     // データがない場合はマスタの反映処理をスキップしますが、プリセット取得処理には進みます
     for (let i = 1; i < data.length; i++) {
