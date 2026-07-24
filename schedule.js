@@ -1,4 +1,4 @@
-﻿const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
       
       // Check login on script load
       function checkLoginStatus() {
@@ -875,6 +875,17 @@ async function fetchWeatherAndUpdateUI() {
 
         let funcHtml = p.isMarker ? `<div style="font-size:11px; color:#555; margin-bottom:5px;">機能: <b>${p.signFunction || '一般看板'}</b></div>` : '';
 
+        // 圃場の場合のみ「衛星写真で確認」ボタンを追加
+        let satBtn = '';
+        if (!p.isMarker && p.coords && p.coords.length >= 3) {
+          satBtn = `<div style="margin-top:8px; text-align:center;">
+            <button onclick="openFieldSatForField('${p.id}')"
+              style="width:100%; padding:8px; background:#1B5E20; color:white;
+              border:none; border-radius:6px; font-weight:bold; font-size:13px;
+              cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🛰️ この圃場の衛星写真を見る</button>
+          </div>`;
+        }
+
         let h = `<div style="width:200px; padding:5px; font-family:sans-serif;">
                    <h3 style="margin:0 0 5px 0;">${p.isMarker?p.color+' ':''}${p.name}</h3>
                    ${funcHtml}
@@ -882,6 +893,7 @@ async function fetchWeatherAndUpdateUI() {
                    <div style="background:#f9f9f9; padding:5px; border-radius:4px; max-height:150px; overflow-y:auto;">
                      ${tasksHtml}
                    </div>
+                   ${satBtn}
                  </div>`;
         infoWindow.setContent(h);
         infoWindow.setPosition(latLng);
@@ -1999,6 +2011,19 @@ window.openFieldSatModal = function() {
 window.closeFieldSatModal = function() {
   const modal = document.getElementById('fieldSatModal');
   if (modal) modal.style.display = 'none';
+};
+
+// 圃場ポップアップから衛星モーダルを直接開くヘルパー
+window.openFieldSatForField = function(fieldId) {
+  infoWindow.close();
+  // 対象圃場を事前選択してからモーダルを開く
+  window._fieldSat.selectedFieldId = fieldId;
+  window.openFieldSatModal();
+  // セレクトボックスも同期
+  const sel = document.getElementById('fieldSatFieldSelect');
+  if (sel) sel.value = fieldId;
+  // 「現状確認」タブで自動表示
+  window.setFieldSatTab('now');
 };
 
 window.setFieldSatViewMode = function(mode) {
