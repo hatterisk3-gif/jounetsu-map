@@ -1212,7 +1212,7 @@ function renderCpPlanRow(plan) {
           播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span>
           ／ 収穫:<span id="calcYield_${plan.id}">0</span>
         </div>
-        <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="この設定をコピーして下に品種を追加"
+        <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="面積・歩留・成功率などをコピーして下に品種を追加（作型は空）"
           style="display:block; width:100%; margin-top:5px; height:26px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:4px; cursor:pointer; font-size:13px; font-weight:bold; line-height:1; padding:0;">＋</button>
         <div id="cpSemiHint_${plan.id}" style="display:none; margin-top:4px; font-size:10px; font-weight:bold; line-height:1.3;"></div>
         <div id="ratios_${plan.id}" style="margin-top: 3px; display:flex; gap: 3px; flex-wrap: wrap;"></div>
@@ -1303,7 +1303,7 @@ function removeCpPlanRow(planId) {
     updateCpSemiAutoHint();
 }
 
-/** 品種カードの設定（面積・歩留・成功率・カレンダー等）をコピーして直下に追加 */
+/** 品種カードの設定（面積・歩留・成功率など）をコピーして直下に追加（作型カレンダーは空） */
 function copyCpPlanRow(sourcePlanId) {
     const srcIdx = cpPlans.findIndex(p => p.id === sourcePlanId);
     if (srcIdx < 0) return;
@@ -1313,8 +1313,6 @@ function copyCpPlanRow(sourcePlanId) {
     }
 
     const src = cpPlans[srcIdx];
-    const collected = collectCurrentCpPlansFromDom().find(p => p.id === sourcePlanId);
-    const tasks = (collected && collected.tasks) ? collected.tasks : (src.tasks || { sowing: [], planting: [], harvesting: [] });
 
     const formCrop = getCpVal('cpCrop');
     const formVariety = getCpVal('cpVariety');
@@ -1339,17 +1337,13 @@ function copyCpPlanRow(sourcePlanId) {
         areaA: areaEl ? (parseFloat(areaEl.value) || 0) : (src.areaA || 0),
         yieldRate: yieldEl ? (parseFloat(yieldEl.value) || 0.9) : (src.yieldRate != null ? src.yieldRate : 0.9),
         seedlingSuccess: successEl ? (parseFloat(successEl.value) || 0.9) : (src.seedlingSuccess != null ? src.seedlingSuccess : 0.9),
-        harvestRatios: Array.isArray(src.harvestRatios) ? src.harvestRatios.slice() : [],
+        harvestRatios: [],
         trays: 0,
         yield: 0,
-        tasks: {
-            sowing: (tasks.sowing || []).map(t => Object.assign({}, t)),
-            planting: (tasks.planting || []).map(t => Object.assign({}, t)),
-            harvesting: (tasks.harvesting || []).map(t => Object.assign({}, t))
-        },
-        sowing: Array.isArray(src.sowing) ? src.sowing.slice() : [],
-        planting: Array.isArray(src.planting) ? src.planting.slice() : [],
-        harvesting: Array.isArray(src.harvesting) ? src.harvesting.slice() : [],
+        tasks: { sowing: [], planting: [], harvesting: [] },
+        sowing: [],
+        planting: [],
+        harvesting: [],
         fileUrl: src.fileUrl || '',
         fieldIds: [],
         tag: ''
