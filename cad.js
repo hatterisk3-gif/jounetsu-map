@@ -477,6 +477,9 @@ window.updateCadSvgOverlay = () => {
             }
         });
     }
+    if (typeof window.applyCadRidgeLabelVisibility === 'function') {
+        window.applyCadRidgeLabelVisibility();
+    }
     if (window.cadNakamichiMapPolygons) {
         window.cadNakamichiMapPolygons.forEach(p => {
             if (p._svgPathNode) p._svgPathNode.setAttribute('d', updatePathD(p, true));
@@ -545,7 +548,7 @@ window.updateCadSvgOverlay = () => {
                     iconStr = '🕳️';
                     numStr = String(waterOutCount);
                 } else if (mk.cadPinType === 'parking_truck') {
-                    iconStr = '🛻';
+                    iconStr = '🅿️';
                 } else {
                     iconStr = '🚜';
                 }
@@ -749,6 +752,87 @@ window.updateCadLabelScale = (detectedScale) => {
     // CSSのカスタムプロパティ（--cad-label-scale）によるスケールで一括制御するため、JSでの個別のフォントサイズ変更は行いません（パフォーマンスとCSS競合回避のため）
 };
 
+/** 畝番号ラベルの画面サイズ概算（SVG font-size=24 基準） */
+window.estimateCadRidgeLabelScreenSize = (text) => {
+    const fontSize = 24;
+    const str = String(text || '');
+    const w = Math.max(fontSize * 0.7, str.length * fontSize * 0.62) + 10; // stroke分の余白
+    const h = fontSize + 10;
+    return { w, h };
+};
+
+/**
+ * 引きで畝番号が密集するときは全非表示。
+ * 近づいたら表示するが、隣とAABBが重なる番号は間引く。
+ */
+window.applyCadRidgeLabelVisibility = () => {
+    const items = [];
+    const collect = (polyList) => {
+        if (!polyList) return;
+        polyList.forEach(p => {
+            const node = p && p._svgTextNode;
+            if (!node) return;
+            const x = parseFloat(node.getAttribute('x'));
+            const y = parseFloat(node.getAttribute('y'));
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                node.setAttribute('visibility', 'hidden');
+                return;
+            }
+            const text = node.textContent || '';
+            const size = window.estimateCadRidgeLabelScreenSize(text);
+            items.push({ node, x, y, w: size.w, h: size.h, text });
+        });
+    };
+    collect(window.cadUnePolygons);
+    collect(window.cadCustomShapes);
+
+    if (items.length === 0) return;
+
+    const hideAll = () => {
+        items.forEach(it => it.node.setAttribute('visibility', 'hidden'));
+    };
+
+    // 隣接畝の画面上の距離（中央値）で「引きすぎ」判定
+    if (items.length >= 2) {
+        const xs = items.map(it => it.x);
+        const ys = items.map(it => it.y);
+        const spanX = Math.max(...xs) - Math.min(...xs);
+        const spanY = Math.max(...ys) - Math.min(...ys);
+        const sorted = items.slice().sort((a, b) => (spanX >= spanY ? (a.x - b.x || a.y - b.y) : (a.y - b.y || a.x - b.x)));
+        const gaps = [];
+        for (let i = 1; i < sorted.length; i++) {
+            gaps.push(Math.hypot(sorted[i].x - sorted[i - 1].x, sorted[i].y - sorted[i - 1].y));
+        }
+        gaps.sort((a, b) => a - b);
+        const medianGap = gaps[Math.floor(gaps.length / 2)];
+        // 2桁番号が隣とほぼ接触する密度なら全非表示
+        const refW = window.estimateCadRidgeLabelScreenSize('88').w;
+        if (!(medianGap > refW * 0.9)) {
+            hideAll();
+            return;
+        }
+    }
+
+    // 左→右（または上→下）に貪欲配置：重なるものは非表示
+    const spanX = Math.max(...items.map(it => it.x)) - Math.min(...items.map(it => it.x));
+    const spanY = Math.max(...items.map(it => it.y)) - Math.min(...items.map(it => it.y));
+    const ordered = items.slice().sort((a, b) => (spanX >= spanY ? (a.x - b.x || a.y - b.y) : (a.y - b.y || a.x - b.x)));
+    const shown = [];
+    const pad = 4;
+    const overlaps = (a, b) =>
+        Math.abs(a.x - b.x) < (a.w + b.w) / 2 + pad
+        && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + pad;
+
+    ordered.forEach(it => {
+        if (shown.some(s => overlaps(s, it))) {
+            it.node.setAttribute('visibility', 'hidden');
+        } else {
+            it.node.setAttribute('visibility', 'visible');
+            shown.push(it);
+        }
+    });
+};
+
 window.getCadVisibleBoundsPolygon = () => {
     if (!window.cadMap) return null;
     const wrapper = document.getElementById('cadMapWrapper');
@@ -907,7 +991,12 @@ window.loadCadStateFromHistory = (index) => {
     window.cadClearLines(true); // 内部クリア（履歴には残さない）
 
     document.getElementById('cadAngle').value = state.angle || 0;
-    document.getElementById('cadWidth').value = state.width || 150;
+    if (typeof window.setCadWidthCm === 'function') {
+        window.cadWidthLinkedFromPlan = false;
+        window.setCadWidthCm(state.width ? parseFloat(state.width) : null, { updatePreview: false });
+    } else {
+        document.getElementById('cadWidth').value = state.width || '';
+    }
     document.getElementById('cadUneCount').value = state.uneCount || 0;
     if (document.getElementById('cadMarginSide')) document.getElementById('cadMarginSide').value = state.marginSide || 0;
     if (document.getElementById('cadMarginEnd')) document.getElementById('cadMarginEnd').value = state.marginEnd || 0;
@@ -1712,11 +1801,15 @@ window.openCADMode = async (id) => {
     }
     document.getElementById('cadTargetName').innerText = p.name;
 
+    window.cadWidthLinkedFromPlan = false;
+    await window.loadCadWidthOptionsFromMaster();
+    window.setCadWidthCm(null, { updatePreview: false });
+
     if (p.uneSimData) {
         try {
             const saved = JSON.parse(p.uneSimData);
             document.getElementById('cadAngle').value = saved.angle !== undefined ? saved.angle : 0;
-            document.getElementById('cadWidth').value = saved.width !== undefined ? saved.width : 150;
+            // 基準畝幅は計画連動時のみ自動選択。保存値では選択しない
             document.getElementById('cadUneCount').value = saved.uneCount !== undefined ? saved.uneCount : 0;
             
             const marginSideEl = document.getElementById('cadMarginSide');
@@ -1767,24 +1860,25 @@ window.openCADMode = async (id) => {
                     window.cadUnePolygons.push(gPoly);
                 });
             } else {
-                cadGenerateLines();
+                // 畝未生成の保存データ：畝幅未選択なら自動生成しない
+                if (window.getCadWidthCm()) cadGenerateLines();
             }
             window.reassignLabels();
             switchCadTab(2);
         } catch (e) { }
     } else {
         document.getElementById('cadAngle').value = 0;
-        document.getElementById('cadWidth').value = 150;
         
         const marginSideEl = document.getElementById('cadMarginSide');
         const marginEndEl = document.getElementById('cadMarginEnd');
         if (marginSideEl) marginSideEl.value = 50;
         if (marginEndEl) marginEndEl.value = 250;
         
-        updateCadPreviewCount();
+        const countEl = document.getElementById('cadUneCount');
+        if (countEl) countEl.value = 0;
     }
 
-    // 栽培計画でこの圃場が選ばれていれば、計画の畝間を基準畝幅に優先反映
+    // 栽培計画でこの圃場が選ばれていれば、計画の畝間を基準畝幅に連動
     await window.applyCultivationPlanWidthToCad(id);
 
     // 起動直後の状態を履歴0番目として保存
@@ -1802,27 +1896,154 @@ window.closeCADMode = () => {
     window.cadTargetId = null;
 };
 
-/** 栽培計画の畝間をCAD基準畝幅へ反映 */
+/** 栽培計画の畝間をCAD基準畝幅へ連動 */
 window.applyCultivationPlanWidthToCad = async (fieldId) => {
     try {
         const planParams = await callGAS('getCultivationRidgeParamsForField', { fieldId: fieldId });
-        if (!planParams || !planParams.rSpace) return false;
-        const widthEl = document.getElementById('cadWidth');
-        if (widthEl) widthEl.value = planParams.rSpace;
+        if (!planParams || !planParams.rSpace) {
+            window.cadWidthLinkedFromPlan = false;
+            window.setCadWidthCm(null);
+            return false;
+        }
+        window.cadWidthLinkedFromPlan = true;
+        window.setCadWidthCm(planParams.rSpace);
         const msgEl = document.getElementById('cadPinModeMsg');
         if (msgEl) {
             const cropBit = planParams.crop
                 ? `（${planParams.crop}${planParams.variety ? ' / ' + planParams.variety : ''}）`
                 : '';
-            msgEl.innerText = `📐 栽培計画の畝間 ${planParams.rSpace}cm を基準畝幅にセットしました${cropBit}`;
+            msgEl.innerText = `📐 栽培計画の畝間 ${planParams.rSpace}cm を基準畝幅に連動しました${cropBit}`;
             msgEl.style.color = '#4CAF50';
         }
-        if (typeof updateCadPreviewCount === 'function') updateCadPreviewCount();
         return true;
     } catch (e) {
         console.warn('栽培計画畝間の反映に失敗:', e);
+        window.cadWidthLinkedFromPlan = false;
+        window.setCadWidthCm(null);
         return false;
     }
+};
+
+window.CAD_DEFAULT_RIDGE_WIDTHS_CM = [100, 120, 150, 180, 200];
+window.cadWidthOptions = window.CAD_DEFAULT_RIDGE_WIDTHS_CM.slice();
+window.cadWidthLinkedFromPlan = false;
+
+window.getCadWidthCm = () => {
+    const el = document.getElementById('cadWidth');
+    if (!el || el.value === '' || el.value == null) return null;
+    const v = parseFloat(el.value);
+    return (!isNaN(v) && v > 0) ? v : null;
+};
+
+/** 基準畝幅をセットしボタン選択状態を更新。cm=null で未選択 */
+window.setCadWidthCm = (cm, opts) => {
+    opts = opts || {};
+    const widthEl = document.getElementById('cadWidth');
+    if (!widthEl) return;
+
+    if (cm == null || cm === '' || !(parseFloat(cm) > 0)) {
+        widthEl.value = '';
+        window.refreshCadWidthButtons(null);
+    } else {
+        const n = Math.round(parseFloat(cm));
+        if (!window.cadWidthOptions) window.cadWidthOptions = [];
+        if (!window.cadWidthOptions.some(v => Number(v) === n)) {
+            window.cadWidthOptions.push(n);
+            window.cadWidthOptions.sort((a, b) => a - b);
+        }
+        widthEl.value = String(n);
+        window.refreshCadWidthButtons(n);
+    }
+    if (opts.updatePreview !== false && typeof window.updateCadPreviewCount === 'function') {
+        window.updateCadPreviewCount();
+    }
+};
+
+window.refreshCadWidthButtons = (selectedCm) => {
+    const wrap = document.getElementById('cadWidthChoices');
+    if (!wrap) return;
+    const selected = (selectedCm != null && selectedCm !== '' && parseFloat(selectedCm) > 0)
+        ? String(Math.round(parseFloat(selectedCm)))
+        : '';
+    const options = (window.cadWidthOptions && window.cadWidthOptions.length)
+        ? window.cadWidthOptions
+        : window.CAD_DEFAULT_RIDGE_WIDTHS_CM;
+
+    wrap.innerHTML = '';
+    options.forEach(cm => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        const isActive = selected === String(cm);
+        btn.textContent = cm + 'cm';
+        btn.style.cssText = isActive
+            ? 'padding:5px 10px;border:1px solid #388E3C;border-radius:4px;background:#4CAF50;color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;'
+            : 'padding:5px 10px;border:1px solid #666;border-radius:4px;background:#333;color:#eee;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;';
+        btn.onmouseenter = function() {
+            if (!isActive) btn.style.borderColor = '#4CAF50';
+        };
+        btn.onmouseleave = function() {
+            if (!isActive) btn.style.borderColor = '#666';
+        };
+        btn.onclick = function() {
+            window.cadWidthLinkedFromPlan = false;
+            window.setCadWidthCm(cm);
+        };
+        wrap.appendChild(btn);
+    });
+
+    const hint = document.getElementById('cadWidthHint');
+    if (hint) {
+        if (selected) {
+            hint.textContent = window.cadWidthLinkedFromPlan
+                ? `栽培計画の畝間と連動中（${selected}cm）`
+                : `選択中: ${selected}cm`;
+            hint.style.color = window.cadWidthLinkedFromPlan ? '#4CAF50' : '#aaa';
+        } else {
+            hint.textContent = '未選択（栽培プリセットの畝間から選んでください）';
+            hint.style.color = '#FF9800';
+        }
+    }
+};
+
+/** 栽培マスタ／プリセットから畝間候補を読み込みボタン化 */
+window.loadCadWidthOptionsFromMaster = async () => {
+    const set = new Set(window.CAD_DEFAULT_RIDGE_WIDTHS_CM);
+    try {
+        let data = null;
+        if (typeof callGAS === 'function') {
+            try {
+                data = await callGAS('getCultivationMaster');
+                if (data) {
+                    try { localStorage.setItem('cpMasterDataCache', JSON.stringify(data)); } catch (e) {}
+                }
+            } catch (e) {
+                console.warn('getCultivationMaster失敗、キャッシュを使用:', e);
+            }
+        }
+        if (!data) {
+            try {
+                const cached = localStorage.getItem('cpMasterDataCache');
+                if (cached) data = JSON.parse(cached);
+            } catch (e) {}
+        }
+        if (data) {
+            (data.rSpace || []).forEach(v => {
+                const n = parseFloat(v);
+                if (n > 0) set.add(Math.round(n));
+            });
+            const presets = data.presets || {};
+            Object.keys(presets).forEach(crop => {
+                (presets[crop] || []).forEach(p => {
+                    const n = parseFloat(p && p.rSpace);
+                    if (n > 0) set.add(Math.round(n));
+                });
+            });
+        }
+    } catch (e) {
+        console.warn('畝幅候補の取得に失敗:', e);
+    }
+    window.cadWidthOptions = Array.from(set).sort((a, b) => a - b);
+    window.refreshCadWidthButtons(window.getCadWidthCm());
 };
 
 /** 地図上の畝ポリゴン1本の幅(m)を概算（畝の直交方向） */
@@ -1868,18 +2089,24 @@ window.getCadReferenceRidgeWidthMeters = () => {
     if (widths.length) {
         return widths.reduce((a, b) => a + b, 0) / widths.length;
     }
-    const widthEl = document.getElementById('cadWidth');
-    const cm = widthEl && widthEl.value ? parseFloat(widthEl.value) : 150;
-    return ((cm > 0 ? cm : 150) / 100);
+    const cm = typeof window.getCadWidthCm === 'function' ? window.getCadWidthCm() : null;
+    if (cm) return cm / 100;
+    return 1.5;
 };
 
 window.switchCadTab = (tab) => {
-    const mode1 = document.getElementById('cadMode1'); const mode2 = document.getElementById('cadMode2');
+    const mode1 = document.getElementById('cadMode1');
+    const mode2 = document.getElementById('cadMode2');
+    const mode3 = document.getElementById('cadMode3');
     if (mode1) mode1.style.display = tab === 1 ? 'block' : 'none';
     if (mode2) mode2.style.display = tab === 2 ? 'block' : 'none';
-    const tab1 = document.getElementById('cadTab1'); const tab2 = document.getElementById('cadTab2');
+    if (mode3) mode3.style.display = tab === 3 ? 'block' : 'none';
+    const tab1 = document.getElementById('cadTab1');
+    const tab2 = document.getElementById('cadTab2');
+    const tab3 = document.getElementById('cadTab3');
     if (tab1) { tab1.style.background = tab === 1 ? '#FF9800' : '#222'; tab1.style.color = tab === 1 ? '#fff' : '#aaa'; }
     if (tab2) { tab2.style.background = tab === 2 ? '#2196F3' : '#222'; tab2.style.color = tab === 2 ? '#fff' : '#aaa'; }
+    if (tab3) { tab3.style.background = tab === 3 ? '#4CAF50' : '#222'; tab3.style.color = tab === 3 ? '#fff' : '#aaa'; }
 };
 
 window.cadAlignMapHeading = () => {
@@ -1932,7 +2159,9 @@ window.cadToggleGrid = () => {
 
 window.updateCadPreviewCount = () => {
     if (!window.cadTargetId) return;
-    const widthCm = parseFloat(document.getElementById('cadWidth').value);
+    const widthCm = typeof window.getCadWidthCm === 'function'
+        ? window.getCadWidthCm()
+        : parseFloat(document.getElementById('cadWidth').value);
     const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
     const marginSideEl = document.getElementById('cadMarginSide');
     const sideMarginMeters = marginSideEl && marginSideEl.value ? parseFloat(marginSideEl.value) / 100 : 0;
@@ -1998,7 +2227,7 @@ window.cadSetPinMode = (type) => {
     } else if (type === 'snap_line') {
         if (msgEl) { msgEl.innerText = `【角度合わせ】基準にしたい外周の直線をタップしてください`; msgEl.style.color = "#4CAF50"; }
     } else {
-        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🛻 軽トラ駐車' : '🚜 機械侵入口';
+        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
     }
 };
@@ -2356,6 +2585,11 @@ window.cadAdjustRidgeGap = (delta) => {
 window.cadGenerateLines = () => {
     try {
         if (!window.cadTargetId) return;
+
+        if (typeof window.getCadWidthCm === 'function' && !window.getCadWidthCm()) {
+            alert('⚠️ 基準の畝幅を選択してください（栽培プリセットの畝間から選べます）');
+            return;
+        }
 
         const angleEl = document.getElementById('cadAngle');
         const countEl = document.getElementById('cadUneCount');
