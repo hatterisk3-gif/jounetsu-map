@@ -1146,18 +1146,18 @@ function renderCpPlanRow(plan) {
     
     let card = document.createElement('div');
     card.id = 'cpLeftCard_' + plan.id;
-    card.style.cssText = 'padding: 6px; background: #e3f2fd; border-bottom: 1px solid #bbdefb; box-sizing: border-box; overflow: hidden;';
+    card.style.cssText = 'padding: 6px; background: #e3f2fd; border-bottom: 1px solid #bbdefb; box-sizing: border-box;';
     card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <span style="font-weight:bold; font-size:11px; display:flex; align-items:center; flex-wrap:wrap; gap:3px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:4px;">
+            <span style="font-weight:bold; font-size:11px; display:flex; align-items:center; flex-wrap:wrap; gap:3px; min-width:0; flex:1;">
                 <span style="background:#1976D2; color:#fff; padding:1px 5px; border-radius:8px; font-size:9px;">${plan.crop}</span>
                 <span style="color:#0d47a1; font-size:11px;">${plan.variety}</span>
                 ${fileLinkHtml}
                 <span id="tagDisplay_${plan.id}" style="color: #e91e63; font-size: 9px; font-weight:bold;">${plan.tag || ''}</span>
             </span>
-            <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:16px; line-height:1; padding:0 4px; font-weight:bold;">×</button>
+            <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:16px; line-height:1; padding:0; width:18px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
-        <div style="font-size: 10px; display:flex; flex-direction:column; gap:3px; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb;">
+        <div style="font-size: 10px; display:flex; flex-direction:column; gap:3px; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb; box-sizing:border-box;">
           <div style="display:flex; align-items:center; gap:3px;">
             <span>面積:</span>
             <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:45px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
@@ -1184,13 +1184,12 @@ function renderCpPlanRow(plan) {
             </select>
           </div>
         </div>
-        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:6px; margin-top:4px;">
-          <div style="color: #2e7d32; font-weight: bold; font-size:9px; flex:1; line-height:1.3;">
-            播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span><br>
-            収穫:<span id="calcYield_${plan.id}">0</span>
-          </div>
-          <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="この設定をコピーして下に品種を追加" style="flex-shrink:0; width:28px; height:28px; background:#1976D2; color:#fff; border:none; border-radius:50%; cursor:pointer; font-size:18px; font-weight:bold; line-height:1; box-shadow:0 1px 3px rgba(0,0,0,0.2);">＋</button>
+        <div style="margin-top:4px; color:#2e7d32; font-weight:bold; font-size:9px; line-height:1.35;">
+          播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span>
+          ／ 収穫:<span id="calcYield_${plan.id}">0</span>
         </div>
+        <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="この設定をコピーして下に品種を追加"
+          style="display:block; width:100%; margin-top:5px; height:26px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:4px; cursor:pointer; font-size:13px; font-weight:bold; line-height:1; padding:0;">＋</button>
         <div id="ratios_${plan.id}" style="margin-top: 3px; display:flex; gap: 3px; flex-wrap: wrap;"></div>
     `;
     leftBody.appendChild(card);
