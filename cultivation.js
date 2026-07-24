@@ -971,20 +971,44 @@ function syncLeftHeaderHeight() {
     }
 }
 
-function syncAllRowHeights() {
-    cpPlans.forEach(plan => {
-        const leftCard = document.getElementById('cpLeftCard_' + plan.id);
-        const rightRow = document.querySelector('#cpTableBody tr[data-plan-id="' + plan.id + '"]');
-        if (leftCard && rightRow) {
-            // リセットしてから計算
-            leftCard.style.height = 'auto';
-            rightRow.style.height = 'auto';
-            const leftH = leftCard.offsetHeight;
-            const rightH = rightRow.offsetHeight;
-            const maxH = Math.max(leftH, rightH);
-            leftCard.style.height = maxH + 'px';
-            rightRow.style.height = maxH + 'px';
+function withPreservedCpPanelScroll(fn) {
+    const leftPanel = document.getElementById('cpLeftPanel');
+    const rightPanel = document.getElementById('cpRightPanel');
+    const leftTop = leftPanel ? leftPanel.scrollTop : 0;
+    const rightTop = rightPanel ? rightPanel.scrollTop : 0;
+    const rightLeft = rightPanel ? rightPanel.scrollLeft : 0;
+    const restore = function() {
+        if (leftPanel) leftPanel.scrollTop = leftTop;
+        if (rightPanel) {
+            rightPanel.scrollTop = rightTop;
+            rightPanel.scrollLeft = rightLeft;
         }
+    };
+    fn();
+    restore();
+    // レイアウト再計算後にもう一度戻す（高さ同期で上に飛ぶ対策）
+    requestAnimationFrame(function() {
+        restore();
+        requestAnimationFrame(restore);
+    });
+}
+
+function syncAllRowHeights() {
+    withPreservedCpPanelScroll(function() {
+        cpPlans.forEach(plan => {
+            const leftCard = document.getElementById('cpLeftCard_' + plan.id);
+            const rightRow = document.querySelector('#cpTableBody tr[data-plan-id="' + plan.id + '"]');
+            if (leftCard && rightRow) {
+                // リセットしてから計算
+                leftCard.style.height = 'auto';
+                rightRow.style.height = 'auto';
+                const leftH = leftCard.offsetHeight;
+                const rightH = rightRow.offsetHeight;
+                const maxH = Math.max(leftH, rightH);
+                leftCard.style.height = maxH + 'px';
+                rightRow.style.height = maxH + 'px';
+            }
+        });
     });
 }
 
@@ -1190,6 +1214,7 @@ function renderCpPlanRow(plan) {
         </div>
         <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="この設定をコピーして下に品種を追加"
           style="display:block; width:100%; margin-top:5px; height:26px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:4px; cursor:pointer; font-size:13px; font-weight:bold; line-height:1; padding:0;">＋</button>
+        <div id="cpSemiHint_${plan.id}" style="display:none; margin-top:4px; font-size:10px; font-weight:bold; line-height:1.3;"></div>
         <div id="ratios_${plan.id}" style="margin-top: 3px; display:flex; gap: 3px; flex-wrap: wrap;"></div>
     `;
     leftBody.appendChild(card);
@@ -1250,6 +1275,9 @@ function renderCpPlanRow(plan) {
     if (typeof updateVarietyCardFieldsDisplay === 'function') {
         updateVarietyCardFieldsDisplay(plan.id);
     }
+    
+    // 半自動ヒント（カードごと）を反映
+    if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint();
     
     // 左右の高さを同期
     setTimeout(() => { syncAllRowHeights(); }, 50);
@@ -1404,19 +1432,58 @@ function updateCpSemiAutoHint(planId) {
     const resetBtn = document.getElementById('cpSemiAutoResetBtn');
     const checked = document.querySelector('input[name="cpTool"]:checked');
     const isSemi = checked && checked.value === 'semiauto';
+    if (planId != null) cpSemiAutoActivePlanId = planId;
+
+    // 品種カードごとに次工程を表示（順序はカード独立）
+    cpPlans.forEach(plan => {
+        const el = document.getElementById('cpSemiHint_' + plan.id);
+        const card = document.getElementById('cpLeftCard_' + plan.id);
+        if (!el) return;
+        if (isSemi) {
+            const step = cpSemiAutoSteps[plan.id] || 0;
+            const tool = getSemiAutoTool(step);
+            el.style.display = '';
+            el.textContent = '次: ' + SEMI_AUTO_LABELS[tool];
+            el.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
+            if (card) {
+                const active = String(plan.id) === String(cpSemiAutoActivePlanId);
+                card.style.outline = active ? '2px solid #1976D2' : '';
+                card.style.outlineOffset = active ? '-2px' : '';
+                card.style.background = active ? '#bbdefb' : '#e3f2fd';
+            }
+        } else {
+            el.style.display = 'none';
+            el.textContent = '';
+            if (card) {
+                card.style.outline = '';
+                card.style.outlineOffset = '';
+                card.style.background = '#e3f2fd';
+            }
+        }
+    });
+
     if (hint) {
         if (isSemi) {
             const pid = planId || cpSemiAutoActivePlanId;
-            const step = pid != null ? (cpSemiAutoSteps[pid] || 0) : 0;
-            const tool = getSemiAutoTool(step);
             hint.style.display = '';
-            hint.textContent = '次: ' + SEMI_AUTO_LABELS[tool];
-            hint.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
+            if (pid != null) {
+                const tool = getSemiAutoTool(cpSemiAutoSteps[pid] || 0);
+                hint.textContent = '操作中 → 次: ' + SEMI_AUTO_LABELS[tool];
+                hint.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
+            } else {
+                hint.textContent = '品種カードごとに独立';
+                hint.style.color = '#1565C0';
+            }
         } else {
             hint.style.display = 'none';
         }
     }
-    if (resetBtn) resetBtn.style.display = isSemi ? '' : 'none';
+    if (resetBtn) {
+        resetBtn.style.display = isSemi ? '' : 'none';
+        resetBtn.title = cpSemiAutoActivePlanId != null
+            ? '操作中の品種カードの順序を播種からやり直す'
+            : '全品種カードの半自動順序を播種からやり直す';
+    }
 }
 
 function updateCrSemiAutoHint() {
@@ -1458,8 +1525,14 @@ function onCrToolChange() {
 }
 
 function resetCpSemiAutoSteps() {
+    // 操作中のカードがあればそのカードだけ、なければ全カード
+    if (cpSemiAutoActivePlanId != null) {
+        delete cpSemiAutoSteps[cpSemiAutoActivePlanId];
+        delete cpSemiAutoLastPaint[cpSemiAutoActivePlanId];
+        updateCpSemiAutoHint(cpSemiAutoActivePlanId);
+        return;
+    }
     cpSemiAutoSteps = {};
-    cpSemiAutoActivePlanId = null;
     cpSemiAutoLastPaint = {};
     updateCpSemiAutoHint();
 }
@@ -1548,78 +1621,91 @@ function toggleCpCell(td, planId) {
     updateCpCellsText(planId);
 }
 
-function updateCpCellsText(planId) {
-    const plansToUpdate = planId ? cpPlans.filter(p => p.id === planId) : cpPlans;
-    
-    plansToUpdate.forEach(plan => {
-        const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
-        if (!tr) return;
+function updateCpCellsText(planId, forceRatioRebuild) {
+    withPreservedCpPanelScroll(function() {
+        const plansToUpdate = planId ? cpPlans.filter(p => p.id === planId) : cpPlans;
         
-        const sowingCells = tr.querySelectorAll('td[data-task="sowing"]');
-        sowingCells.forEach(td => {
-            const div = td.querySelector('div');
-            div.innerHTML = plan.trays > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:14px; font-weight:bold;">${plan.trays}${plan.holes === 1 ? '粒' : '枚'}</span>` : '';
-        });
-        
-        const plantingCells = tr.querySelectorAll('td[data-task="planting"]');
-        plantingCells.forEach(td => {
-            const div = td.querySelector('div');
-            div.innerHTML = plan.areaA > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:14px; font-weight:bold;">${plan.areaA}a</span>` : '';
-        });
-        
-        const harvestCells = tr.querySelectorAll('td[data-task="harvesting"]');
-        
-        const ratioContainer = document.getElementById(`ratios_${plan.id}`);
-        if (ratioContainer) {
-            let html = '';
-            let ratios = plan.harvestRatios || [];
-            let totalRatio = ratios.reduce((a, b) => a + (b || 0), 0);
-            totalRatio = round1(totalRatio);
-            let remaining = round1(1 - totalRatio);
-            let hasAnyRatio = ratios.some(r => r > 0);
-            let ratioText = hasAnyRatio ? `(残り${remaining})` : '均等';
-            let colorStyle = remaining < 0 ? 'red' : '#666';
+        plansToUpdate.forEach(plan => {
+            const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
+            if (!tr) return;
             
-            if (harvestCells.length > 0) {
-                html += `<div id="harvestRatioLabel_${plan.id}" style="width:100%; font-size:10px; color:${colorStyle}; margin-bottom:2px;">収穫割合:${ratioText}</div>`;
-                for (let i = 0; i < harvestCells.length; i++) {
-                    let usedBefore = 0;
-                    for (let j = 0; j < i; j++) usedBefore += (ratios[j] || 0);
-                    usedBefore = round1(usedBefore);
-                    let maxForThis = (i === 0) ? 1 : round1(1 - usedBefore);
-                    let val = (ratios[i] !== undefined && ratios[i] !== null && ratios[i] !== 0) ? ratios[i] : '';
-                    if (val !== '' && Number(val) > maxForThis) val = maxForThis > 0 ? maxForThis : '';
-                    html += `<select onchange="updatePlanRatio('${plan.id}', ${i}, this.value)" style="width: 42px; height: 18px; padding: 0 1px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;" title="枠${i+1}">${buildDecimalSelectOptions(maxForThis, val, true)}</select>`;
-                }
-            }
+            const sowingCells = tr.querySelectorAll('td[data-task="sowing"]');
+            sowingCells.forEach(td => {
+                const div = td.querySelector('div');
+                div.innerHTML = plan.trays > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:14px; font-weight:bold;">${plan.trays}${plan.holes === 1 ? '粒' : '枚'}</span>` : '';
+            });
             
-            // カスケード選択肢を更新するため常に再描画（selectのonchange後なのでフォーカス喪失は問題なし）
-            ratioContainer.innerHTML = html;
-        }
-
-        let ratios = plan.harvestRatios || [];
-        
-        harvestCells.forEach((td, index) => {
-            const div = td.querySelector('div');
-            if (plan.yield > 0) {
-                let cellYield = plan.yield;
+            const plantingCells = tr.querySelectorAll('td[data-task="planting"]');
+            plantingCells.forEach(td => {
+                const div = td.querySelector('div');
+                div.innerHTML = plan.areaA > 0 ? `<span style="color:#fff; font-size:10px; display:block; padding-top:14px; font-weight:bold;">${plan.areaA}a</span>` : '';
+            });
+            
+            const harvestCells = tr.querySelectorAll('td[data-task="harvesting"]');
+            
+            const ratioContainer = document.getElementById(`ratios_${plan.id}`);
+            if (ratioContainer) {
+                let ratios = plan.harvestRatios || [];
                 let totalRatio = ratios.reduce((a, b) => a + (b || 0), 0);
-                if (totalRatio > 0) {
-                    let r = ratios[index] || 0;
-                    cellYield = Math.floor(plan.yield * r / totalRatio);
-                } else {
-                    cellYield = Math.floor(plan.yield / harvestCells.length);
+                totalRatio = round1(totalRatio);
+                let remaining = round1(1 - totalRatio);
+                let hasAnyRatio = ratios.some(r => r > 0);
+                let ratioText = hasAnyRatio ? `(残り${remaining})` : '均等';
+                let colorStyle = remaining < 0 ? 'red' : '#666';
+                const harvestCount = harvestCells.length;
+                const prevCount = parseInt(ratioContainer.dataset.harvestCount || '-1', 10);
+                const needRebuild = forceRatioRebuild || prevCount !== harvestCount;
+
+                if (needRebuild) {
+                    let html = '';
+                    if (harvestCount > 0) {
+                        html += `<div id="harvestRatioLabel_${plan.id}" style="width:100%; font-size:10px; color:${colorStyle}; margin-bottom:2px;">収穫割合:${ratioText}</div>`;
+                        for (let i = 0; i < harvestCount; i++) {
+                            let usedBefore = 0;
+                            for (let j = 0; j < i; j++) usedBefore += (ratios[j] || 0);
+                            usedBefore = round1(usedBefore);
+                            let maxForThis = (i === 0) ? 1 : round1(1 - usedBefore);
+                            let val = (ratios[i] !== undefined && ratios[i] !== null && ratios[i] !== 0) ? ratios[i] : '';
+                            if (val !== '' && Number(val) > maxForThis) val = maxForThis > 0 ? maxForThis : '';
+                            html += `<select onchange="updatePlanRatio('${plan.id}', ${i}, this.value)" style="width: 42px; height: 18px; padding: 0 1px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;" title="枠${i+1}">${buildDecimalSelectOptions(maxForThis, val, true)}</select>`;
+                        }
+                    }
+                    ratioContainer.innerHTML = html;
+                    ratioContainer.dataset.harvestCount = String(harvestCount);
+                } else if (harvestCount > 0) {
+                    // 枠数は同じ → ラベルだけ更新（DOM再生成でスクロールが飛ぶのを防ぐ）
+                    const label = document.getElementById('harvestRatioLabel_' + plan.id);
+                    if (label) {
+                        label.textContent = '収穫割合:' + ratioText;
+                        label.style.color = colorStyle;
+                    }
                 }
-                td.dataset.amount = cellYield;
-                div.innerHTML = cellYield > 0 ? `<span style="color:#fff; font-size:9px; display:block; padding-top:14px; font-weight:bold;">${cellYield.toLocaleString()}</span>` : '';
-            } else {
-                td.dataset.amount = 0;
-                div.innerHTML = '';
             }
+
+            let ratios = plan.harvestRatios || [];
+            
+            harvestCells.forEach((td, index) => {
+                const div = td.querySelector('div');
+                if (plan.yield > 0) {
+                    let cellYield = plan.yield;
+                    let totalRatio = ratios.reduce((a, b) => a + (b || 0), 0);
+                    if (totalRatio > 0) {
+                        let r = ratios[index] || 0;
+                        cellYield = Math.floor(plan.yield * r / totalRatio);
+                    } else {
+                        cellYield = Math.floor(plan.yield / harvestCells.length);
+                    }
+                    td.dataset.amount = cellYield;
+                    div.innerHTML = cellYield > 0 ? `<span style="color:#fff; font-size:9px; display:block; padding-top:14px; font-weight:bold;">${cellYield.toLocaleString()}</span>` : '';
+                } else {
+                    td.dataset.amount = 0;
+                    div.innerHTML = '';
+                }
+            });
         });
     });
     
-    // UI改善: 高さの同期を追加
+    // UI改善: 高さの同期を追加（スクロール位置は syncAllRowHeights 内で保持）
     setTimeout(() => { syncAllRowHeights(); }, 50);
 }
 

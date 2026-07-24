@@ -1012,7 +1012,7 @@ window.updatePlanRatio = function(planId, index, value) {
         used = Math.round(used * 10) / 10;
     }
 
-    updateCpCellsText(planId);
+    updateCpCellsText(planId, true);
 };
 
 window.updateRowParams = function(planId) {
