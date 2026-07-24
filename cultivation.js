@@ -2004,7 +2004,21 @@ function loadCultivationPlanDraft(options) {
     });
 
     updateCpDraftStatusUI();
-    if (!opts.silent) alert('下書きを読み込みました。');
+    if (!opts.silent) {
+        const statusEl = document.getElementById('cpDraftStatus');
+        if (statusEl) {
+            statusEl.textContent = '✓ 下書きを読み込みました';
+            statusEl.style.color = '#2e7d32';
+            statusEl.style.fontWeight = 'bold';
+            setTimeout(() => {
+                updateCpDraftStatusUI();
+                if (statusEl) {
+                    statusEl.style.color = '';
+                    statusEl.style.fontWeight = '';
+                }
+            }, 2000);
+        }
+    }
     return true;
 }
 
