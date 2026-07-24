@@ -1,4 +1,4 @@
-﻿// 🚜 農業CAD専用JavaScript（admin.htmlから切り出し）
+// 🚜 農業CAD専用JavaScript（admin.htmlから切り出し）
 // 🚜 新・農業CADシステム（地形設計特化版）
 window.cadMap = null;
 window.cadTargetId = null;
@@ -1209,6 +1209,14 @@ window.handleMapClick = (pageX, pageY) => {
     const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, visible: false });
     mk.cadPinType = window.cadPinMode;
     window.cadPins.push(mk);
+
+    if (mk.cadPinType === 'water_out' && typeof window.cadAutoAddDrainageLineForPin === 'function') {
+        window.cadAutoAddDrainageLineForPin(latLng);
+        if (window.cadUnePolygons && window.cadUnePolygons.length > 0 && typeof window.cadGenerateLines === 'function') {
+            window.cadGenerateLines();
+        }
+    }
+
     if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
     window.cadPinMode = null;
     if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
@@ -2241,6 +2249,122 @@ window.drawDrainageVisual = (path) => {
     // 破線を表現するため、SVGレイヤーでのみ表示（Google Map上では透明）
     let line = new google.maps.Polyline({ path: path, strokeColor: 'transparent', strokeOpacity: 0, strokeWeight: Math.max(0.5, 6), map: window.cadMap, zIndex: 9 });
     window.cadDrainageMapPolygons.push(line);
+};
+
+/** 排水口ピン(water_out)の位置から、最も近い外周・枕に沿って排水ラインを自動生成 */
+window.cadAutoAddDrainageLineForPin = (latLng) => {
+    if (!window.cadTargetId || !latLng) return false;
+    const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[window.cadTargetId] : null;
+    if (!p || !p.coords || p.coords.length < 3) return false;
+
+    let rawLng = typeof latLng.lng === 'function' ? latLng.lng() : parseFloat(latLng.lng);
+    let rawLat = typeof latLng.lat === 'function' ? latLng.lat() : parseFloat(latLng.lat);
+    if (isNaN(rawLng) || isNaN(rawLat)) return false;
+
+    const pinPt = turf.point([rawLng, rawLat]);
+    let coords = p.coords.map(pt => [
+        typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+        typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+    ]);
+    if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+        coords.push([coords[0][0], coords[0][1]]);
+    }
+    const tPoly = turf.polygon([coords]);
+
+    let minD = Infinity;
+    let minI = -1;
+    for (let i = 0; i < coords.length - 1; i++) {
+        let seg = turf.lineString([coords[i], coords[i + 1]]);
+        let d = turf.pointToLineDistance(pinPt, seg, { units: 'meters' });
+        if (d < minD) {
+            minD = d;
+            minI = i;
+        }
+    }
+    if (minI === -1) return false;
+
+    const pA = coords[minI];
+    const pB = coords[minI + 1];
+    const ptA = turf.point(pA);
+    const ptB = turf.point(pB);
+    const bearing = turf.bearing(ptA, ptB);
+
+    // 圃場の内側方向へオフセット
+    const mid = turf.midpoint(ptA, ptB);
+    const pPlus = turf.destination(mid, 0.5, bearing + 90, { units: 'meters' });
+    let offsetAngle = bearing + 90;
+    try {
+        if (!turf.booleanPointInPolygon(pPlus, tPoly)) {
+            offsetAngle = bearing - 90;
+        }
+    } catch (e) {
+        offsetAngle = bearing - 90;
+    }
+
+    // 枕・頭部用に外周から約0.75m内側にオフセット
+    let offsetMeters = 0.75;
+    const refWidthM = window.getCadReferenceRidgeWidthMeters ? window.getCadReferenceRidgeWidthMeters() : 1.5;
+    if (refWidthM && refWidthM > 0) {
+        offsetMeters = Math.min(Math.max(refWidthM / 2, 0.5), 1.5);
+    }
+
+    const ptA_in = turf.destination(ptA, offsetMeters, offsetAngle, { units: 'meters' });
+    const ptB_in = turf.destination(ptB, offsetMeters, offsetAngle, { units: 'meters' });
+
+    const path = [
+        { lat: ptA_in.geometry.coordinates[1], lng: ptA_in.geometry.coordinates[0] },
+        { lat: ptB_in.geometry.coordinates[1], lng: ptB_in.geometry.coordinates[0] }
+    ];
+
+    if (!window.cadDrainageLines) window.cadDrainageLines = [];
+    const isDup = window.cadDrainageLines.some(existing => {
+        if (!existing || existing.length < 2) return false;
+        const d1 = turf.distance(turf.point([existing[0].lng, existing[0].lat]), ptA_in, { units: 'meters' });
+        const d2 = turf.distance(turf.point([existing[1].lng, existing[1].lat]), ptB_in, { units: 'meters' });
+        return (d1 < 1.0 && d2 < 1.0);
+    });
+
+    if (isDup) return false;
+
+    window.cadDrainageLines.push(path);
+    window.drawDrainageVisual(path);
+    return true;
+};
+
+/** 全ての排水口ピン(water_out)の設置箇所の枕に排水ラインを一括自動生成 */
+window.cadGenerateDrainageLinesFromPins = () => {
+    if (!window.cadPins || !window.cadPins.length) {
+        if (typeof customAlert === 'function') customAlert('排水口ピン（🕳️）が配置されていません。');
+        else alert('排水口ピン（🕳️）が配置されていません。');
+        return;
+    }
+    const waterOutPins = window.cadPins.filter(mk => mk.cadPinType === 'water_out');
+    if (!waterOutPins.length) {
+        if (typeof customAlert === 'function') customAlert('排水口ピン（🕳️）が見つかりません。まず「排水ピン」を配置してください。');
+        else alert('排水口ピン（🕳️）が見つかりません。まず「排水ピン」を配置してください。');
+        return;
+    }
+    let count = 0;
+    waterOutPins.forEach(mk => {
+        const pos = typeof mk.getPosition === 'function' ? mk.getPosition() : mk.position;
+        if (pos) {
+            const added = window.cadAutoAddDrainageLineForPin(pos);
+            if (added) count++;
+        }
+    });
+    if (count > 0) {
+        if (window.cadUnePolygons && window.cadUnePolygons.length > 0) {
+            window.cadGenerateLines();
+        } else {
+            if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+            window.saveCadStateToHistory();
+        }
+        if (typeof customAlert === 'function') customAlert(`排水口の枕に沿って ${count} 箇所の排水ラインを設置しました！`);
+        else alert(`排水口の枕に沿って ${count} 箇所の排水ラインを設置しました！`);
+    } else {
+        if (typeof customAlert === 'function') customAlert('対象の排水口ピンには既に排水ラインが設置されています。');
+        else alert('対象の排水口ピンには既に排水ラインが設置されています。');
+    }
 };
 
 window.cadSetFrontBar = (position) => {
