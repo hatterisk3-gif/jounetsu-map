@@ -56,6 +56,7 @@ function doPost(e) {
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop);
     else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
     else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
+    else if (action === "getCultivationRidgeParamsForField") result = getCultivationRidgeParamsForField(params.fieldId || params.id);
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "appendCultivationMaster") result = appendCultivationMaster(params);
     else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
@@ -3051,6 +3052,67 @@ function getSavedCultivationPlanList() {
   }
 }
 
+/**
+ * 指定圃場が栽培計画の圃場選択に含まれていれば、その計画の畝間(rSpace)等を返す。
+ * 畝選択ID (fieldId#une#N) にも対応。最新の計画を優先。
+ */
+function getCultivationRidgeParamsForField(fieldId) {
+  try {
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('栽培計画');
+    if (!sheet || sheet.getLastRow() <= 1) return null;
+
+    const target = String(fieldId || '').trim();
+    if (!target) return null;
+
+    const parentMatch = target.match(/^(.+)#une#\d+$/);
+    const parentId = parentMatch ? parentMatch[1] : target;
+
+    const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
+    let best = null;
+    let bestTime = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      let plan = null;
+      try {
+        plan = JSON.parse(data[i][5]);
+      } catch (e) {
+        continue;
+      }
+      if (!plan || !Array.isArray(plan.fieldIds) || plan.fieldIds.length === 0) continue;
+
+      const matched = plan.fieldIds.some(function(fid) {
+        const s = String(fid || '');
+        if (!s) return false;
+        if (s === target || s === parentId) return true;
+        if (s.indexOf(parentId + '#une#') === 0) return true;
+        if (target.indexOf(s + '#une#') === 0) return true;
+        return false;
+      });
+      if (!matched) continue;
+
+      const rSpace = parseFloat(plan.rSpace);
+      if (!rSpace || rSpace <= 0) continue;
+
+      const ts = data[i][0] ? new Date(data[i][0]).getTime() : 0;
+      if (!best || ts >= bestTime) {
+        bestTime = ts;
+        best = {
+          rSpace: rSpace,
+          crop: plan.crop || String(data[i][3] || ''),
+          variety: plan.variety || String(data[i][4] || ''),
+          planId: plan.id || '',
+          year: String(data[i][1] || ''),
+          updatedAt: data[i][0] || ''
+        };
+      }
+    }
+    return best;
+  } catch (e) {
+    throw new Error('栽培計画畝間取得エラー: ' + e.message);
+  }
+}
+
 /** 栽培カレンダーの periodIndex(0-5) → 月内の開始日・終了日 */
 function cpPeriodDayRange(year, month, periodIndex) {
   const lastDay = new Date(year, month, 0).getDate();
@@ -3618,7 +3680,7 @@ function deleteCultivationPreset(presetData) {
       const rCrop = cropCol !== -1 ? String(data[i][cropCol] || '').trim() : '';
       const rName = nameCol !== -1 ? String(data[i][nameCol] || '').trim() : '';
 
-      if ((!targetLoc || !rLoc || rLoc === targetLoc) && rCrop === targetCrop && rName === targetName) {
+      if (rLoc === targetLoc && rCrop === targetCrop && rName === targetName) {
         sheet.deleteRow(i + 1);
         return { success: true };
       }
@@ -3650,7 +3712,7 @@ function renameCultivationPreset(presetData) {
       const rCrop = cropCol !== -1 ? String(data[i][cropCol] || '').trim() : '';
       const rName = nameCol !== -1 ? String(data[i][nameCol] || '').trim() : '';
 
-      if ((!targetLoc || !rLoc || rLoc === targetLoc) && rCrop === targetCrop && rName === oldName) {
+      if (rLoc === targetLoc && rCrop === targetCrop && rName === oldName) {
         sheet.getRange(i + 1, nameCol + 1).setValue(presetData.newName);
         return { success: true };
       }

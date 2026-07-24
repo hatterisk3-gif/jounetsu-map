@@ -2,7 +2,11 @@
       <div style="background: #fff; color: #333; padding: 10px; border-radius: 0; width: 100%; max-width: 100%; box-shadow: none; height: 100%; max-height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
           <h3 style="margin: 0; color: #4CAF50;">🌱 栽培計画作成</h3>
-          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('cultivationPlanModal').style.display='none'">×</span>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="closeCultivationPlanModal()">×</span>
+        </div>
+        <div id="cpFieldAttachBanner" style="display:none; margin-bottom:8px; padding:8px 10px; background:#E0F7FA; border:1px solid #4DD0E1; border-radius:6px; font-size:12px; color:#006064; align-items:center; justify-content:space-between; gap:8px;">
+          <span id="cpFieldAttachBannerText"></span>
+          <button type="button" onclick="clearCpPendingFieldAttach()" style="flex-shrink:0; background:#fff; border:1px solid #00ACC1; color:#00838F; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">解除</button>
         </div>
         
         <!-- ステップ1: 基本設定 -->
@@ -71,15 +75,16 @@
             2. 栽培パラメーター設定 <span style="font-size: 11px; font-weight: normal; color: #777;">(穴数, 条数, 株間, 畝間, 1苗収量, 1P入数)</span>
           </summary>
           <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: #e3f2fd; border-radius: 6px; border: 1px solid #bbdefb; overflow-x: auto;">
-            <label style="font-size: 11px; font-weight: bold; color: #1976D2; white-space: nowrap; margin-bottom: 0;">栽培設定(読込/登録):</label>
+            <label style="font-size: 11px; font-weight: bold; color: #1976D2; white-space: nowrap; margin-bottom: 0;">栽培設定:</label>
             <select id="cpPreset" onchange="loadCultivationPreset(this.value)" style="padding: 4px; border: 1px solid #1976D2; border-radius: 4px; font-size: 12px; flex: 1; min-width: 80px;">
               <option value="">選択...</option>
             </select>
-            <button id="btnSavePreset" onclick="saveCultivationPresetFromUI()" style="padding: 4px 8px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; white-space: nowrap;">設定を保存</button>
+            <button id="btnSavePreset" onclick="openCpPresetSaveModal()" style="padding: 4px 8px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; white-space: nowrap;">設定を保存</button>
             <button id="btnRenamePreset" onclick="renameCultivationPresetUI()" style="padding: 4px 8px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; white-space: nowrap; display: none;">名前変更</button>
             <button id="btnDeletePreset" onclick="deleteCultivationPresetUI()" style="padding: 4px 8px; background: #F44336; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; white-space: nowrap; display: none;">削除</button>
             <div id="varietyFileLinkArea" style="font-size: 11px; white-space: nowrap; margin-left: 4px;"></div>
           </div>
+          <div style="font-size:10px; color:#1565c0; margin:0 0 6px 2px;">※共通（全拠点）と拠点限定の両方を登録できます</div>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: flex-end; padding-top: 10px; margin-top: 5px; border-top: 1px dashed #eee;">
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">穴数</label>
@@ -195,6 +200,45 @@
           <button type="button" onclick="saveCultivationPlan()" style="padding: 10px 28px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span></button>
           <button type="button" onclick="executeCultivationPlanFromModal()" style="padding: 10px 28px; background: #4CAF50; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">▶️ 計画実行<br><span style="font-size:10px;font-weight:normal;">作業予定へ</span></button>
           <div id="cpDraftStatus" style="width: 100%; font-size: 11px; color: #607D8B; margin-top: 2px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 栽培設定プリセット保存モーダル -->
+    <div id="cpPresetSaveModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10015; justify-content: center; align-items: center;">
+      <div style="background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="margin: 0; color: #2196F3; font-size: 16px;">💾 栽培設定を保存</h3>
+          <span style="cursor: pointer; font-size: 20px; color: #999;" onclick="closeCpPresetSaveModal()">×</span>
+        </div>
+        <div style="font-size: 12px; color: #555; margin-bottom: 12px;">
+          作物: <strong id="cpPresetSaveCropLabel"></strong>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 12px; font-weight: bold; display:block; margin-bottom:4px;">設定名</label>
+          <input type="text" id="cpPresetSaveName" placeholder="例: 夏秋用" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:14px;">
+        </div>
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px;">保存範囲</div>
+          <label style="display:flex; align-items:flex-start; gap:8px; padding:10px; border:1px solid #90CAF9; border-radius:6px; margin-bottom:8px; cursor:pointer; background:#E3F2FD;">
+            <input type="radio" name="cpPresetScope" id="cpPresetScopeCommon" value="common" style="margin-top:3px;">
+            <span>
+              <strong>共通（全拠点）</strong>
+              <div style="font-size:11px; color:#555; margin-top:2px;">どの拠点でも候補に出ます</div>
+            </span>
+          </label>
+          <label id="cpPresetScopeLocWrap" style="display:flex; align-items:flex-start; gap:8px; padding:10px; border:1px solid #A5D6A7; border-radius:6px; cursor:pointer; background:#E8F5E9;">
+            <input type="radio" name="cpPresetScope" id="cpPresetScopeLoc" value="location" style="margin-top:3px;">
+            <span>
+              <strong>拠点限定</strong>
+              <div style="font-size:11px; color:#555; margin-top:2px;">拠点「<span id="cpPresetSaveLocLabel"></span>」だけで使います</div>
+            </span>
+          </label>
+          <div id="cpPresetScopeLocHint" style="display:none; font-size:11px; color:#e65100; margin-top:6px;">拠点を選んでから保存すると、拠点限定も選べます。</div>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <button type="button" onclick="closeCpPresetSaveModal()" style="padding:8px 12px; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer; font-size:12px;">キャンセル</button>
+          <button type="button" id="btnConfirmCpPresetSave" onclick="confirmCpPresetSave()" style="padding:8px 16px; background:#2196F3; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">保存する</button>
         </div>
       </div>
     </div>

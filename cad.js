@@ -1074,6 +1074,14 @@ window.handleMapClick = (pageX, pageY) => {
         return;
     }
 
+    if (window.cadPinMode === 'custom_rect' || window.cadPinMode === 'custom_circle') {
+        const shapeType = window.cadPinMode === 'custom_circle' ? 'circle' : 'rect';
+        window.cadExecuteAddCustomShape(latLng, shapeType);
+        window.cadPinMode = null;
+        if (msgEl) { msgEl.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。'; msgEl.style.color = "#FF9800"; }
+        return;
+    }
+
     if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') return;
 
     if (window.cadPinMode === 'snap_line') {
@@ -1776,6 +1784,9 @@ window.openCADMode = async (id) => {
         updateCadPreviewCount();
     }
 
+    // 栽培計画でこの圃場が選ばれていれば、計画の畝間を基準畝幅に優先反映
+    await window.applyCultivationPlanWidthToCad(id);
+
     // 起動直後の状態を履歴0番目として保存
     setTimeout(() => {
         window.cadHistory = [];
@@ -1789,6 +1800,77 @@ window.closeCADMode = () => {
     window.cadClearLines(true);
     if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
     window.cadTargetId = null;
+};
+
+/** 栽培計画の畝間をCAD基準畝幅へ反映 */
+window.applyCultivationPlanWidthToCad = async (fieldId) => {
+    try {
+        const planParams = await callGAS('getCultivationRidgeParamsForField', { fieldId: fieldId });
+        if (!planParams || !planParams.rSpace) return false;
+        const widthEl = document.getElementById('cadWidth');
+        if (widthEl) widthEl.value = planParams.rSpace;
+        const msgEl = document.getElementById('cadPinModeMsg');
+        if (msgEl) {
+            const cropBit = planParams.crop
+                ? `（${planParams.crop}${planParams.variety ? ' / ' + planParams.variety : ''}）`
+                : '';
+            msgEl.innerText = `📐 栽培計画の畝間 ${planParams.rSpace}cm を基準畝幅にセットしました${cropBit}`;
+            msgEl.style.color = '#4CAF50';
+        }
+        if (typeof updateCadPreviewCount === 'function') updateCadPreviewCount();
+        return true;
+    } catch (e) {
+        console.warn('栽培計画畝間の反映に失敗:', e);
+        return false;
+    }
+};
+
+/** 地図上の畝ポリゴン1本の幅(m)を概算（畝の直交方向） */
+window.estimateCadUneWidthMeters = (gPoly) => {
+    if (!gPoly || !gPoly.getPath) return 0;
+    const path = gPoly.getPath().getArray();
+    if (!path || path.length < 3) return 0;
+    let coords = path.map(pt => [pt.lng(), pt.lat()]);
+    if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+        coords.push([coords[0][0], coords[0][1]]);
+    }
+    try {
+        const poly = turf.polygon([coords]);
+        const center = turf.centroid(poly);
+        const angleEl = document.getElementById('cadAngle');
+        const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+        // 通常畝の幅方向 = angle + 90
+        const widthBearing = angle + 90;
+        let minP = Infinity;
+        let maxP = -Infinity;
+        coords.forEach(c => {
+            const pt = turf.point(c);
+            const dist = turf.distance(center, pt, { units: 'meters' });
+            const bearing = turf.bearing(center, pt);
+            const proj = dist * Math.cos((bearing - widthBearing) * Math.PI / 180);
+            if (proj < minP) minP = proj;
+            if (proj > maxP) maxP = proj;
+        });
+        const w = Math.abs(maxP - minP);
+        return (w > 0.05 && w < 20) ? w : 0;
+    } catch (e) {
+        return 0;
+    }
+};
+
+/**
+ * 枕畝などに使う「地図上の畝と同じ幅(m)」を返す。
+ * 優先: 描画済み畝の平均幅 → 基準畝幅(cadWidth)
+ */
+window.getCadReferenceRidgeWidthMeters = () => {
+    const uneList = (window.cadUnePolygons || []).filter(p => p && p.getMap && p.getMap());
+    const widths = uneList.map(p => window.estimateCadUneWidthMeters(p)).filter(w => w > 0);
+    if (widths.length) {
+        return widths.reduce((a, b) => a + b, 0) / widths.length;
+    }
+    const widthEl = document.getElementById('cadWidth');
+    const cm = widthEl && widthEl.value ? parseFloat(widthEl.value) : 150;
+    return ((cm > 0 ? cm : 150) / 100);
 };
 
 window.switchCadTab = (tab) => {
@@ -1963,28 +2045,150 @@ window.cadSetFrontBar = (position) => {
 };
 
 window.cadAddCustomShape = (type) => {
-    let center = window.cadMap.getCenter(); let centerPt = turf.point([center.lng(), center.lat()]);
-    let poly;
-    if (type === 'rect') {
-        let baseAngle = -window.cadCurrentRotation;
-        let p1 = turf.destination(centerPt, 2, baseAngle + 45, { units: 'meters' }).geometry.coordinates;
-        let p2 = turf.destination(centerPt, 2, baseAngle + 135, { units: 'meters' }).geometry.coordinates;
-        let p3 = turf.destination(centerPt, 2, baseAngle + 225, { units: 'meters' }).geometry.coordinates;
-        let p4 = turf.destination(centerPt, 2, baseAngle + 315, { units: 'meters' }).geometry.coordinates;
-        poly = turf.polygon([[p1, p2, p3, p4, p1]]);
+    const mode = (type === 'circle') ? 'custom_circle' : 'custom_rect';
+    window.cadPinMode = mode;
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = mode === 'custom_rect'
+            ? '【四角畝】配置したい場所をタップしてください（畝幅・畝方向に合わせます）'
+            : '【丸畝】配置したい場所をタップしてください（直径＝基準畝幅）';
+        msgEl.style.color = '#8BC34A';
+    }
+};
+
+/** 四角畝・丸畝をタップ位置に生成（畝幅基準・圃場内にクリップ） */
+window.cadExecuteAddCustomShape = (latLng, type) => {
+    if (!window.cadTargetId || !latLng) return;
+
+    const p = loadedPolygons[window.cadTargetId];
+    if (!p || !p.coords || p.coords.length < 3) return;
+
+    let fieldCoords = p.coords.map(pt => [
+        typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+        typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+    ]);
+    if (fieldCoords[0][0] !== fieldCoords[fieldCoords.length - 1][0]
+        || fieldCoords[0][1] !== fieldCoords[fieldCoords.length - 1][1]) {
+        fieldCoords.push([fieldCoords[0][0], fieldCoords[0][1]]);
+    }
+    const tPoly = turf.polygon([fieldCoords]);
+    const centerPt = turf.point([latLng.lng(), latLng.lat()]);
+
+    // 圃場外タップは拒否
+    try {
+        if (!turf.booleanPointInPolygon(centerPt, tPoly)) {
+            alert('圃場の内側をタップしてください。');
+            return;
+        }
+    } catch (e) {}
+
+    const widthM = window.getCadReferenceRidgeWidthMeters() || 1.5;
+    const angleEl = document.getElementById('cadAngle');
+    const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+
+    let shapePoly = null;
+    if (type === 'circle') {
+        // 直径＝畝幅
+        const radiusKm = Math.max(widthM / 2, 0.3) / 1000;
+        shapePoly = turf.circle(centerPt, radiusKm, { steps: 24, units: 'kilometers' });
     } else {
-        poly = turf.circle(centerPt, 0.002, { steps: 16, units: 'kilometers' });
+        // 畝方向に長い四角（幅＝畝幅、長さ＝畝幅×4、最低4m）
+        const lengthM = Math.max(widthM * 4, 4);
+        const halfL = lengthM / 2;
+        const halfW = Math.max(widthM / 2, 0.25);
+        const along = angle;
+        const across = angle + 90;
+        const mid1 = turf.destination(centerPt, halfL, along, { units: 'meters' });
+        const mid2 = turf.destination(centerPt, halfL, along + 180, { units: 'meters' });
+        const c1 = turf.destination(mid1, halfW, across, { units: 'meters' }).geometry.coordinates;
+        const c2 = turf.destination(mid1, halfW, across + 180, { units: 'meters' }).geometry.coordinates;
+        const c3 = turf.destination(mid2, halfW, across + 180, { units: 'meters' }).geometry.coordinates;
+        const c4 = turf.destination(mid2, halfW, across, { units: 'meters' }).geometry.coordinates;
+        shapePoly = turf.polygon([[c1, c2, c3, c4, c1]]);
     }
 
-    let paths = poly.geometry.coordinates[0].map(c => ({ lat: c[1], lng: c[0] }));
-    let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
+    let finalPoly = null;
+    try {
+        finalPoly = turf.intersect(tPoly, shapePoly);
+    } catch (e) {
+        console.error(e);
+    }
+    if (!finalPoly) {
+        alert('圃場内に図形を置けませんでした。');
+        return;
+    }
 
-    gPoly.uneIndex = 'custom_' + Date.now();
-    google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
-    window.bindShapeHistoryEvents(gPoly);
-    window.cadCustomShapes.push(gPoly);
-    window.reassignLabels();
-    window.saveCadStateToHistory();
+    // 既存畝との重なりを少し避ける（枕畝と同様）
+    const avoidPolys = (window.cadUnePolygons || []).map(poly => {
+        const path = poly.getPath().getArray();
+        let coords = path.map(pt => [pt.lng(), pt.lat()]);
+        if (coords.length < 3) return null;
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+            coords.push([coords[0][0], coords[0][1]]);
+        }
+        try {
+            return turf.buffer(turf.polygon([coords]), 0.05 / 1000, { units: 'kilometers' });
+        } catch (e) {
+            return null;
+        }
+    }).filter(Boolean);
+
+    for (const av of avoidPolys) {
+        if (!finalPoly) break;
+        try {
+            finalPoly = turf.difference(finalPoly, av);
+        } catch (e) {}
+    }
+    if (!finalPoly) {
+        alert('既存の畝と重なっているため置けません。別の位置をタップしてください。');
+        return;
+    }
+
+    let flattened;
+    try {
+        flattened = turf.flatten(finalPoly);
+    } catch (e) {
+        flattened = { features: [finalPoly] };
+    }
+
+    const groupName = type === 'circle' ? '丸' : '四角';
+    let addedCount = 0;
+    (flattened.features || []).forEach((feature, idx) => {
+        if (!feature || !feature.geometry || !feature.geometry.coordinates) return;
+        const coordinates = feature.geometry.coordinates;
+        if (!coordinates || !coordinates.length) return;
+        // flatten 後は Polygon: coordinates = [outer, hole...]
+        const paths = coordinates.map(ring => ring.map(c => ({ lat: c[1], lng: c[0] })));
+        if (!paths[0] || paths[0].length < 3) return;
+        const gPoly = new google.maps.Polygon({
+            paths: paths,
+            fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(groupName) : '#8BC34A',
+            fillOpacity: 0.4,
+            strokeColor: '#558B2F',
+            strokeOpacity: 0.8,
+            strokeWeight: Math.max(0.5, 2),
+            map: window.cadMap,
+            editable: false,
+            draggable: false,
+            clickable: true,
+            zIndex: 10
+        });
+        gPoly.uneIndex = 'custom_' + Date.now() + '_' + idx + '_' + Math.floor(Math.random() * 1000);
+        gPoly.uneGroup = groupName;
+        google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
+        window.bindShapeHistoryEvents(gPoly);
+        window.cadCustomShapes.push(gPoly);
+        addedCount++;
+    });
+
+    if (addedCount > 0) {
+        window.reassignLabels();
+        window.cadSvgNeedsRebuild = true;
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+        window.saveCadStateToHistory();
+    } else {
+        alert('図形を生成できませんでした。');
+    }
 };
 
 window.cadAddMakura = () => {
@@ -1998,9 +2202,10 @@ window.cadExecuteAddMakura = (latLng) => {
     
     const angleEl = document.getElementById('cadAngle');
     const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
-    
-    const marginEndEl = document.getElementById('cadMarginEnd');
-    let actualWidthM = marginEndEl && marginEndEl.value ? parseFloat(marginEndEl.value) / 100 : 2.5;
+
+    // 枕畝の太さ = 地図上の畝幅（なければ基準畝幅）。端面余白は使わない
+    let actualWidthM = window.getCadReferenceRidgeWidthMeters();
+    if (!actualWidthM || actualWidthM <= 0) actualWidthM = 1.5;
     
     const p = loadedPolygons[window.cadTargetId];
     if (!p || !p.coords || p.coords.length < 3) return;

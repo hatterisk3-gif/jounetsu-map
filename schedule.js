@@ -877,12 +877,19 @@ async function fetchWeatherAndUpdateUI() {
 
         // 圃場の場合のみ「衛星写真で確認」ボタンを追加
         let satBtn = '';
+        let cpBtn = '';
         if (!p.isMarker && p.coords && p.coords.length >= 3) {
           satBtn = `<div style="margin-top:8px; text-align:center;">
             <button onclick="openFieldSatForField('${p.id}')"
               style="width:100%; padding:8px; background:#1B5E20; color:white;
               border:none; border-radius:6px; font-weight:bold; font-size:13px;
               cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🛰️ この圃場の衛星写真を見る</button>
+          </div>`;
+          cpBtn = `<div style="margin-top:6px; text-align:center;">
+            <button onclick="startCultivationPlanForField('${p.id}')"
+              style="width:100%; padding:8px; background:#4CAF50; color:white;
+              border:none; border-radius:6px; font-weight:bold; font-size:13px;
+              cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🌱 この圃場で栽培計画</button>
           </div>`;
         }
 
@@ -893,6 +900,7 @@ async function fetchWeatherAndUpdateUI() {
                    <div style="background:#f9f9f9; padding:5px; border-radius:4px; max-height:150px; overflow-y:auto;">
                      ${tasksHtml}
                    </div>
+                   ${cpBtn}
                    ${satBtn}
                  </div>`;
         infoWindow.setContent(h);
@@ -1232,9 +1240,24 @@ function getPolygonCenter(coords) {
 }
 
 window.handleFieldCultivationClick = function(p) {
+    if (!p || p.isMarker) {
+        customAlert('圃場を選択してください。');
+        return;
+    }
+
     const ridges = getCadRidgeShapes(p);
     if (!ridges.length) {
-        customAlert('この圃場には畝データが登録されていません。');
+        // 畝CADなし → 圃場全体で栽培計画を開く
+        cancelFieldCultivationMode();
+        if (typeof openCultivationPlanFromField === 'function') {
+            openCultivationPlanFromField(p, {
+                fieldIds: [p.id],
+                areaA: parseFloat(p.area) || computeCoordsAreaAres(p.coords) || 0,
+                label: p.name
+            });
+        } else if (typeof openCultivationPlanModal === 'function') {
+            openCultivationPlanModal();
+        }
         return;
     }
 
@@ -1246,7 +1269,7 @@ window.handleFieldCultivationClick = function(p) {
     // 既存の畝描画をクリア
     clearDrawnRidges();
 
-    document.getElementById('fieldCultivationModeMessage').innerText = '🌱 栽培計画を登録する畝をタップしてください';
+    document.getElementById('fieldCultivationModeMessage').innerText = '🌱 栽培計画を登録する畝をタップしてください（キャンセルで終了）';
 
     // 畝ポリゴンを描画
     ridges.forEach((entry) => {
@@ -1289,46 +1312,46 @@ window.handleFieldCultivationClick = function(p) {
             if (typeof e.stop === 'function') e.stop();
 
             const areaSqMeters = google.maps.geometry.spherical.computeArea(ridgePoly.getPath());
-            const areaAres = (areaSqMeters / 100).toFixed(1);
+            const areaAres = Math.round((areaSqMeters / 100) * 10) / 10;
+            const selectionId = makeRidgeSelectionId(p.id, index);
 
-            // 栽培計画モーダルを開く
-            if (typeof openCultivationPlanModal === 'function') {
+            cancelFieldCultivationMode();
+            if (typeof openCultivationPlanFromField === 'function') {
+                openCultivationPlanFromField(p, {
+                    fieldIds: [selectionId],
+                    areaA: areaAres,
+                    label: ridgeName
+                });
+            } else if (typeof openCultivationPlanModal === 'function') {
                 openCultivationPlanModal();
-
-                setTimeout(() => {
-                    if (typeof addCpPlanRow === 'function') {
-                        addCpPlanRow();
-
-                        setTimeout(() => {
-                            const tbody = document.getElementById('cpTableBody');
-                            if (tbody && tbody.lastElementChild) {
-                                const newRow = tbody.lastElementChild;
-                                const planId = newRow.dataset.planId;
-                                if (planId) {
-                                    const plan = cpPlans.find(x => x.id === planId);
-                                    // 面積をセット
-                                    const areaInput = document.getElementById('area_' + planId);
-                                    if (areaInput) areaInput.value = areaAres;
-                                    if (plan) {
-                                        plan.areaA = parseFloat(areaAres) || 0;
-                                        plan.fieldIds = [makeRidgeSelectionId(p.id, index)];
-                                        if (typeof updateVarietyCardFieldsDisplay === 'function') {
-                                            updateVarietyCardFieldsDisplay(planId);
-                                        }
-                                    }
-
-                                    if (typeof updateRowParams === 'function') updateRowParams(planId);
-                                }
-                            }
-                        }, 100);
-                        cancelFieldCultivationMode();
-                    }
-                }, 500);
             }
         });
 
         drawnRidgePolygons.push({ polygon: ridgePoly, label: marker });
     });
+};
+
+/** ポップアップなどから特定圃場で栽培計画を開始 */
+window.startCultivationPlanForField = function(fieldId) {
+    const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[fieldId] : null;
+    if (!p || p.isMarker) {
+        if (typeof customAlert === 'function') customAlert('圃場が見つかりません。');
+        else alert('圃場が見つかりません。');
+        return;
+    }
+    if (infoWindow) infoWindow.close();
+
+    const ridges = getCadRidgeShapes(p);
+    if (ridges.length) {
+        startFieldCultivationMode();
+        handleFieldCultivationClick(p);
+    } else if (typeof openCultivationPlanFromField === 'function') {
+        openCultivationPlanFromField(p, {
+            fieldIds: [p.id],
+            areaA: parseFloat(p.area) || computeCoordsAreaAres(p.coords) || 0,
+            label: p.name
+        });
+    }
 };
 
 // =============================================

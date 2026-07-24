@@ -508,41 +508,89 @@ function updateVarietyList() {
     checkCroptypeDB();
 }
 
+function encodePresetKey(location, name) {
+    const loc = String(location || '').trim();
+    const n = String(name || '').trim();
+    if (!loc) return 'common::' + n;
+    return 'loc::' + loc + '::' + n;
+}
+
+function decodePresetKey(key) {
+    const s = String(key || '');
+    if (s.startsWith('common::')) {
+        return { location: '', name: s.slice('common::'.length), scope: 'common' };
+    }
+    if (s.startsWith('loc::')) {
+        const rest = s.slice('loc::'.length);
+        const idx = rest.indexOf('::');
+        if (idx >= 0) {
+            return { location: rest.slice(0, idx), name: rest.slice(idx + 2), scope: 'location' };
+        }
+    }
+    return { location: null, name: s, scope: 'legacy' };
+}
+
+function getSelectedPresetKey() {
+    const sel = document.getElementById('cpPreset');
+    return sel ? String(sel.value || '') : '';
+}
+
+function findCultivationPreset(crop, location, name) {
+    if (!cpMasterData || !cpMasterData.presets || !cpMasterData.presets[crop]) return null;
+    const curLoc = String(location || '').trim();
+    const targetName = String(name || '').trim();
+    return (cpMasterData.presets[crop] || []).find(x =>
+        String(x.name || '').trim() === targetName &&
+        String(x.location || '').trim() === curLoc
+    ) || null;
+}
+
 function updatePresetList(crop) {
     const presetSelect = document.getElementById('cpPreset');
     if (!presetSelect) return;
-    
-    const location = getCpVal('cpLocation');
-    const currentVal = presetSelect.value;
-    
-    presetSelect.innerHTML = '<option value="">選択...</option>';
-    if (cpMasterData && cpMasterData.presets && cpMasterData.presets[crop]) {
-        cpMasterData.presets[crop].forEach(p => {
-            const pLoc = String(p.location || '').trim();
-            const curLoc = String(location || '').trim();
 
-            if (!pLoc || !curLoc || pLoc === curLoc) {
-                const opt = document.createElement('option');
-                opt.value = p.name;
-                opt.innerText = pLoc ? `${p.name} (${pLoc})` : p.name;
-                opt.dataset.location = pLoc;
-                presetSelect.appendChild(opt);
-            }
-        });
-    }
-    
-    if (currentVal !== '') {
-        const exists = Array.from(presetSelect.options).some(opt => opt.value === currentVal);
-        if (exists) {
-            presetSelect.value = currentVal;
-        } else if (presetSelect.options.length > 1) {
-            presetSelect.value = presetSelect.options[1].value;
-            loadCultivationPreset(presetSelect.value);
-        } else {
-            presetSelect.value = '';
-            loadCultivationPreset('');
-        }
+    const location = getCpVal('cpLocation');
+    const curLoc = String(location || '').trim();
+    const currentVal = presetSelect.value;
+
+    presetSelect.innerHTML = '<option value="">選択...</option>';
+
+    const presetsForCrop = (cpMasterData && cpMasterData.presets && cpMasterData.presets[crop])
+        ? cpMasterData.presets[crop]
+        : [];
+
+    const locPresets = [];
+    const commonPresets = [];
+    presetsForCrop.forEach(p => {
+        const pLoc = String(p.location || '').trim();
+        const pName = String(p.name || '').trim();
+        if (!pName) return;
+        if (pLoc && curLoc && pLoc === curLoc) locPresets.push(p);
+        else if (!pLoc) commonPresets.push(p);
+    });
+
+    locPresets.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = encodePresetKey(p.location, p.name);
+        opt.innerText = `${p.name}（拠点）`;
+        opt.dataset.location = String(p.location || '').trim();
+        opt.dataset.scope = 'location';
+        presetSelect.appendChild(opt);
+    });
+    commonPresets.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = encodePresetKey('', p.name);
+        opt.innerText = `${p.name}（共通）`;
+        opt.dataset.location = '';
+        opt.dataset.scope = 'common';
+        presetSelect.appendChild(opt);
+    });
+
+    if (currentVal && Array.from(presetSelect.options).some(opt => opt.value === currentVal)) {
+        presetSelect.value = currentVal;
+        loadCultivationPreset(currentVal);
     } else if (presetSelect.options.length > 1) {
+        // 拠点限定を優先、なければ共通
         presetSelect.value = presetSelect.options[1].value;
         loadCultivationPreset(presetSelect.value);
     } else {
@@ -585,19 +633,114 @@ function setCpVal(id, value) {
     if (CHOICE_BUTTON_SELECT_IDS.includes(id)) refreshChoiceButtons(id);
 }
 
-async function saveCultivationPresetFromUI() {
+window.openCpPresetSaveModal = function() {
     const crop = getCpVal('cpCrop');
     const location = getCpVal('cpLocation');
     if (!crop) {
-        alert("作物を選択または入力してください。");
+        alert('作物を選択または入力してください。');
         return;
     }
-    const locStr = location ? `【${location}】` : '';
-    const presetName = prompt(locStr + crop + " の設定名を入力してください（例: 夏秋用）");
-    if (!presetName) return;
-    
+    const modal = document.getElementById('cpPresetSaveModal');
+    if (!modal) {
+        saveCultivationPresetFromUI();
+        return;
+    }
+    document.getElementById('cpPresetSaveCropLabel').textContent = crop;
+    document.getElementById('cpPresetSaveLocLabel').textContent = location || '未選択';
+    document.getElementById('cpPresetSaveName').value = '';
+
+    const commonRadio = document.getElementById('cpPresetScopeCommon');
+    const locRadio = document.getElementById('cpPresetScopeLoc');
+    const locWrap = document.getElementById('cpPresetScopeLocWrap');
+    const locHint = document.getElementById('cpPresetScopeLocHint');
+
+    if (location) {
+        if (locRadio) locRadio.disabled = false;
+        if (locWrap) {
+            locWrap.style.opacity = '1';
+            locWrap.style.pointerEvents = 'auto';
+        }
+        if (locHint) locHint.style.display = 'none';
+        if (locRadio) locRadio.checked = true;
+    } else {
+        if (locRadio) locRadio.disabled = true;
+        if (locWrap) {
+            locWrap.style.opacity = '0.5';
+            locWrap.style.pointerEvents = 'none';
+        }
+        if (locHint) locHint.style.display = 'block';
+        if (commonRadio) commonRadio.checked = true;
+    }
+
+    modal.style.display = 'flex';
+    setTimeout(() => {
+        const nameEl = document.getElementById('cpPresetSaveName');
+        if (nameEl) nameEl.focus();
+    }, 50);
+};
+
+window.closeCpPresetSaveModal = function() {
+    const modal = document.getElementById('cpPresetSaveModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.confirmCpPresetSave = async function() {
+    const crop = getCpVal('cpCrop');
+    const location = getCpVal('cpLocation');
+    if (!crop) {
+        alert('作物を選択または入力してください。');
+        return;
+    }
+    const nameEl = document.getElementById('cpPresetSaveName');
+    const presetName = nameEl ? String(nameEl.value || '').trim() : '';
+    if (!presetName) {
+        alert('設定名を入力してください。');
+        if (nameEl) nameEl.focus();
+        return;
+    }
+
+    const scopeEl = document.querySelector('input[name="cpPresetScope"]:checked');
+    const scope = scopeEl ? scopeEl.value : 'common';
+    if (scope === 'location' && !location) {
+        alert('拠点限定で保存するには、先に拠点を選択してください。');
+        return;
+    }
+
+    await saveCultivationPresetFromUI({
+        name: presetName,
+        location: scope === 'location' ? location : '',
+        scope: scope
+    });
+};
+
+async function saveCultivationPresetFromUI(options) {
+    const opts = options || {};
+    const crop = getCpVal('cpCrop');
+    const uiLocation = getCpVal('cpLocation');
+    if (!crop) {
+        alert('作物を選択または入力してください。');
+        return;
+    }
+
+    let presetName = opts.name;
+    let saveLocation = opts.location;
+    if (presetName == null) {
+        const hasLoc = !!uiLocation;
+        const choice = hasLoc
+            ? prompt(`保存範囲を入力してください\n1 = 共通（全拠点）\n2 = 拠点「${uiLocation}」限定`, '2')
+            : '1';
+        if (choice === null) return;
+        const isLoc = String(choice).trim() === '2' && hasLoc;
+        saveLocation = isLoc ? uiLocation : '';
+        const locStr = isLoc ? `【${uiLocation}】` : '【共通】';
+        presetName = prompt(locStr + crop + ' の設定名を入力してください（例: 夏秋用）');
+        if (!presetName) return;
+        presetName = String(presetName).trim();
+    }
+    if (saveLocation === undefined) saveLocation = '';
+
     const presetData = {
-        location: location || '',
+        location: saveLocation || '',
         crop: crop,
         name: presetName,
         holes: getCpVal('cpTrayHoles', true) || 128,
@@ -607,54 +750,70 @@ async function saveCultivationPresetFromUI() {
         yieldPerSeedling: getCpVal('cpYieldPerPlant', true) || 1,
         itemsPerPack: getCpVal('cpItemsPerPack', true) || 1
     };
-    
+
+    const key = encodePresetKey(presetData.location, presetData.name);
+
     try {
-        const btn = document.getElementById('btnSavePreset');
-        if (btn) btn.innerHTML = '保存中...';
-        
+        const btn = document.getElementById('btnConfirmCpPresetSave') || document.getElementById('btnSavePreset');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '保存中...';
+        }
+
         await callGAS('saveCultivationPreset', presetData);
-        
+
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         updatePresetList(crop);
-        setChoiceValue('cpPreset', presetName, false);
-        loadCultivationPreset(presetName);
-        
-        alert("設定を保存しました。");
-    } catch(e) {
-        alert("保存エラー: " + e.message);
+        setChoiceValue('cpPreset', key, false);
+        loadCultivationPreset(key);
+        closeCpPresetSaveModal();
+
+        const scopeLabel = presetData.location ? `拠点「${presetData.location}」限定` : '共通（全拠点）';
+        alert(`設定を保存しました（${scopeLabel}）。`);
+    } catch (e) {
+        alert('保存エラー: ' + e.message);
     } finally {
-        const btn = document.getElementById('btnSavePreset');
-        if (btn) btn.innerHTML = '設定を保存';
+        const confirmBtn = document.getElementById('btnConfirmCpPresetSave');
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '保存する';
+        }
+        const saveBtn = document.getElementById('btnSavePreset');
+        if (saveBtn) saveBtn.innerHTML = '設定を保存';
     }
 }
 
 async function deleteCultivationPresetUI() {
     const crop = getCpVal('cpCrop');
-    const location = getCpVal('cpLocation');
-    const presetName = document.getElementById('cpPreset').value;
-    if (!crop || !presetName) {
-        alert("削除するプリセットを選択してください。");
+    const key = getSelectedPresetKey();
+    if (!crop || !key) {
+        alert('削除するプリセットを選択してください。');
         return;
     }
-    
-    if (!confirm(`プリセット「${presetName}」を削除してもよろしいですか？`)) return;
-    
+
+    const decoded = decodePresetKey(key);
+    const targetLoc = decoded.scope === 'legacy' ? (getCpVal('cpLocation') || '') : (decoded.location || '');
+    const presetName = decoded.name;
+    const scopeLabel = targetLoc ? `拠点「${targetLoc}」` : '共通';
+
+    if (!confirm(`プリセット「${presetName}」（${scopeLabel}）を削除してもよろしいですか？`)) return;
+
     try {
         const btn = document.getElementById('btnDeletePreset');
         if (btn) btn.innerHTML = '削除中...';
-        
-        await callGAS('deleteCultivationPreset', { location: location || '', crop: crop, name: presetName });
-        
+
+        await callGAS('deleteCultivationPreset', { location: targetLoc, crop: crop, name: presetName });
+
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         updatePresetList(crop);
         setChoiceValue('cpPreset', '', false);
         loadCultivationPreset('');
-        
-        alert("プリセットを削除しました。");
-    } catch(e) {
-        alert("削除エラー: " + e.message);
+
+        alert('プリセットを削除しました。');
+    } catch (e) {
+        alert('削除エラー: ' + e.message);
     } finally {
         const btn = document.getElementById('btnDeletePreset');
         if (btn) btn.innerHTML = '削除';
@@ -663,31 +822,43 @@ async function deleteCultivationPresetUI() {
 
 async function renameCultivationPresetUI() {
     const crop = getCpVal('cpCrop');
-    const location = getCpVal('cpLocation');
-    const presetName = document.getElementById('cpPreset').value;
-    if (!crop || !presetName) {
-        alert("名前変更するプリセットを選択してください。");
+    const key = getSelectedPresetKey();
+    if (!crop || !key) {
+        alert('名前変更するプリセットを選択してください。');
         return;
     }
-    
-    const newName = prompt(`プリセット「${presetName}」の新しい名前を入力してください:`, presetName);
-    if (!newName || newName === presetName) return;
-    
+
+    const decoded = decodePresetKey(key);
+    const targetLoc = decoded.scope === 'legacy' ? (getCpVal('cpLocation') || '') : (decoded.location || '');
+    const presetName = decoded.name;
+    const scopeLabel = targetLoc ? `拠点「${targetLoc}」` : '共通';
+
+    const newName = prompt(`プリセット「${presetName}」（${scopeLabel}）の新しい名前:`, presetName);
+    if (!newName || String(newName).trim() === presetName) return;
+
+    const trimmed = String(newName).trim();
+    const newKey = encodePresetKey(targetLoc, trimmed);
+
     try {
         const btn = document.getElementById('btnRenamePreset');
         if (btn) btn.innerHTML = '変更中...';
-        
-        await callGAS('renameCultivationPreset', { location: location || '', crop: crop, oldName: presetName, newName: newName });
-        
+
+        await callGAS('renameCultivationPreset', {
+            location: targetLoc,
+            crop: crop,
+            oldName: presetName,
+            newName: trimmed
+        });
+
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         updatePresetList(crop);
-        setChoiceValue('cpPreset', newName, false);
-        loadCultivationPreset(newName);
-        
-        alert("プリセット名を変更しました。");
-    } catch(e) {
-        alert("変更エラー: " + e.message);
+        setChoiceValue('cpPreset', newKey, false);
+        loadCultivationPreset(newKey);
+
+        alert('プリセット名を変更しました。');
+    } catch (e) {
+        alert('変更エラー: ' + e.message);
     } finally {
         const btn = document.getElementById('btnRenamePreset');
         if (btn) btn.innerHTML = '名前変更';
@@ -939,6 +1110,7 @@ function addCpPlanRow() {
     }
     
     cpPlans.push(plan);
+    applyCpPendingFieldAttach(plan);
     renderCpPlanRow(plan);
     updateRowCalculations(plan.id);
     
@@ -1763,7 +1935,63 @@ function offerRestoreCpDraft() {
     }
 }
 // --- END NEW CULTIVATION PLAN JS ---
-function openCultivationPlanModal() {
+
+/** 圃場から起動したときの圃場紐づけ待ち */
+window.cpPendingFieldAttach = null;
+
+function updateCpFieldAttachBanner() {
+    const banner = document.getElementById('cpFieldAttachBanner');
+    const textEl = document.getElementById('cpFieldAttachBannerText');
+    if (!banner) return;
+    const att = window.cpPendingFieldAttach;
+    if (!att) {
+        banner.style.display = 'none';
+        return;
+    }
+    banner.style.display = 'flex';
+    if (textEl) {
+        textEl.textContent = `📍 「${att.label || '圃場'}」を紐づけ予定（面積 ${att.areaA || '-'}a）。作物・品種を選んで作型を追加すると自動でセットされます。`;
+    }
+}
+
+window.clearCpPendingFieldAttach = function() {
+    window.cpPendingFieldAttach = null;
+    updateCpFieldAttachBanner();
+};
+
+window.setCpPendingFieldAttach = function(attach) {
+    window.cpPendingFieldAttach = attach || null;
+    updateCpFieldAttachBanner();
+};
+
+function applyCpPendingFieldAttach(plan) {
+    const att = window.cpPendingFieldAttach;
+    if (!att || !plan) return false;
+    plan.fieldIds = Array.isArray(att.fieldIds) ? att.fieldIds.slice() : [];
+    if (att.areaA != null && att.areaA !== '') {
+        plan.areaA = parseFloat(att.areaA) || plan.areaA;
+    }
+    window.cpPendingFieldAttach = null;
+    updateCpFieldAttachBanner();
+    return true;
+}
+
+window.closeCultivationPlanModal = function() {
+    const modal = document.getElementById('cultivationPlanModal');
+    if (modal) modal.style.display = 'none';
+    window.cpPendingFieldAttach = null;
+    updateCpFieldAttachBanner();
+};
+
+/**
+ * options:
+ *  - skipDraft: 下書き復元確認を出さない
+ *  - location: 拠点をセット
+ *  - fieldCondition: 圃場条件
+ *  - fieldAttach: { fieldIds, areaA, label }
+ */
+function openCultivationPlanModal(options) {
+    const opts = options || {};
     const modal = document.getElementById('cultivationPlanModal');
     if (!modal) {
         alert('栽培計画画面の読み込み中です。数秒待ってから再度お試しください。');
@@ -1788,11 +2016,31 @@ function openCultivationPlanModal() {
     updateCpSemiAutoHint();
     refreshAllChoiceButtons();
     updateCpDraftStatusUI();
+
+    if (opts.fieldAttach) {
+        window.setCpPendingFieldAttach(opts.fieldAttach);
+    } else if (!opts.keepFieldAttach) {
+        window.cpPendingFieldAttach = null;
+        updateCpFieldAttachBanner();
+    } else {
+        updateCpFieldAttachBanner();
+    }
     
     fetchCultivationMaster().then(() => {
+        if (opts.location) {
+            setChoiceValue('cpLocation', opts.location, true);
+        }
+        if (opts.fieldCondition) {
+            const cond = String(opts.fieldCondition);
+            if (cond.indexOf('ハウス') >= 0) setChoiceValue('cpFieldCondition', 'ハウス', false);
+            else if (cond.indexOf('露地') >= 0) setChoiceValue('cpFieldCondition', '露地', false);
+        }
         calcCp();
         refreshAllChoiceButtons();
-        offerRestoreCpDraft();
+        updateCpFieldAttachBanner();
+        if (!opts.skipDraft) {
+            offerRestoreCpDraft();
+        }
     });
     
     // 左右パネルの縦スクロール同期
@@ -1815,34 +2063,69 @@ function openCultivationPlanModal() {
     }
 }
 
+/** 圃場（または畝）を起点に栽培計画を開く */
+window.openCultivationPlanFromField = function(p, attachOpts) {
+    if (!p || p.isMarker) {
+        alert('圃場を選択してください。');
+        return;
+    }
+    const attach = attachOpts || {};
+    const fieldIds = attach.fieldIds || [p.id];
+    let areaA = attach.areaA;
+    if (areaA == null || areaA === '') {
+        areaA = parseFloat(p.area);
+        if (!areaA && typeof computeCoordsAreaAres === 'function') {
+            areaA = computeCoordsAreaAres(p.coords);
+        }
+        areaA = areaA || 0;
+    }
+    const label = attach.label || p.name || '圃場';
+
+    openCultivationPlanModal({
+        skipDraft: true,
+        location: p.location || '',
+        fieldCondition: p.condition || '',
+        fieldAttach: {
+            fieldIds: fieldIds,
+            areaA: areaA,
+            label: label
+        }
+    });
+};
+
 // --- VARIETY REGISTRATION ---
 
-function loadCultivationPreset(presetName) {
+function loadCultivationPreset(presetKey) {
     const btnDel = document.getElementById('btnDeletePreset');
     const btnRen = document.getElementById('btnRenamePreset');
-    if (!presetName) {
-        document.getElementById('varietyFileLinkArea').innerHTML = '';
+    if (!presetKey) {
+        const fileArea = document.getElementById('varietyFileLinkArea');
+        if (fileArea) fileArea.innerHTML = '';
         if (btnDel) btnDel.style.display = 'none';
         if (btnRen) btnRen.style.display = 'none';
         return;
     }
     const crop = getCpVal('cpCrop');
-    const location = getCpVal('cpLocation');
     if (!cpMasterData || !cpMasterData.presets || !cpMasterData.presets[crop]) {
         if (btnDel) btnDel.style.display = 'none';
         if (btnRen) btnRen.style.display = 'none';
         return;
     }
-    
-    const curLoc = String(location || '').trim();
-    const presetsForCrop = cpMasterData.presets[crop] || [];
-    let p = presetsForCrop.find(x => x.name === presetName && String(x.location || '').trim() === curLoc);
-    if (!p) {
-        p = presetsForCrop.find(x => x.name === presetName && !String(x.location || '').trim());
+
+    const decoded = decodePresetKey(presetKey);
+    const curLoc = getCpVal('cpLocation');
+    let p = null;
+
+    if (decoded.scope === 'common') {
+        p = findCultivationPreset(crop, '', decoded.name);
+    } else if (decoded.scope === 'location') {
+        p = findCultivationPreset(crop, decoded.location, decoded.name);
+    } else {
+        // 旧形式（名前のみ）: 拠点一致 → 共通 の順
+        p = findCultivationPreset(crop, curLoc, decoded.name)
+            || findCultivationPreset(crop, '', decoded.name);
     }
-    if (!p) {
-        p = presetsForCrop.find(x => x.name === presetName);
-    }
+
     if (p) {
         setCpVal('cpTrayHoles', p.holes);
         setCpVal('cpRows', p.rows);
@@ -1851,14 +2134,15 @@ function loadCultivationPreset(presetName) {
         setCpVal('cpYieldPerPlant', p.yieldPerSeedling);
         setCpVal('cpItemsPerPack', p.itemsPerPack);
         calcCp();
-        
-        // Show file link if exists
+
         const fileArea = document.getElementById('varietyFileLinkArea');
-        if (p.fileUrl) {
-            let urls = p.fileUrl.split(',');
-            fileArea.innerHTML = urls.map((u, i) => `<a href="${u.trim()}" target="_blank" style="color: #E91E63; text-decoration: none; font-weight: bold; margin-right: 4px;">📄 資料${urls.length > 1 ? i+1 : ''}を確認</a>`).join('');
-        } else {
-            fileArea.innerHTML = '';
+        if (fileArea) {
+            if (p.fileUrl) {
+                let urls = p.fileUrl.split(',');
+                fileArea.innerHTML = urls.map((u, i) => `<a href="${u.trim()}" target="_blank" style="color: #E91E63; text-decoration: none; font-weight: bold; margin-right: 4px;">📄 資料${urls.length > 1 ? i+1 : ''}を確認</a>`).join('');
+            } else {
+                fileArea.innerHTML = '';
+            }
         }
         if (btnDel) btnDel.style.display = 'inline-block';
         if (btnRen) btnRen.style.display = 'inline-block';
