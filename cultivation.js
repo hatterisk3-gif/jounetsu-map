@@ -1147,7 +1147,10 @@ function renderCpPlanRow(plan) {
                 ${fileLinkHtml}
                 <span id="tagDisplay_${plan.id}" style="color: #e91e63; font-size: 9px; font-weight:bold;">${plan.tag || ''}</span>
             </span>
-            <button onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:16px; line-height:1; padding:0 4px; font-weight:bold;">×</button>
+            <span style="display:flex; align-items:center; gap:2px;">
+                <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="この設定をコピーして下に品種を追加" style="background:#fff; border:1px solid #1976D2; color:#1565C0; cursor:pointer; font-size:10px; line-height:1; padding:2px 5px; border-radius:3px; font-weight:bold;">📋コピー</button>
+                <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:16px; line-height:1; padding:0 4px; font-weight:bold;">×</button>
+            </span>
         </div>
         <div style="font-size: 10px; display:flex; flex-direction:column; gap:3px; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb;">
           <div style="display:flex; align-items:center; gap:3px;">
@@ -1263,6 +1266,86 @@ function removeCpPlanRow(planId) {
     setTimeout(() => { syncAllRowHeights(); }, 50);
     updateCpSemiAutoHint();
 }
+
+/** 品種カードの設定（面積・歩留・成功率・カレンダー等）をコピーして直下に追加 */
+function copyCpPlanRow(sourcePlanId) {
+    const srcIdx = cpPlans.findIndex(p => p.id === sourcePlanId);
+    if (srcIdx < 0) return;
+
+    if (typeof window.updateRowParams === 'function') {
+        window.updateRowParams(sourcePlanId);
+    }
+
+    const src = cpPlans[srcIdx];
+    const collected = collectCurrentCpPlansFromDom().find(p => p.id === sourcePlanId);
+    const tasks = (collected && collected.tasks) ? collected.tasks : (src.tasks || { sowing: [], planting: [], harvesting: [] });
+
+    const formCrop = getCpVal('cpCrop');
+    const formVariety = getCpVal('cpVariety');
+    const useFormVariety = !!(formVariety && String(formVariety).trim());
+
+    const areaEl = document.getElementById('area_' + sourcePlanId);
+    const yieldEl = document.getElementById('yieldRate_' + sourcePlanId);
+    const successEl = document.getElementById('seedlingSuccess_' + sourcePlanId);
+
+    const newPlan = {
+        id: 'plan_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        location: src.location,
+        crop: (formCrop && String(formCrop).trim()) ? formCrop : src.crop,
+        variety: useFormVariety ? formVariety : src.variety,
+        fieldCondition: src.fieldCondition || '露地',
+        holes: src.holes,
+        rows: src.rows,
+        pSpace: src.pSpace,
+        rSpace: src.rSpace,
+        yieldPerPlant: src.yieldPerPlant,
+        itemsPerPack: src.itemsPerPack,
+        areaA: areaEl ? (parseFloat(areaEl.value) || 0) : (src.areaA || 0),
+        yieldRate: yieldEl ? (parseFloat(yieldEl.value) || 0.9) : (src.yieldRate != null ? src.yieldRate : 0.9),
+        seedlingSuccess: successEl ? (parseFloat(successEl.value) || 0.9) : (src.seedlingSuccess != null ? src.seedlingSuccess : 0.9),
+        harvestRatios: Array.isArray(src.harvestRatios) ? src.harvestRatios.slice() : [],
+        trays: 0,
+        yield: 0,
+        tasks: {
+            sowing: (tasks.sowing || []).map(t => Object.assign({}, t)),
+            planting: (tasks.planting || []).map(t => Object.assign({}, t)),
+            harvesting: (tasks.harvesting || []).map(t => Object.assign({}, t))
+        },
+        sowing: Array.isArray(src.sowing) ? src.sowing.slice() : [],
+        planting: Array.isArray(src.planting) ? src.planting.slice() : [],
+        harvesting: Array.isArray(src.harvesting) ? src.harvesting.slice() : [],
+        fileUrl: src.fileUrl || '',
+        fieldIds: [],
+        tag: ''
+    };
+
+    cpPlans.splice(srcIdx + 1, 0, newPlan);
+    renderCpPlanRow(newPlan);
+
+    // 直下に並ぶようDOMを差し替え（renderは末尾追加のため）
+    const tbody = document.getElementById('cpTableBody');
+    const srcCard = document.getElementById('cpLeftCard_' + sourcePlanId);
+    const newCard = document.getElementById('cpLeftCard_' + newPlan.id);
+    const srcTr = tbody ? tbody.querySelector(`tr[data-plan-id="${sourcePlanId}"]`) : null;
+    const newTr = tbody ? tbody.querySelector(`tr[data-plan-id="${newPlan.id}"]`) : null;
+    if (srcCard && newCard) srcCard.after(newCard);
+    if (srcTr && newTr) srcTr.after(newTr);
+
+    if (typeof window.updateRowCalculations === 'function') {
+        window.updateRowCalculations(newPlan.id);
+    }
+    if (typeof updateCpCellsText === 'function') updateCpCellsText(newPlan.id);
+    if (typeof updateVarietyCardFieldsDisplay === 'function') updateVarietyCardFieldsDisplay(newPlan.id);
+    setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
+
+    // コピーしたことが分かるようカードを一瞬強調
+    if (newCard) {
+        newCard.style.outline = '2px solid #FF9800';
+        setTimeout(() => { newCard.style.outline = ''; }, 1200);
+    }
+}
+
+window.copyCpPlanRow = copyCpPlanRow;
 
 
 const TOOL_COLORS = {
@@ -1389,12 +1472,13 @@ function toggleCpCell(td, planId) {
         const step = cpSemiAutoSteps[planId] || 0;
         tool = getSemiAutoTool(step);
         const div = td.querySelector('div');
-        // 同じ種類が既にあるセル → 消す（ステップは進めない）
+        // 同じ種類が既にあるセル → 消す＋順序も1つ戻す
         if (td.dataset.task === tool) {
             td.dataset.task = '';
             div.style.backgroundColor = '';
             div.innerHTML = '';
             td.dataset.amount = '';
+            cpSemiAutoSteps[planId] = Math.max(0, step - 1);
         } else {
             td.dataset.task = tool;
             div.style.backgroundColor = TOOL_COLORS[tool];
@@ -2381,10 +2465,11 @@ function toggleCrCell(td) {
     if (selected === 'semiauto') {
         const tool = getSemiAutoTool(crSemiAutoStep);
         const div = td.querySelector('div');
-        // 同じ種類が既にあるセル → 消す（ステップは進めない）
+        // 同じ種類が既にあるセル → 消す＋順序も1つ戻す
         if (td.dataset.task === tool) {
             td.dataset.task = '';
             div.style.backgroundColor = '';
+            crSemiAutoStep = Math.max(0, crSemiAutoStep - 1);
         } else {
             td.dataset.task = tool;
             div.style.backgroundColor = TOOL_COLORS[tool];
