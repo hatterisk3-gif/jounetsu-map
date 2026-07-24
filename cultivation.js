@@ -1192,7 +1192,7 @@ function renderCpPlanRow(plan) {
     // fieldIdsの初期化
     plan.fieldIds = plan.fieldIds || [];
     
-    // --- 左パネル: 品種カード ---
+    // --- 左パネル: 品種カード（既定はコンパクト：作物・品種・面積のみ） ---
     let fileLinkHtml = '';
     if (plan.fileUrl) {
         let urls = plan.fileUrl.split(',');
@@ -1201,23 +1201,26 @@ function renderCpPlanRow(plan) {
     
     let card = document.createElement('div');
     card.id = 'cpLeftCard_' + plan.id;
-    card.style.cssText = 'padding: 6px; background: #e3f2fd; border-bottom: 1px solid #bbdefb; box-sizing: border-box;';
+    card.style.cssText = 'padding: 4px 6px; background: #e3f2fd; border-bottom: 1px solid #bbdefb; box-sizing: border-box;';
     card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:4px;">
-            <span style="font-weight:bold; font-size:11px; display:flex; align-items:center; flex-wrap:wrap; gap:3px; min-width:0; flex:1;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:2px;">
+            <span style="font-weight:bold; font-size:11px; display:flex; align-items:center; flex-wrap:wrap; gap:2px; min-width:0; flex:1; line-height:1.25;">
                 <span style="background:#1976D2; color:#fff; padding:1px 5px; border-radius:8px; font-size:9px;">${plan.crop}</span>
                 <span style="color:#0d47a1; font-size:11px;">${plan.variety}</span>
                 ${fileLinkHtml}
                 <span id="tagDisplay_${plan.id}" style="color: #e91e63; font-size: 9px; font-weight:bold;">${plan.tag || ''}</span>
             </span>
-            <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:16px; line-height:1; padding:0; width:18px; flex-shrink:0; font-weight:bold;">×</button>
+            <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:14px; line-height:1; padding:0; width:16px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
-        <div style="font-size: 10px; display:flex; flex-direction:column; gap:3px; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb; box-sizing:border-box;">
-          <div style="display:flex; align-items:center; gap:3px;">
+        <div style="display:flex; align-items:center; gap:3px; margin-top:3px; font-size:10px;">
             <span>面積:</span>
-            <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:45px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+            <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:42px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
             <span>a</span>
-          </div>
+            <button type="button" id="cpCardDetailsBtn_${plan.id}" onclick="toggleCpCardDetails('${plan.id}')" title="詳細を開閉"
+              style="margin-left:auto; height:20px; padding:0 6px; font-size:10px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap;">詳細 ▾</button>
+        </div>
+        <div id="cpSemiHint_${plan.id}" style="display:none; margin-top:2px; font-size:9px; font-weight:bold; line-height:1.2;"></div>
+        <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:4px; font-size:10px; flex-direction:column; gap:3px; background:#fff; padding:4px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
           <div id="fieldSelectContainer_${plan.id}" style="width:100%; font-size:10px; display:flex; flex-direction:column; gap:2px;">
              <button type="button" onclick="openFieldSelectMap('${plan.id}')" style="width:100%; height:20px; font-size:10px; padding:0; background:#2196F3; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold;">🗺️ 圃場選択 (地図)</button>
              <div style="display:flex; justify-content:space-between; font-weight:bold; color:#e65100; margin-top:1px; font-size:9px;">
@@ -1238,15 +1241,14 @@ function renderCpPlanRow(plan) {
               ${buildDecimalSelectOptions(1, plan.seedlingSuccess != null ? plan.seedlingSuccess : 0.9, false)}
             </select>
           </div>
+          <div style="color:#2e7d32; font-weight:bold; font-size:9px; line-height:1.35;">
+            播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span>
+            ／ 収穫:<span id="calcYield_${plan.id}">0</span>
+          </div>
+          <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="面積・歩留・成功率などをコピーして下に品種を追加（作型は空）"
+            style="display:block; width:100%; height:24px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:4px; cursor:pointer; font-size:13px; font-weight:bold; line-height:1; padding:0;">＋</button>
+          <div id="ratios_${plan.id}" style="display:flex; gap: 3px; flex-wrap: wrap;"></div>
         </div>
-        <div style="margin-top:4px; color:#2e7d32; font-weight:bold; font-size:9px; line-height:1.35;">
-          播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span>
-          ／ 収穫:<span id="calcYield_${plan.id}">0</span>
-        </div>
-        <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="面積・歩留・成功率などをコピーして下に品種を追加（作型は空）"
-          style="display:block; width:100%; margin-top:5px; height:26px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:4px; cursor:pointer; font-size:13px; font-weight:bold; line-height:1; padding:0;">＋</button>
-        <div id="cpSemiHint_${plan.id}" style="display:none; margin-top:4px; font-size:10px; font-weight:bold; line-height:1.3;"></div>
-        <div id="ratios_${plan.id}" style="margin-top: 3px; display:flex; gap: 3px; flex-wrap: wrap;"></div>
     `;
     leftBody.appendChild(card);
 
@@ -1312,6 +1314,17 @@ function renderCpPlanRow(plan) {
     
     // 左右の高さを同期
     setTimeout(() => { syncAllRowHeights(); }, 50);
+}
+
+/** 品種カードの詳細（圃場・歩留など）を開閉 */
+function toggleCpCardDetails(planId) {
+    const details = document.getElementById('cpCardDetails_' + planId);
+    const btn = document.getElementById('cpCardDetailsBtn_' + planId);
+    if (!details) return;
+    const open = details.style.display === 'none' || !details.style.display;
+    details.style.display = open ? 'flex' : 'none';
+    if (btn) btn.textContent = open ? '詳細 ▴' : '詳細 ▾';
+    setTimeout(() => { syncAllRowHeights(); }, 30);
 }
 
 function removeCpPlanRow(planId) {
