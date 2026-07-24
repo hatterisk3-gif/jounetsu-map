@@ -107,23 +107,24 @@
             畝を生成</button>
         </div>
 
-        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 地形・自由畝の追加 (タップで移動/変形可能)</div>
-        <div style="display:flex; gap:5px; margin-bottom:5px; flex-wrap:wrap;">
-          <button onclick="cadSetPinMode('nakamichi')"
-            style="flex:1; min-width:70px; background:#9C27B0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛤
-            中道ライン</button>
-          <button onclick="cadSetPinMode('drainage')"
-            style="flex:1; min-width:70px; background:#00BCD4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">〰️
-            排水ライン</button>
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <button onclick="cadSetPinMode('snap_line')"
+            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
+            選んだ線に合わせる</button>
+          <button onclick="cadRotateMap(-5)"
+            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↩️</button>
+          <button onclick="cadRotateMap(5)"
+            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↪️</button>
+        </div>
+
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">⬛ 自由畝の追加 (タップで配置・移動/変形可能)</div>
+        <div style="display:flex; gap:5px; margin-bottom:5px;">
           <button onclick="cadAddCustomShape('rect')"
-            style="flex:1; min-width:70px; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛
+            style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛
             四角畝</button>
           <button onclick="cadAddCustomShape('circle')"
-            style="flex:1; min-width:70px; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⚫
+            style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⚫
             丸畝</button>
-          <button onclick="cadAddMakura()"
-            style="flex:1; min-width:70px; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛌
-            枕畝</button>
         </div>
       </div>
 
@@ -144,21 +145,25 @@
             駐車場</button>
         </div>
 
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 地形の追加</div>
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <button onclick="cadSetPinMode('nakamichi')"
+            style="flex:1; background:#9C27B0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛤
+            中道ライン</button>
+          <button onclick="cadSetPinMode('drainage')"
+            style="flex:1; background:#00BCD4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">〰️
+            排水ライン</button>
+          <button onclick="cadAddMakura()"
+            style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛌
+            枕畝</button>
+        </div>
+
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📐 畝の正面（バー）配置</div>
         <div style="display:flex; gap:5px; margin-bottom:5px;">
            <button onclick="cadSetFrontBar('top')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">上(北)</button>
            <button onclick="cadSetFrontBar('bottom')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">下(南)</button>
            <button onclick="cadSetFrontBar('left')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">左(西)</button>
            <button onclick="cadSetFrontBar('right')" style="flex:1; background:#ea580c; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; font-weight:bold;">右(東)</button>
-        </div>
-        <div style="display:flex; gap:5px; margin-bottom:10px;">
-          <button onclick="cadSetPinMode('snap_line')"
-            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
-            選んだ線に合わせる</button>
-          <button onclick="cadRotateMap(-5)"
-            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↩️</button>
-          <button onclick="cadRotateMap(5)"
-            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↪️</button>
         </div>
 
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📏 畝間（間隔）の調整</div>
