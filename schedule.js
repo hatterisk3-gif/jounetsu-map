@@ -957,7 +957,7 @@ async function fetchWeatherAndUpdateUI() {
 
       window.openCropMarketModal = () => {
         if (window.MarketInfo && typeof window.MarketInfo.open === 'function') {
-          window.MarketInfo.open({ suggestedCrops: window.getScheduleCropNames() });
+          window.MarketInfo.open();
         } else if (typeof customAlert === 'function') {
           customAlert('市況モジュールの読み込み中です。少し待って再度お試しください。');
         } else {

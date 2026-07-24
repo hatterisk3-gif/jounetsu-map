@@ -641,6 +641,19 @@ function ensureLocationMasterSheet_() {
   return sheet;
 }
 
+function parseLocationClimates_(val) {
+  if (Array.isArray(val)) {
+    return val.map(v => String(v || '').trim()).filter(Boolean);
+  }
+  const s = String(val || '').trim();
+  if (!s) return [];
+  return s.split(/[,、\/／|｜]/).map(v => v.trim()).filter(Boolean);
+}
+
+function formatLocationClimates_(climates) {
+  return parseLocationClimates_(climates).join(',');
+}
+
 function readLocationMasterDetails_() {
   const sheet = ensureLocationMasterSheet_();
   if (!sheet || sheet.getLastRow() <= 1) return [];
@@ -657,11 +670,13 @@ function readLocationMasterDetails_() {
     if (!name || name === '拠点名' || name === '拠点') continue;
     if (seen[name]) continue;
     seen[name] = true;
+    const climates = idxClimate >= 0 ? parseLocationClimates_(data[i][idxClimate]) : [];
     results.push({
       name: name,
       prefecture: idxPref >= 0 ? String(data[i][idxPref] || '').trim() : '',
       city: idxCity >= 0 ? String(data[i][idxCity] || '').trim() : '',
-      climate: idxClimate >= 0 ? String(data[i][idxClimate] || '').trim() : ''
+      climate: climates.join(','),
+      climates: climates
     });
   }
   return results;
@@ -738,7 +753,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const climIdx = headers.indexOf('産地');
       if (prefIdx >= 0) row[prefIdx] = String(loc.prefecture || '').trim();
       if (cityIdx >= 0) row[cityIdx] = String(loc.city || '').trim();
-      if (climIdx >= 0) row[climIdx] = String(loc.climate || '').trim();
+      if (climIdx >= 0) {
+        const climates = loc.climates != null ? loc.climates : loc.climate;
+        row[climIdx] = formatLocationClimates_(climates);
+      }
       sheet.appendRow(row);
       writeLog(userName, "マスタ追加", name, `対象: ${sheetName}`);
     } else {
@@ -791,7 +809,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet.getRange(i + 1, 1).setValue(newName);
           if (prefIdx >= 0) sheet.getRange(i + 1, prefIdx + 1).setValue(String(loc.prefecture || '').trim());
           if (cityIdx >= 0) sheet.getRange(i + 1, cityIdx + 1).setValue(String(loc.city || '').trim());
-          if (climIdx >= 0) sheet.getRange(i + 1, climIdx + 1).setValue(String(loc.climate || '').trim());
+          if (climIdx >= 0) {
+            const climates = loc.climates != null ? loc.climates : loc.climate;
+            sheet.getRange(i + 1, climIdx + 1).setValue(formatLocationClimates_(climates));
+          }
           writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
           break;
         }
@@ -1297,6 +1318,9 @@ function updatePolygon(params) {
     if (params.ridgeDir !== undefined) sheet.getRange(targetRow, 14).setValue(params.ridgeDir); // N列(あれば)
     if (params.ridgeWidth !== undefined) sheet.getRange(targetRow, 15).setValue(params.ridgeWidth); // O列(あれば)
     if (params.uneSimData !== undefined) {
+      if (!checkAdminRole(userName)) {
+        throw new Error("管理者権限がないため、CAD（給水口）データの更新はできません。");
+      }
       sheet.getRange(targetRow, 16).setValue(params.uneSimData); // P列(畝データ)
       
       // 畝シートにも保存

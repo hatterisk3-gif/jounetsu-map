@@ -265,37 +265,98 @@ function getLocationDetailByName(name) {
     return details.find(l => l && l.name === name) || null;
 }
 
-/** 拠点選択に応じて産地を自動セット */
+function parseLocationClimates(val) {
+    if (Array.isArray(val)) return val.map(v => String(v || '').trim()).filter(Boolean);
+    const s = String(val || '').trim();
+    if (!s) return [];
+    return s.split(/[,、\/／|｜]/).map(v => v.trim()).filter(Boolean);
+}
+
+/** 拠点に紐づく産地一覧 */
+function getLocationClimates(detailOrName) {
+    const detail = typeof detailOrName === 'string'
+        ? getLocationDetailByName(detailOrName)
+        : detailOrName;
+    if (!detail) return [];
+    if (Array.isArray(detail.climates) && detail.climates.length) {
+        return parseLocationClimates(detail.climates);
+    }
+    return parseLocationClimates(detail.climate);
+}
+
+const ALL_CP_CLIMATES = ['暖地', '温暖地', '一般地', '高冷地'];
+
+/** 産地セレクトを拠点の登録産地に合わせて更新 */
+function rebuildCpClimateOptions(allowedClimates, preferred) {
+    const sel = document.getElementById('cpClimate');
+    if (!sel) return;
+    const prev = preferred != null ? preferred : sel.value;
+    const list = (allowedClimates && allowedClimates.length)
+        ? allowedClimates.filter(c => ALL_CP_CLIMATES.includes(c))
+        : ALL_CP_CLIMATES.slice();
+    let html = '<option value="">拠点の全産地</option>';
+    list.forEach(c => {
+        html += `<option value="${c}">${c}</option>`;
+    });
+    sel.innerHTML = html;
+    if (prev && list.includes(prev)) {
+        sel.value = prev;
+    } else if (list.length === 1) {
+        sel.value = list[0];
+    } else {
+        sel.value = '';
+    }
+    refreshChoiceButtons('cpClimate');
+}
+
+/** 作型の産地が拠点（または選択中）産地と一致するか */
+function isCroptypeClimateMatch(dbClimate, selectedClimate, locationClimates) {
+    const db = String(dbClimate || '').trim();
+    if (!db) return true;
+    const selected = String(selectedClimate || '').trim();
+    if (selected) return db === selected;
+    if (locationClimates && locationClimates.length) {
+        return locationClimates.includes(db);
+    }
+    return true;
+}
+
+/** 拠点選択に応じて産地を自動セットし、一致品種を絞り込む */
 function onCpLocationChange() {
     const location = getCpVal('cpLocation');
     const hint = document.getElementById('cpLocationClimateHint');
     const detail = getLocationDetailByName(location);
+    const climates = getLocationClimates(detail);
+
+    rebuildCpClimateOptions(climates, climates.length === 1 ? climates[0] : '');
 
     if (!detail) {
         if (hint) {
             hint.textContent = '';
             hint.style.color = '#2e7d32';
         }
+        updateVarietyList();
+        checkCroptypeDB();
         return;
     }
 
     const bits = [detail.prefecture, detail.city].filter(Boolean);
-    if (detail.climate) {
-        setChoiceValue('cpClimate', detail.climate, true);
+    if (climates.length) {
         if (hint) {
             hint.style.color = '#2e7d32';
             hint.textContent = bits.length
-                ? `拠点設定: ${bits.join(' ')} → 産地「${detail.climate}」を自動選択`
-                : `拠点の産地「${detail.climate}」を自動選択`;
+                ? `拠点設定: ${bits.join(' ')} → 産地「${climates.join('・')}」に一致する品種・作型を読込`
+                : `拠点の産地「${climates.join('・')}」に一致する品種・作型を読込`;
         }
-    } else {
-        if (hint) {
-            hint.style.color = '#e65100';
-            hint.textContent = bits.length
-                ? `拠点: ${bits.join(' ')}（産地未設定。管理画面の拠点マスタで設定できます）`
-                : 'この拠点に産地が未設定です（管理画面の拠点マスタで設定）';
-        }
+    } else if (hint) {
+        hint.style.color = '#e65100';
+        hint.textContent = bits.length
+            ? `拠点: ${bits.join(' ')}（産地未設定。管理画面の拠点マスタで設定できます）`
+            : 'この拠点に産地が未設定です（管理画面の拠点マスタで設定）';
     }
+
+    updateVarietyList();
+    checkCroptypeDB();
 }
 
 async function fetchCultivationMaster() {
@@ -325,11 +386,27 @@ async function fetchCultivationMaster() {
 function updateVarietyList() {
     const crop = getCpVal('cpCrop');
     let opts = [];
-    if(cpMasterData && cpMasterData.crops && cpMasterData.crops[crop]) {
-        opts = cpMasterData.crops[crop];
+    if (cpMasterData && cpMasterData.crops && cpMasterData.crops[crop]) {
+        opts = cpMasterData.crops[crop].slice();
     }
+
+    // 拠点の産地に一致する作型がある品種を優先表示（一致するものだけに絞る）
+    const locationClimates = getLocationClimates(getCpVal('cpLocation'));
+    const selectedClimate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+    if (opts.length && cpMasterData && cpMasterData.croptypesDB && (locationClimates.length || selectedClimate)) {
+        const matched = opts.filter(variety => {
+            return cpMasterData.croptypesDB.some(db =>
+                db.crop === crop &&
+                db.variety === variety &&
+                isCroptypeClimateMatch(db.climate, selectedClimate, locationClimates)
+            );
+        });
+        if (matched.length) opts = matched;
+    }
+
     populateSelect('cpVariety', opts, []);
     updatePresetList(crop);
+    checkCroptypeDB();
 }
 
 function updatePresetList(crop) {
@@ -646,19 +723,45 @@ function checkCroptypeDB() {
     const crop = getCpVal('cpCrop');
     const variety = getCpVal('cpVariety');
     const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+    const locationClimates = getLocationClimates(getCpVal('cpLocation'));
     
     pendingCroptypeData = null;
     
     if (!crop || !variety) return;
     
     if (cpMasterData && cpMasterData.croptypesDB) {
-        const found = cpMasterData.croptypesDB.find(db => 
-            db.crop === crop && db.variety === variety &&
-            (!climate || !db.climate || db.climate === climate)
+        const candidates = cpMasterData.croptypesDB.filter(db =>
+            db.crop === crop &&
+            db.variety === variety &&
+            isCroptypeClimateMatch(db.climate, climate, locationClimates)
         );
+
+        let found = null;
+        if (climate) {
+            found = candidates.find(db => String(db.climate || '').trim() === climate) || candidates[0] || null;
+        } else if (locationClimates.length) {
+            // 拠点産地の並び順を優先
+            for (const locClimate of locationClimates) {
+                found = candidates.find(db => String(db.climate || '').trim() === locClimate);
+                if (found) break;
+            }
+            if (!found) found = candidates[0] || null;
+        } else {
+            found = candidates[0] || null;
+        }
         
         if (found) {
             pendingCroptypeData = found;
+        }
+    }
+
+    // 作型ファイルリンクなどがあれば更新
+    const linkArea = document.getElementById('varietyFileLinkArea');
+    if (linkArea) {
+        if (pendingCroptypeData && pendingCroptypeData.fileUrl) {
+            linkArea.innerHTML = `<a href="${pendingCroptypeData.fileUrl}" target="_blank" style="color:#1565c0;">📄 作型表</a>`;
+        } else {
+            linkArea.innerHTML = '';
         }
     }
 }
@@ -1456,16 +1559,18 @@ function saveCultivationPlanDraft() {
 function applyCpFormState(form) {
     if (!form) return;
     if (form.year != null && form.year !== '') setChoiceValue('cpYear', String(form.year), false);
-    if (form.location) setCpVal('cpLocation', form.location);
+    if (form.location) {
+        setCpVal('cpLocation', form.location);
+        onCpLocationChange();
+    }
     if (form.crop) {
         rememberCustomCrop(form.crop);
         setCpVal('cpCrop', form.crop);
         updateVarietyList();
     }
     if (form.climate != null) {
-        const climateEl = document.getElementById('cpClimate');
-        if (climateEl) climateEl.value = form.climate;
-        refreshChoiceButtons('cpClimate');
+        const climates = getLocationClimates(form.location || getCpVal('cpLocation'));
+        rebuildCpClimateOptions(climates, form.climate || '');
     }
     if (form.fieldCondition) setCpVal('cpFieldCondition', form.fieldCondition);
     if (form.holes !== undefined && form.holes !== '') setCpVal('cpTrayHoles', form.holes);

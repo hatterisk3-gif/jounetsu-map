@@ -6,6 +6,11 @@ mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 
 const JP_PREFECTURES = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
 const CP_CLIMATE_OPTIONS = ['暖地', '温暖地', '一般地', '高冷地'];
+const JP_CITIES_CACHE_KEY = 'jmap_jp_cities_by_pref_v1';
+const JP_CITIES_API_URL = 'https://geolonia.github.io/japanese-addresses/api/ja.json';
+let jpCitiesByPref = null;
+let jpCitiesLoadPromise = null;
+
 function suggestClimateFromPrefecture(pref) {
     const cool = ['北海道','青森県','岩手県','秋田県','山形県','福島県','長野県','新潟県','富山県','石川県','福井県','山梨県','群馬県','栃木県'];
     const warm = ['沖縄県','鹿児島県','宮崎県','熊本県','長崎県','佐賀県','福岡県','大分県','高知県','愛媛県','香川県','徳島県','山口県','広島県','岡山県','和歌山県','三重県','静岡県','愛知県','千葉県','神奈川県','東京都','大阪府','兵庫県','京都府','滋賀県','奈良県'];
@@ -19,11 +24,100 @@ function buildPrefectureOptionsHtml(selected) {
 function buildClimateOptionsHtml(selected) {
     return '<option value="">産地を選択</option>' + CP_CLIMATE_OPTIONS.map(c => `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`).join('');
 }
+function parseLocationClimates(val) {
+    if (Array.isArray(val)) return val.map(v => String(v || '').trim()).filter(Boolean);
+    const s = String(val || '').trim();
+    if (!s) return [];
+    return s.split(/[,、\/／|｜]/).map(v => v.trim()).filter(Boolean);
+}
+function buildClimateCheckboxesHtml(prefix, selected) {
+    const selectedSet = new Set(parseLocationClimates(selected));
+    return `<div id="${prefix}_location_climates" style="display:flex; flex-wrap:wrap; gap:8px 12px; padding:6px 8px; background:#fff; border:1px solid #ccc; border-radius:4px;">` +
+        CP_CLIMATE_OPTIONS.map(c => {
+            const checked = selectedSet.has(c) ? 'checked' : '';
+            return `<label style="font-size:13px; display:flex; align-items:center; gap:4px; cursor:pointer; white-space:nowrap;">
+                <input type="checkbox" class="${prefix}_climate_cb" value="${c}" ${checked}>${c}
+            </label>`;
+        }).join('') +
+        `</div>
+        <div style="font-size:11px; color:#666; margin-top:2px;">※複数選択可（栽培計画で一致する品種・作型を読み込みます）</div>`;
+}
+function getSelectedLocationClimates(prefix) {
+    return Array.from(document.querySelectorAll(`.${prefix}_climate_cb:checked`)).map(el => el.value);
+}
+function setLocationClimateCheckboxes(prefix, climates) {
+    const selected = new Set(parseLocationClimates(climates));
+    document.querySelectorAll(`.${prefix}_climate_cb`).forEach(cb => {
+        cb.checked = selected.has(cb.value);
+    });
+}
+function buildCityOptionsHtml(pref, selected) {
+    const cities = (jpCitiesByPref && pref && Array.isArray(jpCitiesByPref[pref])) ? jpCitiesByPref[pref] : [];
+    let html = '<option value="">市を選択</option>';
+    cities.forEach(c => { html += `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`; });
+    html += `<option value="custom" ${selected && cities.indexOf(selected) === -1 && selected !== '' ? 'selected' : ''}>その他(手入力)</option>`;
+    return html;
+}
+function ensureJpCitiesLoaded() {
+    if (jpCitiesByPref) return Promise.resolve(jpCitiesByPref);
+    if (jpCitiesLoadPromise) return jpCitiesLoadPromise;
+    try {
+        const cached = localStorage.getItem(JP_CITIES_CACHE_KEY);
+        if (cached) { jpCitiesByPref = JSON.parse(cached); return Promise.resolve(jpCitiesByPref); }
+    } catch (e) {}
+    jpCitiesLoadPromise = fetch(JP_CITIES_API_URL)
+        .then(res => { if (!res.ok) throw new Error('市区町村データの取得に失敗しました'); return res.json(); })
+        .then(data => {
+            jpCitiesByPref = data || {};
+            try { localStorage.setItem(JP_CITIES_CACHE_KEY, JSON.stringify(jpCitiesByPref)); } catch (e) {}
+            return jpCitiesByPref;
+        })
+        .catch(err => { console.warn(err); jpCitiesByPref = jpCitiesByPref || {}; return jpCitiesByPref; })
+        .finally(() => { jpCitiesLoadPromise = null; });
+    return jpCitiesLoadPromise;
+}
+function syncLocationCityCustomVisibility(prefix) {
+    const citySel = document.getElementById(prefix + '_location_city');
+    const cityCustom = document.getElementById(prefix + '_location_city_custom');
+    if (!citySel || !cityCustom) return;
+    if (citySel.value === 'custom') { cityCustom.style.display = 'block'; cityCustom.focus(); }
+    else { cityCustom.style.display = 'none'; if (citySel.value) cityCustom.value = ''; }
+}
+function getLocationCityValue(prefix) {
+    const citySel = document.getElementById(prefix + '_location_city');
+    const cityCustom = document.getElementById(prefix + '_location_city_custom');
+    if (!citySel) return (cityCustom && cityCustom.value.trim()) || '';
+    if (citySel.value === 'custom') return (cityCustom && cityCustom.value.trim()) || '';
+    return citySel.value || '';
+}
+function populateLocationCitySelect(prefix, pref, selectedCity) {
+    const citySel = document.getElementById(prefix + '_location_city');
+    const cityCustom = document.getElementById(prefix + '_location_city_custom');
+    if (!citySel) return;
+    const cities = (jpCitiesByPref && pref && Array.isArray(jpCitiesByPref[pref])) ? jpCitiesByPref[pref] : [];
+    const isCustom = selectedCity && cities.indexOf(selectedCity) === -1;
+    citySel.innerHTML = buildCityOptionsHtml(pref, isCustom ? '' : (selectedCity || ''));
+    if (isCustom) {
+        citySel.value = 'custom';
+        if (cityCustom) { cityCustom.style.display = 'block'; cityCustom.value = selectedCity; }
+    } else if (cityCustom) {
+        cityCustom.style.display = 'none'; cityCustom.value = '';
+    }
+}
 window.onLocationPrefChange = function(sel) {
-    const climateEl = document.getElementById('add_location_climate') || document.getElementById('edit_location_climate');
-    if (!climateEl) return;
-    const suggested = suggestClimateFromPrefecture(sel.value);
-    if (suggested && !climateEl.value) climateEl.value = suggested;
+    const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
+    const currentClimates = getSelectedLocationClimates(prefix);
+    if (currentClimates.length === 0) {
+        const suggested = suggestClimateFromPrefecture(sel.value);
+        if (suggested) setLocationClimateCheckboxes(prefix, [suggested]);
+    }
+    const citySel = document.getElementById(prefix + '_location_city');
+    if (citySel) citySel.innerHTML = '<option value="">読込中...</option>';
+    ensureJpCitiesLoaded().then(() => { populateLocationCitySelect(prefix, sel.value, ''); });
+};
+window.onLocationCityChange = function(sel) {
+    const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
+    syncLocationCityCustomVisibility(prefix);
 };
 let latestUserPos = null;
 let customDrawingMode = null; let customDrawingPath = []; let customDrawingPolyline = null; let customDrawingPolygon = null;
@@ -358,7 +452,11 @@ function updateAdminLegend() {
     legendDiv.innerHTML = html;
 }
 
-window.openMasterModal = () => { renderMasterSection(); document.getElementById('masterModal').style.display = 'flex'; };
+window.openMasterModal = () => {
+    ensureJpCitiesLoaded();
+    renderMasterSection();
+    document.getElementById('masterModal').style.display = 'flex';
+};
 
 window.renderMasterSection = () => {
     const buildHTML = (title, type, list) => {
@@ -370,12 +468,19 @@ window.renderMasterSection = () => {
               <input type="text" id="add_location_name" class="form-input" style="width:100%; margin-bottom:0; padding:6px;" placeholder="拠点名 (例: 本社農場)">
               <div style="display:flex; gap:5px;">
                 <select id="add_location_pref" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml('')}</select>
-                <input type="text" id="add_location_city" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="市・町・村">
+                <select id="add_location_city" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationCityChange(this)">
+                  <option value="">先に県を選択</option>
+                </select>
               </div>
-              <div style="display:flex; gap:5px; align-items:center;">
-                <select id="add_location_climate" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${buildClimateOptionsHtml('')}</select>
-                <button onclick="execMaster('location', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold; height:34px;">追加</button>
+              <input type="text" id="add_location_city_custom" class="form-input" style="width:100%; margin-bottom:0; padding:6px; display:none;" placeholder="市・町・村を手入力">
+              <div>
+                <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">産地（複数可）</div>
+                ${buildClimateCheckboxesHtml('add', [])}
               </div>
+              <div style="display:flex; justify-content:flex-end;">
+                <button onclick="execMaster('location', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:8px 18px; font-weight:bold;">追加</button>
+              </div>
+              <div style="font-size:11px; color:#666;">※県を選ぶと市の候補が出ます</div>
             </div>`;
         }
         else if (type === 'tool') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_tool_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="道具名 (例:草刈機)"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_tool_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select><button onclick="execMaster('tool', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div><input type="text" id="add_tool_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）">`; }
@@ -388,7 +493,9 @@ window.renderMasterSection = () => {
             const dispName = v.name || v, deleteVal = v.id || v.name || v; let subInfo = "";
             if (type === 'crop') subInfo = `(${v.density}本/10a)`;
             if (type === 'location' && typeof v === 'object') {
-                const bits = [v.prefecture, v.city, v.climate].filter(Boolean);
+                const climates = parseLocationClimates(v.climates != null ? v.climates : v.climate);
+                const climateLabel = climates.length ? climates.join('・') : '';
+                const bits = [v.prefecture, v.city, climateLabel].filter(Boolean);
                 if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0;">${bits.join(' / ')}</span>`;
             }
             if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${v.workCategory || '汎用'}</span>`;
@@ -410,11 +517,13 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'location') {
             const name = document.getElementById('add_location_name').value.trim();
             if (!name) { customAlert("拠点名を入力してください"); return; }
+            const climates = getSelectedLocationClimates('add');
             value = {
                 name: name,
                 prefecture: document.getElementById('add_location_pref').value,
-                city: document.getElementById('add_location_city').value.trim(),
-                climate: document.getElementById('add_location_climate').value
+                city: getLocationCityValue('add'),
+                climates: climates,
+                climate: climates.join(',')
             };
         }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }

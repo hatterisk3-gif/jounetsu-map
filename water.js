@@ -295,7 +295,8 @@ function openWaterStatusModal(pData) {
     let html = `
         <h3 style="color:#1565C0; margin-top:0;">💧 水管理ステータス変更</h3>
         <p style="margin-bottom:5px;"><strong>圃場名:</strong> ${pData.name}</p>
-        <button onclick="showWaterPinsOnMap('${pData.id}')" style="background:#FFF3E0; color:#E65100; border:1px solid #FF9800; padding:8px 12px; border-radius:6px; margin-bottom:15px; width:100%; cursor:pointer; font-weight:bold;">📍 給水栓の位置をマップで確認</button>
+        <button onclick="showWaterPinsOnMap('${pData.id}')" style="background:#FFF3E0; color:#E65100; border:1px solid #FF9800; padding:8px 12px; border-radius:6px; margin-bottom:8px; width:100%; cursor:pointer; font-weight:bold;">📍 給水口の位置を確認</button>
+        ${isWaterAdmin() ? `<button onclick="openWaterCadSimple('${pData.id}', { editMode: true })" style="background:#E3F2FD; color:#1565C0; border:1px solid #2196F3; padding:8px 12px; border-radius:6px; margin-bottom:15px; width:100%; cursor:pointer; font-weight:bold;">✏️ 簡易CADで給水口を登録・編集</button>` : ''}
         
         <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
             <button onclick="setAllValves('supplying')" style="background:#E3F2FD; color:#1976D2; border:1px solid #2196F3; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px;">すべて給水中にする</button>
@@ -366,7 +367,7 @@ function closeModal() {
     document.getElementById('modal').style.display = 'none';
 }
 
-// ====== 追加機能 (バルブ個別・マップピン確認) ======
+// ====== 追加機能 (バルブ個別・マップピン確認・簡易CAD) ======
 window.setAllValves = function(status) {
     const selects = document.querySelectorAll('.valve-status-select');
     selects.forEach(sel => {
@@ -374,57 +375,366 @@ window.setAllValves = function(status) {
     });
 };
 
+function isWaterAdmin() {
+    return (currentUserRole || localStorage.getItem('passionMapUserRole') || '') === '管理者';
+}
+
+function parseUneSimData(raw) {
+    if (!raw) return {};
+    try {
+        const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        return data && typeof data === 'object' ? data : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function getWaterInPins(pData) {
+    const cad = parseUneSimData(pData && pData.uneSimData);
+    if (!Array.isArray(cad.pins)) return [];
+    return cad.pins.filter(p => p && p.type === 'water_in' && p.lat != null && p.lng != null);
+}
+
+function findPolyDataById(polyId) {
+    if (currentEditPoly && currentEditPoly.id === polyId) return currentEditPoly;
+    const poly = polygons.find(p => p.pData && p.pData.id === polyId);
+    return poly ? poly.pData : null;
+}
+
+function updateLocalUneSimData(polyId, simDataStr) {
+    polygons.forEach(p => {
+        if (p.pData && p.pData.id === polyId) p.pData.uneSimData = simDataStr;
+    });
+    if (currentEditPoly && currentEditPoly.id === polyId) {
+        currentEditPoly.uneSimData = simDataStr;
+    }
+    try {
+        const cached = localStorage.getItem('waterMapData');
+        if (cached) {
+            const list = JSON.parse(cached);
+            if (Array.isArray(list)) {
+                const item = list.find(x => x && x.id === polyId);
+                if (item) {
+                    item.uneSimData = simDataStr;
+                    localStorage.setItem('waterMapData', JSON.stringify(list));
+                }
+            }
+        }
+    } catch (e) {}
+}
+
 let tempCadMarkers = [];
 window.showWaterPinsOnMap = function(polyId) {
-    // 既存のテンポラリマーカーをクリア
     tempCadMarkers.forEach(m => m.setMap(null));
     tempCadMarkers = [];
-    
-    if (!currentEditPoly || currentEditPoly.id !== polyId) return;
-    
-    try {
-        if (!currentEditPoly.uneSimData) {
-            alert('この圃場にはCADのピン情報がありません。');
-            return;
-        }
-        const cadData = JSON.parse(currentEditPoly.uneSimData);
-        if (!cadData.pins || cadData.pins.length === 0) {
-            alert('この圃場には給水栓ピンが設定されていません。');
-            return;
-        }
-        
-        let waterInCount = 0;
-        let bounds = new google.maps.LatLngBounds();
-        
-        cadData.pins.forEach(pin => {
-            if (pin.type === 'water_in') {
-                waterInCount++;
-                const mk = new google.maps.Marker({
-                    position: { lat: pin.lat, lng: pin.lng },
-                    map: map,
-                    label: { text: '💧' + waterInCount, fontSize: '14px', fontWeight: 'bold' },
-                    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
-                    zIndex: 9999
-                });
-                tempCadMarkers.push(mk);
-                bounds.extend(mk.getPosition());
+
+    const pData = findPolyDataById(polyId);
+    if (!pData) return;
+
+    const waterPins = getWaterInPins(pData);
+    if (waterPins.length === 0) {
+        if (isWaterAdmin()) {
+            if (confirm('この圃場には給水口の登録がありません。\n簡易CADを開いて登録しますか？')) {
+                openWaterCadSimple(polyId, { editMode: true });
             }
-        });
-        
-        if (waterInCount > 0) {
-            map.fitBounds(bounds);
-            closeModal(); // マップを見やすくするためモーダルを閉じる
-            
-            // 少しズームアウトする
-            setTimeout(() => {
-                if (map.getZoom() > 19) map.setZoom(19);
-            }, 300);
         } else {
-            alert('給水栓ピンがありません。');
+            alert('この圃場には給水口の登録がありません。\n管理者に登録を依頼してください。');
         }
-    } catch(e) {
-        alert('ピン情報の読み込みに失敗しました。');
-        console.error(e);
+        return;
+    }
+
+    // 登録あり → 簡易CADで位置確認（作業者は閲覧のみ）
+    openWaterCadSimple(polyId, { editMode: false });
+};
+
+// ---- 簡易版農業CAD（給水口） ----
+let waterCadMap = null;
+let waterCadPolygon = null;
+let waterCadMarkers = [];
+let waterCadTarget = null;
+let waterCadBaseData = {};
+let waterCadEditMode = false;
+let waterCadAddMode = false;
+let waterCadMapClickListener = null;
+
+window.openWaterCadSimple = function(polyId, options) {
+    const opts = options || {};
+    const pData = findPolyDataById(polyId);
+    if (!pData || !pData.coords || pData.coords.length < 3) {
+        alert('圃場データが見つかりません。');
+        return;
+    }
+
+    const wantEdit = !!opts.editMode && isWaterAdmin();
+    waterCadTarget = pData;
+    waterCadBaseData = parseUneSimData(pData.uneSimData);
+    waterCadEditMode = wantEdit;
+    waterCadAddMode = false;
+
+    closeModal();
+
+    const overlay = document.getElementById('waterCadOverlay');
+    const nameEl = document.getElementById('waterCadTargetName');
+    if (nameEl) nameEl.textContent = pData.name || polyId;
+    if (overlay) overlay.classList.add('open');
+
+    setTimeout(() => {
+        initWaterCadMap(pData);
+        applyWaterCadModeUI();
+        renderWaterCadPins(getWaterInPins(pData));
+        if (waterCadEditMode && getWaterInPins(pData).length === 0) {
+            toggleWaterCadAddMode(true);
+        }
+    }, 50);
+};
+
+function initWaterCadMap(pData) {
+    const mapEl = document.getElementById('waterCadMap');
+    if (!mapEl) return;
+
+    const path = pData.coords.map(pt => ({ lat: parseFloat(pt.lat), lng: parseFloat(pt.lng) }));
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach(pt => bounds.extend(pt));
+
+    if (!waterCadMap) {
+        waterCadMap = new google.maps.Map(mapEl, {
+            center: bounds.getCenter(),
+            zoom: 18,
+            mapTypeId: 'satellite',
+            tilt: 0,
+            disableDefaultUI: true,
+            zoomControl: true,
+            gestureHandling: 'greedy'
+        });
+    } else {
+        google.maps.event.trigger(waterCadMap, 'resize');
+        waterCadMap.setCenter(bounds.getCenter());
+    }
+
+    if (waterCadPolygon) waterCadPolygon.setMap(null);
+    waterCadPolygon = new google.maps.Polygon({
+        paths: path,
+        strokeColor: '#4FC3F7',
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+        fillColor: '#29B6F6',
+        fillOpacity: 0.18,
+        map: waterCadMap,
+        clickable: false
+    });
+
+    waterCadMap.fitBounds(bounds);
+    setTimeout(() => {
+        if (waterCadMap && waterCadMap.getZoom() > 20) waterCadMap.setZoom(20);
+    }, 200);
+
+    if (waterCadMapClickListener) {
+        google.maps.event.removeListener(waterCadMapClickListener);
+        waterCadMapClickListener = null;
+    }
+    waterCadMapClickListener = waterCadMap.addListener('click', (e) => {
+        if (!waterCadEditMode || !waterCadAddMode || !e.latLng) return;
+        addWaterCadPin(e.latLng.lat(), e.latLng.lng());
+        // 連続配置しやすいよう追加モードは維持
+        updateWaterCadHint();
+    });
+}
+
+function applyWaterCadModeUI() {
+    const editTools = document.getElementById('waterCadEditTools');
+    const viewTools = document.getElementById('waterCadViewTools');
+    const editBtn = document.getElementById('btnWaterCadOpenEdit');
+    const addBtn = document.getElementById('btnWaterCadAdd');
+
+    if (waterCadEditMode) {
+        if (editTools) editTools.style.display = 'block';
+        if (viewTools) viewTools.style.display = 'none';
+    } else {
+        if (editTools) editTools.style.display = 'none';
+        if (viewTools) viewTools.style.display = 'block';
+        // 作業者権限では編集ボタンを隠す
+        if (editBtn) editBtn.style.display = isWaterAdmin() ? '' : 'none';
+    }
+
+    if (addBtn) {
+        addBtn.textContent = waterCadAddMode ? '✓ 追加モード中（再タップで解除）' : '＋ 給水口を追加';
+        addBtn.style.background = waterCadAddMode ? '#1565C0' : '#0288D1';
+    }
+    updateWaterCadHint();
+}
+
+function updateWaterCadHint() {
+    const hint = document.getElementById('waterCadHint');
+    if (!hint) return;
+    const count = waterCadMarkers.length;
+    if (!waterCadEditMode) {
+        hint.textContent = count
+            ? `給水口 ${count} 箇所（確認のみ）`
+            : '給水口の登録がありません';
+        hint.style.color = count ? '#90CAF9' : '#FFCC80';
+        return;
+    }
+    if (waterCadAddMode) {
+        hint.textContent = `追加モード: 地図をタップして給水口を配置（現在 ${count} 箇所）`;
+        hint.style.color = '#81C784';
+    } else {
+        hint.textContent = `編集モード: 現在 ${count} 箇所。追加ボタンで配置、ピンタップで削除`;
+        hint.style.color = '#90CAF9';
+    }
+}
+
+function clearWaterCadMarkers() {
+    waterCadMarkers.forEach(m => m.setMap(null));
+    waterCadMarkers = [];
+}
+
+function renderWaterCadPins(pins) {
+    clearWaterCadMarkers();
+    (pins || []).forEach((pin, idx) => {
+        addWaterCadPin(pin.lat, pin.lng, false);
+    });
+    renumberWaterCadPins();
+    updateWaterCadHint();
+}
+
+function addWaterCadPin(lat, lng, renumber = true) {
+    if (!waterCadMap) return;
+    const n = waterCadMarkers.length + 1;
+    const mk = new google.maps.Marker({
+        position: { lat: parseFloat(lat), lng: parseFloat(lng) },
+        map: waterCadMap,
+        draggable: !!waterCadEditMode,
+        label: {
+            text: '💧' + n,
+            fontSize: '14px',
+            fontWeight: 'bold',
+            color: '#0D47A1'
+        },
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 12,
+            fillColor: '#E3F2FD',
+            fillOpacity: 0.95,
+            strokeColor: '#1565C0',
+            strokeWeight: 2
+        },
+        zIndex: 9999
+    });
+    mk.cadPinType = 'water_in';
+    mk.addListener('click', () => {
+        if (!waterCadEditMode) return;
+        if (confirm('この給水口ピンを削除しますか？')) {
+            mk.setMap(null);
+            waterCadMarkers = waterCadMarkers.filter(m => m !== mk);
+            renumberWaterCadPins();
+            updateWaterCadHint();
+        }
+    });
+    waterCadMarkers.push(mk);
+    if (renumber) renumberWaterCadPins();
+}
+
+function renumberWaterCadPins() {
+    waterCadMarkers.forEach((mk, i) => {
+        mk.setLabel({
+            text: '💧' + (i + 1),
+            fontSize: '14px',
+            fontWeight: 'bold',
+            color: '#0D47A1'
+        });
+        mk.setDraggable(!!waterCadEditMode);
+    });
+}
+
+window.toggleWaterCadAddMode = function(forceOn) {
+    if (!waterCadEditMode || !isWaterAdmin()) return;
+    waterCadAddMode = (forceOn === true) ? true : !waterCadAddMode;
+    applyWaterCadModeUI();
+};
+
+window.clearWaterCadPinsConfirm = function() {
+    if (!waterCadEditMode || !isWaterAdmin()) return;
+    if (!waterCadMarkers.length) return;
+    if (!confirm('給水口ピンをすべて削除しますか？')) return;
+    clearWaterCadMarkers();
+    updateWaterCadHint();
+};
+
+window.enterWaterCadEditMode = function() {
+    if (!isWaterAdmin()) {
+        alert('管理者権限がないため編集できません。');
+        return;
+    }
+    waterCadEditMode = true;
+    waterCadAddMode = false;
+    renumberWaterCadPins();
+    applyWaterCadModeUI();
+};
+
+window.closeWaterCadSimple = function() {
+    const overlay = document.getElementById('waterCadOverlay');
+    if (overlay) overlay.classList.remove('open');
+    waterCadAddMode = false;
+    waterCadEditMode = false;
+    waterCadTarget = null;
+    if (waterCadMapClickListener) {
+        google.maps.event.removeListener(waterCadMapClickListener);
+        waterCadMapClickListener = null;
+    }
+    clearWaterCadMarkers();
+    if (waterCadPolygon) {
+        waterCadPolygon.setMap(null);
+        waterCadPolygon = null;
+    }
+};
+
+window.saveWaterCadPins = async function() {
+    if (!waterCadEditMode || !isWaterAdmin()) {
+        alert('管理者権限がないため保存できません。');
+        return;
+    }
+    if (!waterCadTarget) return;
+
+    const targetId = waterCadTarget.id;
+    const targetName = waterCadTarget.name;
+    const saveBtn = document.getElementById('btnWaterCadSave');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = '保存中...';
+    }
+
+    const waterPins = waterCadMarkers.map(mk => {
+        const pos = mk.getPosition();
+        return { type: 'water_in', lat: pos.lat(), lng: pos.lng() };
+    });
+    const otherPins = Array.isArray(waterCadBaseData.pins)
+        ? waterCadBaseData.pins.filter(p => p && p.type !== 'water_in')
+        : [];
+
+    const nextData = Object.assign({}, waterCadBaseData, {
+        pins: otherPins.concat(waterPins)
+    });
+    const simDataStr = JSON.stringify(nextData);
+
+    try {
+        await callGAS('updatePolygon', {
+            id: targetId,
+            name: targetName,
+            uneSimData: simDataStr,
+            userName: currentUserName || currentStaffId || ''
+        });
+        updateLocalUneSimData(targetId, simDataStr);
+        alert('給水口位置を保存しました。');
+        closeWaterCadSimple();
+        const refreshed = findPolyDataById(targetId);
+        if (refreshed) openWaterStatusModal(refreshed);
+    } catch (e) {
+        alert('保存に失敗しました: ' + (e.message || e));
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = '💾 保存';
+        }
     }
 };
 

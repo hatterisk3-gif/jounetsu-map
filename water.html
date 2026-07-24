@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>情熱MAP [水管理用] v1.13</title>
+    <title>情熱MAP [水管理用] v1.14</title>
     <link rel="apple-touch-icon" href="icon.png">
     <link rel="icon" href="icon.png">
     <link rel="manifest" href="manifest.json">
@@ -17,7 +17,7 @@
     <!-- プロポータルに戻る×ボタン -->
         <div id="loginScreen">
         <div class="login-box">
-            <h2 style="color:#1565C0;">💧 水管理MAP (v1.13)</h2>
+            <h2 style="color:#1565C0;">💧 水管理MAP (v1.14)</h2>
             <div id="loginError" style="color:red; margin-bottom:10px;"></div>
             <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
             <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -63,6 +63,40 @@
     <!-- 汎用モーダル -->
     <div id="modal">
         <div class="modal-content" id="modalBody"></div>
+    </div>
+
+    <!-- 簡易版農業CAD（給水口確認・登録） -->
+    <div id="waterCadOverlay">
+      <div id="waterCadHeader">
+        <div style="min-width:0;">
+          <div style="font-weight:bold; font-size:15px;">💧 簡易CAD（給水口）</div>
+          <div id="waterCadTargetName" style="font-size:12px; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+        </div>
+        <button type="button" class="water-cad-btn" style="background:#f44336; color:#fff;" onclick="closeWaterCadSimple()">閉じる</button>
+      </div>
+      <div id="waterCadMapWrap">
+        <div id="waterCadMap"></div>
+      </div>
+      <div id="waterCadPanel">
+        <div id="waterCadHint" style="font-size:12px; color:#90CAF9; margin-bottom:4px;"></div>
+        <div id="waterCadEditTools" style="display:none;">
+          <div class="water-cad-btn-row">
+            <button type="button" id="btnWaterCadAdd" class="water-cad-btn" style="background:#0288D1; color:#fff;" onclick="toggleWaterCadAddMode()">＋ 給水口を追加</button>
+            <button type="button" class="water-cad-btn" style="background:#E65100; color:#fff;" onclick="clearWaterCadPinsConfirm()">全削除</button>
+          </div>
+          <div class="water-cad-btn-row">
+            <button type="button" id="btnWaterCadSave" class="water-cad-btn" style="background:#2E7D32; color:#fff;" onclick="saveWaterCadPins()">💾 保存</button>
+            <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;" onclick="closeWaterCadSimple()">キャンセル</button>
+          </div>
+          <div style="font-size:11px; color:#aaa; margin-top:6px;">ピンをタップすると削除できます。追加モード中は地図タップで配置します。</div>
+        </div>
+        <div id="waterCadViewTools">
+          <div class="water-cad-btn-row">
+            <button type="button" id="btnWaterCadOpenEdit" class="water-cad-btn" style="background:#FF9800; color:#fff; display:none;" onclick="enterWaterCadEditMode()">✏️ 給水口を編集</button>
+            <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;" onclick="closeWaterCadSimple()">閉じる</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 天気モーダル -->

@@ -1,5 +1,5 @@
 ---
-description: 
+description: 変更内容の差分分析・要約コミットを行い、GitHubとGAS（clasp）へデプロイを完遂するワークフロー
 ---
 
 # 役割
@@ -14,4 +14,5 @@ description:
    - `git commit -m "Manual: 【生成したコミットメッセージ】"`
    - `git push`
    - `clasp deploy -i AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV`
+   ※ `schedule.js` 等のフロントエンド外部ファイルは `.claspignore` 対象のため `clasp push` 時に「Script is already up to date.」と表示される場合がありますが、正常な動作です。
 4. すべてのコマンドが成功したら、「🚀 AIによる要約コミットとデプロイが完了しました！」と報告してください。
