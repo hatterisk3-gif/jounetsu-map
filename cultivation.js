@@ -957,8 +957,38 @@ function renderCultivationPlanTable() {
     table.innerHTML = tHTML;
     cpPlans = [];
     
-    // テーブルヘッダーの高さに左パネルヘッダーを同期
-    setTimeout(() => { syncLeftHeaderHeight(); }, 50);
+    // テーブルヘッダーの高さに左パネルヘッダーを同期＋縦スクロール時の固定
+    setTimeout(() => {
+        syncLeftHeaderHeight();
+        applyCpTableStickyHeader();
+    }, 50);
+}
+
+function applyCpTableStickyHeader() {
+    const table = document.getElementById('cpTable');
+    if (!table) return;
+    const thead = table.querySelector('thead');
+    if (!thead) return;
+    const rows = thead.querySelectorAll('tr');
+    const monthRow = rows[0];
+    const periodRow = rows[1];
+    if (monthRow) {
+        monthRow.querySelectorAll('th').forEach(th => {
+            th.style.position = 'sticky';
+            th.style.top = '0px';
+            th.style.zIndex = '4';
+            th.style.boxShadow = '0 1px 0 #ddd';
+        });
+    }
+    if (periodRow) {
+        const top = monthRow ? monthRow.offsetHeight : 0;
+        periodRow.querySelectorAll('th').forEach(th => {
+            th.style.position = 'sticky';
+            th.style.top = top + 'px';
+            th.style.zIndex = '3';
+            th.style.boxShadow = '0 2px 3px rgba(0,0,0,0.08)';
+        });
+    }
 }
 
 function syncLeftHeaderHeight() {
@@ -969,6 +999,7 @@ function syncLeftHeaderHeight() {
     if (thead) {
         leftHeader.style.height = thead.offsetHeight + 'px';
     }
+    applyCpTableStickyHeader();
 }
 
 function withPreservedCpPanelScroll(fn) {
