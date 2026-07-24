@@ -51,12 +51,39 @@ function refreshChoiceButtons(selectId) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.dataset.value = opt.value;
-        btn.textContent = opt.textContent || opt.value;
         const isActive = String(current) === String(opt.value);
         const isCustom = opt.value === 'custom';
+        const canDeleteCrop = (selectId === 'cpCrop' || selectId === 'crCrop') && !isCustom;
         btn.style.cssText = isActive
-            ? `padding:5px 10px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;`
-            : `padding:5px 10px;border:1px solid #ccc;border-radius:4px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;`;
+            ? `padding:5px ${canDeleteCrop ? '6' : '10'}px 5px 10px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`
+            : `padding:5px ${canDeleteCrop ? '6' : '10'}px 5px 10px;border:1px solid #ccc;border-radius:4px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+
+        const label = document.createElement('span');
+        label.textContent = opt.textContent || opt.value;
+        btn.appendChild(label);
+
+        if (canDeleteCrop) {
+            const del = document.createElement('span');
+            del.textContent = '×';
+            del.title = '一覧から削除';
+            del.setAttribute('aria-label', '一覧から削除');
+            del.style.cssText = isActive
+                ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:12px;font-weight:bold;line-height:1;'
+                : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#888;font-size:12px;font-weight:bold;line-height:1;';
+            del.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const name = opt.value;
+                if (!confirm(`作物「${name}」を一覧から削除しますか？`)) return;
+                removeCropFromChoices(name);
+                if (selectId === 'crCrop') {
+                    refreshCropSelectOptions(getCpVal('cpCrop'));
+                    refreshChoiceButtons('crCrop');
+                }
+            };
+            btn.appendChild(del);
+        }
+
         btn.onmouseenter = function() {
             if (!isActive) btn.style.borderColor = accent;
         };
@@ -158,6 +185,78 @@ function populateSelect(id, arr, defaultOptions = []) {
 }
 
 const DEFAULT_CP_CROPS = ['キャベツ', 'ブロッコリー', 'トマト', 'ネギ'];
+const CP_HIDDEN_CROPS_KEY = 'cpHiddenCrops';
+
+function getCustomCropsList() {
+    try {
+        const arr = JSON.parse(localStorage.getItem('customCrops') || '[]');
+        return Array.isArray(arr) ? arr.map(c => String(c).trim()).filter(Boolean) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function getHiddenCropsList() {
+    try {
+        const arr = JSON.parse(localStorage.getItem(CP_HIDDEN_CROPS_KEY) || '[]');
+        return Array.isArray(arr) ? arr.map(c => String(c).trim()).filter(Boolean) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveHiddenCropsList(list) {
+    localStorage.setItem(CP_HIDDEN_CROPS_KEY, JSON.stringify(list));
+}
+
+function isCropHidden(crop) {
+    return getHiddenCropsList().includes(String(crop || '').trim());
+}
+
+function getAllKnownCrops() {
+    const customCrops = getCustomCropsList();
+    const masterCrops = (cpMasterData && cpMasterData.crops) ? Object.keys(cpMasterData.crops) : [];
+    return Array.from(new Set([...DEFAULT_CP_CROPS, ...masterCrops, ...customCrops]))
+        .filter(c => c && !isCropHidden(c));
+}
+
+function getVisibleDefaultCrops() {
+    return DEFAULT_CP_CROPS.filter(c => !isCropHidden(c));
+}
+
+/** 作物一覧から削除（この端末の選択肢）。手入力は削除、それ以外は非表示。 */
+function removeCropFromChoices(cropName) {
+    const crop = String(cropName || '').trim();
+    if (!crop || crop === 'custom') return false;
+
+    let customCrops = getCustomCropsList().filter(c => c !== crop);
+    localStorage.setItem('customCrops', JSON.stringify(customCrops));
+
+    // 標準・マスタ由来もこの端末の一覧から外す
+    const hidden = getHiddenCropsList();
+    if (!hidden.includes(crop)) {
+        hidden.push(crop);
+        saveHiddenCropsList(hidden);
+    }
+
+    // マスタのメモリ上からも外す（再取得まで）
+    if (cpMasterData && cpMasterData.crops && cpMasterData.crops[crop]) {
+        delete cpMasterData.crops[crop];
+        try {
+            localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        } catch (e) {}
+    }
+
+    const wasSelected = getCpVal('cpCrop') === crop;
+    refreshCropSelectOptions(wasSelected ? '' : getCpVal('cpCrop'));
+    if (wasSelected) {
+        setChoiceValue('cpCrop', '', false);
+        updateVarietyList();
+        calcCp();
+        if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
+    }
+    return true;
+}
 
 function round1(n) {
     return Math.round(Number(n) * 10) / 10;
@@ -179,21 +278,11 @@ function buildDecimalSelectOptions(maxVal, selectedVal, includeEmpty = true) {
     return html;
 }
 
-function getAllKnownCrops() {
-    let customCrops = [];
-    try {
-        customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
-    } catch (e) {
-        customCrops = [];
-    }
-    const masterCrops = (cpMasterData && cpMasterData.crops) ? Object.keys(cpMasterData.crops) : [];
-    return Array.from(new Set([...DEFAULT_CP_CROPS, ...masterCrops, ...customCrops]));
-}
-
 function refreshCropSelectOptions(preferCrop) {
+    const visibleDefaults = getVisibleDefaultCrops();
     const allCrops = getAllKnownCrops().filter(c => !DEFAULT_CP_CROPS.includes(c));
     const cropToSelect = preferCrop || getCpVal('cpCrop');
-    populateSelect('cpCrop', allCrops, DEFAULT_CP_CROPS);
+    populateSelect('cpCrop', allCrops, visibleDefaults);
     if (cropToSelect && getAllKnownCrops().includes(cropToSelect)) {
         setChoiceValue('cpCrop', cropToSelect, false);
         const customInput = document.getElementById('cpCrop_custom');
@@ -201,10 +290,16 @@ function refreshCropSelectOptions(preferCrop) {
             customInput.style.display = 'none';
             customInput.value = '';
         }
+    } else if (!cropToSelect) {
+        const sel = document.getElementById('cpCrop');
+        if (sel) {
+            sel.value = '';
+            refreshChoiceButtons('cpCrop');
+        }
     }
     const crSel = document.getElementById('crCrop');
     if (crSel) {
-        populateSelect('crCrop', allCrops, DEFAULT_CP_CROPS);
+        populateSelect('crCrop', allCrops, visibleDefaults);
     }
 }
 
@@ -212,12 +307,14 @@ function refreshCropSelectOptions(preferCrop) {
 function rememberCustomCrop(crop) {
     crop = (crop || '').trim();
     if (!crop) return false;
-    let customCrops = [];
-    try {
-        customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
-    } catch (e) {
-        customCrops = [];
+
+    // 以前非表示にした作物を手入力で復活
+    const hidden = getHiddenCropsList().filter(c => c !== crop);
+    if (hidden.length !== getHiddenCropsList().length) {
+        saveHiddenCropsList(hidden);
     }
+
+    let customCrops = getCustomCropsList();
     const masterCrops = (cpMasterData && cpMasterData.crops) ? Object.keys(cpMasterData.crops) : [];
     const alreadyKnown = DEFAULT_CP_CROPS.includes(crop) || masterCrops.includes(crop) || customCrops.includes(crop);
     if (!customCrops.includes(crop) && !DEFAULT_CP_CROPS.includes(crop) && !masterCrops.includes(crop)) {
@@ -239,9 +336,10 @@ function rememberCustomCrop(crop) {
 function applyCultivationMasterData() {
     if(cpMasterData && cpMasterData.crops) {
         populateSelect('cpLocation', cpMasterData.locations || [], []);
-        let customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
-        let allCrops = Array.from(new Set([...Object.keys(cpMasterData.crops), ...customCrops]));
-        populateSelect('cpCrop', allCrops, DEFAULT_CP_CROPS);
+        const customCrops = getCustomCropsList();
+        const allCrops = Array.from(new Set([...Object.keys(cpMasterData.crops), ...customCrops]))
+            .filter(c => c && !isCropHidden(c) && !DEFAULT_CP_CROPS.includes(c));
+        populateSelect('cpCrop', allCrops, getVisibleDefaultCrops());
         populateSelect('cpTrayHoles', cpMasterData.holes, [72, 128, 200, 288]);
         populateSelect('cpRows', cpMasterData.rows, [1, 2, 3, 4]);
         populateSelect('cpPlantSpacing', cpMasterData.pSpace, [20, 25, 30, 35, 40, 45, 50]);
@@ -357,6 +455,7 @@ function onCpLocationChange() {
 
     updateVarietyList();
     checkCroptypeDB();
+    updatePresetList(getCpVal('cpCrop'));
 }
 
 async function fetchCultivationMaster() {
@@ -413,15 +512,22 @@ function updatePresetList(crop) {
     const presetSelect = document.getElementById('cpPreset');
     if (!presetSelect) return;
     
+    const location = getCpVal('cpLocation');
     const currentVal = presetSelect.value;
     
     presetSelect.innerHTML = '<option value="">選択...</option>';
     if (cpMasterData && cpMasterData.presets && cpMasterData.presets[crop]) {
         cpMasterData.presets[crop].forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p.name;
-            opt.innerText = p.name;
-            presetSelect.appendChild(opt);
+            const pLoc = String(p.location || '').trim();
+            const curLoc = String(location || '').trim();
+
+            if (!pLoc || !curLoc || pLoc === curLoc) {
+                const opt = document.createElement('option');
+                opt.value = p.name;
+                opt.innerText = pLoc ? `${p.name} (${pLoc})` : p.name;
+                opt.dataset.location = pLoc;
+                presetSelect.appendChild(opt);
+            }
         });
     }
     
@@ -432,10 +538,16 @@ function updatePresetList(crop) {
         } else if (presetSelect.options.length > 1) {
             presetSelect.value = presetSelect.options[1].value;
             loadCultivationPreset(presetSelect.value);
+        } else {
+            presetSelect.value = '';
+            loadCultivationPreset('');
         }
     } else if (presetSelect.options.length > 1) {
         presetSelect.value = presetSelect.options[1].value;
         loadCultivationPreset(presetSelect.value);
+    } else {
+        presetSelect.value = '';
+        loadCultivationPreset('');
     }
     refreshChoiceButtons('cpPreset');
 }
@@ -475,14 +587,17 @@ function setCpVal(id, value) {
 
 async function saveCultivationPresetFromUI() {
     const crop = getCpVal('cpCrop');
+    const location = getCpVal('cpLocation');
     if (!crop) {
         alert("作物を選択または入力してください。");
         return;
     }
-    const presetName = prompt(crop + " の設定名を入力してください（例: 夏秋用）");
+    const locStr = location ? `【${location}】` : '';
+    const presetName = prompt(locStr + crop + " の設定名を入力してください（例: 夏秋用）");
     if (!presetName) return;
     
     const presetData = {
+        location: location || '',
         crop: crop,
         name: presetName,
         holes: getCpVal('cpTrayHoles', true) || 128,
@@ -503,6 +618,7 @@ async function saveCultivationPresetFromUI() {
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         updatePresetList(crop);
         setChoiceValue('cpPreset', presetName, false);
+        loadCultivationPreset(presetName);
         
         alert("設定を保存しました。");
     } catch(e) {
@@ -515,6 +631,7 @@ async function saveCultivationPresetFromUI() {
 
 async function deleteCultivationPresetUI() {
     const crop = getCpVal('cpCrop');
+    const location = getCpVal('cpLocation');
     const presetName = document.getElementById('cpPreset').value;
     if (!crop || !presetName) {
         alert("削除するプリセットを選択してください。");
@@ -527,7 +644,7 @@ async function deleteCultivationPresetUI() {
         const btn = document.getElementById('btnDeletePreset');
         if (btn) btn.innerHTML = '削除中...';
         
-        await callGAS('deleteCultivationPreset', { crop: crop, name: presetName });
+        await callGAS('deleteCultivationPreset', { location: location || '', crop: crop, name: presetName });
         
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
@@ -546,6 +663,7 @@ async function deleteCultivationPresetUI() {
 
 async function renameCultivationPresetUI() {
     const crop = getCpVal('cpCrop');
+    const location = getCpVal('cpLocation');
     const presetName = document.getElementById('cpPreset').value;
     if (!crop || !presetName) {
         alert("名前変更するプリセットを選択してください。");
@@ -559,7 +677,7 @@ async function renameCultivationPresetUI() {
         const btn = document.getElementById('btnRenamePreset');
         if (btn) btn.innerHTML = '変更中...';
         
-        await callGAS('renameCultivationPreset', { crop: crop, oldName: presetName, newName: newName });
+        await callGAS('renameCultivationPreset', { location: location || '', crop: crop, oldName: presetName, newName: newName });
         
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
@@ -612,8 +730,8 @@ function calcCp() {
 
 function populateDefaultCpSelects() {
     populateSelect('cpLocation', [], []);
-    let customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
-    populateSelect('cpCrop', customCrops, DEFAULT_CP_CROPS);
+    const customCrops = getCustomCropsList().filter(c => !isCropHidden(c) && !DEFAULT_CP_CROPS.includes(c));
+    populateSelect('cpCrop', customCrops, getVisibleDefaultCrops());
     populateSelect('cpTrayHoles', [], [72, 128, 200, 288]);
     populateSelect('cpRows', [], [1, 2, 3, 4]);
     populateSelect('cpPlantSpacing', [], [20, 25, 30, 35, 40, 45, 50]);
@@ -1709,13 +1827,22 @@ function loadCultivationPreset(presetName) {
         return;
     }
     const crop = getCpVal('cpCrop');
+    const location = getCpVal('cpLocation');
     if (!cpMasterData || !cpMasterData.presets || !cpMasterData.presets[crop]) {
         if (btnDel) btnDel.style.display = 'none';
         if (btnRen) btnRen.style.display = 'none';
         return;
     }
     
-    const p = cpMasterData.presets[crop].find(x => x.name === presetName);
+    const curLoc = String(location || '').trim();
+    const presetsForCrop = cpMasterData.presets[crop] || [];
+    let p = presetsForCrop.find(x => x.name === presetName && String(x.location || '').trim() === curLoc);
+    if (!p) {
+        p = presetsForCrop.find(x => x.name === presetName && !String(x.location || '').trim());
+    }
+    if (!p) {
+        p = presetsForCrop.find(x => x.name === presetName);
+    }
     if (p) {
         setCpVal('cpTrayHoles', p.holes);
         setCpVal('cpRows', p.rows);
@@ -1791,6 +1918,7 @@ async function saveVarietyData() {
     btn.disabled = true;
     
     const params = {
+        location: getCpVal('cpLocation') || '',
         crop: crop,
         name: variety,
         holes: getCpVal('cpTrayHoles', true) || '',
@@ -1879,12 +2007,15 @@ function openCroptypeRegistrationModal() {
         alert('品種作型登録画面の読み込み中です。数秒待ってから再度お試しください。');
         return;
     }
-    let customCrops = JSON.parse(localStorage.getItem('customCrops') || '[]');
+    const customCrops = getCustomCropsList();
     let allCrops = [];
-    if(cpMasterData && cpMasterData.crops) {
+    if (cpMasterData && cpMasterData.crops) {
         allCrops = Array.from(new Set([...Object.keys(cpMasterData.crops), ...customCrops]));
+    } else {
+        allCrops = customCrops.slice();
     }
-    populateSelect('crCrop', allCrops, DEFAULT_CP_CROPS);
+    allCrops = allCrops.filter(c => c && !isCropHidden(c) && !DEFAULT_CP_CROPS.includes(c));
+    populateSelect('crCrop', allCrops, getVisibleDefaultCrops());
     
     const currentCrop = getCpVal('cpCrop');
     if (currentCrop) {

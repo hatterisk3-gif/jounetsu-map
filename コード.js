@@ -3354,41 +3354,49 @@ function getCultivationMaster() {
     }
     
     // プリセット情報の取得
-    const presetSheet = ss.getSheetByName('栽培計画プリセット');
-    if (!presetSheet) {
-      ss.insertSheet('栽培計画プリセット').appendRow(['作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数', 'ファイルURL']);
-    } else {
-      const presetData = presetSheet.getDataRange().getValues();
-      const presetHeaders = presetData[0] || [];
-      const urlCol = presetHeaders.indexOf('ファイルURL');
-      
-      for (let i = 1; i < presetData.length; i++) {
-        let r = presetData[i];
-        let pc = String(r[0]).trim();
-        if (pc && r[1]) {
-          if (!master.presets[pc]) master.presets[pc] = [];
-          master.presets[pc].push({
-            name: String(r[1]),
-            holes: r[2] || '',
-            rows: r[3] || '',
-            pSpace: r[4] || '',
-            rSpace: r[5] || '',
-            yieldPerSeedling: r[6] || '',
-            itemsPerPack: r[7] || '',
-            fileUrl: urlCol !== -1 ? r[urlCol] : ''
-          });
-          // プリセットに保存されている数値を各プルダウンの選択肢にも反映する
-          if (r[2] !== '' && !master.holes.includes(r[2])) master.holes.push(r[2]);
-          if (r[3] !== '' && !master.rows.includes(r[3])) master.rows.push(r[3]);
-          if (r[4] !== '' && !master.pSpace.includes(r[4])) master.pSpace.push(r[4]);
-          if (r[5] !== '' && !master.rSpace.includes(r[5])) master.rSpace.push(r[5]);
-          if (r[6] !== undefined && r[6] !== '' && !master.yieldPerSeedling.includes(r[6])) master.yieldPerSeedling.push(r[6]);
-          if (r[7] !== undefined && r[7] !== '' && !master.itemsPerPack.includes(r[7])) master.itemsPerPack.push(r[7]);
-          // プリセットの作物も作物選択肢に反映
-          if (!master.crops[pc]) master.crops[pc] = [];
-          const pname = String(r[1]).trim();
-          if (pname && !master.crops[pc].includes(pname)) master.crops[pc].push(pname);
-        }
+    const presetSheet = ensurePresetSheetHeaders_(ss);
+    const presetData = presetSheet.getDataRange().getValues();
+    const presetHeaders = presetData[0] ? presetData[0].map(h => String(h || '').trim()) : [];
+    const locCol = presetHeaders.indexOf('拠点');
+    const cropCol = presetHeaders.indexOf('作物');
+    const nameCol = presetHeaders.indexOf('プリセット名');
+    const holesCol = presetHeaders.indexOf('穴数');
+    const rowsCol = presetHeaders.indexOf('条数');
+    const pSpaceCol = presetHeaders.indexOf('株間');
+    const rSpaceCol = presetHeaders.indexOf('畝間');
+    const yieldCol = presetHeaders.indexOf('1苗当たり収量');
+    const packCol = presetHeaders.indexOf('1P当たり入り数');
+    const urlCol = presetHeaders.indexOf('ファイルURL');
+    
+    for (let i = 1; i < presetData.length; i++) {
+      let r = presetData[i];
+      let loc = locCol !== -1 ? String(r[locCol] || '').trim() : '';
+      let pc = cropCol !== -1 ? String(r[cropCol] || '').trim() : '';
+      let pName = nameCol !== -1 ? String(r[nameCol] || '').trim() : '';
+      if (pc && pName) {
+        if (!master.presets[pc]) master.presets[pc] = [];
+        master.presets[pc].push({
+          location: loc,
+          crop: pc,
+          name: pName,
+          holes: holesCol !== -1 ? (r[holesCol] || '') : '',
+          rows: rowsCol !== -1 ? (r[rowsCol] || '') : '',
+          pSpace: pSpaceCol !== -1 ? (r[pSpaceCol] || '') : '',
+          rSpace: rSpaceCol !== -1 ? (r[rSpaceCol] || '') : '',
+          yieldPerSeedling: yieldCol !== -1 ? (r[yieldCol] || '') : '',
+          itemsPerPack: packCol !== -1 ? (r[packCol] || '') : '',
+          fileUrl: urlCol !== -1 ? r[urlCol] : ''
+        });
+        // プリセットに保存されている数値を各プルダウンの選択肢にも反映する
+        if (holesCol !== -1 && r[holesCol] !== '' && r[holesCol] !== undefined && !master.holes.includes(r[holesCol])) master.holes.push(r[holesCol]);
+        if (rowsCol !== -1 && r[rowsCol] !== '' && r[rowsCol] !== undefined && !master.rows.includes(r[rowsCol])) master.rows.push(r[rowsCol]);
+        if (pSpaceCol !== -1 && r[pSpaceCol] !== '' && r[pSpaceCol] !== undefined && !master.pSpace.includes(r[pSpaceCol])) master.pSpace.push(r[pSpaceCol]);
+        if (rSpaceCol !== -1 && r[rSpaceCol] !== '' && r[rSpaceCol] !== undefined && !master.rSpace.includes(r[rSpaceCol])) master.rSpace.push(r[rSpaceCol]);
+        if (yieldCol !== -1 && r[yieldCol] !== undefined && r[yieldCol] !== '' && !master.yieldPerSeedling.includes(r[yieldCol])) master.yieldPerSeedling.push(r[yieldCol]);
+        if (packCol !== -1 && r[packCol] !== undefined && r[packCol] !== '' && !master.itemsPerPack.includes(r[packCol])) master.itemsPerPack.push(r[packCol]);
+        // プリセットの作物も作物選択肢に反映
+        if (!master.crops[pc]) master.crops[pc] = [];
+        if (pName && !master.crops[pc].includes(pName)) master.crops[pc].push(pName);
       }
     }
 
@@ -3568,16 +3576,49 @@ function saveCroptypeDB(params) {
     return { success: false, message: e.message };
   }
 }
+function ensurePresetSheetHeaders_(ss) {
+  let sheet = ss.getSheetByName('栽培計画プリセット');
+  if (!sheet) {
+    sheet = ss.insertSheet('栽培計画プリセット');
+    sheet.appendRow(['拠点', '作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数', 'ファイルURL']);
+    return sheet;
+  }
+  let data = sheet.getDataRange().getValues();
+  if (data.length > 0) {
+    let headers = data[0].map(h => String(h || '').trim());
+    if (!headers.includes('拠点')) {
+      sheet.insertColumnBefore(1);
+      sheet.getRange(1, 1).setValue('拠点');
+      SpreadsheetApp.flush();
+    }
+  } else {
+    sheet.appendRow(['拠点', '作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数', 'ファイルURL']);
+  }
+  return sheet;
+}
+
 // 栽培計画のプリセットを削除する関数
 function deleteCultivationPreset(presetData) {
   try {
     const ss = TENANT_SS;
-    const sheet = ss.getSheetByName('栽培計画プリセット');
-    if (!sheet) return { success: false, message: 'プリセットシートがありません' };
-    
+    const sheet = ensurePresetSheetHeaders_(ss);
     const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim());
+
+    const locCol = headers.indexOf('拠点');
+    const cropCol = headers.indexOf('作物');
+    const nameCol = headers.indexOf('プリセット名');
+
+    const targetLoc = String(presetData.location || '').trim();
+    const targetCrop = String(presetData.crop || '').trim();
+    const targetName = String(presetData.name || '').trim();
+
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(presetData.crop).trim() && String(data[i][1]).trim() === String(presetData.name).trim()) {
+      const rLoc = locCol !== -1 ? String(data[i][locCol] || '').trim() : '';
+      const rCrop = cropCol !== -1 ? String(data[i][cropCol] || '').trim() : '';
+      const rName = nameCol !== -1 ? String(data[i][nameCol] || '').trim() : '';
+
+      if ((!targetLoc || !rLoc || rLoc === targetLoc) && rCrop === targetCrop && rName === targetName) {
         sheet.deleteRow(i + 1);
         return { success: true };
       }
@@ -3592,13 +3633,25 @@ function deleteCultivationPreset(presetData) {
 function renameCultivationPreset(presetData) {
   try {
     const ss = TENANT_SS;
-    const sheet = ss.getSheetByName('栽培計画プリセット');
-    if (!sheet) return { success: false, message: 'プリセットシートがありません' };
-    
+    const sheet = ensurePresetSheetHeaders_(ss);
     const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim());
+
+    const locCol = headers.indexOf('拠点');
+    const cropCol = headers.indexOf('作物');
+    const nameCol = headers.indexOf('プリセット名');
+
+    const targetLoc = String(presetData.location || '').trim();
+    const targetCrop = String(presetData.crop || '').trim();
+    const oldName = String(presetData.oldName || '').trim();
+
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(presetData.crop).trim() && String(data[i][1]).trim() === String(presetData.oldName).trim()) {
-        sheet.getRange(i + 1, 2).setValue(presetData.newName);
+      const rLoc = locCol !== -1 ? String(data[i][locCol] || '').trim() : '';
+      const rCrop = cropCol !== -1 ? String(data[i][cropCol] || '').trim() : '';
+      const rName = nameCol !== -1 ? String(data[i][nameCol] || '').trim() : '';
+
+      if ((!targetLoc || !rLoc || rLoc === targetLoc) && rCrop === targetCrop && rName === oldName) {
+        sheet.getRange(i + 1, nameCol + 1).setValue(presetData.newName);
         return { success: true };
       }
     }
@@ -3612,44 +3665,60 @@ function renameCultivationPreset(presetData) {
 function saveCultivationPreset(presetData) {
   try {
     const ss = TENANT_SS;
-    let sheet = ss.getSheetByName('栽培計画プリセット');
-    if (!sheet) {
-      sheet = ss.insertSheet('栽培計画プリセット');
-      sheet.appendRow(['作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数']);
-    }
-    
+    const sheet = ensurePresetSheetHeaders_(ss);
     const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim());
+
+    const locCol = headers.indexOf('拠点');
+    const cropCol = headers.indexOf('作物');
+    const nameCol = headers.indexOf('プリセット名');
+
+    const targetLoc = String(presetData.location || '').trim();
+    const targetCrop = String(presetData.crop || '').trim();
+    const targetName = String(presetData.name || '').trim();
+
     let updated = false;
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(presetData.crop).trim() && String(data[i][1]).trim() === String(presetData.name).trim()) {
-        sheet.getRange(i + 1, 3, 1, 6).setValues([[
-          presetData.holes,
-          presetData.rows,
-          presetData.pSpace,
-          presetData.rSpace,
-          presetData.yieldPerSeedling,
-          presetData.itemsPerPack
-        ]]);
+      const rLoc = locCol !== -1 ? String(data[i][locCol] || '').trim() : '';
+      const rCrop = cropCol !== -1 ? String(data[i][cropCol] || '').trim() : '';
+      const rName = nameCol !== -1 ? String(data[i][nameCol] || '').trim() : '';
+
+      if (rLoc === targetLoc && rCrop === targetCrop && rName === targetName) {
+        const holesCol = headers.indexOf('穴数');
+        const rowsCol = headers.indexOf('条数');
+        const pSpaceCol = headers.indexOf('株間');
+        const rSpaceCol = headers.indexOf('畝間');
+        const yieldCol = headers.indexOf('1苗当たり収量');
+        const packCol = headers.indexOf('1P当たり入り数');
+
+        if (holesCol !== -1) sheet.getRange(i + 1, holesCol + 1).setValue(presetData.holes);
+        if (rowsCol !== -1) sheet.getRange(i + 1, rowsCol + 1).setValue(presetData.rows);
+        if (pSpaceCol !== -1) sheet.getRange(i + 1, pSpaceCol + 1).setValue(presetData.pSpace);
+        if (rSpaceCol !== -1) sheet.getRange(i + 1, rSpaceCol + 1).setValue(presetData.rSpace);
+        if (yieldCol !== -1) sheet.getRange(i + 1, yieldCol + 1).setValue(presetData.yieldPerSeedling);
+        if (packCol !== -1) sheet.getRange(i + 1, packCol + 1).setValue(presetData.itemsPerPack);
+
         updated = true;
         break;
       }
     }
-    
+
     if (!updated) {
-      sheet.appendRow([
-        presetData.crop,
-        presetData.name,
-        presetData.holes,
-        presetData.rows,
-        presetData.pSpace,
-        presetData.rSpace,
-        presetData.yieldPerSeedling,
-        presetData.itemsPerPack
-      ]);
+      const row = new Array(headers.length).fill('');
+      if (locCol !== -1) row[locCol] = targetLoc;
+      if (cropCol !== -1) row[cropCol] = targetCrop;
+      if (nameCol !== -1) row[nameCol] = targetName;
+      if (headers.indexOf('穴数') !== -1) row[headers.indexOf('穴数')] = presetData.holes;
+      if (headers.indexOf('条数') !== -1) row[headers.indexOf('条数')] = presetData.rows;
+      if (headers.indexOf('株間') !== -1) row[headers.indexOf('株間')] = presetData.pSpace;
+      if (headers.indexOf('畝間') !== -1) row[headers.indexOf('畝間')] = presetData.rSpace;
+      if (headers.indexOf('1苗当たり収量') !== -1) row[headers.indexOf('1苗当たり収量')] = presetData.yieldPerSeedling;
+      if (headers.indexOf('1P当たり入り数') !== -1) row[headers.indexOf('1P当たり入り数')] = presetData.itemsPerPack;
+
+      sheet.appendRow(row);
     }
-    
+
     SpreadsheetApp.flush();
-    
     return { success: true, message: "保存完了" };
   } catch (e) {
     return { success: false, message: e.message };
@@ -3660,82 +3729,85 @@ function saveCultivationPreset(presetData) {
 function saveVarietyWithFile(params) {
   try {
     const ss = TENANT_SS;
-    let sheet = ss.getSheetByName('栽培計画プリセット');
-    if (!sheet) {
-      sheet = ss.insertSheet('栽培計画プリセット');
-      sheet.appendRow(['作物', 'プリセット名', '穴数', '条数', '株間', '畝間', '1苗当たり収量', '1P当たり入り数', 'ファイルURL']);
-    }
-    
-    // ヘッダーにファイルURLがなければ追加
-    const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+    const sheet = ensurePresetSheetHeaders_(ss);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim());
+
     let fileUrlColIndex = headers.indexOf('ファイルURL') + 1;
     if (fileUrlColIndex === 0) {
       fileUrlColIndex = headers.length + 1;
       sheet.getRange(1, fileUrlColIndex).setValue('ファイルURL');
     }
-    
+
     let fileUrl = "";
     if (params.fileData && params.fileName) {
-      // Decode Base64
       let dataStr = params.fileData;
       if (dataStr.indexOf(',') !== -1) {
         dataStr = dataStr.split(',')[1];
       }
       const blob = Utilities.newBlob(Utilities.base64Decode(dataStr), params.fileType, params.fileName);
-      
-      // フォルダ検索 or 作成
+
       const folderName = "情熱MAP品種情報";
       let folders = DriveApp.getFoldersByName(folderName);
-      let folder;
-      if (folders.hasNext()) {
-        folder = folders.next();
-      } else {
-        folder = DriveApp.createFolder(folderName);
-      }
-      
+      let folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+
       const file = folder.createFile(blob);
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       fileUrl = file.getUrl();
     }
-    
-    // シートへの書き込み（上書き or 追記）
-    const data = sheet.getDataRange().getValues();
+
+    const locCol = headers.indexOf('拠点');
+    const cropCol = headers.indexOf('作物');
+    const nameCol = headers.indexOf('プリセット名');
+
+    const targetLoc = String(params.location || '').trim();
+    const targetCrop = String(params.crop || '').trim();
+    const targetName = String(params.name || '').trim();
+
     let updated = false;
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(params.crop).trim() && String(data[i][1]).trim() === String(params.name).trim()) {
-        sheet.getRange(i + 1, 3, 1, 6).setValues([[
-          params.holes,
-          params.rows,
-          params.pSpace,
-          params.rSpace,
-          params.yieldPerSeedling,
-          params.itemsPerPack
-        ]]);
-        if (fileUrl) {
+      const rLoc = locCol !== -1 ? String(data[i][locCol] || '').trim() : '';
+      const rCrop = cropCol !== -1 ? String(data[i][cropCol] || '').trim() : '';
+      const rName = nameCol !== -1 ? String(data[i][nameCol] || '').trim() : '';
+
+      if ((!targetLoc || !rLoc || rLoc === targetLoc) && rCrop === targetCrop && rName === targetName) {
+        const holesCol = headers.indexOf('穴数');
+        const rowsCol = headers.indexOf('条数');
+        const pSpaceCol = headers.indexOf('株間');
+        const rSpaceCol = headers.indexOf('畝間');
+        const yieldCol = headers.indexOf('1苗当たり収量');
+        const packCol = headers.indexOf('1P当たり入り数');
+
+        if (holesCol !== -1) sheet.getRange(i + 1, holesCol + 1).setValue(params.holes);
+        if (rowsCol !== -1) sheet.getRange(i + 1, rowsCol + 1).setValue(params.rows);
+        if (pSpaceCol !== -1) sheet.getRange(i + 1, pSpaceCol + 1).setValue(params.pSpace);
+        if (rSpaceCol !== -1) sheet.getRange(i + 1, rSpaceCol + 1).setValue(params.rSpace);
+        if (yieldCol !== -1) sheet.getRange(i + 1, yieldCol + 1).setValue(params.yieldPerSeedling);
+        if (packCol !== -1) sheet.getRange(i + 1, packCol + 1).setValue(params.itemsPerPack);
+
+        if (fileUrl && fileUrlColIndex > 0) {
           sheet.getRange(i + 1, fileUrlColIndex).setValue(fileUrl);
-        } else {
-          // If no new file, keep existing or leave blank
         }
         updated = true;
         break;
       }
     }
-    
+
     if (!updated) {
-      let newRow = [];
-      for (let j = 0; j < fileUrlColIndex; j++) newRow.push('');
-      newRow[0] = params.crop;
-      newRow[1] = params.name; // プリセット名として品種名を扱う
-      newRow[2] = params.holes;
-      newRow[3] = params.rows;
-      newRow[4] = params.pSpace;
-      newRow[5] = params.rSpace;
-      newRow[6] = params.yieldPerSeedling;
-      newRow[7] = params.itemsPerPack;
-      newRow[fileUrlColIndex - 1] = fileUrl;
+      let newRow = new Array(Math.max(headers.length, fileUrlColIndex)).fill('');
+      if (locCol !== -1) newRow[locCol] = targetLoc;
+      if (cropCol !== -1) newRow[cropCol] = targetCrop;
+      if (nameCol !== -1) newRow[nameCol] = targetName;
+      if (headers.indexOf('穴数') !== -1) newRow[headers.indexOf('穴数')] = params.holes;
+      if (headers.indexOf('条数') !== -1) newRow[headers.indexOf('条数')] = params.rows;
+      if (headers.indexOf('株間') !== -1) newRow[headers.indexOf('株間')] = params.pSpace;
+      if (headers.indexOf('畝間') !== -1) newRow[headers.indexOf('畝間')] = params.rSpace;
+      if (headers.indexOf('1苗当たり収量') !== -1) newRow[headers.indexOf('1苗当たり収量')] = params.yieldPerSeedling;
+      if (headers.indexOf('1P当たり入り数') !== -1) newRow[headers.indexOf('1P当たり入り数')] = params.itemsPerPack;
+      if (fileUrlColIndex > 0) newRow[fileUrlColIndex - 1] = fileUrl;
       sheet.appendRow(newRow);
     }
-    
+
     SpreadsheetApp.flush();
 
     // 作物・品種を栽培計画マスタの選択肢にも反映
