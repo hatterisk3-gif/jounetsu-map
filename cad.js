@@ -6,6 +6,7 @@ window.cadTargetPolygon = null;
 window.cadUnePolygons = [];
 window.cadPins = [];
 window.cadPinMode = null;
+window.cadPinNumFontSize = 14; // 給水・排水アイコン上の番号サイズ(px)
 window.cadUneLabels = [];
 window.cadNakamichiLines = [];
 window.cadNakamichiMapPolygons = [];
@@ -521,7 +522,9 @@ window.updateCadSvgOverlay = () => {
     if (window.cadUnePolygons) window.cadUnePolygons.forEach(updateHandlesPosition);
     if (window.cadCustomShapes) window.cadCustomShapes.forEach(updateHandlesPosition);
 
-    let pinsStateId = window.cadPins ? window.cadPins.map(mk => mk.cadPinType).join('_') + '_' + window.cadPins.length : '';
+    let pinsStateId = window.cadPins
+        ? window.cadPins.map(mk => mk.cadPinType).join('_') + '_' + window.cadPins.length + '_n' + (window.cadPinNumFontSize || 14)
+        : '';
     let pinsGroup = svg ? svg.querySelector('#cadSvgPins') : null;
     if (pinsGroup && svg._lastPinsStateId !== pinsStateId) {
         svg._lastPinsStateId = pinsStateId;
@@ -530,6 +533,7 @@ window.updateCadSvgOverlay = () => {
         if (window.cadPins) {
             let waterInCount = 0;
             let waterOutCount = 0;
+            const numFontPx = Math.max(8, Math.min(48, parseFloat(window.cadPinNumFontSize) || 14));
             window.cadPins.forEach((mk, idx) => {
                 let fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
                 fo.setAttribute('width', '100');
@@ -563,7 +567,7 @@ window.updateCadSvgOverlay = () => {
                     let numSpan = document.createElement('span');
                     numSpan.className = 'cad-pin-num';
                     numSpan.textContent = numStr;
-                    numSpan.style.cssText = 'position:absolute; left:50%; top:0; transform:translate(-50%, -110%); font-size:0.7em; font-weight:bold; color:#111; line-height:1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                    numSpan.style.cssText = `position:absolute; left:50%; top:0; transform:translate(-50%, -110%); font-size:${numFontPx}px; font-weight:bold; color:#111; line-height:1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;`;
                     div.appendChild(numSpan);
                 }
                 
@@ -961,7 +965,8 @@ window.saveCadStateToHistory = () => {
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline ? JSON.parse(JSON.stringify(window.cadFrontBaseline)) : null,
-        ridgeGapRatio: window.cadRidgeGapRatio
+        ridgeGapRatio: window.cadRidgeGapRatio,
+        pinNumFontSize: window.cadPinNumFontSize || 14
     };
 
     const stateStr = JSON.stringify(state);
@@ -1000,6 +1005,11 @@ window.loadCadStateFromHistory = (index) => {
     document.getElementById('cadUneCount').value = state.uneCount || 0;
     if (document.getElementById('cadMarginSide')) document.getElementById('cadMarginSide').value = state.marginSide || 0;
     if (document.getElementById('cadMarginEnd')) document.getElementById('cadMarginEnd').value = state.marginEnd || 0;
+    if (typeof window.setCadPinNumFontSize === 'function') {
+        window.setCadPinNumFontSize(state.pinNumFontSize || 14, { refresh: false });
+    } else {
+        window.cadPinNumFontSize = state.pinNumFontSize || 14;
+    }
 
     if (state.pins) {
         state.pins.forEach(pin => {
@@ -1824,6 +1834,11 @@ window.openCADMode = async (id) => {
             const marginEndEl = document.getElementById('cadMarginEnd');
             if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 50;
             if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 250;
+            if (typeof window.setCadPinNumFontSize === 'function') {
+                window.setCadPinNumFontSize(saved.pinNumFontSize || 14, { refresh: false });
+            } else {
+                window.cadPinNumFontSize = saved.pinNumFontSize || 14;
+            }
 
             if (saved.pins) {
                 saved.pins.forEach(pin => {
@@ -2240,6 +2255,25 @@ window.cadSetPinMode = (type) => {
     }
 };
 
+/** 給水・排水アイコン上の番号サイズを変更 */
+window.setCadPinNumFontSize = (px, opts) => {
+    opts = opts || {};
+    const n = Math.max(8, Math.min(48, Math.round(parseFloat(px) || 14)));
+    window.cadPinNumFontSize = n;
+    const label = document.getElementById('cadPinNumSizeLabel');
+    if (label) label.textContent = n + 'px';
+    if (opts.refresh !== false) {
+        const svg = document.getElementById('cadSvgOverlay');
+        if (svg) svg._lastPinsStateId = null;
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    }
+};
+
+window.cadAdjustPinNumSize = (delta) => {
+    const cur = parseFloat(window.cadPinNumFontSize) || 14;
+    window.setCadPinNumFontSize(cur + (parseFloat(delta) || 0));
+};
+
 window.drawNakamichiVisual = (path) => {
     let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6), map: window.cadMap, zIndex: 9 });
     window.cadNakamichiMapPolygons.push(line);
@@ -2251,7 +2285,10 @@ window.drawDrainageVisual = (path) => {
     window.cadDrainageMapPolygons.push(line);
 };
 
-/** 排水口ピン(water_out)の位置から、最も近い外周・枕に沿って排水ラインを自動生成 */
+/**
+ * 排水口ピン設置時: ピンのすぐ内側（上）に枕を横切る中道ラインを自動生成し、枕畝を分割する。
+ * （旧仕様の「枕に平行な排水ライン」はやめて、枕を分割する中道にする）
+ */
 window.cadAutoAddDrainageLineForPin = (latLng) => {
     if (!window.cadTargetId || !latLng) return false;
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[window.cadTargetId] : null;
@@ -2287,51 +2324,164 @@ window.cadAutoAddDrainageLineForPin = (latLng) => {
     const pB = coords[minI + 1];
     const ptA = turf.point(pA);
     const ptB = turf.point(pB);
-    const bearing = turf.bearing(ptA, ptB);
+    const edgeBearing = turf.bearing(ptA, ptB);
 
-    // 圃場の内側方向へオフセット
     const mid = turf.midpoint(ptA, ptB);
-    const pPlus = turf.destination(mid, 0.5, bearing + 90, { units: 'meters' });
-    let offsetAngle = bearing + 90;
+    const pPlus = turf.destination(mid, 0.5, edgeBearing + 90, { units: 'meters' });
+    let inwardAngle = edgeBearing + 90;
     try {
         if (!turf.booleanPointInPolygon(pPlus, tPoly)) {
-            offsetAngle = bearing - 90;
+            inwardAngle = edgeBearing - 90;
         }
     } catch (e) {
-        offsetAngle = bearing - 90;
+        inwardAngle = edgeBearing - 90;
     }
 
-    // 枕・頭部用に外周から約0.75m内側にオフセット
-    let offsetMeters = 0.75;
     const refWidthM = window.getCadReferenceRidgeWidthMeters ? window.getCadReferenceRidgeWidthMeters() : 1.5;
-    if (refWidthM && refWidthM > 0) {
-        offsetMeters = Math.min(Math.max(refWidthM / 2, 0.5), 1.5);
-    }
+    const makuraW = (refWidthM && refWidthM > 0) ? refWidthM : 1.5;
 
-    const ptA_in = turf.destination(ptA, offsetMeters, offsetAngle, { units: 'meters' });
-    const ptB_in = turf.destination(ptB, offsetMeters, offsetAngle, { units: 'meters' });
+    // ピンのすぐ内側（枕の中央付近）に中道の中心
+    const aboveMeters = Math.min(Math.max(makuraW * 0.55, 0.5), 2.0);
+    const center = turf.destination(pinPt, aboveMeters, inwardAngle, { units: 'meters' });
+
+    // 枕の長手に垂直＝枕を左右に分割
+    const splitBearing = edgeBearing + 90;
+    const halfLen = Math.min(Math.max(makuraW * 1.1, 1.2), 3.5);
+    const end1 = turf.destination(center, halfLen, splitBearing, { units: 'meters' });
+    const end2 = turf.destination(center, halfLen, splitBearing + 180, { units: 'meters' });
 
     const path = [
-        { lat: ptA_in.geometry.coordinates[1], lng: ptA_in.geometry.coordinates[0] },
-        { lat: ptB_in.geometry.coordinates[1], lng: ptB_in.geometry.coordinates[0] }
+        { lat: end1.geometry.coordinates[1], lng: end1.geometry.coordinates[0] },
+        { lat: end2.geometry.coordinates[1], lng: end2.geometry.coordinates[0] }
     ];
 
-    if (!window.cadDrainageLines) window.cadDrainageLines = [];
-    const isDup = window.cadDrainageLines.some(existing => {
+    if (!window.cadNakamichiLines) window.cadNakamichiLines = [];
+    const isDup = window.cadNakamichiLines.some(existing => {
         if (!existing || existing.length < 2) return false;
-        const d1 = turf.distance(turf.point([existing[0].lng, existing[0].lat]), ptA_in, { units: 'meters' });
-        const d2 = turf.distance(turf.point([existing[1].lng, existing[1].lat]), ptB_in, { units: 'meters' });
-        return (d1 < 1.0 && d2 < 1.0);
+        const midExist = turf.midpoint(
+            turf.point([existing[0].lng, existing[0].lat]),
+            turf.point([existing[1].lng, existing[1].lat])
+        );
+        return turf.distance(midExist, center, { units: 'meters' }) < 1.0;
     });
-
     if (isDup) return false;
 
-    window.cadDrainageLines.push(path);
-    window.drawDrainageVisual(path);
+    window.cadNakamichiLines.push(path);
+    window.drawNakamichiVisual(path);
+    try {
+        window.cadSplitMakuraByNakamichi(path);
+    } catch (e) {
+        console.warn('枕畝の分割に失敗:', e);
+    }
     return true;
 };
 
-/** 全ての排水口ピン(water_out)の設置箇所の枕に排水ラインを一括自動生成 */
+/** 中道ライン付近の枕畝(customShapes)をバッファ差分で分割 */
+window.cadSplitMakuraByNakamichi = (path) => {
+    if (!path || path.length < 2 || !window.cadCustomShapes || !window.cadCustomShapes.length) return;
+    const p1lng = typeof path[0].lng === 'function' ? path[0].lng() : parseFloat(path[0].lng);
+    const p1lat = typeof path[0].lat === 'function' ? path[0].lat() : parseFloat(path[0].lat);
+    const p2lng = typeof path[1].lng === 'function' ? path[1].lng() : parseFloat(path[1].lng);
+    const p2lat = typeof path[1].lat === 'function' ? path[1].lat() : parseFloat(path[1].lat);
+    const centerLine = turf.lineString([[p1lng, p1lat], [p2lng, p2lat]]);
+    const cutBuf = turf.buffer(centerLine, 0.45 / 1000, { units: 'kilometers' });
+    if (!cutBuf) return;
+
+    const kept = [];
+    const toRemove = [];
+
+    window.cadCustomShapes.forEach((poly) => {
+        if (!poly || poly.uneGroup !== '枕') {
+            kept.push(poly);
+            return;
+        }
+        const arr = poly.getPath().getArray();
+        if (!arr || arr.length < 3) {
+            kept.push(poly);
+            return;
+        }
+        let ring = arr.map(pt => [pt.lng(), pt.lat()]);
+        if (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1]) {
+            ring.push([ring[0][0], ring[0][1]]);
+        }
+        let tPoly;
+        try {
+            tPoly = turf.polygon([ring]);
+        } catch (e) {
+            kept.push(poly);
+            return;
+        }
+
+        let intersects = false;
+        try {
+            intersects = typeof turf.booleanIntersects === 'function'
+                ? turf.booleanIntersects(tPoly, cutBuf)
+                : !!turf.intersect(tPoly, cutBuf);
+        } catch (e) {
+            intersects = false;
+        }
+        if (!intersects) {
+            kept.push(poly);
+            return;
+        }
+
+        let differenced = null;
+        try {
+            differenced = turf.difference(tPoly, cutBuf);
+        } catch (e) {
+            kept.push(poly);
+            return;
+        }
+        if (!differenced) {
+            toRemove.push(poly);
+            return;
+        }
+
+        let flattened;
+        try {
+            flattened = turf.flatten(differenced);
+        } catch (e) {
+            flattened = { features: [differenced] };
+        }
+
+        toRemove.push(poly);
+        (flattened.features || []).forEach((feature, idx) => {
+            if (!feature || !feature.geometry || !feature.geometry.coordinates) return;
+            const coordinates = feature.geometry.coordinates;
+            if (!coordinates || !coordinates.length) return;
+            const paths = coordinates.map(ringCoords => ringCoords.map(c => ({ lat: c[1], lng: c[0] })));
+            if (!paths[0] || paths[0].length < 3) return;
+            const gPoly = new google.maps.Polygon({
+                paths: paths,
+                fillColor: window.cadGetGroupColor ? window.cadGetGroupColor('枕') : '#8BC34A',
+                fillOpacity: 0.4,
+                strokeColor: '#558B2F',
+                strokeOpacity: 0.8,
+                strokeWeight: Math.max(0.5, 2),
+                map: window.cadMap,
+                editable: false,
+                draggable: false,
+                clickable: true,
+                zIndex: 10
+            });
+            gPoly.uneIndex = 'custom_makura_split_' + Date.now() + '_' + idx + '_' + Math.floor(Math.random() * 1000);
+            gPoly.uneGroup = '枕';
+            google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
+            if (typeof window.bindShapeHistoryEvents === 'function') window.bindShapeHistoryEvents(gPoly);
+            kept.push(gPoly);
+        });
+    });
+
+    toRemove.forEach(poly => {
+        try { poly.setMap(null); } catch (e) {}
+    });
+    window.cadCustomShapes = kept;
+
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    window.cadSvgNeedsRebuild = true;
+};
+
+/** 全ての排水口ピンから枕分割用の中道を一括自動生成 */
 window.cadGenerateDrainageLinesFromPins = () => {
     if (!window.cadPins || !window.cadPins.length) {
         if (typeof customAlert === 'function') customAlert('排水口ピン（🕳️）が配置されていません。');
@@ -2359,11 +2509,11 @@ window.cadGenerateDrainageLinesFromPins = () => {
             if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
             window.saveCadStateToHistory();
         }
-        if (typeof customAlert === 'function') customAlert(`排水口の枕に沿って ${count} 箇所の排水ラインを設置しました！`);
-        else alert(`排水口の枕に沿って ${count} 箇所の排水ラインを設置しました！`);
+        if (typeof customAlert === 'function') customAlert(`排水口のすぐ上に中道を ${count} 箇所入れ、枕を分割しました！`);
+        else alert(`排水口のすぐ上に中道を ${count} 箇所入れ、枕を分割しました！`);
     } else {
-        if (typeof customAlert === 'function') customAlert('対象の排水口ピンには既に排水ラインが設置されています。');
-        else alert('対象の排水口ピンには既に排水ラインが設置されています。');
+        if (typeof customAlert === 'function') customAlert('対象の排水口ピンには既に中道が設置されています。');
+        else alert('対象の排水口ピンには既に中道が設置されています。');
     }
 };
 
@@ -3212,7 +3362,8 @@ window.saveUneSim = async () => {
         drainageLines: window.cadDrainageLines,
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
-        frontBaseline: window.cadFrontBaseline || null
+        frontBaseline: window.cadFrontBaseline || null,
+        pinNumFontSize: window.cadPinNumFontSize || 14
     });
 
     p.uneSimData = simDataStr;

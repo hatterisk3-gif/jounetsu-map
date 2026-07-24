@@ -130,7 +130,7 @@
 
       <div id="cadMode2" style="display:none;">
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📍 設備ピンと補助線</div>
-        <div style="display:flex; gap:5px; margin-bottom:10px;">
+        <div style="display:flex; gap:5px; margin-bottom:8px;">
           <button onclick="cadSetPinMode('water_in')"
             style="flex:1; background:#03A9F4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">💧
             吸水</button>
@@ -143,6 +143,14 @@
           <button onclick="cadSetPinMode('parking_truck')"
             style="flex:1; background:#607D8B; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🅿️
             駐車場</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+          <span style="font-size:11px; color:#aaa;">給水・排水の番号サイズ</span>
+          <button type="button" onclick="cadAdjustPinNumSize(-2)"
+            style="width:32px; height:28px; background:#555; color:#fff; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">−</button>
+          <span id="cadPinNumSizeLabel" style="min-width:36px; text-align:center; font-size:13px; font-weight:bold; color:#8BC34A;">14px</span>
+          <button type="button" onclick="cadAdjustPinNumSize(2)"
+            style="width:32px; height:28px; background:#555; color:#fff; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">＋</button>
         </div>
 
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 地形の追加</div>
