@@ -345,9 +345,13 @@ function applyCultivationMasterData() {
         populateSelect('cpPlantSpacing', cpMasterData.pSpace, [20, 25, 30, 35, 40, 45, 50]);
         populateSelect('cpRidgeSpacing', cpMasterData.rSpace, [100, 120, 150, 180, 200]);
         populateSelect('cpYieldRate', cpMasterData.yields, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
+        populateSelect('cpSeedlingSuccess', cpMasterData.seedlingSuccess || cpMasterData.yields, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
         populateSelect('cpArea', cpMasterData.areas, [5, 10, 15, 20, 50]);
         populateSelect('cpYieldPerPlant', cpMasterData.yieldPerSeedling || [], [1]);
         populateSelect('cpItemsPerPack', cpMasterData.itemsPerPack || [], [1]);
+        
+        if (document.getElementById('cpYieldRate') && !getCpVal('cpYieldRate')) setCpVal('cpYieldRate', 0.9);
+        if (document.getElementById('cpSeedlingSuccess') && !getCpVal('cpSeedlingSuccess')) setCpVal('cpSeedlingSuccess', 1.0);
         
         updateVarietyList();
         calcCp();
@@ -908,10 +912,14 @@ function populateDefaultCpSelects() {
     populateSelect('cpPlantSpacing', [], [20, 25, 30, 35, 40, 45, 50]);
     populateSelect('cpRidgeSpacing', [], [100, 120, 150, 180, 200]);
     populateSelect('cpYieldRate', [], [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
+    populateSelect('cpSeedlingSuccess', [], [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
     populateSelect('cpArea', [], [5, 10, 15, 20, 50]);
     populateSelect('cpVariety', [], []);
     populateSelect('cpYieldPerPlant', [], [1]);
     populateSelect('cpItemsPerPack', [], [1]);
+    // 初期値
+    if (document.getElementById('cpYieldRate')) setCpVal('cpYieldRate', 0.9);
+    if (document.getElementById('cpSeedlingSuccess')) setCpVal('cpSeedlingSuccess', 1.0);
 }
 
 
@@ -1090,8 +1098,8 @@ function addCpPlanRow() {
         itemsPerPack: itemsPerPack,
         // Default row parameters
         areaA: 10,
-        yieldRate: 0.9,
-        seedlingSuccess: 0.9,
+        yieldRate: getCpVal('cpYieldRate', true) || 0.9,
+        seedlingSuccess: getCpVal('cpSeedlingSuccess', true) || 0.9,
         harvestRatios: [],
         trays: 0,
         yield: 0
@@ -1147,10 +1155,7 @@ function renderCpPlanRow(plan) {
                 ${fileLinkHtml}
                 <span id="tagDisplay_${plan.id}" style="color: #e91e63; font-size: 9px; font-weight:bold;">${plan.tag || ''}</span>
             </span>
-            <span style="display:flex; align-items:center; gap:2px;">
-                <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="この設定をコピーして下に品種を追加" style="background:#fff; border:1px solid #1976D2; color:#1565C0; cursor:pointer; font-size:10px; line-height:1; padding:2px 5px; border-radius:3px; font-weight:bold;">📋コピー</button>
-                <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:16px; line-height:1; padding:0 4px; font-weight:bold;">×</button>
-            </span>
+            <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:16px; line-height:1; padding:0 4px; font-weight:bold;">×</button>
         </div>
         <div style="font-size: 10px; display:flex; flex-direction:column; gap:3px; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #bbdefb;">
           <div style="display:flex; align-items:center; gap:3px;">
@@ -1179,9 +1184,12 @@ function renderCpPlanRow(plan) {
             </select>
           </div>
         </div>
-        <div style="display:flex; align-items:center; gap:4px; margin-top:3px; color: #2e7d32; font-weight: bold; font-size:9px; flex-wrap:wrap;">
-          播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span> |
-          収穫:<span id="calcYield_${plan.id}">0</span>
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:6px; margin-top:4px;">
+          <div style="color: #2e7d32; font-weight: bold; font-size:9px; flex:1; line-height:1.3;">
+            播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span><br>
+            収穫:<span id="calcYield_${plan.id}">0</span>
+          </div>
+          <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="この設定をコピーして下に品種を追加" style="flex-shrink:0; width:28px; height:28px; background:#1976D2; color:#fff; border:none; border-radius:50%; cursor:pointer; font-size:18px; font-weight:bold; line-height:1; box-shadow:0 1px 3px rgba(0,0,0,0.2);">＋</button>
         </div>
         <div id="ratios_${plan.id}" style="margin-top: 3px; display:flex; gap: 3px; flex-wrap: wrap;"></div>
     `;
@@ -1251,6 +1259,7 @@ function renderCpPlanRow(plan) {
 function removeCpPlanRow(planId) {
     cpPlans = cpPlans.filter(p => p.id !== planId);
     delete cpSemiAutoSteps[planId];
+    delete cpSemiAutoLastPaint[planId];
     if (cpSemiAutoActivePlanId === planId) cpSemiAutoActivePlanId = null;
     // 右テーブルの行を削除
     const tbody = document.getElementById('cpTableBody');
@@ -1364,13 +1373,31 @@ const SEMI_AUTO_LABELS = {
 // 半自動: 作型行ごとのクリック回数（0=播種, 1=定植, 2以降=収穫）
 let cpSemiAutoSteps = {};
 let cpSemiAutoActivePlanId = null;
+// 半自動: 直前に塗ったセル（同じマス再クリックで取消用）
+let cpSemiAutoLastPaint = {}; // planId -> { monthIndex, period, tool, stepBefore }
 // 半自動: 作型登録ペイント用
 let crSemiAutoStep = 0;
+let crSemiAutoLastPaint = null; // { cellIndex or monthIndex+period, tool, stepBefore }
 
 function getSemiAutoTool(step) {
     if (step <= 0) return 'sowing';
     if (step === 1) return 'planting';
     return 'harvesting';
+}
+
+function clearCpCellPaint(td) {
+    const div = td.querySelector('div');
+    td.dataset.task = '';
+    if (div) {
+        div.style.backgroundColor = '';
+        div.innerHTML = '';
+    }
+    td.dataset.amount = '';
+}
+
+function isSameSemiAutoCell(a, b) {
+    if (!a || !b) return false;
+    return String(a.monthIndex) === String(b.monthIndex) && String(a.period) === String(b.period);
 }
 
 function updateCpSemiAutoHint(planId) {
@@ -1417,6 +1444,7 @@ function onCpToolChange() {
         // 半自動を選び直したら順序を播種から
         cpSemiAutoSteps = {};
         cpSemiAutoActivePlanId = null;
+        cpSemiAutoLastPaint = {};
     }
     updateCpSemiAutoHint();
 }
@@ -1425,6 +1453,7 @@ function onCrToolChange() {
     const checked = document.querySelector('input[name="crTool"]:checked');
     if (checked && checked.value === 'semiauto') {
         crSemiAutoStep = 0;
+        crSemiAutoLastPaint = null;
     }
     updateCrSemiAutoHint();
 }
@@ -1432,11 +1461,13 @@ function onCrToolChange() {
 function resetCpSemiAutoSteps() {
     cpSemiAutoSteps = {};
     cpSemiAutoActivePlanId = null;
+    cpSemiAutoLastPaint = {};
     updateCpSemiAutoHint();
 }
 
 function resetCrSemiAutoStep() {
     crSemiAutoStep = 0;
+    crSemiAutoLastPaint = null;
     updateCrSemiAutoHint();
 }
 
@@ -1471,23 +1502,44 @@ function toggleCpCell(td, planId) {
         cpSemiAutoActivePlanId = planId;
         const step = cpSemiAutoSteps[planId] || 0;
         tool = getSemiAutoTool(step);
-        const div = td.querySelector('div');
-        // 同じ種類が既にあるセル → 消す＋順序も1つ戻す
-        if (td.dataset.task === tool) {
-            td.dataset.task = '';
-            div.style.backgroundColor = '';
-            div.innerHTML = '';
-            td.dataset.amount = '';
-            cpSemiAutoSteps[planId] = Math.max(0, step - 1);
-        } else {
-            td.dataset.task = tool;
-            div.style.backgroundColor = TOOL_COLORS[tool];
-            if (tool !== 'harvesting') {
-                td.dataset.amount = '';
-                div.innerHTML = '';
-            }
-            cpSemiAutoSteps[planId] = step + 1;
+        const cellKey = { monthIndex: td.dataset.monthIndex, period: td.dataset.period };
+        const last = cpSemiAutoLastPaint[planId];
+
+        // 直前に塗った同じマスを再クリック → 消して順序を戻す
+        if (last && isSameSemiAutoCell(last, cellKey) && td.dataset.task === last.tool) {
+            clearCpCellPaint(td);
+            cpSemiAutoSteps[planId] = Math.max(0, last.stepBefore);
+            delete cpSemiAutoLastPaint[planId];
+            updateCpCellsText(planId);
+            updateCpSemiAutoHint(planId);
+            return;
         }
+
+        // 今の順序と同じ種類が既にあるセル → 消して順序を1つ戻す
+        if (td.dataset.task === tool) {
+            clearCpCellPaint(td);
+            cpSemiAutoSteps[planId] = Math.max(0, step - 1);
+            if (last && isSameSemiAutoCell(last, cellKey)) delete cpSemiAutoLastPaint[planId];
+            updateCpCellsText(planId);
+            updateCpSemiAutoHint(planId);
+            return;
+        }
+
+        // 新規に塗る
+        const div = td.querySelector('div');
+        td.dataset.task = tool;
+        div.style.backgroundColor = TOOL_COLORS[tool];
+        if (tool !== 'harvesting') {
+            td.dataset.amount = '';
+            div.innerHTML = '';
+        }
+        cpSemiAutoLastPaint[planId] = {
+            monthIndex: cellKey.monthIndex,
+            period: cellKey.period,
+            tool: tool,
+            stepBefore: step
+        };
+        cpSemiAutoSteps[planId] = step + 1;
         updateCpCellsText(planId);
         updateCpSemiAutoHint(planId);
         return;
@@ -1853,6 +1905,8 @@ function collectCpFormState() {
         rSpace: getCpVal('cpRidgeSpacing'),
         yieldPerPlant: getCpVal('cpYieldPerPlant'),
         itemsPerPack: getCpVal('cpItemsPerPack'),
+        yieldRate: getCpVal('cpYieldRate'),
+        seedlingSuccess: getCpVal('cpSeedlingSuccess'),
         variety: getCpVal('cpVariety')
     };
 }
@@ -1953,6 +2007,8 @@ function applyCpFormState(form) {
     if (form.rSpace !== undefined && form.rSpace !== '') setCpVal('cpRidgeSpacing', form.rSpace);
     if (form.yieldPerPlant !== undefined && form.yieldPerPlant !== '') setCpVal('cpYieldPerPlant', form.yieldPerPlant);
     if (form.itemsPerPack !== undefined && form.itemsPerPack !== '') setCpVal('cpItemsPerPack', form.itemsPerPack);
+    if (form.yieldRate !== undefined && form.yieldRate !== '') setCpVal('cpYieldRate', form.yieldRate);
+    if (form.seedlingSuccess !== undefined && form.seedlingSuccess !== '') setCpVal('cpSeedlingSuccess', form.seedlingSuccess);
     if (form.variety) setCpVal('cpVariety', form.variety);
     calcCp();
     checkCroptypeDB();
@@ -1983,6 +2039,7 @@ function loadCultivationPlanDraft(options) {
     if (leftBody) leftBody.innerHTML = '';
     cpPlans = [];
     cpSemiAutoSteps = {};
+    cpSemiAutoLastPaint = {};
     cpSemiAutoActivePlanId = null;
 
     applyCpFormState(draft.form || {});
@@ -2106,6 +2163,7 @@ function openCultivationPlanModal(options) {
     if (leftBody) leftBody.innerHTML = '';
     cpPlans = [];
     cpSemiAutoSteps = {};
+    cpSemiAutoLastPaint = {};
     cpSemiAutoActivePlanId = null;
     
     // デフォルトを半自動に合わせ、ヒント表示を更新
@@ -2479,16 +2537,40 @@ function toggleCrCell(td) {
     if (selected === 'semiauto') {
         const tool = getSemiAutoTool(crSemiAutoStep);
         const div = td.querySelector('div');
-        // 同じ種類が既にあるセル → 消す＋順序も1つ戻す
+        const cellKey = {
+            monthIndex: td.dataset.monthIndex,
+            period: td.dataset.period != null ? td.dataset.period : td.dataset.monthIndex
+        };
+        const last = crSemiAutoLastPaint;
+
+        // 直前に塗った同じマスを再クリック → 消して順序を戻す
+        if (last && isSameSemiAutoCell(last, cellKey) && td.dataset.task === last.tool) {
+            td.dataset.task = '';
+            div.style.backgroundColor = '';
+            crSemiAutoStep = Math.max(0, last.stepBefore);
+            crSemiAutoLastPaint = null;
+            updateCrSemiAutoHint();
+            return;
+        }
+
         if (td.dataset.task === tool) {
             td.dataset.task = '';
             div.style.backgroundColor = '';
             crSemiAutoStep = Math.max(0, crSemiAutoStep - 1);
-        } else {
-            td.dataset.task = tool;
-            div.style.backgroundColor = TOOL_COLORS[tool];
-            crSemiAutoStep += 1;
+            if (last && isSameSemiAutoCell(last, cellKey)) crSemiAutoLastPaint = null;
+            updateCrSemiAutoHint();
+            return;
         }
+
+        td.dataset.task = tool;
+        div.style.backgroundColor = TOOL_COLORS[tool];
+        crSemiAutoLastPaint = {
+            monthIndex: cellKey.monthIndex,
+            period: cellKey.period,
+            tool: tool,
+            stepBefore: crSemiAutoStep
+        };
+        crSemiAutoStep += 1;
         updateCrSemiAutoHint();
         return;
     }

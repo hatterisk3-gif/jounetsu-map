@@ -140,7 +140,7 @@
             3. 品種・作型登録
           </summary>
           <div style="padding-top: 10px; margin-top: 5px; border-top: 1px dashed #bbdefb;">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; align-items: flex-end; margin-bottom: 12px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: flex-end; margin-bottom: 12px;">
               <div style="width: 100%;">
                 <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">品種</label>
                 <div style="display: flex; gap: 4px; width: 100%;">
@@ -148,6 +148,14 @@
                   <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp(); checkCroptypeDB()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
                   <button onclick="searchCroptypeWeb()" title="作型をWEB検索" style="padding: 4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; width: 28px; display: flex; align-items: center; justify-content: center;">🌐</button>
                 </div>
+              </div>
+              <div style="width: 100%;">
+                <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">歩留</label>
+                <select id="cpYieldRate" onchange="calcCp()" style="width:100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;"></select>
+              </div>
+              <div style="width: 100%;">
+                <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">育苗成功率</label>
+                <select id="cpSeedlingSuccess" onchange="calcCp()" style="width:100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;"></select>
               </div>
               <div style="width: 100%; display: flex; align-items: flex-end;">
                 <button type="button" onclick="loadAndAddCroptype()" style="padding: 6px 12px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">🔄 品種マスタから作型を読込</button>
