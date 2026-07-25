@@ -84,6 +84,15 @@
             <button type="button" id="btnWaterCadAdd" class="water-cad-btn" style="background:#0288D1; color:#fff;" onclick="toggleWaterCadAddMode()">＋ 給水口を追加</button>
             <button type="button" class="water-cad-btn" style="background:#E65100; color:#fff;" onclick="clearWaterCadPinsConfirm()">全削除</button>
           </div>
+          <div id="waterCadGpsBar" style="background:#0D47A1; border:1px solid #1976D2; border-radius:6px; padding:8px; margin:8px 0;">
+            <div style="font-size:11px; color:#BBDEFB; margin-bottom:6px;">📡 GPSで給水口を置く</div>
+            <div class="water-cad-btn-row" style="margin-bottom:6px;">
+              <button type="button" id="btnWaterCadGpsStart" class="water-cad-btn" style="background:#1565C0; color:#fff;" onclick="waterStartGpsPinPlace()">GPSで置く</button>
+              <button type="button" id="btnWaterCadGpsConfirm" class="water-cad-btn" style="background:#455A64; color:#fff; opacity:0.6;" onclick="waterConfirmGpsPinPlace()" disabled>ここに置く</button>
+              <button type="button" id="btnWaterCadGpsCancel" class="water-cad-btn" style="background:#616161; color:#fff; opacity:0.6;" onclick="waterStopGpsPinPlace()" disabled>取消</button>
+            </div>
+            <div id="waterCadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">現場で「GPSで置く」→精度を確認→「ここに置く」</div>
+          </div>
           <div class="water-cad-btn-row">
             <button type="button" id="btnWaterCadSave" class="water-cad-btn" style="background:#2E7D32; color:#fff;" onclick="saveWaterCadPins()">💾 保存</button>
             <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;" onclick="closeWaterCadSimple()">キャンセル</button>

@@ -456,6 +456,10 @@ let waterCadBaseData = {};
 let waterCadEditMode = false;
 let waterCadAddMode = false;
 let waterCadMapClickListener = null;
+let waterCadGpsWatchId = null;
+let waterCadGpsLastPos = null;
+let waterCadGpsPreviewMarker = null;
+let waterCadGpsPreviewCircle = null;
 
 window.openWaterCadSimple = function(polyId, options) {
     const opts = options || {};
@@ -561,6 +565,7 @@ function applyWaterCadModeUI() {
         addBtn.style.background = waterCadAddMode ? '#1565C0' : '#0288D1';
     }
     updateWaterCadHint();
+    if (typeof waterUpdateGpsUi === 'function') waterUpdateGpsUi({});
 }
 
 function updateWaterCadHint() {
@@ -672,6 +677,7 @@ window.enterWaterCadEditMode = function() {
 };
 
 window.closeWaterCadSimple = function() {
+    if (typeof waterStopGpsPinPlace === 'function') waterStopGpsPinPlace({ silent: true });
     const overlay = document.getElementById('waterCadOverlay');
     if (overlay) overlay.classList.remove('open');
     waterCadAddMode = false;
@@ -685,6 +691,183 @@ window.closeWaterCadSimple = function() {
     if (waterCadPolygon) {
         waterCadPolygon.setMap(null);
         waterCadPolygon = null;
+    }
+};
+
+function waterUpdateGpsUi(opts) {
+    opts = opts || {};
+    const statusEl = document.getElementById('waterCadGpsStatus');
+    const startBtn = document.getElementById('btnWaterCadGpsStart');
+    const confirmBtn = document.getElementById('btnWaterCadGpsConfirm');
+    const cancelBtn = document.getElementById('btnWaterCadGpsCancel');
+    const active = waterCadGpsWatchId != null;
+    const hasFix = !!(waterCadGpsLastPos && waterCadGpsLastPos.lat != null);
+    const acc = waterCadGpsLastPos && waterCadGpsLastPos.accuracy != null
+        ? Math.round(waterCadGpsLastPos.accuracy)
+        : null;
+    const good = acc != null && acc <= 15;
+
+    if (statusEl && opts.status != null) {
+        statusEl.textContent = opts.status;
+        statusEl.style.color = opts.statusColor || '#90CAF9';
+    }
+    if (startBtn) {
+        startBtn.disabled = !!active || !waterCadEditMode;
+        startBtn.style.opacity = (active || !waterCadEditMode) ? '0.6' : '1';
+        startBtn.textContent = active ? '測位中…' : 'GPSで置く';
+    }
+    if (confirmBtn) {
+        confirmBtn.disabled = !(active && hasFix);
+        confirmBtn.style.opacity = (active && hasFix) ? '1' : '0.6';
+        confirmBtn.style.background = (active && hasFix && good) ? '#2E7D32' : ((active && hasFix) ? '#F9A825' : '#455A64');
+        confirmBtn.style.color = (active && hasFix && !good) ? '#212121' : '#fff';
+    }
+    if (cancelBtn) {
+        cancelBtn.disabled = !active;
+        cancelBtn.style.opacity = active ? '1' : '0.6';
+    }
+}
+
+function waterUpdateGpsPreview(lat, lng, accuracy) {
+    if (!waterCadMap) return;
+    const pos = { lat: Number(lat), lng: Number(lng) };
+    const acc = Math.max(1, Number(accuracy) || 20);
+    waterCadGpsLastPos = { lat: pos.lat, lng: pos.lng, accuracy: acc };
+
+    if (!waterCadGpsPreviewMarker) {
+        waterCadGpsPreviewMarker = new google.maps.Marker({
+            position: pos,
+            map: waterCadMap,
+            clickable: false,
+            zIndex: 100000,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#2196F3',
+                fillOpacity: 1,
+                strokeColor: '#fff',
+                strokeWeight: 2
+            },
+            title: 'GPS現在地'
+        });
+    } else {
+        waterCadGpsPreviewMarker.setPosition(pos);
+        waterCadGpsPreviewMarker.setMap(waterCadMap);
+    }
+
+    if (!waterCadGpsPreviewCircle) {
+        waterCadGpsPreviewCircle = new google.maps.Circle({
+            map: waterCadMap,
+            center: pos,
+            radius: acc,
+            clickable: false,
+            fillColor: '#2196F3',
+            fillOpacity: 0.15,
+            strokeColor: '#1976D2',
+            strokeOpacity: 0.7,
+            strokeWeight: 1,
+            zIndex: 99999
+        });
+    } else {
+        waterCadGpsPreviewCircle.setCenter(pos);
+        waterCadGpsPreviewCircle.setRadius(acc);
+        waterCadGpsPreviewCircle.setMap(waterCadMap);
+    }
+
+    try { waterCadMap.panTo(pos); } catch (e) { /* ignore */ }
+
+    const good = acc <= 15;
+    waterUpdateGpsUi({
+        status: `精度 ±${acc}m${good ? '（良好）' : '（もう少し待つと安定）'} →「ここに置く」で確定`,
+        statusColor: good ? '#A5D6A7' : '#FFE082'
+    });
+}
+
+function waterClearGpsPreview() {
+    if (waterCadGpsPreviewMarker) {
+        waterCadGpsPreviewMarker.setMap(null);
+        waterCadGpsPreviewMarker = null;
+    }
+    if (waterCadGpsPreviewCircle) {
+        waterCadGpsPreviewCircle.setMap(null);
+        waterCadGpsPreviewCircle = null;
+    }
+}
+
+window.waterStartGpsPinPlace = function() {
+    if (!waterCadEditMode || !isWaterAdmin()) {
+        alert('編集モードでのみGPS設置できます。');
+        return;
+    }
+    if (!navigator.geolocation) {
+        alert('この端末・ブラウザではGPS（位置情報）を使えません。');
+        return;
+    }
+    if (!waterCadMap) {
+        alert('簡易CAD地図がまだ準備できていません。');
+        return;
+    }
+
+    waterStopGpsPinPlace({ silent: true });
+    waterCadAddMode = false;
+    applyWaterCadModeUI();
+
+    waterUpdateGpsUi({
+        status: '測位中… 給水口の位置で少し待ってください（位置情報の許可が必要な場合があります）',
+        statusColor: '#90CAF9'
+    });
+
+    waterCadGpsWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+            waterUpdateGpsPreview(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        },
+        (err) => {
+            let msg = '位置情報を取得できませんでした。';
+            if (err && err.code === 1) msg = '位置情報の利用が拒否されています。端末の設定で許可してください。';
+            else if (err && err.code === 2) msg = '位置情報を取得できません（電波・GPSを確認）。';
+            else if (err && err.code === 3) msg = '測位がタイムアウトしました。屋外で再度お試しください。';
+            waterUpdateGpsUi({ status: msg, statusColor: '#EF9A9A' });
+            alert(msg);
+            waterStopGpsPinPlace({ keepStatus: true });
+        },
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
+    );
+    waterUpdateGpsUi({});
+};
+
+window.waterConfirmGpsPinPlace = function() {
+    if (!waterCadGpsLastPos) {
+        alert('まだ現在地を取得できていません。少し待ってから再度お試しください。');
+        return;
+    }
+    const acc = Math.round(waterCadGpsLastPos.accuracy || 999);
+    if (acc > 15) {
+        if (!confirm(`現在の精度は ±${acc}m です。\nこのまま置きますか？（あとからピンをドラッグして微調整できます）`)) return;
+    }
+    addWaterCadPin(waterCadGpsLastPos.lat, waterCadGpsLastPos.lng, true);
+    updateWaterCadHint();
+    waterStopGpsPinPlace({ silent: true });
+    waterUpdateGpsUi({
+        status: '給水口をGPS位置に設置しました（ピンをドラッグで微調整可。保存を忘れずに）',
+        statusColor: '#A5D6A7'
+    });
+};
+
+window.waterStopGpsPinPlace = function(opts) {
+    opts = opts || {};
+    if (waterCadGpsWatchId != null && navigator.geolocation) {
+        try { navigator.geolocation.clearWatch(waterCadGpsWatchId); } catch (e) { /* ignore */ }
+    }
+    waterCadGpsWatchId = null;
+    waterCadGpsLastPos = null;
+    waterClearGpsPreview();
+    if (!opts.silent && !opts.keepStatus) {
+        waterUpdateGpsUi({
+            status: '現場で「GPSで置く」→精度を確認→「ここに置く」',
+            statusColor: '#90CAF9'
+        });
+    } else {
+        waterUpdateGpsUi({});
     }
 };
 

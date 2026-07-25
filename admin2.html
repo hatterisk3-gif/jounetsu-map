@@ -146,6 +146,18 @@
             style="flex:1; background:#607D8B; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🅿️
             駐車場</button>
         </div>
+        <div id="cadGpsBar" style="background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:10px;">
+          <div style="font-size:11px; color:#9fa8da; margin-bottom:6px;">📡 GPSで正確に置く（種別を選んでから起動）</div>
+          <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
+            <button type="button" id="cadGpsStartBtn" onclick="cadStartGpsPinPlace()"
+              style="flex:1; min-width:90px; background:#1565C0; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">GPSで置く</button>
+            <button type="button" id="cadGpsConfirmBtn" onclick="cadConfirmGpsPinPlace()" disabled
+              style="flex:1; min-width:90px; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
+            <button type="button" id="cadGpsCancelBtn" onclick="cadStopGpsPinPlace()" disabled
+              style="flex:0.7; min-width:70px; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">取消</button>
+          </div>
+          <div id="cadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">ピン種別を選んで「GPSで置く」を押してください</div>
+        </div>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
           <span style="font-size:11px; color:#aaa;">給水・排水の番号サイズ</span>
           <button type="button" onclick="cadAdjustPinNumSize(-2)"
@@ -190,13 +202,18 @@
       </div>
 
       <div id="cadMode3" style="display:none;">
-        <div style="display:flex; gap:10px; width:100%; margin-top:5px;">
+        <div style="display:flex; gap:8px; width:100%; margin-top:5px; flex-wrap:wrap;">
           <button onclick="saveUneSim()"
-            style="flex:2; background:#2196F3; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">💾
+            style="flex:2; min-width:140px; background:#2196F3; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">💾
             描画図面を保存</button>
+          <button onclick="cadUserClearRidgesOnly()"
+            style="flex:1; min-width:100px; background:#FF9800; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+            title="生成畝・自由畝だけ消します。ピンや中道は残ります">🌾
+            畝だけ消す</button>
           <button onclick="cadUserClearLines()"
-            style="flex:1; background:#f44336; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🗑️
-            クリア</button>
+            style="flex:1; min-width:90px; background:#f44336; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+            title="畝・ピン・中道など全部消します">🗑️
+            全部クリア</button>
         </div>
         <div style="margin-top:10px;">
           <button onclick="showCadHistoryModal()" style="width:100%; background:#9E9E9E; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">📅 過去の図面を復元</button>

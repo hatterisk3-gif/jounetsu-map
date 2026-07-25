@@ -1216,8 +1216,16 @@ window.handleMapClick = (pageX, pageY) => {
         return;
     }
 
+    window.cadPlaceEquipmentPin(latLng, window.cadPinMode);
+};
+
+/** 設備ピン（吸水・排水・侵入口・駐車場）を座標に設置 */
+window.cadPlaceEquipmentPin = (latLng, pinType) => {
+    if (!window.cadMap || !latLng || !pinType) return false;
+    const msgEl = document.getElementById('cadPinModeMsg');
     const mk = new google.maps.Marker({ position: latLng, map: window.cadMap, visible: false });
-    mk.cadPinType = window.cadPinMode;
+    mk.cadPinType = pinType;
+    if (!window.cadPins) window.cadPins = [];
     window.cadPins.push(mk);
 
     if (mk.cadPinType === 'water_out' && typeof window.cadAutoAddDrainageLineForPin === 'function') {
@@ -1231,6 +1239,7 @@ window.handleMapClick = (pageX, pageY) => {
     window.cadPinMode = null;
     if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
     window.saveCadStateToHistory();
+    return true;
 };
 
 window.initCadTouchEvents = () => {
@@ -1913,6 +1922,7 @@ window.openCADMode = async (id) => {
 };
 
 window.closeCADMode = () => {
+    if (typeof window.cadStopGpsPinPlace === 'function') window.cadStopGpsPinPlace({ silent: true });
     document.getElementById('cadOverlay').style.display = 'none';
     window.cadClearLines(true);
     if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
@@ -2230,15 +2240,69 @@ window.cadClearLines = (skipHistory = false) => {
     const msgEl = document.getElementById('cadPinModeMsg'); if (msgEl) msgEl.innerText = "💡 畝を直接タップすると、十字キーで移動や変形ができます。";
 };
 
+/** 畝だけ消す（ピン・中道・排水・正面バーは残す） */
+window.cadClearRidgesOnly = (skipHistory = false) => {
+    if (window.cadUnePolygons) {
+        window.cadUnePolygons.forEach(pl => pl.setMap(null));
+        window.cadUnePolygons = [];
+    }
+    if (window.cadCustomShapes) {
+        window.cadCustomShapes.forEach(pl => pl.setMap(null));
+        window.cadCustomShapes = [];
+    }
+    if (window.cadGridLines) {
+        window.cadGridLines.forEach(l => l.setMap(null));
+        window.cadGridLines = [];
+    }
+    if (window.cadUneLabels) {
+        window.cadUneLabels.forEach(lbl => lbl.setMap(null));
+        window.cadUneLabels = [];
+    }
+    const countEl = document.getElementById('cadUneCount');
+    if (countEl) countEl.value = 0;
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = '畝だけクリアしました（ピン・中道・排水は残っています）';
+        msgEl.style.color = '#FF9800';
+    }
+    if (!skipHistory && typeof window.saveCadStateToHistory === 'function') {
+        window.saveCadStateToHistory();
+    }
+    if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+};
+
+window.cadUserClearRidgesOnly = () => {
+    const hasUne = (window.cadUnePolygons && window.cadUnePolygons.length > 0)
+        || (window.cadCustomShapes && window.cadCustomShapes.length > 0);
+    if (!hasUne) {
+        alert('消す畝がありません。');
+        return;
+    }
+    if (confirm('畝だけクリアしますか？\n（吸水・排水などのピン、中道・排水ラインは残ります）')) {
+        window.cadClearRidgesOnly();
+    }
+};
+
 window.cadUserClearLines = () => {
-    if (confirm("図面をすべてクリアしますか？")) {
+    if (confirm("図面をすべてクリアしますか？\n（畝・ピン・中道など全部消えます）")) {
         window.cadClearLines();
         window.saveCadStateToHistory();
         if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
     }
 };
 
+window.CAD_GPS_PIN_TYPES = ['water_in', 'water_out', 'machine_entry', 'parking_truck'];
+window.cadGpsWatchId = null;
+window.cadGpsLastPos = null;
+window.cadGpsPreviewMarker = null;
+window.cadGpsPreviewCircle = null;
+window.cadGpsPinType = null;
+
 window.cadSetPinMode = (type) => {
+    // ライン系モードに切り替えたらGPS測位は止める
+    if (type && window.CAD_GPS_PIN_TYPES.indexOf(type) < 0 && window.cadGpsWatchId != null) {
+        window.cadStopGpsPinPlace({ keepStatus: true });
+    }
     window.cadPinMode = type;
     const msgEl = document.getElementById('cadPinModeMsg');
     if (type === 'nakamichi') {
@@ -2251,7 +2315,208 @@ window.cadSetPinMode = (type) => {
         if (msgEl) { msgEl.innerText = `【角度合わせ】基準にしたい外周の直線をタップしてください`; msgEl.style.color = "#4CAF50"; }
     } else {
         const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
-        if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！`; msgEl.style.color = "#03A9F4"; }
+        if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！（または下のGPSで置く）`; msgEl.style.color = "#03A9F4"; }
+        if (window.CAD_GPS_PIN_TYPES.indexOf(type) >= 0) {
+            window.cadGpsPinType = type;
+            window.cadUpdateGpsUi({ status: `選択中: ${name} → 「GPSで置く」か地図タップ` });
+        }
+    }
+};
+
+window.cadGpsPinTypeLabel = (type) => {
+    if (type === 'water_in') return '💧 吸水';
+    if (type === 'water_out') return '🕳️ 排水';
+    if (type === 'parking_truck') return '🅿️ 駐車場';
+    if (type === 'machine_entry') return '🚜 侵入口';
+    return type || '';
+};
+
+window.cadUpdateGpsUi = (opts) => {
+    opts = opts || {};
+    const statusEl = document.getElementById('cadGpsStatus');
+    const startBtn = document.getElementById('cadGpsStartBtn');
+    const confirmBtn = document.getElementById('cadGpsConfirmBtn');
+    const cancelBtn = document.getElementById('cadGpsCancelBtn');
+    const active = window.cadGpsWatchId != null;
+    const hasFix = !!(window.cadGpsLastPos && window.cadGpsLastPos.lat != null);
+    const acc = window.cadGpsLastPos && window.cadGpsLastPos.accuracy != null
+        ? Math.round(window.cadGpsLastPos.accuracy)
+        : null;
+    const good = acc != null && acc <= 15;
+
+    if (statusEl && opts.status != null) {
+        statusEl.textContent = opts.status;
+        statusEl.style.color = opts.statusColor || '#90CAF9';
+    }
+    if (startBtn) {
+        startBtn.disabled = !!active;
+        startBtn.style.opacity = active ? '0.6' : '1';
+        startBtn.style.cursor = active ? 'not-allowed' : 'pointer';
+        startBtn.textContent = active ? '測位中…' : 'GPSで置く';
+    }
+    if (confirmBtn) {
+        confirmBtn.disabled = !(active && hasFix);
+        confirmBtn.style.opacity = (active && hasFix) ? '1' : '0.6';
+        confirmBtn.style.cursor = (active && hasFix) ? 'pointer' : 'not-allowed';
+        confirmBtn.style.background = (active && hasFix && good) ? '#2E7D32' : ((active && hasFix) ? '#F9A825' : '#455A64');
+        confirmBtn.style.color = (active && hasFix && !good) ? '#212121' : '#fff';
+    }
+    if (cancelBtn) {
+        cancelBtn.disabled = !active;
+        cancelBtn.style.opacity = active ? '1' : '0.6';
+        cancelBtn.style.cursor = active ? 'pointer' : 'not-allowed';
+    }
+};
+
+window.cadUpdateGpsPreview = (lat, lng, accuracy) => {
+    if (!window.cadMap) return;
+    const pos = { lat: Number(lat), lng: Number(lng) };
+    const acc = Math.max(1, Number(accuracy) || 20);
+    window.cadGpsLastPos = { lat: pos.lat, lng: pos.lng, accuracy: acc };
+
+    if (!window.cadGpsPreviewMarker) {
+        window.cadGpsPreviewMarker = new google.maps.Marker({
+            position: pos,
+            map: window.cadMap,
+            clickable: false,
+            zIndex: 99999,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#2196F3',
+                fillOpacity: 1,
+                strokeColor: '#fff',
+                strokeWeight: 2
+            },
+            title: 'GPS現在地'
+        });
+    } else {
+        window.cadGpsPreviewMarker.setPosition(pos);
+        window.cadGpsPreviewMarker.setMap(window.cadMap);
+    }
+
+    if (!window.cadGpsPreviewCircle) {
+        window.cadGpsPreviewCircle = new google.maps.Circle({
+            map: window.cadMap,
+            center: pos,
+            radius: acc,
+            clickable: false,
+            fillColor: '#2196F3',
+            fillOpacity: 0.15,
+            strokeColor: '#1976D2',
+            strokeOpacity: 0.7,
+            strokeWeight: 1,
+            zIndex: 99998
+        });
+    } else {
+        window.cadGpsPreviewCircle.setCenter(pos);
+        window.cadGpsPreviewCircle.setRadius(acc);
+        window.cadGpsPreviewCircle.setMap(window.cadMap);
+    }
+
+    try {
+        window.cadMap.setCenter(pos);
+    } catch (e) { /* ignore */ }
+
+    const good = acc <= 15;
+    const label = window.cadGpsPinTypeLabel(window.cadGpsPinType || window.cadPinMode);
+    window.cadUpdateGpsUi({
+        status: `${label}  精度 ±${acc}m${good ? '（良好）' : '（もう少し待つと安定）'} →「ここに置く」で確定`,
+        statusColor: good ? '#A5D6A7' : '#FFE082'
+    });
+};
+
+window.cadClearGpsPreview = () => {
+    if (window.cadGpsPreviewMarker) {
+        window.cadGpsPreviewMarker.setMap(null);
+        window.cadGpsPreviewMarker = null;
+    }
+    if (window.cadGpsPreviewCircle) {
+        window.cadGpsPreviewCircle.setMap(null);
+        window.cadGpsPreviewCircle = null;
+    }
+};
+
+window.cadStartGpsPinPlace = () => {
+    const type = (window.CAD_GPS_PIN_TYPES.indexOf(window.cadPinMode) >= 0)
+        ? window.cadPinMode
+        : (window.CAD_GPS_PIN_TYPES.indexOf(window.cadGpsPinType) >= 0 ? window.cadGpsPinType : null);
+
+    if (!type) {
+        alert('先に「吸水」「排水」「侵入口」「駐車場」のいずれかを選んでください。');
+        window.cadUpdateGpsUi({ status: 'ピン種別を選んでから「GPSで置く」を押してください', statusColor: '#EF9A9A' });
+        return;
+    }
+    if (!navigator.geolocation) {
+        alert('この端末・ブラウザではGPS（位置情報）を使えません。');
+        return;
+    }
+    if (!window.cadMap) {
+        alert('CAD地図がまだ準備できていません。');
+        return;
+    }
+
+    window.cadGpsPinType = type;
+    window.cadPinMode = type;
+    window.cadStopGpsPinPlace({ silent: true });
+
+    window.cadUpdateGpsUi({ status: '測位中… 屋外で少し待ってください（位置情報の許可が必要な場合があります）', statusColor: '#90CAF9' });
+
+    window.cadGpsWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+            window.cadUpdateGpsPreview(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        },
+        (err) => {
+            let msg = '位置情報を取得できませんでした。';
+            if (err && err.code === 1) msg = '位置情報の利用が拒否されています。端末の設定で許可してください。';
+            else if (err && err.code === 2) msg = '位置情報を取得できません（電波・GPSを確認）。';
+            else if (err && err.code === 3) msg = '測位がタイムアウトしました。屋外で再度お試しください。';
+            window.cadUpdateGpsUi({ status: msg, statusColor: '#EF9A9A' });
+            alert(msg);
+            window.cadStopGpsPinPlace({ keepStatus: true });
+        },
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
+    );
+    window.cadUpdateGpsUi({});
+};
+
+window.cadConfirmGpsPinPlace = () => {
+    if (!window.cadGpsLastPos) {
+        alert('まだ現在地を取得できていません。少し待ってから再度お試しください。');
+        return;
+    }
+    const type = window.cadGpsPinType || window.cadPinMode;
+    if (window.CAD_GPS_PIN_TYPES.indexOf(type) < 0) {
+        alert('ピン種別が不明です。吸水・排水などを選んでからやり直してください。');
+        return;
+    }
+    const acc = Math.round(window.cadGpsLastPos.accuracy || 999);
+    if (acc > 15) {
+        if (!confirm(`現在の精度は ±${acc}m です。\nこのまま置きますか？（あとから地図で微調整できます）`)) return;
+    }
+    const latLng = new google.maps.LatLng(window.cadGpsLastPos.lat, window.cadGpsLastPos.lng);
+    const ok = window.cadPlaceEquipmentPin(latLng, type);
+    window.cadStopGpsPinPlace({ silent: true });
+    if (ok) {
+        window.cadUpdateGpsUi({
+            status: `${window.cadGpsPinTypeLabel(type)} をGPS位置に設置しました（必要ならドラッグで微調整）`,
+            statusColor: '#A5D6A7'
+        });
+    }
+};
+
+window.cadStopGpsPinPlace = (opts) => {
+    opts = opts || {};
+    if (window.cadGpsWatchId != null && navigator.geolocation) {
+        try { navigator.geolocation.clearWatch(window.cadGpsWatchId); } catch (e) { /* ignore */ }
+    }
+    window.cadGpsWatchId = null;
+    window.cadGpsLastPos = null;
+    window.cadClearGpsPreview();
+    if (!opts.silent && !opts.keepStatus) {
+        window.cadUpdateGpsUi({ status: 'ピン種別を選んで「GPSで置く」を押してください', statusColor: '#90CAF9' });
+    } else {
+        window.cadUpdateGpsUi({});
     }
 };
 
@@ -2697,93 +2962,180 @@ window.cadExecuteAddCustomShape = (latLng, type) => {
 window.cadAddMakura = () => {
     window.cadPinMode = 'makuraune';
     const msgEl = document.getElementById('cadPinModeMsg');
-    if (msgEl) { msgEl.innerText = '枕畝を配置したい場所をタップしてください。'; msgEl.style.color = "#ea580c"; }
+    if (msgEl) {
+        msgEl.innerText = '枕畝：外殻（辺）の近くをタップすると、その外周に沿った曲がった枕畝を生成します。';
+        msgEl.style.color = "#ea580c";
+    }
+};
+
+/** 方位角の最小差（0〜180） */
+window.cadBearingDiff = (a, b) => {
+    let d = Math.abs(Number(a) - Number(b)) % 360;
+    if (d > 180) d = 360 - d;
+    return d;
+};
+
+/**
+ * タップ点に近い圃場外周の辺を起点に、角度が近い連続辺をたどる
+ * @returns {number[][]} [lng,lat] の折れ線（外殻に追随）
+ */
+window.cadFindBoundaryEdgeChainNearPoint = (ringCoords, centerPt, maxAngleDiffDeg) => {
+    const coords = ringCoords;
+    if (!coords || coords.length < 2) return null;
+    const maxDiff = (maxAngleDiffDeg != null) ? maxAngleDiffDeg : 40;
+
+    let best = { dist: Infinity, i: 0 };
+    for (let i = 0; i < coords.length - 1; i++) {
+        const a = coords[i];
+        const b = coords[i + 1];
+        if (!a || !b) continue;
+        // ごく短い辺は無視
+        if (turf.distance(turf.point(a), turf.point(b), { units: 'meters' }) < 0.15) continue;
+        const line = turf.lineString([a, b]);
+        const d = turf.pointToLineDistance(centerPt, line, { units: 'meters' });
+        if (d < best.dist) best = { dist: d, i };
+    }
+    if (!isFinite(best.dist)) return null;
+
+    const startBearing = turf.bearing(turf.point(coords[best.i]), turf.point(coords[best.i + 1]));
+    let i0 = best.i;
+    let i1 = best.i + 1;
+
+    while (i0 > 0) {
+        const b = turf.bearing(turf.point(coords[i0 - 1]), turf.point(coords[i0]));
+        if (window.cadBearingDiff(b, startBearing) > maxDiff) break;
+        if (turf.distance(turf.point(coords[i0 - 1]), turf.point(coords[i0]), { units: 'meters' }) < 0.15) break;
+        i0--;
+    }
+    while (i1 < coords.length - 1) {
+        const b = turf.bearing(turf.point(coords[i1]), turf.point(coords[i1 + 1]));
+        if (window.cadBearingDiff(b, startBearing) > maxDiff) break;
+        if (turf.distance(turf.point(coords[i1]), turf.point(coords[i1 + 1]), { units: 'meters' }) < 0.15) break;
+        i1++;
+    }
+
+    const chain = coords.slice(i0, i1 + 1);
+    if (chain.length < 2) return null;
+    return { chain: chain, nearestDist: best.dist, startBearing: startBearing };
 };
 
 window.cadExecuteAddMakura = (latLng) => {
     let centerPt = turf.point([latLng.lng(), latLng.lat()]);
-    
+
     const angleEl = document.getElementById('cadAngle');
     const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
 
-    // 枕畝の太さ = 地図上の畝幅（なければ基準畝幅）。端面余白は使わない
+    // 枕畝の太さ = 地図上の畝幅（なければ基準畝幅）
     let actualWidthM = window.getCadReferenceRidgeWidthMeters();
     if (!actualWidthM || actualWidthM <= 0) actualWidthM = 1.5;
-    
+
     const p = loadedPolygons[window.cadTargetId];
     if (!p || !p.coords || p.coords.length < 3) return;
     let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
-    if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([coords[0][0], coords[0][1]]);
+    if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+        coords.push([coords[0][0], coords[0][1]]);
+    }
     const tPoly = turf.polygon([coords]);
 
-    let makuraAngle = angle + 90;
-    
-    let pt1 = turf.destination(centerPt, 1000, makuraAngle + 180, { units: 'meters' });
-    let pt2 = turf.destination(centerPt, 1000, makuraAngle, { units: 'meters' });
-    
-    let c1 = turf.destination(pt1, actualWidthM / 2, makuraAngle + 90, {units: 'meters'}).geometry.coordinates;
-    let c2 = turf.destination(pt1, actualWidthM / 2, makuraAngle - 90, {units: 'meters'}).geometry.coordinates;
-    let c3 = turf.destination(pt2, actualWidthM / 2, makuraAngle - 90, {units: 'meters'}).geometry.coordinates;
-    let c4 = turf.destination(pt2, actualWidthM / 2, makuraAngle + 90, {units: 'meters'}).geometry.coordinates;
-    
-    let makuraRect = turf.polygon([[c1, c2, c3, c4, c1]]);
-    
-    // ※ CDN は @turf/turf@6。intersect/difference は2引数API（v7の featureCollection 形式は不可）
+    // --- 外殻追随: 近い辺＋角度の近い連続辺に沿った帯 ---
     let finalPoly = null;
-    try {
-        finalPoly = turf.intersect(tPoly, makuraRect);
-    } catch(e) { console.error(e); }
-    
+    const edgeInfo = window.cadFindBoundaryEdgeChainNearPoint(coords, centerPt, 42);
+    if (edgeInfo && edgeInfo.chain && edgeInfo.chain.length >= 2) {
+        try {
+            const edgeLine = turf.lineString(edgeInfo.chain);
+            // 辺の両側にバッファ → 圃場内だけ残すと、外殻に沿った帯（斜め・折れ曲がり対応）
+            const strip = turf.buffer(edgeLine, actualWidthM, { units: 'meters' });
+            if (strip) finalPoly = turf.intersect(tPoly, strip);
+        } catch (e) {
+            console.warn('外殻追随枕畝の生成に失敗、直線帯にフォールバック:', e);
+            finalPoly = null;
+        }
+    }
+
+    // フォールバック: 従来の主畝直角の直線帯
     if (!finalPoly) {
-        alert("圃場の外にタップされたか、枕畝を生成できません。");
+        let makuraAngle = angle + 90;
+        let pt1 = turf.destination(centerPt, 1000, makuraAngle + 180, { units: 'meters' });
+        let pt2 = turf.destination(centerPt, 1000, makuraAngle, { units: 'meters' });
+        let c1 = turf.destination(pt1, actualWidthM / 2, makuraAngle + 90, { units: 'meters' }).geometry.coordinates;
+        let c2 = turf.destination(pt1, actualWidthM / 2, makuraAngle - 90, { units: 'meters' }).geometry.coordinates;
+        let c3 = turf.destination(pt2, actualWidthM / 2, makuraAngle - 90, { units: 'meters' }).geometry.coordinates;
+        let c4 = turf.destination(pt2, actualWidthM / 2, makuraAngle + 90, { units: 'meters' }).geometry.coordinates;
+        let makuraRect = turf.polygon([[c1, c2, c3, c4, c1]]);
+        try {
+            finalPoly = turf.intersect(tPoly, makuraRect);
+        } catch (e) { console.error(e); }
+    }
+
+    if (!finalPoly) {
+        alert("圃場の外にタップされたか、枕畝を生成できません。\n外殻の辺の近くをタップしてください。");
         return;
     }
-    
+
     let avoidPolys = window.cadUnePolygons.map(poly => {
         let path = poly.getPath().getArray();
-        let coords = path.map(pt => [pt.lng(), pt.lat()]);
-        if (coords.length > 2) {
-            if (coords[0][0] !== coords[coords.length-1][0] || coords[0][1] !== coords[coords.length-1][1]) {
-                coords.push([coords[0][0], coords[0][1]]);
+        let ring = path.map(pt => [pt.lng(), pt.lat()]);
+        if (ring.length > 2) {
+            if (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1]) {
+                ring.push([ring[0][0], ring[0][1]]);
             }
-            let t = turf.polygon([coords]);
+            let t = turf.polygon([ring]);
             return turf.buffer(t, 0.2 / 1000, { units: 'kilometers' });
         }
         return null;
     }).filter(Boolean);
-    
+
     for (let av of avoidPolys) {
         if (!finalPoly) break;
         try {
             finalPoly = turf.difference(finalPoly, av);
-        } catch(e) { console.error(e); }
+        } catch (e) { console.error(e); }
     }
-    
+
     if (!finalPoly) {
         alert("既存の畝と完全に重なっているため、枕畝を生成するスペースがありません。");
         return;
     }
-    
+
     let flattened = turf.flatten(finalPoly);
-    
+
     let addedCount = 0;
     flattened.features.forEach((feature, idx) => {
         let coordinates = feature.geometry.coordinates;
         if (!coordinates || coordinates.length === 0) return;
+        // Polygon / 穴あきに対応
         let paths = coordinates.map(ring => ring.map(c => ({ lat: c[1], lng: c[0] })));
-        
-        let gPoly = new google.maps.Polygon({ paths: paths, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 2), map: window.cadMap, editable: false, draggable: false, clickable: true, zIndex: 10 });
+
+        let gPoly = new google.maps.Polygon({
+            paths: paths,
+            fillColor: '#8BC34A',
+            fillOpacity: 0.4,
+            strokeColor: '#558B2F',
+            strokeOpacity: 0.8,
+            strokeWeight: Math.max(0.5, 2),
+            map: window.cadMap,
+            editable: false,
+            draggable: false,
+            clickable: true,
+            zIndex: 10
+        });
         gPoly.uneIndex = 'custom_' + Date.now() + '_' + idx + '_' + Math.floor(Math.random() * 1000);
         gPoly.uneGroup = '枕';
+        gPoly.cadMakuraFollowEdge = true;
         google.maps.event.addListener(gPoly, 'click', () => window.openCadEditModal(gPoly.uneIndex));
         window.bindShapeHistoryEvents(gPoly);
         window.cadCustomShapes.push(gPoly);
         addedCount++;
     });
-    
+
     if (addedCount > 0) {
         window.reassignLabels();
         window.saveCadStateToHistory();
+        const msgEl = document.getElementById('cadPinModeMsg');
+        if (msgEl) {
+            msgEl.innerText = '枕畝を外殻に沿って生成しました（主畝と重なる部分は除いています）';
+            msgEl.style.color = '#ea580c';
+        }
     } else {
         alert("枕畝を生成できるスペースがありませんでした。");
     }
