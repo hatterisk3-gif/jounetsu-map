@@ -54,13 +54,47 @@ function refreshChoiceButtons(selectId) {
         const isActive = String(current) === String(opt.value);
         const isCustom = opt.value === 'custom';
         const canDeleteCrop = (selectId === 'cpCrop' || selectId === 'crCrop') && !isCustom;
+        const canManageVariety = (selectId === 'cpVariety') && !isCustom;
+        const showSideActions = canDeleteCrop || canManageVariety;
         btn.style.cssText = isActive
-            ? `padding:5px ${canDeleteCrop ? '6' : '10'}px 5px 10px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`
-            : `padding:5px ${canDeleteCrop ? '6' : '10'}px 5px 10px;border:1px solid #ccc;border-radius:4px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            ? `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`
+            : `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid #ccc;border-radius:4px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
 
         const label = document.createElement('span');
         label.textContent = opt.textContent || opt.value;
         btn.appendChild(label);
+
+        if (canManageVariety) {
+            const edit = document.createElement('span');
+            edit.textContent = '✎';
+            edit.title = '名前を編集';
+            edit.setAttribute('aria-label', '名前を編集');
+            edit.style.cssText = isActive
+                ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:11px;font-weight:bold;line-height:1;'
+                : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#666;font-size:11px;font-weight:bold;line-height:1;';
+            edit.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                renameVarietyFromChoices(opt.value);
+            };
+            btn.appendChild(edit);
+
+            const del = document.createElement('span');
+            del.textContent = '×';
+            del.title = '一覧から削除';
+            del.setAttribute('aria-label', '一覧から削除');
+            del.style.cssText = isActive
+                ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:12px;font-weight:bold;line-height:1;'
+                : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#888;font-size:12px;font-weight:bold;line-height:1;';
+            del.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const name = opt.value;
+                if (!confirm(`品種「${name}」を一覧から削除しますか？`)) return;
+                removeVarietyFromChoices(name);
+            };
+            btn.appendChild(del);
+        }
 
         if (canDeleteCrop) {
             const del = document.createElement('span');
@@ -257,6 +291,141 @@ function removeCropFromChoices(cropName) {
     }
     return true;
 }
+
+const CP_HIDDEN_VARIETIES_KEY = 'cpHiddenVarieties';
+
+function getHiddenVarietiesMap() {
+    try {
+        const obj = JSON.parse(localStorage.getItem(CP_HIDDEN_VARIETIES_KEY) || '{}');
+        return (obj && typeof obj === 'object') ? obj : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveHiddenVarietiesMap(map) {
+    localStorage.setItem(CP_HIDDEN_VARIETIES_KEY, JSON.stringify(map || {}));
+}
+
+function isVarietyHidden(crop, variety) {
+    const c = String(crop || '').trim();
+    const v = String(variety || '').trim();
+    if (!c || !v) return false;
+    const map = getHiddenVarietiesMap();
+    const list = map[c];
+    return Array.isArray(list) && list.includes(v);
+}
+
+function hideVarietyLocally(crop, variety) {
+    const c = String(crop || '').trim();
+    const v = String(variety || '').trim();
+    if (!c || !v) return;
+    const map = getHiddenVarietiesMap();
+    if (!Array.isArray(map[c])) map[c] = [];
+    if (!map[c].includes(v)) map[c].push(v);
+    saveHiddenVarietiesMap(map);
+}
+
+/** 品種を一覧から削除（この端末）。マスタメモリからも外す */
+function removeVarietyFromChoices(varietyName) {
+    const crop = getCpVal('cpCrop');
+    const variety = String(varietyName || '').trim();
+    if (!crop || !variety || variety === 'custom') return false;
+
+    hideVarietyLocally(crop, variety);
+
+    if (cpMasterData && cpMasterData.crops && Array.isArray(cpMasterData.crops[crop])) {
+        cpMasterData.crops[crop] = cpMasterData.crops[crop].filter(v => String(v) !== variety);
+        try {
+            localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        } catch (e) {}
+    }
+
+    const wasSelected = getCpVal('cpVariety') === variety;
+    updateVarietyList();
+    if (wasSelected) {
+        setChoiceValue('cpVariety', '', false);
+        calcCp();
+        if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
+    } else {
+        refreshChoiceButtons('cpVariety');
+    }
+    return true;
+}
+
+/** 品種名を編集（ローカル＋サーバー同期） */
+async function renameVarietyFromChoices(oldName) {
+    const crop = getCpVal('cpCrop');
+    const oldVariety = String(oldName || '').trim();
+    if (!crop || !oldVariety || oldVariety === 'custom') return;
+
+    const input = prompt(`品種「${oldVariety}」の新しい名前:`, oldVariety);
+    if (input == null) return;
+    const newVariety = String(input).trim();
+    if (!newVariety || newVariety === oldVariety) return;
+    if (newVariety === 'custom') {
+        alert('この名前は使えません。');
+        return;
+    }
+
+    // 同一作物内の重複チェック
+    const existing = (cpMasterData && cpMasterData.crops && cpMasterData.crops[crop])
+        ? cpMasterData.crops[crop].map(v => String(v))
+        : [];
+    if (existing.some(v => v === newVariety && v !== oldVariety)) {
+        alert(`品種「${newVariety}」は既にあります。`);
+        return;
+    }
+
+    // メモリ上のマスタを更新
+    if (cpMasterData && cpMasterData.crops) {
+        if (!Array.isArray(cpMasterData.crops[crop])) cpMasterData.crops[crop] = [];
+        cpMasterData.crops[crop] = cpMasterData.crops[crop].map(v =>
+            String(v) === oldVariety ? newVariety : v
+        );
+        if (!cpMasterData.crops[crop].includes(newVariety)) {
+            cpMasterData.crops[crop].push(newVariety);
+        }
+    }
+    if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
+        cpMasterData.croptypesDB.forEach(db => {
+            if (db && db.crop === crop && db.variety === oldVariety) {
+                db.variety = newVariety;
+            }
+        });
+    }
+    // 非表示リストのキーも付け替え
+    const map = getHiddenVarietiesMap();
+    if (Array.isArray(map[crop])) {
+        map[crop] = map[crop].map(v => (v === oldVariety ? newVariety : v));
+        saveHiddenVarietiesMap(map);
+    }
+    try {
+        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+    } catch (e) {}
+
+    // サーバー側のマスタ／作型DBも更新
+    try {
+        if (typeof callGAS === 'function') {
+            await callGAS('renameCultivationVariety', {
+                crop: crop,
+                oldName: oldVariety,
+                newName: newVariety
+            });
+        }
+    } catch (e) {
+        console.warn('品種名のサーバー更新に失敗（ローカルは反映済み）:', e);
+        alert('品種名は端末上で変更しましたが、サーバーへの同期に失敗しました。\n' + (e && e.message ? e.message : e));
+    }
+
+    updateVarietyList();
+    setChoiceValue('cpVariety', newVariety, true);
+    calcCp();
+    if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
+}
+
+window.removeVarietyFromChoices = removeVarietyFromChoices;
+window.renameVarietyFromChoices = renameVarietyFromChoices;
 
 function round1(n) {
     return Math.round(Number(n) * 10) / 10;
@@ -506,6 +675,9 @@ function updateVarietyList() {
         });
         if (matched.length) opts = matched;
     }
+
+    // この端末で非表示にした品種を除外
+    opts = opts.filter(v => !isVarietyHidden(crop, v));
 
     populateSelect('cpVariety', opts, []);
     updatePresetList(crop);
@@ -1522,19 +1694,15 @@ function updateCpSemiAutoHint(planId) {
     });
 
     if (hint) {
-        if (isSemi) {
-            const pid = planId || cpSemiAutoActivePlanId;
+        const pidActive = planId || cpSemiAutoActivePlanId;
+        if (isSemi && pidActive != null) {
+            const tool = getSemiAutoTool(cpSemiAutoSteps[pidActive] || 0);
             hint.style.display = '';
-            if (pid != null) {
-                const tool = getSemiAutoTool(cpSemiAutoSteps[pid] || 0);
-                hint.textContent = '操作中 → 次: ' + SEMI_AUTO_LABELS[tool];
-                hint.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
-            } else {
-                hint.textContent = '品種カードごとに独立';
-                hint.style.color = '#1565C0';
-            }
+            hint.textContent = '操作中 → 次: ' + SEMI_AUTO_LABELS[tool];
+            hint.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
         } else {
             hint.style.display = 'none';
+            hint.textContent = '';
         }
     }
     if (resetBtn) {

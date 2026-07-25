@@ -62,6 +62,7 @@ function doPost(e) {
     else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
     else if (action === "deleteCultivationPreset") result = deleteCultivationPreset(params);
     else if (action === "renameCultivationPreset") result = renameCultivationPreset(params);
+    else if (action === "renameCultivationVariety") result = renameCultivationVariety(params);
     else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
     else if (action === "saveCroptypeDBBatch") result = saveCroptypeDBBatch(params);
     else if (action === "saveVarietyWithFile") result = saveVarietyWithFile(params);
@@ -3720,6 +3721,90 @@ function renameCultivationPreset(presetData) {
     return { success: false, message: '対象のプリセットが見つかりませんでした' };
   } catch(e) {
     return { success: false, message: e.toString() };
+  }
+}
+
+/**
+ * 品種名を変更する（栽培計画マスタ・作型DB・プリセット名が品種と同名の場合）
+ * params: { crop, oldName, newName }
+ */
+function renameCultivationVariety(params) {
+  try {
+    const crop = String((params && params.crop) || '').trim();
+    const oldName = String((params && params.oldName) || '').trim();
+    const newName = String((params && params.newName) || '').trim();
+    if (!crop || !oldName || !newName) {
+      return { success: false, message: '作物・旧品種名・新品種名は必須です' };
+    }
+    if (oldName === newName) return { success: true, message: '変更なし' };
+
+    const ss = TENANT_SS;
+    let updatedMaster = 0;
+    let updatedCroptype = 0;
+    let updatedPreset = 0;
+
+    // 栽培計画マスタ: A作物 B品種
+    const masterSheet = ss.getSheetByName('栽培計画マスタ');
+    if (masterSheet && masterSheet.getLastRow() > 1) {
+      const lastRow = masterSheet.getLastRow();
+      const data = masterSheet.getRange(2, 1, lastRow, 2).getValues();
+      for (let i = 0; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === crop && String(data[i][1] || '').trim() === oldName) {
+          masterSheet.getRange(i + 2, 2).setValue(newName);
+          updatedMaster++;
+        }
+      }
+    }
+
+    // 作型DB: 作物・品種列
+    const croptypeSheet = ss.getSheetByName('作型DB');
+    if (croptypeSheet && croptypeSheet.getLastRow() > 1) {
+      const headers = croptypeSheet.getRange(1, 1, 1, croptypeSheet.getLastColumn()).getValues()[0]
+        .map(h => String(h || '').trim());
+      const cropCol = headers.indexOf('作物');
+      const varietyCol = headers.indexOf('品種');
+      if (cropCol !== -1 && varietyCol !== -1) {
+        const lastRow = croptypeSheet.getLastRow();
+        const data = croptypeSheet.getRange(2, 1, lastRow, croptypeSheet.getLastColumn()).getValues();
+        for (let i = 0; i < data.length; i++) {
+          if (String(data[i][cropCol] || '').trim() === crop
+              && String(data[i][varietyCol] || '').trim() === oldName) {
+            croptypeSheet.getRange(i + 2, varietyCol + 1).setValue(newName);
+            updatedCroptype++;
+          }
+        }
+      }
+    }
+
+    // プリセットシート: 作物が一致し、プリセット名が旧品種名と同名なら改名
+    try {
+      const presetSheet = ensurePresetSheetHeaders_(ss);
+      if (presetSheet && presetSheet.getLastRow() > 1) {
+        const data = presetSheet.getDataRange().getValues();
+        const headers = data[0].map(h => String(h || '').trim());
+        const cropCol = headers.indexOf('作物');
+        const nameCol = headers.indexOf('プリセット名');
+        if (cropCol !== -1 && nameCol !== -1) {
+          for (let i = 1; i < data.length; i++) {
+            if (String(data[i][cropCol] || '').trim() === crop
+                && String(data[i][nameCol] || '').trim() === oldName) {
+              presetSheet.getRange(i + 1, nameCol + 1).setValue(newName);
+              updatedPreset++;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    return {
+      success: true,
+      message: '品種名を更新しました',
+      updatedMaster: updatedMaster,
+      updatedCroptype: updatedCroptype,
+      updatedPreset: updatedPreset
+    };
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
   }
 }
 
