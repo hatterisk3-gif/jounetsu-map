@@ -2379,6 +2379,13 @@ window.searchFieldSatScenes = async function() {
 
 // ====== マイページ ======
 window.openMyPage = function() {
+    const modal = document.getElementById('modal');
+    const modalBody = document.getElementById('modalBody');
+    if (!modal || !modalBody) {
+        alert('マイページの表示領域が見つかりません。ページを再読み込みしてください。');
+        return;
+    }
+
     const staffId = localStorage.getItem('passionMapUserId') || '';
     const userName = localStorage.getItem('passionMapUserName') || '';
     const userRole = localStorage.getItem('passionMapUserRole') || '管理者';
@@ -2413,8 +2420,8 @@ window.openMyPage = function() {
         <div id="changeIdResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
         <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">閉じる</button>
     `;
-    document.getElementById('modalBody').innerHTML = html;
-    document.getElementById('modal').style.display = 'flex';
+    modalBody.innerHTML = html;
+    modal.style.display = 'flex';
 };
 
 

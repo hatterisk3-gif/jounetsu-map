@@ -56,9 +56,9 @@
         台風</button>
       <button id="btnWeather" onclick="openWeatherModal()"
         style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
-      <button id="btnFieldSat" onclick="openFieldSatModal()"
-        style="margin-right:10px; background:white; color:#2E7D32; border:1px solid #A5D6A7; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;" title="畑の衛星確認（現状・生育）">🌾</button>
-      <button class="btn-reload" onclick="location.reload()">🔄 更新</button>
+      <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
+      <button type="button" onclick="executeLogout()"
+        style="background:#c62828; color:#fff; border:1px solid #ef9a9a; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; cursor:pointer; white-space:nowrap;">🚪 ログアウト</button>
       <!-- 軌跡表示用（下部タブのアクションシートから参照・非表示） -->
       <select id="trackingMode" class="desktop-only" aria-hidden="true">
         <option value="path">線(Path)</option>
@@ -165,6 +165,11 @@
 
   <div id="cultivationModalContainer"></div>
 
+  <!-- マイページ等の汎用モーダル -->
+  <div id="modal" onclick="if(event.target===this) this.style.display='none'">
+    <div class="modal-content" id="modalBody" onclick="event.stopPropagation()"></div>
+  </div>
+
   <!-- 下部ナビゲーション（PC / モバイル共通） -->
   <div class="mobile-bottom-bar">
     <button type="button" onclick="openScheduleTable()">
@@ -187,10 +192,6 @@
       <div style="font-size:20px;">👤</div>
       <div style="font-weight:bold;">マイページ</div>
     </button>
-    <button type="button" onclick="executeLogout()">
-      <div style="font-size:20px;">🚪</div>
-      <div style="font-weight:bold;">ログアウト</div>
-    </button>
   </div>
 
   <!-- アクションシート: 栽培計画 -->
@@ -203,8 +204,8 @@
         onclick="startFieldCultivationMode(); document.getElementById('mobileCultivationMenu').style.display='none'">📍
         圃場から栽培計画</button>
       <button
-        onclick="showExecutePlanListModal(); document.getElementById('mobileCultivationMenu').style.display='none'">▶️
-        計画実行</button>
+        onclick="showPlanListModal(); document.getElementById('mobileCultivationMenu').style.display='none'">📂
+        計画一覧</button>
       <button
         onclick="openCroptypeRegistrationModal(); document.getElementById('mobileCultivationMenu').style.display='none'">🏷️
         品種作型を登録する</button>
@@ -218,13 +219,13 @@
     <div class="action-sheet-content" onclick="event.stopPropagation()">
       <div style="padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; text-align: center; color: #333;">
         軌跡表示モード</div>
-      <div style="padding: 15px;">
+      <div style="padding: 15px; box-sizing: border-box;">
         <select id="trackingModeMobile"
-          style="width:100%; padding: 10px; font-size:16px; border:1px solid #ccc; border-radius:5px;">
+          style="width:100%; max-width:100%; box-sizing:border-box; padding: 10px; font-size:16px; border:1px solid #ccc; border-radius:5px;">
           <option value="path">線 (Path)</option>
           <option value="trip">アニメ (Trip)</option>
         </select>
-        <input type="date" id="trackingDateMobile" style="width:100%; padding: 10px; font-size:16px; border:1px solid #ccc; border-radius:5px; margin-top:10px;">
+        <input type="date" id="trackingDateMobile" style="width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding: 10px; font-size:16px; border:1px solid #ccc; border-radius:5px; margin-top:10px; display:block;">
       </div>
       <button
         onclick="document.getElementById('trackingMode').value = document.getElementById('trackingModeMobile').value; document.getElementById('trackingDate').value = document.getElementById('trackingDateMobile').value; loadTrackingData(); document.getElementById('mobileTrackingMenu').style.display='none'">🏃‍♂️

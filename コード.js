@@ -56,6 +56,8 @@ function doPost(e) {
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop);
     else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
     else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
+    else if (action === "deleteSavedCultivationPlans") result = deleteSavedCultivationPlans(params.year, params.crop);
+    else if (action === "getCultivationHarvestSummary") result = getCultivationHarvestSummary(params.year);
     else if (action === "getCultivationRidgeParamsForField") result = getCultivationRidgeParamsForField(params.fieldId || params.id);
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "appendCultivationMaster") result = appendCultivationMaster(params);
@@ -3053,6 +3055,171 @@ function getSavedCultivationPlanList() {
   }
 }
 
+/** 保存済み栽培計画を年度＋作物単位で削除 */
+function deleteSavedCultivationPlans(year, crop) {
+  try {
+    const ss = TENANT_SS;
+    if (!ss) return { success: false, message: 'スプレッドシート未設定' };
+    const sheet = ss.getSheetByName('栽培計画');
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return { success: true, deleted: 0, message: '削除対象はありませんでした' };
+    }
+
+    const targetYear = String(year || '').trim();
+    const targetCrop = String(crop || '').trim();
+    if (!targetYear || !targetCrop) {
+      return { success: false, message: '年度と作物は必須です' };
+    }
+
+    const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
+    let deleted = 0;
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (String(data[i][1]) === targetYear && String(data[i][3]) === targetCrop) {
+        sheet.deleteRow(i + 2);
+        deleted++;
+      }
+    }
+    SpreadsheetApp.flush();
+    return {
+      success: true,
+      deleted: deleted,
+      message: deleted > 0
+        ? `${targetYear}年 ${targetCrop} の計画を${deleted}件削除しました`
+        : '削除対象はありませんでした'
+    };
+  } catch (e) {
+    return { success: false, message: '栽培計画削除エラー: ' + e.message };
+  }
+}
+
+/** 半旬インデックスへ正規化（オブジェクト or フラット番号） */
+function cpHarvestFlatIndex_(h) {
+  if (h == null) return -1;
+  if (typeof h === 'number' && isFinite(h)) return Math.floor(h);
+  if (typeof h === 'object') {
+    if (h.monthIndex != null && (h.periodIndex != null || h.period != null)) {
+      const p = h.periodIndex != null ? h.periodIndex : h.period;
+      return Number(h.monthIndex) * 6 + Number(p);
+    }
+  }
+  return -1;
+}
+
+/** 1計画の半旬別収穫量配列(108)を算出 */
+function computePlanHarvestByPeriod_(plan) {
+  const PERIODS = 108;
+  const amounts = [];
+  for (let i = 0; i < PERIODS; i++) amounts.push(0);
+  if (!plan) return amounts;
+
+  let harvesting = [];
+  if (plan.tasks && Array.isArray(plan.tasks.harvesting)) harvesting = plan.tasks.harvesting;
+  else if (Array.isArray(plan.harvesting)) harvesting = plan.harvesting;
+  if (!harvesting.length) return amounts;
+
+  const cells = [];
+  for (let i = 0; i < harvesting.length; i++) {
+    const h = harvesting[i];
+    const flat = cpHarvestFlatIndex_(h);
+    if (flat < 0 || flat >= PERIODS) continue;
+    cells.push({
+      flatIndex: flat,
+      amount: (h && typeof h === 'object' && h.amount != null) ? Number(h.amount) : null
+    });
+  }
+  if (!cells.length) return amounts;
+
+  const yieldTotal = Number(plan.yield) || 0;
+  const ratios = Array.isArray(plan.harvestRatios) ? plan.harvestRatios : [];
+  let totalRatio = 0;
+  for (let i = 0; i < ratios.length; i++) totalRatio += (Number(ratios[i]) || 0);
+
+  for (let index = 0; index < cells.length; index++) {
+    let cellYield = 0;
+    if (yieldTotal > 0) {
+      if (totalRatio > 0) {
+        cellYield = Math.floor(yieldTotal * (Number(ratios[index]) || 0) / totalRatio);
+      } else {
+        cellYield = Math.floor(yieldTotal / cells.length);
+      }
+    } else if (cells[index].amount != null && cells[index].amount > 0) {
+      cellYield = Math.floor(cells[index].amount);
+    }
+    amounts[cells[index].flatIndex] += cellYield;
+  }
+  return amounts;
+}
+
+/**
+ * 年度の栽培計画から作物別・半旬別の収穫量サマリーを返す
+ * planned / executed を分離
+ */
+function getCultivationHarvestSummary(year) {
+  try {
+    const ss = TENANT_SS;
+    if (!ss) return { success: false, message: 'スプレッドシート未設定' };
+    const sheet = ss.getSheetByName('栽培計画');
+    const targetYear = String(year || '').trim() || String(new Date().getFullYear());
+    const PERIODS = 108;
+    const cropMap = {};
+
+    if (sheet && sheet.getLastRow() > 1) {
+      const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
+      for (let i = 0; i < data.length; i++) {
+        if (String(data[i][1]) !== targetYear) continue;
+        let plan = null;
+        try {
+          plan = JSON.parse(data[i][5]);
+        } catch (e) {
+          continue;
+        }
+        if (!plan) continue;
+        const crop = String(plan.crop || data[i][3] || '').trim();
+        if (!crop) continue;
+        if (!cropMap[crop]) {
+          cropMap[crop] = {
+            crop: crop,
+            planned: [],
+            executed: []
+          };
+          for (let p = 0; p < PERIODS; p++) {
+            cropMap[crop].planned.push(0);
+            cropMap[crop].executed.push(0);
+          }
+        }
+        const amounts = computePlanHarvestByPeriod_(plan);
+        const status = (plan.status === 'executed') ? 'executed' : 'planned';
+        const target = cropMap[crop][status];
+        for (let p = 0; p < PERIODS; p++) {
+          target[p] += amounts[p] || 0;
+        }
+      }
+    }
+
+    const crops = Object.keys(cropMap).sort().map(function(k) {
+      const row = cropMap[k];
+      let plannedTotal = 0;
+      let executedTotal = 0;
+      for (let p = 0; p < PERIODS; p++) {
+        plannedTotal += row.planned[p];
+        executedTotal += row.executed[p];
+      }
+      return {
+        crop: row.crop,
+        planned: row.planned,
+        executed: row.executed,
+        plannedTotal: plannedTotal,
+        executedTotal: executedTotal,
+        total: plannedTotal + executedTotal
+      };
+    });
+
+    return { success: true, year: targetYear, periods: PERIODS, crops: crops };
+  } catch (e) {
+    return { success: false, message: '収穫サマリー取得エラー: ' + e.message };
+  }
+}
+
 /**
  * 指定圃場が栽培計画の圃場選択に含まれていれば、その計画の畝間(rSpace)等を返す。
  * 畝選択ID (fieldId#une#N) にも対応。最新の計画を優先。
@@ -3484,53 +3651,74 @@ function getCultivationMaster() {
 function appendCultivationMaster(newData) {
   try {
     const ss = TENANT_SS;
+    if (!ss) return { success: false, error: 'スプレッドシート未設定' };
+
     let sheet = ss.getSheetByName('栽培計画マスタ');
-    if (!sheet) return { success: false };
-    
-    const { crop, variety, holes, rows, pSpace, rSpace, yieldPerSeedling, itemsPerPack } = newData;
-    
+    if (!sheet) {
+      sheet = ss.insertSheet('栽培計画マスタ');
+      sheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積', '1苗当たり収量', '1P当たり入り数']);
+    }
+
+    const crop = String((newData && newData.crop) || '').trim();
+    const variety = String((newData && newData.variety) || '').trim();
+    if (!crop || !variety) {
+      return { success: false, error: '作物と品種は必須です' };
+    }
+
+    const holes = newData.holes;
+    const rows = newData.rows;
+    const pSpace = newData.pSpace;
+    const rSpace = newData.rSpace;
+    const yieldPerSeedling = newData.yieldPerSeedling;
+    const itemsPerPack = newData.itemsPerPack;
+
+    const hasVal = (v) => v !== '' && v !== null && v !== undefined;
+
     // 現在のデータを取得して重複チェック
-    const data = sheet.getDataRange().getValues();
+    const data = sheet.getLastRow() > 0 ? sheet.getDataRange().getValues() : [['作物', '品種']];
     let isCropVarietyExist = false;
-    let isHolesExist = false;
-    let isRowsExist = false;
-    let isPSpaceExist = false;
-    let isRSpaceExist = false;
-    let isYieldPerSeedlingExist = false;
-    let isItemsPerPackExist = false;
-    
+    let isHolesExist = !hasVal(holes);
+    let isRowsExist = !hasVal(rows);
+    let isPSpaceExist = !hasVal(pSpace);
+    let isRSpaceExist = !hasVal(rSpace);
+    let isYieldPerSeedlingExist = !hasVal(yieldPerSeedling);
+    let isItemsPerPackExist = !hasVal(itemsPerPack);
+
     for (let i = 1; i < data.length; i++) {
         let r = data[i];
-        if (String(r[0]).trim() === crop && String(r[1]).trim() === variety) isCropVarietyExist = true;
-        if (String(r[2]) === String(holes)) isHolesExist = true;
-        if (String(r[3]) === String(rows)) isRowsExist = true;
-        if (String(r[4]) === String(pSpace)) isPSpaceExist = true;
-        if (String(r[5]) === String(rSpace)) isRSpaceExist = true;
-        if (String(r[8]) === String(yieldPerSeedling)) isYieldPerSeedlingExist = true;
-        if (String(r[9]) === String(itemsPerPack)) isItemsPerPackExist = true;
+        if (String(r[0] || '').trim() === crop && String(r[1] || '').trim() === variety) {
+          isCropVarietyExist = true;
+        }
+        if (hasVal(holes) && String(r[2]) === String(holes)) isHolesExist = true;
+        if (hasVal(rows) && String(r[3]) === String(rows)) isRowsExist = true;
+        if (hasVal(pSpace) && String(r[4]) === String(pSpace)) isPSpaceExist = true;
+        if (hasVal(rSpace) && String(r[5]) === String(rSpace)) isRSpaceExist = true;
+        if (hasVal(yieldPerSeedling) && String(r[8]) === String(yieldPerSeedling)) isYieldPerSeedlingExist = true;
+        if (hasVal(itemsPerPack) && String(r[9]) === String(itemsPerPack)) isItemsPerPackExist = true;
     }
-    
+
     // 全てが存在する場合は何もしない
     if (isCropVarietyExist && isHolesExist && isRowsExist && isPSpaceExist && isRSpaceExist && isYieldPerSeedlingExist && isItemsPerPackExist) {
-        return { success: true, message: "既に存在します" };
+        return { success: true, message: "既に存在します", added: false };
     }
-    
-    // 一つでも新しいものがあれば、新しい行として追加（各列は存在しない場合のみ書き込む、または適当な行に追記）
+
+    // 一つでも新しいものがあれば、新しい行として追加（各列は存在しない場合のみ書き込む）
     // 通常マスタシートは列ごとに独立した選択肢として読み込まれるため、1行にまとめて追加しても問題ありません
     sheet.appendRow([
         !isCropVarietyExist ? crop : '',
         !isCropVarietyExist ? variety : '',
-        !isHolesExist ? holes : '',
-        !isRowsExist ? rows : '',
-        !isPSpaceExist ? pSpace : '',
-        !isRSpaceExist ? rSpace : '',
+        !isHolesExist && hasVal(holes) ? holes : '',
+        !isRowsExist && hasVal(rows) ? rows : '',
+        !isPSpaceExist && hasVal(pSpace) ? pSpace : '',
+        !isRSpaceExist && hasVal(rSpace) ? rSpace : '',
         '', // 収穫係数
         '', // 定植面積
-        !isYieldPerSeedlingExist ? yieldPerSeedling : '',
-        !isItemsPerPackExist ? itemsPerPack : ''
+        !isYieldPerSeedlingExist && hasVal(yieldPerSeedling) ? yieldPerSeedling : '',
+        !isItemsPerPackExist && hasVal(itemsPerPack) ? itemsPerPack : ''
     ]);
-    
-    return { success: true };
+    SpreadsheetApp.flush();
+
+    return { success: true, added: !isCropVarietyExist, crop: crop, variety: variety };
   } catch(e) {
     return { success: false, error: e.message };
   }

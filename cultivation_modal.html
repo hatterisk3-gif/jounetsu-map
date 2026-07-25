@@ -62,7 +62,7 @@
           </div>
           <div style="text-align: center; margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 6px; border: 1px dashed #4CAF50;">
             <p style="font-size: 11px; color: #2e7d32; margin: 0 0 5px 0; font-weight: bold;">※ 過去の計画を呼び出したい場合はこちら</p>
-            <button type="button" onclick="showHistoryListModal()" style="padding: 8px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📂 保存済みの計画一覧から選んで読み込む</button>
+            <button type="button" onclick="showPlanListModal()" style="padding: 8px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📂 計画一覧から選んで読み込む</button>
           </div>
           <div style="text-align: right; margin-top: 10px;">
             <button type="button" onclick="nextCpStep(2)" style="padding: 6px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (栽培パラメーター設定)</button>
@@ -206,8 +206,23 @@
           <button type="button" id="btnCpDraftSave" onclick="saveCultivationPlanDraft()" style="padding: 10px 24px; background: #607D8B; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">一時保存</button>
           <button type="button" id="btnCpDraftLoad" onclick="loadCultivationPlanDraft({ force: true })" style="padding: 10px 16px; background: #fff; color: #455A64; border: 2px solid #607D8B; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: none;">📂 下書きを読込</button>
           <button type="button" onclick="saveCultivationPlan()" style="padding: 10px 28px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span></button>
-          <button type="button" onclick="executeCultivationPlanFromModal()" style="padding: 10px 28px; background: #4CAF50; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">▶️ 計画実行<br><span style="font-size:10px;font-weight:normal;">作業予定へ</span></button>
           <div id="cpDraftStatus" style="width: 100%; font-size: 11px; color: #607D8B; margin-top: 2px;"></div>
+        </div>
+
+        <!-- 半旬別収穫量グラフ（開いている計画） -->
+        <div id="cpHarvestChartPanel" style="margin-top: 10px; padding: 8px 10px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+            <div style="font-size:12px; font-weight:bold; color:#e65100;">
+              📊 収穫量（半旬）
+              <span id="cpHarvestChartCrop" style="font-weight:normal; color:#666;"></span>
+              <span id="cpHarvestChartTotal" style="margin-left:6px; color:#bf360c;"></span>
+            </div>
+            <div id="cpHarvestChartLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555;"></div>
+          </div>
+          <div id="cpHarvestChartBars" style="overflow-x:auto; overflow-y:hidden; height:72px; border:1px solid #ffe082; border-radius:4px; background:#fff; padding:4px 2px 0;">
+            <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">収穫を塗るとここに表示されます</div>
+          </div>
+          <div id="cpHarvestChartAxis" style="overflow-x:auto; overflow-y:hidden; height:16px; margin-top:2px;"></div>
         </div>
       </div>
     </div>
@@ -414,32 +429,53 @@
       </div>
     </div>
     
-    <!-- 計画実行一覧モーダル -->
-    <div id="executePlanListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11000; align-items:center; justify-content:center;">
-      <div style="background:#fff; width:90%; max-width:420px; border-radius:12px; padding:20px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
-        <h3 style="margin:0 0 8px 0; font-size:18px; color:#333; text-align:center; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">▶️ 計画実行</h3>
-        <p style="font-size:12px; color:#666; margin:0 0 12px 0; text-align:center;">未実行の栽培計画を選び、播種を作業予定に登録します</p>
-        <div id="executePlanListContainer" style="overflow-y:auto; flex:1; margin-bottom: 15px; padding-right: 5px;">
+    <!-- 計画実行一覧は計画一覧に統合（互換のため残し非表示） -->
+    <div id="executePlanListModal" style="display:none;"></div>
+
+    <!-- 計画一覧モーダル（読込・実行・削除・収穫グラフ） -->
+    <div id="historyListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11000; align-items:center; justify-content:center;">
+      <div style="background:#fff; width:92%; max-width:480px; border-radius:12px; padding:20px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column;">
+        <h3 style="margin:0 0 8px 0; font-size:18px; color:#333; text-align:center; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">📂 計画一覧</h3>
+        <p style="font-size:12px; color:#666; margin:0 0 10px 0; text-align:center;">保存した計画の読込・実行・削除ができます</p>
+        <div style="text-align:center; margin-bottom:10px;">
+          <button type="button" onclick="openCropHarvestChartModal()" style="padding:6px 12px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;">📊 作物別・半旬収穫グラフ</button>
+        </div>
+        
+        <div id="historyListContainer" style="overflow-y:auto; flex:1; margin-bottom: 15px; padding-right: 5px;">
           <div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">読み込み中...</div>
         </div>
+        
         <div style="text-align:center;">
-          <button type="button" onclick="closeExecutePlanListModal()" style="padding: 10px 30px; background: #666; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; width: 100%;">閉じる</button>
+          <button type="button" onclick="closePlanListModal()" style="padding: 10px 30px; background: #666; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; width: 100%;">閉じる</button>
         </div>
       </div>
     </div>
 
-    <!-- 保存済み計画一覧モーダル -->
-    <div id="historyListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11000; align-items:center; justify-content:center;">
-      <div style="background:#fff; width:90%; max-width:400px; border-radius:12px; padding:20px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
-        <h3 style="margin:0 0 15px 0; font-size:18px; color:#333; text-align:center; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">📂 保存済みの計画一覧</h3>
-        
-        <div id="historyListContainer" style="overflow-y:auto; flex:1; margin-bottom: 15px; padding-right: 5px;">
-          <!-- JSでリストを描画 -->
-          <div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">読み込み中...</div>
+    <!-- 作物別半旬収穫グラフ（保存済・未実行/実行済） -->
+    <div id="cpCropHarvestModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11020; align-items:center; justify-content:center;">
+      <div style="background:#fff; width:96%; max-width:720px; border-radius:12px; padding:16px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
+          <h3 style="margin:0; font-size:16px; color:#e65100;">📊 作物別・半旬収穫量</h3>
+          <span style="cursor:pointer; font-size:22px; color:#999; line-height:1;" onclick="closeCropHarvestChartModal()">×</span>
         </div>
-        
-        <div style="text-align:center;">
-          <button type="button" onclick="closeHistoryListModal()" style="padding: 10px 30px; background: #666; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; width: 100%;">キャンセル</button>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px;">
+          <label style="font-size:12px; font-weight:bold; color:#555;">年度
+            <select id="cpCropHarvestYear" onchange="refreshCropHarvestChartModal()" style="margin-left:4px; padding:4px 6px; font-size:12px;"></select>
+          </label>
+          <label style="font-size:12px; font-weight:bold; color:#555;">表示
+            <select id="cpCropHarvestMode" onchange="refreshCropHarvestChartModal()" style="margin-left:4px; padding:4px 6px; font-size:12px;">
+              <option value="both">未実行＋実行済</option>
+              <option value="planned">未実行のみ</option>
+              <option value="executed">実行済のみ</option>
+            </select>
+          </label>
+          <span id="cpCropHarvestTotal" style="font-size:12px; color:#bf360c; font-weight:bold;"></span>
+        </div>
+        <div id="cpCropHarvestLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555; margin-bottom:6px;"></div>
+        <div id="cpCropHarvestBars" style="overflow-x:auto; height:140px; border:1px solid #ffe082; border-radius:4px; background:#fffaf0; padding:6px 2px 0;"></div>
+        <div id="cpCropHarvestAxis" style="overflow-x:auto; height:18px; margin-top:2px;"></div>
+        <div style="text-align:center; margin-top:12px;">
+          <button type="button" onclick="closeCropHarvestChartModal()" style="padding:8px 24px; background:#666; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">閉じる</button>
         </div>
       </div>
     </div>
