@@ -1015,6 +1015,17 @@ window.updatePlanRatio = function(planId, index, value) {
     updateCpCellsText(planId, true);
 };
 
+window.setCpPlanInputMode = function(planId, mode) {
+    const plan = cpPlans.find(p => p.id === planId);
+    if (!plan) return;
+    plan.inputMode = (mode === 'trays') ? 'trays' : 'area';
+    const areaRadio = document.getElementById('inputModeArea_' + planId);
+    const traysRadio = document.getElementById('inputModeTrays_' + planId);
+    if (areaRadio) areaRadio.checked = plan.inputMode === 'area';
+    if (traysRadio) traysRadio.checked = plan.inputMode === 'trays';
+    updateRowParams(planId, plan.inputMode);
+};
+
 window.updateRowParams = function(planId, source) {
     const plan = cpPlans.find(p => p.id === planId);
     if (!plan) return;
@@ -1023,17 +1034,22 @@ window.updateRowParams = function(planId, source) {
     const traysEl = document.getElementById('trays_' + planId);
     const yieldRateEl = document.getElementById('yieldRate_' + planId);
     const successEl = document.getElementById('seedlingSuccess_' + planId);
+    const areaRadio = document.getElementById('inputModeArea_' + planId);
+    const traysRadio = document.getElementById('inputModeTrays_' + planId);
 
     if (yieldRateEl) plan.yieldRate = parseFloat(yieldRateEl.value) || 0;
     if (successEl) plan.seedlingSuccess = parseFloat(successEl.value) || 0.1;
 
-    const src = source || plan.inputMode || 'area';
-    if (src === 'trays' && traysEl) {
+    // ラジオが優先。無ければ従来どおり source / plan.inputMode
+    if (traysRadio && traysRadio.checked) plan.inputMode = 'trays';
+    else if (areaRadio && areaRadio.checked) plan.inputMode = 'area';
+    else if (source === 'trays' || source === 'area') plan.inputMode = source;
+    else if (!plan.inputMode) plan.inputMode = 'area';
+
+    if (plan.inputMode === 'trays' && traysEl) {
         plan.trays = Math.max(0, parseFloat(traysEl.value) || 0);
-        plan.inputMode = 'trays';
     } else if (areaEl) {
         plan.areaA = Math.max(0, parseFloat(areaEl.value) || 0);
-        plan.inputMode = 'area';
     }
 
     updateRowCalculations(planId);
@@ -1081,12 +1097,11 @@ window.updateRowCalculations = function(planId) {
             plan.trays = Math.ceil(requiredSeedlings / holes);
         }
     } else if (!canGeom && inputMode === 'trays') {
-        // 株間などが未設定でも枚数は保持
         plan.trays = Math.max(0, parseFloat(plan.trays) || 0);
         totalPlants = (holes === 1) ? plan.trays : (plan.trays * holes);
         totalPlants = Math.floor(totalPlants * seedlingSuccess);
     } else {
-        plan.trays = 0;
+        if (inputMode === 'area') plan.trays = 0;
         totalPlants = 0;
     }
 
@@ -1094,25 +1109,41 @@ window.updateRowCalculations = function(planId) {
         ? Math.floor((totalPlants * yieldRate * ypp) / ipp)
         : 0;
 
-    // UI反映（入力中フィールドは上書きしない）
     const areaInput = document.getElementById('area_' + planId);
     const traysInput = document.getElementById('trays_' + planId);
     const traysLabel = document.getElementById('calcTrays_' + planId);
     const yieldEl = document.getElementById('calcYield_' + planId);
     const unitEl = document.getElementById('unitTrays_' + planId);
     const unitInputEl = document.getElementById('unitTraysInput_' + planId);
+    const areaRadio = document.getElementById('inputModeArea_' + planId);
+    const traysRadio = document.getElementById('inputModeTrays_' + planId);
     const unit = holes === 1 ? '株' : '枚';
+    const qtyLabel = holes === 1 ? '株数' : '枚数';
 
-    if (areaInput && document.activeElement !== areaInput) {
-        areaInput.value = plan.areaA != null ? plan.areaA : '';
+    if (areaRadio) areaRadio.checked = inputMode === 'area';
+    if (traysRadio) traysRadio.checked = inputMode === 'trays';
+
+    // 選択中のみ編集可。もう一方は自動計算で上書き
+    if (areaInput) {
+        areaInput.disabled = inputMode !== 'area';
+        areaInput.style.background = inputMode === 'area' ? '#fff' : '#f0f0f0';
+        if (inputMode !== 'area' || document.activeElement !== areaInput) {
+            areaInput.value = plan.areaA != null ? plan.areaA : '';
+        }
     }
-    if (traysInput && document.activeElement !== traysInput) {
-        traysInput.value = plan.trays != null ? plan.trays : '';
+    if (traysInput) {
+        traysInput.disabled = inputMode !== 'trays';
+        traysInput.style.background = inputMode === 'trays' ? '#fff' : '#f0f0f0';
+        if (inputMode !== 'trays' || document.activeElement !== traysInput) {
+            traysInput.value = plan.trays != null ? plan.trays : '';
+        }
     }
     if (traysLabel) traysLabel.innerText = (plan.trays || 0).toLocaleString();
     if (yieldEl) yieldEl.innerText = (plan.yield || 0).toLocaleString();
     if (unitEl) unitEl.innerText = unit;
     if (unitInputEl) unitInputEl.innerText = unit;
+    const qtyLabelEl = document.getElementById('qtyLabel_' + planId);
+    if (qtyLabelEl) qtyLabelEl.textContent = qtyLabel;
 
     if (typeof updateVarietyCardFieldsDisplay === 'function') {
         updateVarietyCardFieldsDisplay(planId);

@@ -1600,11 +1600,17 @@ function renderCpPlanRow(plan) {
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:14px; line-height:1; padding:0; width:16px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
         <div style="display:flex; align-items:center; gap:3px; margin-top:3px; font-size:10px; flex-wrap:wrap;">
-            <span>面積:</span>
-            <input type="number" id="area_${plan.id}" value="${plan.areaA != null ? plan.areaA : ''}" min="0" step="0.1" oninput="updateRowParams('${plan.id}', 'area')" title="定植面積(a)を入力すると枚数/株数を自動計算" style="width:42px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+            <label style="display:inline-flex; align-items:center; gap:2px; cursor:pointer; white-space:nowrap;">
+              <input type="radio" name="cpInputMode_${plan.id}" id="inputModeArea_${plan.id}" value="area" ${(plan.inputMode !== 'trays') ? 'checked' : ''} onchange="setCpPlanInputMode('${plan.id}', 'area')" style="margin:0;">
+              <span>面積</span>
+            </label>
+            <input type="number" id="area_${plan.id}" value="${plan.areaA != null ? plan.areaA : ''}" min="0" step="0.1" oninput="updateRowParams('${plan.id}', 'area')" ${(plan.inputMode === 'trays') ? 'disabled' : ''} title="定植面積(a)" style="width:42px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px; background:${(plan.inputMode === 'trays') ? '#f0f0f0' : '#fff'};">
             <span>a</span>
-            <span style="margin-left:4px;">${(plan.holes === 1) ? '株数' : '枚数'}:</span>
-            <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" title="枚数/株数を入力すると面積を自動計算" style="width:48px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+            <label style="display:inline-flex; align-items:center; gap:2px; cursor:pointer; white-space:nowrap; margin-left:4px;">
+              <input type="radio" name="cpInputMode_${plan.id}" id="inputModeTrays_${plan.id}" value="trays" ${(plan.inputMode === 'trays') ? 'checked' : ''} onchange="setCpPlanInputMode('${plan.id}', 'trays')" style="margin:0;">
+              <span id="qtyLabel_${plan.id}">${(plan.holes === 1) ? '株数' : '枚数'}</span>
+            </label>
+            <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" ${(plan.inputMode !== 'trays') ? 'disabled' : ''} title="枚数/株数" style="width:48px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px; background:${(plan.inputMode !== 'trays') ? '#f0f0f0' : '#fff'};">
             <span id="unitTraysInput_${plan.id}">${(plan.holes === 1) ? '株' : '枚'}</span>
             <button type="button" id="cpCardDetailsBtn_${plan.id}" onclick="toggleCpCardDetails('${plan.id}')" title="詳細を開閉"
               style="margin-left:auto; height:20px; padding:0 6px; font-size:10px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap;">詳細 ▾</button>
@@ -1634,25 +1640,21 @@ function renderCpPlanRow(plan) {
           <div style="color:#2e7d32; font-weight:bold; font-size:9px; line-height:1.35;">
             播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">${(plan.holes === 1) ? '株' : '枚'}</span>
             ／ 収穫:<span id="calcYield_${plan.id}">0</span>
-            <span style="display:block; color:#888; font-weight:normal; margin-top:1px;">※面積か枚数/株数のどちらかで計画可</span>
+            <span style="display:block; color:#888; font-weight:normal; margin-top:1px;">※ラジオで選んだ側を入力、もう一方は自動計算</span>
           </div>
           <div id="ratios_${plan.id}" style="display:flex; gap: 3px; flex-wrap: wrap;"></div>
         </div>
+        <div style="display:flex; justify-content:center; margin-top:4px;">
+          <button type="button" id="cpCardAddBtn_${plan.id}" title="面積・歩留・成功率などをコピーして下に品種を追加（作型は空）" aria-label="品種カードをコピーして追加"
+            onclick="copyCpPlanRow('${plan.id}')"
+            style="width:22px; height:16px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:11px; font-weight:bold; line-height:1; padding:0;">＋</button>
+        </div>
     `;
 
-    // カード外の小さい＋（詳細には入れない）
     let wrap = document.createElement('div');
     wrap.id = 'cpLeftCardWrap_' + plan.id;
     wrap.style.cssText = 'display:flex; flex-direction:column; box-sizing:border-box;';
-    let addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.title = '面積・歩留・成功率などをコピーして下に品種を追加（作型は空）';
-    addBtn.setAttribute('aria-label', '品種カードをコピーして追加');
-    addBtn.onclick = function() { copyCpPlanRow(plan.id); };
-    addBtn.style.cssText = 'align-self:center; margin:3px 0 2px; width:22px; height:16px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:11px; font-weight:bold; line-height:1; padding:0;';
-    addBtn.textContent = '＋';
     wrap.appendChild(card);
-    wrap.appendChild(addBtn);
     leftBody.appendChild(wrap);
 
     // --- 右パネル: ペイントセル行 ---
