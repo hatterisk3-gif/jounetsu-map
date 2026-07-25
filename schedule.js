@@ -1118,7 +1118,7 @@ window.updateRowCalculations = function(planId) {
     const areaRadio = document.getElementById('inputModeArea_' + planId);
     const traysRadio = document.getElementById('inputModeTrays_' + planId);
     const unit = holes === 1 ? '株' : '枚';
-    const qtyLabel = holes === 1 ? '株数' : '枚数';
+    const qtyLabel = unit;
 
     if (areaRadio) areaRadio.checked = inputMode === 'area';
     if (traysRadio) traysRadio.checked = inputMode === 'trays';

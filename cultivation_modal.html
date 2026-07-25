@@ -9,12 +9,16 @@
           <button type="button" onclick="clearCpPendingFieldAttach()" style="flex-shrink:0; background:#fff; border:1px solid #00ACC1; color:#00838F; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">解除</button>
         </div>
         
+        <!-- ステップ1〜3: 横並び（開いたとき全幅） -->
+        <div id="cpStepsRow" style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; margin-bottom:8px; align-items:start;">
         <!-- ステップ1: 基本設定 -->
-        <details id="cpStep1" open style="margin-bottom: 8px; background: #f1f8e9; padding: 8px 12px; border-radius: 6px; border: 1px solid #c5e1a5;">
-          <summary style="font-size: 14px; font-weight: bold; color: #33691E; cursor: pointer; outline: none; user-select: none;">
-            1. 基本設定 <span style="font-size: 11px; font-weight: normal; color: #555;">(年度, 拠点, 作物, 産地)</span>
+        <details id="cpStep1" open class="cp-step" style="margin:0; background:#f1f8e9; padding:6px 8px; border-radius:6px; border:1px solid #c5e1a5; min-width:0;">
+          <summary style="font-size:13px; font-weight:bold; color:#33691E; cursor:pointer; outline:none; user-select:none; list-style:none; display:flex; flex-direction:column; gap:1px;">
+            <span>1. 基本設定</span>
+            <span style="font-size:10px; font-weight:normal; color:#555; line-height:1.2;">年度・拠点・作物・産地</span>
           </summary>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: flex-end; padding-top: 10px; margin-top: 5px; border-top: 1px dashed #c5e1a5;">
+          <div class="cp-step-body" style="padding-top:8px; margin-top:6px; border-top:1px dashed #c5e1a5;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: flex-end;">
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">年度</label>
               <select id="cpYear" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
@@ -60,21 +64,24 @@
               </select>
             </div>
           </div>
-          <div style="text-align: center; margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 6px; border: 1px dashed #4CAF50;">
+          <div style="text-align: center; margin-top: 10px; padding: 8px; background: #e8f5e9; border-radius: 6px; border: 1px dashed #4CAF50;">
             <p style="font-size: 11px; color: #2e7d32; margin: 0 0 5px 0; font-weight: bold;">※ 過去の計画を呼び出したい場合はこちら</p>
             <button type="button" onclick="showPlanListModal()" style="padding: 8px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📂 計画一覧から選んで読み込む</button>
           </div>
-          <div style="text-align: right; margin-top: 10px;">
-            <button type="button" onclick="nextCpStep(2)" style="padding: 6px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (栽培パラメーター設定)</button>
+          <div style="text-align: right; margin-top: 8px;">
+            <button type="button" onclick="nextCpStep(2)" style="padding: 6px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (栽培パラメーター)</button>
+          </div>
           </div>
         </details>
 
         <!-- ステップ2: 栽培パラメーター設定 -->
-        <details id="cpStep2" style="margin-bottom: 8px; background: #fdfdfd; padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd;">
-          <summary style="font-size: 14px; font-weight: bold; color: #444; cursor: pointer; outline: none; user-select: none;">
-            2. 栽培パラメーター設定 <span style="font-size: 11px; font-weight: normal; color: #777;">(穴数, 条数, 株間, 畝間, 1苗収量, 1P入数)</span>
+        <details id="cpStep2" class="cp-step" style="margin:0; background:#fdfdfd; padding:6px 8px; border-radius:6px; border:1px solid #ddd; min-width:0;">
+          <summary style="font-size:13px; font-weight:bold; color:#444; cursor:pointer; outline:none; user-select:none; list-style:none; display:flex; flex-direction:column; gap:1px;">
+            <span>2. 栽培パラメーター</span>
+            <span style="font-size:10px; font-weight:normal; color:#777; line-height:1.2;">穴数・条数・株間・畝間など</span>
           </summary>
-          <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: #e3f2fd; border-radius: 6px; border: 1px solid #bbdefb; overflow-x: auto;">
+          <div class="cp-step-body" style="padding-top:8px; margin-top:6px; border-top:1px dashed #eee;">
+          <div style="margin-top: 0; display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: #e3f2fd; border-radius: 6px; border: 1px solid #bbdefb; overflow-x: auto;">
             <label style="font-size: 11px; font-weight: bold; color: #1976D2; white-space: nowrap; margin-bottom: 0;">栽培設定:</label>
             <select id="cpPreset" onchange="loadCultivationPreset(this.value)" style="padding: 4px; border: 1px solid #1976D2; border-radius: 4px; font-size: 12px; flex: 1; min-width: 80px;">
               <option value="">選択...</option>
@@ -129,17 +136,19 @@
               </div>
             </div>
           </div>
-          <div style="text-align: right; margin-top: 10px;">
-            <button type="button" onclick="nextCpStep(3)" style="padding: 6px 16px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (品種・作型登録)</button>
+          <div style="text-align: right; margin-top: 8px;">
+            <button type="button" onclick="nextCpStep(3)" style="padding: 6px 16px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (品種・作型)</button>
+          </div>
           </div>
         </details>
 
         <!-- ステップ3: 品種・作型登録 -->
-        <details id="cpStep3" style="margin-bottom: 8px; background: #e3f2fd; padding: 8px 12px; border-radius: 6px; border: 1px solid #bbdefb;">
-          <summary style="font-size: 14px; font-weight: bold; color: #0D47A1; cursor: pointer; outline: none; user-select: none;">
-            3. 品種・作型登録
+        <details id="cpStep3" class="cp-step" style="margin:0; background:#e3f2fd; padding:6px 8px; border-radius:6px; border:1px solid #bbdefb; min-width:0;">
+          <summary style="font-size:13px; font-weight:bold; color:#0D47A1; cursor:pointer; outline:none; user-select:none; list-style:none; display:flex; flex-direction:column; gap:1px;">
+            <span>3. 品種・作型登録</span>
+            <span style="font-size:10px; font-weight:normal; color:#555; line-height:1.2;">品種選択・作型追加</span>
           </summary>
-          <div style="padding-top: 10px; margin-top: 5px; border-top: 1px dashed #bbdefb;">
+          <div class="cp-step-body" style="padding-top:8px; margin-top:6px; border-top:1px dashed #bbdefb;">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: flex-end; margin-bottom: 12px;">
               <div style="width: 100%;">
                 <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">品種</label>
@@ -167,7 +176,16 @@
             </div>
           </div>
         </details>
-        
+        </div>
+        <style>
+          #cpStepsRow > details.cp-step > summary::-webkit-details-marker { display: none; }
+          #cpStepsRow > details.cp-step[open] { grid-column: 1 / -1; }
+          #cpStepsRow > details.cp-step:not([open]) .cp-step-body { display: none; }
+          @media (max-width: 720px) {
+            #cpStepsRow { grid-template-columns: 1fr !important; }
+            #cpStepsRow > details.cp-step[open] { grid-column: auto; }
+          }
+        </style>
         <div style="margin-bottom: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px; border: 1px solid #ddd; display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap;">
           <span style="font-size: 12px; font-weight: bold; color:#666;">🖌 ペイントツール:</span>
           <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
@@ -190,7 +208,7 @@
         </div>
         
         <div id="cpTwoColContainer" style="flex: 1; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 100px;">
-          <div id="cpLeftPanel" style="width: 150px; min-width: 150px; overflow-y: auto; border-right: 2px solid #1976D2; background: #f5f5f5; flex-shrink: 0;">
+          <div id="cpLeftPanel" style="width: 168px; min-width: 168px; overflow-y: auto; border-right: 2px solid #1976D2; background: #f5f5f5; flex-shrink: 0;">
             <div id="cpLeftHeader" style="height: 0px; position: sticky; top: 0; z-index: 5; background: #f5f5f5; flex-shrink: 0;"></div>
             <div id="cpLeftBody"></div>
           </div>

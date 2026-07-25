@@ -1588,35 +1588,40 @@ function renderCpPlanRow(plan) {
     
     let card = document.createElement('div');
     card.id = 'cpLeftCard_' + plan.id;
-    card.style.cssText = 'padding: 4px 6px; background: #e3f2fd; border-bottom: 1px solid #bbdefb; box-sizing: border-box;';
+    const qtyWord = (plan.holes === 1) ? '株' : '枚';
+    const modeArea = plan.inputMode !== 'trays';
+    card.style.cssText = 'padding:3px 5px 2px; background:#e3f2fd; border-bottom:1px solid #bbdefb; box-sizing:border-box;';
     card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:2px;">
-            <span style="font-weight:bold; font-size:11px; display:flex; align-items:center; flex-wrap:wrap; gap:2px; min-width:0; flex:1; line-height:1.25;">
-                <span style="background:#1976D2; color:#fff; padding:1px 5px; border-radius:8px; font-size:9px;">${plan.crop}</span>
-                <span style="color:#0d47a1; font-size:11px;">${plan.variety}</span>
+        <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
+            <span style="font-weight:bold; font-size:10px; display:flex; align-items:center; flex-wrap:nowrap; gap:2px; min-width:0; flex:1; line-height:1.2; overflow:hidden;">
+                <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0;">${plan.crop}</span>
+                <span style="color:#0d47a1; font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${plan.variety}</span>
                 ${fileLinkHtml}
-                <span id="tagDisplay_${plan.id}" style="color: #e91e63; font-size: 9px; font-weight:bold;">${plan.tag || ''}</span>
+                <span id="tagDisplay_${plan.id}" style="color:#e91e63; font-size:9px; font-weight:bold; flex-shrink:0;">${plan.tag || ''}</span>
             </span>
-            <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:14px; line-height:1; padding:0; width:16px; flex-shrink:0; font-weight:bold;">×</button>
-        </div>
-        <div style="display:flex; align-items:center; gap:3px; margin-top:3px; font-size:10px; flex-wrap:wrap;">
-            <label style="display:inline-flex; align-items:center; gap:2px; cursor:pointer; white-space:nowrap;">
-              <input type="radio" name="cpInputMode_${plan.id}" id="inputModeArea_${plan.id}" value="area" ${(plan.inputMode !== 'trays') ? 'checked' : ''} onchange="setCpPlanInputMode('${plan.id}', 'area')" style="margin:0;">
-              <span>面積</span>
-            </label>
-            <input type="number" id="area_${plan.id}" value="${plan.areaA != null ? plan.areaA : ''}" min="0" step="0.1" oninput="updateRowParams('${plan.id}', 'area')" ${(plan.inputMode === 'trays') ? 'disabled' : ''} title="定植面積(a)" style="width:42px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px; background:${(plan.inputMode === 'trays') ? '#f0f0f0' : '#fff'};">
-            <span>a</span>
-            <label style="display:inline-flex; align-items:center; gap:2px; cursor:pointer; white-space:nowrap; margin-left:4px;">
-              <input type="radio" name="cpInputMode_${plan.id}" id="inputModeTrays_${plan.id}" value="trays" ${(plan.inputMode === 'trays') ? 'checked' : ''} onchange="setCpPlanInputMode('${plan.id}', 'trays')" style="margin:0;">
-              <span id="qtyLabel_${plan.id}">${(plan.holes === 1) ? '株数' : '枚数'}</span>
-            </label>
-            <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" ${(plan.inputMode !== 'trays') ? 'disabled' : ''} title="枚数/株数" style="width:48px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px; background:${(plan.inputMode !== 'trays') ? '#f0f0f0' : '#fff'};">
-            <span id="unitTraysInput_${plan.id}">${(plan.holes === 1) ? '株' : '枚'}</span>
             <button type="button" id="cpCardDetailsBtn_${plan.id}" onclick="toggleCpCardDetails('${plan.id}')" title="詳細を開閉"
-              style="margin-left:auto; height:20px; padding:0 6px; font-size:10px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap;">詳細 ▾</button>
+              style="height:18px; padding:0 5px; font-size:9px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap; flex-shrink:0;">詳細</button>
+            <button type="button" id="cpCardAddBtn_${plan.id}" title="コピーして下に品種を追加" aria-label="品種カードをコピーして追加"
+              onclick="copyCpPlanRow('${plan.id}')"
+              style="width:18px; height:18px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:12px; font-weight:bold; line-height:1; padding:0; flex-shrink:0;">＋</button>
+            <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:13px; line-height:1; padding:0; width:14px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
-        <div id="cpSemiHint_${plan.id}" style="display:none; margin-top:2px; font-size:9px; font-weight:bold; line-height:1.2;"></div>
-        <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:4px; font-size:10px; flex-direction:column; gap:3px; background:#fff; padding:4px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:2px 4px; margin-top:2px; font-size:10px; align-items:center;">
+            <label style="display:flex; align-items:center; gap:2px; cursor:pointer; min-width:0;">
+              <input type="radio" name="cpInputMode_${plan.id}" id="inputModeArea_${plan.id}" value="area" ${modeArea ? 'checked' : ''} onchange="setCpPlanInputMode('${plan.id}', 'area')" style="margin:0; flex-shrink:0;">
+              <span style="flex-shrink:0;">面積</span>
+              <input type="number" id="area_${plan.id}" value="${plan.areaA != null ? plan.areaA : ''}" min="0" step="0.1" oninput="updateRowParams('${plan.id}', 'area')" ${modeArea ? '' : 'disabled'} title="定植面積(a)" style="width:100%; min-width:0; max-width:44px; height:18px; font-size:11px; padding:0 2px; border:1px solid #ccc; border-radius:3px; background:${modeArea ? '#fff' : '#f0f0f0'}; box-sizing:border-box;">
+              <span style="flex-shrink:0;">a</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:2px; cursor:pointer; min-width:0;">
+              <input type="radio" name="cpInputMode_${plan.id}" id="inputModeTrays_${plan.id}" value="trays" ${modeArea ? '' : 'checked'} onchange="setCpPlanInputMode('${plan.id}', 'trays')" style="margin:0; flex-shrink:0;">
+              <span id="qtyLabel_${plan.id}" style="flex-shrink:0;">${qtyWord}</span>
+              <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" ${modeArea ? 'disabled' : ''} title="枚数/株数" style="width:100%; min-width:0; max-width:44px; height:18px; font-size:11px; padding:0 2px; border:1px solid #ccc; border-radius:3px; background:${modeArea ? '#f0f0f0' : '#fff'}; box-sizing:border-box;">
+              <span id="unitTraysInput_${plan.id}" style="flex-shrink:0;">${qtyWord}</span>
+            </label>
+        </div>
+        <div id="cpSemiHint_${plan.id}" style="display:none; margin-top:1px; font-size:9px; font-weight:bold; line-height:1.15;"></div>
+        <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:3px; font-size:10px; flex-direction:column; gap:2px; background:#fff; padding:3px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
           <div id="fieldSelectContainer_${plan.id}" style="width:100%; font-size:10px; display:flex; flex-direction:column; gap:2px;">
              <button type="button" onclick="openFieldSelectMap('${plan.id}')" style="width:100%; height:20px; font-size:10px; padding:0; background:#2196F3; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold;">🗺️ 圃場選択 (地図)</button>
              <div style="display:flex; justify-content:space-between; font-weight:bold; color:#e65100; margin-top:1px; font-size:9px;">
@@ -1627,27 +1632,19 @@ function renderCpPlanRow(plan) {
           </div>
           <div style="display:flex; align-items:center; gap:3px;">
             <span>歩留:</span>
-            <select id="yieldRate_${plan.id}" onchange="updateRowParams('${plan.id}')" style="width:52px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+            <select id="yieldRate_${plan.id}" onchange="updateRowParams('${plan.id}')" style="width:52px; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px;">
               ${buildDecimalSelectOptions(1, plan.yieldRate != null ? plan.yieldRate : 0.9, false)}
             </select>
-          </div>
-          <div style="display:flex; align-items:center; gap:3px;">
-            <span>成功率:</span>
-            <select id="seedlingSuccess_${plan.id}" onchange="updateRowParams('${plan.id}')" style="width:52px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+            <span style="margin-left:4px;">成功率:</span>
+            <select id="seedlingSuccess_${plan.id}" onchange="updateRowParams('${plan.id}')" style="width:52px; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px;">
               ${buildDecimalSelectOptions(1, plan.seedlingSuccess != null ? plan.seedlingSuccess : 0.9, false)}
             </select>
           </div>
-          <div style="color:#2e7d32; font-weight:bold; font-size:9px; line-height:1.35;">
-            播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">${(plan.holes === 1) ? '株' : '枚'}</span>
+          <div style="color:#2e7d32; font-weight:bold; font-size:9px; line-height:1.25;">
+            播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">${qtyWord}</span>
             ／ 収穫:<span id="calcYield_${plan.id}">0</span>
-            <span style="display:block; color:#888; font-weight:normal; margin-top:1px;">※ラジオで選んだ側を入力、もう一方は自動計算</span>
           </div>
           <div id="ratios_${plan.id}" style="display:flex; gap: 3px; flex-wrap: wrap;"></div>
-        </div>
-        <div style="display:flex; justify-content:center; margin-top:4px;">
-          <button type="button" id="cpCardAddBtn_${plan.id}" title="面積・歩留・成功率などをコピーして下に品種を追加（作型は空）" aria-label="品種カードをコピーして追加"
-            onclick="copyCpPlanRow('${plan.id}')"
-            style="width:22px; height:16px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:11px; font-weight:bold; line-height:1; padding:0;">＋</button>
         </div>
     `;
 
@@ -1725,7 +1722,7 @@ function toggleCpCardDetails(planId) {
     if (!details) return;
     const open = details.style.display === 'none' || !details.style.display;
     details.style.display = open ? 'flex' : 'none';
-    if (btn) btn.textContent = open ? '詳細 ▴' : '詳細 ▾';
+    if (btn) btn.textContent = open ? '詳細▴' : '詳細';
     setTimeout(() => { syncAllRowHeights(); }, 30);
 }
 
@@ -2997,6 +2994,7 @@ function openCultivationPlanModal(options) {
         return;
     }
     modal.style.display = 'flex';
+    if (typeof initCpStepsAccordion === 'function') initCpStepsAccordion();
     renderCultivationPlanTable();
     populateDefaultCpSelects();
     
@@ -3262,13 +3260,39 @@ function nextCpStep(step) {
         if (el) {
             if (i === step) {
                 el.open = true;
-                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } else {
                 el.open = false;
             }
         }
     }
 }
+
+/** ステップは同時に1つだけ開く（横並びタブ風） */
+function initCpStepsAccordion() {
+    for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById('cpStep' + i);
+        if (!el || el._cpStepBound) continue;
+        el._cpStepBound = true;
+        el.addEventListener('toggle', function() {
+            if (!el.open) return;
+            for (let j = 1; j <= 3; j++) {
+                if (j === i) continue;
+                const other = document.getElementById('cpStep' + j);
+                if (other) other.open = false;
+            }
+        });
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCpStepsAccordion);
+} else {
+    initCpStepsAccordion();
+}
+// モーダルHTMLが後から差し込まれる場合にも対応
+setTimeout(initCpStepsAccordion, 500);
+setTimeout(initCpStepsAccordion, 2000);
 
 // --- CULTIVATION MENU ---
 function toggleCultivationMenu() {
