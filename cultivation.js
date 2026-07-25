@@ -829,18 +829,15 @@ async function fetchCultivationMaster() {
     }
 }
 
-function updateVarietyList() {
-    const crop = getCpVal('cpCrop');
+function getVarietyOptionsForCrop(crop) {
     let opts = [];
     if (cpMasterData && cpMasterData.crops && cpMasterData.crops[crop]) {
         opts = cpMasterData.crops[crop].slice();
     }
-    // 端末に記憶した品種も候補へ（作物に紐づけ）
     getCustomVarietiesForCrop(crop).forEach(v => {
         if (v && !opts.includes(v)) opts.push(v);
     });
 
-    // 栽培プリセット名は品種候補から除外（過去に誤って混入した分も隠す）
     const presetNames = new Set();
     if (cpMasterData && cpMasterData.presets && Array.isArray(cpMasterData.presets[crop])) {
         cpMasterData.presets[crop].forEach(p => {
@@ -852,7 +849,6 @@ function updateVarietyList() {
         opts = opts.filter(v => !presetNames.has(String(v || '').trim()));
     }
 
-    // 拠点の産地に一致する作型がある品種を優先表示（一致するものだけに絞る）
     const locationClimates = getLocationClimates(getCpVal('cpLocation'));
     const selectedClimate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
     if (opts.length && cpMasterData && cpMasterData.croptypesDB && (locationClimates.length || selectedClimate)) {
@@ -866,8 +862,88 @@ function updateVarietyList() {
         if (matched.length) opts = matched;
     }
 
-    // この端末で非表示にした品種を除外
     opts = opts.filter(v => !isVarietyHidden(crop, v));
+    return opts;
+}
+
+function escapeCpHtmlAttr(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function buildCpVarietySelectHtml(plan) {
+    const crop = plan.crop || '';
+    const cur = String(plan.variety || '');
+    let opts = getVarietyOptionsForCrop(crop);
+    if (cur && !opts.map(String).includes(cur)) opts = [cur].concat(opts);
+    const optionsHtml = opts.map(v => {
+        const esc = escapeCpHtmlAttr(v);
+        const sel = String(v) === cur ? ' selected' : '';
+        return `<option value="${esc}"${sel}>${esc}</option>`;
+    }).join('');
+    return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="flex:1; min-width:0; height:18px; font-size:10px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
+}
+
+/** 品種カード上で品種を変更 */
+function changeCpPlanVariety(planId, value) {
+    const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
+    if (!plan) return;
+    const sel = document.getElementById('varietySelect_' + planId);
+    let next = String(value || '');
+
+    if (next === '__custom__') {
+        const name = prompt('品種名を入力してください', plan.variety || '');
+        if (!name || !String(name).trim()) {
+            if (sel) sel.value = plan.variety || '';
+            return;
+        }
+        next = String(name).trim();
+        if (sel) {
+            const exists = Array.from(sel.options).some(o => o.value === next);
+            if (!exists) {
+                const opt = document.createElement('option');
+                opt.value = next;
+                opt.textContent = next;
+                const customOpt = Array.from(sel.options).find(o => o.value === '__custom__');
+                if (customOpt) sel.insertBefore(opt, customOpt);
+                else sel.appendChild(opt);
+            }
+            sel.value = next;
+        }
+        rememberCustomVariety(plan.crop, next);
+    }
+
+    if (!next || next === plan.variety) return;
+    plan.variety = next;
+
+    // 作型DBに一致すればファイルリンクのみ更新（既に塗ったカレンダーは維持）
+    const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+    const locationClimates = getLocationClimates(getCpVal('cpLocation') || plan.location);
+    if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
+        const candidates = cpMasterData.croptypesDB.filter(db =>
+            db.crop === plan.crop &&
+            db.variety === next &&
+            isCroptypeClimateMatch(db.climate, climate, locationClimates)
+        );
+        let found = null;
+        if (climate) {
+            found = candidates.find(db => String(db.climate || '').trim() === climate) || candidates[0] || null;
+        } else {
+            found = candidates[0] || null;
+        }
+        if (found && found.fileUrl) plan.fileUrl = found.fileUrl;
+    }
+
+    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+}
+window.changeCpPlanVariety = changeCpPlanVariety;
+
+function updateVarietyList() {
+    const crop = getCpVal('cpCrop');
+    let opts = getVarietyOptionsForCrop(crop);
 
     const prevVariety = getCpVal('cpVariety');
     populateSelect('cpVariety', opts, []);
@@ -1594,12 +1670,10 @@ function renderCpPlanRow(plan) {
     const numInputCss = 'flex:1; min-width:56px; width:0; height:20px; font-size:12px; padding:0 6px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; -moz-appearance:textfield;';
     card.innerHTML = `
         <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
-            <span style="font-weight:bold; font-size:10px; display:flex; align-items:center; flex-wrap:nowrap; gap:2px; min-width:0; flex:1; line-height:1.2; overflow:hidden;">
-                <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0;">${plan.crop}</span>
-                <span style="color:#0d47a1; font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${plan.variety}</span>
-                ${fileLinkHtml}
-                <span id="tagDisplay_${plan.id}" style="color:#e91e63; font-size:9px; font-weight:bold; flex-shrink:0;">${plan.tag || ''}</span>
-            </span>
+            <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0; font-weight:bold;">${escapeCpHtmlAttr(plan.crop)}</span>
+            ${buildCpVarietySelectHtml(plan)}
+            ${fileLinkHtml}
+            <span id="tagDisplay_${plan.id}" style="color:#e91e63; font-size:9px; font-weight:bold; flex-shrink:0;">${plan.tag || ''}</span>
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:13px; line-height:1; padding:0; width:14px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
         <div style="display:flex; flex-direction:column; gap:2px; margin-top:2px; font-size:10px;">
