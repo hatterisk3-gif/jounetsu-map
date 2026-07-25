@@ -840,6 +840,18 @@ function updateVarietyList() {
         if (v && !opts.includes(v)) opts.push(v);
     });
 
+    // 栽培プリセット名は品種候補から除外（過去に誤って混入した分も隠す）
+    const presetNames = new Set();
+    if (cpMasterData && cpMasterData.presets && Array.isArray(cpMasterData.presets[crop])) {
+        cpMasterData.presets[crop].forEach(p => {
+            const n = String(p && p.name || '').trim();
+            if (n) presetNames.add(n);
+        });
+    }
+    if (presetNames.size) {
+        opts = opts.filter(v => !presetNames.has(String(v || '').trim()));
+    }
+
     // 拠点の産地に一致する作型がある品種を優先表示（一致するものだけに絞る）
     const locationClimates = getLocationClimates(getCpVal('cpLocation'));
     const selectedClimate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';

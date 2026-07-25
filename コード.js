@@ -3624,9 +3624,8 @@ function getCultivationMaster() {
         if (rSpaceCol !== -1 && r[rSpaceCol] !== '' && r[rSpaceCol] !== undefined && !master.rSpace.includes(r[rSpaceCol])) master.rSpace.push(r[rSpaceCol]);
         if (yieldCol !== -1 && r[yieldCol] !== undefined && r[yieldCol] !== '' && !master.yieldPerSeedling.includes(r[yieldCol])) master.yieldPerSeedling.push(r[yieldCol]);
         if (packCol !== -1 && r[packCol] !== undefined && r[packCol] !== '' && !master.itemsPerPack.includes(r[packCol])) master.itemsPerPack.push(r[packCol]);
-        // プリセットの作物も作物選択肢に反映
+        // プリセットの作物名だけ作物選択肢に反映（プリセット名は品種候補にしない）
         if (!master.crops[pc]) master.crops[pc] = [];
-        if (pName && !master.crops[pc].includes(pName)) master.crops[pc].push(pName);
       }
     }
 
@@ -4145,21 +4144,10 @@ function saveVarietyWithFile(params) {
 
     SpreadsheetApp.flush();
 
-    // 作物・品種を栽培計画マスタの選択肢にも反映
-    try {
-      appendCultivationMaster({
-        crop: params.crop,
-        variety: params.name,
-        holes: params.holes,
-        rows: params.rows,
-        pSpace: params.pSpace,
-        rSpace: params.rSpace,
-        yieldPerSeedling: params.yieldPerSeedling,
-        itemsPerPack: params.itemsPerPack
-      });
-    } catch (e) {}
+    // 穴数・条数などはプリセットシートからマスタ読込時に反映する。
+    // プリセット名を品種マスタへ追記しない（品種候補と混ざるため）。
     
-    return { success: true, message: "品種情報とファイルを保存しました", fileUrl: fileUrl };
+    return { success: true, message: "栽培設定とファイルを保存しました", fileUrl: fileUrl };
   } catch (e) {
     return { success: false, message: e.message };
   }
