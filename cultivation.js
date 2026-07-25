@@ -1591,6 +1591,7 @@ function renderCpPlanRow(plan) {
     const qtyWord = (plan.holes === 1) ? '株' : '枚';
     const modeArea = plan.inputMode !== 'trays';
     card.style.cssText = 'padding:3px 5px 2px; background:#e3f2fd; border-bottom:1px solid #bbdefb; box-sizing:border-box;';
+    const numInputCss = 'flex:1; min-width:56px; width:0; height:20px; font-size:12px; padding:0 6px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; -moz-appearance:textfield;';
     card.innerHTML = `
         <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
             <span style="font-weight:bold; font-size:10px; display:flex; align-items:center; flex-wrap:nowrap; gap:2px; min-width:0; flex:1; line-height:1.2; overflow:hidden;">
@@ -1599,24 +1600,19 @@ function renderCpPlanRow(plan) {
                 ${fileLinkHtml}
                 <span id="tagDisplay_${plan.id}" style="color:#e91e63; font-size:9px; font-weight:bold; flex-shrink:0;">${plan.tag || ''}</span>
             </span>
-            <button type="button" id="cpCardDetailsBtn_${plan.id}" onclick="toggleCpCardDetails('${plan.id}')" title="詳細を開閉"
-              style="height:18px; padding:0 5px; font-size:9px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap; flex-shrink:0;">詳細</button>
-            <button type="button" id="cpCardAddBtn_${plan.id}" title="コピーして下に品種を追加" aria-label="品種カードをコピーして追加"
-              onclick="copyCpPlanRow('${plan.id}')"
-              style="width:18px; height:18px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:12px; font-weight:bold; line-height:1; padding:0; flex-shrink:0;">＋</button>
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:13px; line-height:1; padding:0; width:14px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:2px 4px; margin-top:2px; font-size:10px; align-items:center;">
-            <label style="display:flex; align-items:center; gap:2px; cursor:pointer; min-width:0;">
+        <div style="display:flex; flex-direction:column; gap:2px; margin-top:2px; font-size:10px;">
+            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; min-width:0;">
               <input type="radio" name="cpInputMode_${plan.id}" id="inputModeArea_${plan.id}" value="area" ${modeArea ? 'checked' : ''} onchange="setCpPlanInputMode('${plan.id}', 'area')" style="margin:0; flex-shrink:0;">
-              <span style="flex-shrink:0;">面積</span>
-              <input type="number" id="area_${plan.id}" value="${plan.areaA != null ? plan.areaA : ''}" min="0" step="0.1" oninput="updateRowParams('${plan.id}', 'area')" ${modeArea ? '' : 'disabled'} title="定植面積(a)" style="width:100%; min-width:0; max-width:44px; height:18px; font-size:11px; padding:0 2px; border:1px solid #ccc; border-radius:3px; background:${modeArea ? '#fff' : '#f0f0f0'}; box-sizing:border-box;">
+              <span style="flex-shrink:0; width:2em;">面積</span>
+              <input type="number" id="area_${plan.id}" value="${plan.areaA != null ? plan.areaA : ''}" min="0" step="0.1" oninput="updateRowParams('${plan.id}', 'area')" ${modeArea ? '' : 'disabled'} title="定植面積(a)" style="${numInputCss} background:${modeArea ? '#fff' : '#f0f0f0'};">
               <span style="flex-shrink:0;">a</span>
             </label>
-            <label style="display:flex; align-items:center; gap:2px; cursor:pointer; min-width:0;">
+            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; min-width:0;">
               <input type="radio" name="cpInputMode_${plan.id}" id="inputModeTrays_${plan.id}" value="trays" ${modeArea ? '' : 'checked'} onchange="setCpPlanInputMode('${plan.id}', 'trays')" style="margin:0; flex-shrink:0;">
-              <span id="qtyLabel_${plan.id}" style="flex-shrink:0;">${qtyWord}</span>
-              <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" ${modeArea ? 'disabled' : ''} title="枚数/株数" style="width:100%; min-width:0; max-width:44px; height:18px; font-size:11px; padding:0 2px; border:1px solid #ccc; border-radius:3px; background:${modeArea ? '#f0f0f0' : '#fff'}; box-sizing:border-box;">
+              <span id="qtyLabel_${plan.id}" style="flex-shrink:0; width:2em;">${qtyWord}</span>
+              <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" ${modeArea ? 'disabled' : ''} title="枚数/株数" style="${numInputCss} background:${modeArea ? '#f0f0f0' : '#fff'};">
               <span id="unitTraysInput_${plan.id}" style="flex-shrink:0;">${qtyWord}</span>
             </label>
         </div>
@@ -1645,6 +1641,13 @@ function renderCpPlanRow(plan) {
             ／ 収穫:<span id="calcYield_${plan.id}">0</span>
           </div>
           <div id="ratios_${plan.id}" style="display:flex; gap: 3px; flex-wrap: wrap;"></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:4px; margin-top:3px; padding-top:2px;">
+            <button type="button" id="cpCardDetailsBtn_${plan.id}" onclick="toggleCpCardDetails('${plan.id}')" title="詳細を開閉"
+              style="height:18px; padding:0 6px; font-size:9px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap; flex:1;">詳細</button>
+            <button type="button" id="cpCardAddBtn_${plan.id}" title="コピーして下に品種を追加" aria-label="品種カードをコピーして追加"
+              onclick="copyCpPlanRow('${plan.id}')"
+              style="width:22px; height:18px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:12px; font-weight:bold; line-height:1; padding:0; flex-shrink:0;">＋</button>
         </div>
     `;
 
@@ -2441,9 +2444,7 @@ async function saveCultivationPlan(options) {
             return false;
         }
 
-        // 保存前にタグ割り当て（未設定なら自動）
-        if (typeof assignTags === 'function') assignTags();
-        
+        // タグは実行時に自動割り当て（計画段階では未設定のまま保存）
         const payloadPlans = collectCurrentCpPlansFromDom().map(plan => ({
             year: year,
             crop: plan.crop,
@@ -2462,16 +2463,10 @@ async function saveCultivationPlan(options) {
             yield: plan.yield,
             tasks: plan.tasks,
             fieldIds: plan.fieldIds || [],
-            tag: plan.tag || '',
+            tag: '',
             id: plan.id,
             status: 'planned'
         }));
-
-        const missingTag = payloadPlans.filter(p => !p.tag);
-        if (missingTag.length > 0) {
-            alert('タグが未設定の作型があります。「タグ割り当て」を実行してから保存してください。');
-            return false;
-        }
 
         const missingSowing = payloadPlans.filter(p => !p.tasks || !p.tasks.sowing || p.tasks.sowing.length === 0);
         if (missingSowing.length > 0 && !opts.allowNoSowing) {
@@ -2557,8 +2552,13 @@ async function saveCultivationPlan(options) {
 
         clearCultivationPlanDraft();
 
-        // メモリ上も未実行に
-        cpPlans.forEach(p => { p.status = 'planned'; });
+        // メモリ上も未実行・タグ未割当（タグは実行時に付与）
+        cpPlans.forEach(p => {
+            p.status = 'planned';
+            p.tag = '';
+            const tagDisplay = document.getElementById('tagDisplay_' + p.id);
+            if (tagDisplay) tagDisplay.innerText = '';
+        });
         
         if (btn && !opts.silent) {
             btn.innerHTML = orgText;

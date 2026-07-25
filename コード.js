@@ -3350,6 +3350,36 @@ function resolveCpFieldDisplayName_(fieldId) {
 }
 
 /**
+ * 定植の最も早い半旬順に、作物ごとへタグを割り当て（例: キャベツ1）
+ * plans 配列内のオブジェクトを直接更新する
+ */
+function assignCultivationPlanTags_(plans) {
+  if (!plans || plans.length === 0) return;
+  const groups = {};
+  plans.forEach(plan => {
+    const planting = (plan.tasks && plan.tasks.planting) ? plan.tasks.planting : [];
+    let earliest = 9999;
+    planting.forEach(c => {
+      const mIdx = Number(c.monthIndex);
+      const pIdx = (c.periodIndex != null) ? Number(c.periodIndex) : Number(c.period);
+      if (!isNaN(mIdx) && !isNaN(pIdx)) {
+        const idx = mIdx * 6 + pIdx;
+        if (idx < earliest) earliest = idx;
+      }
+    });
+    const crop = plan.crop || '';
+    if (!groups[crop]) groups[crop] = [];
+    groups[crop].push({ plan: plan, earliest: earliest });
+  });
+  Object.keys(groups).forEach(crop => {
+    groups[crop].sort((a, b) => a.earliest - b.earliest);
+    groups[crop].forEach((item, index) => {
+      item.plan.tag = crop + (index + 1);
+    });
+  });
+}
+
+/**
  * 未実行の栽培計画を「実行」し、播種を作業予定へ登録する
  * params: { year, crop, planIds?: string[] }
  */
@@ -3375,11 +3405,8 @@ function executeCultivationPlans(params) {
       return { success: false, message: '実行対象の未実行計画がありません（既に実行済みの可能性があります）' };
     }
 
-    // タグ未設定チェック
-    const noTag = targets.filter(p => !p.tag);
-    if (noTag.length > 0) {
-      return { success: false, message: 'タグ未設定の作型があります。タグ割り当て後に保存してから実行してください。' };
-    }
+    // 実行時に定植の早い順でタグを自動割り当て（作物ごと: キャベツ1, キャベツ2...）
+    assignCultivationPlanTags_(plans);
 
     const ss = TENANT_SS;
     let schedSheet = ss.getSheetByName('作業予定');
@@ -3469,7 +3496,7 @@ function executeCultivationPlans(params) {
     SpreadsheetApp.flush();
     return {
       success: true,
-      message: created + '件の播種を作業予定に登録しました',
+      message: created + '件の播種を作業予定に登録しました（タグは定植順に自動割り当て）',
       created: created,
       executed: targets.length
     };
