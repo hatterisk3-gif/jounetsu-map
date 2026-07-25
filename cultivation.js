@@ -1641,9 +1641,12 @@ function addCpPlanRow() {
     setChoiceValue('cpVariety', variety, true);
     
     // UI改善: 作型を追加後、ペイント領域を広くするために設定項目を自動で閉じる
-    for (let i = 1; i <= 3; i++) {
-        const el = document.getElementById('cpStep' + i);
-        if (el) el.open = false;
+    if (typeof openCpStep === 'function') openCpStep(0);
+    else {
+        for (let i = 1; i <= 3; i++) {
+            const el = document.getElementById('cpStep' + i);
+            if (el) el.open = false;
+        }
     }
 }
 
@@ -3328,35 +3331,63 @@ async function sendVarietyToGAS(params, btn, originalText) {
     }
 }
 
-function nextCpStep(step) {
+/** ステップを開く（0で全閉じ）。同じタブ再クリックで閉じる */
+function openCpStep(step) {
+    const n = Number(step) || 0;
+    const panelsWrap = document.getElementById('cpStepPanels');
+    let anyOpen = false;
+
     for (let i = 1; i <= 3; i++) {
-        const el = document.getElementById('cpStep' + i);
-        if (el) {
-            if (i === step) {
-                el.open = true;
-                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            } else {
-                el.open = false;
-            }
+        const panel = document.getElementById('cpStep' + i);
+        const tab = document.getElementById('cpStepTab' + i);
+        const on = i === n;
+        if (on) anyOpen = true;
+        if (panel) {
+            panel.classList.toggle('is-open', on);
+            panel.hidden = !on;
+            panel.open = on; // 旧details互換
+        }
+        if (tab) {
+            tab.classList.toggle('is-active', on);
+            tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        }
+    }
+    if (panelsWrap) panelsWrap.classList.toggle('has-open', anyOpen);
+
+    if (anyOpen) {
+        const panel = document.getElementById('cpStep' + n);
+        if (panel) {
+            setTimeout(() => {
+                panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 40);
         }
     }
 }
+window.openCpStep = openCpStep;
 
-/** ステップは同時に1つだけ開く（横並びタブ風） */
+function nextCpStep(step) {
+    openCpStep(step);
+}
+
+/** タブ初期化（同じタブ再クリックで閉じる） */
 function initCpStepsAccordion() {
     for (let i = 1; i <= 3; i++) {
-        const el = document.getElementById('cpStep' + i);
-        if (!el || el._cpStepBound) continue;
-        el._cpStepBound = true;
-        el.addEventListener('toggle', function() {
-            if (!el.open) return;
-            for (let j = 1; j <= 3; j++) {
-                if (j === i) continue;
-                const other = document.getElementById('cpStep' + j);
-                if (other) other.open = false;
-            }
+        const tab = document.getElementById('cpStepTab' + i);
+        if (!tab || tab._cpStepBound) continue;
+        tab._cpStepBound = true;
+        tab.addEventListener('click', function(e) {
+            // onclick="openCpStep(n)" と二重になる場合はこちらを優先
+            e.preventDefault();
+            const cur = document.getElementById('cpStep' + i);
+            if (cur && cur.classList.contains('is-open')) openCpStep(0);
+            else openCpStep(i);
         });
+        // inline onclick を外して二重発火を防ぐ
+        tab.removeAttribute('onclick');
     }
+    // 初期表示: ステップ1が開いていればパネル状態を同期
+    const s1 = document.getElementById('cpStep1');
+    if (s1 && s1.classList.contains('is-open')) openCpStep(1);
 }
 
 if (document.readyState === 'loading') {

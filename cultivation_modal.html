@@ -9,15 +9,27 @@
           <button type="button" onclick="clearCpPendingFieldAttach()" style="flex-shrink:0; background:#fff; border:1px solid #00ACC1; color:#00838F; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">解除</button>
         </div>
         
-        <!-- ステップ1〜3: 横並び（開いたとき全幅） -->
-        <div id="cpStepsRow" style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; margin-bottom:8px; align-items:start;">
-        <!-- ステップ1: 基本設定 -->
-        <details id="cpStep1" open class="cp-step" style="margin:0; background:#f1f8e9; padding:6px 8px; border-radius:6px; border:1px solid #c5e1a5; min-width:0;">
-          <summary style="font-size:13px; font-weight:bold; color:#33691E; cursor:pointer; outline:none; user-select:none; list-style:none; display:flex; flex-direction:column; gap:1px;">
-            <span>1. 基本設定</span>
-            <span style="font-size:10px; font-weight:normal; color:#555; line-height:1.2;">年度・拠点・作物・産地</span>
-          </summary>
-          <div class="cp-step-body" style="padding-top:8px; margin-top:6px; border-top:1px dashed #c5e1a5;">
+        <!-- ステップ1〜3: タブ固定＋下にパネル（なめらかに開閉） -->
+        <div id="cpStepsRow" class="cp-steps">
+          <div class="cp-step-tabs" role="tablist" aria-label="栽培計画の設定ステップ">
+            <button type="button" role="tab" id="cpStepTab1" class="cp-step-tab cp-step-tab--1 is-active" aria-selected="true" aria-controls="cpStep1" data-step="1" onclick="openCpStep(1)">
+              <span class="cp-step-tab-title">1. 基本設定</span>
+              <span class="cp-step-tab-sub">年度・拠点・作物・産地</span>
+            </button>
+            <button type="button" role="tab" id="cpStepTab2" class="cp-step-tab cp-step-tab--2" aria-selected="false" aria-controls="cpStep2" data-step="2" onclick="openCpStep(2)">
+              <span class="cp-step-tab-title">2. 栽培パラメーター</span>
+              <span class="cp-step-tab-sub">穴数・条数・株間・畝間など</span>
+            </button>
+            <button type="button" role="tab" id="cpStepTab3" class="cp-step-tab cp-step-tab--3" aria-selected="false" aria-controls="cpStep3" data-step="3" onclick="openCpStep(3)">
+              <span class="cp-step-tab-title">3. 品種・作型登録</span>
+              <span class="cp-step-tab-sub">品種選択・作型追加</span>
+            </button>
+          </div>
+          <div id="cpStepPanels" class="cp-step-panels has-open">
+            <div class="cp-step-panels-clip">
+              <!-- ステップ1: 基本設定 -->
+              <div id="cpStep1" class="cp-step-panel is-open cp-step-panel--1" role="tabpanel" aria-labelledby="cpStepTab1">
+                <div class="cp-step-body">
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: flex-end;">
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">年度</label>
@@ -71,16 +83,12 @@
           <div style="text-align: right; margin-top: 8px;">
             <button type="button" onclick="nextCpStep(2)" style="padding: 6px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (栽培パラメーター)</button>
           </div>
-          </div>
-        </details>
+                </div>
+              </div>
 
-        <!-- ステップ2: 栽培パラメーター設定 -->
-        <details id="cpStep2" class="cp-step" style="margin:0; background:#fdfdfd; padding:6px 8px; border-radius:6px; border:1px solid #ddd; min-width:0;">
-          <summary style="font-size:13px; font-weight:bold; color:#444; cursor:pointer; outline:none; user-select:none; list-style:none; display:flex; flex-direction:column; gap:1px;">
-            <span>2. 栽培パラメーター</span>
-            <span style="font-size:10px; font-weight:normal; color:#777; line-height:1.2;">穴数・条数・株間・畝間など</span>
-          </summary>
-          <div class="cp-step-body" style="padding-top:8px; margin-top:6px; border-top:1px dashed #eee;">
+              <!-- ステップ2: 栽培パラメーター設定 -->
+              <div id="cpStep2" class="cp-step-panel cp-step-panel--2" role="tabpanel" aria-labelledby="cpStepTab2" hidden>
+                <div class="cp-step-body">
           <div style="margin-top: 0; display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: #e3f2fd; border-radius: 6px; border: 1px solid #bbdefb; overflow-x: auto;">
             <label style="font-size: 11px; font-weight: bold; color: #1976D2; white-space: nowrap; margin-bottom: 0;">栽培設定:</label>
             <select id="cpPreset" onchange="loadCultivationPreset(this.value)" style="padding: 4px; border: 1px solid #1976D2; border-radius: 4px; font-size: 12px; flex: 1; min-width: 80px;">
@@ -139,16 +147,12 @@
           <div style="text-align: right; margin-top: 8px;">
             <button type="button" onclick="nextCpStep(3)" style="padding: 6px 16px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (品種・作型)</button>
           </div>
-          </div>
-        </details>
+                </div>
+              </div>
 
-        <!-- ステップ3: 品種・作型登録 -->
-        <details id="cpStep3" class="cp-step" style="margin:0; background:#e3f2fd; padding:6px 8px; border-radius:6px; border:1px solid #bbdefb; min-width:0;">
-          <summary style="font-size:13px; font-weight:bold; color:#0D47A1; cursor:pointer; outline:none; user-select:none; list-style:none; display:flex; flex-direction:column; gap:1px;">
-            <span>3. 品種・作型登録</span>
-            <span style="font-size:10px; font-weight:normal; color:#555; line-height:1.2;">品種選択・作型追加</span>
-          </summary>
-          <div class="cp-step-body" style="padding-top:8px; margin-top:6px; border-top:1px dashed #bbdefb;">
+              <!-- ステップ3: 品種・作型登録 -->
+              <div id="cpStep3" class="cp-step-panel cp-step-panel--3" role="tabpanel" aria-labelledby="cpStepTab3" hidden>
+                <div class="cp-step-body">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: flex-end; margin-bottom: 12px;">
               <div style="width: 100%;">
                 <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">品種</label>
@@ -174,16 +178,86 @@
             <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
               <button type="button" onclick="addCpPlanRow()" style="padding: 6px 12px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">＋ 作型を行に追加</button>
             </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </details>
         </div>
         <style>
-          #cpStepsRow > details.cp-step > summary::-webkit-details-marker { display: none; }
-          #cpStepsRow > details.cp-step[open] { grid-column: 1 / -1; }
-          #cpStepsRow > details.cp-step:not([open]) .cp-step-body { display: none; }
+          .cp-steps { margin-bottom: 8px; }
+          .cp-step-tabs {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 6px;
+          }
+          .cp-step-tab {
+            margin: 0;
+            padding: 7px 8px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            background: #fafafa;
+            cursor: pointer;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+            font: inherit;
+            color: inherit;
+          }
+          .cp-step-tab:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+          .cp-step-tab-title { font-size: 13px; font-weight: bold; line-height: 1.2; }
+          .cp-step-tab-sub { font-size: 10px; font-weight: normal; color: #666; line-height: 1.2; }
+          .cp-step-tab--1 { background: #f1f8e9; border-color: #c5e1a5; color: #33691E; }
+          .cp-step-tab--2 { background: #fdfdfd; border-color: #ddd; color: #444; }
+          .cp-step-tab--2 .cp-step-tab-sub { color: #777; }
+          .cp-step-tab--3 { background: #e3f2fd; border-color: #bbdefb; color: #0D47A1; }
+          .cp-step-tab.is-active {
+            box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.18);
+            transform: translateY(-1px);
+          }
+          .cp-step-tab--1.is-active { box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.28); background: #e8f5e9; }
+          .cp-step-tab--2.is-active { box-shadow: 0 0 0 2px rgba(120, 120, 120, 0.2); background: #f5f5f5; }
+          .cp-step-tab--3.is-active { box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.28); background: #bbdefb; }
+          .cp-step-panels {
+            display: grid;
+            grid-template-rows: 0fr;
+            transition: grid-template-rows 0.28s ease;
+            margin-top: 0;
+          }
+          .cp-step-panels.has-open {
+            grid-template-rows: 1fr;
+            margin-top: 6px;
+          }
+          .cp-step-panels-clip { overflow: hidden; min-height: 0; }
+          .cp-step-panel {
+            display: none;
+            opacity: 0;
+            transform: translateY(-6px);
+          }
+          .cp-step-panel.is-open {
+            display: block;
+            animation: cpStepPanelIn 0.28s ease forwards;
+          }
+          .cp-step-panel--1 .cp-step-body { background: #f1f8e9; border: 1px solid #c5e1a5; }
+          .cp-step-panel--2 .cp-step-body { background: #fdfdfd; border: 1px solid #ddd; }
+          .cp-step-panel--3 .cp-step-body { background: #e3f2fd; border: 1px solid #bbdefb; }
+          .cp-step-body {
+            padding: 10px 10px 8px;
+            border-radius: 6px;
+            box-sizing: border-box;
+          }
+          @keyframes cpStepPanelIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
           @media (max-width: 720px) {
-            #cpStepsRow { grid-template-columns: 1fr !important; }
-            #cpStepsRow > details.cp-step[open] { grid-column: auto; }
+            .cp-step-tabs { grid-template-columns: 1fr; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .cp-step-panels { transition: none; }
+            .cp-step-panel.is-open { animation: none; opacity: 1; transform: none; }
+            .cp-step-tab { transition: none; }
           }
         </style>
         <div style="margin-bottom: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px; border: 1px solid #ddd; display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap;">
