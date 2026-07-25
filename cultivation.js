@@ -1027,16 +1027,19 @@ function withPreservedCpPanelScroll(fn) {
 function syncAllRowHeights() {
     withPreservedCpPanelScroll(function() {
         cpPlans.forEach(plan => {
+            const leftWrap = document.getElementById('cpLeftCardWrap_' + plan.id);
             const leftCard = document.getElementById('cpLeftCard_' + plan.id);
+            const leftEl = leftWrap || leftCard;
             const rightRow = document.querySelector('#cpTableBody tr[data-plan-id="' + plan.id + '"]');
-            if (leftCard && rightRow) {
+            if (leftEl && rightRow) {
                 // リセットしてから計算
-                leftCard.style.height = 'auto';
+                leftEl.style.height = 'auto';
+                if (leftCard && leftWrap) leftCard.style.height = 'auto';
                 rightRow.style.height = 'auto';
-                const leftH = leftCard.offsetHeight;
+                const leftH = leftEl.offsetHeight;
                 const rightH = rightRow.offsetHeight;
                 const maxH = Math.max(leftH, rightH);
-                leftCard.style.height = maxH + 'px';
+                leftEl.style.height = maxH + 'px';
                 rightRow.style.height = maxH + 'px';
             }
         });
@@ -1245,12 +1248,24 @@ function renderCpPlanRow(plan) {
             播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span>
             ／ 収穫:<span id="calcYield_${plan.id}">0</span>
           </div>
-          <button type="button" onclick="copyCpPlanRow('${plan.id}')" title="面積・歩留・成功率などをコピーして下に品種を追加（作型は空）"
-            style="display:block; width:100%; height:24px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:4px; cursor:pointer; font-size:13px; font-weight:bold; line-height:1; padding:0;">＋</button>
           <div id="ratios_${plan.id}" style="display:flex; gap: 3px; flex-wrap: wrap;"></div>
         </div>
     `;
-    leftBody.appendChild(card);
+
+    // カード外の小さい＋（詳細には入れない）
+    let wrap = document.createElement('div');
+    wrap.id = 'cpLeftCardWrap_' + plan.id;
+    wrap.style.cssText = 'display:flex; flex-direction:column; box-sizing:border-box;';
+    let addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.title = '面積・歩留・成功率などをコピーして下に品種を追加（作型は空）';
+    addBtn.setAttribute('aria-label', '品種カードをコピーして追加');
+    addBtn.onclick = function() { copyCpPlanRow(plan.id); };
+    addBtn.style.cssText = 'align-self:center; margin:3px 0 2px; width:22px; height:16px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:11px; font-weight:bold; line-height:1; padding:0;';
+    addBtn.textContent = '＋';
+    wrap.appendChild(card);
+    wrap.appendChild(addBtn);
+    leftBody.appendChild(wrap);
 
     // --- 右パネル: ペイントセル行 ---
     const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
@@ -1340,8 +1355,10 @@ function removeCpPlanRow(planId) {
     const trInfo = tbody.querySelector(`tr[data-plan-id-info="${planId}"]`);
     if (trInfo) tbody.removeChild(trInfo);
     // 左パネルのカードを削除
+    const leftWrap = document.getElementById('cpLeftCardWrap_' + planId);
     const leftCard = document.getElementById('cpLeftCard_' + planId);
-    if (leftCard) leftCard.parentNode.removeChild(leftCard);
+    if (leftWrap) leftWrap.parentNode.removeChild(leftWrap);
+    else if (leftCard) leftCard.parentNode.removeChild(leftCard);
     // 高さ再同期
     setTimeout(() => { syncAllRowHeights(); }, 50);
     updateCpSemiAutoHint();
@@ -1398,11 +1415,14 @@ function copyCpPlanRow(sourcePlanId) {
 
     // 直下に並ぶようDOMを差し替え（renderは末尾追加のため）
     const tbody = document.getElementById('cpTableBody');
+    const srcWrap = document.getElementById('cpLeftCardWrap_' + sourcePlanId);
+    const newWrap = document.getElementById('cpLeftCardWrap_' + newPlan.id);
     const srcCard = document.getElementById('cpLeftCard_' + sourcePlanId);
     const newCard = document.getElementById('cpLeftCard_' + newPlan.id);
     const srcTr = tbody ? tbody.querySelector(`tr[data-plan-id="${sourcePlanId}"]`) : null;
     const newTr = tbody ? tbody.querySelector(`tr[data-plan-id="${newPlan.id}"]`) : null;
-    if (srcCard && newCard) srcCard.after(newCard);
+    if (srcWrap && newWrap) srcWrap.after(newWrap);
+    else if (srcCard && newCard) srcCard.after(newCard);
     if (srcTr && newTr) srcTr.after(newTr);
 
     if (typeof window.updateRowCalculations === 'function') {
@@ -1413,9 +1433,10 @@ function copyCpPlanRow(sourcePlanId) {
     setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
 
     // コピーしたことが分かるようカードを一瞬強調
-    if (newCard) {
-        newCard.style.outline = '2px solid #FF9800';
-        setTimeout(() => { newCard.style.outline = ''; }, 1200);
+    const highlightEl = newWrap || newCard;
+    if (highlightEl) {
+        highlightEl.style.outline = '2px solid #FF9800';
+        setTimeout(() => { highlightEl.style.outline = ''; }, 1200);
     }
 }
 
