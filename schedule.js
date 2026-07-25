@@ -1015,54 +1015,108 @@ window.updatePlanRatio = function(planId, index, value) {
     updateCpCellsText(planId, true);
 };
 
-window.updateRowParams = function(planId) {
+window.updateRowParams = function(planId, source) {
     const plan = cpPlans.find(p => p.id === planId);
     if (!plan) return;
-    
-    plan.areaA = parseFloat(document.getElementById('area_' + planId).value) || 0;
-    plan.yieldRate = parseFloat(document.getElementById('yieldRate_' + planId).value) || 0;
-    plan.seedlingSuccess = parseFloat(document.getElementById('seedlingSuccess_' + planId).value) || 0.1; // avoid div by 0
-    
+
+    const areaEl = document.getElementById('area_' + planId);
+    const traysEl = document.getElementById('trays_' + planId);
+    const yieldRateEl = document.getElementById('yieldRate_' + planId);
+    const successEl = document.getElementById('seedlingSuccess_' + planId);
+
+    if (yieldRateEl) plan.yieldRate = parseFloat(yieldRateEl.value) || 0;
+    if (successEl) plan.seedlingSuccess = parseFloat(successEl.value) || 0.1;
+
+    const src = source || plan.inputMode || 'area';
+    if (src === 'trays' && traysEl) {
+        plan.trays = Math.max(0, parseFloat(traysEl.value) || 0);
+        plan.inputMode = 'trays';
+    } else if (areaEl) {
+        plan.areaA = Math.max(0, parseFloat(areaEl.value) || 0);
+        plan.inputMode = 'area';
+    }
+
     updateRowCalculations(planId);
 };
 
+/**
+ * 面積 ↔ 枚数/株数 の双方向計算
+ * inputMode === 'trays' のとき枚数/株数から面積を逆算
+ * それ以外は面積から枚数/株数を算出
+ */
 window.updateRowCalculations = function(planId) {
     const plan = cpPlans.find(p => p.id === planId);
     if (!plan) return;
-    
-    const pSpaceM = plan.pSpace / 100;
-    const rSpaceM = plan.rSpace / 100;
-    
-    if (plan.areaA > 0 && pSpaceM > 0 && rSpaceM > 0 && plan.rows > 0) {
-        const areaM2 = plan.areaA * 100;
-        const areaPerPlant = (rSpaceM / plan.rows) * pSpaceM;
-        const totalPlants = Math.floor(areaM2 / areaPerPlant);
-        
-        const requiredSeedlings = Math.ceil(totalPlants / plan.seedlingSuccess);
-        
-        if (plan.holes === 1) {
-            plan.trays = requiredSeedlings; // Unit becomes 粒
-        } else {
-            plan.trays = Math.ceil(requiredSeedlings / plan.holes); // Unit is 枚
+
+    const pSpaceM = (parseFloat(plan.pSpace) || 0) / 100;
+    const rSpaceM = (parseFloat(plan.rSpace) || 0) / 100;
+    const rows = parseFloat(plan.rows) || 0;
+    const holes = parseFloat(plan.holes) || 1;
+    const seedlingSuccess = Math.max(0.01, parseFloat(plan.seedlingSuccess) || 0.9);
+    const yieldRate = parseFloat(plan.yieldRate) || 0;
+    const ypp = parseFloat(plan.yieldPerPlant) || 1;
+    const ipp = parseFloat(plan.itemsPerPack) || 1;
+    const canGeom = pSpaceM > 0 && rSpaceM > 0 && rows > 0;
+    const areaPerPlant = canGeom ? (rSpaceM / rows) * pSpaceM : 0;
+    const inputMode = plan.inputMode === 'trays' ? 'trays' : 'area';
+
+    let totalPlants = 0;
+
+    if (inputMode === 'trays' && canGeom) {
+        const trays = Math.max(0, parseFloat(plan.trays) || 0);
+        const requiredSeedlings = (holes === 1) ? trays : (trays * holes);
+        totalPlants = Math.floor(requiredSeedlings * seedlingSuccess);
+        plan.trays = trays;
+        if (areaPerPlant > 0) {
+            const areaM2 = totalPlants * areaPerPlant;
+            plan.areaA = Math.round((areaM2 / 100) * 10) / 10;
         }
-        
-        const ypp = parseFloat(plan.yieldPerPlant) || 1;
-        const ipp = parseFloat(plan.itemsPerPack) || 1;
-        plan.yield = Math.floor((totalPlants * plan.yieldRate * ypp) / ipp);
+    } else if (canGeom && plan.areaA > 0) {
+        const areaM2 = plan.areaA * 100;
+        totalPlants = Math.floor(areaM2 / areaPerPlant);
+        const requiredSeedlings = Math.ceil(totalPlants / seedlingSuccess);
+        if (holes === 1) {
+            plan.trays = requiredSeedlings;
+        } else {
+            plan.trays = Math.ceil(requiredSeedlings / holes);
+        }
+    } else if (!canGeom && inputMode === 'trays') {
+        // 株間などが未設定でも枚数は保持
+        plan.trays = Math.max(0, parseFloat(plan.trays) || 0);
+        totalPlants = (holes === 1) ? plan.trays : (plan.trays * holes);
+        totalPlants = Math.floor(totalPlants * seedlingSuccess);
     } else {
         plan.trays = 0;
-        plan.yield = 0;
+        totalPlants = 0;
     }
-    
-    // Update display in the pinned column
-    const traysEl = document.getElementById('calcTrays_' + planId);
+
+    plan.yield = totalPlants > 0
+        ? Math.floor((totalPlants * yieldRate * ypp) / ipp)
+        : 0;
+
+    // UI反映（入力中フィールドは上書きしない）
+    const areaInput = document.getElementById('area_' + planId);
+    const traysInput = document.getElementById('trays_' + planId);
+    const traysLabel = document.getElementById('calcTrays_' + planId);
     const yieldEl = document.getElementById('calcYield_' + planId);
     const unitEl = document.getElementById('unitTrays_' + planId);
-    
-    if (traysEl) traysEl.innerText = plan.trays.toLocaleString();
-    if (yieldEl) yieldEl.innerText = plan.yield.toLocaleString();
-    if (unitEl) unitEl.innerText = plan.holes === 1 ? '粒' : '枚';
-    
+    const unitInputEl = document.getElementById('unitTraysInput_' + planId);
+    const unit = holes === 1 ? '株' : '枚';
+
+    if (areaInput && document.activeElement !== areaInput) {
+        areaInput.value = plan.areaA != null ? plan.areaA : '';
+    }
+    if (traysInput && document.activeElement !== traysInput) {
+        traysInput.value = plan.trays != null ? plan.trays : '';
+    }
+    if (traysLabel) traysLabel.innerText = (plan.trays || 0).toLocaleString();
+    if (yieldEl) yieldEl.innerText = (plan.yield || 0).toLocaleString();
+    if (unitEl) unitEl.innerText = unit;
+    if (unitInputEl) unitInputEl.innerText = unit;
+
+    if (typeof updateVarietyCardFieldsDisplay === 'function') {
+        updateVarietyCardFieldsDisplay(planId);
+    }
     updateCpCellsText(planId);
 };
 

@@ -1540,7 +1540,8 @@ function addCpPlanRow() {
         seedlingSuccess: getCpVal('cpSeedlingSuccess', true) || 0.9,
         harvestRatios: [],
         trays: 0,
-        yield: 0
+        yield: 0,
+        inputMode: 'area'
     };
     
     if (pendingCroptypeData) {
@@ -1598,10 +1599,13 @@ function renderCpPlanRow(plan) {
             </span>
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:14px; line-height:1; padding:0; width:16px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
-        <div style="display:flex; align-items:center; gap:3px; margin-top:3px; font-size:10px;">
+        <div style="display:flex; align-items:center; gap:3px; margin-top:3px; font-size:10px; flex-wrap:wrap;">
             <span>面積:</span>
-            <input type="number" id="area_${plan.id}" value="${plan.areaA}" oninput="updateRowParams('${plan.id}')" style="width:42px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+            <input type="number" id="area_${plan.id}" value="${plan.areaA != null ? plan.areaA : ''}" min="0" step="0.1" oninput="updateRowParams('${plan.id}', 'area')" title="定植面積(a)を入力すると枚数/株数を自動計算" style="width:42px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
             <span>a</span>
+            <span style="margin-left:4px;">${(plan.holes === 1) ? '株数' : '枚数'}:</span>
+            <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" title="枚数/株数を入力すると面積を自動計算" style="width:48px; height:20px; font-size:12px; padding:0 2px; border:1px solid #ccc; border-radius:3px;">
+            <span id="unitTraysInput_${plan.id}">${(plan.holes === 1) ? '株' : '枚'}</span>
             <button type="button" id="cpCardDetailsBtn_${plan.id}" onclick="toggleCpCardDetails('${plan.id}')" title="詳細を開閉"
               style="margin-left:auto; height:20px; padding:0 6px; font-size:10px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap;">詳細 ▾</button>
         </div>
@@ -1628,8 +1632,9 @@ function renderCpPlanRow(plan) {
             </select>
           </div>
           <div style="color:#2e7d32; font-weight:bold; font-size:9px; line-height:1.35;">
-            播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">枚</span>
+            播種:<span id="calcTrays_${plan.id}">0</span><span id="unitTrays_${plan.id}">${(plan.holes === 1) ? '株' : '枚'}</span>
             ／ 収穫:<span id="calcYield_${plan.id}">0</span>
+            <span style="display:block; color:#888; font-weight:normal; margin-top:1px;">※面積か枚数/株数のどちらかで計画可</span>
           </div>
           <div id="ratios_${plan.id}" style="display:flex; gap: 3px; flex-wrap: wrap;"></div>
         </div>
@@ -1761,6 +1766,7 @@ function copyCpPlanRow(sourcePlanId) {
     const useFormVariety = !!(formVariety && String(formVariety).trim());
 
     const areaEl = document.getElementById('area_' + sourcePlanId);
+    const traysEl = document.getElementById('trays_' + sourcePlanId);
     const yieldEl = document.getElementById('yieldRate_' + sourcePlanId);
     const successEl = document.getElementById('seedlingSuccess_' + sourcePlanId);
 
@@ -1780,8 +1786,9 @@ function copyCpPlanRow(sourcePlanId) {
         yieldRate: yieldEl ? (parseFloat(yieldEl.value) || 0.9) : (src.yieldRate != null ? src.yieldRate : 0.9),
         seedlingSuccess: successEl ? (parseFloat(successEl.value) || 0.9) : (src.seedlingSuccess != null ? src.seedlingSuccess : 0.9),
         harvestRatios: [],
-        trays: 0,
+        trays: traysEl ? (parseFloat(traysEl.value) || 0) : (src.trays || 0),
         yield: 0,
+        inputMode: src.inputMode || 'area',
         tasks: { sowing: [], planting: [], harvesting: [] },
         sowing: [],
         planting: [],
@@ -2073,7 +2080,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                 div.style.alignItems = 'center';
                 div.style.justifyContent = 'center';
                 div.innerHTML = plan.trays > 0
-                    ? `<span style="color:#fff; font-size:10px; font-weight:bold; line-height:1.1;">${plan.trays}${plan.holes === 1 ? '粒' : '枚'}</span>`
+                    ? `<span style="color:#fff; font-size:10px; font-weight:bold; line-height:1.1;">${plan.trays}${plan.holes === 1 ? '株' : '枚'}</span>`
                     : '';
             });
             
