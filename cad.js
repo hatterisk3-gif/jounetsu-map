@@ -275,7 +275,11 @@ window.updateCadSvgOverlay = () => {
                 textNode.setAttribute('dominant-baseline', 'central');
                 textNode.setAttribute('style', 'pointer-events: none; paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
                 let baseIdx = p._displayLabel ? p._displayLabel : (p.customLabel ? p.customLabel : String(idx + 1));
-                let labelStr = baseIdx; if (p.uneGroup && p.uneGroup !== 'default') labelStr += ' (' + p.uneGroup + ')'; textNode.textContent = labelStr;
+                if (typeof window.applyCadUneSvgLabelText === 'function') {
+                    window.applyCadUneSvgLabelText(textNode, p, baseIdx);
+                } else {
+                    let labelStr = baseIdx; if (p.uneGroup && p.uneGroup !== 'default') labelStr += ' (' + p.uneGroup + ')'; textNode.textContent = labelStr;
+                }
                 p._svgTextNode = textNode;
                 textsGroup.appendChild(textNode);
             });
@@ -302,7 +306,11 @@ window.updateCadSvgOverlay = () => {
                 textNode.setAttribute('dominant-baseline', 'central');
                 textNode.setAttribute('style', 'pointer-events: none; paint-order: stroke; stroke: #000000; stroke-width: 4px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;');
                 let baseIdxStr = p._displayLabel ? p._displayLabel : (p.customLabel ? p.customLabel : String(baseIdx + idx + 1));
-                textNode.textContent = baseIdxStr;
+                if (typeof window.applyCadUneSvgLabelText === 'function') {
+                    window.applyCadUneSvgLabelText(textNode, p, baseIdxStr);
+                } else {
+                    textNode.textContent = baseIdxStr;
+                }
                 p._svgTextNode = textNode;
                 textsGroup.appendChild(textNode);
             });
@@ -450,6 +458,7 @@ window.updateCadSvgOverlay = () => {
                     let screenPt = window.latLngToScreenPixel(latLng.lat(), latLng.lng());
                     p._svgTextNode.setAttribute('x', screenPt.x);
                     p._svgTextNode.setAttribute('y', screenPt.y);
+                    p._svgTextNode.querySelectorAll('tspan').forEach(ts => ts.setAttribute('x', screenPt.x));
                 }
             }
         });
@@ -474,6 +483,7 @@ window.updateCadSvgOverlay = () => {
                     let screenPt = window.latLngToScreenPixel(latLng.lat(), latLng.lng());
                     p._svgTextNode.setAttribute('x', screenPt.x);
                     p._svgTextNode.setAttribute('y', screenPt.y);
+                    p._svgTextNode.querySelectorAll('tspan').forEach(ts => ts.setAttribute('x', screenPt.x));
                 }
             }
         });
@@ -756,11 +766,21 @@ window.updateCadLabelScale = (detectedScale) => {
     // CSSのカスタムプロパティ（--cad-label-scale）によるスケールで一括制御するため、JSでの個別のフォントサイズ変更は行いません（パフォーマンスとCSS競合回避のため）
 };
 
-/** 畝番号ラベルの画面サイズ概算（SVG font-size=24 基準） */
-window.estimateCadRidgeLabelScreenSize = (text) => {
+/** 畝番号ラベルの画面サイズ概算（SVG font-size=24 基準。長さ行ありは2行分） */
+window.estimateCadRidgeLabelScreenSize = (textOrNode) => {
     const fontSize = 24;
-    const str = String(text || '');
-    const w = Math.max(fontSize * 0.7, str.length * fontSize * 0.62) + 10; // stroke分の余白
+    if (textOrNode && textOrNode.querySelectorAll) {
+        const tspans = textOrNode.querySelectorAll('tspan');
+        if (tspans.length > 0) {
+            const lines = Array.from(tspans).map(t => t.textContent || '');
+            const maxLen = Math.max(...lines.map(s => s.length), 1);
+            const w = Math.max(fontSize * 0.7, maxLen * fontSize * 0.62) + 10;
+            const h = (tspans.length > 1 ? fontSize * 2.2 : fontSize) + 10;
+            return { w, h };
+        }
+    }
+    const str = String((textOrNode && textOrNode.textContent != null) ? textOrNode.textContent : (textOrNode || ''));
+    const w = Math.max(fontSize * 0.7, str.length * fontSize * 0.62) + 10;
     const h = fontSize + 10;
     return { w, h };
 };
@@ -783,7 +803,7 @@ window.applyCadRidgeLabelVisibility = () => {
                 return;
             }
             const text = node.textContent || '';
-            const size = window.estimateCadRidgeLabelScreenSize(text);
+            const size = window.estimateCadRidgeLabelScreenSize(node);
             items.push({ node, x, y, w: size.w, h: size.h, text });
         });
     };
@@ -2110,6 +2130,81 @@ window.estimateCadUneWidthMeters = (gPoly) => {
     } catch (e) {
         return 0;
     }
+};
+
+/** 畝ポリゴンの長さ(m)を概算（長辺方向。CAD角度に沿った投影の長い方） */
+window.estimateCadUneLengthMeters = (gPoly) => {
+    if (!gPoly || !gPoly.getPath) return 0;
+    const path = gPoly.getPath().getArray();
+    if (!path || path.length < 3) return 0;
+    let coords = path.map(pt => [pt.lng(), pt.lat()]);
+    if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+        coords.push([coords[0][0], coords[0][1]]);
+    }
+    try {
+        const poly = turf.polygon([coords]);
+        const center = turf.centroid(poly);
+        const angleEl = document.getElementById('cadAngle');
+        const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+        const spanOnBearing = (bearingDeg) => {
+            let minP = Infinity;
+            let maxP = -Infinity;
+            coords.forEach(c => {
+                const pt = turf.point(c);
+                const dist = turf.distance(center, pt, { units: 'meters' });
+                const bearing = turf.bearing(center, pt);
+                const proj = dist * Math.cos((bearing - bearingDeg) * Math.PI / 180);
+                if (proj < minP) minP = proj;
+                if (proj > maxP) maxP = proj;
+            });
+            return Math.abs(maxP - minP);
+        };
+        // 長辺を長さとする（通常畝は angle 方向、回転した自由形状にも対応）
+        const along = spanOnBearing(angle);
+        const across = spanOnBearing(angle + 90);
+        const len = Math.max(along, across);
+        return len > 0.1 ? len : 0;
+    } catch (e) {
+        return 0;
+    }
+};
+
+window.formatCadUneLengthMeters = (meters) => {
+    if (!meters || !(meters > 0)) return '';
+    if (meters < 10) return (Math.round(meters * 10) / 10) + 'm';
+    return Math.round(meters) + 'm';
+};
+
+/** 畝ラベルの番号行（グループ付き） */
+window.getCadUneLabelTitle = (poly, baseIdx) => {
+    let title = String(baseIdx != null ? baseIdx : '');
+    if (poly && poly.uneGroup && poly.uneGroup !== 'default') {
+        title += ' (' + poly.uneGroup + ')';
+    }
+    return title;
+};
+
+/** SVGテキストノードに畝番号＋長さ(m)を2行でセット */
+window.applyCadUneSvgLabelText = (textNode, poly, baseIdx) => {
+    if (!textNode) return;
+    const title = window.getCadUneLabelTitle(poly, baseIdx);
+    const lenStr = window.formatCadUneLengthMeters(window.estimateCadUneLengthMeters(poly));
+    const x = textNode.getAttribute('x') || '0';
+    while (textNode.firstChild) textNode.removeChild(textNode.firstChild);
+    const t1 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+    t1.setAttribute('x', x);
+    t1.setAttribute('dy', lenStr ? '-0.55em' : '0');
+    t1.textContent = title;
+    textNode.appendChild(t1);
+    if (lenStr) {
+        const t2 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+        t2.setAttribute('x', x);
+        t2.setAttribute('dy', '1.15em');
+        t2.setAttribute('font-size', '18');
+        t2.textContent = lenStr;
+        textNode.appendChild(t2);
+    }
+    textNode.setAttribute('data-has-length', lenStr ? '1' : '0');
 };
 
 /**
@@ -3461,9 +3556,25 @@ window.openCadEditModal = (idx) => {
         if (document.getElementById('cadEditCustomLabel')) {
             document.getElementById('cadEditCustomLabel').value = poly.customLabel || '';
         }
+        if (typeof window.refreshCadEditLengthDisplay === 'function') {
+            window.refreshCadEditLengthDisplay(poly);
+        }
     }
     
     document.getElementById('cadEditPolyModal').style.display = 'flex';
+};
+
+window.refreshCadEditLengthDisplay = (poly) => {
+    const el = document.getElementById('cadEditLengthM');
+    if (!el) return;
+    if (!poly) {
+        el.textContent = '—';
+        return;
+    }
+    const lenStr = typeof window.formatCadUneLengthMeters === 'function'
+        ? window.formatCadUneLengthMeters(window.estimateCadUneLengthMeters(poly))
+        : '';
+    el.textContent = lenStr || '—';
 };
 
 window.cadCompleteEditPoly = () => {
@@ -3533,14 +3644,26 @@ window.updateSinglePolyLabel = (idx) => {
         poly.getPath().forEach(pt => bounds.extend(pt));
         marker.setPosition(bounds.getCenter());
 
-        let labelStr = poly._displayLabel ? poly._displayLabel : (poly.customLabel ? poly.customLabel : String(polyIndex + 1));
+        let baseIdx = poly._displayLabel ? poly._displayLabel : (poly.customLabel ? poly.customLabel : String(polyIndex + 1));
+        let title = typeof window.getCadUneLabelTitle === 'function' ? window.getCadUneLabelTitle(poly, baseIdx) : baseIdx;
+        let lenStr = typeof window.formatCadUneLengthMeters === 'function'
+            ? window.formatCadUneLengthMeters(window.estimateCadUneLengthMeters(poly))
+            : '';
         marker.setLabel({
-            text: labelStr,
+            text: lenStr ? (title + ' ' + lenStr) : title,
             color: '#ffffff',
             fontSize: '24px',
             fontWeight: 'bold',
             className: 'polygon-label ridge-label'
         });
+        if (poly._svgTextNode && typeof window.applyCadUneSvgLabelText === 'function') {
+            window.applyCadUneSvgLabelText(poly._svgTextNode, poly, baseIdx);
+            const x = poly._svgTextNode.getAttribute('x');
+            if (x != null) poly._svgTextNode.querySelectorAll('tspan').forEach(ts => ts.setAttribute('x', x));
+        }
+        if (typeof window.refreshCadEditLengthDisplay === 'function') {
+            window.refreshCadEditLengthDisplay(poly);
+        }
     }
 };
 
@@ -3682,12 +3805,23 @@ window.reassignLabels = () => {
         marker.setPosition(bounds.getCenter());
 
         marker.setLabel({
-            text: idxStr,
+            text: (typeof window.formatCadUneLengthMeters === 'function'
+                ? (() => {
+                    const title = typeof window.getCadUneLabelTitle === 'function' ? window.getCadUneLabelTitle(poly, idxStr) : idxStr;
+                    const lenStr = window.formatCadUneLengthMeters(window.estimateCadUneLengthMeters(poly));
+                    return lenStr ? (title + ' ' + lenStr) : title;
+                })()
+                : idxStr),
             color: '#ffffff',
             fontSize: initialFontSize,
             fontWeight: 'bold',
             className: 'polygon-label ridge-label'
         });
+        if (poly._svgTextNode && typeof window.applyCadUneSvgLabelText === 'function') {
+            window.applyCadUneSvgLabelText(poly._svgTextNode, poly, idxStr);
+            const x = poly._svgTextNode.getAttribute('x');
+            if (x != null) poly._svgTextNode.querySelectorAll('tspan').forEach(ts => ts.setAttribute('x', x));
+        }
     });
 
     window.updateCadLabelPositionsThrottled();
