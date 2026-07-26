@@ -3,6 +3,8 @@ let currentUser = "", loadedPolygons = {}, editingId = null, originalCoordsForEd
 let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
+let pendingInitData = null;
+let initDataLoadStarted = false;
 
 const JP_PREFECTURES = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
 const CP_CLIMATE_OPTIONS = ['暖地', '温暖地', '一般地', '高冷地'];
@@ -329,6 +331,16 @@ async function executeLogin(isAuto = false) {
             const savedName = localStorage.getItem('pMapAdminName');
             if (savedName) currentUser = savedName;
             startLocationWatch();
+            try {
+                if (localStorage.getItem('spreadsheetId')) {
+                    loadInitData();
+                } else {
+                    const cached = localStorage.getItem('pMapAdminInitData');
+                    if (cached) renderInitData(JSON.parse(cached));
+                }
+            } catch (err) {
+                console.warn('自動ログイン失敗後の圃場描画に失敗:', err);
+            }
         } else {
             document.getElementById('loginScreen').style.display = 'flex';
             if (err) err.innerText = "⚠️ 通信エラー: " + e.message;
@@ -357,16 +369,29 @@ function startLocationWatch() {
 }
 
 function loadInitData() {
+    initDataLoadStarted = true;
     const cached = localStorage.getItem('pMapAdminInitData');
     if (cached) {
         try { renderInitData(JSON.parse(cached)); } catch(e){}
     }
     callGAS('getInitData').then(data => {
-        try {
-            const newDataStr = JSON.stringify(data);
-            localStorage.setItem('pMapAdminInitData', newDataStr);
-        } catch (e) {
-            console.warn('InitData cache save failed:', e);
+        // サーバーが空（0件）を返した場合、圃場入りのキャッシュを空で上書きしない
+        const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
+        let skipCacheSave = false;
+        if (incomingCount === 0 && cached) {
+            try {
+                const c = JSON.parse(cached);
+                if (c && Array.isArray(c.polygons) && c.polygons.length > 0) skipCacheSave = true;
+            } catch (e) {}
+        }
+        if (!skipCacheSave) {
+            try {
+                localStorage.setItem('pMapAdminInitData', JSON.stringify(data));
+            } catch (e) {
+                console.warn('InitData cache save failed:', e);
+            }
+        } else {
+            console.warn('取得データの圃場が0件のため、キャッシュを保持します');
         }
         renderInitData(data);
     }).catch(e => {
@@ -377,15 +402,33 @@ function loadInitData() {
     });
 }
 
+function flushPendingInitData() {
+    if (!map) return;
+    if (pendingInitData) {
+        const data = pendingInitData;
+        pendingInitData = null;
+        renderInitData(data);
+        return;
+    }
+    if (Object.keys(loadedPolygons || {}).length > 0) return;
+    const cached = localStorage.getItem('pMapAdminInitData');
+    if (!cached) return;
+    try { renderInitData(JSON.parse(cached)); } catch (e) {
+        console.warn('キャッシュからの圃場描画に失敗:', e);
+    }
+}
+
 function renderInitData(data) {
+    if (!data) return;
+    pendingInitData = data;
     if (!map) {
         let attempts = 0;
         const tryRender = () => {
             if (map) {
-                renderInitData(data);
+                flushPendingInitData();
                 return;
             }
-            if (++attempts > 150) {
+            if (++attempts > 300) {
                 console.warn('地図初期化前のため圃場データの描画をスキップします');
                 return;
             }
@@ -394,7 +437,8 @@ function renderInitData(data) {
         tryRender();
         return;
     }
-    if (!data || !data.pdl) return;
+    if (!data.pdl) return;
+    pendingInitData = null;
 
     window.pdlMachines = data.pdl.machines || [];
     pdlLocations = data.pdl.locations || [];
@@ -419,6 +463,14 @@ function renderInitData(data) {
     if (condEl) condEl.innerHTML = '<option value="">条件</option>' + html(pdlConditions);
     if (statEl) statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses);
 
+    // 🌟防御：空（0件）のデータで、表示済みの圃場・看板を消さない
+    const incomingPolys = Array.isArray(data.polygons) ? data.polygons : [];
+    if (incomingPolys.length === 0 && Object.keys(loadedPolygons).length > 0) {
+        console.warn('取得データの圃場が0件のため、表示中の圃場・看板を保持します（マスタのみ更新）');
+        return;
+    }
+    console.log('圃場・看板の描画開始:', incomingPolys.length + '件');
+
     for (let id in loadedPolygons) {
         if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
         if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null);
@@ -435,8 +487,12 @@ function renderInitData(data) {
             let end = Math.min(currentIndex + chunkSize, data.polygons.length);
             for (; currentIndex < end; currentIndex++) {
                 let f = data.polygons[currentIndex];
-                if (f.coords && f.coords.length === 1) f.linkedSigns = window.pdlSignLinks[f.id] || "";
-                createPolygonObject(f);
+                try {
+                    if (f.coords && f.coords.length === 1) f.linkedSigns = window.pdlSignLinks[f.id] || "";
+                    createPolygonObject(f);
+                } catch (err) {
+                    console.warn('圃場/看板の描画スキップ:', f && f.id, err);
+                }
             }
 
             if (currentIndex < data.polygons.length) {
@@ -1210,6 +1266,10 @@ function initMap() {
     };
     if (typeof setupSearch === 'function') setupSearch();
     if (typeof setupMapSearch === 'function') setupMapSearch();
+    if (typeof resolveMapInit === 'function') resolveMapInit();
+    try { flushPendingInitData(); } catch (e) {
+        console.warn('地図準備後の圃場描画に失敗:', e);
+    }
 }
 
 function fetchAddressHint(latLng) {
@@ -2747,17 +2807,27 @@ window.forceUpdateApp = () => {
 // 地図の初期化完了を待つPromiseは上部で定義済み
 
 document.addEventListener('DOMContentLoaded', () => {
+    let mapInitAttempts = 0;
     function tryInitMap() {
-        if (typeof google === 'object' && typeof google.maps === 'object') {
-            try {
-                initMap();
-                resolveMapInit();
-            } catch (err) {
-                console.warn("地図の初期化エラー:", err);
-                resolveMapInit(); // エラーが起きても次に進めるようにresolveする
+        const mapsReady = typeof google === 'object'
+            && google.maps
+            && typeof google.maps.Map === 'function';
+        if (!mapsReady) {
+            if (++mapInitAttempts > 100) {
+                console.warn('Google Maps API の読み込みがタイムアウトしました（描画は地図準備後に再試行します）');
+                return;
             }
-        } else {
             setTimeout(tryInitMap, 100);
+            return;
+        }
+        try {
+            if (!map) initMap();
+            if (!map) {
+                setTimeout(tryInitMap, 120);
+            }
+        } catch (err) {
+            console.warn("地図の初期化エラー:", err);
+            setTimeout(tryInitMap, 200);
         }
     }
     tryInitMap();
@@ -2919,19 +2989,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // 🌟自動ログイン＆キャッシュ読み込みは、ログイン情報がある場合のみ実行！🌟
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
-            mapInitPromise.then(() => {
-                try {
-                    renderInitData(JSON.parse(cachedData));
-                    setTimeout(() => { executeLogin(true); }, 1500);
-                } catch (e) {
-                    executeLogin(true);
-                }
-            });
-        } else {
-            mapInitPromise.then(() => {
-                executeLogin(true);
-            });
+            try { renderInitData(JSON.parse(cachedData)); } catch (e) {}
         }
+        executeLogin(true);
+        mapInitPromise.then(() => {
+            try { flushPendingInitData(); } catch (e) {}
+            if (!initDataLoadStarted && localStorage.getItem('spreadsheetId')) {
+                loadInitData();
+            }
+        });
     } else {
         // ログイン情報がない場合は手動ログインを待機
         console.log("ログイン情報がないため、手動ログインを待機します");

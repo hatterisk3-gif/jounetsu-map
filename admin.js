@@ -163,6 +163,8 @@ window.onLocationCityChange = function(sel) {
 let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
+let pendingInitData = null; // 地図準備前に届いた初期データ（地図完成後に必ず描画）
+let initDataLoadStarted = false;
 let latestUserPos = null;
 let customDrawingMode = null; let customDrawingPath = []; let customDrawingPolyline = null; let customDrawingPolygon = null;
 let customDrawingMarkers = []; let customDrawingLabelMarker = null;
@@ -378,6 +380,17 @@ async function executeLogin(isAuto = false) {
             const savedName = localStorage.getItem('pMapAdminName');
             if (savedName) currentUser = savedName;
             startLocationWatch();
+            // 自動ログイン失敗時も、セッション/キャッシュから圃場を出す
+            try {
+                if (localStorage.getItem('spreadsheetId')) {
+                    loadInitData();
+                } else {
+                    const cached = localStorage.getItem('pMapAdminInitData');
+                    if (cached) renderInitData(JSON.parse(cached));
+                }
+            } catch (err) {
+                console.warn('自動ログイン失敗後の圃場描画に失敗:', err);
+            }
         } else {
             document.getElementById('loginScreen').style.display = 'flex';
             if (err) err.innerText = "⚠️ 通信エラー: " + e.message;
@@ -406,16 +419,29 @@ function startLocationWatch() {
 }
 
 function loadInitData() {
+    initDataLoadStarted = true;
     const cached = localStorage.getItem('pMapAdminInitData');
     if (cached) {
         try { renderInitData(JSON.parse(cached)); } catch(e){}
     }
     callGAS('getInitData').then(data => {
-        try {
-            const newDataStr = JSON.stringify(data);
-            localStorage.setItem('pMapAdminInitData', newDataStr);
-        } catch (e) {
-            console.warn('InitData cache save failed:', e);
+        // サーバーが空（0件）を返した場合、圃場入りのキャッシュを空で上書きしない
+        const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
+        let skipCacheSave = false;
+        if (incomingCount === 0 && cached) {
+            try {
+                const c = JSON.parse(cached);
+                if (c && Array.isArray(c.polygons) && c.polygons.length > 0) skipCacheSave = true;
+            } catch (e) {}
+        }
+        if (!skipCacheSave) {
+            try {
+                localStorage.setItem('pMapAdminInitData', JSON.stringify(data));
+            } catch (e) {
+                console.warn('InitData cache save failed:', e);
+            }
+        } else {
+            console.warn('取得データの圃場が0件のため、キャッシュを保持します');
         }
         // キャッシュと同一でも、地図準備後の再描画漏れを防ぐため必ず描画する
         renderInitData(data);
@@ -432,16 +458,34 @@ function loadInitData() {
     });
 }
 
+function flushPendingInitData() {
+    if (!map) return;
+    if (pendingInitData) {
+        const data = pendingInitData;
+        pendingInitData = null;
+        renderInitData(data);
+        return;
+    }
+    if (Object.keys(loadedPolygons || {}).length > 0) return;
+    const cached = localStorage.getItem('pMapAdminInitData');
+    if (!cached) return;
+    try { renderInitData(JSON.parse(cached)); } catch (e) {
+        console.warn('キャッシュからの圃場描画に失敗:', e);
+    }
+}
+
 function renderInitData(data) {
+    if (!data) return;
+    pendingInitData = data;
     if (!map) {
         // mapInitPromise が「地図なし」で解決済みでも描画できるよう、地図が出るまで再試行する
         let attempts = 0;
         const tryRender = () => {
             if (map) {
-                renderInitData(data);
+                flushPendingInitData();
                 return;
             }
-            if (++attempts > 150) {
+            if (++attempts > 300) { // 最大30秒待つ
                 console.warn('地図初期化前のため圃場データの描画をスキップします');
                 return;
             }
@@ -450,7 +494,8 @@ function renderInitData(data) {
         tryRender();
         return;
     }
-    if (!data || !data.pdl) return;
+    if (!data.pdl) return;
+    pendingInitData = null;
 
     window.pdlMachines = data.pdl.machines || [];
     pdlLocations = data.pdl.locations || [];
@@ -487,6 +532,14 @@ function renderInitData(data) {
         statEl.setAttribute('onchange', 'handleStatusSelect(this)');
     }
 
+    // 🌟防御：空（0件）のデータで、表示済みの圃場・看板を消さない
+    const incomingPolys = Array.isArray(data.polygons) ? data.polygons : [];
+    if (incomingPolys.length === 0 && Object.keys(loadedPolygons).length > 0) {
+        console.warn('取得データの圃場が0件のため、表示中の圃場・看板を保持します（マスタのみ更新）');
+        return;
+    }
+    console.log('圃場・看板の描画開始:', incomingPolys.length + '件');
+
     for (let id in loadedPolygons) {
         if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
         if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null);
@@ -503,8 +556,12 @@ function renderInitData(data) {
             let end = Math.min(currentIndex + chunkSize, data.polygons.length);
             for (; currentIndex < end; currentIndex++) {
                 let f = data.polygons[currentIndex];
-                if (f.coords && f.coords.length === 1) f.linkedSigns = window.pdlSignLinks[f.id] || "";
-                createPolygonObject(f);
+                try {
+                    if (f.coords && f.coords.length === 1) f.linkedSigns = window.pdlSignLinks[f.id] || "";
+                    createPolygonObject(f);
+                } catch (err) {
+                    console.warn('圃場/看板の描画スキップ:', f && f.id, err);
+                }
             }
 
             if (currentIndex < data.polygons.length) {
@@ -1415,8 +1472,9 @@ function initMap() {
     }
     const mapEl = document.getElementById('map');
     if (!mapEl) {
-        console.warn('地図コンテナ #map が見つかりません');
-        if (typeof resolveMapInit === 'function') resolveMapInit();
+        // 地図なしで resolve すると圃場描画が永久にスキップされるため、再試行のみ行う
+        console.warn('地図コンテナ #map が見つかりません。再試行します');
+        setTimeout(() => { try { initMap(); } catch (e) { console.warn(e); } }, 120);
         return;
     }
     if (typeof google === 'undefined' || !google.maps || typeof google.maps.Map !== 'function') {
@@ -1780,6 +1838,10 @@ function initMap() {
         console.warn('地図検索の初期化に失敗しました:', e);
     }
     if (typeof resolveMapInit === 'function') resolveMapInit();
+    // 地図完成直後に、待ち行列・キャッシュの圃場を必ず描画する
+    try { flushPendingInitData(); } catch (e) {
+        console.warn('地図準備後の圃場描画に失敗:', e);
+    }
 }
 window.initMap = initMap;
 
@@ -3545,21 +3607,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // 🌟自動ログイン＆キャッシュ読み込みは、ログイン情報がある場合のみ実行！🌟
+        // 地図の完了を待たずに開始する（描画側が map 待ちを吸収する）
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
-            mapInitPromise.then(() => {
-                try {
-                    renderInitData(JSON.parse(cachedData));
-                    setTimeout(() => { executeLogin(true); }, 1500);
-                } catch (e) {
-                    executeLogin(true);
-                }
-            });
-        } else {
-            mapInitPromise.then(() => {
-                executeLogin(true);
-            });
+            try { renderInitData(JSON.parse(cachedData)); } catch (e) {}
         }
+        // セッション更新と最新データの取得（地図待ち・1.5秒待ちは不要）
+        executeLogin(true);
+        // 地図が後からできても再描画する保険
+        mapInitPromise.then(() => {
+            try { flushPendingInitData(); } catch (e) {}
+            if (!initDataLoadStarted && localStorage.getItem('spreadsheetId')) {
+                loadInitData();
+            }
+        });
     } else {
         // ログイン情報がない場合は手動ログインを待機
         console.log("ログイン情報がないため、手動ログインを待機します");

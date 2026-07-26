@@ -1185,34 +1185,44 @@ function getSavedPolygons() {
     const data = fieldSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (!data[i][0]) continue;
-      let photos = [];
-      try { if (data[i][9]) photos = JSON.parse(data[i][9]); } catch(e){}
-      
-      result.push({
-        id: data[i][0],
-        name: data[i][1],
-        location: data[i][2],
-        condition: data[i][3],
-        area: data[i][4],
-        coords: JSON.parse(data[i][5] || "[]"),
-        color: (JSON.parse(data[i][5] || "[]").length === 1) ? data[i][6] : "",
-        author: data[i][8],
-        photos: photos,
-        status: data[i][10],
-        toukiId: data[i][11],
-        ridgeDir: data[i][13],
-        ridgeWidth: data[i][14],
-        uneSimData: data[i][15],
-        water_status: data[i][16] || 'stopped'
-      });
-      let manureData = {};
-      try { if (data[i][17]) manureData = JSON.parse(data[i][17]); } catch(e){}
-      
-      result[result.length - 1].manure_status = manureData.manure_status || 'none';
-      result[result.length - 1].manure_deadline = manureData.manure_deadline || '';
-      result[result.length - 1].manure_scheduled_date = manureData.manure_scheduled_date || '';
-      result[result.length - 1].manure_cancel_reason = manureData.manure_cancel_reason || '';
-      result[result.length - 1].manure_has_pin = manureData.manure_has_pin || false;
+      try {
+        let photos = [];
+        try { if (data[i][9]) photos = JSON.parse(data[i][9]); } catch(e){}
+        let coords = [];
+        try { coords = JSON.parse(data[i][5] || "[]"); } catch (e) {
+          console.warn('圃場 coords 不正のためスキップ:', data[i][0], e);
+          continue;
+        }
+        if (!Array.isArray(coords)) coords = [];
+        
+        result.push({
+          id: data[i][0],
+          name: data[i][1],
+          location: data[i][2],
+          condition: data[i][3],
+          area: data[i][4],
+          coords: coords,
+          color: (coords.length === 1) ? data[i][6] : "",
+          author: data[i][8],
+          photos: photos,
+          status: data[i][10],
+          toukiId: data[i][11],
+          ridgeDir: data[i][13],
+          ridgeWidth: data[i][14],
+          uneSimData: data[i][15],
+          water_status: data[i][16] || 'stopped'
+        });
+        let manureData = {};
+        try { if (data[i][17]) manureData = JSON.parse(data[i][17]); } catch(e){}
+        
+        result[result.length - 1].manure_status = manureData.manure_status || 'none';
+        result[result.length - 1].manure_deadline = manureData.manure_deadline || '';
+        result[result.length - 1].manure_scheduled_date = manureData.manure_scheduled_date || '';
+        result[result.length - 1].manure_cancel_reason = manureData.manure_cancel_reason || '';
+        result[result.length - 1].manure_has_pin = manureData.manure_has_pin || false;
+      } catch (rowErr) {
+        console.warn('圃場行の読込スキップ:', data[i][0], rowErr);
+      }
     }
   }
   
@@ -1222,22 +1232,32 @@ function getSavedPolygons() {
     const data = signSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (!data[i][0]) continue;
-      let photos = [];
       try {
-        if (data[i][9] && data[i][9] !== "[]") photos = JSON.parse(data[i][9]);
-        else if (data[i][6] && data[i][6] !== "[]") photos = JSON.parse(data[i][6]);
-      } catch(e){}
-      
-      result.push({
-        id: data[i][0],
-        name: data[i][1],
-        coords: JSON.parse(data[i][2] || "[]"),
-        color: data[i][3],
-        author: data[i][5],
-        signFunction: data[i][7] || "一般看板", // ★ここが超重要！H列（看板機能）をアプリに送る！
-        photos: photos,
-        uneSimData: data[i][10] // K列(11)
-      });
+        let photos = [];
+        try {
+          if (data[i][9] && data[i][9] !== "[]") photos = JSON.parse(data[i][9]);
+          else if (data[i][6] && data[i][6] !== "[]") photos = JSON.parse(data[i][6]);
+        } catch(e){}
+        let coords = [];
+        try { coords = JSON.parse(data[i][2] || "[]"); } catch (e) {
+          console.warn('看板 coords 不正のためスキップ:', data[i][0], e);
+          continue;
+        }
+        if (!Array.isArray(coords)) coords = [];
+        
+        result.push({
+          id: data[i][0],
+          name: data[i][1],
+          coords: coords,
+          color: data[i][3],
+          author: data[i][5],
+          signFunction: data[i][7] || "一般看板", // ★ここが超重要！H列（看板機能）をアプリに送る！
+          photos: photos,
+          uneSimData: data[i][10] // K列(11)
+        });
+      } catch (rowErr) {
+        console.warn('看板行の読込スキップ:', data[i][0], rowErr);
+      }
     }
   }
   
