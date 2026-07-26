@@ -354,6 +354,7 @@ async function executeLogin(isAuto = false) {
             currentUser = res.name;
             document.getElementById('loginScreen').style.display = 'none';
             if (err) err.innerText = '';
+            setTimeout(refreshAdminMapSize, 50);
 
             localStorage.setItem('passionMapUserId', id);
             localStorage.setItem('passionMapUserPw', pw);
@@ -425,7 +426,15 @@ function loadInitData() {
 
 function renderInitData(data) {
     if (!map) {
-        mapInitPromise.then(() => renderInitData(data));
+        if (typeof mapInitPromise !== 'undefined') {
+            mapInitPromise.then(() => {
+                if (!map) {
+                    console.warn('地図初期化前のため圃場データの描画をスキップします');
+                    return;
+                }
+                renderInitData(data);
+            });
+        }
         return;
     }
     if (!data || !data.pdl) return;
@@ -1353,6 +1362,21 @@ window.calcRidges = (coords, dir, widthCm) => {
 };
 
 function initMap() {
+    if (map) {
+        if (typeof resolveMapInit === 'function') resolveMapInit();
+        return; // 二重初期化防止
+    }
+    const mapEl = document.getElementById('map');
+    if (!mapEl) {
+        console.warn('地図コンテナ #map が見つかりません');
+        if (typeof resolveMapInit === 'function') resolveMapInit();
+        return;
+    }
+    if (typeof google === 'undefined' || !google.maps || typeof google.maps.Map !== 'function') {
+        console.warn('Google Maps API が未ロードです。再試行します');
+        setTimeout(() => { try { initMap(); } catch (e) { console.warn(e); } }, 120);
+        return;
+    }
     let savedLat = localStorage.getItem('pMapAdminLastLat');
     let savedLng = localStorage.getItem('pMapAdminLastLng');
     let savedZoom = localStorage.getItem('pMapAdminLastZoom');
@@ -1367,9 +1391,14 @@ function initMap() {
             this.name = 'ハイブリッド';
             this.alt = 'ハイブリッド';
             this.maxNativeZoom = 21; // Googleの最大ネイティブズーム
-            
+
             // Get standard projection to prevent Google Maps from rejecting the custom map type
-            let baseType = map.mapTypes.get('roadmap') || map.mapTypes.get('hybrid');
+            let baseType = null;
+            try {
+                baseType = (map && map.mapTypes)
+                    ? (map.mapTypes.get('roadmap') || map.mapTypes.get('hybrid'))
+                    : null;
+            } catch (e) { baseType = null; }
             if (baseType && baseType.projection) {
                 this.projection = baseType.projection;
             } else {
@@ -1440,7 +1469,7 @@ function initMap() {
 
     // Dummy map options to register MapType before instantiation? No, we can just instantiate Map directly if we use mapTypes.set inside a registry. But MapTypeRegistry is on the map instance!
     // Wait, mapTypes is a property of the map instance! So we MUST create the map first.
-    map = new google.maps.Map(document.getElementById('map'), {
+    map = new google.maps.Map(mapEl, {
         center: centerPos,
         zoom: zoomLevel,
         maxZoom: 45,
@@ -1455,8 +1484,18 @@ function initMap() {
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
-    map.mapTypes.set('hybrid_stretched', new StretchedMapType());
-    map.setMapTypeId('hybrid_stretched');
+    try {
+        map.mapTypes.set('hybrid_stretched', new StretchedMapType());
+        map.setMapTypeId('hybrid_stretched');
+    } catch (e) {
+        console.warn('カスタム地図タイプの登録に失敗したため hybrid を使用します:', e);
+        map.setMapTypeId('hybrid');
+    }
+
+    // コンテナサイズが後から確定する場合に備えリサイズを通知
+    setTimeout(() => {
+        try { google.maps.event.trigger(map, 'resize'); } catch (e) {}
+    }, 0);
 
     infoWindow = new google.maps.InfoWindow();
     google.maps.event.addListener(map, 'click', () => infoWindow.close());
@@ -1684,8 +1723,23 @@ function initMap() {
             }, function () { customAlert("現在地を取得できません"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true });
         }
     };
-    if (typeof setupSearch === 'function') setupSearch();
-    if (typeof setupMapSearch === 'function') setupMapSearch();
+    try {
+        if (typeof setupSearch === 'function') setupSearch();
+    } catch (e) {
+        console.warn('圃場検索の初期化に失敗しました:', e);
+    }
+    try {
+        if (typeof setupMapSearch === 'function') setupMapSearch();
+    } catch (e) {
+        console.warn('地図検索の初期化に失敗しました:', e);
+    }
+    if (typeof resolveMapInit === 'function') resolveMapInit();
+}
+window.initMap = initMap;
+
+function refreshAdminMapSize() {
+    if (!map || typeof google === 'undefined' || !google.maps || !google.maps.event) return;
+    try { google.maps.event.trigger(map, 'resize'); } catch (e) {}
 }
 
 function fetchAddressHint(latLng) {
@@ -1730,8 +1784,41 @@ function openMarkerForm(markerObj) {
     setTimeout(() => selectMI('🪧'), 10);
 }
 
-function setupMapSearch() { const input = document.getElementById('mapSearchInput'); const searchBox = new google.maps.places.SearchBox(input); map.addListener('bounds_changed', () => { searchBox.setBounds(map.getBounds()); }); searchBox.addListener('places_changed', () => { const places = searchBox.getPlaces(); if (places.length == 0) return; const bounds = new google.maps.LatLngBounds(); places.forEach(place => { if (!place.geometry || !place.geometry.location) return; if (place.geometry.viewport) { bounds.union(place.geometry.viewport); } else { bounds.extend(place.geometry.location); } }); map.fitBounds(bounds); }); }
-function setupSearch() { const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions'); input.oninput = () => { const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; } const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val)); matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker ? '🪧' : '🌿') + ' ' + m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); }); sug.style.display = matches.length ? 'block' : 'none'; }; }
+function setupMapSearch() {
+    const input = document.getElementById('mapSearchInput');
+    if (!input || !map || !google.maps.places || typeof google.maps.places.SearchBox !== 'function') return;
+    const searchBox = new google.maps.places.SearchBox(input);
+    map.addListener('bounds_changed', () => { searchBox.setBounds(map.getBounds()); });
+    searchBox.addListener('places_changed', () => {
+        const places = searchBox.getPlaces();
+        if (!places || places.length == 0) return;
+        const bounds = new google.maps.LatLngBounds();
+        places.forEach(place => {
+            if (!place.geometry || !place.geometry.location) return;
+            if (place.geometry.viewport) { bounds.union(place.geometry.viewport); }
+            else { bounds.extend(place.geometry.location); }
+        });
+        map.fitBounds(bounds);
+    });
+}
+function setupSearch() {
+    const input = document.getElementById('searchInput'), sug = document.getElementById('searchSuggestions');
+    if (!input || !sug) return;
+    input.oninput = () => {
+        const val = input.value.toLowerCase();
+        sug.innerHTML = '';
+        if (!val) { sug.style.display = 'none'; return; }
+        const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val));
+        matches.forEach(m => {
+            const d = document.createElement('div');
+            d.className = 'suggestion-item';
+            d.innerHTML = (m.isMarker ? '🪧' : '🌿') + ' ' + m.name;
+            d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); };
+            sug.appendChild(d);
+        });
+        sug.style.display = matches.length ? 'block' : 'none';
+    };
+}
 function focusAndOpen(id) { const p = loadedPolygons[id]; let center; if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); } map.setZoom(18); map.panTo(center); setTimeout(() => { openM(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500); }
 
 function updateCustomDrawingVisuals() {
@@ -2037,6 +2124,7 @@ window.setFudeVisibility = (isVisible) => {
 // マップ初期化後にスクロール（移動・ズーム）時の再描画イベントを追加
 if (typeof mapInitPromise !== 'undefined') {
     mapInitPromise.then(() => {
+        if (!map || typeof map.addListener !== 'function') return;
         map.addListener('idle', () => {
             if (window.isFudeVisibleFlag) {
                 setFudeVisibility(true);
@@ -3228,17 +3316,29 @@ window.forceUpdateApp = () => {
 // 地図の初期化完了を待つPromiseは上部で定義済み
 
 document.addEventListener('DOMContentLoaded', () => {
+    let mapInitAttempts = 0;
     function tryInitMap() {
-        if (typeof google === 'object' && typeof google.maps === 'object') {
-            try {
-                initMap();
-                resolveMapInit();
-            } catch (err) {
-                console.warn("地図の初期化エラー:", err);
-                resolveMapInit(); // エラーが起きても次に進めるようにresolveする
+        const mapsReady = typeof google === 'object'
+            && google.maps
+            && typeof google.maps.Map === 'function';
+        if (!mapsReady) {
+            if (++mapInitAttempts > 100) {
+                console.warn('Google Maps API の読み込みがタイムアウトしました');
+                if (typeof resolveMapInit === 'function') resolveMapInit();
+                return;
             }
-        } else {
             setTimeout(tryInitMap, 100);
+            return;
+        }
+        try {
+            initMap(); // 成功時は initMap 内で resolveMapInit
+            if (!map) {
+                // API 未完了などで延期された場合は再試行（resolveしない）
+                setTimeout(tryInitMap, 120);
+            }
+        } catch (err) {
+            console.warn("地図の初期化エラー:", err);
+            if (typeof resolveMapInit === 'function') resolveMapInit();
         }
     }
     tryInitMap();
@@ -3252,6 +3352,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (orgId && id && pw) {
         const loginScreen = document.getElementById('loginScreen');
         if (loginScreen) loginScreen.style.display = 'none';
+        setTimeout(refreshAdminMapSize, 50);
 
         if (savedName) currentUser = savedName;
         if (document.getElementById('loginOrgId')) document.getElementById('loginOrgId').value = orgId;

@@ -424,9 +424,15 @@ function getInitData() {
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
     signFunctionsMaster: getCol(['看板マスタ', '看板機能マスタ', '看板機能'], 0), // ★ここを追加！看板マスタのA列を取得します
-    machineGroups: getMachineGroupMasterList_(),
-    machineTypes: getMachineTypeMasterList_(),
-    machineCategories: getMachineTypeMasterList_() // 互換: 旧キー（機種＝機械カテゴリ）
+    machineGroups: (function () {
+      try { return getMachineGroupMasterList_(); } catch (e) { return ['農業機械', '農機インプルメント', '出荷機械']; }
+    })(),
+    machineTypes: (function () {
+      try { return getMachineTypeMasterList_(); } catch (e) { return ['トラクター', 'ドローン']; }
+    })(),
+    machineCategories: (function () {
+      try { return getMachineTypeMasterList_(); } catch (e) { return ['トラクター', 'ドローン']; }
+    })()
   };
   
   let workMaster = [];
