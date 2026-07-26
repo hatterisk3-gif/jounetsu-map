@@ -910,7 +910,7 @@ function initMap() {
     map = new google.maps.Map(document.getElementById('map'), {
         center: centerPos,
         zoom: zoomLevel,
-        maxZoom: 45,
+        maxZoom: 30,
         mapTypeId: 'hybrid',
         gestureHandling: 'greedy',
         mapTypeControl: false,
@@ -922,8 +922,12 @@ function initMap() {
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
-    map.mapTypes.set('hybrid_stretched', new StretchedMapType());
-    map.setMapTypeId('hybrid_stretched');
+    try {
+        map.mapTypes.set('hybrid_stretched', new StretchedMapType());
+    } catch (e) {
+        console.warn('StretchedMapType 登録スキップ:', e);
+    }
+    map.setMapTypeId('hybrid');
 
     infoWindow = new google.maps.InfoWindow();
     google.maps.event.addListener(map, 'click', () => infoWindow.close());

@@ -1472,7 +1472,7 @@ function initMap() {
     map = new google.maps.Map(mapEl, {
         center: centerPos,
         zoom: zoomLevel,
-        maxZoom: 45,
+        maxZoom: 30,
         mapTypeId: 'hybrid',
         gestureHandling: 'greedy',
         mapTypeControl: false,
@@ -1486,11 +1486,10 @@ function initMap() {
 
     try {
         map.mapTypes.set('hybrid_stretched', new StretchedMapType());
-        map.setMapTypeId('hybrid_stretched');
     } catch (e) {
-        console.warn('カスタム地図タイプの登録に失敗したため hybrid を使用します:', e);
-        map.setMapTypeId('hybrid');
+        console.warn('StretchedMapType 登録スキップ:', e);
     }
+    map.setMapTypeId('hybrid');
 
     // コンテナサイズが後から確定する場合に備えリサイズを通知
     setTimeout(() => {
@@ -3331,9 +3330,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
-            initMap(); // 成功時は initMap 内で resolveMapInit
-            if (!map) {
-                // API 未完了などで延期された場合は再試行（resolveしない）
+            initMap();
+            if (map && typeof resolveMapInit === 'function') {
+                resolveMapInit();
+            } else if (!map) {
                 setTimeout(tryInitMap, 120);
             }
         } catch (err) {
