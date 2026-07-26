@@ -1,4 +1,4 @@
-﻿// machine.js
+// machine.js
 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 
@@ -70,7 +70,13 @@ function initMap() {
         mapTypeId: 'hybrid',
         maxZoom: 45,
         tilt: 0,
-        disableDefaultUI: false
+        disableDefaultUI: false,
+        mapTypeControl: false,
+        fullscreenControl: false,
+        streetViewControl: false,
+        rotateControl: false,
+        cameraControl: false,
+        zoomControl: false
     });
 
     map.addListener('click', (e) => {

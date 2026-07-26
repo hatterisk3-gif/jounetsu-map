@@ -916,6 +916,9 @@ function initMap() {
         mapTypeControl: false,
         fullscreenControl: false,
         streetViewControl: false,
+        rotateControl: false,
+        cameraControl: false,
+        zoomControl: false,
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
