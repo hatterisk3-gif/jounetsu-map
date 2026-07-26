@@ -231,14 +231,17 @@
         <label>機械グループ</label>
         <div style="display:flex; gap:5px;">
           <select id="regMachineGroup" style="flex:1;"></select>
-          <button onclick="addNewItem('MachineGroup')" style="padding:8px; border-radius:4px; border:1px solid #ccc;">➕</button>
+          <button onclick="addNewItem('MachineGroup')" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="グループを追加">➕</button>
+          <button onclick="renameSelectedMachineGroup()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="選択中のグループ名を編集">✏️</button>
+          <button onclick="removeSelectedMachineGroup()" style="padding:8px; border-radius:4px; border:1px solid #ccc; color:#c62828;" title="選択中のグループを削除">➖</button>
         </div>
       </div>
       <div class="form-group">
-        <label>機種</label>
+        <label>機械カテゴリ</label>
         <div style="display:flex; gap:5px;">
           <select id="regMachineType" style="flex:1;"></select>
-          <button onclick="addNewItem('MachineType')" style="padding:8px; border-radius:4px; border:1px solid #ccc;">➕</button>
+          <button onclick="addNewItem('MachineType')" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="機械カテゴリを追加">➕</button>
+          <button onclick="removeSelectedMachineType()" style="padding:8px; border-radius:4px; border:1px solid #ccc; color:#c62828;" title="選択中の機械カテゴリを削除">➖</button>
         </div>
       </div>
       <div class="form-group">
@@ -254,12 +257,15 @@
       <div class="form-group">
         <label>定位置看板</label>
         <select id="regSign">
-          <option value="">-- 選択 --</option>
+          <option value="">-- 選択（農機管理機能付き） --</option>
         </select>
+        <div style="font-size:11px; color:#888; margin-top:4px;">「車両・機械管理」機能が付いた看板のみ表示されます</div>
       </div>
       <div class="form-group">
         <label>作業分類</label>
-        <input type="text" id="regWorkCategory" placeholder="例：耕耘,潅水（カンマ区切り）">
+        <div id="regWorkCategoryRows" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:6px;"></div>
+        <button type="button" onclick="addRegWorkCategoryRow()" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; width:100%;">＋ 作業を追加</button>
+        <div style="font-size:11px; color:#888; margin-top:4px;">各枠で作業マスタの作業から選択します</div>
       </div>
       <div class="form-group">
         <label>購入日（登録日）</label>

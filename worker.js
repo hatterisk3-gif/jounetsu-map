@@ -1,7 +1,7 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
       let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
       let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], activeLots = [];
-      let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [];
+      let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
       let selectedPolyIds = [], isMapSelecting = false, backupSelectedPolyIds = [];
       let pendingFiles = [];
       let latestUserPos = null;
@@ -452,6 +452,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
           pdlSignFunctions = data.pdl.signFunctionsMaster || [];
           pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
+          pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
+          pdlMachineGroups = data.pdl.machineGroups || ["農業機械", "農機インプルメント", "出荷機械"];
+          if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
+              && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
+              pdlMachineGroups = data.pdl.machineCategories;
+          }
 
           for(let id in loadedPolygons) { 
               if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
@@ -3842,9 +3848,24 @@ function createSignboardMarker(name, pos, icon, id) {
          const box = document.getElementById(containerId);
          if (!box) return;
          const list = (Array.isArray(values) && values.length > 0) ? values : [''];
+         const workNames = (pdlWorkMaster || []).map(w => String((w && w.name) || w || '').trim()).filter(Boolean);
+         const optionsFor = (selected) => {
+            const selectedVal = String(selected || '').trim();
+            let opts = '<option value="">作業を選択...</option>';
+            const seen = {};
+            workNames.forEach(name => {
+               if (seen[name]) return;
+               seen[name] = true;
+               opts += `<option value="${name.replace(/"/g, '&quot;')}" ${name === selectedVal ? 'selected' : ''}>${name}</option>`;
+            });
+            if (selectedVal && !seen[selectedVal]) {
+               opts += `<option value="${selectedVal.replace(/"/g, '&quot;')}" selected>${selectedVal}</option>`;
+            }
+            return opts;
+         };
          box.innerHTML = list.map((v, i) => `
             <div class="work-cat-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
-              <input type="text" class="form-input work-cat-input" value="${String(v).replace(/"/g, '&quot;')}" placeholder="例: 草刈り / 潅水" style="margin-bottom:0; flex:1;">
+              <select class="form-input work-cat-input" style="margin-bottom:0; flex:1;">${optionsFor(v)}</select>
               <button type="button" onclick="removeWorkCategoryRow('${containerId}', ${i})" title="削除" style="background:#fff; color:#F44336; border:1px solid #ef9a9a; border-radius:6px; width:36px; height:36px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:16px; line-height:1;">×</button>
             </div>
          `).join('') + `
@@ -3875,13 +3896,105 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.buildWorkCategoryFieldHTML = (containerId, labelText) => `
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">${labelText || '作業分類'}</label>
+             <label class="form-label" style="font-size:11px; margin-bottom:2px;">${labelText || '作業分類'}（既存の作業から選択）</label>
              <div id="${containerId}" style="margin-bottom:4px;"></div>
       `;
 
 // ==========================================
       // 農機・車両の新規登録ポップアップ
       // ==========================================
+      window.addMachineTypeFromForm = async (selectId) => {
+          const name = prompt('新しい機械カテゴリ名を入力してください:');
+          if (!name || !name.trim()) return;
+          const t = name.trim();
+          if ((pdlMachineTypes || []).includes(t)) {
+              customAlert('既に登録されています');
+              const sel = document.getElementById(selectId);
+              if (sel) sel.value = t;
+              return;
+          }
+          try {
+              const updated = await callGAS('manageMaster', { masterType: 'machineType', manageAction: 'add', value: t, userName: currentUser });
+              pdlMachineTypes = updated || [...(pdlMachineTypes || []), t];
+              const sel = document.getElementById(selectId);
+              if (sel) {
+                  sel.innerHTML = '<option value="">選択...</option>' + pdlMachineTypes.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+                  sel.value = t;
+              }
+          } catch (e) {
+              customAlert(e.message || '機械カテゴリの追加に失敗しました');
+          }
+      };
+
+      window.addMachineGroupFromForm = async (selectId) => {
+          const name = prompt('新しい機械グループ名を入力してください:');
+          if (!name || !name.trim()) return;
+          const t = name.trim();
+          if ((pdlMachineGroups || []).includes(t)) {
+              customAlert('既に登録されています');
+              const sel = document.getElementById(selectId);
+              if (sel) sel.value = t;
+              return;
+          }
+          try {
+              const updated = await callGAS('manageMaster', { masterType: 'machineGroup', manageAction: 'add', value: t, userName: currentUser });
+              pdlMachineGroups = updated || [...(pdlMachineGroups || []), t];
+              const sel = document.getElementById(selectId);
+              if (sel) {
+                  sel.innerHTML = '<option value="">選択...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+                  sel.value = t;
+              }
+          } catch (e) {
+              customAlert(e.message || '機械グループの追加に失敗しました');
+          }
+      };
+
+      window.renameMachineGroupFromForm = async (selectId) => {
+          const sel = document.getElementById(selectId);
+          if (!sel || !sel.value) { customAlert('編集するグループを選択してください'); return; }
+          const oldName = sel.value;
+          const next = prompt('グループ名を編集してください:', oldName);
+          if (next == null) return;
+          const newName = next.trim();
+          if (!newName) { customAlert('グループ名を入力してください'); return; }
+          if (newName === oldName) return;
+          if ((pdlMachineGroups || []).includes(newName)) { customAlert('既に登録されています'); return; }
+          try {
+              const updated = await callGAS('manageMaster', {
+                  masterType: 'machineGroup',
+                  manageAction: 'edit',
+                  value: { originalName: oldName, newData: { name: newName } },
+                  userName: currentUser
+              });
+              pdlMachineGroups = updated || (pdlMachineGroups || []).map(c => c === oldName ? newName : c);
+              (pdlMachines || []).forEach(m => { if (m.group === oldName) m.group = newName; });
+              sel.innerHTML = '<option value="">選択...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+              sel.value = newName;
+              customAlert('グループ名を更新しました');
+          } catch (e) {
+              customAlert(e.message || '編集に失敗しました');
+          }
+      };
+
+      window.removeMachineGroupFromForm = async (selectId) => {
+          const sel = document.getElementById(selectId);
+          if (!sel || !sel.value) { customAlert('削除するグループを選択してください'); return; }
+          const val = sel.value;
+          if (!await customConfirm(`機械グループ「${val}」をマスタから削除しますか？`)) return;
+          try {
+              const updated = await callGAS('manageMaster', { masterType: 'machineGroup', manageAction: 'delete', value: val, userName: currentUser });
+              pdlMachineGroups = updated || (pdlMachineGroups || []).filter(c => c !== val);
+              sel.innerHTML = '<option value="">選択...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+          } catch (e) {
+              customAlert(e.message || '削除に失敗しました');
+          }
+      };
+
+      // 互換エイリアス（旧名）
+      window.addMachineCategoryFromForm = window.addMachineGroupFromForm;
+      window.renameMachineCategoryFromForm = window.renameMachineGroupFromForm;
+      window.removeMachineCategoryFromForm = window.removeMachineGroupFromForm;
+
       window.openNewMachineModal = (signId, signName) => {
          window.newMachinePendingFiles = []; 
          const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
@@ -3906,10 +4019,30 @@ function createSignboardMarker(name, pos, icon, id) {
 </div>
              <div style="display:flex; gap:5px; margin-bottom:10px;">
                <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">型式</label><input type="text" id="new_mac_model" class="form-input" placeholder="例: K001" style="margin-bottom:0;"></div>
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">機種</label><input type="text" id="new_mac_type" class="form-input" placeholder="例: トラクター" style="margin-bottom:0;"></div>
+               <div style="flex:1;">
+                 <label class="form-label" style="font-size:11px; margin-bottom:2px;">機械カテゴリ</label>
+                 <div style="display:flex; gap:4px;">
+                   <select id="new_mac_type" class="form-input" style="flex:1; margin-bottom:0;">
+                     <option value="">選択...</option>
+                     ${(pdlMachineTypes || []).map(t => `<option value="${String(t).replace(/"/g, '&quot;')}">${t}</option>`).join('')}
+                   </select>
+                   <button type="button" onclick="addMachineTypeFromForm('new_mac_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;">➕</button>
+                 </div>
+               </div>
              </div>
              <div style="display:flex; gap:5px; margin-bottom:10px;">
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">機械グループ</label><input type="text" id="new_mac_group" class="form-input" placeholder="例: 農業機械" style="margin-bottom:0;"></div>
+               <div style="flex:1;">
+                 <label class="form-label" style="font-size:11px; margin-bottom:2px;">機械グループ</label>
+                 <div style="display:flex; gap:4px;">
+                   <select id="new_mac_group" class="form-input" style="flex:1; margin-bottom:0;">
+                     <option value="">選択...</option>
+                     ${(pdlMachineGroups || []).map(t => `<option value="${String(t).replace(/"/g, '&quot;')}">${t}</option>`).join('')}
+                   </select>
+                   <button type="button" onclick="addMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="追加">➕</button>
+                   <button type="button" onclick="renameMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="編集">✏️</button>
+                   <button type="button" onclick="removeMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; color:#c62828; cursor:pointer;" title="削除">➖</button>
+                 </div>
+               </div>
                <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">拠点</label><select id="new_mac_location" class="form-input" style="margin-bottom:0;">${locOpts}</select></div>
              </div>
              <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -4788,10 +4921,30 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
                   <div style="flex:1;"><label class="form-label">型式</label><input type="text" id="edit_mac_model" class="form-input" value="${(m.model || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
-                  <div style="flex:1;"><label class="form-label">機種</label><input type="text" id="edit_mac_type" class="form-input" value="${(m.type || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;">
+                    <label class="form-label">機械カテゴリ</label>
+                    <div style="display:flex; gap:4px;">
+                      <select id="edit_mac_type" class="form-input" style="flex:1; margin-bottom:0;">
+                        <option value="">選択...</option>
+                        ${(pdlMachineTypes || []).map(t => `<option value="${String(t).replace(/"/g, '&quot;')}" ${String(t) === String(m.type || '') ? 'selected' : ''}>${t}</option>`).join('')}
+                      </select>
+                      <button type="button" onclick="addMachineTypeFromForm('edit_mac_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;">➕</button>
+                    </div>
+                  </div>
               </div>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
-                  <div style="flex:1;"><label class="form-label">機械グループ</label><input type="text" id="edit_mac_group" class="form-input" value="${(m.group || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;">
+                    <label class="form-label">機械グループ</label>
+                    <div style="display:flex; gap:4px;">
+                      <select id="edit_mac_group" class="form-input" style="flex:1; margin-bottom:0;">
+                        <option value="">選択...</option>
+                        ${(() => { const groups = [...(pdlMachineGroups || [])]; if (m.group && !groups.includes(m.group)) groups.unshift(m.group); return groups.map(t => `<option value="${String(t).replace(/"/g, '&quot;')}" ${String(t) === String(m.group || '') ? 'selected' : ''}>${t}</option>`).join(''); })()}
+                      </select>
+                      <button type="button" onclick="addMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="追加">➕</button>
+                      <button type="button" onclick="renameMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="編集">✏️</button>
+                      <button type="button" onclick="removeMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; color:#c62828; cursor:pointer;" title="削除">➖</button>
+                    </div>
+                  </div>
                   <div style="flex:1;"><label class="form-label">拠点</label><select id="edit_mac_location" class="form-input" style="margin-bottom:0;">${locOpts}</select></div>
               </div>
               <div style="display:flex; gap:5px; margin-bottom:10px;">

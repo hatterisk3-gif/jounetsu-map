@@ -423,7 +423,10 @@ function getInitData() {
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
-    signFunctionsMaster: getCol(['看板マスタ', '看板機能マスタ', '看板機能'], 0) // ★ここを追加！看板マスタのA列を取得します
+    signFunctionsMaster: getCol(['看板マスタ', '看板機能マスタ', '看板機能'], 0), // ★ここを追加！看板マスタのA列を取得します
+    machineGroups: getMachineGroupMasterList_(),
+    machineTypes: getMachineTypeMasterList_(),
+    machineCategories: getMachineTypeMasterList_() // 互換: 旧キー（機種＝機械カテゴリ）
   };
   
   let workMaster = [];
@@ -675,12 +678,120 @@ function readLocationMasterDetails_() {
   return results;
 }
 
+function ensureMachineTypeMasterSheet_() {
+  const ss = TENANT_SS;
+  // 表示名は「機械カテゴリ」。既存「機種マスタ」を正本とする
+  let sheet = ss.getSheetByName('機種マスタ');
+  if (!sheet) {
+    // グループ用の誤名シートが残っていない場合のみ「機械カテゴリマスタ」をタイプ用とみなす
+    const named = ss.getSheetByName('機械カテゴリマスタ');
+    const groupSheet = ss.getSheetByName('機械グループマスタ');
+    if (named && groupSheet) sheet = named;
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet('機種マスタ');
+    sheet.appendRow(['カテゴリ名']);
+    const defaults = ['トラクター', 'ドローン'];
+    const macSh = ss.getSheetByName('農機マスタ');
+    const fromMachines = [];
+    if (macSh && macSh.getLastRow() > 1) {
+      const md = macSh.getDataRange().getValues();
+      // 機種（機械カテゴリ）列 AA = index 26
+      for (let i = 1; i < md.length; i++) {
+        const t = String(md[i][26] || '').trim();
+        if (t && fromMachines.indexOf(t) < 0) fromMachines.push(t);
+      }
+    }
+    const seed = Array.from(new Set(defaults.concat(fromMachines)));
+    seed.forEach(t => sheet.appendRow([t]));
+  }
+  return sheet;
+}
+
+function getMachineTypeMasterList_() {
+  try {
+    const sheet = ensureMachineTypeMasterSheet_();
+    if (!sheet || sheet.getLastRow() <= 1) return ['トラクター', 'ドローン'];
+    const data = sheet.getDataRange().getValues();
+    return data.slice(1).map(r => String(r[0] || '').trim()).filter(String);
+  } catch (e) {
+    return ['トラクター', 'ドローン'];
+  }
+}
+
+function ensureMachineGroupMasterSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('機械グループマスタ');
+  // 誤って作った「機械カテゴリマスタ」がグループ用だった場合の移行
+  if (!sheet) {
+    const wrong = ss.getSheetByName('機械カテゴリマスタ');
+    if (wrong && wrong.getLastRow() > 1) {
+      const vals = wrong.getDataRange().getValues().slice(1).map(r => String(r[0] || '').trim()).filter(Boolean);
+      const looksLikeGroup = vals.some(v => v === '農業機械' || v === '農機インプルメント' || v === '出荷機械');
+      const looksLikeType = vals.some(v => v === 'トラクター' || v === 'ドローン');
+      if (looksLikeGroup && !looksLikeType) {
+        wrong.setName('機械グループマスタ');
+        sheet = wrong;
+      }
+    } else if (wrong && ss.getSheetByName('機種マスタ')) {
+      // 機種マスタがあるなら、空の機械カテゴリマスタもグループ用誤名とみなす
+      wrong.setName('機械グループマスタ');
+      sheet = wrong;
+    }
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet('機械グループマスタ');
+    sheet.appendRow(['グループ名']);
+    const defaults = ['農業機械', '農機インプルメント', '出荷機械'];
+    const macSh = ss.getSheetByName('農機マスタ');
+    const fromMachines = [];
+    if (macSh && macSh.getLastRow() > 1) {
+      const md = macSh.getDataRange().getValues();
+      // 機械グループ列 = index 25
+      for (let i = 1; i < md.length; i++) {
+        const g = String(md[i][25] || '').trim();
+        if (g && fromMachines.indexOf(g) < 0) fromMachines.push(g);
+      }
+    }
+    const seed = Array.from(new Set(defaults.concat(fromMachines)));
+    seed.forEach(g => sheet.appendRow([g]));
+  }
+  return sheet;
+}
+
+function getMachineGroupMasterList_() {
+  try {
+    const sheet = ensureMachineGroupMasterSheet_();
+    if (!sheet || sheet.getLastRow() <= 1) return ['農業機械', '農機インプルメント', '出荷機械'];
+    const data = sheet.getDataRange().getValues();
+    return data.slice(1).map(r => String(r[0] || '').trim()).filter(String);
+  } catch (e) {
+    return ['農業機械', '農機インプルメント', '出荷機械'];
+  }
+}
+
+function renameMachineGroupInMachines_(oldName, newName) {
+  const sheet = TENANT_SS.getSheetByName('農機マスタ');
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  const data = sheet.getDataRange().getValues();
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][25] || '').trim() === oldName) {
+      sheet.getRange(i + 1, 26).setValue(newName);
+      count++;
+    }
+  }
+  return count;
+}
+
 /// =========================================
 // マスタ管理（★看板マスタの処理を追加）
 // =========================================
 function manageMasterData(masterType, manageAction, value, userName) {
   const ss = TENANT_SS;
   let sheetName = "";
+  // 互換: 旧 machineCategory は機械グループ、machineType は機械カテゴリ（旧機種）
+  if (masterType === 'machineCategory') masterType = 'machineGroup';
   
   if (masterType === 'crop') sheetName = '作物マスタ';
   else if (masterType === 'tool') sheetName = '道具マスタ';
@@ -689,6 +800,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'sign') sheetName = '看板マスタ';
   else if (masterType === 'location') sheetName = '拠点マスタ';
   else if (masterType === 'workCategory') sheetName = '作業カテゴリマスタ';
+  else if (masterType === 'machineType') sheetName = '機種マスタ';
+  else if (masterType === 'machineGroup') sheetName = '機械グループマスタ';
   
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -698,6 +811,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet.appendRow(["圃場作業"]);
           sheet.appendRow(["事務作業"]);
           sheet.appendRow(["保全・整備"]);
+      } else if (masterType === 'machineType') {
+          sheet = ensureMachineTypeMasterSheet_();
+      } else if (masterType === 'machineGroup') {
+          sheet = ensureMachineGroupMasterSheet_();
       } else if (masterType === 'location') {
           sheet = ensureLocationMasterSheet_();
       } else {
@@ -707,6 +824,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
 
   if (masterType === 'location') {
     sheet = ensureLocationMasterSheet_();
+  }
+  if (masterType === 'machineType') {
+    sheet = ensureMachineTypeMasterSheet_();
+  }
+  if (masterType === 'machineGroup') {
+    sheet = ensureMachineGroupMasterSheet_();
   }
 
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
@@ -810,6 +933,27 @@ function manageMasterData(masterType, manageAction, value, userName) {
           break;
         }
       }
+    } else if (masterType === 'machineGroup') {
+      const originalName = String(value.originalName || '').trim();
+      const newName = String((value.newData && value.newData.name) || value.name || '').trim();
+      if (!originalName) throw new Error('変更前のグループ名がありません');
+      if (!newName) throw new Error('グループ名を入力してください');
+      if (newName !== originalName) {
+        const existing = getMachineGroupMasterList_();
+        if (existing.indexOf(newName) >= 0) {
+          throw new Error(`グループ名「${newName}」は既に登録されています`);
+        }
+      }
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === originalName) {
+          sheet.getRange(i + 1, 1).setValue(newName);
+          if (newName !== originalName) {
+            renameMachineGroupInMachines_(originalName, newName);
+          }
+          writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
+          break;
+        }
+      }
     }
   } 
   else if (manageAction === 'delete') {
@@ -822,8 +966,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
       let match = false;
       if (masterType === 'work') {
           if (keyIdx >= 0 && data[i][keyIdx] === targetVal) match = true;
-      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory') {
-          if (data[i][0] === targetVal) match = true;
+      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'machineType' || masterType === 'machineGroup') {
+          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else {
           if (data[i][0] === targetVal || data[i][1] === targetVal) match = true;
       }
@@ -839,6 +983,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
   SpreadsheetApp.flush();
   if (masterType === 'location') {
     return readLocationMasterDetails_();
+  }
+  if (masterType === 'machineType') {
+    return getMachineTypeMasterList_();
+  }
+  if (masterType === 'machineGroup') {
+    return getMachineGroupMasterList_();
   }
   const newData = sheet.getDataRange().getValues();
   const returnHeaders = newData[0].map(h => String(h).trim());

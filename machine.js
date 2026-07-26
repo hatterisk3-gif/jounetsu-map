@@ -37,12 +37,14 @@ let map;
 let fieldPolygons = []; // 圃場表示用
 let pdlLocations = []; // 拠点マスタ
 let pdlSigns = []; // 看板（定位置用）
+let pdlWorkMaster = []; // 作業マスタ（作業分類選択用）
 let machines = {};
 let vehicles = {};
 let pendingVehiclePhotoBase64 = "";
 let pendingMachinePhotoBase64 = "";
 let machineGroups = ["農業機械", "農機インプルメント", "出荷機械"];
 let machineTypes = ["トラクター", "ドローン"];
+let machineCategories = machineTypes; // 互換エイリアス（機械カテゴリ＝旧機種）
 let maintenanceRecords = [];
 let fuelRecords = [];
 let machineMarkers = {};
@@ -117,12 +119,26 @@ async function loadAllData() {
         const initData = await callGAS('getInitData');
         if (initData && initData.pdl) {
             pdlLocations = initData.pdl.locations || [];
+            pdlWorkMaster = initData.pdl.workMaster || [];
+            if (Array.isArray(initData.pdl.machineTypes) && initData.pdl.machineTypes.length) {
+                machineTypes = initData.pdl.machineTypes.slice();
+                machineCategories = machineTypes;
+            }
+            if (Array.isArray(initData.pdl.machineGroups) && initData.pdl.machineGroups.length) {
+                machineGroups = initData.pdl.machineGroups.slice();
+            } else if (Array.isArray(initData.pdl.machineCategories) && initData.pdl.machineCategories.length
+                       && !initData.pdl.machineCategories.some(c => ['トラクター', 'ドローン'].includes(c))) {
+                // 旧実装で machineCategories にグループが入っていた場合のフォールバック
+                machineGroups = initData.pdl.machineCategories.slice();
+            }
         }
         if (initData && initData.polygons) {
             pdlSigns = (initData.polygons || []).filter(p => {
                 let coords = p.coords;
                 try { if (typeof coords === 'string') coords = JSON.parse(coords); } catch (e) { return false; }
-                return Array.isArray(coords) && coords.length === 1;
+                if (!(Array.isArray(coords) && coords.length === 1)) return false;
+                const f = String(p.signFunction || '');
+                return f.includes('車両・機械管理') || f.includes('農機管理');
             }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
             renderFieldPolygons(initData.polygons);
         }
@@ -132,12 +148,13 @@ async function loadAllData() {
         if (machineData.machines) machines = machineData.machines;
         if (machineData.maintenanceRecords) maintenanceRecords = machineData.maintenanceRecords;
         if (machineData.fuelRecords) fuelRecords = machineData.fuelRecords;
-        // グループ・機種の候補を既存データから拡張
+        // グループ・機械カテゴリの候補を既存データから拡張（正本は各マスタ）
         for (let id in machines) {
             const m = machines[id];
             if (m.group && !machineGroups.includes(m.group)) machineGroups.push(m.group);
             if (m.type && !machineTypes.includes(m.type)) machineTypes.push(m.type);
         }
+        machineCategories = machineTypes;
 
         // 移動車両データ取得
         try {
@@ -305,7 +322,7 @@ function openBadgeSelect(actionType) {
     
     document.getElementById('badgeModalTitle').innerText = title;
     
-    // グループ→機種で分類
+    // グループ→機械カテゴリで分類
     let grouped = {};
     for (let id in machines) {
         let m = machines[id];
@@ -400,8 +417,9 @@ function openMachineRegisterModal() {
     // 定位置看板
     let signSel = document.getElementById('regSign');
     if (signSel) {
-        signSel.innerHTML = '<option value="">-- 選択 --</option>' +
-            pdlSigns.map(s => `<option value="${String(s.id).replace(/"/g, '&quot;')}">${s.name || s.id}</option>`).join('');
+        signSel.innerHTML = '<option value="">-- 選択（農機管理機能付き） --</option>' +
+            (pdlSigns.length ? pdlSigns.map(s => `<option value="${String(s.id).replace(/"/g, '&quot;')}">${s.name || s.id}</option>`).join('')
+            : '<option value="" disabled>※「車両・機械管理」機能の看板がありません</option>');
     }
     
     // フォームリセット
@@ -409,7 +427,7 @@ function openMachineRegisterModal() {
     document.getElementById('regMachineNumber').value = '';
     document.getElementById('regLocation').value = '';
     document.getElementById('regSign').value = '';
-    document.getElementById('regWorkCategory').value = '';
+    renderRegWorkCategoryRows(['']);
     document.getElementById('regPurchaseDate').value = '';
     document.getElementById('regModel').value = '';
     document.getElementById('regFuel').value = '';
@@ -433,6 +451,60 @@ function openMachineRegisterModal() {
     document.getElementById('modalMachineRegister').style.display = "flex";
 }
 
+function getWorkMasterOptionsHtml(selected) {
+    const selectedVal = String(selected || '').trim();
+    let html = '<option value="">作業を選択...</option>';
+    const seen = {};
+    (pdlWorkMaster || []).forEach(w => {
+        const name = String((w && w.name) || w || '').trim();
+        if (!name || seen[name]) return;
+        seen[name] = true;
+        html += `<option value="${name.replace(/"/g, '&quot;')}" ${name === selectedVal ? 'selected' : ''}>${name}</option>`;
+    });
+    if (selectedVal && !seen[selectedVal]) {
+        html += `<option value="${selectedVal.replace(/"/g, '&quot;')}" selected>${selectedVal}</option>`;
+    }
+    return html;
+}
+
+function renderRegWorkCategoryRows(values) {
+    const box = document.getElementById('regWorkCategoryRows');
+    if (!box) return;
+    const list = (Array.isArray(values) && values.length) ? values : [''];
+    box.innerHTML = list.map((v, i) => `
+        <div class="reg-work-cat-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+            <select class="reg-work-cat-input" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px;">${getWorkMasterOptionsHtml(v)}</select>
+            <button type="button" onclick="removeRegWorkCategoryRow(${i})" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer;">×</button>
+        </div>
+    `).join('');
+}
+
+function addRegWorkCategoryRow() {
+    const box = document.getElementById('regWorkCategoryRows');
+    if (!box) return;
+    const current = Array.from(box.querySelectorAll('.reg-work-cat-input')).map(el => el.value || '');
+    current.push('');
+    renderRegWorkCategoryRows(current);
+}
+
+function removeRegWorkCategoryRow(index) {
+    const box = document.getElementById('regWorkCategoryRows');
+    if (!box) return;
+    const current = Array.from(box.querySelectorAll('.reg-work-cat-input')).map(el => el.value || '');
+    if (current.length <= 1) current[0] = '';
+    else current.splice(index, 1);
+    renderRegWorkCategoryRows(current);
+}
+
+function collectRegWorkCategoryValue() {
+    const box = document.getElementById('regWorkCategoryRows');
+    if (!box) return '';
+    return Array.from(box.querySelectorAll('.reg-work-cat-input'))
+        .map(el => (el.value || '').trim())
+        .filter(Boolean)
+        .join(', ');
+}
+
 function updateSelectOptions(elementId, items) {
     let sel = document.getElementById(elementId);
     if(!sel) return;
@@ -440,16 +512,115 @@ function updateSelectOptions(elementId, items) {
 }
 
 function addNewItem(type) {
-    let val = prompt("新しい項目名を入力してください:");
+    let val = prompt(type === 'MachineGroup' ? "新しい機械グループ名を入力してください:" : (type === 'MachineType' ? "新しい機械カテゴリ名を入力してください:" : "新しい項目名を入力してください:"));
+    if (!val) return;
+    val = val.trim();
     if (!val) return;
     if (type === 'MachineGroup') {
+        addMachineGroupToMaster(val);
+    } else if (type === 'MachineType') {
+        addMachineTypeToMaster(val);
+    }
+}
+
+async function addMachineGroupToMaster(val) {
+    if (machineGroups.includes(val)) {
+        updateSelectOptions('regMachineGroup', machineGroups);
+        document.getElementById('regMachineGroup').value = val;
+        return;
+    }
+    try {
+        const updated = await callGAS('manageMaster', { masterType: 'machineGroup', manageAction: 'add', value: val });
+        machineGroups = Array.isArray(updated) && updated.length ? updated : [...machineGroups, val];
+        updateSelectOptions('regMachineGroup', machineGroups);
+        document.getElementById('regMachineGroup').value = val;
+        showToast('機械グループを追加しました');
+    } catch (e) {
         if (!machineGroups.includes(val)) machineGroups.push(val);
         updateSelectOptions('regMachineGroup', machineGroups);
         document.getElementById('regMachineGroup').value = val;
-    } else if (type === 'MachineType') {
+        alert('機械グループマスタへの保存に失敗したため、この画面のみに追加しました: ' + e.message);
+    }
+}
+
+async function renameSelectedMachineGroup() {
+    const sel = document.getElementById('regMachineGroup');
+    if (!sel || !sel.value) { alert('編集するグループを選択してください'); return; }
+    const oldName = sel.value;
+    const next = prompt(`グループ名を編集してください:`, oldName);
+    if (next == null) return;
+    const newName = next.trim();
+    if (!newName) { alert('グループ名を入力してください'); return; }
+    if (newName === oldName) return;
+    if (machineGroups.includes(newName)) { alert('同じグループ名が既にあります'); return; }
+    try {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'machineGroup',
+            manageAction: 'edit',
+            value: { originalName: oldName, newData: { name: newName } }
+        });
+        machineGroups = Array.isArray(updated) && updated.length ? updated : machineGroups.map(c => c === oldName ? newName : c);
+        for (let id in machines) {
+            if (machines[id].group === oldName) machines[id].group = newName;
+        }
+        updateSelectOptions('regMachineGroup', machineGroups);
+        document.getElementById('regMachineGroup').value = newName;
+        showToast('機械グループ名を更新しました');
+    } catch (e) {
+        alert('編集に失敗しました: ' + e.message);
+    }
+}
+
+async function removeSelectedMachineGroup() {
+    const sel = document.getElementById('regMachineGroup');
+    if (!sel || !sel.value) { alert('削除するグループを選択してください'); return; }
+    const val = sel.value;
+    if (!confirm(`機械グループ「${val}」をマスタから削除しますか？\n※既に登録済みの機械のグループ値自体は残ります。`)) return;
+    try {
+        const updated = await callGAS('manageMaster', { masterType: 'machineGroup', manageAction: 'delete', value: val });
+        machineGroups = Array.isArray(updated) ? updated : machineGroups.filter(t => t !== val);
+        updateSelectOptions('regMachineGroup', machineGroups);
+        showToast('機械グループを削除しました');
+    } catch (e) {
+        alert('削除に失敗しました: ' + e.message);
+    }
+}
+
+async function addMachineTypeToMaster(val) {
+    if (machineTypes.includes(val)) {
+        updateSelectOptions('regMachineType', machineTypes);
+        document.getElementById('regMachineType').value = val;
+        return;
+    }
+    try {
+        const updated = await callGAS('manageMaster', { masterType: 'machineType', manageAction: 'add', value: val });
+        machineTypes = Array.isArray(updated) && updated.length ? updated : [...machineTypes, val];
+        machineCategories = machineTypes;
+        updateSelectOptions('regMachineType', machineTypes);
+        document.getElementById('regMachineType').value = val;
+        showToast('機械カテゴリを追加しました');
+    } catch (e) {
+        // オフライン時などはローカルのみ追加
         if (!machineTypes.includes(val)) machineTypes.push(val);
         updateSelectOptions('regMachineType', machineTypes);
         document.getElementById('regMachineType').value = val;
+        alert('機械カテゴリマスタへの保存に失敗したため、この画面のみに追加しました: ' + e.message);
+    }
+}
+
+async function removeSelectedMachineType() {
+    const sel = document.getElementById('regMachineType');
+    if (!sel || !sel.value) { alert('削除する機械カテゴリを選択してください'); return; }
+    const val = sel.value;
+    if (!confirm(`機械カテゴリ「${val}」をマスタから削除しますか？`)) return;
+    try {
+        const updated = await callGAS('manageMaster', { masterType: 'machineType', manageAction: 'delete', value: val });
+        machineTypes = Array.isArray(updated) ? updated : machineTypes.filter(t => t !== val);
+        machineCategories = machineTypes;
+        updateSelectOptions('regMachineType', machineTypes);
+        showToast('機械カテゴリを削除しました');
+    } catch (e) {
+        alert('削除に失敗しました: ' + e.message);
     }
 }
 
@@ -466,7 +637,7 @@ async function saveMachineRegistration() {
         model: document.getElementById('regModel').value.trim(),
         type: document.getElementById('regMachineType').value,
         fuel: document.getElementById('regFuel').value,
-        workCategory: document.getElementById('regWorkCategory').value.trim(),
+        workCategory: collectRegWorkCategoryValue(),
         signId: signId,
         signName: signName,
         currentLocId: signId,

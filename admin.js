@@ -160,7 +160,7 @@ window.onLocationCityChange = function(sel) {
     const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [], pdlWorkCategories = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 let latestUserPos = null;
@@ -446,6 +446,13 @@ function renderInitData(data) {
     pdlMaterials = data.pdl.materials || [];
     pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
     pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
+    pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
+    pdlMachineGroups = data.pdl.machineGroups || ["農業機械", "農機インプルメント", "出荷機械"];
+    // 旧実装で machineCategories にグループが入っていた場合
+    if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
+        && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
+        pdlMachineGroups = data.pdl.machineCategories;
+    }
 
     const html = (list) => list.map(l => `<option value="${l}">${l}</option>`).join('');
     const locEl = document.getElementById('fieldLocation');
@@ -554,16 +561,88 @@ window.buildDetailWorksEditorHtml = (containerId, detailWorksStr, placeholder = 
         <button type="button" onclick="addDetailWorkRow('${containerId}', '', '${safePh}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ 追加</button>`;
 };
 
+window.getWorkMasterOptionsHtml = (selected) => {
+    const selectedVal = String(selected || '').trim();
+    let html = '<option value="">作業を選択...</option>';
+    const names = (pdlWorkMaster || []).map(w => String((w && w.name) || w || '').trim()).filter(Boolean);
+    const seen = {};
+    names.forEach(name => {
+        if (seen[name]) return;
+        seen[name] = true;
+        const sel = name === selectedVal ? 'selected' : '';
+        html += `<option value="${name.replace(/"/g, '&quot;')}" ${sel}>${name}</option>`;
+    });
+    if (selectedVal && !seen[selectedVal]) {
+        html += `<option value="${selectedVal.replace(/"/g, '&quot;')}" selected>${selectedVal}</option>`;
+    }
+    return html;
+};
+
+window.addMachineWorkCategoryRow = (containerId, value = '') => {
+    const box = document.getElementById(containerId);
+    if (!box) return;
+    const row = document.createElement('div');
+    row.className = 'detail-work-row';
+    row.style.cssText = 'display:flex; gap:6px; align-items:center; margin-bottom:6px;';
+    row.innerHTML = `<select class="form-input detail-work-input" style="flex:1; margin-bottom:0; padding:8px;">${getWorkMasterOptionsHtml(value)}</select><button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>`;
+    box.appendChild(row);
+};
+
+window.buildMachineWorkCategoryEditorHtml = (containerId, workCategoryStr) => {
+    const items = String(workCategoryStr || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const list = items.length ? items : [''];
+    const rows = list.map(item => {
+        return `<div class="detail-work-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+            <select class="form-input detail-work-input" style="flex:1; margin-bottom:0; padding:8px;">${getWorkMasterOptionsHtml(item)}</select>
+            <button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>
+        </div>`;
+    }).join('');
+    return `<div id="${containerId}" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:8px;">${rows}</div>
+        <button type="button" onclick="addMachineWorkCategoryRow('${containerId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ 作業を追加</button>`;
+};
+
+window.isMachineManageSign = (p) => {
+    const f = String((p && p.signFunction) || '');
+    return f.includes('車両・機械管理') || f.includes('農機管理');
+};
+
 window.getAdminSignOptionsHtml = (selectedId) => {
-    const signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker);
+    const signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker && isMachineManageSign(p));
     signs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
-    let html = '<option value="">定位置の看板を選択...</option>';
+    let html = '<option value="">定位置の看板を選択（農機管理機能付き）...</option>';
+    if (signs.length === 0) {
+        html += '<option value="" disabled>※「車両・機械管理」機能の看板がありません</option>';
+    }
     signs.forEach(p => {
         const sel = String(p.id) === String(selectedId || '') ? 'selected' : '';
         html += `<option value="${String(p.id).replace(/"/g, '&quot;')}" ${sel}>${p.name || p.id}</option>`;
     });
     return html;
 };
+
+window.getMachineTypeOptionsHtml = (selected) => {
+    const list = pdlMachineTypes || [];
+    let html = '<option value="">機械カテゴリを選択...</option>';
+    list.forEach(t => {
+        const sel = String(t) === String(selected || '') ? 'selected' : '';
+        html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
+    });
+    return html;
+};
+
+window.getMachineGroupOptionsHtml = (selected) => {
+    const list = [...(pdlMachineGroups || [])];
+    if (selected && !list.includes(selected)) list.unshift(selected);
+    let html = '<option value="">機械グループを選択...</option>';
+    list.forEach(t => {
+        const sel = String(t) === String(selected || '') ? 'selected' : '';
+        html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
+    });
+    return html;
+};
+
+// 互換エイリアス
+window.getMachineCategoryOptionsHtml = window.getMachineGroupOptionsHtml;
 
 window.renderMasterSection = () => {
     const pdlMachines = window.pdlMachines || [];
@@ -592,6 +671,8 @@ window.renderMasterSection = () => {
             </div>`;
         }
         else if (type === 'workCategory') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_workCategory_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="カテゴリ名 (例: 圃場作業)"><button onclick="execMaster('workCategory', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
+        else if (type === 'machineType') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_machineType_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="カテゴリ名 (例: トラクター)"><button onclick="execMaster('machineType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
+        else if (type === 'machineGroup') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_machineGroup_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="グループ名 (例: 農業機械)"><button onclick="execMaster('machineGroup', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
         else if (type === 'tool') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_tool_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="道具名 (例:草刈機)"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_tool_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select><button onclick="execMaster('tool', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div><input type="text" id="add_tool_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）">`; }
         else if (type === 'material') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_mat_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="資材名"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_mat_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select></div><input type="text" id="add_mat_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）"><div style="display:flex; gap:5px; margin-bottom:5px;"><input type="text" id="add_mat_size" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="容量 (例:20)"><input type="text" id="add_mat_unit" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="単位 (例:kg)"><button onclick="execMaster('material', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
         else if (type === 'work') { const funcOpts = '<option value="">+ 対応看板機能...</option>' + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join(''); const catOpts = pdlWorkCategories.map(c => `<option value="${c}">${c}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><select id="add_work_category" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${catOpts}</select><input type="text" id="add_work_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作業名"><select id="add_work_place" class="form-input" style="flex:1; margin-bottom:0; padding:6px;"><option value="圃場">圃場</option><option value="看板">看板</option><option value="全て">全て</option></select></div><div style="margin-bottom:5px;"><div style="font-size:11px; color:#666; margin-bottom:4px;">詳細作業（各枠に1つ）</div>${buildDetailWorksEditorHtml('add_work_details_list', '')}<select id="add_work_func" class="form-input" style="width:100%; margin-bottom:0; padding:6px;">${funcOpts}</select></div><button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; width:100%; border-radius:4px; border:none; padding:8px; font-weight:bold; margin-bottom:5px;">作業マスタを追加</button>`; }
@@ -604,10 +685,10 @@ window.renderMasterSection = () => {
               </div>
               <div style="display:flex; gap:5px;">
                 <input type="text" id="add_mac_model" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="型式">
-                <input type="text" id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="機種 (例:トラクター)">
+                <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${getMachineTypeOptionsHtml('')}</select>
               </div>
               <div style="display:flex; gap:5px;">
-                <input type="text" id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="機械グループ">
+                <select id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${getMachineGroupOptionsHtml('')}</select>
                 <select id="add_mac_location" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${locOpts}</select>
               </div>
               <div style="display:flex; gap:5px;">
@@ -622,10 +703,10 @@ window.renderMasterSection = () => {
                 </select>
               </div>
               <select id="add_mac_sign" class="form-input" style="width:100%; margin-bottom:0; padding:6px;">${getAdminSignOptionsHtml('')}</select>
-              <div style="font-size:11px; color:#666; margin-top:2px;">作業分類（各枠に1つ）</div>
-              ${buildDetailWorksEditorHtml('add_mac_category_rows', '', '作業分類')}
+              <div style="font-size:11px; color:#666; margin-top:2px;">作業分類（各枠で既存の作業から1つ選択）</div>
+              ${buildMachineWorkCategoryEditorHtml('add_mac_category_rows', '')}
               <button onclick="execMaster('machine', 'add')" style="background:#4CAF50; color:white; width:100%; border-radius:4px; border:none; padding:8px; font-weight:bold;">農機を追加</button>
-              <div style="font-size:11px; color:#666;">※定位置は地図上の看板から選びます。看板が無い場合は先に看板を設置してください。</div>
+              <div style="font-size:11px; color:#666;">※定位置は「車両・機械管理」機能付き看板のみ選択できます。機械カテゴリ・機械グループの追加・削除は下の各マスタから行えます。</div>
             </div>`;
         }
 
@@ -653,9 +734,12 @@ window.renderMasterSection = () => {
             if (type === 'work') {
                 const safeV = encodeURIComponent(JSON.stringify(v));
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditWorkMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
-            } else if (type === 'location' && typeof v === 'object') {
+            } else             if (type === 'location' && typeof v === 'object') {
                 const safeV = encodeURIComponent(JSON.stringify(v));
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditLocationMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
+            } else if (type === 'machineGroup') {
+                const safeName = encodeURIComponent(String(dispName));
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span></div><div><span onclick="openEditMachineGroupMaster('${safeName}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
             } else if (type === 'machine') {
                 const safeV = encodeURIComponent(JSON.stringify(v));
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditMachineMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
@@ -666,7 +750,7 @@ window.renderMasterSection = () => {
         return html + `</div></div>`;
     };
     const machinesSorted = [...pdlMachines].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
-    let content = buildHTML('🌱 作物マスタ', 'crop', pdlCrops) + buildHTML('🪧 看板マスタ', 'sign', pdlSignFunctions) + buildHTML('🏢 拠点マスタ', 'location', pdlLocationDetails.length ? pdlLocationDetails : pdlLocations) + buildHTML('📂 作業カテゴリマスタ', 'workCategory', pdlWorkCategories) + buildHTML('🚜 作業記録マスタ', 'work', pdlWorkMaster) + buildHTML('🚜 農機マスタ', 'machine', machinesSorted) + buildHTML('🔧 道具マスタ', 'tool', pdlTools) + buildHTML('📦 資材マスタ', 'material', pdlMaterials);
+    let content = buildHTML('🌱 作物マスタ', 'crop', pdlCrops) + buildHTML('🪧 看板マスタ', 'sign', pdlSignFunctions) + buildHTML('🏢 拠点マスタ', 'location', pdlLocationDetails.length ? pdlLocationDetails : pdlLocations) + buildHTML('📂 作業カテゴリマスタ', 'workCategory', pdlWorkCategories) + buildHTML('🏷️ 機械カテゴリマスタ', 'machineType', pdlMachineTypes) + buildHTML('📁 機械グループマスタ', 'machineGroup', pdlMachineGroups) + buildHTML('🚜 作業記録マスタ', 'work', pdlWorkMaster) + buildHTML('🚜 農機マスタ', 'machine', machinesSorted) + buildHTML('🔧 道具マスタ', 'tool', pdlTools) + buildHTML('📦 資材マスタ', 'material', pdlMaterials);
     document.getElementById('masterSections').innerHTML = content;
 };
 
@@ -698,6 +782,25 @@ window.openEditLocationMaster = (encodedStr) => {
     ensureJpCitiesLoaded().then(() => {
         populateLocationCitySelect('edit', v.prefecture || '', v.city || '');
     });
+};
+
+window.openEditMachineGroupMaster = (encodedName) => {
+    const name = decodeURIComponent(encodedName || '');
+    const safeName = String(name).replace(/"/g, '&quot;');
+    const html = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h3 style="margin-top:0; color:#FF9800;">✏️ 機械グループの編集</h3>
+            <input type="hidden" id="edit_machineGroup_original_name" value="${safeName}">
+            <label class="form-label">グループ名</label>
+            <input type="text" id="edit_machineGroup_name" class="form-input" value="${safeName}">
+            <div style="font-size:12px; color:#666; margin-top:6px;">※名前を変更すると、農機マスタ側の同じグループもまとめて更新されます。</div>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('machineGroup', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold;">更新する</button>
+                <button onclick="renderMasterSection()" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    document.getElementById('masterSections').innerHTML = html;
 };
 
 window.openEditWorkMaster = (encodedStr) => {
@@ -741,8 +844,6 @@ window.openEditMachineMaster = (encodedStr) => {
     const safeName = (v.name || "").replace(/"/g, '&quot;');
     const safeModel = (v.model || "").replace(/"/g, '&quot;');
     const safeNumber = (v.machineNumber || "").replace(/"/g, '&quot;');
-    const safeType = (v.type || "").replace(/"/g, '&quot;');
-    const safeGroup = (v.group || "").replace(/"/g, '&quot;');
     const purchaseDate = String(v.purchaseDate || '').replace(/\//g, '-');
     const fuel = v.fuel || v.fuelType || '';
     const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => {
@@ -763,10 +864,10 @@ window.openEditMachineMaster = (encodedStr) => {
             <input type="text" id="edit_mac_number" class="form-input" value="${safeNumber}">
             <label class="form-label">型式</label>
             <input type="text" id="edit_mac_model" class="form-input" value="${safeModel}">
-            <label class="form-label">機種</label>
-            <input type="text" id="edit_mac_type" class="form-input" value="${safeType}" placeholder="例:トラクター">
+            <label class="form-label">機械カテゴリ</label>
+            <select id="edit_mac_type" class="form-input">${getMachineTypeOptionsHtml(v.type || '')}</select>
             <label class="form-label">機械グループ</label>
-            <input type="text" id="edit_mac_group" class="form-input" value="${safeGroup}" placeholder="例:農業機械">
+            <select id="edit_mac_group" class="form-input">${getMachineGroupOptionsHtml(v.group || '')}</select>
             <label class="form-label">拠点</label>
             <select id="edit_mac_location" class="form-input">${locOpts}</select>
             <label class="form-label">燃料</label>
@@ -775,8 +876,8 @@ window.openEditMachineMaster = (encodedStr) => {
             <input type="date" id="edit_mac_date" class="form-input" value="${purchaseDate}">
             <label class="form-label">定位置（参考表示）</label>
             <input type="text" class="form-input" value="${(v.signName || v.currentLocName || '未設定').replace(/"/g, '&quot;')}" readonly style="background:#f4f6f8; color:#666;">
-            <label class="form-label">作業分類（各枠に1つ）</label>
-            ${buildDetailWorksEditorHtml('edit_mac_category_rows', v.workCategory || '', '作業分類')}
+            <label class="form-label">作業分類（各枠で既存の作業から1つ選択）</label>
+            ${buildMachineWorkCategoryEditorHtml('edit_mac_category_rows', v.workCategory || '')}
             <div style="display:flex; gap:10px; margin-top:15px;">
                 <button onclick="execMaster('machine', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold;">更新する</button>
                 <button onclick="renderMasterSection()" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold;">キャンセル</button>
@@ -884,6 +985,8 @@ window.execMaster = async (type, act, val) => {
             };
         }
         else if (type === 'workCategory') { const name = document.getElementById('add_workCategory_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } value = name; }
+        else if (type === 'machineType') { const name = document.getElementById('add_machineType_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } if ((pdlMachineTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
+        else if (type === 'machineGroup') { const name = document.getElementById('add_machineGroup_name').value.trim(); if (!name) { customAlert("グループ名を入力してください"); return; } if ((pdlMachineGroups || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'material') { const name = document.getElementById('add_mat_name').value.trim(); if (!name) { customAlert("資材名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_mat_cat').value.trim(), size: document.getElementById('add_mat_size').value.trim(), unit: document.getElementById('add_mat_unit').value.trim() }; }
         else if (type === 'work') {
@@ -930,12 +1033,24 @@ window.execMaster = async (type, act, val) => {
                     detailWorks: collectDetailWorksFromInputs('edit_work_details_list')
                 }
             };
+        } else if (type === 'machineGroup') {
+            const originalName = document.getElementById('edit_machineGroup_original_name').value;
+            const newName = document.getElementById('edit_machineGroup_name').value.trim();
+            if (!newName) { customAlert("グループ名を入力してください"); return; }
+            if (newName !== String(originalName || "").trim() && (pdlMachineGroups || []).includes(newName)) {
+                customAlert("既に登録されています");
+                return;
+            }
+            value = {
+                originalName: originalName,
+                newData: { name: newName }
+            };
         }
     } else { if (!await customConfirm(`削除しますか？`)) return; value = { id: val }; }
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
     try {
         const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
-        if (type === 'crop') pdlCrops = updatedList; else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList;
+        if (type === 'crop') pdlCrops = updatedList; else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
         // 再読み込み時に古い値が表示されないよう、初期データキャッシュを破棄して次回は最新を取得させる
         localStorage.removeItem('pMapAdminInitData');
         renderMasterSection();
