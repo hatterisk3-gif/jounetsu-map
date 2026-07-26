@@ -391,31 +391,41 @@ function getInitData() {
     return [];
   };
 
-  // 拠点マスタの自動移行処理
-  ensureLocationMasterSheet_();
-  let locSheet = ss.getSheetByName('拠点マスタ');
-  
-  if (locSheet.getLastRow() <= 1) {
-    const fieldSheet = ss.getSheetByName('圃場設定マスタ');
-    if (fieldSheet) {
-      const fieldData = fieldSheet.getDataRange().getValues();
-      let locs = new Set();
-      for (let i = 1; i < fieldData.length; i++) {
-        if (fieldData[i][0]) locs.add(String(fieldData[i][0]).trim());
-      }
-      locs.forEach(l => {
-        if (l !== '拠点名' && l !== '拠点') {
-          locSheet.appendRow([l, '', '', '']);
+  // 拠点マスタの自動移行処理（失敗しても圃場読込は続ける）
+  try {
+    ensureLocationMasterSheet_();
+    let locSheet = ss.getSheetByName('拠点マスタ');
+    
+    if (locSheet && locSheet.getLastRow() <= 1) {
+      const fieldSheet = ss.getSheetByName('圃場設定マスタ');
+      if (fieldSheet) {
+        const fieldData = fieldSheet.getDataRange().getValues();
+        let locs = new Set();
+        for (let i = 1; i < fieldData.length; i++) {
+          if (fieldData[i][0]) locs.add(String(fieldData[i][0]).trim());
         }
-      });
-      // 移行後、圃場設定マスタのA列(値のみ)をクリアする（ヘッダー行は残す）
-      if (fieldData.length > 1) {
-        fieldSheet.getRange(2, 1, fieldData.length - 1, 1).clearContent();
+        locs.forEach(l => {
+          if (l !== '拠点名' && l !== '拠点') {
+            // appendRow の列数不一致を避ける
+            const r = locSheet.getLastRow() + 1;
+            locSheet.getRange(r, 1, r, 4).setValues([[l, '', '', '']]);
+          }
+        });
+        // 移行後、圃場設定マスタのA列(値のみ)をクリアする（ヘッダー行は残す）
+        if (fieldData.length > 1) {
+          fieldSheet.getRange(2, 1, fieldData.length - 1, 1).clearContent();
+        }
       }
     }
+  } catch (e) {
+    console.warn('拠点マスタ移行スキップ:', e);
   }
 
-  const locationDetails = readLocationMasterDetails_();
+  let locationDetails = [];
+  try { locationDetails = readLocationMasterDetails_(); } catch (e) {
+    console.warn('拠点マスタ読み込みスキップ:', e);
+    locationDetails = [];
+  }
   const pdl = {
     locations: locationDetails.map(l => l.name),
     locationDetails: locationDetails,
@@ -503,15 +513,22 @@ pdl.signLinks = {};
      }
   }
 // 農機マスタの読み込み（機械管理と統一フィールド）
+  // ※列拡張エラーで getInitData 全体を落とさない
   pdl.machines = [];
-  const macSh = ensureNoukiMasterSheet();
-  if(macSh) {
-     const md = macSh.getDataRange().getValues();
-     for(let i=1; i<md.length; i++) { 
-       if(md[i][1]) {
-         pdl.machines.push(parseNoukiMachineRow(md[i]));
-       }
-     }
+  try {
+    const macSh = ensureNoukiMasterSheet();
+    if (macSh) {
+      const md = macSh.getDataRange().getValues();
+      for (let i = 1; i < md.length; i++) {
+        if (md[i][1]) {
+          try { pdl.machines.push(parseNoukiMachineRow(md[i])); } catch (rowErr) {
+            console.warn('農機行スキップ:', md[i][0], rowErr);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('農機マスタ読み込みスキップ:', e);
   }
 
   // ★注意：この下にあった pdl.symptoms = []; と、作業記録マスタから
@@ -2407,7 +2424,9 @@ function addMachineToSign(params) {
     lng: params.lng || "",
     maintenanceSettings: params.maintenanceSettings || []
   });
-  sheet.appendRow(row);
+  // appendRow はシート列幅と不一致で失敗することがあるため明示範囲に書く
+  const nextRow = sheet.getLastRow() + 1;
+  sheet.getRange(nextRow, 1, nextRow, row.length).setValues([row]);
 
   writeLog(params.userName, "農機新規登録", params.name, `定位置: ${signName}`);
   
@@ -4416,14 +4435,23 @@ function ensureNoukiMasterSheet() {
   let sheet = TENANT_SS.getSheetByName('農機マスタ');
   if (!sheet) {
     sheet = TENANT_SS.insertSheet('農機マスタ');
-    sheet.appendRow(NOUKI_EXT_HEADERS);
+    // appendRow はシート列幅と不一致で落ちることがあるため setValues を使う
+    sheet.getRange(1, 1, 1, NOUKI_EXT_HEADERS.length).setValues([NOUKI_EXT_HEADERS]);
+    try { sheet.getRange(1, 1, 1, NOUKI_EXT_HEADERS.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
     return sheet;
   }
-  const lastCol = Math.max(sheet.getLastColumn(), 1);
-  if (lastCol < NOUKI_EXT_HEADERS.length) {
-    const startCol = lastCol + 1;
-    const missing = NOUKI_EXT_HEADERS.slice(lastCol);
-    sheet.getRange(1, startCol, 1, startCol + missing.length - 1).setValues([missing]);
+  // 不足ヘッダーは1セルずつ埋める（「data has 7 / range has 32」列数不一致を避ける）
+  const needed = NOUKI_EXT_HEADERS.length;
+  let lastCol = 1;
+  try { lastCol = Math.max(sheet.getLastColumn(), 1); } catch (e) { lastCol = 1; }
+  for (let c = 1; c <= needed; c++) {
+    let current = '';
+    try {
+      if (c <= lastCol) current = String(sheet.getRange(1, c).getValue() || '').trim();
+    } catch (e) { current = ''; }
+    if (!current) {
+      try { sheet.getRange(1, c).setValue(NOUKI_EXT_HEADERS[c - 1]); } catch (e) {}
+    }
   }
   return sheet;
 }
@@ -4562,7 +4590,8 @@ function migrateMachineMasterToNouki() {
       currentLocName: "",
       currentLocId: ""
     });
-    nouki.appendRow(row);
+    const nextRow = nouki.getLastRow() + 1;
+    nouki.getRange(nextRow, 1, nextRow, row.length).setValues([row]);
     existingIds[newId] = true;
     existingKeys[key] = true;
     migrated++;
@@ -4652,7 +4681,8 @@ function machine_saveMachine(p) {
   if (rowIdx !== -1) {
     sheet.getRange(rowIdx, 1, rowIdx, rowData.length).setValues([rowData]);
   } else {
-    sheet.appendRow(rowData);
+    const nextRow = sheet.getLastRow() + 1;
+    sheet.getRange(nextRow, 1, nextRow, rowData.length).setValues([rowData]);
   }
   return { success: true, machine: parseNoukiMachineRow(rowData) };
 }
