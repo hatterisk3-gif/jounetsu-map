@@ -1665,6 +1665,18 @@ function createSignboardMarker(name, pos, icon, id) {
             </span>`;
           }).join(''); 
         }
+
+        // 圃場が選択されている場合、その圃場の最新の進捗状況を反省
+        if (typeof currentEditRecordId === 'undefined' || !currentEditRecordId) {
+          const targetPolyId = (selectedPolyIds && selectedPolyIds.length > 0) ? selectedPolyIds[0] : activePolyId;
+          if (targetPolyId && loadedPolygons && loadedPolygons[targetPolyId] && !loadedPolygons[targetPolyId].isMarker) {
+             const polyStatus = window.getFieldLatestProgressStatus ? window.getFieldLatestProgressStatus(targetPolyId) : '';
+             if (polyStatus && typeof window.selectProgressStatus === 'function') {
+                window.selectProgressStatus(polyStatus);
+             }
+          }
+        }
+
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
       };
@@ -1724,6 +1736,9 @@ function createSignboardMarker(name, pos, icon, id) {
               }
             });
           }
+        }
+        if (latestEnd === '12:00' || latestEnd === '12:00:00' || latestEnd === '12時') {
+          latestEnd = '13:00';
         }
         return latestEnd;
       };
@@ -2049,6 +2064,32 @@ function createSignboardMarker(name, pos, icon, id) {
         if (hiddenInput) hiddenInput.value = currentCat;
       };
 
+      window.getFieldLatestProgressStatus = (polyId) => {
+        if (!polyId || !loadedPolygons || !loadedPolygons[polyId]) return '';
+        const p = loadedPolygons[polyId];
+        if (p.isMarker) return '';
+        
+        if (p.photos && Array.isArray(p.photos) && p.photos.length > 0) {
+          let latestStatus = '';
+          let maxTime = -1;
+          p.photos.forEach(ph => {
+            if (ph && ph.data && ph.data.progressStatus) {
+              const dStr = ph.data.workDate || ph.date || '';
+              const tStr = ph.data.endTime || ph.data.startTime || ph.time || '00:00';
+              const timeMs = new Date(dStr.replace(/\//g, '-').replace(/-/g, '/') + ' ' + tStr).getTime() || 0;
+              if (timeMs >= maxTime) {
+                maxTime = timeMs;
+                latestStatus = ph.data.progressStatus;
+              }
+            }
+          });
+          if (latestStatus) return latestStatus;
+        }
+        if (p.progressStatus) return p.progressStatus;
+        if (p.status && ['未着手', '途中', '作業中', '完了'].includes(p.status)) return p.status;
+        return '';
+      };
+
       window.selectProgressStatus = (statusName) => {
         const hiddenInput = document.getElementById('rec_progress_status');
         if (hiddenInput) hiddenInput.value = statusName;
@@ -2083,8 +2124,19 @@ function createSignboardMarker(name, pos, icon, id) {
         const wrapper = document.getElementById('progress_status_buttons_wrapper');
         if (!wrapper) return;
 
-        const statuses = (pdlWorkStatuses && pdlWorkStatuses.length > 0) ? pdlWorkStatuses : ["途中", "完了"];
-        const currentStatus = selectedStatus || (document.getElementById('rec_progress_status') ? document.getElementById('rec_progress_status').value : '') || '';
+        const statuses = (pdlWorkStatuses && pdlWorkStatuses.length > 0) ? pdlWorkStatuses : ["未着手", "途中", "完了"];
+        
+        let currentStatus = selectedStatus;
+        if (!currentStatus) {
+           currentStatus = (document.getElementById('rec_progress_status') ? document.getElementById('rec_progress_status').value : '') || '';
+        }
+
+        // 圃場が選択されている場合は圃場ごとに最新の進捗状況を適用
+        if (!currentStatus && activePolyId && loadedPolygons && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker) {
+           if (typeof window.getFieldLatestProgressStatus === 'function') {
+              currentStatus = window.getFieldLatestProgressStatus(activePolyId);
+           }
+        }
 
         wrapper.innerHTML = statuses.map(s => {
            const isSelected = (s === currentStatus);
@@ -2106,7 +2158,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }).join('');
 
         const hiddenInput = document.getElementById('rec_progress_status');
-        if (hiddenInput) hiddenInput.value = currentStatus;
+        if (hiddenInput) hiddenInput.value = currentStatus || '';
       };
 
       window.getTotalWorkMinutes = () => {
