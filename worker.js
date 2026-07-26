@@ -2502,6 +2502,30 @@ function createSignboardMarker(name, pos, icon, id) {
               }
           });
           handleWorkNameChange(wName);
+          if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar(wName);
+      };
+
+      window.isWorkerAdmin = () => (localStorage.getItem('passionMapUserRole') || '作業員') === '管理者';
+
+      window.buildWorkChipHtml = (w, isRecent) => {
+          const wName = String((w && w.name) || w || '').trim();
+          if (!wName) return '';
+          const wCat = (w && w.category) ? w.category : '圃場作業';
+          const details = (w && w.detailWorks) ? w.detailWorks : '';
+          const safeName = wName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const safeAttr = wName.replace(/"/g, '&quot;');
+          const chipBg = isRecent ? '#fff3e0' : '#f4f6f8';
+          const chipColor = isRecent ? '#e65100' : '#333';
+          const chipBorder = isRecent ? '#ffb74d' : '#ccc';
+          const chipClass = isRecent ? 'work-chip recent-work-chip' : 'work-chip all-work-chip';
+          const adminBtns = window.isWorkerAdmin()
+              ? `<button type="button" onclick="event.stopPropagation(); adminEditWorkName('${safeName}')" title="作業名を編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:12px; padding:0; flex-shrink:0;">✏️</button>
+                 <button type="button" onclick="event.stopPropagation(); adminDeleteWorkName('${safeName}')" title="作業名を削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:12px; padding:0; flex-shrink:0;">🗑️</button>`
+              : '';
+          return `<div class="work-chip-row" style="display:inline-flex; align-items:center; gap:3px;">
+              <button type="button" class="${chipClass}" data-recent="${isRecent ? 'true' : 'false'}" data-category="${String(wCat).replace(/"/g, '&quot;')}" data-wname="${safeAttr}" data-details="${encodeURIComponent(details)}" onclick="selectWorkChip('${safeName}')" style="background:${chipBg}; color:${chipColor}; border:1px solid ${chipBorder}; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>
+              ${adminBtns}
+            </div>`;
       };
 
       window.renderWorkOptions = (category) => {
@@ -2513,10 +2537,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const filteredWorks = category === 'すべて' ? allWorks : allWorks.filter(w => (w.category || '圃場作業') === category);
           
           let allChipsHTML = '<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">' + 
-                filteredWorks.map(w => {
-                  const safeName = String(w.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                  return `<button type="button" class="work-chip all-work-chip" data-recent="false" data-category="${w.category || '圃場作業'}" data-wname="${String(w.name || '').replace(/"/g, '&quot;')}" data-details="${encodeURIComponent(w.detailWorks || '')}" onclick="selectWorkChip('${safeName}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`;
-                }).join('') + '</div>';
+                filteredWorks.map(w => window.buildWorkChipHtml(w, false)).join('') + '</div>';
           
           let wNames = '<option value="">選択してください</option>' + filteredWorks.map(w => `<option value="${String(w.name || '').replace(/"/g, '&quot;')}">${w.name}</option>`).join('');
           
@@ -2527,6 +2548,308 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           const select = document.getElementById('rec_work_name');
           if (select) select.innerHTML = wNames;
+          if (typeof window.renderWorkNameAdminBar === 'function') {
+              window.renderWorkNameAdminBar(select ? select.value : '');
+          }
+      };
+
+      window.renderWorkNameAdminBar = (wName) => {
+          const bar = document.getElementById('work_name_admin_bar');
+          if (!bar) return;
+          if (!window.isWorkerAdmin()) {
+              bar.style.display = 'none';
+              bar.innerHTML = '';
+              return;
+          }
+          bar.style.display = 'flex';
+          const safe = String(wName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          bar.innerHTML = `
+            <button type="button" onclick="openWorkMasterManager()" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📋 作業マスタ</button>
+            <button type="button" onclick="adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業名を追加</button>
+            ${wName ? `<button type="button" onclick="adminEditWorkName('${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
+            <button type="button" onclick="adminDeleteWorkName('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>` : `<span style="font-size:11px; color:#888;">全件の追加・編集・削除は「作業マスタ」から</span>`}
+          `;
+      };
+
+      window.collectWorkerDetailWorks = (containerId) => {
+          const box = document.getElementById(containerId);
+          if (!box) return '';
+          return Array.from(box.querySelectorAll('.detail-work-input'))
+              .map(el => (el.value || '').trim())
+              .filter(Boolean)
+              .join(',');
+      };
+
+      window.addWorkerDetailWorkRow = (containerId, value = '') => {
+          const box = document.getElementById(containerId);
+          if (!box) return;
+          const row = document.createElement('div');
+          row.className = 'detail-work-row';
+          row.style.cssText = 'display:flex; gap:6px; align-items:center; margin-bottom:6px;';
+          const safeVal = String(value || '').replace(/"/g, '&quot;');
+          row.innerHTML = `<input type="text" class="detail-work-input" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" placeholder="詳細作業名" value="${safeVal}"><button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>`;
+          box.appendChild(row);
+          const input = row.querySelector('input');
+          if (input && !value) input.focus();
+      };
+
+      window.buildWorkerDetailWorksHtml = (containerId, detailWorksStr) => {
+          const items = String(detailWorksStr || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+          const rows = (items.length ? items : ['']).map((item) => {
+              const safe = String(item).replace(/"/g, '&quot;');
+              return `<div class="detail-work-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+                <input type="text" class="detail-work-input" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" placeholder="詳細作業名" value="${safe}">
+                <button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>
+              </div>`;
+          }).join('');
+          return `<div id="${containerId}" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:8px;">${rows}</div>
+            <button type="button" onclick="addWorkerDetailWorkRow('${containerId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ 詳細作業を追加</button>`;
+      };
+
+      window.refreshWorkChipsAfterMasterChange = (selectedName) => {
+          const cat = document.getElementById('rec_work_category')?.value || 'すべて';
+          if (typeof renderWorkOptions === 'function') renderWorkOptions(cat);
+          if (selectedName && typeof selectWorkChip === 'function') selectWorkChip(selectedName);
+          else if (typeof handleWorkNameChange === 'function') handleWorkNameChange('');
+          if (document.getElementById('workMasterManagerModal')) {
+              window.renderWorkMasterManagerList();
+          }
+      };
+
+      window.closeWorkMasterManager = () => {
+          const m = document.getElementById('workMasterManagerModal');
+          if (m) m.remove();
+      };
+
+      window.openWorkMasterManager = () => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          window.closeWorkMasterManager();
+          const modal = document.createElement('div');
+          modal.id = 'workMasterManagerModal';
+          modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:11900; display:flex; justify-content:center; align-items:flex-end; padding:0; box-sizing:border-box;';
+          modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:520px; max-height:88vh; border-radius:14px 14px 0 0; box-shadow:0 -8px 28px rgba(0,0,0,0.25); display:flex; flex-direction:column;">
+              <div style="padding:14px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <div>
+                  <div style="font-size:16px; font-weight:bold; color:#FF9800;">🚜 作業マスタ</div>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">追加・編集・削除（管理者のみ）</div>
+                </div>
+                <button type="button" onclick="closeWorkMasterManager()" style="background:#eee; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer;">閉じる</button>
+              </div>
+              <div style="padding:10px 16px; border-bottom:1px solid #f0f0f0; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <input type="search" id="wm_mgr_filter" placeholder="作業名で検索..." oninput="renderWorkMasterManagerList()" style="flex:1; min-width:140px; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box;">
+                <select id="wm_mgr_cat_filter" onchange="renderWorkMasterManagerList()" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+                  <option value="">全カテゴリ</option>
+                  ${(pdlWorkCategories || []).map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">${c}</option>`).join('')}
+                </select>
+                <button type="button" onclick="adminAddWorkName()" style="background:#4CAF50; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 追加</button>
+              </div>
+              <div id="wm_mgr_list" style="flex:1; overflow-y:auto; padding:8px 12px 20px;"></div>
+            </div>`;
+          document.body.appendChild(modal);
+          window.renderWorkMasterManagerList();
+      };
+
+      window.renderWorkMasterManagerList = () => {
+          const list = document.getElementById('wm_mgr_list');
+          if (!list) return;
+          const q = String(document.getElementById('wm_mgr_filter')?.value || '').trim().toLowerCase();
+          const catF = String(document.getElementById('wm_mgr_cat_filter')?.value || '').trim();
+          let works = Array.isArray(pdlWorkMaster) ? [...pdlWorkMaster] : [];
+          works.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+          if (catF) works = works.filter(w => (w.category || '圃場作業') === catF);
+          if (q) works = works.filter(w => String(w.name || '').toLowerCase().includes(q) || String(w.detailWorks || '').toLowerCase().includes(q));
+
+          if (!works.length) {
+              list.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">該当する作業がありません</div>`;
+              return;
+          }
+
+          list.innerHTML = works.map(w => {
+              const name = String(w.name || '');
+              const safe = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              const details = String(w.detailWorks || '').trim();
+              const detailPreview = details
+                  ? `<div style="font-size:11px; color:#666; margin-top:4px; line-height:1.35;">詳細: ${details.split(/[,、]/).map(s => s.trim()).filter(Boolean).slice(0, 6).join(' / ')}${details.split(/[,、]/).filter(s => s.trim()).length > 6 ? ' …' : ''}</div>`
+                  : `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし</div>`;
+              return `<div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; margin-bottom:8px; background:#fafafa;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <div style="min-width:0; flex:1;">
+                    <div style="font-weight:bold; font-size:14px; color:#333; word-break:break-all;">${name.replace(/</g, '&lt;')}</div>
+                    <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">
+                      <span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px;">${(w.category || '圃場作業').replace(/</g, '&lt;')}</span>
+                      <span style="font-size:11px; background:#e0e0e0; color:#444; padding:2px 6px; border-radius:4px;">${(w.displayPlace || '圃場').replace(/</g, '&lt;')}</span>
+                      ${w.targetFunction ? `<span style="font-size:11px; background:#fff3e0; color:#e65100; padding:2px 6px; border-radius:4px;">看板:${String(w.targetFunction).replace(/</g, '&lt;')}</span>` : ''}
+                    </div>
+                    ${detailPreview}
+                  </div>
+                  <div style="display:flex; gap:4px; flex-shrink:0;">
+                    <button type="button" onclick="adminEditWorkName('${safe}')" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">✏️</button>
+                    <button type="button" onclick="adminDeleteWorkName('${safe}')" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">🗑️</button>
+                  </div>
+                </div>
+              </div>`;
+          }).join('');
+      };
+
+      window.closeWorkNameEditorModal = () => {
+          const m = document.getElementById('workNameEditorModal');
+          if (m) m.remove();
+      };
+
+      window.openWorkNameEditorModal = (mode, originalName) => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          window.closeWorkNameEditorModal();
+          const p = loadedPolygons[activePolyId];
+          const existing = (mode === 'edit')
+              ? (pdlWorkMaster || []).find(w => String(w.name || '').trim() === String(originalName || '').trim())
+              : null;
+          const catNow = document.getElementById('rec_work_category')?.value || '';
+          const defaultCat = (existing && existing.category)
+              || (catNow && catNow !== 'すべて' ? catNow : (pdlWorkCategories[0] || '圃場作業'));
+          const defaultPlace = (existing && existing.displayPlace)
+              || (p && p.isMarker ? '看板' : '圃場');
+          const defaultFunc = (existing && existing.targetFunction) || (p && p.isMarker ? (p.signFunction || '') : '');
+          const catOpts = (pdlWorkCategories || ['圃場作業', '事務作業', '保全・整備']).map(c =>
+              `<option value="${String(c).replace(/"/g, '&quot;')}" ${c === defaultCat ? 'selected' : ''}>${c}</option>`
+          ).join('');
+          const funcOpts = '<option value="">なし</option>' + (pdlSignFunctions || []).map(f =>
+              `<option value="${String(f).replace(/"/g, '&quot;')}" ${f === defaultFunc ? 'selected' : ''}>${f}</option>`
+          ).join('');
+          const title = mode === 'edit' ? '作業マスタを編集' : '作業マスタを追加';
+          const detailsHtml = window.buildWorkerDetailWorksHtml('wn_edit_details_list', (existing && existing.detailWorks) || '');
+          const modal = document.createElement('div');
+          modal.id = 'workNameEditorModal';
+          modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12100; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
+          modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:400px; max-height:90vh; overflow-y:auto; border-radius:10px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
+              <h3 style="margin:0 0 12px; font-size:16px; color:#FF9800;">${title}</h3>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">カテゴリ</label>
+              <select id="wn_edit_category" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:14px;">${catOpts}</select>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業名</label>
+              <input type="text" id="wn_edit_name" value="${String((existing && existing.name) || '').replace(/"/g, '&quot;')}" placeholder="例: 定植" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:15px;">
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">表示場所</label>
+              <select id="wn_edit_place" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:14px;">
+                <option value="圃場" ${defaultPlace === '圃場' ? 'selected' : ''}>圃場</option>
+                <option value="看板" ${defaultPlace === '看板' ? 'selected' : ''}>看板</option>
+                <option value="全て" ${defaultPlace === '全て' ? 'selected' : ''}>全て</option>
+              </select>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（各枠に1つ）</label>
+              ${detailsHtml}
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">対応看板機能（看板のとき）</label>
+              <select id="wn_edit_func" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:14px; font-size:14px;">${funcOpts}</select>
+              <div style="display:flex; gap:8px;">
+                <button type="button" onclick="closeWorkNameEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
+                <button type="button" onclick="submitWorkNameEditor('${mode}', '${String(originalName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="flex:1; background:#FF9800; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${mode === 'edit' ? '更新する' : '追加する'}</button>
+              </div>
+            </div>`;
+          document.body.appendChild(modal);
+          setTimeout(() => {
+              const input = document.getElementById('wn_edit_name');
+              if (input) { input.focus(); input.select(); }
+          }, 50);
+      };
+
+      window.submitWorkNameEditor = async (mode, originalName) => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const name = String(document.getElementById('wn_edit_name')?.value || '').trim();
+          const category = document.getElementById('wn_edit_category')?.value || '圃場作業';
+          const displayPlace = document.getElementById('wn_edit_place')?.value || '圃場';
+          const targetFunction = String(document.getElementById('wn_edit_func')?.value || '').trim();
+          const detailWorks = window.collectWorkerDetailWorks('wn_edit_details_list');
+          if (!name) {
+              if (typeof customAlert === 'function') customAlert('作業名を入力してください。');
+              return;
+          }
+          const orig = String(originalName || '').trim();
+          if (mode === 'add' || (mode === 'edit' && name !== orig)) {
+              if ((pdlWorkMaster || []).some(w => String(w.name || '').trim() === name)) {
+                  if (typeof customAlert === 'function') customAlert(`作業名「${name}」は既に登録されています。`);
+                  return;
+              }
+          }
+          try {
+              let updatedList;
+              if (mode === 'add') {
+                  updatedList = await callGAS('manageMaster', {
+                      masterType: 'work',
+                      manageAction: 'add',
+                      value: { name, category, displayPlace, targetFunction, detailWorks },
+                      userName: localStorage.getItem('passionMapUserName') || currentUser
+                  });
+              } else {
+                  updatedList = await callGAS('manageMaster', {
+                      masterType: 'work',
+                      manageAction: 'edit',
+                      value: {
+                          originalName: orig,
+                          newData: { name, category, displayPlace, targetFunction, detailWorks }
+                      },
+                      userName: localStorage.getItem('passionMapUserName') || currentUser
+                  });
+              }
+              if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+              window.closeWorkNameEditorModal();
+              window.refreshWorkChipsAfterMasterChange(name);
+              if (typeof customAlert === 'function') customAlert(mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました。');
+          }
+      };
+
+      window.adminAddWorkName = () => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          window.openWorkNameEditorModal('add', '');
+      };
+
+      window.adminEditWorkName = (wName) => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const name = String(wName || '').trim();
+          if (!name) return;
+          window.openWorkNameEditorModal('edit', name);
+      };
+
+      window.adminDeleteWorkName = async (wName) => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const name = String(wName || '').trim();
+          if (!name) return;
+          if (!await customConfirm(`作業名「${name}」を削除しますか？\n（詳細作業の設定も消えます）`)) return;
+          try {
+              const updatedList = await callGAS('manageMaster', {
+                  masterType: 'work',
+                  manageAction: 'delete',
+                  value: { id: name },
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+              if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+              const sel = document.getElementById('rec_work_name');
+              const keep = (sel && sel.value && sel.value !== name) ? sel.value : '';
+              if (sel && sel.value === name) sel.value = '';
+              window.refreshWorkChipsAfterMasterChange(keep);
+              if (typeof customAlert === 'function') customAlert('✅ 作業マスタを削除しました！');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました。');
+          }
       };
 
       window.handleCategoryChange = () => {
@@ -2958,19 +3281,15 @@ function createSignboardMarker(name, pos, icon, id) {
           if (uniqueRecent.length > 0) {
               recentChipsHTML = `<div id="recent_chips_container" style="margin-bottom:10px;"><div style="font-size:11px; color:#888; margin-bottom:5px;">🕒 最近使った作業</div><div style="display:flex; flex-wrap:wrap; gap:8px;">` + 
                   uniqueRecent.map(wName => {
-                      const wObj = pdlWorkMaster.find(w => w.name === wName);
-                      const wCat = (wObj && wObj.category) ? wObj.category : '圃場作業';
-                      const details = (wObj && wObj.detailWorks) ? wObj.detailWorks : '';
-                      const safeName = String(wName).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                      return `<button type="button" class="work-chip recent-work-chip" data-recent="true" data-category="${wCat}" data-wname="${String(wName).replace(/"/g, '&quot;')}" data-details="${encodeURIComponent(details)}" onclick="selectWorkChip('${safeName}')" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>`;
+                      const wObj = pdlWorkMaster.find(w => w.name === wName) || { name: wName };
+                      return (typeof window.buildWorkChipHtml === 'function')
+                          ? window.buildWorkChipHtml(wObj, true)
+                          : '';
                   }).join('') + `</div></div>`;
           }
 
           let allChipsHTML = `<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">` + 
-              availableWorks.map(w => {
-                  const safeName = String(w.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                  return `<button type="button" class="work-chip all-work-chip" data-recent="false" data-category="${w.category || '圃場作業'}" data-wname="${String(w.name || '').replace(/"/g, '&quot;')}" data-details="${encodeURIComponent(w.detailWorks || '')}" onclick="selectWorkChip('${safeName}')" style="background:#f4f6f8; color:#333; border:1px solid #ccc; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${w.name}</button>`;
-              }).join('') + `</div>`;
+              availableWorks.map(w => (typeof window.buildWorkChipHtml === 'function') ? window.buildWorkChipHtml(w, false) : '').join('') + `</div>`;
 
           let wNames = '<option value="">選択してください</option>' + availableWorks.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
           let wStats = '<option value="">選択してください</option>' + pdlWorkStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -3017,6 +3336,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <input type="hidden" id="rec_work_category" value="すべて">
                   <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
                   <label class="form-label" style="margin-top:10px;">🚜 作業名</label>
+                  <div id="work_name_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <div id="work_chips_wrapper">
                     ${recentChipsHTML}
                     ${allChipsHTML}
@@ -3071,7 +3391,15 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
             if (typeof window.applyPrefillWorkTime === 'function') window.applyPrefillWorkTime();
             if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+            if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar('');
         }, 50);
+
+        if (currentRecordType === 'work') setTimeout(() => {
+            if (typeof window.renderWorkNameAdminBar === 'function') {
+                const sel = document.getElementById('rec_work_name');
+                window.renderWorkNameAdminBar(sel ? sel.value : '');
+            }
+        }, 60);
 
         if (isEdit && tgt && tgt.data) {
           const d = tgt.data;
