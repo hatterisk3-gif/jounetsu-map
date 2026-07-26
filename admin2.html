@@ -37,8 +37,12 @@
     <div id="cadHeader">
       <div style="font-weight:bold; font-size:16px;">🚜 農業CAD <span id="cadTargetName"
           style="font-size:12px; color:#aaa; margin-left:10px;"></span></div>
-      <button onclick="closeCADMode()"
-        style="background:#f44336; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button type="button" onclick="openCad3DPreview()"
+          style="background:#1565C0; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; font-size:13px; cursor:pointer;">🧊 3D</button>
+        <button onclick="closeCADMode()"
+          style="background:#f44336; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
+      </div>
     </div>
 
     <div id="cadMapWrapper">
@@ -218,6 +222,31 @@
         <div style="margin-top:10px;">
           <button onclick="showCadHistoryModal()" style="width:100%; background:#9E9E9E; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">📅 過去の図面を復元</button>
         </div>
+      </div>
+    </div>
+  </div>
+  <div id="cad3dOverlay">
+    <div id="cad3dHeader">
+      <div style="font-weight:bold; font-size:15px;">🧊 3Dプレビュー <span id="cad3dHint" style="font-size:11px; color:#90CAF9; font-weight:normal; margin-left:8px;"></span></div>
+      <button type="button" onclick="closeCad3DPreview()"
+        style="background:#f44336; color:#fff; border:none; padding:8px 14px; border-radius:4px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>
+    <div id="cad3dCanvasHost"></div>
+    <div id="cad3dToolbar">
+      <div class="cad3d-row">
+        <label>畝の高さ <span id="cad3dRidgeHeightVal">20</span>cm</label>
+        <input type="range" id="cad3dRidgeHeight" min="0.05" max="0.5" step="0.01" value="0.2"
+          oninput="document.getElementById('cad3dRidgeHeightVal').textContent=Math.round(this.value*100); refreshCad3DPreview();">
+      </div>
+      <div class="cad3d-row">
+        <label>高さの見やすさ ×<span id="cad3dHeightScaleVal">5</span></label>
+        <input type="range" id="cad3dHeightScale" min="1" max="12" step="1" value="5"
+          oninput="document.getElementById('cad3dHeightScaleVal').textContent=this.value; refreshCad3DPreview();">
+      </div>
+      <div class="cad3d-row">
+        <button type="button" onclick="resetCad3DCamera()"
+          style="background:#455A64; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">視点リセット</button>
+        <span style="font-size:11px; color:#90A4AE;">ドラッグで回転 / ピンチ・ホイールでズーム</span>
       </div>
     </div>
   </div>
@@ -471,6 +500,22 @@
   <script src="admin2.js?v=1784600000001" defer></script>
   <script src="tracking.js?v=1784615000001" defer></script>
   <script src="cad.js?v=1784610000002" defer></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="cad3d.js?v=1785300000001"></script>
+  <script>
+    if (typeof window.openCad3DPreview !== 'function') {
+      window.openCad3DPreview = function () {
+        alert('3Dプレビューを読み込み中です。少し待ってからもう一度押してください。');
+      };
+    }
+  </script>
 
   <div id="cadHistoryModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:90%; max-width:320px; z-index:999999;">
     <div style="background:#fff; color:#333; padding:15px; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height:80vh; display:flex; flex-direction:column;">
