@@ -411,30 +411,43 @@ function loadInitData() {
         try { renderInitData(JSON.parse(cached)); } catch(e){}
     }
     callGAS('getInitData').then(data => {
-        const newDataStr = JSON.stringify(data);
-        if (newDataStr !== cached) {
+        try {
+            const newDataStr = JSON.stringify(data);
             localStorage.setItem('pMapAdminInitData', newDataStr);
-            renderInitData(data);
-            // マスタ設定画面を開いたまま最新データが届いた場合は再描画して古い表示を防ぐ
-            const mm = document.getElementById('masterModal');
-            if (mm && mm.style.display === 'flex' && typeof renderMasterSection === 'function') {
-                renderMasterSection();
-            }
+        } catch (e) {
+            console.warn('InitData cache save failed:', e);
         }
-    }).catch(e => console.log("InitData Error:", e));
+        // キャッシュと同一でも、地図準備後の再描画漏れを防ぐため必ず描画する
+        renderInitData(data);
+        const mm = document.getElementById('masterModal');
+        if (mm && mm.style.display === 'flex' && typeof renderMasterSection === 'function') {
+            renderMasterSection();
+        }
+    }).catch(e => {
+        console.log("InitData Error:", e);
+        // ネット取得失敗時でもキャッシュが未描画なら再試行
+        if (cached && Object.keys(loadedPolygons || {}).length === 0) {
+            try { renderInitData(JSON.parse(cached)); } catch (err) {}
+        }
+    });
 }
 
 function renderInitData(data) {
     if (!map) {
-        if (typeof mapInitPromise !== 'undefined') {
-            mapInitPromise.then(() => {
-                if (!map) {
-                    console.warn('地図初期化前のため圃場データの描画をスキップします');
-                    return;
-                }
+        // mapInitPromise が「地図なし」で解決済みでも描画できるよう、地図が出るまで再試行する
+        let attempts = 0;
+        const tryRender = () => {
+            if (map) {
                 renderInitData(data);
-            });
-        }
+                return;
+            }
+            if (++attempts > 150) {
+                console.warn('地図初期化前のため圃場データの描画をスキップします');
+                return;
+            }
+            setTimeout(tryRender, 100);
+        };
+        tryRender();
         return;
     }
     if (!data || !data.pdl) return;
@@ -3356,8 +3369,8 @@ document.addEventListener('DOMContentLoaded', () => {
             && typeof google.maps.Map === 'function';
         if (!mapsReady) {
             if (++mapInitAttempts > 100) {
-                console.warn('Google Maps API の読み込みがタイムアウトしました');
-                if (typeof resolveMapInit === 'function') resolveMapInit();
+                console.warn('Google Maps API の読み込みがタイムアウトしました（描画は地図準備後に再試行します）');
+                // map なしで resolve しない（圃場描画が永久スキップされるのを防ぐ）
                 return;
             }
             setTimeout(tryInitMap, 100);
@@ -3365,14 +3378,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         try {
             initMap();
-            if (map && typeof resolveMapInit === 'function') {
-                resolveMapInit();
-            } else if (!map) {
+            // resolve は initMap 成功時に行う。ここでの早期 resolve は描画漏れの原因になる
+            if (!map) {
                 setTimeout(tryInitMap, 120);
             }
         } catch (err) {
             console.warn("地図の初期化エラー:", err);
-            if (typeof resolveMapInit === 'function') resolveMapInit();
+            setTimeout(tryInitMap, 200);
         }
     }
     tryInitMap();

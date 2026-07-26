@@ -46,3 +46,44 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
 .app-time-select { flex: 1; max-width: 120px; padding: 12px 8px; font-size: 22px; font-weight: bold; border: 1px solid #ccc; border-radius: 8px; background: #fafafa; text-align: center; }
 #lightbox img { max-width: 95%; max-height: 90%; border-radius: 4px; }
 .lot-section { background: #e3f2fd; border: 1px solid #90caf9; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
+
+/* 地図右下→下部のアクションボタン群 */
+.map-action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  z-index: 2000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.map-action-btn {
+  pointer-events: auto;
+  width: 50px;
+  height: 50px;
+  margin: 0;
+  padding: 0;
+  background: white;
+  border: none;
+  border-radius: 50%;
+  font-weight: bold;
+  font-size: 24px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+.map-action-btn--typhoon {
+  background: #ffebee;
+  color: #d32f2f;
+  border: 2px solid #d32f2f;
+}

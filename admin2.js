@@ -362,17 +362,36 @@ function loadInitData() {
         try { renderInitData(JSON.parse(cached)); } catch(e){}
     }
     callGAS('getInitData').then(data => {
-        const newDataStr = JSON.stringify(data);
-        if (newDataStr !== cached) {
+        try {
+            const newDataStr = JSON.stringify(data);
             localStorage.setItem('pMapAdminInitData', newDataStr);
-            renderInitData(data);
+        } catch (e) {
+            console.warn('InitData cache save failed:', e);
         }
-    }).catch(e => console.log("InitData Error:", e));
+        renderInitData(data);
+    }).catch(e => {
+        console.log("InitData Error:", e);
+        if (cached && Object.keys(loadedPolygons || {}).length === 0) {
+            try { renderInitData(JSON.parse(cached)); } catch (err) {}
+        }
+    });
 }
 
 function renderInitData(data) {
     if (!map) {
-        mapInitPromise.then(() => renderInitData(data));
+        let attempts = 0;
+        const tryRender = () => {
+            if (map) {
+                renderInitData(data);
+                return;
+            }
+            if (++attempts > 150) {
+                console.warn('地図初期化前のため圃場データの描画をスキップします');
+                return;
+            }
+            setTimeout(tryRender, 100);
+        };
+        tryRender();
         return;
     }
     if (!data || !data.pdl) return;
