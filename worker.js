@@ -1347,6 +1347,10 @@ function createSignboardMarker(name, pos, icon, id) {
                    const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
                    h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 給水栓: ${irrigText}</div>`;
                  }
+                 if (item.data.installedPumps && Array.isArray(item.data.installedPumps) && item.data.installedPumps.length) {
+                   const pumpText = item.data.installedPumps.map(p => p.name || p.id).join('、');
+                   h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
+                 }
                  if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
                  
                  if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
@@ -1431,6 +1435,10 @@ function createSignboardMarker(name, pos, icon, id) {
                  if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
                    const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
                    h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 給水栓: ${irrigText}</div>`;
+                 }
+                 if (item.data.installedPumps && Array.isArray(item.data.installedPumps) && item.data.installedPumps.length) {
+                   const pumpText = item.data.installedPumps.map(p => p.name || p.id).join('、');
+                   h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
                  }
                  if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
 
@@ -1899,11 +1907,19 @@ function createSignboardMarker(name, pos, icon, id) {
         return rows;
       };
 
-      // ===== 潅水作業：給水栓 開/閉 =====
+      // ===== 潅水作業：給水栓 開/閉・ポンプ設置 =====
       window.isIrrigationWork = (wName) => {
         const n = String(wName || '');
         return n.includes('潅水') || n.includes('灌水');
       };
+
+      window.isPumpMachine = (m) => {
+        if (!m) return false;
+        const workCat = String(m.workCategory || '');
+        return workCat.includes('潅水') || workCat.includes('灌水');
+      };
+
+      window.getPumpMachines = () => (pdlMachines || []).filter(m => window.isPumpMachine(m));
 
       window.parseWaterStatusObj = (raw) => {
         if (!raw) return {};
@@ -1931,13 +1947,96 @@ function createSignboardMarker(name, pos, icon, id) {
         });
       };
 
-      window.refreshIrrigationValveUI = () => {
-        const box = document.getElementById('irrigation_valve_section');
+      window.applyPumpInstallButtonStyle = (btn, installed) => {
+        if (!btn) return;
+        btn.setAttribute('data-installed', installed ? '1' : '0');
+        if (installed) {
+          btn.style.background = '#00897B';
+          btn.style.color = '#fff';
+          btn.style.border = '1px solid #00695C';
+          btn.textContent = '設置中';
+        } else {
+          btn.style.background = '#fff';
+          btn.style.color = '#00897B';
+          btn.style.border = '1px solid #80CBC4';
+          btn.textContent = '設置中';
+        }
+      };
+
+      window.togglePumpInstall = (machineId) => {
+        const btn = document.querySelector(`.pump-install-btn[data-id="${machineId}"]`);
+        if (!btn) return;
+        const next = btn.getAttribute('data-installed') !== '1';
+        window.applyPumpInstallButtonStyle(btn, next);
+      };
+
+      window.refreshIrrigationPumpUI = (preferredInstalledIds) => {
+        const box = document.getElementById('irrigation_pump_section');
         if (!box) return;
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
         if (!window.isIrrigationWork(wName)) {
           box.style.display = 'none';
           box.innerHTML = '';
+          return;
+        }
+
+        const prev = {};
+        document.querySelectorAll('.pump-install-btn').forEach(el => {
+          prev[el.getAttribute('data-id')] = el.getAttribute('data-installed') === '1';
+        });
+
+        const preferSet = Array.isArray(preferredInstalledIds)
+          ? new Set(preferredInstalledIds.map(String))
+          : null;
+        const fieldIds = (selectedPolyIds || []).filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker);
+        const pumps = window.getPumpMachines();
+
+        let html = `<div style="background:#e0f2f1; padding:12px; border-radius:8px; border:1px solid #80cbc4;">
+          <div style="font-weight:bold; color:#00695C; margin-bottom:8px;">🚰 ポンプ設置</div>
+          <div style="font-size:11px; color:#546e7a; margin-bottom:10px;">農機マスタの作業分類に「潅水」が含まれるものを表示します。「設置中」を押すとこの圃場への設置として記録されます。</div>`;
+
+        if (pumps.length === 0) {
+          html += `<div style="font-size:12px; color:#c62828;">作業分類に「潅水」が設定された農機がありません。農機マスタの作業分類を確認してください。</div>`;
+        } else {
+          pumps.forEach(m => {
+            let installed;
+            if (preferSet) {
+              installed = preferSet.has(String(m.id));
+            } else if (Object.prototype.hasOwnProperty.call(prev, m.id)) {
+              installed = !!prev[m.id];
+            } else {
+              installed = fieldIds.includes(m.currentLocId);
+            }
+            const locLabel = m.currentLocName || m.signName || '場所未設定';
+            const safeId = String(m.id || '').replace(/'/g, "\\'");
+            html += `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; padding:10px; border:1px solid #b2dfdb; border-radius:6px; background:#fff;">
+              <div style="min-width:0; flex:1;">
+                <div style="font-weight:bold; font-size:14px; color:#004D40;">${m.name}</div>
+                <div style="font-size:11px; color:#666; margin-top:2px;">📍 現在地: ${locLabel}</div>
+              </div>
+              <button type="button" class="pump-install-btn" data-id="${m.id}" data-name="${String(m.name || '').replace(/"/g, '&quot;')}" data-installed="${installed ? '1' : '0'}" onclick="togglePumpInstall('${safeId}')" style="flex-shrink:0; padding:10px 14px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; min-width:84px;"></button>
+            </div>`;
+          });
+        }
+        html += `</div>`;
+        box.style.display = 'block';
+        box.innerHTML = html;
+        box.querySelectorAll('.pump-install-btn').forEach(btn => {
+          window.applyPumpInstallButtonStyle(btn, btn.getAttribute('data-installed') === '1');
+        });
+      };
+
+      window.refreshIrrigationValveUI = () => {
+        const box = document.getElementById('irrigation_valve_section');
+        if (!box) {
+          if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
+          return;
+        }
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        if (!window.isIrrigationWork(wName)) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
           return;
         }
 
@@ -1953,6 +2052,7 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="font-weight:bold; color:#1565C0; margin-bottom:6px;">💧 給水栓 開・閉</div>
             <div style="font-size:12px; color:#555;">圃場を選択すると、CAD登録の給水栓番号が表示されます。</div>
           </div>`;
+          if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
           return;
         }
 
@@ -1996,6 +2096,7 @@ function createSignboardMarker(name, pos, icon, id) {
         html += `</div>`;
         box.style.display = 'block';
         box.innerHTML = html;
+        if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
       };
 
       window.collectIrrigationValveData = () => {
@@ -2018,6 +2119,17 @@ function createSignboardMarker(name, pos, icon, id) {
           byPoly[pid].summary.push(`栓${valve}:${val === 'supplying' ? '開' : '閉'}`);
         });
         return Object.values(byPoly);
+      };
+
+      window.collectInstalledPumps = () => {
+        const rows = [];
+        document.querySelectorAll('.pump-install-btn[data-installed="1"]').forEach(btn => {
+          rows.push({
+            id: btn.getAttribute('data-id'),
+            name: btn.getAttribute('data-name') || ''
+          });
+        });
+        return rows;
       };
 
       window.selectWorkCategory = (catName) => {
@@ -2654,7 +2766,11 @@ function createSignboardMarker(name, pos, icon, id) {
          };
          
          const matchMats = pdlMaterials.filter(m => isMatch(m.workCategory));
-         const matchMachines = pdlMachines.filter(m => isMatch(m.workCategory));
+         let matchMachines = pdlMachines.filter(m => isMatch(m.workCategory));
+         // 潅水作業のポンプは専用UI（設置中ボタン）で扱うため、ここでは除外
+         if (typeof window.isIrrigationWork === 'function' && window.isIrrigationWork(workName) && typeof window.isPumpMachine === 'function') {
+            matchMachines = matchMachines.filter(m => !window.isPumpMachine(m));
+         }
 
          if (matchMats.length === 0 && matchMachines.length === 0) { container.innerHTML = ""; return; }
 
@@ -2815,7 +2931,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (currentRecordType === 'work') {
           // 畝UIはカテゴリ×圃場選択に応じて動的表示（placeholder）
           let ridgeUI = p.isMarker ? '' : `<div id="ridge_progress_section" style="display:none; margin-bottom:15px;"></div>`;
-          let irrigationUI = p.isMarker ? '' : `<div id="irrigation_valve_section" style="display:none; margin-bottom:15px;"></div>`;
+          let irrigationUI = p.isMarker ? '' : `<div id="irrigation_valve_section" style="display:none; margin-bottom:15px;"></div><div id="irrigation_pump_section" style="display:none; margin-bottom:15px;"></div>`;
           
           let availableWorks = p.isMarker ? pdlWorkMaster.filter(w => w.displayPlace === '看板' && (w.targetFunction === (p.signFunction || '一般看板') || String(w.targetFunction).includes(p.signFunction || '一般看板'))) : pdlWorkMaster;
           
@@ -2992,6 +3108,9 @@ function createSignboardMarker(name, pos, icon, id) {
                     if (sel) sel.value = row.status[valveNo] === 'supplying' ? 'supplying' : 'stopped';
                   });
                 });
+              }
+              if (Array.isArray(d.installedPumps) && typeof window.refreshIrrigationPumpUI === 'function') {
+                window.refreshIrrigationPumpUI(d.installedPumps.map(p => p && p.id).filter(Boolean));
               }
             }, 80);
             
@@ -3279,6 +3398,8 @@ function createSignboardMarker(name, pos, icon, id) {
                   }
                 }
               }
+              const installedPumps = (typeof window.collectInstalledPumps === 'function') ? window.collectInstalledPumps() : [];
+              data.installedPumps = installedPumps;
             }
 
            if ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")) {
@@ -3330,6 +3451,26 @@ function createSignboardMarker(name, pos, icon, id) {
                 
                 if (sId && sName) { machineUpdates.push({ id: mId, signId: sId, signName: sName }); }
              });
+
+             // 潅水ポンプの設置中 → 現在地を選択圃場へ。解除時は定位置へ戻す
+             if (typeof window.isIrrigationWork === 'function' && window.isIrrigationWork(document.getElementById('rec_work_name')?.value || '')) {
+                const fieldIds = (selectedPolyIds || []).filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker);
+                const targetFieldId = fieldIds[0] || (activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker ? activePolyId : '');
+                const targetPoly = targetFieldId ? loadedPolygons[targetFieldId] : null;
+                const installedIds = new Set((data.installedPumps || []).map(p => String(p.id)));
+                const pumps = (typeof window.getPumpMachines === 'function') ? window.getPumpMachines() : [];
+                pumps.forEach(m => {
+                   const already = machineUpdates.some(u => u.id === m.id);
+                   if (already) return;
+                   if (installedIds.has(String(m.id))) {
+                      if (targetPoly) {
+                         machineUpdates.push({ id: m.id, signId: targetFieldId, signName: targetPoly.name });
+                      }
+                   } else if (fieldIds.includes(m.currentLocId) && m.signId && m.signName) {
+                      machineUpdates.push({ id: m.id, signId: m.signId, signName: m.signName });
+                   }
+                });
+             }
 
              if (machineUpdates.length > 0) {
                  await callGAS('updateMachineLocations', { updates: machineUpdates });
@@ -3679,10 +3820,71 @@ function createSignboardMarker(name, pos, icon, id) {
           }
       };
 // ==========================================
+      // 作業分類（複数枠）入力UI
+      // ==========================================
+      window.parseWorkCategoryList = (raw) => {
+         return String(raw || '')
+            .split(/[,、]/)
+            .map(s => s.trim())
+            .filter(Boolean);
+      };
+
+      window.collectWorkCategoryValue = (containerId) => {
+         const box = document.getElementById(containerId);
+         if (!box) return '';
+         const vals = Array.from(box.querySelectorAll('.work-cat-input'))
+            .map(el => (el.value || '').trim())
+            .filter(Boolean);
+         return vals.join(', ');
+      };
+
+      window.renderWorkCategoryRows = (containerId, values) => {
+         const box = document.getElementById(containerId);
+         if (!box) return;
+         const list = (Array.isArray(values) && values.length > 0) ? values : [''];
+         box.innerHTML = list.map((v, i) => `
+            <div class="work-cat-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+              <input type="text" class="form-input work-cat-input" value="${String(v).replace(/"/g, '&quot;')}" placeholder="例: 草刈り / 潅水" style="margin-bottom:0; flex:1;">
+              <button type="button" onclick="removeWorkCategoryRow('${containerId}', ${i})" title="削除" style="background:#fff; color:#F44336; border:1px solid #ef9a9a; border-radius:6px; width:36px; height:36px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:16px; line-height:1;">×</button>
+            </div>
+         `).join('') + `
+            <button type="button" onclick="addWorkCategoryRow('${containerId}')" style="background:#E8F5E9; color:#2E7D32; border:1px dashed #81C784; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer; width:100%; margin-bottom:10px;">＋ 作業分類を追加</button>
+         `;
+      };
+
+      window.addWorkCategoryRow = (containerId) => {
+         const box = document.getElementById(containerId);
+         if (!box) return;
+         const current = Array.from(box.querySelectorAll('.work-cat-input')).map(el => el.value || '');
+         current.push('');
+         window.renderWorkCategoryRows(containerId, current);
+         const inputs = box.querySelectorAll('.work-cat-input');
+         if (inputs.length) inputs[inputs.length - 1].focus();
+      };
+
+      window.removeWorkCategoryRow = (containerId, index) => {
+         const box = document.getElementById(containerId);
+         if (!box) return;
+         const current = Array.from(box.querySelectorAll('.work-cat-input')).map(el => el.value || '');
+         if (current.length <= 1) {
+            current[0] = '';
+         } else {
+            current.splice(index, 1);
+         }
+         window.renderWorkCategoryRows(containerId, current);
+      };
+
+      window.buildWorkCategoryFieldHTML = (containerId, labelText) => `
+             <label class="form-label" style="font-size:11px; margin-bottom:2px;">${labelText || '作業分類'}</label>
+             <div id="${containerId}" style="margin-bottom:4px;"></div>
+      `;
+
+// ==========================================
       // 農機・車両の新規登録ポップアップ
       // ==========================================
       window.openNewMachineModal = (signId, signName) => {
          window.newMachinePendingFiles = []; 
+         const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
          
          const html = `
            <div style="text-align:left;">
@@ -3704,13 +3906,27 @@ function createSignboardMarker(name, pos, icon, id) {
 </div>
              <div style="display:flex; gap:5px; margin-bottom:10px;">
                <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">型式</label><input type="text" id="new_mac_model" class="form-input" placeholder="例: K001" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">機種</label><input type="text" id="new_mac_type" class="form-input" placeholder="例: トラクター" style="margin-bottom:0;"></div>
+             </div>
+             <div style="display:flex; gap:5px; margin-bottom:10px;">
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">機械グループ</label><input type="text" id="new_mac_group" class="form-input" placeholder="例: 農業機械" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">拠点</label><select id="new_mac_location" class="form-input" style="margin-bottom:0;">${locOpts}</select></div>
+             </div>
+             <div style="display:flex; gap:5px; margin-bottom:10px;">
                <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">購入年月日</label><input type="date" id="new_mac_date" class="form-input" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">燃料</label>
+                 <select id="new_mac_fuel" class="form-input" style="margin-bottom:0;">
+                   <option value="">-- 選択 --</option>
+                   <option value="軽油">軽油</option>
+                   <option value="ガソリン">ガソリン</option>
+                   <option value="混合油">混合油</option>
+                   <option value="電気100V">電気100V</option>
+                   <option value="電気200V">電気200V</option>
+                 </select>
+               </div>
              </div>
 
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">作業分類 (カンマ区切りで複数可)</label>
-             <input type="text" id="new_mac_category" class="form-input" placeholder="例: 草刈り, 定植" style="margin-bottom:10px;">
-
-    
+             ${window.buildWorkCategoryFieldHTML('new_mac_category_rows', '作業分類')}
 
              <label class="form-label" style="font-size:11px; margin-bottom:2px;">📷 写真 (最大2枚)</label>
              <div style="display:flex; gap:10px; margin-bottom:10px;">
@@ -3727,6 +3943,7 @@ function createSignboardMarker(name, pos, icon, id) {
          `;
          document.getElementById('modalBody').innerHTML = html;
          document.getElementById('modal').style.display = 'flex';
+         window.renderWorkCategoryRows('new_mac_category_rows', ['']);
       };
 
       window.handleNewMachinePhoto = (input) => {
@@ -3753,11 +3970,14 @@ function createSignboardMarker(name, pos, icon, id) {
 
      window.execAddMachineToSign = async (signId, signName) => {
          const name = document.getElementById('new_mac_name').value.trim();
-         const number = document.getElementById('new_mac_number').value.trim(); // 🌟追加：機械番号を取得！
+         const number = document.getElementById('new_mac_number').value.trim();
          const model = document.getElementById('new_mac_model').value.trim();
-         const workCategory = document.getElementById('new_mac_category').value.trim();
+         const type = (document.getElementById('new_mac_type') || {}).value || '';
+         const group = (document.getElementById('new_mac_group') || {}).value || '';
+         const location = (document.getElementById('new_mac_location') || {}).value || '';
+         const fuel = (document.getElementById('new_mac_fuel') || {}).value || '';
+         const workCategory = window.collectWorkCategoryValue('new_mac_category_rows');
          const purchaseDate = document.getElementById('new_mac_date').value;
-         // ★修正：部品名の取得は削除しました
          
          if (!name) { customAlert("車両名・農機名を入力してください。"); return; }
          
@@ -3768,13 +3988,15 @@ function createSignboardMarker(name, pos, icon, id) {
             for(let f of window.newMachinePendingFiles) { const b64 = await resizeImg(f); photos.push({filename: f.name, base64: b64}); }
             
            const newMac = await callGAS('addMachineToSign', {
-            name, machineNumber: number, model, workCategory, purchaseDate, parts: "", photos, signId, signName, userName: currentUser
+            name, machineNumber: number, model, type, group, location, fuel, workCategory, purchaseDate, parts: "", photos, signId, signName, userName: currentUser
         });
 
         pdlMachines.push({
             id: newMac.id, name: newMac.name, machineNumber: newMac.machineNumber, workCategory: newMac.workCategory,
+            model: newMac.model || model, type: newMac.type || type, group: newMac.group || group,
+            location: newMac.location || location, fuel: newMac.fuel || fuel,
             signName: newMac.signName, signId: newMac.signId, parts: newMac.parts,
-            currentLocName: newMac.signName, // 初期値は定位置にする
+            currentLocName: newMac.signName,
             currentLocId: newMac.signId
         });
             document.getElementById('modal').style.display = 'none'; 
@@ -3833,9 +4055,7 @@ function createSignboardMarker(name, pos, icon, id) {
              <label class="form-label" style="font-size:11px; margin-bottom:2px;">資材名</label>
              <input type="text" id="edit_mat_name" class="form-input" value="${mat.name}" style="margin-bottom:10px;">
              
-             <!-- ★追加：作業分類の入力欄 -->
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">作業分類 (カンマ区切りで複数可)</label>
-             <input type="text" id="edit_mat_category" class="form-input" value="${mat.workCategory || ''}" style="margin-bottom:10px;">
+             ${window.buildWorkCategoryFieldHTML('edit_mat_category_rows', '作業分類')}
              
              <div style="display:flex; gap:5px; margin-bottom:10px;">
                <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">容量</label><input type="text" id="edit_mat_size" class="form-input" value="${mat.size || ''}" style="margin-bottom:0;"></div>
@@ -3851,6 +4071,7 @@ function createSignboardMarker(name, pos, icon, id) {
          `;
          document.getElementById('modalBody').innerHTML = html;
          document.getElementById('modal').style.display = 'flex';
+         window.renderWorkCategoryRows('edit_mat_category_rows', window.parseWorkCategoryList(mat.workCategory));
       };
 // 🌟 履歴の編集保存処理 🌟
       window.execEditInvHistory = async (matId, rowIndex, signId) => {
@@ -3892,7 +4113,7 @@ function createSignboardMarker(name, pos, icon, id) {
       // 編集内容の保存処理
       window.execEditMaterial = async (matId, signId) => {
          const name = document.getElementById('edit_mat_name').value.trim();
-         const category = document.getElementById('edit_mat_category').value.trim(); // ★追加
+         const category = window.collectWorkCategoryValue('edit_mat_category_rows');
          const size = document.getElementById('edit_mat_size').value.trim();
          const volUnit = document.getElementById('edit_mat_vol_unit').value.trim();
          const stockUnit = document.getElementById('edit_mat_stock_unit').value.trim();
@@ -4549,19 +4770,35 @@ function createSignboardMarker(name, pos, icon, id) {
       window.openEditMachineModal = (machineId, signId) => {
           const m = pdlMachines.find(x => x.id === machineId);
           if(!m) return;
+          const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => {
+              const sel = String(l) === String(m.location || '') ? 'selected' : '';
+              return `<option value="${String(l).replace(/"/g, '&quot;')}" ${sel}>${l}</option>`;
+          }).join('');
+          const fuel = m.fuel || m.fuelType || '';
+          const fuelOpts = ['', '軽油', 'ガソリン', '混合油', '電気100V', '電気200V'].map(f => {
+              if (!f) return `<option value="">-- 選択 --</option>`;
+              return `<option value="${f}" ${fuel === f ? 'selected' : ''}>${f}</option>`;
+          }).join('');
           
           document.getElementById('modalBody').innerHTML = `
               <h3 style="margin-top:0; color:#1976D2; border-bottom:2px solid #1976D2; padding-bottom:8px;">✏️ 農機の編集</h3>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
-                  <div style="flex:2;"><label class="form-label">🚜 車両名</label><input type="text" id="edit_mac_name" class="form-input" value="${m.name}" style="margin-bottom:0;"></div>
-                  <div style="flex:1;"><label class="form-label">🔢 機械番号</label><input type="text" id="edit_mac_number" class="form-input" value="${m.machineNumber || ''}" style="margin-bottom:0;"></div>
+                  <div style="flex:2;"><label class="form-label">🚜 車両名</label><input type="text" id="edit_mac_name" class="form-input" value="${(m.name || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;"><label class="form-label">🔢 機械番号</label><input type="text" id="edit_mac_number" class="form-input" value="${(m.machineNumber || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
               </div>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
-                  <div style="flex:1;"><label class="form-label">型式</label><input type="text" id="edit_mac_model" class="form-input" value="${m.model || ''}" style="margin-bottom:0;"></div>
-                  <div style="flex:1;"><label class="form-label">購入年月日</label><input type="date" id="edit_mac_date" class="form-input" value="${(m.purchaseDate || '').replace(/\//g, '-')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;"><label class="form-label">型式</label><input type="text" id="edit_mac_model" class="form-input" value="${(m.model || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;"><label class="form-label">機種</label><input type="text" id="edit_mac_type" class="form-input" value="${(m.type || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
               </div>
-              <label class="form-label">作業分類 (カンマ区切り)</label>
-              <input type="text" id="edit_mac_category" class="form-input" value="${m.workCategory || ''}">
+              <div style="display:flex; gap:5px; margin-bottom:10px;">
+                  <div style="flex:1;"><label class="form-label">機械グループ</label><input type="text" id="edit_mac_group" class="form-input" value="${(m.group || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;"><label class="form-label">拠点</label><select id="edit_mac_location" class="form-input" style="margin-bottom:0;">${locOpts}</select></div>
+              </div>
+              <div style="display:flex; gap:5px; margin-bottom:10px;">
+                  <div style="flex:1;"><label class="form-label">購入年月日</label><input type="date" id="edit_mac_date" class="form-input" value="${(m.purchaseDate || '').replace(/\//g, '-')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;"><label class="form-label">燃料</label><select id="edit_mac_fuel" class="form-input" style="margin-bottom:0;">${fuelOpts}</select></div>
+              </div>
+              ${window.buildWorkCategoryFieldHTML('edit_mac_category_rows', '作業分類')}
               
               <div style="display:flex; gap:10px; margin-top:15px;">
                   <button onclick="execEditMachine('${machineId}', '${signId}')" style="flex:2; padding:12px; background:#1976D2; color:white; font-weight:bold; border:none; border-radius:8px;">更新する</button>
@@ -4569,6 +4806,7 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>
           `;
           document.getElementById('modal').style.display = 'flex';
+          window.renderWorkCategoryRows('edit_mac_category_rows', window.parseWorkCategoryList(m.workCategory));
       };
 
       // 編集の保存処理
@@ -4578,13 +4816,22 @@ function createSignboardMarker(name, pos, icon, id) {
           if(!name) { customAlert("名前を入力してください"); return; }
           const number = document.getElementById('edit_mac_number').value.trim();
           const model = document.getElementById('edit_mac_model').value.trim();
+          const type = (document.getElementById('edit_mac_type') || {}).value || '';
+          const group = (document.getElementById('edit_mac_group') || {}).value || '';
+          const location = (document.getElementById('edit_mac_location') || {}).value || '';
+          const fuel = (document.getElementById('edit_mac_fuel') || {}).value || '';
           const date = document.getElementById('edit_mac_date').value.replace(/-/g, '/');
-          const category = document.getElementById('edit_mac_category').value.trim();
+          const category = window.collectWorkCategoryValue('edit_mac_category_rows');
 
           document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1976D2;'>更新中...</div>";
           try {
-              await callGAS('editMachineInMaster', { machineId: machineId, name: name, machineNumber: number, model: model, purchaseDate: date, workCategory: category });
+              await callGAS('editMachineInMaster', {
+                  machineId: machineId, name: name, machineNumber: number, model: model,
+                  type: type, group: group, location: location, fuel: fuel,
+                  purchaseDate: date, workCategory: category
+              });
               m.name = name; m.machineNumber = number; m.model = model; m.purchaseDate = date; m.workCategory = category;
+              m.type = type; m.group = group; m.location = location; m.fuel = fuel;
               document.getElementById('modal').style.display = 'none';
               customAlert("更新しました！");
               openMachineStatusUI(signId);

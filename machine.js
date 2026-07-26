@@ -36,15 +36,22 @@ async function callGAS(action, params = {}, retries = 2) {
 let map;
 let fieldPolygons = []; // 圃場表示用
 let pdlLocations = []; // 拠点マスタ
+let pdlSigns = []; // 看板（定位置用）
 let machines = {};
+let vehicles = {};
+let pendingVehiclePhotoBase64 = "";
+let pendingMachinePhotoBase64 = "";
 let machineGroups = ["農業機械", "農機インプルメント", "出荷機械"];
 let machineTypes = ["トラクター", "ドローン"];
 let maintenanceRecords = [];
 let fuelRecords = [];
 let machineMarkers = {};
+let vehicleMarkers = {};
 
 let currentMachineId = null;
+let currentVehicleId = null;
 let isPickingLocation = false;
+let pickingTargetType = 'machine'; // 'machine' | 'vehicle'
 let pendingLocation = null;
 let pendingBadgeAction = null; // 'maintenance' | 'fuel' | 'location'
 
@@ -112,16 +119,37 @@ async function loadAllData() {
             pdlLocations = initData.pdl.locations || [];
         }
         if (initData && initData.polygons) {
+            pdlSigns = (initData.polygons || []).filter(p => {
+                let coords = p.coords;
+                try { if (typeof coords === 'string') coords = JSON.parse(coords); } catch (e) { return false; }
+                return Array.isArray(coords) && coords.length === 1;
+            }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
             renderFieldPolygons(initData.polygons);
         }
         
-        // 機械データ取得
+        // 機械データ取得（農機マスタ正本）
         const machineData = await callGAS('machine_loadAll');
         if (machineData.machines) machines = machineData.machines;
         if (machineData.maintenanceRecords) maintenanceRecords = machineData.maintenanceRecords;
         if (machineData.fuelRecords) fuelRecords = machineData.fuelRecords;
+        // グループ・機種の候補を既存データから拡張
+        for (let id in machines) {
+            const m = machines[id];
+            if (m.group && !machineGroups.includes(m.group)) machineGroups.push(m.group);
+            if (m.type && !machineTypes.includes(m.type)) machineTypes.push(m.type);
+        }
+
+        // 移動車両データ取得
+        try {
+            const vehicleData = await callGAS('vehicle_loadAll');
+            if (vehicleData && vehicleData.vehicles) vehicles = vehicleData.vehicles;
+        } catch (ve) {
+            console.warn("Vehicle load skipped:", ve);
+            vehicles = {};
+        }
         
         renderMachineMarkers();
+        renderVehicleMarkers();
         showToast("読み込み完了");
     } catch (e) {
         console.error("Data load error:", e);
@@ -173,8 +201,6 @@ function renderMachineMarkers() {
     }
     machineMarkers = {};
 
-    let bounds = map.getBounds() || new google.maps.LatLngBounds();
-
     for (let id in machines) {
         let m = machines[id];
         if (m.lat && m.lng) {
@@ -199,6 +225,43 @@ function renderMachineMarkers() {
                 loadMachineSettings();
             });
             machineMarkers[id] = marker;
+        }
+    }
+}
+
+// ======================
+// 移動車両ピン描画
+// ======================
+function renderVehicleMarkers() {
+    for (let id in vehicleMarkers) {
+        vehicleMarkers[id].setMap(null);
+    }
+    vehicleMarkers = {};
+
+    for (let id in vehicles) {
+        let v = vehicles[id];
+        if (v.lat && v.lng) {
+            let color = (v.status === "修理中") ? "#d32f2f" : "#FF9800";
+            let marker = new google.maps.Marker({
+                position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) },
+                map: map,
+                title: '🛻 ' + (v.plateNumber || '移動車両'),
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    fillColor: color,
+                    fillOpacity: 1,
+                    strokeColor: 'white',
+                    strokeWeight: 2,
+                    scale: 12
+                }
+            });
+            marker.addListener('click', () => {
+                currentVehicleId = id;
+                openVehicleSettingsModal();
+                document.getElementById('settingVehicleSelect').value = id;
+                loadVehicleSettings();
+            });
+            vehicleMarkers[id] = marker;
         }
     }
 }
@@ -237,7 +300,7 @@ function openBadgeSelect(actionType) {
         title = '⛽ 給油登録 - 機械を選択';
         filterFuel = true;
     } else if (actionType === 'location') {
-        title = '📍 置き場所登録 - 機械を選択';
+        title = '📍 置き場所登録 - 対象を選択';
     }
     
     document.getElementById('badgeModalTitle').innerText = title;
@@ -246,7 +309,7 @@ function openBadgeSelect(actionType) {
     let grouped = {};
     for (let id in machines) {
         let m = machines[id];
-        if (filterFuel && m.fuelType !== '軽油') continue;
+        if (filterFuel && (m.fuel || m.fuelType) !== '軽油') continue;
         
         let grp = m.group || '未分類';
         let typ = m.type || '未分類';
@@ -258,10 +321,10 @@ function openBadgeSelect(actionType) {
     let html = '';
     let groupKeys = Object.keys(grouped);
     
-    if (groupKeys.length === 0) {
+    if (groupKeys.length === 0 && !(actionType === 'location' && Object.keys(vehicles).length > 0)) {
         html = '<p style="text-align:center; color:#888; padding:20px;">対象の機械がありません。</p>';
         if (filterFuel) {
-            html += '<p style="text-align:center; font-size:12px; color:#aaa;">（燃料属性が「軽油」の機械のみ表示されます）</p>';
+            html += '<p style="text-align:center; font-size:12px; color:#aaa;">（燃料が「軽油」の機械のみ表示されます）</p>';
         }
     } else {
         groupKeys.forEach(grp => {
@@ -272,21 +335,46 @@ function openBadgeSelect(actionType) {
                 html += '<div class="badge-grid">';
                 types[typ].forEach(m => {
                     let statusIcon = m.status === '修理中' ? '🔴' : '🟢';
-                    html += `<div class="badge-item" onclick="onBadgeSelected('${m.id}')">${statusIcon} ${m.name}</div>`;
+                    html += `<div class="badge-item" onclick="onBadgeSelected('${m.id}', 'machine')">${statusIcon} ${m.name}</div>`;
                 });
                 html += '</div>';
             });
         });
+    }
+
+    if (actionType === 'location') {
+        const vehicleIds = Object.keys(vehicles);
+        html += `<div class="badge-group-title">━━ 移動車両（軽トラ） ━━</div>`;
+        if (vehicleIds.length === 0) {
+            html += '<p style="text-align:center; color:#888; padding:10px;">登録済みの移動車両がありません。</p>';
+        } else {
+            html += '<div class="badge-grid">';
+            vehicleIds.forEach(id => {
+                const v = vehicles[id];
+                const statusIcon = v.status === '修理中' ? '🔴' : '🟢';
+                html += `<div class="badge-item" onclick="onBadgeSelected('${id}', 'vehicle')">${statusIcon} 🛻 ${v.plateNumber || id}</div>`;
+            });
+            html += '</div>';
+        }
     }
     
     document.getElementById('badgeContainer').innerHTML = html;
     document.getElementById('modalBadgeSelect').style.display = 'flex';
 }
 
-function onBadgeSelected(machineId) {
-    currentMachineId = machineId;
+function onBadgeSelected(targetId, kind) {
     closeModal('modalBadgeSelect');
-    
+    const targetKind = kind || 'machine';
+
+    if (targetKind === 'vehicle') {
+        currentVehicleId = targetId;
+        if (pendingBadgeAction === 'location') {
+            startVehicleLocationPick();
+        }
+        return;
+    }
+
+    currentMachineId = targetId;
     if (pendingBadgeAction === 'maintenance') {
         openMaintenanceRegisterModal();
     } else if (pendingBadgeAction === 'fuel') {
@@ -309,15 +397,38 @@ function openMachineRegisterModal() {
         locSel.innerHTML = '<option value="">-- 選択 --</option>' + 
             pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
     }
+    // 定位置看板
+    let signSel = document.getElementById('regSign');
+    if (signSel) {
+        signSel.innerHTML = '<option value="">-- 選択 --</option>' +
+            pdlSigns.map(s => `<option value="${String(s.id).replace(/"/g, '&quot;')}">${s.name || s.id}</option>`).join('');
+    }
     
     // フォームリセット
     document.getElementById('regMachineName').value = '';
+    document.getElementById('regMachineNumber').value = '';
     document.getElementById('regLocation').value = '';
+    document.getElementById('regSign').value = '';
+    document.getElementById('regWorkCategory').value = '';
     document.getElementById('regPurchaseDate').value = '';
-    document.getElementById('regModelType').value = '';
-    document.getElementById('regSerialNo').value = '';
-    document.getElementById('regFuelType').value = '';
+    document.getElementById('regModel').value = '';
+    document.getElementById('regFuel').value = '';
     document.getElementById('photoPreview').innerHTML = '';
+    pendingMachinePhotoBase64 = '';
+    const photoInput = document.getElementById('regPhoto');
+    if (photoInput) {
+        photoInput.value = '';
+        photoInput.onchange = function () {
+            const file = this.files && this.files[0];
+            if (!file) { pendingMachinePhotoBase64 = ''; document.getElementById('photoPreview').innerHTML = ''; return; }
+            const reader = new FileReader();
+            reader.onload = e => {
+                pendingMachinePhotoBase64 = e.target.result;
+                document.getElementById('photoPreview').innerHTML = `<img src="${pendingMachinePhotoBase64}" style="max-width:100%; max-height:140px;">`;
+            };
+            reader.readAsDataURL(file);
+        };
+    }
     
     document.getElementById('modalMachineRegister').style.display = "flex";
 }
@@ -343,33 +454,312 @@ function addNewItem(type) {
 }
 
 async function saveMachineRegistration() {
-    let id = "m_" + new Date().getTime();
+    const signId = document.getElementById('regSign').value;
+    const sign = pdlSigns.find(s => String(s.id) === String(signId));
+    const signName = sign ? (sign.name || '') : '';
     let m = {
-        id: id,
-        name: document.getElementById('regMachineName').value,
+        name: document.getElementById('regMachineName').value.trim(),
+        machineNumber: document.getElementById('regMachineNumber').value.trim(),
         group: document.getElementById('regMachineGroup').value,
         location: document.getElementById('regLocation').value,
-        photo: "",
         purchaseDate: document.getElementById('regPurchaseDate').value,
-        modelType: document.getElementById('regModelType').value,
+        model: document.getElementById('regModel').value.trim(),
         type: document.getElementById('regMachineType').value,
-        serialNo: document.getElementById('regSerialNo').value,
-        fuelType: document.getElementById('regFuelType').value,
+        fuel: document.getElementById('regFuel').value,
+        workCategory: document.getElementById('regWorkCategory').value.trim(),
+        signId: signId,
+        signName: signName,
+        currentLocId: signId,
+        currentLocName: signName,
         status: "使用可能",
         lat: null, lng: null,
-        maintenanceSettings: []
+        maintenanceSettings: [],
+        photoBase64: pendingMachinePhotoBase64 || ""
     };
 
     if (!m.name) { alert("機械名を入力してください"); return; }
     
     showToast("保存中...");
     try {
-        await callGAS('machine_saveMachine', m);
-        machines[id] = m;
+        const res = await callGAS('machine_saveMachine', m);
+        const saved = (res && res.machine) ? res.machine : m;
+        if (saved.id) machines[saved.id] = saved;
         closeModal('modalMachineRegister');
         showToast("機械を登録しました");
         updateMachineSettingsDropdown();
+        renderMachineMarkers();
     } catch(e) {
+        alert("保存に失敗しました: " + e.message);
+    }
+}
+
+// ======================
+// 移動車両（軽トラ）登録
+// ======================
+function resizeVehicleImg(file) {
+    return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = e => {
+            const img = new Image();
+            img.onload = () => {
+                const cvs = document.createElement('canvas');
+                let w = img.width, h = img.height, max = 1200;
+                if (w > h && w > max) { h *= max / w; w = max; }
+                else if (h > max) { w *= max / h; h = max; }
+                cvs.width = w; cvs.height = h;
+                cvs.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(cvs.toDataURL('image/jpeg', 0.8));
+            };
+            img.onerror = () => reject(new Error("画像の読み込みに失敗しました"));
+            img.src = e.target.result;
+        };
+        r.onerror = () => reject(new Error("ファイルの読み込みに失敗しました"));
+        r.readAsDataURL(file);
+    });
+}
+
+async function previewVehiclePhoto(input) {
+    pendingVehiclePhotoBase64 = "";
+    const preview = document.getElementById('vehPhotoPreview');
+    if (!preview) return;
+    preview.innerHTML = '';
+    if (!input.files || !input.files[0]) return;
+    try {
+        pendingVehiclePhotoBase64 = await resizeVehicleImg(input.files[0]);
+        preview.innerHTML = `<img src="${pendingVehiclePhotoBase64}" style="max-width:100%; max-height:140px; border-radius:4px;">`;
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+function openVehicleRegisterModal(editId) {
+    pendingVehiclePhotoBase64 = "";
+    const editingId = editId || '';
+    document.getElementById('vehEditId').value = editingId;
+    document.getElementById('vehPhoto').value = '';
+
+    const title = document.getElementById('vehModalTitle');
+    if (editingId && vehicles[editingId]) {
+        const v = vehicles[editingId];
+        if (title) title.textContent = '✏️ 移動車両を編集';
+        document.getElementById('vehPlateNumber').value = v.plateNumber || '';
+        document.getElementById('vehMileage').value = (v.mileage === 0 || v.mileage) ? v.mileage : '';
+        document.getElementById('vehDriveType').value = v.driveType || '';
+        document.getElementById('vehRegistrationDate').value = formatDateInputValue(v.registrationDate);
+        const preview = document.getElementById('vehPhotoPreview');
+        preview.innerHTML = v.photo
+            ? `<img src="${v.photo}" style="max-width:100%; max-height:140px; border-radius:4px;">`
+            : '';
+    } else {
+        if (title) title.textContent = '🛻 移動車両登録（軽トラ）';
+        document.getElementById('vehPlateNumber').value = '';
+        document.getElementById('vehMileage').value = '';
+        document.getElementById('vehDriveType').value = '';
+        document.getElementById('vehRegistrationDate').value = new Date().toISOString().slice(0, 10);
+        document.getElementById('vehPhotoPreview').innerHTML = '';
+    }
+    document.getElementById('modalVehicleRegister').style.display = "flex";
+}
+
+function formatDateInputValue(val) {
+    if (!val) return '';
+    if (typeof val === 'string') {
+        if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+        return '';
+    }
+    try {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    } catch (e) {}
+    return '';
+}
+
+async function saveVehicleRegistration() {
+    const plateNumber = (document.getElementById('vehPlateNumber').value || '').trim();
+    if (!plateNumber) { alert("ナンバーを入力してください"); return; }
+
+    const editId = document.getElementById('vehEditId').value;
+    const existing = editId && vehicles[editId] ? vehicles[editId] : null;
+    const mileageRaw = document.getElementById('vehMileage').value;
+    const v = {
+        id: existing ? existing.id : ("v_" + new Date().getTime()),
+        plateNumber: plateNumber,
+        mileage: mileageRaw === '' ? '' : Number(mileageRaw),
+        driveType: document.getElementById('vehDriveType').value,
+        registrationDate: document.getElementById('vehRegistrationDate').value,
+        photoBase64: pendingVehiclePhotoBase64 || '',
+        photoFilename: plateNumber.replace(/\s+/g, '_') + '.jpg',
+        photo: existing ? (existing.photo || '') : '',
+        status: existing ? (existing.status || '使用可能') : '使用可能',
+        lat: existing ? (existing.lat || '') : '',
+        lng: existing ? (existing.lng || '') : ''
+    };
+
+    showToast("保存中...");
+    try {
+        const result = await callGAS('vehicle_saveVehicle', v);
+        vehicles[v.id] = {
+            id: v.id,
+            plateNumber: v.plateNumber,
+            photo: (result && result.photo) || v.photo || '',
+            mileage: v.mileage,
+            driveType: v.driveType,
+            registrationDate: v.registrationDate,
+            status: v.status,
+            lat: v.lat || null,
+            lng: v.lng || null
+        };
+        pendingVehiclePhotoBase64 = "";
+        closeModal('modalVehicleRegister');
+        renderVehicleMarkers();
+        updateVehicleSettingsDropdown();
+        renderVehicleList();
+        showToast(existing ? "移動車両を更新しました" : "移動車両を登録しました");
+        if (document.getElementById('modalVehicleSettings').style.display === 'flex') {
+            document.getElementById('settingVehicleSelect').value = v.id;
+            loadVehicleSettings();
+        }
+    } catch (e) {
+        alert("保存に失敗しました: " + e.message);
+    }
+}
+
+// ======================
+// 移動車両一覧・設定
+// ======================
+function openVehicleSettingsModal() {
+    updateVehicleSettingsDropdown();
+    renderVehicleList();
+    document.getElementById('vehicleActionPanel').style.display = "none";
+    document.getElementById('modalVehicleSettings').style.display = "flex";
+}
+
+function updateVehicleSettingsDropdown() {
+    let sel = document.getElementById('settingVehicleSelect');
+    if (!sel) return;
+    let html = '<option value="">-- 車両を選択 --</option>';
+    Object.keys(vehicles).sort((a, b) => String(vehicles[a].plateNumber || '').localeCompare(String(vehicles[b].plateNumber || ''), 'ja'))
+        .forEach(id => {
+            html += `<option value="${id}">${vehicles[id].plateNumber || id}</option>`;
+        });
+    let currentVal = sel.value;
+    sel.innerHTML = html;
+    if (vehicles[currentVal]) sel.value = currentVal;
+}
+
+function renderVehicleList() {
+    const panel = document.getElementById('vehicleListPanel');
+    if (!panel) return;
+    const ids = Object.keys(vehicles);
+    if (ids.length === 0) {
+        panel.innerHTML = '<p style="text-align:center; color:#888; padding:16px; margin:0;">登録済みの移動車両はありません。</p>';
+        return;
+    }
+    let html = '';
+    ids.sort((a, b) => String(vehicles[a].plateNumber || '').localeCompare(String(vehicles[b].plateNumber || ''), 'ja'))
+        .forEach(id => {
+            const v = vehicles[id];
+            const statusIcon = v.status === '修理中' ? '🔴' : '🟢';
+            const pin = (v.lat && v.lng) ? '📍' : '・';
+            html += `<div onclick="selectVehicleFromList('${id}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
+                <div style="width:48px; height:48px; border-radius:6px; overflow:hidden; background:#eee; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+                    ${v.photo ? `<img src="${v.photo}" style="width:100%; height:100%; object-fit:cover;">` : '🛻'}
+                </div>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:bold; color:#333;">${statusIcon} ${v.plateNumber || '(ナンバー未設定)'}</div>
+                    <div style="font-size:12px; color:#666;">${v.driveType || '-'} / ${v.mileage === '' || v.mileage == null ? '-' : v.mileage + ' km'} ${pin}</div>
+                </div>
+            </div>`;
+        });
+    panel.innerHTML = html;
+}
+
+function selectVehicleFromList(id) {
+    const sel = document.getElementById('settingVehicleSelect');
+    if (sel) sel.value = id;
+    loadVehicleSettings();
+}
+
+function loadVehicleSettings() {
+    let sel = document.getElementById('settingVehicleSelect');
+    currentVehicleId = sel ? sel.value : '';
+    let panel = document.getElementById('vehicleActionPanel');
+    if (currentVehicleId && vehicles[currentVehicleId]) {
+        const v = vehicles[currentVehicleId];
+        document.getElementById('selectedVehicleTitle').innerText = v.plateNumber || currentVehicleId;
+        const dateStr = formatDateInputValue(v.registrationDate) || '-';
+        const photoHtml = v.photo
+            ? `<div style="margin-bottom:8px;"><img src="${v.photo}" style="max-width:100%; max-height:120px; border-radius:6px;"></div>`
+            : '';
+        document.getElementById('selectedVehicleDetail').innerHTML =
+            photoHtml +
+            `走行距離: <b>${v.mileage === '' || v.mileage == null ? '-' : v.mileage + ' km'}</b><br>` +
+            `駆動方式: <b>${v.driveType || '-'}</b><br>` +
+            `登録日: <b>${dateStr}</b><br>` +
+            `稼働状況: <b>${v.status || '使用可能'}</b><br>` +
+            `置き場所: <b>${(v.lat && v.lng) ? '設定済み' : '未設定'}</b>`;
+        panel.style.display = "block";
+    } else {
+        panel.style.display = "none";
+    }
+}
+
+function editSelectedVehicle() {
+    if (!currentVehicleId || !vehicles[currentVehicleId]) return;
+    closeModal('modalVehicleSettings');
+    openVehicleRegisterModal(currentVehicleId);
+}
+
+function focusSelectedVehicle() {
+    if (!currentVehicleId || !vehicles[currentVehicleId]) return;
+    const v = vehicles[currentVehicleId];
+    if (!v.lat || !v.lng) {
+        alert("置き場所が未設定です。先に置き場所を登録してください。");
+        return;
+    }
+    closeModal('modalVehicleSettings');
+    map.setCenter({ lat: parseFloat(v.lat), lng: parseFloat(v.lng) });
+    map.setZoom(18);
+}
+
+function openVehicleStatusModal() {
+    let v = vehicles[currentVehicleId];
+    if (!v) return;
+    let isUsable = v.status !== "修理中";
+    let html = `
+    <div id="modalVehicleStatus" class="modal-overlay" style="display:flex;">
+      <div class="modal-content">
+        <h3>🔄 稼働状況登録</h3>
+        <p>対象: <b>${v.plateNumber || ''}</b></p>
+        <div class="form-group">
+            <select id="vehicleStatusSelect">
+                <option value="使用可能" ${isUsable ? "selected":""}>🟢 使用可能</option>
+                <option value="修理中" ${!isUsable ? "selected":""}>🔴 修理中</option>
+            </select>
+        </div>
+        <button class="btn btn-register" onclick="saveVehicleStatus(this)">保存</button>
+        <button class="btn btn-close" onclick="removeDynamicModal('modalVehicleStatus')">キャンセル</button>
+      </div>
+    </div>`;
+    document.getElementById('dynamicModals').innerHTML = html;
+}
+
+async function saveVehicleStatus(btn) {
+    let val = document.getElementById('vehicleStatusSelect').value;
+    btn.disabled = true;
+    showToast("保存中...");
+    try {
+        await callGAS('vehicle_saveStatus', { id: currentVehicleId, status: val });
+        vehicles[currentVehicleId].status = val;
+        removeDynamicModal('modalVehicleStatus');
+        renderVehicleMarkers();
+        renderVehicleList();
+        loadVehicleSettings();
+        showToast("稼働状況を更新しました");
+    } catch(e) {
+        btn.disabled = false;
         alert("保存に失敗しました: " + e.message);
     }
 }
@@ -453,7 +843,20 @@ async function saveStatus(btn) {
 // 置き場所
 // ======================
 function startLocationPick() {
+    pickingTargetType = 'machine';
     closeModal('modalMachineSettings');
+    closeModal('modalBadgeSelect');
+    isPickingLocation = true;
+    document.getElementById('pickingModeUI').style.display = "block";
+}
+
+function startVehicleLocationPick() {
+    if (!currentVehicleId || !vehicles[currentVehicleId]) {
+        alert("車両を選択してください");
+        return;
+    }
+    pickingTargetType = 'vehicle';
+    closeModal('modalVehicleSettings');
     closeModal('modalBadgeSelect');
     isPickingLocation = true;
     document.getElementById('pickingModeUI').style.display = "block";
@@ -470,26 +873,36 @@ function handleLocationPicked(latLng) {
 }
 
 async function savePickedLocation() {
-    if (pendingLocation && currentMachineId) {
-        showToast("保存中...");
-        try {
+    if (!pendingLocation) {
+        cancelPicking();
+        return;
+    }
+
+    showToast("保存中...");
+    try {
+        if (pickingTargetType === 'vehicle' && currentVehicleId) {
+            await callGAS('vehicle_saveLocation', { id: currentVehicleId, lat: pendingLocation.lat, lng: pendingLocation.lng });
+            vehicles[currentVehicleId].lat = pendingLocation.lat;
+            vehicles[currentVehicleId].lng = pendingLocation.lng;
+            showToast("車両の置き場所を保存しました");
+            renderVehicleMarkers();
+        } else if (currentMachineId) {
             await callGAS('machine_saveLocation', { id: currentMachineId, lat: pendingLocation.lat, lng: pendingLocation.lng });
             machines[currentMachineId].lat = pendingLocation.lat;
             machines[currentMachineId].lng = pendingLocation.lng;
             showToast("置き場所を保存しました");
             renderMachineMarkers();
-            cancelPicking();
-        } catch(e) {
-            alert("保存に失敗しました: " + e.message);
         }
-    } else {
         cancelPicking();
+    } catch(e) {
+        alert("保存に失敗しました: " + e.message);
     }
 }
 
 function cancelPicking() {
     isPickingLocation = false;
     pendingLocation = null;
+    pickingTargetType = 'machine';
     document.getElementById('pickingModeUI').style.display = "none";
     if(machineMarkers["_preview"]) machineMarkers["_preview"].setMap(null);
 }
