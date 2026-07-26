@@ -3788,8 +3788,12 @@ function getCultivationMaster() {
       ss.insertSheet('作型DB').appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL']);
     } else {
       const dbData = croptypeSheet.getDataRange().getValues();
-      const headers = dbData[0] || [];
+      const headers = (dbData[0] || []).map(h => String(h || '').trim());
       const fileUrlCol = headers.indexOf('ファイルURL');
+      let charCol = headers.indexOf('特性');
+      if (charCol === -1) charCol = headers.indexOf('特性(タグ)');
+      const makerCol = headers.indexOf('メーカー');
+      const harvestSeasonCol = headers.indexOf('とる時期');
       for (let i = 1; i < dbData.length; i++) {
         let r = dbData[i];
         if (r[0] && r[1]) {
@@ -3802,7 +3806,10 @@ function getCultivationMaster() {
               sowing: r[4] ? JSON.parse(r[4]) : [],
               planting: r[5] ? JSON.parse(r[5]) : [],
               harvesting: r[6] ? JSON.parse(r[6]) : [],
-              fileUrl: fileUrlCol !== -1 ? r[fileUrlCol] : ''
+              fileUrl: fileUrlCol !== -1 ? String(r[fileUrlCol] || '') : '',
+              characteristics: charCol !== -1 ? String(r[charCol] || '') : '',
+              maker: makerCol !== -1 ? String(r[makerCol] || '') : '',
+              harvestSeason: harvestSeasonCol !== -1 ? String(r[harvestSeasonCol] || '') : ''
             });
           } catch(e) { console.log('JSON parse error in croptypesDB', e); }
         }

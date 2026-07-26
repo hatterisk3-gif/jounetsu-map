@@ -209,6 +209,12 @@
       <button
         onclick="openCroptypeRegistrationModal(); document.getElementById('mobileCultivationMenu').style.display='none'">🏷️
         品種作型を登録する</button>
+      <button
+        onclick="showRegisteredCroptypeListModal(); document.getElementById('mobileCultivationMenu').style.display='none'">📋
+        登録中の品種作型一覧</button>
+      <button
+        onclick="showRegisteredCroptypeListModal({ mode: 'search' }); document.getElementById('mobileCultivationMenu').style.display='none'">🔍
+        品種検索</button>
       <button class="cancel-btn"
         onclick="document.getElementById('mobileCultivationMenu').style.display='none'">キャンセル</button>
     </div>

@@ -400,9 +400,12 @@
     <!-- 品種作型登録モーダル -->
     <div id="croptypeRegistrationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10020; justify-content: center; align-items: center;">
       <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 98%; max-width: 900px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 95vh; display: flex; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap;">
           <h3 style="margin: 0; color: #FF9800;">🏷️ 品種作型マスタ登録</h3>
-          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="closeCroptypeRegistrationModal()">×</span>
+          <div style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+            <button type="button" onclick="showRegisteredCroptypeListModal()" style="padding:6px 12px; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; white-space:nowrap;">📋 登録中の品種作型一覧</button>
+            <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="closeCroptypeRegistrationModal()">×</span>
+          </div>
         </div>
         
         <!-- 共通エリア -->
@@ -501,6 +504,69 @@
         <div style="text-align: right; margin-top: auto;">
           <button onclick="closeCroptypeRegistrationModal()" style="padding: 10px 20px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 14px; margin-right: 15px;">キャンセル</button>
           <button id="btnSaveCroptype" onclick="saveCroptypeData()" style="padding: 10px 40px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">リストの作型を一括で登録</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 登録済み品種作型一覧 -->
+    <div id="registeredCroptypeListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); z-index:10030; align-items:center; justify-content:center;">
+      <div style="background:#fff; width:96%; max-width:720px; border-radius:12px; padding:16px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
+          <h3 style="margin:0; font-size:16px; color:#E65100;" id="regCtModalTitle">📋 登録中の品種作型一覧</h3>
+          <span style="cursor:pointer; font-size:22px; color:#999; line-height:1;" onclick="closeRegisteredCroptypeListModal()">×</span>
+        </div>
+
+        <!-- モード切替 -->
+        <div style="display:flex; gap:0; margin-bottom:10px; border:1px solid #FFB74D; border-radius:8px; overflow:hidden;">
+          <button type="button" id="regCtModeListBtn" onclick="setRegisteredCroptypeMode('list')" style="flex:1; padding:8px 10px; border:none; background:#FF9800; color:#fff; font-size:12px; font-weight:bold; cursor:pointer;">📋 一覧</button>
+          <button type="button" id="regCtModeSearchBtn" onclick="setRegisteredCroptypeMode('search')" style="flex:1; padding:8px 10px; border:none; background:#fff; color:#E65100; font-size:12px; font-weight:bold; cursor:pointer;">🔍 品種検索</button>
+        </div>
+        <p id="regCtModeHint" style="margin:0 0 10px 0; font-size:12px; color:#666;">すでにマスタ登録されている品種・作型の内容を確認できます。編集したい場合は「編集画面へ」を押してください。</p>
+
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
+          <label style="font-size:12px; font-weight:bold; color:#555;">作物
+            <select id="regCtFilterCrop" onchange="onRegCtFilterCropChange()" style="margin-left:4px; padding:4px 6px; font-size:12px; max-width:140px;"></select>
+          </label>
+          <label style="font-size:12px; font-weight:bold; color:#555;">産地
+            <select id="regCtFilterClimate" onchange="renderRegisteredCroptypeList()" style="margin-left:4px; padding:4px 6px; font-size:12px;">
+              <option value="">すべて</option>
+              <option value="暖地">暖地</option>
+              <option value="温暖地">温暖地</option>
+              <option value="一般地">一般地</option>
+              <option value="高冷地">高冷地</option>
+            </select>
+          </label>
+          <label id="regCtMakerFilterWrap" style="display:none; font-size:12px; font-weight:bold; color:#555;">メーカー
+            <select id="regCtFilterMaker" onchange="renderRegisteredCroptypeList()" style="margin-left:4px; padding:4px 6px; font-size:12px; max-width:140px;"></select>
+          </label>
+          <input type="search" id="regCtFilterText" placeholder="品種名・特性で検索" oninput="renderRegisteredCroptypeList()" style="flex:1; min-width:120px; padding:4px 8px; font-size:12px; border:1px solid #ccc; border-radius:4px;">
+          <button type="button" onclick="refreshRegisteredCroptypeList()" style="padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">🔄 再読込</button>
+        </div>
+
+        <!-- 品種検索モード: 特性タグ絞り込み -->
+        <div id="regCtSearchPanel" style="display:none; margin-bottom:10px; padding:10px; background:#fff8e1; border:1px solid #ffe082; border-radius:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+            <div style="font-size:12px; font-weight:bold; color:#E65100;">🏷️ 特性タグで絞り込み <span style="font-weight:normal; color:#888; font-size:11px;">(複数選択＝すべて含む)</span></div>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <label style="font-size:11px; color:#666; display:flex; align-items:center; gap:3px; cursor:pointer;">
+                <input type="radio" name="regCtTagMatch" value="and" checked onchange="renderRegisteredCroptypeList()"> AND
+              </label>
+              <label style="font-size:11px; color:#666; display:flex; align-items:center; gap:3px; cursor:pointer;">
+                <input type="radio" name="regCtTagMatch" value="or" onchange="renderRegisteredCroptypeList()"> OR
+              </label>
+              <button type="button" onclick="clearRegCtSearchFilters()" style="padding:2px 8px; font-size:11px; background:#fff; border:1px solid #ccc; border-radius:4px; cursor:pointer; color:#666;">条件クリア</button>
+            </div>
+          </div>
+          <div id="regCtTagChips" style="display:flex; flex-wrap:wrap; gap:5px; min-height:28px;"></div>
+          <div id="regCtSelectedTags" style="margin-top:6px; font-size:11px; color:#bf360c;"></div>
+        </div>
+
+        <div id="regCtListCount" style="font-size:11px; color:#888; margin-bottom:6px;"></div>
+        <div id="regCtListContainer" style="overflow-y:auto; flex:1; padding-right:4px;">
+          <div style="text-align:center; color:#666; font-size:13px; padding:20px;">読み込み中...</div>
+        </div>
+        <div style="text-align:center; margin-top:12px;">
+          <button type="button" onclick="closeRegisteredCroptypeListModal()" style="padding:8px 28px; background:#666; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">閉じる</button>
         </div>
       </div>
     </div>
