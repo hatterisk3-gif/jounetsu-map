@@ -236,10 +236,10 @@ window.plotClockInMarker = (state, doCenter) => {
           document.getElementById('customConfirmCancel').onclick = () => { document.getElementById('customConfirmModal').style.display = 'none'; resolve(false); };
         });
       };
-      window.customPrompt = (msg) => {
+      window.customPrompt = (msg, defaultValue = '') => {
         return new Promise(resolve => {
           document.getElementById('customPromptMessage').innerText = msg;
-          document.getElementById('customPromptInput').value = '';
+          document.getElementById('customPromptInput').value = defaultValue != null ? defaultValue : '';
           document.getElementById('customPromptModal').style.display = 'flex';
           document.getElementById('customPromptInput').focus();
           document.getElementById('customPromptOk').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(document.getElementById('customPromptInput').value); };
@@ -2370,6 +2370,68 @@ function createSignboardMarker(name, pos, icon, id) {
         return String(raw).split(/[,、，\n]/).map(s => s.trim()).filter(Boolean);
       };
 
+      window.renderDetailWorksSection = (wName) => {
+         const detailSec = document.getElementById('detailed_works_section');
+         if (!detailSec) return;
+         if (!wName) {
+            detailSec.innerHTML = '';
+            detailSec.style.display = 'none';
+            return;
+         }
+
+         let rawDetails = '';
+         const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
+         if (workData) rawDetails = workData.detailWorks || '';
+         if (!rawDetails) {
+           const chip = Array.from(document.querySelectorAll('.work-chip')).find(c => c.dataset.wname === wName);
+           if (chip && chip.dataset.details) {
+             try { rawDetails = decodeURIComponent(chip.dataset.details); } catch (e) { rawDetails = chip.dataset.details; }
+           }
+         }
+         const details = window.parseDetailWorksList(rawDetails);
+         const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+         const isAdmin = (userRole === '管理者');
+
+         if (details.length > 0 || isAdmin) {
+            const safeWName = String(wName).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,"\\'");
+            let dHtml = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+               <div style="font-size:13px; font-weight:bold; color:#1a73e8;">✅ 詳細作業を選択（複数可・任意で分数指定）</div>
+               ${isAdmin ? `<button type="button" onclick="adminAddDetailWork('${safeWName}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px;">＋ 詳細を追加</button>` : ''}
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">`;
+
+            if (details.length === 0 && isAdmin) {
+               dHtml += `<div style="font-size:12px; color:#888; padding:10px; text-align:center; background:#fff; border:1px dashed #90caf9; border-radius:6px;">詳細作業がまだ登録されていません。「＋ 詳細を追加」ボタンから追加できます。</div>`;
+            }
+
+            details.forEach((d, idx) => {
+               const safeVal = String(d).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+               dHtml += `<label class="checkbox-label detail-work-item-row" style="padding:10px 12px; background:#fff; border:1px solid #90caf9; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;">
+                  <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+                     <input type="checkbox" name="detail_work_ids" value="${safeVal}" onchange="toggleDetailWorkMinutes(this)" style="width:18px; height:18px; flex-shrink:0;">
+                     <span style="font-size:14px; color:#333; word-break:break-all;">${safeVal}</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                     <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
+                        <input type="number" name="detail_work_min_${safeVal}" class="detail-work-min-input" data-work="${safeVal}" placeholder="自動" min="0" style="width:60px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()">
+                        <span style="font-size:12px; color:#666;">分</span>
+                     </div>
+                     ${isAdmin ? `
+                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${idx})" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">✏️</button>
+                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${idx})" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">🗑️</button>
+                     ` : ''}
+                  </div>
+               </label>`;
+            });
+            dHtml += `</div>`;
+            detailSec.innerHTML = dHtml;
+            detailSec.style.display = 'block';
+         } else {
+            detailSec.innerHTML = '';
+            detailSec.style.display = 'none';
+         }
+      };
+
       window.handleWorkNameChange = (forcedName) => {
         const sel = document.getElementById('rec_work_name');
         const wName = String(forcedName != null ? forcedName : (sel ? sel.value : '') || '').trim();
@@ -2381,44 +2443,135 @@ function createSignboardMarker(name, pos, icon, id) {
            else useSec.style.display = 'none';
         }
         
-        const detailSec = document.getElementById('detailed_works_section');
-        if (detailSec) {
-           let rawDetails = '';
-           const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
-           if (workData) rawDetails = workData.detailWorks || '';
-           // チップ側の data-details もフォールバック
-           if (!rawDetails) {
-             const chip = Array.from(document.querySelectorAll('.work-chip')).find(c => c.dataset.wname === wName);
-             if (chip && chip.dataset.details) {
-               try { rawDetails = decodeURIComponent(chip.dataset.details); } catch (e) { rawDetails = chip.dataset.details; }
-             }
-           }
-           const details = window.parseDetailWorksList(rawDetails);
-           if (details.length > 0) {
-              let dHtml = `<div style="font-size:13px; font-weight:bold; color:#1a73e8; margin-bottom:8px;">✅ 詳細作業を選択（複数可・任意で分数指定）</div><div style="display:flex; flex-direction:column; gap:8px;">`;
-              details.forEach(d => {
-                 const safeVal = String(d).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-                 dHtml += `<label class="checkbox-label detail-work-item-row" style="padding:10px 12px; background:#fff; border:1px solid #90caf9; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer;">
-                    <div style="display:flex; align-items:center; gap:10px; flex:1;">
-                       <input type="checkbox" name="detail_work_ids" value="${safeVal}" onchange="toggleDetailWorkMinutes(this)" style="width:18px; height:18px; flex-shrink:0;">
-                       <span style="font-size:14px; color:#333;">${safeVal}</span>
-                    </div>
-                    <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
-                       <input type="number" name="detail_work_min_${safeVal}" class="detail-work-min-input" data-work="${safeVal}" placeholder="自動" min="0" style="width:65px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()">
-                       <span style="font-size:12px; color:#666;">分</span>
-                    </div>
-                 </label>`;
-              });
-              dHtml += `</div>`;
-              detailSec.innerHTML = dHtml;
-              detailSec.style.display = 'block';
-           } else {
-              detailSec.innerHTML = '';
-              detailSec.style.display = 'none';
-           }
-        }
+        window.renderDetailWorksSection(wName);
         window.renderUsedItems(wName);
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+      };
+
+      window.adminAddDetailWork = async function(wName) {
+          const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+          if (userRole !== '管理者') {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          
+          let newDetail = await customPrompt(`「${wName}」に新しく追加する詳細作業名を入力してください:`);
+          if (newDetail === null) return;
+          newDetail = String(newDetail).trim();
+          if (!newDetail) {
+              if (typeof customAlert === 'function') customAlert('詳細作業名を入力してください。');
+              return;
+          }
+
+          const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
+          let details = window.parseDetailWorksList(workData ? workData.detailWorks : '');
+          if (details.includes(newDetail)) {
+              if (typeof customAlert === 'function') customAlert(`「${newDetail}」は既に追加されています。`);
+              return;
+          }
+
+          details.push(newDetail);
+          await window.saveAdminDetailWorks(wName, details, '追加');
+      };
+
+      window.adminEditDetailWork = async function(wName, index) {
+          const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+          if (userRole !== '管理者') {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+
+          const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
+          let details = window.parseDetailWorksList(workData ? workData.detailWorks : '');
+          if (index < 0 || index >= details.length) return;
+
+          const oldVal = details[index];
+          let newVal = await customPrompt(`詳細作業名の編集:`, oldVal);
+          if (newVal === null) return;
+          newVal = String(newVal).trim();
+          if (!newVal) {
+              if (typeof customAlert === 'function') customAlert('詳細作業名を入力してください。');
+              return;
+          }
+
+          if (newVal !== oldVal && details.includes(newVal)) {
+              if (typeof customAlert === 'function') customAlert(`「${newVal}」は既に存在します。`);
+              return;
+          }
+
+          details[index] = newVal;
+          await window.saveAdminDetailWorks(wName, details, '更新');
+      };
+
+      window.adminDeleteDetailWork = async function(wName, index) {
+          const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+          if (userRole !== '管理者') {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+
+          const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
+          let details = window.parseDetailWorksList(workData ? workData.detailWorks : '');
+          if (index < 0 || index >= details.length) return;
+
+          const targetVal = details[index];
+          if (!await customConfirm(`詳細作業「${targetVal}」を削除しますか？`)) return;
+
+          details.splice(index, 1);
+          await window.saveAdminDetailWorks(wName, details, '削除');
+      };
+
+      window.saveAdminDetailWorks = async function(wName, newDetailsArray, actionLabel) {
+          const newDetailWorksStr = newDetailsArray.join(', ');
+          let workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
+
+          if (!workData) {
+              workData = {
+                  name: wName,
+                  category: '圃場作業',
+                  displayPlace: '全て',
+                  targetFunction: '',
+                  detailWorks: newDetailWorksStr
+              };
+              if (!Array.isArray(pdlWorkMaster)) pdlWorkMaster = [];
+              pdlWorkMaster.push(workData);
+          } else {
+              workData.detailWorks = newDetailWorksStr;
+          }
+
+          try {
+              const valueObj = {
+                  originalName: wName,
+                  newData: {
+                      name: workData.name,
+                      category: workData.category || '圃場作業',
+                      displayPlace: workData.displayPlace || '全て',
+                      targetFunction: workData.targetFunction || '',
+                      detailWorks: newDetailWorksStr
+                  }
+              };
+
+              const updatedList = await callGAS('manageMaster', {
+                  masterType: 'work',
+                  manageAction: 'edit',
+                  value: valueObj,
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+
+              if (Array.isArray(updatedList) && updatedList.length > 0) {
+                  pdlWorkMaster = updatedList;
+              }
+
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+
+              window.renderDetailWorksSection(wName);
+              if (typeof customAlert === 'function') customAlert(`✅ 詳細作業を${actionLabel}しました！`);
+          } catch (e) {
+              console.warn('saveAdminDetailWorks Error:', e);
+              window.renderDetailWorksSection(wName);
+              if (typeof customAlert === 'function') customAlert(`詳細作業をローカルで${actionLabel}しました（通信: ${e.message || e}）`);
+          }
       };
 
       window.renderUsedItems = (workName) => {
