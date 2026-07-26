@@ -603,9 +603,17 @@ window.updateCadSvgOverlay = (opts) => {
         if (ep) updateHandlesPosition(ep);
     }
 
-    let pinsStateId = window.cadPins
-        ? window.cadPins.map(mk => mk.cadPinType).join('_') + '_' + window.cadPins.length + '_n' + (window.cadPinNumFontSize || 20)
-        : '';
+    let pinsStateId = '';
+    if (window.cadPins && window.cadPins.length) {
+        pinsStateId = window.cadPins.map(mk => {
+            const pos = mk.getPosition ? mk.getPosition() : null;
+            const t = mk.cadPinType || '';
+            if (!pos) return t;
+            return t + ':' + pos.lat().toFixed(6) + ',' + pos.lng().toFixed(6);
+        }).join('|') + '_n' + (window.cadPinNumFontSize || 20);
+    } else {
+        pinsStateId = 'none_n' + (window.cadPinNumFontSize || 20);
+    }
     let pinsGroup = svg ? svg.querySelector('#cadSvgPins') : null;
     if (pinsGroup && svg._lastPinsStateId !== pinsStateId) {
         svg._lastPinsStateId = pinsStateId;
@@ -830,6 +838,15 @@ window.updateCadSvgOverlay = (opts) => {
         } else {
             frontBarGroup.innerHTML = '';
         }
+    }
+
+    // SVG再構築で消えるため、GPS測位中ならプレビューを描き直す
+    if (window.cadGpsWatchId != null && window.cadGpsLastPos && typeof window.cadDrawGpsPreviewOnSvg === 'function') {
+        window.cadDrawGpsPreviewOnSvg(
+            window.cadGpsLastPos.lat,
+            window.cadGpsLastPos.lng,
+            window.cadGpsLastPos.accuracy || 20
+        );
     }
 };
 
@@ -1128,7 +1145,6 @@ window.loadCadStateFromHistory = (index) => {
     if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
     if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
     window.cadFrontBaseline = state.frontBaseline || null;
-    if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
 
     if (state.customShapes) {
         state.customShapes.forEach((shape, idx) => {
@@ -1158,6 +1174,14 @@ window.loadCadStateFromHistory = (index) => {
 
     window.reassignLabels();
     window.cadAlignMapHeading();
+    // 畝・ピン復元後に必ずSVGを再構築（途中更新だと設備ピンが欠ける）
+    window.cadSvgNeedsRebuild = true;
+    const svgEl = document.getElementById('cadSvgOverlay');
+    if (svgEl) {
+        svgEl._lastPinsStateId = null;
+        svgEl._lastPolysLength = null;
+    }
+    if (window.updateCadSvgOverlay) window.updateCadSvgOverlay({ light: false });
     window.isHistoryNavigating = false;
 };
 
@@ -2545,49 +2569,10 @@ window.cadUpdateGpsPreview = (lat, lng, accuracy) => {
     const acc = Math.max(1, Number(accuracy) || 20);
     window.cadGpsLastPos = { lat: pos.lat, lng: pos.lng, accuracy: acc };
 
-    if (!window.cadGpsPreviewMarker) {
-        window.cadGpsPreviewMarker = new google.maps.Marker({
-            position: pos,
-            map: window.cadMap,
-            clickable: false,
-            zIndex: 99999,
-            icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: '#2196F3',
-                fillOpacity: 1,
-                strokeColor: '#fff',
-                strokeWeight: 2
-            },
-            title: 'GPS現在地'
-        });
-    } else {
-        window.cadGpsPreviewMarker.setPosition(pos);
-        window.cadGpsPreviewMarker.setMap(window.cadMap);
-    }
-
-    if (!window.cadGpsPreviewCircle) {
-        window.cadGpsPreviewCircle = new google.maps.Circle({
-            map: window.cadMap,
-            center: pos,
-            radius: acc,
-            clickable: false,
-            fillColor: '#2196F3',
-            fillOpacity: 0.15,
-            strokeColor: '#1976D2',
-            strokeOpacity: 0.7,
-            strokeWeight: 1,
-            zIndex: 99998
-        });
-    } else {
-        window.cadGpsPreviewCircle.setCenter(pos);
-        window.cadGpsPreviewCircle.setRadius(acc);
-        window.cadGpsPreviewCircle.setMap(window.cadMap);
-    }
-
-    try {
-        window.cadMap.setCenter(pos);
-    } catch (e) { /* ignore */ }
+    // 地図の setCenter はしない（設備ピンSVGとのずれ防止）。
+    // プレビューは設備ピンと同じ SVG 座標系だけを使う。
+    window.cadClearGpsMapOverlays();
+    window.cadDrawGpsPreviewOnSvg(pos.lat, pos.lng, acc);
 
     const good = acc <= 15;
     const label = window.cadGpsPinTypeLabel(window.cadGpsPinType || window.cadPinMode);
@@ -2597,7 +2582,51 @@ window.cadUpdateGpsPreview = (lat, lng, accuracy) => {
     });
 };
 
-window.cadClearGpsPreview = () => {
+/** SVGオーバーレイ上にGPS現在地＋精度円を描画（latLngToScreenPixel と同一系） */
+window.cadDrawGpsPreviewOnSvg = (lat, lng, accuracyM) => {
+    const svg = document.getElementById('cadSvgOverlay');
+    if (!svg || typeof window.latLngToScreenPixel !== 'function') return;
+
+    let g = svg.querySelector('#cadSvgGpsPreview');
+    if (!g) {
+        g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('id', 'cadSvgGpsPreview');
+        g.setAttribute('style', 'pointer-events:none;');
+        svg.appendChild(g);
+    }
+
+    const center = window.latLngToScreenPixel(lat, lng);
+    let rPx = 24;
+    try {
+        if (typeof turf !== 'undefined') {
+            const south = turf.destination(turf.point([lng, lat]), accuracyM, 180, { units: 'meters' });
+            const edge = window.latLngToScreenPixel(south.geometry.coordinates[1], south.geometry.coordinates[0]);
+            rPx = Math.max(8, Math.hypot(edge.x - center.x, edge.y - center.y));
+        }
+    } catch (e) { /* ignore */ }
+
+    g.innerHTML = '';
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', String(center.x));
+    circle.setAttribute('cy', String(center.y));
+    circle.setAttribute('r', String(rPx));
+    circle.setAttribute('fill', '#2196F3');
+    circle.setAttribute('fill-opacity', '0.18');
+    circle.setAttribute('stroke', '#1976D2');
+    circle.setAttribute('stroke-width', '2');
+    g.appendChild(circle);
+
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', String(center.x));
+    dot.setAttribute('cy', String(center.y));
+    dot.setAttribute('r', '7');
+    dot.setAttribute('fill', '#2196F3');
+    dot.setAttribute('stroke', '#fff');
+    dot.setAttribute('stroke-width', '2');
+    g.appendChild(dot);
+};
+
+window.cadClearGpsMapOverlays = () => {
     if (window.cadGpsPreviewMarker) {
         window.cadGpsPreviewMarker.setMap(null);
         window.cadGpsPreviewMarker = null;
@@ -2605,6 +2634,15 @@ window.cadClearGpsPreview = () => {
     if (window.cadGpsPreviewCircle) {
         window.cadGpsPreviewCircle.setMap(null);
         window.cadGpsPreviewCircle = null;
+    }
+};
+
+window.cadClearGpsPreview = () => {
+    window.cadClearGpsMapOverlays();
+    const svg = document.getElementById('cadSvgOverlay');
+    if (svg) {
+        const g = svg.querySelector('#cadSvgGpsPreview');
+        if (g) g.remove();
     }
 };
 
