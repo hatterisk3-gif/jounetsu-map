@@ -1290,9 +1290,22 @@ function createSignboardMarker(name, pos, icon, id) {
 }
 
 function createPolygonObject(p) {
-    p.isMarker = p.coords && p.coords.length === 1;
+    if (!p || !p.coords) return;
+    if (typeof p.coords === 'string') {
+        try {
+            p.coords = JSON.parse(p.coords);
+        } catch (e) {
+            console.error('coords parse error:', e, p);
+            return;
+        }
+    }
+    if (!Array.isArray(p.coords) || p.coords.length === 0) return;
+    p.isMarker = p.coords.length === 1;
+
     if (p.isMarker) {
-        const m = createSignboardMarker(p.name, new google.maps.LatLng(p.coords[0].lat, p.coords[0].lng), p.color, p.id);
+        let lat = typeof p.coords[0].lat === 'function' ? p.coords[0].lat() : parseFloat(p.coords[0].lat);
+        let lng = typeof p.coords[0].lng === 'function' ? p.coords[0].lng() : parseFloat(p.coords[0].lng);
+        const m = createSignboardMarker(p.name, new google.maps.LatLng(lat, lng), p.color, p.id);
         loadedPolygons[p.id] = { ...p, marker: m, labelConfig: { text: p.name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: p.signFunction, linkedSigns: p.linkedSigns || "" };
     } else {
         const isU = (p.status === '未使用（返却）' || p.status === '未使用'), dC = getAdminColor(p.status);
@@ -1320,7 +1333,28 @@ function createPolygonObject(p) {
         loadedPolygons[p.id] = { ...p, polygon: poly, marker: m };
     }
 }
-function createLabelMarker(n, c, col, a) { const b = new google.maps.LatLngBounds(); c.forEach(pt => b.extend(pt)); return new google.maps.Marker({ position: b.getCenter(), map, visible: map.getZoom() >= 16, clickable: false, label: { text: `${n} / ${a}a`, color: 'white', fontSize: '13px', fontWeight: 'bold', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 } }); }
+function createLabelMarker(n, c, col, a) {
+    const b = new google.maps.LatLngBounds();
+    if (Array.isArray(c)) {
+        c.forEach(pt => {
+            if (pt) {
+                let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
+                let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    b.extend(new google.maps.LatLng(lat, lng));
+                }
+            }
+        });
+    }
+    return new google.maps.Marker({
+        position: b.getCenter(),
+        map,
+        visible: map ? map.getZoom() >= 16 : true,
+        clickable: false,
+        label: { text: `${n} / ${a}a`, color: 'white', fontSize: '13px', fontWeight: 'bold', className: 'polygon-label' },
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
+    });
+}
 
 window.calcRidges = (coords, dir, widthCm) => {
     if (!dir || !widthCm || widthCm <= 0 || !coords || coords.length < 3) return "--";
