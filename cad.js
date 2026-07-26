@@ -6,7 +6,7 @@ window.cadTargetPolygon = null;
 window.cadUnePolygons = [];
 window.cadPins = [];
 window.cadPinMode = null;
-window.cadPinNumFontSize = 14; // 給水・排水アイコン上の番号サイズ(px)
+window.cadPinNumFontSize = 20; // 給水・排水アイコン上の番号サイズ(px)
 window.cadUneLabels = [];
 window.cadNakamichiLines = [];
 window.cadNakamichiMapPolygons = [];
@@ -604,7 +604,7 @@ window.updateCadSvgOverlay = (opts) => {
     }
 
     let pinsStateId = window.cadPins
-        ? window.cadPins.map(mk => mk.cadPinType).join('_') + '_' + window.cadPins.length + '_n' + (window.cadPinNumFontSize || 14)
+        ? window.cadPins.map(mk => mk.cadPinType).join('_') + '_' + window.cadPins.length + '_n' + (window.cadPinNumFontSize || 20)
         : '';
     let pinsGroup = svg ? svg.querySelector('#cadSvgPins') : null;
     if (pinsGroup && svg._lastPinsStateId !== pinsStateId) {
@@ -614,7 +614,7 @@ window.updateCadSvgOverlay = (opts) => {
         if (window.cadPins) {
             let waterInCount = 0;
             let waterOutCount = 0;
-            const numFontPx = Math.max(8, Math.min(48, parseFloat(window.cadPinNumFontSize) || 14));
+            const numFontPx = Math.max(8, Math.min(48, parseFloat(window.cadPinNumFontSize) || 20));
             window.cadPins.forEach((mk, idx) => {
                 let fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
                 fo.setAttribute('width', '100');
@@ -1060,7 +1060,7 @@ window.saveCadStateToHistory = () => {
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline ? JSON.parse(JSON.stringify(window.cadFrontBaseline)) : null,
         ridgeGapRatio: window.cadRidgeGapRatio,
-        pinNumFontSize: window.cadPinNumFontSize || 14
+        pinNumFontSize: window.cadPinNumFontSize || 20
     };
 
     const stateStr = JSON.stringify(state);
@@ -1100,9 +1100,9 @@ window.loadCadStateFromHistory = (index) => {
     if (document.getElementById('cadMarginSide')) document.getElementById('cadMarginSide').value = state.marginSide || 0;
     if (document.getElementById('cadMarginEnd')) document.getElementById('cadMarginEnd').value = state.marginEnd || 0;
     if (typeof window.setCadPinNumFontSize === 'function') {
-        window.setCadPinNumFontSize(state.pinNumFontSize || 14, { refresh: false });
+        window.setCadPinNumFontSize(state.pinNumFontSize || 20, { refresh: false });
     } else {
-        window.cadPinNumFontSize = state.pinNumFontSize || 14;
+        window.cadPinNumFontSize = state.pinNumFontSize || 20;
     }
 
     if (state.pins) {
@@ -1329,6 +1329,7 @@ window.cadPlaceEquipmentPin = (latLng, pinType) => {
 
     if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
     window.cadPinMode = null;
+    if (typeof window.cadSetGpsBarVisible === 'function') window.cadSetGpsBarVisible(false);
     if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
     window.saveCadStateToHistory();
     return true;
@@ -1936,9 +1937,9 @@ window.openCADMode = async (id) => {
             if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 50;
             if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 250;
             if (typeof window.setCadPinNumFontSize === 'function') {
-                window.setCadPinNumFontSize(saved.pinNumFontSize || 14, { refresh: false });
+                window.setCadPinNumFontSize(saved.pinNumFontSize || 20, { refresh: false });
             } else {
-                window.cadPinNumFontSize = saved.pinNumFontSize || 14;
+                window.cadPinNumFontSize = saved.pinNumFontSize || 20;
             }
 
             if (saved.pins) {
@@ -2463,12 +2464,19 @@ window.cadGpsPreviewMarker = null;
 window.cadGpsPreviewCircle = null;
 window.cadGpsPinType = null;
 
+window.cadSetGpsBarVisible = (visible) => {
+    const bar = document.getElementById('cadGpsBar');
+    if (bar) bar.style.display = visible ? '' : 'none';
+};
+
 window.cadSetPinMode = (type) => {
+    const isEquipPin = window.CAD_GPS_PIN_TYPES.indexOf(type) >= 0;
     // ライン系モードに切り替えたらGPS測位は止める
-    if (type && window.CAD_GPS_PIN_TYPES.indexOf(type) < 0 && window.cadGpsWatchId != null) {
+    if (type && !isEquipPin && window.cadGpsWatchId != null) {
         window.cadStopGpsPinPlace({ keepStatus: true });
     }
     window.cadPinMode = type;
+    window.cadSetGpsBarVisible(isEquipPin);
     const msgEl = document.getElementById('cadPinModeMsg');
     if (type === 'nakamichi') {
         window.nakamichiTempPt = null;
@@ -2478,13 +2486,11 @@ window.cadSetPinMode = (type) => {
         if (msgEl) { msgEl.innerText = `【排水ライン】始点となる場所をタップしてください`; msgEl.style.color = "#00BCD4"; }
     } else if (type === 'snap_line') {
         if (msgEl) { msgEl.innerText = `【角度合わせ】基準にしたい外周の直線をタップしてください`; msgEl.style.color = "#4CAF50"; }
-    } else {
+    } else if (isEquipPin) {
         const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！（または下のGPSで置く）`; msgEl.style.color = "#03A9F4"; }
-        if (window.CAD_GPS_PIN_TYPES.indexOf(type) >= 0) {
-            window.cadGpsPinType = type;
-            window.cadUpdateGpsUi({ status: `選択中: ${name} → 「GPSで置く」か地図タップ` });
-        }
+        window.cadGpsPinType = type;
+        window.cadUpdateGpsUi({ status: `選択中: ${name} → 「GPSで置く」か地図タップ` });
     }
 };
 
@@ -2688,7 +2694,7 @@ window.cadStopGpsPinPlace = (opts) => {
 /** 給水・排水アイコン上の番号サイズを変更 */
 window.setCadPinNumFontSize = (px, opts) => {
     opts = opts || {};
-    const n = Math.max(8, Math.min(48, Math.round(parseFloat(px) || 14)));
+    const n = Math.max(8, Math.min(48, Math.round(parseFloat(px) || 20)));
     window.cadPinNumFontSize = n;
     const label = document.getElementById('cadPinNumSizeLabel');
     if (label) label.textContent = n + 'px';
@@ -2700,7 +2706,7 @@ window.setCadPinNumFontSize = (px, opts) => {
 };
 
 window.cadAdjustPinNumSize = (delta) => {
-    const cur = parseFloat(window.cadPinNumFontSize) || 14;
+    const cur = parseFloat(window.cadPinNumFontSize) || 20;
     window.setCadPinNumFontSize(cur + (parseFloat(delta) || 0));
 };
 
@@ -3887,7 +3893,7 @@ window.saveUneSim = async () => {
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline || null,
-        pinNumFontSize: window.cadPinNumFontSize || 14
+        pinNumFontSize: window.cadPinNumFontSize || 20
     });
 
     p.uneSimData = simDataStr;

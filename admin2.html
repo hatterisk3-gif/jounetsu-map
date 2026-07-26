@@ -135,7 +135,7 @@
       </div>
 
       <div id="cadMode2" style="display:none;">
-        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📍 設備ピンと補助線</div>
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📍 設備ピン</div>
         <div style="display:flex; gap:5px; margin-bottom:8px;">
           <button onclick="cadSetPinMode('water_in')"
             style="flex:1; background:#03A9F4; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">💧
@@ -150,8 +150,8 @@
             style="flex:1; background:#607D8B; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🅿️
             駐車場</button>
         </div>
-        <div id="cadGpsBar" style="background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:10px;">
-          <div style="font-size:11px; color:#9fa8da; margin-bottom:6px;">📡 GPSで正確に置く（種別を選んでから起動）</div>
+        <div id="cadGpsBar" style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:10px;">
+          <div style="font-size:11px; color:#9fa8da; margin-bottom:6px;">📡 GPSで正確に置く</div>
           <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
             <button type="button" id="cadGpsStartBtn" onclick="cadStartGpsPinPlace()"
               style="flex:1; min-width:90px; background:#1565C0; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">GPSで置く</button>
@@ -160,15 +160,7 @@
             <button type="button" id="cadGpsCancelBtn" onclick="cadStopGpsPinPlace()" disabled
               style="flex:0.7; min-width:70px; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">取消</button>
           </div>
-          <div id="cadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">ピン種別を選んで「GPSで置く」を押してください</div>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
-          <span style="font-size:11px; color:#aaa;">給水・排水の番号サイズ</span>
-          <button type="button" onclick="cadAdjustPinNumSize(-2)"
-            style="width:32px; height:28px; background:#555; color:#fff; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">−</button>
-          <span id="cadPinNumSizeLabel" style="min-width:36px; text-align:center; font-size:13px; font-weight:bold; color:#8BC34A;">14px</span>
-          <button type="button" onclick="cadAdjustPinNumSize(2)"
-            style="width:32px; height:28px; background:#555; color:#fff; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">＋</button>
+          <div id="cadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">「GPSで置く」を押してください</div>
         </div>
 
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 地形の追加</div>
