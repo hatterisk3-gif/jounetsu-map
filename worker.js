@@ -6270,17 +6270,12 @@ window.collectMyWorkRecords = function(allowedYmds) {
 window.renderMyWorkRecordCardHtml = function(rec) {
     const d = rec.data || {};
     const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `🕒 ${rec.time}` : '');
-    const fieldLabel = rec.isMarker ? '🪧 看板' : '🌿 圃場';
-    const placeName = d.multiFieldNames || rec.polyName || '未選択';
     const safePolyId = String(rec.polyId || '').replace(/'/g, "\\'");
     const safeRecId = String(rec.id || '').replace(/'/g, "\\'");
 
     return `
         <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #4CAF50; border-radius:6px; padding:10px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <span style="font-size:11px; color:#1565C0; font-weight:bold; cursor:pointer;" onclick="document.getElementById('modal').style.display='none'; closeMyWorkHistoryDetail(); focusAndOpen('${safePolyId}')">
-                    ${fieldLabel}: ${placeName} ↗
-                </span>
+            <div style="display:flex; justify-content:flex-end; align-items:center; margin-bottom:4px;">
                 <span style="font-size:11px; color:#666;">${timeSpan}</span>
             </div>
             <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:3px;">
