@@ -1194,20 +1194,397 @@ function toggleIdForm() {
     div.style.display = div.style.display === 'none' ? 'block' : 'none';
 }
 
-// ====== 管理者用：鶏糞散布ステータス全リセット ======
-window.resetAllManureStatus = async function() {
-    if (currentUserRole !== '管理者') { alert('管理者のみ実行できます'); return; }
-    if (!confirm('全圃場の鶏糞散布ステータスを「依頼なし」にリセットします。\nこの操作は元に戻せません。実行しますか？')) return;
-    try {
-        const res = await callGAS('resetAllManureStatus', { userName: currentUserName });
-        if (res && res.success) {
-            alert(`${res.count}件の圃場をリセットしました。`);
-            localStorage.removeItem('manureMapData');
-            loadInitData();
-        } else {
-            alert('リセットに失敗しました。');
+// ====== 散布ルート設定 ＆ 本日のルート表 機能 ======
+let currentCandidateRoute = null;
+let candidateHighlightOverlays = [];
+
+// 散布容量表示の更新
+window.updateSprayRouteCapacityDisplay = function() {
+    const trucks = parseInt(document.getElementById('sprayTruckCount')?.value || 1, 10);
+    const capPerTruckA = parseFloat(document.getElementById('sprayCapacityPerTruck')?.value || 40);
+    const totalA = (trucks * capPerTruckA).toFixed(1);
+    const totalSqm = Math.round(totalA * 100).toLocaleString();
+    
+    const dispA = document.getElementById('sprayMaxCapacityDisp');
+    const dispSqm = document.getElementById('sprayMaxSqmDisp');
+    if (dispA) dispA.textContent = `${totalA} a`;
+    if (dispSqm) dispSqm.textContent = totalSqm;
+};
+
+window.openSprayRouteModal = function() {
+    clearCandidateHighlights();
+    currentCandidateRoute = null;
+    const resArea = document.getElementById('sprayRouteResultArea');
+    if (resArea) {
+        resArea.style.display = 'none';
+        resArea.innerHTML = '';
+    }
+    updateSprayRouteCapacityDisplay();
+    document.getElementById('sprayRouteModal').style.display = 'flex';
+};
+
+window.closeSprayRouteModal = function() {
+    clearCandidateHighlights();
+    currentCandidateRoute = null;
+    document.getElementById('sprayRouteModal').style.display = 'none';
+};
+
+// 圃場の面積（㎡）を取得するヘルパー
+function getPolygonAreaSqm(polyObj) {
+    if (!polyObj) return 0;
+    const pData = polyObj.pData || {};
+    let areaVal = pData.area;
+    if (typeof areaVal === 'number' && areaVal > 0) {
+        return areaVal;
+    }
+    if (typeof areaVal === 'string' && areaVal.trim()) {
+        const num = parseFloat(areaVal);
+        if (!isNaN(num)) {
+            if (areaVal.includes('a') || areaVal.includes('アール')) return num * 100;
+            if (areaVal.includes('ha')) return num * 10000;
+            return num;
         }
+    }
+    // Google Maps 幾何計算でフォールバック
+    if (polyObj.polygon && google.maps.geometry && google.maps.geometry.spherical) {
+        const path = polyObj.polygon.getPath();
+        if (path && path.getLength() > 2) {
+            return google.maps.geometry.spherical.computeArea(path);
+        }
+    }
+    return 3000; // デフォルト3,000㎡ (30a)
+}
+
+// 圃場の中心緯度経度を取得
+function getPolygonCenterLatLng(polyObj) {
+    if (!polyObj || !polyObj.polygon) return { lat: 35.0, lng: 135.0 };
+    const path = polyObj.polygon.getPath();
+    let bounds = new google.maps.LatLngBounds();
+    for (let i = 0; i < path.getLength(); i++) {
+        bounds.extend(path.getAt(i));
+    }
+    const center = bounds.getCenter();
+    return { lat: center.lat(), lng: center.lng() };
+}
+
+// ハイライト表示のクリア
+function clearCandidateHighlights() {
+    candidateHighlightOverlays.forEach(ov => {
+        if (ov && ov.setMap) ov.setMap(null);
+    });
+    candidateHighlightOverlays = [];
+}
+
+// 散布ルート（候補圃場群）の算出
+window.calculateSprayRoute = function(isRecalculate = false) {
+    const trucks = parseInt(document.getElementById('sprayTruckCount')?.value || 1, 10);
+    const capPerTruckA = parseFloat(document.getElementById('sprayCapacityPerTruck')?.value || 40);
+    const maxCapacitySqm = trucks * capPerTruckA * 100;
+
+    // 散布対象候補となる圃場を収集 (依頼中 'request', 未 'none', 予定 'accepted')
+    const candidates = polygons.filter(p => {
+        if (!p || !p.pData) return false;
+        const st = p.pData.manure_status || 'none';
+        return st === 'request' || st === 'none' || st === 'accepted';
+    });
+
+    if (candidates.length === 0) {
+        alert('散布対象となる圃場（依頼中・未・予定）がありません。');
+        return;
+    }
+
+    // 距離・近接性に基づくグループ探索
+    // ランダムまたは開始点を変えてバリエーション生成
+    let bestGroup = [];
+    let bestTotalArea = 0;
+    const seedIndex = isRecalculate ? Math.floor(Math.random() * candidates.length) : 0;
+    const startPoly = candidates[seedIndex];
+    const startCenter = getPolygonCenterLatLng(startPoly);
+
+    // 開始点からの距離順にソート
+    const sortedCandidates = [...candidates].sort((a, b) => {
+        const cA = getPolygonCenterLatLng(a);
+        const cB = getPolygonCenterLatLng(b);
+        const distA = Math.pow(cA.lat - startCenter.lat, 2) + Math.pow(cA.lng - startCenter.lng, 2);
+        const distB = Math.pow(cB.lat - startCenter.lat, 2) + Math.pow(cB.lng - startCenter.lng, 2);
+        return distA - distB;
+    });
+
+    let currentSum = 0;
+    const selected = [];
+    for (let p of sortedCandidates) {
+        const area = getPolygonAreaSqm(p);
+        if (currentSum + area <= maxCapacitySqm) {
+            selected.push(p);
+            currentSum += area;
+        } else {
+            // ピッタリ収まる小さい圃場が後方にないか少し探す
+            if (maxCapacitySqm - currentSum > 500) {
+                continue;
+            } else {
+                break;
+            }
+        }
+    }
+
+    currentCandidateRoute = {
+        polygons: selected,
+        totalAreaSqm: currentSum,
+        totalAreaA: (currentSum / 100).toFixed(1),
+        maxCapacityA: (maxCapacitySqm / 100).toFixed(1),
+        fillRate: Math.round((currentSum / maxCapacitySqm) * 100)
+    };
+
+    // マップ上のハイライト描画
+    clearCandidateHighlights();
+    let bounds = new google.maps.LatLngBounds();
+
+    selected.forEach(p => {
+        if (p.polygon) {
+            const path = p.polygon.getPath();
+            const highlightPoly = new google.maps.Polygon({
+                paths: path,
+                strokeColor: '#FF9800',
+                strokeOpacity: 1.0,
+                strokeWeight: 5,
+                fillColor: '#FFC107',
+                fillOpacity: 0.45,
+                map: map,
+                zIndex: 9999
+            });
+            candidateHighlightOverlays.push(highlightPoly);
+            for (let i = 0; i < path.getLength(); i++) {
+                bounds.extend(path.getAt(i));
+            }
+        }
+    });
+
+    if (selected.length > 0 && map && bounds) {
+        map.fitBounds(bounds);
+    }
+
+    // 結果表示エリアのレンダリング
+    const resArea = document.getElementById('sprayRouteResultArea');
+    if (!resArea) return;
+    resArea.style.display = 'block';
+
+    let listRowsHtml = selected.map((p, idx) => {
+        const pData = p.pData || {};
+        const areaA = (getPolygonAreaSqm(p) / 100).toFixed(1);
+        const statusLabel = getStatusLabel(pData.manure_status || 'none');
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; background:#fff; padding:8px 10px; border-radius:6px; border:1px solid #e0e0e0; margin-bottom:6px; font-size:13px;">
+                <div>
+                    <b>${idx + 1}. ${pData.name || '圃場'}</b>
+                    <span style="font-size:11px; color:#666; margin-left:6px;">(${areaA} a)</span>
+                </div>
+                <span style="font-size:11px; background:#f0f0f0; padding:2px 6px; border-radius:4px;">${statusLabel}</span>
+            </div>
+        `;
+    }).join('');
+
+    resArea.innerHTML = `
+        <div style="background:#FFF3E0; border:1px solid #FFE0B2; border-radius:8px; padding:12px; margin-bottom:12px;">
+            <div style="font-weight:bold; color:#E65100; font-size:15px; margin-bottom:6px;">✨ 算出された候補グループ</div>
+            <div style="font-size:13px; color:#333; line-height:1.4;">
+                ・対象圃場数: <b>${selected.length} 筆</b><br>
+                ・合計面積: <b style="color:#D84315; font-size:16px;">${currentCandidateRoute.totalAreaA} a</b> / 許容 ${currentCandidateRoute.maxCapacityA} a<br>
+                ・充填率 (すっぽり感): <b style="color:#2E7D32;">${currentCandidateRoute.fillRate}%</b>
+            </div>
+        </div>
+
+        <div style="font-size:13px; font-weight:bold; color:#444; margin-bottom:6px;">選定された畑の候補一覧:</div>
+        <div style="max-height:160px; overflow-y:auto; margin-bottom:12px; padding-right:2px;">
+            ${listRowsHtml || '<div style="color:#888; text-align:center;">該当する圃場がありません</div>'}
+        </div>
+
+        <div style="display:flex; gap:10px;">
+            <button type="button" onclick="calculateSprayRoute(true)" style="flex:1; background:#795548; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">🔄 再算出</button>
+            <button type="button" onclick="applySprayRouteCandidate()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">✅ 設定する (散布予定に切替)</button>
+        </div>
+    `;
+};
+
+// 候補圃場群を一括で「散布予定 (accepted)」に設定する
+window.applySprayRouteCandidate = async function() {
+    if (!currentCandidateRoute || !currentCandidateRoute.polygons || currentCandidateRoute.polygons.length === 0) {
+        alert('設定する候補圃場が選択されていません。');
+        return;
+    }
+
+    const count = currentCandidateRoute.polygons.length;
+    if (!confirm(`選定された ${count} 筆の圃場のステータスを「散布予定（橙色）」に変更して設定しますか？`)) return;
+
+    const resArea = document.getElementById('sprayRouteResultArea');
+    if (resArea) resArea.innerHTML = `<div style="text-align:center; padding:20px; font-weight:bold; color:#E65100;">一括保存中...</div>`;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    try {
+        for (let p of currentCandidateRoute.polygons) {
+            const pData = p.pData || {};
+            pData.manure_status = 'accepted';
+            pData.manure_scheduled_date = todayStr;
+            pData.manure_has_pin = true;
+
+            const manureData = {
+                manure_status: 'accepted',
+                manure_deadline: pData.manure_deadline || '',
+                manure_scheduled_date: todayStr,
+                manure_cancel_reason: '',
+                manure_has_pin: true
+            };
+            await callGAS('updatePolygon', { id: p.id || pData.id, manureData: JSON.stringify(manureData) });
+        }
+
+        closeSprayRouteModal();
+        alert(`✅ ${count} 筆の圃場を本日の「散布予定」に設定しました！`);
+        localStorage.removeItem('manureMapData');
+        loadInitData();
     } catch (e) {
-        alert('エラー: ' + e.message);
+        alert('エラーが発生しました: ' + e.message);
+        if (resArea) calculateSprayRoute();
     }
 };
+
+// ====== 本日のルート表 モーダル ======
+window.openTodayRouteTableModal = function() {
+    renderTodayRouteTable();
+    document.getElementById('todayRouteTableModal').style.display = 'flex';
+};
+
+function renderTodayRouteTable() {
+    const container = document.getElementById('todayRouteTableContent');
+    if (!container) return;
+
+    // 散布予定 'accepted' または 散布完了 'completed' の圃場を抽出
+    const routePolys = polygons.filter(p => {
+        if (!p || !p.pData) return false;
+        const st = p.pData.manure_status;
+        return st === 'accepted' || st === 'completed';
+    });
+
+    if (routePolys.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center; padding:30px 10px; color:#888;">
+                <div style="font-size:32px; margin-bottom:10px;">🗺️</div>
+                <div style="font-size:14px; font-weight:bold; margin-bottom:6px;">本日の散布ルート対象の圃場はありません</div>
+                <div style="font-size:12px;">「🚜 散布ルート設定」から本日の対象圃場を設定してください。</div>
+            </div>
+        `;
+        return;
+    }
+
+    let totalSqm = 0;
+    let completedCount = 0;
+
+    let rowsHtml = routePolys.map((p, idx) => {
+        const pData = p.pData || {};
+        const areaSqm = getPolygonAreaSqm(p);
+        totalSqm += areaSqm;
+        const areaA = (areaSqm / 100).toFixed(1);
+        const status = pData.manure_status || 'accepted';
+        const isDone = status === 'completed';
+        if (isDone) completedCount++;
+
+        const polyId = p.id || pData.id;
+        const safeName = (pData.name || '圃場').replace(/'/g, "\\'");
+
+        return `
+            <tr id="routeRow_${polyId}" style="border-bottom: 1px solid #eee; background: ${isDone ? '#f9f9f9' : '#fff'};">
+                <td style="padding: 10px 8px; text-align: center; font-weight: bold; color: #555;">${idx + 1}</td>
+                <td style="padding: 10px 8px;">
+                    <div style="font-weight: bold; color: #333; font-size: 14px;">${pData.name || '圃場'}</div>
+                    <div style="font-size: 11px; color: #666;">面積: ${areaA} a (${Math.round(areaSqm).toLocaleString()} ㎡)</div>
+                </td>
+                <td style="padding: 10px 8px; text-align: center;">
+                    <span id="routeStatusBadge_${polyId}" style="font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 12px; background: ${isDone ? '#E8F5E9' : '#FFF3E0'}; color: ${isDone ? '#2E7D32' : '#E65100'}; border: 1px solid ${isDone ? '#A5D6A7' : '#FFE082'};">
+                        ${isDone ? '✅ 散布完了' : '🍊 散布予定'}
+                    </span>
+                </td>
+                <td style="padding: 10px 8px; text-align: right; white-space: nowrap;">
+                    ${isDone ? `
+                        <button type="button" disabled style="background:#e0e0e0; color:#888; border:none; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:bold; margin-right:4px;">完了済</button>
+                    ` : `
+                        <button type="button" onclick="markFieldSprayCompleted('${polyId}', '${safeName}')" style="background:#4CAF50; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; margin-right:4px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">✅ 散布完了</button>
+                    `}
+                    <button type="button" onclick="hideTodayRouteRow('${polyId}')" style="background:#fff; color:#777; border:1px solid #ccc; padding:6px 10px; border-radius:4px; font-size:12px; cursor:pointer;">👁️ 非表示</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    const totalA = (totalSqm / 100).toFixed(1);
+
+    container.innerHTML = `
+        <div style="background:#E8F5E9; border:1px solid #C8E6C9; border-radius:8px; padding:10px 14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+                <span style="font-size:13px; color:#2E7D32; font-weight:bold;">本日の散布対象:</span>
+                <b style="font-size:16px; color:#1B5E20; margin-left:6px;">${routePolys.length} 筆</b>
+                <span style="font-size:12px; color:#555; margin-left:8px;">(計 ${totalA} a)</span>
+            </div>
+            <div style="font-size:13px; font-weight:bold; color:#2E7D32;">
+                進捗: <span style="font-size:16px; color:#D84315;">${completedCount}</span> / ${routePolys.length} 完了
+            </div>
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead>
+                <tr style="background:#f4f6f8; text-align:left; border-bottom:2px solid #ddd; color:#555;">
+                    <th style="padding:8px; text-align:center; width:35px;">No</th>
+                    <th style="padding:8px;">圃場名・面積</th>
+                    <th style="padding:8px; text-align:center; width:100px;">ステータス</th>
+                    <th style="padding:8px; text-align:right; width:170px;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rowsHtml}
+            </tbody>
+        </table>
+    `;
+}
+
+// 散布完了にする機能
+window.markFieldSprayCompleted = async function(polyId, polyName) {
+    if (!confirm(`「${polyName || 'この圃場'}」を散布完了にしますか？`)) return;
+
+    const polyObj = polygons.find(p => String(p.id || (p.pData && p.pData.id)) === String(polyId));
+    if (!polyObj) {
+        alert('対象の圃場データが見つかりませんでした。');
+        return;
+    }
+
+    const pData = polyObj.pData || {};
+    pData.manure_status = 'completed';
+    pData.manure_has_pin = true;
+
+    try {
+        const manureData = {
+            manure_status: 'completed',
+            manure_deadline: pData.manure_deadline || '',
+            manure_scheduled_date: pData.manure_scheduled_date || '',
+            manure_cancel_reason: '',
+            manure_has_pin: true
+        };
+        await callGAS('updatePolygon', { id: polyId, manureData: JSON.stringify(manureData) });
+        
+        // 履歴追加
+        addHistory(pData.name || '圃場', 'accepted', 'completed');
+
+        // 一覧表の表示を即時更新
+        renderTodayRouteTable();
+        localStorage.removeItem('manureMapData');
+        loadInitData();
+    } catch (e) {
+        alert('散布完了への更新に失敗しました: ' + e.message);
+    }
+};
+
+// ルート表の行を非表示にする機能
+window.hideTodayRouteRow = function(polyId) {
+    const row = document.getElementById(`routeRow_${polyId}`);
+    if (row) {
+        row.style.display = 'none';
+    }
+};
+

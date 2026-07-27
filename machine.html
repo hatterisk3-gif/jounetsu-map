@@ -3,49 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [機械管理] v1.79</title>
+  <title>情熱MAP [機械管理] v1.80</title>
   <link rel="stylesheet" href="admin.css">
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; }
     #map { width: 100%; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
-
-    /* ===== 左上コントロール ===== */
-    .control-panel {
-      position: absolute; top: 12px; left: 12px; z-index: 1000;
-      background: rgba(255, 255, 255, 0.96);
-      padding: 12px;
-      border-radius: 14px;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.18);
-      width: min(300px, calc(100vw - 24px));
-      box-sizing: border-box;
-      backdrop-filter: blur(6px);
-    }
-    .control-header {
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      margin-bottom: 10px;
-    }
-    .control-header h3 {
-      margin: 0; color: #1a1a1a; font-size: 15px; letter-spacing: 0.02em;
-      display: flex; align-items: center; gap: 6px;
-    }
-    .control-toggle {
-      border: none; background: #f1f3f5; color: #555; width: 32px; height: 32px;
-      border-radius: 8px; font-size: 16px; cursor: pointer; line-height: 1;
-      flex-shrink: 0;
-    }
-    .control-panel.is-collapsed .control-body { display: none; }
-    .control-panel.is-collapsed { padding: 8px 10px; width: auto; }
-    .control-panel.is-collapsed .control-header { margin-bottom: 0; }
-
-    .action-section { margin-bottom: 10px; }
-    .action-section:last-child { margin-bottom: 0; }
-    .action-label {
-      font-size: 11px; font-weight: bold; color: #888; margin: 0 0 6px 2px;
-      letter-spacing: 0.04em;
-    }
-    .action-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-    }
 
     .btn {
       padding: 11px 10px; margin: 0; border: none; border-radius: 10px;
@@ -67,9 +29,53 @@
     .btn-row { display: flex; gap: 10px; margin-top: 16px; }
     .btn-row .btn { min-height: 44px; flex-direction: row; gap: 6px; }
 
-    /* ===== 右下 FAB ドック ===== */
+    /* ===== 下部ナビ（schedule.html と同型） ===== */
+    .mobile-bottom-bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000;
+      display: flex; background: #fff;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.12);
+      padding-bottom: env(safe-area-inset-bottom);
+      justify-content: center;
+      border-top: 1px solid #e0e0e0;
+    }
+    .mobile-bottom-bar button {
+      flex: 1; max-width: 120px; background: none; border: none;
+      padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      font-size: 11px; color: #555; border-radius: 0; cursor: pointer; font-weight: bold;
+    }
+    .mobile-bottom-bar button:active { background: #f0f0f0; }
+    .mobile-bottom-bar .bar-ico { font-size: 20px; line-height: 1; }
+
+    .mobile-action-sheet {
+      display: none; position: fixed; inset: 0; z-index: 5000;
+      background: rgba(0,0,0,0.5); justify-content: center; align-items: flex-end;
+    }
+    .action-sheet-content {
+      background: #fff; width: 100%; max-width: 480px;
+      border-radius: 16px 16px 0 0;
+      display: flex; flex-direction: column;
+      padding-bottom: env(safe-area-inset-bottom);
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+      box-sizing: border-box; overflow: hidden;
+      animation: sheetUp 0.22s ease-out;
+    }
+    .action-sheet-handle {
+      width: 40px; height: 4px; border-radius: 2px; background: #ddd;
+      margin: 10px auto 4px;
+    }
+    .action-sheet-content > button {
+      background: none; border: none; padding: 18px; font-size: 16px; color: #333;
+      border-bottom: 1px solid #eee; text-align: center; border-radius: 0; width: 100%;
+      font-weight: bold; cursor: pointer;
+    }
+    .action-sheet-content > button:active { background: #f0f0f0; }
+    .action-sheet-content > button.cancel-btn {
+      color: #f44336; border-bottom: none;
+    }
+
+    /* 右下 FAB：下部バーの上に配置 */
     .fab-dock {
-      position: fixed; bottom: 24px; right: 12px; z-index: 2000;
+      position: fixed; bottom: calc(72px + env(safe-area-inset-bottom)); right: 12px; z-index: 1900;
       display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
     }
     .fab-group {
@@ -115,8 +121,29 @@
       border: 1px solid #e0e0e0;
     }
 
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center; }
-    .modal-content { background: #fff; padding: 20px; border-radius: 12px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+    /* モーダル＝下からのボトムシート */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 9999; justify-content: center; align-items: flex-end;
+    }
+    .modal-content {
+      background: #fff; padding: 16px 18px 20px; width: 100%; max-width: 520px;
+      max-height: min(88vh, 900px); overflow-y: auto;
+      border-radius: 16px 16px 0 0;
+      box-shadow: 0 -5px 20px rgba(0,0,0,0.25);
+      box-sizing: border-box;
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
+      animation: sheetUp 0.22s ease-out;
+    }
+    .modal-content::before {
+      content: ""; display: block; width: 40px; height: 4px; border-radius: 2px;
+      background: #ddd; margin: 0 auto 12px;
+    }
+    @keyframes sheetUp {
+      from { transform: translateY(24px); opacity: 0.6; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
     .form-group { margin-bottom: 15px; }
     .form-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 13px; color: #555; }
     .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
@@ -135,12 +162,15 @@
     }
     .modal-actions .btn.span-2 { grid-column: 1 / -1; }
 
-    #toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 16px; position: fixed; z-index: 10000; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 14px; }
+    #toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 16px; position: fixed; z-index: 10000; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%); font-size: 14px; }
     #toast.show { visibility: visible; -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
 
+    #pickingModeUI {
+      bottom: calc(80px + env(safe-area-inset-bottom)) !important;
+    }
+
     @media (max-width: 420px) {
-      .control-panel { top: 8px; left: 8px; padding: 10px; }
-      .fab-dock { bottom: 16px; right: 8px; }
+      .fab-dock { right: 8px; }
       .fab { width: 48px; height: 48px; font-size: 20px; }
       .btn { min-height: 50px; font-size: 11px; }
     }
@@ -149,53 +179,8 @@
 <body>
   <div id="map"></div>
 
-  <div class="control-panel" id="machineControlPanel">
-    <div class="control-header">
-      <h3>🚜 機械管理</h3>
-      <button type="button" class="control-toggle" id="controlToggleBtn" onclick="toggleMachineControlPanel()" title="開閉" aria-label="パネル開閉">▾</button>
-    </div>
-    <div class="control-body" id="machineControlBody">
-      <div class="action-section">
-        <div class="action-label">登録</div>
-        <div class="action-grid">
-          <button class="btn btn-register" onclick="openMachineRegisterModal()">
-            <span class="btn-ico">⚙️</span><span class="btn-txt">機械登録</span>
-          </button>
-          <button class="btn btn-vehicle" onclick="openVehicleRegisterModal()">
-            <span class="btn-ico">🛻</span><span class="btn-txt">移動車両</span>
-          </button>
-        </div>
-      </div>
-      <div class="action-section">
-        <div class="action-label">一覧・設定</div>
-        <div class="action-grid">
-          <button class="btn btn-vehicle-list" onclick="openVehicleSettingsModal()">
-            <span class="btn-ico">📋</span><span class="btn-txt">車両一覧</span>
-          </button>
-          <button class="btn btn-settings" onclick="openMachineSettingsModal()">
-            <span class="btn-ico">📋</span><span class="btn-txt">機械一覧</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 右下：現場操作 / 地図操作 -->
+  <!-- 地図操作 FAB（トラッキング / 現在地） -->
   <div class="fab-dock">
-    <div class="fab-group" aria-label="現場操作">
-      <div class="fab-wrap">
-        <button class="fab fab-maint" onclick="openBadgeSelect('maintenance')" title="整備登録" aria-label="整備登録">🛠</button>
-        <span class="fab-caption">整備</span>
-      </div>
-      <div class="fab-wrap">
-        <button class="fab fab-fuel" onclick="openBadgeSelect('fuel')" title="給油登録" aria-label="給油登録">⛽</button>
-        <span class="fab-caption">給油</span>
-      </div>
-      <div class="fab-wrap">
-        <button class="fab fab-place" onclick="openBadgeSelect('location')" title="置き場所登録" aria-label="置き場所登録">📌</button>
-        <span class="fab-caption">置き場所</span>
-      </div>
-    </div>
     <div class="fab-group fab-group-map" aria-label="地図操作">
       <div class="fab-wrap">
         <button id="btnTracking" class="fab fab-track" onclick="toggleTracking()" title="トラッキング" aria-label="トラッキング">🏃‍♂️</button>
@@ -206,7 +191,46 @@
     </div>
   </div>
 
-  <div id="pickingModeUI" style="display:none; position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:1000; background:rgba(255,255,255,0.95); padding:15px 18px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.25); text-align:center;">
+  <!-- 下部ナビ（schedule.html イメージ） -->
+  <div class="mobile-bottom-bar" aria-label="機械管理メニュー">
+    <button type="button" onclick="openMachineActionSheet('sheetRegister')">
+      <span class="bar-ico">⚙️</span><span>登録</span>
+    </button>
+    <button type="button" onclick="openMachineActionSheet('sheetList')">
+      <span class="bar-ico">📋</span><span>一覧</span>
+    </button>
+    <button type="button" onclick="openBadgeSelect('maintenance')">
+      <span class="bar-ico">🛠</span><span>整備</span>
+    </button>
+    <button type="button" onclick="openBadgeSelect('fuel')">
+      <span class="bar-ico">⛽</span><span>給油</span>
+    </button>
+    <button type="button" onclick="openBadgeSelect('location')">
+      <span class="bar-ico">📌</span><span>置き場所</span>
+    </button>
+  </div>
+
+  <!-- アクションシート: 登録 -->
+  <div id="sheetRegister" class="mobile-action-sheet" onclick="closeMachineActionSheet('sheetRegister')">
+    <div class="action-sheet-content" onclick="event.stopPropagation()">
+      <div class="action-sheet-handle"></div>
+      <button type="button" onclick="closeMachineActionSheet('sheetRegister'); openMachineRegisterModal();">⚙️ 機械登録</button>
+      <button type="button" onclick="closeMachineActionSheet('sheetRegister'); openVehicleRegisterModal();">🛻 移動車両登録</button>
+      <button type="button" class="cancel-btn" onclick="closeMachineActionSheet('sheetRegister')">キャンセル</button>
+    </div>
+  </div>
+
+  <!-- アクションシート: 一覧 -->
+  <div id="sheetList" class="mobile-action-sheet" onclick="closeMachineActionSheet('sheetList')">
+    <div class="action-sheet-content" onclick="event.stopPropagation()">
+      <div class="action-sheet-handle"></div>
+      <button type="button" onclick="closeMachineActionSheet('sheetList'); openVehicleSettingsModal();">📋 車両一覧</button>
+      <button type="button" onclick="closeMachineActionSheet('sheetList'); openMachineSettingsModal();">🚜 機械一覧</button>
+      <button type="button" class="cancel-btn" onclick="closeMachineActionSheet('sheetList')">キャンセル</button>
+    </div>
+  </div>
+
+  <div id="pickingModeUI" style="display:none; position:fixed; left:50%; transform:translateX(-50%); z-index:2100; background:rgba(255,255,255,0.95); padding:15px 18px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.25); text-align:center; width:min(360px, calc(100vw - 24px)); box-sizing:border-box;">
     <h4 style="margin:0 0 8px 0; color:#E91E63;">📍 置き場所を選択してください</h4>
     <p style="margin:0 0 12px 0; font-size:12px; color:#555;">地図上をタップしてピンを立ててください。</p>
     <div style="display:flex; gap:8px; justify-content:center;">
@@ -216,8 +240,8 @@
   </div>
 
   <!-- 機械登録モーダル -->
-  <div id="modalMachineRegister" class="modal-overlay">
-    <div class="modal-content">
+  <div id="modalMachineRegister" class="modal-overlay" onclick="if(event.target===this) closeModal('modalMachineRegister')">
+    <div class="modal-content" onclick="event.stopPropagation()">
       <h3 style="margin-top:0; color:#43A047;">⚙️ 機械登録</h3>
       <div class="form-group">
         <label>機械名</label>
@@ -296,8 +320,8 @@
   </div>
 
   <!-- 移動車両（軽トラ）登録・編集モーダル -->
-  <div id="modalVehicleRegister" class="modal-overlay">
-    <div class="modal-content">
+  <div id="modalVehicleRegister" class="modal-overlay" onclick="if(event.target===this) closeModal('modalVehicleRegister')">
+    <div class="modal-content" onclick="event.stopPropagation()">
       <h3 id="vehModalTitle" style="margin-top:0; color:#FB8C00;">🛻 移動車両登録（軽トラ）</h3>
       <input type="hidden" id="vehEditId" value="">
       <div class="form-group">
@@ -334,8 +358,8 @@
   </div>
 
   <!-- 移動車両一覧・設定モーダル -->
-  <div id="modalVehicleSettings" class="modal-overlay">
-    <div class="modal-content">
+  <div id="modalVehicleSettings" class="modal-overlay" onclick="if(event.target===this) closeModal('modalVehicleSettings')">
+    <div class="modal-content" onclick="event.stopPropagation()">
       <h3 style="margin-top:0; color:#EF6C00;">📋 移動車両一覧</h3>
 
       <div id="vehicleListPanel" style="max-height:35vh; overflow-y:auto; margin-bottom:12px; border:1px solid #eee; border-radius:8px;"></div>
@@ -365,8 +389,8 @@
   </div>
 
   <!-- 機械一覧・設定モーダル -->
-  <div id="modalMachineSettings" class="modal-overlay">
-    <div class="modal-content">
+  <div id="modalMachineSettings" class="modal-overlay" onclick="if(event.target===this) closeModal('modalMachineSettings')">
+    <div class="modal-content" onclick="event.stopPropagation()">
       <h3 style="margin-top:0; color:#1E88E5;">📋 機械一覧</h3>
 
       <div id="machineListPanel" style="max-height:35vh; overflow-y:auto; margin-bottom:12px; border:1px solid #eee; border-radius:8px;"></div>
@@ -396,8 +420,8 @@
   </div>
 
   <!-- バッジ選択モーダル -->
-  <div id="modalBadgeSelect" class="modal-overlay">
-    <div class="modal-content">
+  <div id="modalBadgeSelect" class="modal-overlay" onclick="if(event.target===this) closeModal('modalBadgeSelect')">
+    <div class="modal-content" onclick="event.stopPropagation()">
       <h3 id="badgeModalTitle" style="margin-top:0;"></h3>
       <div id="badgeContainer"></div>
       <button class="btn btn-close" style="min-height:44px; flex-direction:row; margin-top:15px;" onclick="closeModal('modalBadgeSelect')">キャンセル</button>
@@ -409,15 +433,16 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly&callback=initMap" async defer></script>
-  <script src="machine.js?v=1785309000001" defer></script>
+  <script src="machine.js?v=1785310000001" defer></script>
   <script src="tracking.js?v=1784615000002" defer></script>
   <script>
-    function toggleMachineControlPanel() {
-      const panel = document.getElementById('machineControlPanel');
-      const btn = document.getElementById('controlToggleBtn');
-      if (!panel || !btn) return;
-      panel.classList.toggle('is-collapsed');
-      btn.textContent = panel.classList.contains('is-collapsed') ? '▸' : '▾';
+    function openMachineActionSheet(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'flex';
+    }
+    function closeMachineActionSheet(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
     }
   </script>
 </body>

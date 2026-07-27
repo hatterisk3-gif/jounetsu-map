@@ -308,6 +308,15 @@ function removeDynamicModal(id) {
     if(el) el.remove();
 }
 
+/** 動的モーダルの外枠HTML（下から出るボトムシート） */
+function buildDynamicOverlay(id, innerHtml) {
+    return `<div id="${id}" class="modal-overlay" style="display:flex;" onclick="if(event.target===this) removeDynamicModal('${id}')">
+      <div class="modal-content" onclick="event.stopPropagation()">
+        ${innerHtml}
+      </div>
+    </div>`;
+}
+
 // ======================
 // バッジ選択UI
 // ======================
@@ -905,9 +914,7 @@ function openVehicleStatusModal() {
     let v = vehicles[currentVehicleId];
     if (!v) return;
     let isUsable = v.status !== "修理中";
-    let html = `
-    <div id="modalVehicleStatus" class="modal-overlay" style="display:flex;">
-      <div class="modal-content">
+    let html = buildDynamicOverlay('modalVehicleStatus', `
         <h3>🔄 稼働状況登録</h3>
         <p>対象: <b>${v.plateNumber || ''}</b></p>
         <div class="form-group">
@@ -918,8 +925,7 @@ function openVehicleStatusModal() {
         </div>
         <button class="btn btn-register" onclick="saveVehicleStatus(this)">保存</button>
         <button class="btn btn-close" onclick="removeDynamicModal('modalVehicleStatus')">キャンセル</button>
-      </div>
-    </div>`;
+    `);
     document.getElementById('dynamicModals').innerHTML = html;
 }
 
@@ -1050,9 +1056,7 @@ function openStatusModal() {
     if (!m) return;
     let isUsable = m.status !== "修理中";
     
-    let html = `
-    <div id="modalStatus" class="modal-overlay" style="display:flex;">
-      <div class="modal-content">
+    let html = buildDynamicOverlay('modalStatus', `
         <h3>🔄 稼働状況登録</h3>
         <p>対象: <b>${m.name}</b></p>
         <div class="form-group">
@@ -1063,8 +1067,7 @@ function openStatusModal() {
         </div>
         <button class="btn btn-register" onclick="saveStatus(this)">保存</button>
         <button class="btn btn-close" onclick="removeDynamicModal('modalStatus')">キャンセル</button>
-      </div>
-    </div>`;
+    `);
     document.getElementById('dynamicModals').innerHTML = html;
 }
 
@@ -1175,17 +1178,14 @@ function openMaintenanceHistoryModal() {
         </div>`;
     });
 
-    let html = `
-    <div id="modalHistory" class="modal-overlay" style="display:flex;">
-      <div class="modal-content">
+    let html = buildDynamicOverlay('modalHistory', `
         <h3>📋 整備履歴</h3>
         <p>対象: <b>${m.name}</b></p>
         <div style="max-height: 60vh; overflow-y: auto; margin-bottom:15px; border:1px solid #eee; padding:10px;">
             ${historyHtml}
         </div>
         <button class="btn btn-close" style="width:100%;" onclick="removeDynamicModal('modalHistory')">閉じる</button>
-      </div>
-    </div>`;
+    `);
     document.getElementById('dynamicModals').innerHTML = html;
 }
 
@@ -1198,9 +1198,7 @@ function openMaintenanceRegisterModal() {
     
     let today = new Date().toISOString().split('T')[0];
     
-    let html = `
-    <div id="modalMaintReg" class="modal-overlay" style="display:flex;">
-      <div class="modal-content">
+    let html = buildDynamicOverlay('modalMaintReg', `
         <h3>🛠 整備登録</h3>
         <p>対象: <b>${m.name}</b></p>
         
@@ -1225,8 +1223,7 @@ function openMaintenanceRegisterModal() {
             <button class="btn btn-register" style="flex:1;" onclick="saveMaintenance(this)">登録する</button>
             <button class="btn btn-close" style="flex:1;" onclick="removeDynamicModal('modalMaintReg')">キャンセル</button>
         </div>
-      </div>
-    </div>`;
+    `);
     document.getElementById('dynamicModals').innerHTML = html;
 }
 
@@ -1273,9 +1270,7 @@ function openMaintenanceSettingsModal() {
         itemsHtml = "<p style='font-size:13px; color:#666;'>設定された整備項目はありません。</p>";
     }
     
-    let html = `
-    <div id="modalMaintSet" class="modal-overlay" style="display:flex;">
-      <div class="modal-content">
+    let html = buildDynamicOverlay('modalMaintSet', `
         <h3>⚙️ 整備設定</h3>
         <p>対象: <b>${m.name}</b></p>
         
@@ -1303,8 +1298,7 @@ function openMaintenanceSettingsModal() {
             <button class="btn btn-register" style="flex:1;" onclick="saveMaintenanceSetting(this)">追加して保存</button>
             <button class="btn btn-close" style="flex:1;" onclick="removeDynamicModal('modalMaintSet')">閉じる</button>
         </div>
-      </div>
-    </div>`;
+    `);
     document.getElementById('dynamicModals').innerHTML = html;
 }
 
@@ -1349,9 +1343,7 @@ function openFuelRegisterModal() {
     let latestFuel = fuelRecords.filter(r => r.machineId === currentMachineId).sort((a,b) => b.hourMeter - a.hourMeter)[0];
     let placeholderHour = latestFuel ? latestFuel.hourMeter : 0;
     
-    let html = `
-    <div id="modalFuel" class="modal-overlay" style="display:flex;">
-      <div class="modal-content">
+    let html = buildDynamicOverlay('modalFuel', `
         <h3>⛽ 給油登録</h3>
         <p>対象: <b>${m.name}</b></p>
         
@@ -1383,8 +1375,7 @@ function openFuelRegisterModal() {
             <button class="btn btn-register" style="flex:1;" onclick="saveFuel(this)">登録する</button>
             <button class="btn btn-close" style="flex:1;" onclick="removeDynamicModal('modalFuel')">キャンセル</button>
         </div>
-      </div>
-    </div>`;
+    `);
     document.getElementById('dynamicModals').innerHTML = html;
 }
 

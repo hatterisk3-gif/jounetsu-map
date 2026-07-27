@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -41,6 +41,8 @@
             <button onclick="openHistoryModal()" class="ctrl-btn" style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8;">📋 登録履歴</button>
             <button id="btnWeather" onclick="openWeatherModal()" class="ctrl-btn" style="background:#fff; color:#ff9800; border:1px solid #ff9800;">☁️ 天気</button>
             <button id="btnTyphoon" onclick="openTyphoonModal()" class="ctrl-btn" style="display:none; background:#ffebee; color:#d32f2f; border:1px solid #d32f2f;">🌀 台風</button>
+            <button onclick="openSprayRouteModal()" class="ctrl-btn" style="background:#FFF3E0; color:#E65100; border:1px solid #FF9800; font-weight:bold;">🚜 散布ルート設定</button>
+            <button onclick="openTodayRouteTableModal()" class="ctrl-btn" style="background:#E8F5E9; color:#1B5E20; border:1px solid #4CAF50; font-weight:bold;">🗺️ 本日のルート表</button>
             <button onclick="openContactModal()" class="ctrl-btn" style="background:#E8F5E9; color:#388E3C; border:1px solid #388E3C;">📞 連絡先</button>
             <button onclick="openMyPage()" class="ctrl-btn" style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2;">👤 マイページ</button>
             <button id="btnResetAllManure" onclick="resetAllManureStatus()" class="ctrl-btn" style="display:none; background:#880E4F; color:white; border:none;">🔄 全リセット</button>
@@ -168,6 +170,50 @@
             </div>
             <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
                 <div style="text-align:center; padding:20px;">読み込み中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 散布ルート設定モーダル -->
+    <div id="sprayRouteModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: #fff; color: #333; padding: 20px; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column; box-sizing: border-box;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #FF9800; padding-bottom: 8px;">
+                <h3 style="margin: 0; color: #E65100; font-size: 18px;">🚜 散布ルート設定</h3>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="closeSprayRouteModal()">×</span>
+            </div>
+            <div id="sprayRouteModalContent" style="overflow-y: auto; flex: 1;">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <div>
+                        <label style="font-size: 13px; font-weight: bold; color: #444; margin-bottom: 4px; display: block;">🚜 散布台数 (台)</label>
+                        <input type="number" id="sprayTruckCount" min="1" max="20" value="1" oninput="updateSprayRouteCapacityDisplay()" style="width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size: 13px; font-weight: bold; color: #444; margin-bottom: 4px; display: block;">📦 1台あたりの散布可能面積 (a / 台)</label>
+                        <input type="number" id="sprayCapacityPerTruck" min="1" value="40" oninput="updateSprayRouteCapacityDisplay()" style="width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box;">
+                    </div>
+                    <div style="background: #FFF8E1; border: 1px solid #FFE082; border-radius: 6px; padding: 10px; font-size: 13px; color: #795548;">
+                        💡 最大許容散布面積: <b id="sprayMaxCapacityDisp" style="color: #E65100; font-size: 16px;">40 a</b> (<span id="sprayMaxSqmDisp">4,000</span> ㎡)
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" onclick="calculateSprayRoute()" style="flex: 1; background: #FF9800; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">ルートを算出する</button>
+                    </div>
+                    <div id="sprayRouteResultArea" style="display: none; border-top: 1px solid #eee; pt: 10px; margin-top: 5px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 本日のルート表モーダル -->
+    <div id="todayRouteTableModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: #fff; color: #333; padding: 20px; border-radius: 10px; width: 92%; max-width: 650px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 88vh; display: flex; flex-direction: column; box-sizing: border-box;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">
+                <h3 style="margin: 0; color: #1B5E20; font-size: 18px;">🗺️ 本日のルート表 (散布管理)</h3>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('todayRouteTableModal').style.display='none'">×</span>
+            </div>
+            <div id="todayRouteTableContent" style="overflow-y: auto; flex: 1;">
+                <div style="text-align:center; padding:20px; color:#888;">読み込み中...</div>
             </div>
         </div>
     </div>
