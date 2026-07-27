@@ -265,9 +265,22 @@
 
   <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src=""></div>
 
+  <!-- 管理者：農業CAD（admin.html iframe） -->
+  <div id="adminCadModal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:16000; justify-content:center; align-items:center;">
+    <div style="width:96%; height:92%; background:#fff; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 8px 28px rgba(0,0,0,0.35);">
+      <div style="padding:10px 12px; background:#f5f5f5; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="font-weight:bold; color:#E65100;">🚜 農業CAD（吸水ピン設定）</div>
+        <button type="button" onclick="closeAdminCadModal()"
+          style="background:#f44336; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
+      <iframe id="adminCadIframe" src="" style="flex:1; border:none; background:#fff;"></iframe>
+    </div>
+  </div>
+
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-  <script src="worker.js?v=1785311000002"></script>
+  <script src="worker.js?v=1785311000004"></script>
   <script src="tracking.js?v=1784615000002"></script>
   <script>
     if ('serviceWorker' in navigator) {

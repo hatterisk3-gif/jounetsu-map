@@ -2070,13 +2070,20 @@ function createSignboardMarker(name, pos, icon, id) {
           : null;
         const fieldIds = (selectedPolyIds || []).filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker);
         const pumps = window.getPumpMachines();
+        const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
 
         let html = `<div style="background:#e0f2f1; padding:12px; border-radius:8px; border:1px solid #80cbc4;">
-          <div style="font-weight:bold; color:#00695C; margin-bottom:8px;">🚰 ポンプ設置</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+            <div style="font-weight:bold; color:#00695C;">🚰 ポンプ設置</div>
+            ${isAdmin ? `<button type="button" onclick="openNewMachineFromIrrigationPump()" style="background:#1976D2; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">➕ 機械マスタに追加</button>` : ''}
+          </div>
           <div style="font-size:11px; color:#546e7a; margin-bottom:10px;">農機マスタの作業分類に「潅水」が含まれるものを表示します。「設置中」を押すとこの圃場への設置として記録されます。</div>`;
 
         if (pumps.length === 0) {
           html += `<div style="font-size:12px; color:#c62828;">作業分類に「潅水」が設定された農機がありません。農機マスタの作業分類を確認してください。</div>`;
+          if (isAdmin) {
+            html += `<div style="margin-top:8px; font-size:11px; color:#546e7a;">管理者は「機械マスタに追加」から作業分類に「潅水」を入れて登録できます。</div>`;
+          }
         } else {
           pumps.forEach(m => {
             let installed;
@@ -2125,6 +2132,7 @@ function createSignboardMarker(name, pos, icon, id) {
           prev[`${el.getAttribute('data-poly-id')}_${el.getAttribute('data-valve')}`] = el.value;
         });
 
+        const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
         const fieldIds = (selectedPolyIds || []).filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker);
         if (fieldIds.length === 0) {
           box.style.display = 'block';
@@ -2145,8 +2153,12 @@ function createSignboardMarker(name, pos, icon, id) {
           const poly = loadedPolygons[pid];
           const pins = window.getWaterInPins(poly);
           const statusObj = window.parseWaterStatusObj(poly.water_status);
+          const safePid = String(pid).replace(/'/g, "\\'");
           html += `<div class="irrig-field-block" data-poly-id="${pid}" style="background:#fff; padding:10px; border-radius:8px; margin-bottom:10px; border:1px solid #bbdefb;">
-            <div style="font-weight:bold; color:#0d47a1; font-size:13px; margin-bottom:8px;">📍 ${poly.name || pid}</div>`;
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+              <div style="font-weight:bold; color:#0d47a1; font-size:13px;">📍 ${poly.name || pid}</div>
+              ${isAdmin ? `<button type="button" onclick="openAdminCadForField('${safePid}')" style="background:#FF9800; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">🚜 農業CADを開く</button>` : ''}
+            </div>`;
           if (pins.length === 0) {
             html += `<div style="font-size:12px; color:#888;">この圃場にはCADの給水栓（吸水ピン）が登録されていません。</div>`;
           } else {
@@ -2172,11 +2184,119 @@ function createSignboardMarker(name, pos, icon, id) {
 
         if (!anyValve) {
           html += `<div style="font-size:12px; color:#c62828; margin-top:4px;">選択中の圃場に給水栓がありません。農業CADで吸水ピンを登録してください。</div>`;
+          if (isAdmin && fieldIds.length > 0) {
+            const firstId = String(fieldIds[0]).replace(/'/g, "\\'");
+            html += `<button type="button" onclick="openAdminCadForField('${firstId}')" style="margin-top:8px; width:100%; background:#FF9800; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">🚜 農業CADを開いて吸水ピンを登録</button>`;
+          }
         }
         html += `</div>`;
         box.style.display = 'block';
         box.innerHTML = html;
         if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
+      };
+
+      // ===== 管理者：農業CAD / 機械マスタ追加（潅水UIから） =====
+      window.openAdminCadForField = (polyId) => {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          else alert('管理者権限が必要です。');
+          return;
+        }
+        const pid = String(polyId || '');
+        const poly = loadedPolygons[pid];
+        if (!poly || poly.isMarker) {
+          if (typeof customAlert === 'function') customAlert('対象の圃場が見つかりません。');
+          else alert('対象の圃場が見つかりません。');
+          return;
+        }
+        const modal = document.getElementById('adminCadModal');
+        const iframe = document.getElementById('adminCadIframe');
+        if (!modal || !iframe) {
+          if (typeof customAlert === 'function') customAlert('農業CAD画面の準備ができていません。ページを再読み込みしてください。');
+          return;
+        }
+        window._adminCadTargetFieldId = pid;
+        const params = new URLSearchParams({
+          openCad: '1',
+          fieldId: pid,
+          v: String(Date.now())
+        });
+        // 可能なら中心座標も渡して地図位置を合わせる
+        try {
+          if (poly.coords && poly.coords.length) {
+            let latSum = 0, lngSum = 0, n = 0;
+            poly.coords.forEach(c => {
+              if (c && typeof c.lat === 'number' && typeof c.lng === 'number') {
+                latSum += c.lat; lngSum += c.lng; n++;
+              }
+            });
+            if (n > 0) {
+              params.set('lat', String(latSum / n));
+              params.set('lng', String(lngSum / n));
+              params.set('zoom', '18');
+            }
+          }
+        } catch (e) {}
+        modal.style.display = 'flex';
+        iframe.src = `admin.html?${params.toString()}`;
+      };
+
+      window.closeAdminCadModal = async () => {
+        const modal = document.getElementById('adminCadModal');
+        const iframe = document.getElementById('adminCadIframe');
+        if (modal) modal.style.display = 'none';
+        if (iframe) iframe.src = '';
+        // CAD更新後の給水栓情報を反映
+        try {
+          if (typeof loadInitData === 'function') {
+            await loadInitData();
+          }
+        } catch (e) {
+          console.warn('CAD閉じ後の再読込失敗:', e);
+        }
+        setTimeout(() => {
+          if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+        }, 300);
+      };
+
+      window.openNewMachineFromIrrigationPump = () => {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          else alert('管理者権限が必要です。');
+          return;
+        }
+        // 定位置用の看板を探す（なければ未設定看板でも可）
+        let signId = '';
+        let signName = '定位置未設定';
+        const signs = Object.keys(loadedPolygons || {})
+          .map(id => loadedPolygons[id])
+          .filter(p => p && p.isMarker);
+        if (signs.length > 0) {
+          // 選択中圃場に近い看板を優先（簡易：先頭）
+          signId = signs[0].id;
+          signName = signs[0].name || '看板';
+        } else {
+          if (typeof customAlert === 'function') {
+            customAlert('定位置となる看板が地図上にありません。\n先に看板を登録するか、看板画面から農機登録してください。');
+          } else {
+            alert('定位置となる看板がありません。');
+          }
+          return;
+        }
+        if (typeof window.openNewMachineModal !== 'function') {
+          if (typeof customAlert === 'function') customAlert('農機登録画面を開けませんでした。');
+          return;
+        }
+        window._openMachineFromIrrigation = true;
+        window.openNewMachineModal(signId, signName);
+        // 作業分類の初期値を「潅水」に寄せる
+        setTimeout(() => {
+          try {
+            if (typeof window.renderWorkCategoryRows === 'function') {
+              window.renderWorkCategoryRows('new_mac_category_rows', ['潅水']);
+            }
+          } catch (e) {}
+        }, 80);
       };
 
       window.collectIrrigationValveData = () => {
@@ -3663,21 +3783,20 @@ function createSignboardMarker(name, pos, icon, id) {
 
         let tempLoadBtn = '';
         try {
-            const tempStr = localStorage.getItem('jmap_temp_work_record');
-            if (tempStr) {
-                const tempParsed = JSON.parse(tempStr);
-                // 現在のrecordTypeと一致する一時保存データがある場合のみ復元ボタンを表示
-                if (tempParsed.type === currentRecordType) {
-                    const savedPolyName = tempParsed.polyId && loadedPolygons[tempParsed.polyId] ? loadedPolygons[tempParsed.polyId].name : '未選択';
-                    const savedTime = tempParsed.savedAt || '';
-                    tempLoadBtn = `<button type="button" id="tempLoadBtn" onclick="loadTempRecord()" style="width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;">📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${savedPolyName} ${savedTime ? '(' + savedTime + ')' : ''}</span></button>`;
-                }
+            const tempParsed = getLocalTempWorkRecord_(currentRecordType);
+            if (tempParsed) {
+                const savedPolyName = tempParsed.polyName
+                  || (tempParsed.polyId && loadedPolygons[tempParsed.polyId] ? loadedPolygons[tempParsed.polyId].name : '未選択');
+                const savedTime = tempParsed.savedAt || '';
+                tempLoadBtn = `<button type="button" id="tempLoadBtn" onclick="loadTempRecord()" style="width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;">📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${savedPolyName} ${savedTime ? '(' + savedTime + ')' : ''}</span></button>`;
             }
         } catch(e) {}
 
         document.getElementById('rightPanelContent').innerHTML = `<div style="background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.05);">${tempLoadBtn}${html}</div>`;
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
         document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
+        // 他端末で保存した一時保存があればクラウドから取得して復元ボタンを更新
+        setTimeout(() => { refreshTempRecordButtonFromCloud_(); }, 50);
         
         if (currentRecordType === 'work') setTimeout(() => {
             if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons();
@@ -3835,7 +3954,60 @@ function createSignboardMarker(name, pos, icon, id) {
         if (currentRecordType === 'work') calcTotalTime();
       };
 
-      window.saveTempRecord = () => {
+      function getTempWorkRecordUserId_() {
+          return localStorage.getItem('passionMapUserId') || '';
+      }
+
+      function getLocalTempWorkRecord_(recordType) {
+          try {
+              const tempStr = localStorage.getItem('jmap_temp_work_record');
+              if (!tempStr) return null;
+              const parsed = JSON.parse(tempStr);
+              if (!parsed || parsed.type !== (recordType || currentRecordType)) return null;
+              return parsed;
+          } catch (e) {
+              return null;
+          }
+      }
+
+      function setLocalTempWorkRecord_(payload) {
+          localStorage.setItem('jmap_temp_work_record', JSON.stringify(payload));
+      }
+
+      function upsertTempLoadButton_(polyName, savedAt) {
+          const container = document.getElementById('rightPanelContent');
+          if (!container) return;
+          let btn = document.getElementById('tempLoadBtn');
+          if (!btn) {
+              const formWrapper = container.querySelector('div');
+              if (!formWrapper) return;
+              btn = document.createElement('button');
+              btn.type = 'button';
+              btn.id = 'tempLoadBtn';
+              btn.onclick = loadTempRecord;
+              btn.style.cssText = 'width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;';
+              formWrapper.insertBefore(btn, formWrapper.firstChild);
+          }
+          btn.innerHTML = `📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${polyName || '未選択'} (${savedAt || ''})</span>`;
+      }
+
+      async function refreshTempRecordButtonFromCloud_() {
+          const userId = getTempWorkRecordUserId_();
+          if (!userId || typeof callGAS !== 'function') return;
+          try {
+              const res = await callGAS('getTempWorkRecord', { userId: userId, type: currentRecordType });
+              const draft = res && res.draft ? res.draft : null;
+              if (!draft) return;
+              setLocalTempWorkRecord_(draft);
+              const polyName = draft.polyName
+                || (draft.polyId && loadedPolygons[draft.polyId] ? loadedPolygons[draft.polyId].name : '未選択');
+              upsertTempLoadButton_(polyName, draft.savedAt || '');
+          } catch (e) {
+              console.warn('一時保存クラウド取得スキップ:', e);
+          }
+      }
+
+      window.saveTempRecord = async () => {
           const container = document.getElementById('rightPanelContent');
           if (!container) return;
           const inputs = container.querySelectorAll('input, select, textarea');
@@ -3856,42 +4028,76 @@ function createSignboardMarker(name, pos, icon, id) {
           });
           const now = new Date();
           const savedAt = `${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-          localStorage.setItem('jmap_temp_work_record', JSON.stringify({
+          const polyName = activePolyId && loadedPolygons[activePolyId] ? loadedPolygons[activePolyId].name : '未選択';
+          const payload = {
               type: currentRecordType,
               polyId: activePolyId,
+              polyName: polyName,
               data: tempData,
               selectedChipName: selectedChipName,
-              savedAt: savedAt
-          }));
-          if(typeof customAlert !== 'undefined') customAlert("✅ 入力内容を一時保存しました！");
-          else alert("✅ 入力内容を一時保存しました！");
-          
-          // フォーム再描画せず、復元ボタンだけ追加する（入力内容を維持）
-          const existingBtn = document.getElementById('tempLoadBtn');
-          if (!existingBtn) {
-              const formWrapper = container.querySelector('div');
-              if (formWrapper) {
-                  const btn = document.createElement('button');
-                  btn.type = 'button';
-                  btn.id = 'tempLoadBtn';
-                  btn.onclick = loadTempRecord;
-                  btn.style.cssText = 'width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;';
-                  const polyName = activePolyId && loadedPolygons[activePolyId] ? loadedPolygons[activePolyId].name : '未選択';
-                  btn.innerHTML = `📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${polyName} (${savedAt})</span>`;
-                  formWrapper.insertBefore(btn, formWrapper.firstChild);
+              selectedPolyIds: Array.isArray(selectedPolyIds) ? [...selectedPolyIds] : [],
+              savedAt: savedAt,
+              userName: currentUser || localStorage.getItem('passionMapUserName') || ''
+          };
+          setLocalTempWorkRecord_(payload);
+
+          const userId = getTempWorkRecordUserId_();
+          let synced = false;
+          if (userId && typeof callGAS === 'function') {
+              try {
+                  await callGAS('saveTempWorkRecord', {
+                      userId: userId,
+                      userName: payload.userName,
+                      type: payload.type,
+                      polyId: payload.polyId || '',
+                      polyName: payload.polyName || '',
+                      data: payload.data,
+                      selectedChipName: payload.selectedChipName || '',
+                      selectedPolyIds: payload.selectedPolyIds || [],
+                      savedAt: payload.savedAt
+                  });
+                  synced = true;
+              } catch (e) {
+                  console.warn('一時保存クラウド同期失敗:', e);
               }
           }
+
+          if (typeof customAlert !== 'undefined') {
+              customAlert(synced
+                ? "✅ 入力内容を一時保存しました！（全端末で同期）"
+                : "✅ この端末に一時保存しました。\n（通信エラーのため他端末への同期は未完了）");
+          } else {
+              alert(synced ? "✅ 入力内容を一時保存しました！（全端末で同期）" : "✅ この端末に一時保存しました。");
+          }
+
+          upsertTempLoadButton_(polyName, savedAt);
       };
 
       window.loadTempRecord = () => {
-          const dataStr = localStorage.getItem('jmap_temp_work_record');
-          if (!dataStr) return;
-          const parsed = JSON.parse(dataStr);
+          const parsed = getLocalTempWorkRecord_(currentRecordType);
+          if (!parsed) {
+              if (typeof customAlert !== 'undefined') customAlert("一時保存データがありません。");
+              else alert("一時保存データがありません。");
+              return;
+          }
           
           const container = document.getElementById('rightPanelContent');
           if(!container) return;
+
+          // 選択圃場も復元
+          if (Array.isArray(parsed.selectedPolyIds) && parsed.selectedPolyIds.length > 0) {
+              selectedPolyIds = parsed.selectedPolyIds.filter(id => id && loadedPolygons[id]);
+              if (typeof renderSelectedPolys === 'function') {
+                  try { renderSelectedPolys(); } catch (e) {}
+              }
+          } else if (parsed.polyId && loadedPolygons[parsed.polyId] && (!selectedPolyIds || selectedPolyIds.length === 0)) {
+              selectedPolyIds = [parsed.polyId];
+              if (typeof renderSelectedPolys === 'function') {
+                  try { renderSelectedPolys(); } catch (e) {}
+              }
+          }
           
-          parsed.data.forEach(savedEl => {
+          (parsed.data || []).forEach(savedEl => {
               let el;
               if (savedEl.id) {
                   el = document.getElementById(savedEl.id);
@@ -4174,6 +4380,13 @@ function createSignboardMarker(name, pos, icon, id) {
               updatePolygonColor(activePolyId);
           }
           localStorage.removeItem('jmap_temp_work_record');
+          // 本保存後はクラウド側の一時保存も削除
+          try {
+              const uid = localStorage.getItem('passionMapUserId') || '';
+              if (uid && typeof callGAS === 'function') {
+                  callGAS('clearTempWorkRecord', { userId: uid, type: currentRecordType }).catch(() => {});
+              }
+          } catch (e) {}
           localStorage.removeItem('passionMapInitData');
           closeRightPanel();
           const resumeClock = typeof window.resumeClockOutAfterWorkSave === 'function' && sessionStorage.getItem('passionMapPendingClockOut');
@@ -4780,6 +4993,10 @@ function createSignboardMarker(name, pos, icon, id) {
         });
             document.getElementById('modal').style.display = 'none'; 
             customAlert(`「${name}」をマスタに登録し、定位置を\n【${signName}】に設定しました！`);
+            if (window._openMachineFromIrrigation) {
+              window._openMachineFromIrrigation = false;
+              if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
+            }
             infoWindow.close(); 
          } catch(e) { 
             customAlert("エラーが発生しました: " + e.message); 

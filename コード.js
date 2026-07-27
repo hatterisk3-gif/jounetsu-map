@@ -95,6 +95,9 @@ function doPost(e) {
     else if (action === "vehicle_saveVehicle") result = vehicle_saveVehicle(params);
     else if (action === "vehicle_saveLocation") result = vehicle_saveLocation(params);
     else if (action === "vehicle_saveStatus") result = vehicle_saveStatus(params);
+    else if (action === "saveTempWorkRecord") result = saveTempWorkRecord(params);
+    else if (action === "getTempWorkRecord") result = getTempWorkRecord(params);
+    else if (action === "clearTempWorkRecord") result = clearTempWorkRecord(params);
 
 
 
@@ -5123,4 +5126,106 @@ function checkAdminRole(userName) {
     }
   }
   return false;
+}
+
+// ==========================================
+// 作業記録の一時保存（全端末同期）
+// ==========================================
+function ensureTempWorkRecordSheet_() {
+  const ss = TENANT_SS;
+  if (!ss) throw new Error('データベースに接続できません');
+  let sheet = ss.getSheetByName('作業一時保存');
+  if (!sheet) {
+    sheet = ss.insertSheet('作業一時保存');
+    sheet.appendRow(['スタッフID', 'ユーザー名', '記録種別', '圃場ID', '圃場名', 'フォームJSON', '作業チップ', '選択圃場IDs', '保存日時']);
+    sheet.getRange(1, 1, 1, 9).setFontWeight('bold').setBackground('#e0e0e0');
+  }
+  return sheet;
+}
+
+function saveTempWorkRecord(params) {
+  const sheet = ensureTempWorkRecordSheet_();
+  const userId = String(params.userId || '').trim();
+  const recordType = String(params.type || 'work');
+  if (!userId) throw new Error('ユーザーIDが必要です');
+
+  const savedAt = params.savedAt || Utilities.formatDate(new Date(), 'JST', 'M/d HH:mm');
+  const formJson = (typeof params.data === 'string') ? params.data : JSON.stringify(params.data || []);
+  const polyIdsJson = (typeof params.selectedPolyIds === 'string')
+    ? params.selectedPolyIds
+    : JSON.stringify(params.selectedPolyIds || []);
+
+  const rowVals = [
+    userId,
+    params.userName || '',
+    recordType,
+    params.polyId || '',
+    params.polyName || '',
+    formJson,
+    params.selectedChipName || '',
+    polyIdsJson,
+    savedAt
+  ];
+
+  const data = sheet.getDataRange().getValues();
+  let targetRow = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === userId && String(data[i][2]) === recordType) {
+      targetRow = i + 1;
+      break;
+    }
+  }
+
+  if (targetRow > 0) {
+    sheet.getRange(targetRow, 1, 1, rowVals.length).setValues([rowVals]);
+  } else {
+    sheet.appendRow(rowVals);
+  }
+  return { success: true, savedAt: savedAt };
+}
+
+function getTempWorkRecord(params) {
+  const sheet = ensureTempWorkRecordSheet_();
+  const userId = String(params.userId || '').trim();
+  const recordType = String(params.type || 'work');
+  if (!userId) return { success: true, draft: null };
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === userId && String(data[i][2]) === recordType) {
+      let formData = [];
+      let selectedPolyIds = [];
+      try { formData = JSON.parse(data[i][5] || '[]'); } catch (e) { formData = []; }
+      try { selectedPolyIds = JSON.parse(data[i][7] || '[]'); } catch (e) { selectedPolyIds = []; }
+      return {
+        success: true,
+        draft: {
+          type: String(data[i][2] || recordType),
+          polyId: data[i][3] || '',
+          polyName: data[i][4] || '',
+          data: formData,
+          selectedChipName: data[i][6] || '',
+          selectedPolyIds: selectedPolyIds,
+          savedAt: data[i][8] || '',
+          userName: data[i][1] || ''
+        }
+      };
+    }
+  }
+  return { success: true, draft: null };
+}
+
+function clearTempWorkRecord(params) {
+  const sheet = ensureTempWorkRecordSheet_();
+  const userId = String(params.userId || '').trim();
+  const recordType = String(params.type || '');
+  if (!userId) return { success: true };
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0]) === userId && (!recordType || String(data[i][2]) === recordType)) {
+      sheet.deleteRow(i + 1);
+    }
+  }
+  return { success: true };
 }

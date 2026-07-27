@@ -3872,6 +3872,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 1200);
             }
 
+            // worker などから「特定圃場の農業CAD」を開く
+            const openCad = urlParams.get('openCad');
+            const cadFieldId = urlParams.get('fieldId') || urlParams.get('id');
+            const shouldOpenCad = openCad && (openCad === '1' || openCad === 'true' || openCad === 'cad') && cadFieldId;
+            if (shouldOpenCad) {
+                const tryOpenCad = (attempt) => {
+                    if (loadedPolygons[cadFieldId] && typeof window.openCADMode === 'function') {
+                        try {
+                            window.history.replaceState(null, null, window.location.pathname);
+                        } catch (e) {}
+                        window.openCADMode(cadFieldId);
+                        return;
+                    }
+                    if (attempt < 40) setTimeout(() => tryOpenCad(attempt + 1), 250);
+                };
+                setTimeout(() => tryOpenCad(0), 800);
+            }
+
             // Workerから飛んできたバトン（パラメータ）を取得
             const directLat = urlParams.get('lat');
             const directLng = urlParams.get('lng');
