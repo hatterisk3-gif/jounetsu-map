@@ -89,6 +89,13 @@ async function executeLogin(isAuto = false) {
             localStorage.setItem('passionMapUserRole', result.role || '作業員');
             localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
+            // 管理者用ボタン表示
+            const resetBtn = document.getElementById('btnResetAllManure');
+            if (resetBtn && currentUserRole === '管理者') resetBtn.style.display = 'inline-block';
+
+            const openAdminFieldBtn = document.getElementById('btnOpenAdminField');
+            if (openAdminFieldBtn && currentUserRole === '管理者') openAdminFieldBtn.style.display = 'inline-block';
+
             if (!isAuto) initMap();
             
             // キャッシュで即座に地図描画
@@ -119,6 +126,25 @@ async function executeLogin(isAuto = false) {
 }
 
 function executeLogout() { localStorage.clear(); location.reload(); }
+
+// ====== 管理者：圃場追加（admin.html を iframe 表示） ======
+window.openAdminFieldModal = function () {
+    if (currentUserRole !== '管理者') { alert('管理者のみ利用できます'); return; }
+    const modal = document.getElementById('adminFieldModal');
+    const iframe = document.getElementById('adminFieldIframe');
+    if (!modal || !iframe) return;
+
+    modal.style.display = 'flex';
+    // iframe を差し替えて、admin.html 側の自動「圃場作成モード開始」パラメータを反映
+    iframe.src = `admin.html?startDraw=1&v=${Date.now()}`;
+};
+
+window.closeAdminFieldModal = function () {
+    const modal = document.getElementById('adminFieldModal');
+    const iframe = document.getElementById('adminFieldIframe');
+    if (modal) modal.style.display = 'none';
+    if (iframe) iframe.src = '';
+};
 
 // ====== 地図初期化 ======
 function initMap() {
@@ -655,6 +681,23 @@ function getWeatherDescription(code) {
     return '不明';
 }
 
+function renderSunshineDiffBadge(thisYearH, lastYearH) {
+  let ty = parseFloat(thisYearH);
+  let ly = parseFloat(lastYearH);
+  if (isNaN(ty) || isNaN(ly) || ly === 0) {
+    return `<span style="font-size:11px; color:#666;">-</span>`;
+  }
+  let diff = Math.round((ty - ly) * 10) / 10;
+  let ratio = Math.round((ty / ly) * 100);
+  if (diff > 0) {
+    return `<span style="background:#ffebee; color:#c62828; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #ffcdd2;">+${diff.toFixed(1)}h 多 (${ratio}%)</span>`;
+  } else if (diff < 0) {
+    return `<span style="background:#e3f2fd; color:#1565c0; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #bbdefb;">${diff.toFixed(1)}h 少 (${ratio}%)</span>`;
+  } else {
+    return `<span style="background:#f5f5f5; color:#616161; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #e0e0e0;">±0.0h (100%)</span>`;
+  }
+}
+
 window.switchWeatherTab = function(tabName) {
     let tF = document.getElementById('tabForecast');
     let tH = document.getElementById('tabHistory');
@@ -686,13 +729,18 @@ async function fetchWeatherAndUpdateUI() {
   lastWeatherFetchPos = {lat, lng};
 
   try {
-    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FTokyo`;
+    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=7&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
     
     let today = new Date();
-    let lastYearStart = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
-    let lastYearEnd = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() + 30);
     let formatYMD = (d) => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
-    let historyUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${formatYMD(lastYearStart)}&end_date=${formatYMD(lastYearEnd)}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FTokyo`;
+    let todayStr = formatYMD(today);
+
+    let lastYearToday = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+    let lastYearTodayStr = formatYMD(lastYearToday);
+    let lastYearStart = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() - 30);
+    let lastYearEnd = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() + 30);
+    
+    let historyUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${formatYMD(lastYearStart)}&end_date=${formatYMD(lastYearEnd)}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
 
     let [resForecast, resHistory] = await Promise.all([
        fetch(forecastUrl),
@@ -701,22 +749,86 @@ async function fetchWeatherAndUpdateUI() {
     
     let data = await resForecast.json();
     let historyData = resHistory && resHistory.ok ? await resHistory.json() : null;
+
+    let todayIndex = data.daily && data.daily.time ? data.daily.time.indexOf(todayStr) : -1;
+    if (todayIndex === -1) todayIndex = 7;
     
     let currentCode = data.current_weather.weathercode;
     let emoji = getWeatherEmoji(currentCode);
-    let tomorrowCode = data.daily.weathercode[1];
+    let tomorrowCode = data.daily.weathercode[todayIndex + 1] || data.daily.weathercode[1];
     let tomorrowEmoji = getWeatherEmoji(tomorrowCode);
     let btnWeather = document.getElementById('btnWeather');
     if (btnWeather) {
       btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">明${tomorrowEmoji}</span></div>`;
     }
 
+    // --- 日照時間比較計算 ---
+    let past7ThisYearSec = 0;
+    for (let i = Math.max(0, todayIndex - 7); i < todayIndex; i++) {
+      if (data.daily.sunshine_duration && data.daily.sunshine_duration[i] != null) {
+        past7ThisYearSec += data.daily.sunshine_duration[i];
+      }
+    }
+    let past7ThisYearH = (past7ThisYearSec / 3600).toFixed(1);
+
+    let next7ThisYearSec = 0;
+    for (let i = todayIndex; i < todayIndex + 7 && i < data.daily.time.length; i++) {
+      if (data.daily.sunshine_duration && data.daily.sunshine_duration[i] != null) {
+        next7ThisYearSec += data.daily.sunshine_duration[i];
+      }
+    }
+    let next7ThisYearH = (next7ThisYearSec / 3600).toFixed(1);
+
+    let past7LastYearH = "-", next7LastYearH = "-";
+    if (historyData && historyData.daily && historyData.daily.time) {
+      let lyTodayIdx = historyData.daily.time.indexOf(lastYearTodayStr);
+      if (lyTodayIdx !== -1) {
+        let past7LySec = 0;
+        for (let i = Math.max(0, lyTodayIdx - 7); i < lyTodayIdx; i++) {
+          if (historyData.daily.sunshine_duration && historyData.daily.sunshine_duration[i] != null) {
+            past7LySec += historyData.daily.sunshine_duration[i];
+          }
+        }
+        past7LastYearH = (past7LySec / 3600).toFixed(1);
+
+        let next7LySec = 0;
+        for (let i = lyTodayIdx; i < lyTodayIdx + 7 && i < historyData.daily.time.length; i++) {
+          if (historyData.daily.sunshine_duration && historyData.daily.sunshine_duration[i] != null) {
+            next7LySec += historyData.daily.sunshine_duration[i];
+          }
+        }
+        next7LastYearH = (next7LySec / 3600).toFixed(1);
+      }
+    }
+
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
     
+    // --- ☀️ 日照時間比較パネル ---
+    if (historyData && historyData.daily) {
+      let pastBadge = renderSunshineDiffBadge(past7ThisYearH, past7LastYearH);
+      let nextBadge = renderSunshineDiffBadge(next7ThisYearH, next7LastYearH);
+
+      html += `<div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
+        <div style="font-weight:bold; color:#e65100; margin-bottom:8px; display:flex; align-items:center; gap:5px;">
+          <span>☀️ 昨年との日照時間比較 (7日間合計)</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:6px 10px; border-radius:6px; border:1px solid #fff3e0;">
+            <span><b>直近7日間</b> (今年:<b>${past7ThisYearH}h</b> / 昨年:${past7LastYearH}h)</span>
+            <div>${pastBadge}</div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:6px 10px; border-radius:6px; border:1px solid #fff3e0;">
+            <span><b>今後7日間</b> (今年:<b>${next7ThisYearH}h</b> / 昨年:${next7LastYearH}h)</span>
+            <div>${nextBadge}</div>
+          </div>
+        </div>
+      </div>`;
+    }
+
     html += `<div style="display:flex; margin-bottom:15px; border-bottom:1px solid #ccc;">
       <div id="tabForecast" onclick="switchWeatherTab('forecast')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid #2196F3; color:#2196F3;">週間予報</div>
-      <div id="tabHistory" onclick="switchWeatherTab('history')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid transparent; color:#999;">昨年の同時期</div>
+      <div id="tabHistory" onclick="switchWeatherTab('history')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid transparent; color:#999;">昨年の同時期 (前後1ヶ月)</div>
     </div>`;
 
     html += `<div id="contentForecast">`;
@@ -751,27 +863,37 @@ async function fetchWeatherAndUpdateUI() {
     html += `</div>`;
 
     html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 週間予報</div>`;
-    html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
+    html += `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">`;
     html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
-               <th style="padding: 8px; text-align: left;">日付</th>
-               <th style="padding: 8px; text-align: center;">天気</th>
-               <th style="padding: 8px; text-align: right;">最高/最低</th>
+               <th style="padding: 6px 4px; text-align: left;">日付</th>
+               <th style="padding: 6px 4px; text-align: center;">天気</th>
+               <th style="padding: 6px 4px; text-align: right;">最高/最低</th>
+               <th style="padding: 6px 4px; text-align: right;">降水</th>
+               <th style="padding: 6px 4px; text-align: right;">日照</th>
+               <th style="padding: 6px 4px; text-align: right;">風速</th>
              </tr>`;
     
-    for (let i = 0; i < data.daily.time.length; i++) {
+    for (let i = todayIndex; i < data.daily.time.length; i++) {
       let dateStr = data.daily.time[i];
       let d = new Date(dateStr);
       let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
       let code = data.daily.weathercode[i];
       let maxT = data.daily.temperature_2m_max[i];
       let minT = data.daily.temperature_2m_min[i];
+      let pcp = data.daily.precipitation_sum ? (data.daily.precipitation_sum[i] !== undefined ? data.daily.precipitation_sum[i] + 'mm' : '-') : '-';
+      let sunSec = data.daily.sunshine_duration ? data.daily.sunshine_duration[i] : null;
+      let sunHours = (sunSec !== null && sunSec !== undefined) ? (sunSec / 3600).toFixed(1) + 'h' : '-';
+      let wind = data.daily.wind_speed_10m_max ? (data.daily.wind_speed_10m_max[i] !== undefined ? data.daily.wind_speed_10m_max[i] + 'm/s' : '-') : '-';
       let dEmoji = getWeatherEmoji(code);
       let dDesc = getWeatherDescription(code);
       
       html += `<tr style="border-bottom: 1px solid #eee;">
-                 <td style="padding: 8px; text-align: left;">${shortDate}</td>
-                 <td style="padding: 8px; text-align: center;" title="${dDesc}">${dEmoji}</td>
-                 <td style="padding: 8px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                 <td style="padding: 6px 4px; text-align: left;">${shortDate}</td>
+                 <td style="padding: 6px 4px; text-align: center;" title="${dDesc}">${dEmoji}</td>
+                 <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                 <td style="padding: 6px 4px; text-align: right; color:#2196F3;">${pcp}</td>
+                 <td style="padding: 6px 4px; text-align: right; color:#FF9800;">${sunHours}</td>
+                 <td style="padding: 6px 4px; text-align: right; color:#4CAF50;">${wind}</td>
                </tr>`;
     }
     html += `</table>`;
@@ -780,30 +902,44 @@ async function fetchWeatherAndUpdateUI() {
 
     html += `<div id="contentHistory" style="display:none;">`;
     if (historyData && historyData.daily) {
-       html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 昨年の天気 (${lastYearStart.getFullYear()}年)</div>`;
-       html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">`;
+       let lastYearTodayStr = formatYMD(lastYearToday);
+       html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 昨年の天気 (本日±1ヶ月) ★:本日の同日</div>`;
+       html += `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">`;
        html += `<tr style="background: #fff8e1; border-bottom: 1px solid #ccc;">
-                  <th style="padding: 8px; text-align: left;">日付</th>
-                  <th style="padding: 8px; text-align: center;">天気</th>
-                  <th style="padding: 8px; text-align: right;">最高/最低</th>
-                  <th style="padding: 8px; text-align: right;">降水</th>
+                  <th style="padding: 6px 4px; text-align: left;">日付</th>
+                  <th style="padding: 6px 4px; text-align: center;">天気</th>
+                  <th style="padding: 6px 4px; text-align: right;">最高/最低</th>
+                  <th style="padding: 6px 4px; text-align: right;">降水</th>
+                  <th style="padding: 6px 4px; text-align: right;">日照</th>
+                  <th style="padding: 6px 4px; text-align: right;">風速</th>
                 </tr>`;
        for (let i = 0; i < historyData.daily.time.length; i++) {
           let dateStr = historyData.daily.time[i];
           let d = new Date(dateStr);
           let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
+          let isTodayLastYear = (dateStr === lastYearTodayStr);
+          if (isTodayLastYear) {
+            shortDate += '★';
+          }
           let code = historyData.daily.weathercode[i];
           let maxT = historyData.daily.temperature_2m_max[i];
           let minT = historyData.daily.temperature_2m_min[i];
-          let pcp = historyData.daily.precipitation_sum[i];
+          let pcp = historyData.daily.precipitation_sum ? (historyData.daily.precipitation_sum[i] !== undefined ? historyData.daily.precipitation_sum[i] + 'mm' : '-') : '-';
+          let sunSec = historyData.daily.sunshine_duration ? historyData.daily.sunshine_duration[i] : null;
+          let sunHours = (sunSec !== null && sunSec !== undefined) ? (sunSec / 3600).toFixed(1) + 'h' : '-';
+          let wind = historyData.daily.wind_speed_10m_max ? (historyData.daily.wind_speed_10m_max[i] !== undefined ? historyData.daily.wind_speed_10m_max[i] + 'm/s' : '-') : '-';
           let dEmoji = getWeatherEmoji(code);
           let dDesc = getWeatherDescription(code);
           
-          html += `<tr style="border-bottom: 1px solid #eee;">
-                     <td style="padding: 8px; text-align: left;">${shortDate}</td>
-                     <td style="padding: 8px; text-align: center;" title="${dDesc}">${dEmoji}</td>
-                     <td style="padding: 8px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
-                     <td style="padding: 8px; text-align: right; color:#2196F3;">${pcp}mm</td>
+          let rowStyle = isTodayLastYear ? 'border-bottom: 1px solid #eee; background: #e3f2fd; font-weight: bold;' : 'border-bottom: 1px solid #eee;';
+
+          html += `<tr style="${rowStyle}">
+                     <td style="padding: 6px 4px; text-align: left;">${shortDate}</td>
+                     <td style="padding: 6px 4px; text-align: center;" title="${dDesc}">${dEmoji}</td>
+                     <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                     <td style="padding: 6px 4px; text-align: right; color:#2196F3;">${pcp}</td>
+                     <td style="padding: 6px 4px; text-align: right; color:#FF9800;">${sunHours}</td>
+                     <td style="padding: 6px 4px; text-align: right; color:#4CAF50;">${wind}</td>
                    </tr>`;
        }
        html += `</table>`;
@@ -1058,4 +1194,20 @@ function toggleIdForm() {
     div.style.display = div.style.display === 'none' ? 'block' : 'none';
 }
 
-
+// ====== 管理者用：鶏糞散布ステータス全リセット ======
+window.resetAllManureStatus = async function() {
+    if (currentUserRole !== '管理者') { alert('管理者のみ実行できます'); return; }
+    if (!confirm('全圃場の鶏糞散布ステータスを「依頼なし」にリセットします。\nこの操作は元に戻せません。実行しますか？')) return;
+    try {
+        const res = await callGAS('resetAllManureStatus', { userName: currentUserName });
+        if (res && res.success) {
+            alert(`${res.count}件の圃場をリセットしました。`);
+            localStorage.removeItem('manureMapData');
+            loadInitData();
+        } else {
+            alert('リセットに失敗しました。');
+        }
+    } catch (e) {
+        alert('エラー: ' + e.message);
+    }
+};

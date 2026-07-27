@@ -3467,6 +3467,16 @@ document.addEventListener('DOMContentLoaded', () => {
         mapInitPromise.then(() => {
             const urlParams = new URLSearchParams(window.location.search);
 
+            // iframe 経由などで「最初から圃場作成モード」にしたい場合
+            const startDraw = urlParams.get('startDraw') || urlParams.get('mode');
+            const shouldAutoStartDraw = startDraw && (startDraw === '1' || startDraw === 'true' || startDraw === 'draw');
+            if (shouldAutoStartDraw && urlParams.get('action') !== 'draw') {
+                setTimeout(() => {
+                    const btn = document.getElementById('btnDrawMode');
+                    if (btn) btn.click();
+                }, 1200);
+            }
+
             // Workerから飛んできたバトン（パラメータ）を取得
             const directLat = urlParams.get('lat');
             const directLng = urlParams.get('lng');

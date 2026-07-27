@@ -81,6 +81,7 @@ function doPost(e) {
     else if (action === "getFieldMemoHistory") result = getFieldMemoHistory(params);
     else if (action === "saveTrackingData") result = saveTrackingData(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
+    else if (action === "resetAllManureStatus") result = resetAllManureStatus(params.userName);
     else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
     else if (action === "changePassword") result = changePassword(params.userId, params.currentPassword, params.newPassword);
     else if (action === "machine_loadAll") result = machine_loadAll();
@@ -4952,6 +4953,24 @@ function vehicle_saveStatus(p) {
     }
   }
   return { success: true };
+}
+
+function resetAllManureStatus(userName) {
+  if (!checkAdminRole(userName)) throw new Error("管理者権限が必要です");
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('圃場');
+  if (!sheet) throw new Error("圃場シートが見つかりません");
+  const data = sheet.getDataRange().getValues();
+  const emptyManure = JSON.stringify({ manure_status: 'none', manure_deadline: '', manure_scheduled_date: '', manure_cancel_reason: '', manure_has_pin: false });
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    sheet.getRange(i + 1, 18).setValue(emptyManure);
+    count++;
+  }
+  SpreadsheetApp.flush();
+  writeLog(userName, "鶏糞ステータス全リセット", "全圃場", count + "件リセット");
+  return { success: true, count: count };
 }
 
 function checkAdminRole(userName) {

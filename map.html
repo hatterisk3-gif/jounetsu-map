@@ -43,6 +43,8 @@
             <button id="btnTyphoon" onclick="openTyphoonModal()" class="ctrl-btn" style="display:none; background:#ffebee; color:#d32f2f; border:1px solid #d32f2f;">🌀 台風</button>
             <button onclick="openContactModal()" class="ctrl-btn" style="background:#E8F5E9; color:#388E3C; border:1px solid #388E3C;">📞 連絡先</button>
             <button onclick="openMyPage()" class="ctrl-btn" style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2;">👤 マイページ</button>
+            <button id="btnResetAllManure" onclick="resetAllManureStatus()" class="ctrl-btn" style="display:none; background:#880E4F; color:white; border:none;">🔄 全リセット</button>
+            <button id="btnOpenAdminField" onclick="openAdminFieldModal()" class="ctrl-btn" style="display:none; background:#212121; color:#4CAF50; border:1px solid #4CAF50;">✏️ 圃場</button>
             <button onclick="executeLogout()" class="ctrl-btn" style="background:#F44336; color:white; border:none;">ログアウト</button>
         </div>
         <!-- The filter checkboxes will be a popup now -->
@@ -66,6 +68,19 @@
 
 
     <div id="map"></div>
+
+    <!-- 管理者：圃場追加モーダル（admin.html を iframe 表示） -->
+    <div id="adminFieldModal"
+        style="display:none; position: fixed; inset:0; background: rgba(0,0,0,0.7); z-index:15000; justify-content:center; align-items:center;">
+      <div style="width:95%; height:90%; background:#fff; border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="padding:10px 12px; background:#f5f5f5; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-weight:bold; color:#4CAF50;">✏️ 圃場追加（管理者）</div>
+          <button type="button" onclick="closeAdminFieldModal()"
+            style="background:#f44336; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+        </div>
+        <iframe id="adminFieldIframe" src="" style="flex:1; border:none; background:#fff;"></iframe>
+      </div>
+    </div>
 
     <!-- 圃場メモ（CAD風） -->
     <div id="fieldMemoOverlay">
