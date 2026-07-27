@@ -1096,12 +1096,6 @@ async function fetchWeatherAndUpdateUI() {
     if (historyData && historyData.daily && typeof window.renderSunshinePanelHtml === 'function') {
       html += window.renderSunshinePanelHtml();
     }
-            <span><b>今後7日間</b> (今年:<b>${next7ThisYearH}h</b> / 昨年:${next7LastYearH}h)</span>
-            <div>${nextBadge}</div>
-          </div>
-        </div>
-      </div>`;
-    }
 
     html += `<div style="display:flex; margin-bottom:15px; border-bottom:1px solid #ccc;">
       <div id="tabForecast" onclick="switchWeatherTab('forecast')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid #2196F3; color:#2196F3;">週間予報</div>
