@@ -2316,7 +2316,6 @@ function createSignboardMarker(name, pos, icon, id) {
               : '圃場作業').trim();
             return wCat === catNorm;
           });
-          // マスタのカテゴリ名がボタンと一致しない場合は、作物条件だけで表示する
           if (inCat.length) {
             works = inCat;
           } else if (works.length) {
@@ -2325,12 +2324,41 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (cropKey) {
           works = works.filter(w => {
-            const wCrop = window.normalizeWorkCropKey(w && w.cropName);
-            // 選択作物に一致する作業 ＋ 共通作業
-            return wCrop === cropKey || wCrop === '__common__';
+            if (!w) return false;
+            // 複数作物（crops配列 または カンマ区切り文字列）での判定
+            let cropList = [];
+            if (w.crops && Array.isArray(w.crops) && w.crops.length) {
+              cropList = w.crops;
+            } else if (w.cropName) {
+              cropList = String(w.cropName).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+            }
+            if (!cropList.length || cropList.includes('共通') || cropList.includes('__common__')) return true;
+
+            const normKey = window.normalizeWorkCropKey(cropKey);
+            return cropList.some(c => window.normalizeWorkCropKey(c) === normKey);
           });
         }
         return works;
+      };
+
+      window.getDetailWorksForWorkAndCrop = (wObj, cropKey) => {
+        if (!wObj) return [];
+        let detailsStr = '';
+
+        if (wObj.cropDetails && typeof wObj.cropDetails === 'object') {
+          if (cropKey && wObj.cropDetails[cropKey] != null) {
+            detailsStr = wObj.cropDetails[cropKey];
+          } else if (wObj.cropDetails['__common__'] != null) {
+            detailsStr = wObj.cropDetails['__common__'];
+          }
+        }
+
+        if (!detailsStr && wObj.detailWorks) {
+          detailsStr = wObj.detailWorks;
+        }
+
+        if (!detailsStr) return [];
+        return String(detailsStr).split(/[,、]/).map(s => s.trim()).filter(Boolean);
       };
 
       window.getCropOptionsForCategory = (category, p) => {
@@ -3005,8 +3033,10 @@ function createSignboardMarker(name, pos, icon, id) {
           const catOpts = (pdlWorkCategories || ['圃場作業', '事務作業', '保全・整備']).map(c =>
               `<option value="${String(c).replace(/"/g, '&quot;')}" ${c === defaultCat ? 'selected' : ''}>${c}</option>`
           ).join('');
-          const cropOpts = '<option value="">共通（全作物）</option>' + (pdlCrops || []).map(c =>
-              `<option value="${String(c.name).replace(/"/g, '&quot;')}" ${c.name === defaultCrop ? 'selected' : ''}>${c.name}</option>`
+          const cropNames = (pdlCrops || []).map(c => c.name);
+          if (defaultCrop && !cropNames.includes(defaultCrop)) cropNames.unshift(defaultCrop);
+          const cropOpts = '<option value="">共通（全作物）</option>' + cropNames.map(name =>
+              `<option value="${String(name).replace(/"/g, '&quot;')}" ${name === defaultCrop ? 'selected' : ''}>${name}</option>`
           ).join('');
           const title = mode === 'edit' ? '作業マスタを編集' : '作業マスタを追加';
           const detailsHtml = window.buildWorkerDetailWorksHtml('wn_edit_details_list', (existing && existing.detailWorks) || '');

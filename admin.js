@@ -885,17 +885,14 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             </div>`;
         } else if (type === 'work') {
             const catOpts = pdlWorkCategories.map(c => `<option value="${c}">${c}</option>`).join('');
-            const cropOpts = '<option value="">共通</option>' + (pdlCrops || []).map(c => `<option value="${c.name}">${c.name}</option>`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">作業カテゴリ / 作物</label>
-                <div style="display:flex; gap:5px;">
-                  <select id="add_work_category" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${catOpts}</select>
-                  <select id="add_work_crop" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${cropOpts}</select>
-                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">作業カテゴリ</label>
+                <select id="add_work_category" class="form-input" style="margin-bottom:0; padding:8px;">${catOpts}</select>
                 <label style="font-size:12px; font-weight:bold; color:#555;">作業名</label>
                 <input type="text" id="add_work_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 播種">
-                <label style="font-size:12px; font-weight:bold; color:#555;">詳細作業（各枠に1つ）</label>
-                ${buildDetailWorksEditorHtml('add_work_details_list', '')}
+                <label style="font-size:12px; font-weight:bold; color:#555;">対象作物（複数選択可）</label>
+                ${buildWorkCropsCheckboxesHtml('add_work', ['__common__'])}
+                ${buildPerCropDetailWorksEditorHtml('add_work', ['__common__'], {})}
                 <button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">作業マスタを追加</button>
             </div>`;
         } else if (type === 'machine') {
@@ -928,10 +925,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     <option value="電気200V">電気200V</option>
                   </select>
                 </div>
-                <label style="font-size:12px; font-weight:bold; color:#555;">定位置（管理機能付き看板）</label>
-                <select id="add_mac_sign" class="form-input" style="width:100%; margin-bottom:0; padding:8px;">${getAdminSignOptionsHtml('')}</select>
-                <label style="font-size:12px; font-weight:bold; color:#555;">作業分類</label>
-                ${buildMachineWorkCategoryEditorHtml('add_mac_category_rows', '')}
+                <label style="font-size:12px; font-weight:bold; color:#555;">作業カテゴリ（対応可能な作業）</label>
+                ${buildMachineWorkCategoryEditorHtml('add_mac_category_rows', '', '作業名 (例:草刈)')}
+                <label style="font-size:12px; font-weight:bold; color:#555;">定位置（看板を選択）*</label>
+                <select id="add_mac_sign" class="form-input" style="margin-bottom:0; padding:8px;">${getAdminSignOptionsHtml('')}</select>
                 <button onclick="execMaster('machine', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">農機を追加する</button>
             </div>`;
         }
@@ -974,8 +971,17 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.workCategory || '汎用'}</span>`;
             if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8; margin-left:4px;">単位:${v.unit} (容量:${v.size||'-'})</span>`;
             if (type === 'work') {
-                subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px; margin-left:4px;">${v.cropName || '共通'}</span>`;
-                if (v.detailWorks) subInfo += `<div style="font-size:11px; color:#666; margin-top:2px;">詳細: ${v.detailWorks}</div>`;
+                const cropsDisp = (v.crops && v.crops.length) ? v.crops.join(', ') : (v.cropName || '共通');
+                subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px; margin-left:4px;">🌱 ${cropsDisp}</span>`;
+                if (v.cropDetails && Object.keys(v.cropDetails).length > 0) {
+                    let detailsPreview = Object.keys(v.cropDetails).map(cKey => {
+                        const label = cKey === '__common__' ? '共通' : cKey;
+                        return `<span style="font-size:10px; color:#555;">[${label}: ${v.cropDetails[cKey] || 'なし'}]</span>`;
+                    }).join(' ');
+                    subInfo += `<div style="font-size:11px; color:#666; margin-top:2px;">詳細: ${detailsPreview}</div>`;
+                } else if (v.detailWorks) {
+                    subInfo += `<div style="font-size:11px; color:#666; margin-top:2px;">詳細: ${v.detailWorks}</div>`;
+                }
             }
             if (type === 'machine') {
                 const bits = [];
@@ -1095,29 +1101,194 @@ window.openEditMachineGroupMaster = (encodedName) => {
     openMasterDetail('machineGroup', editHtml);
 };
 
+/** 作物名マルチ選択（チェックボックス群）のHTML生成 */
+window.buildWorkCropsCheckboxesHtml = (prefix, selectedCropsArray = []) => {
+    const crops = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops)) ? pdlCrops.map(c => c.name) : [];
+    let normSelected = Array.isArray(selectedCropsArray) ? selectedCropsArray : String(selectedCropsArray || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const isCommonChecked = normSelected.length === 0 || normSelected.includes('共通') || normSelected.includes('__common__');
+
+    let html = `<div id="${prefix}_crops_container" style="display:flex; flex-wrap:wrap; gap:8px; padding:10px; background:#fafafa; border:1px solid #ddd; border-radius:6px; margin-bottom:10px;">`;
+
+    html += `
+        <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px; font-weight:bold; background:${isCommonChecked ? '#e3f2fd' : '#fff'}; border:1px solid ${isCommonChecked ? '#2196F3' : '#ccc'}; padding:4px 10px; border-radius:15px; cursor:pointer;">
+            <input type="checkbox" class="${prefix}_crop_cb" value="__common__" ${isCommonChecked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}')"> 🌐 共通
+        </label>
+    `;
+
+    crops.forEach(cName => {
+        const checked = normSelected.includes(cName);
+        html += `
+            <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px; background:${checked ? '#e8f5e9' : '#fff'}; border:1px solid ${checked ? '#4CAF50' : '#ccc'}; padding:4px 10px; border-radius:15px; cursor:pointer;">
+                <input type="checkbox" class="${prefix}_crop_cb" value="${String(cName).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}')"> 🌱 ${cName}
+            </label>
+        `;
+    });
+
+    html += `</div>`;
+    return html;
+};
+
+/** 選択されている作物一覧の取得 */
+window.getSelectedWorkCrops = (prefix) => {
+    const cbs = document.querySelectorAll(`.${prefix}_crop_cb:checked`);
+    const list = Array.from(cbs).map(cb => cb.value).filter(Boolean);
+    return list.length ? list : ['__common__'];
+};
+
+/** 作物選択が変更された時にタブおよび詳細作業エリアを自動更新する */
+window.onWorkCropsChange = (prefix) => {
+    const selected = getSelectedWorkCrops(prefix);
+    const tabsBox = document.getElementById(`${prefix}_crop_tabs`);
+    if (!tabsBox) return;
+
+    let activeTab = tabsBox.getAttribute('data-active-tab') || '__common__';
+    if (!selected.includes(activeTab)) {
+        activeTab = selected[0] || '__common__';
+    }
+
+    let tabsHtml = selected.map(cKey => {
+        const label = cKey === '__common__' ? '🌐 共通' : `🌱 ${cKey}`;
+        const isActive = (cKey === activeTab);
+        return `
+            <button type="button" onclick="switchWorkCropTab('${prefix}', '${String(cKey).replace(/'/g, "\\'")}')"
+                style="background:${isActive ? '#2196F3' : '#f5f5f5'}; color:${isActive ? '#fff' : '#444'}; border:1px solid ${isActive ? '#1976D2' : '#ccc'}; border-bottom:none; border-radius:6px 6px 0 0; padding:6px 14px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">
+                ${label}
+            </button>
+        `;
+    }).join('');
+
+    tabsBox.innerHTML = tabsHtml;
+    tabsBox.setAttribute('data-active-tab', activeTab);
+
+    const detailsBox = document.getElementById(`${prefix}_details_panels`);
+    selected.forEach(cKey => {
+        let panel = document.getElementById(`${prefix}_panel_${cKey}`);
+        if (!panel && detailsBox) {
+            panel = document.createElement('div');
+            panel.id = `${prefix}_panel_${cKey}`;
+            panel.className = `${prefix}_detail_panel`;
+            panel.setAttribute('data-crop-key', cKey);
+            const labelName = cKey === '__common__' ? '共通' : cKey;
+            panel.innerHTML = `
+                <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">【${labelName}】の詳細作業リスト</div>
+                ${buildDetailWorksEditorHtml(`${prefix}_details_${cKey}`, '')}
+            `;
+            detailsBox.appendChild(panel);
+        }
+        if (panel) {
+            panel.style.display = (cKey === activeTab) ? 'block' : 'none';
+        }
+    });
+
+    const allPanels = document.querySelectorAll(`.${prefix}_detail_panel`);
+    allPanels.forEach(p => {
+        const pk = p.getAttribute('data-crop-key');
+        if (!selected.includes(pk)) {
+            p.style.display = 'none';
+        }
+    });
+};
+
+window.switchWorkCropTab = (prefix, cKey) => {
+    const tabsBox = document.getElementById(`${prefix}_crop_tabs`);
+    if (tabsBox) tabsBox.setAttribute('data-active-tab', cKey);
+    onWorkCropsChange(prefix);
+};
+
+window.buildPerCropDetailWorksEditorHtml = (prefix, selectedCropsArray = [], cropDetailsMap = {}) => {
+    let normSelected = Array.isArray(selectedCropsArray) ? selectedCropsArray : String(selectedCropsArray || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    if (!normSelected.length) normSelected = ['__common__'];
+
+    const map = cropDetailsMap || {};
+    let activeTab = normSelected[0] || '__common__';
+
+    let tabsHtml = normSelected.map(cKey => {
+        const label = cKey === '__common__' ? '🌐 共通' : `🌱 ${cKey}`;
+        const isActive = (cKey === activeTab);
+        return `
+            <button type="button" onclick="switchWorkCropTab('${prefix}', '${String(cKey).replace(/'/g, "\\'")}')"
+                style="background:${isActive ? '#2196F3' : '#f5f5f5'}; color:${isActive ? '#fff' : '#444'}; border:1px solid ${isActive ? '#1976D2' : '#ccc'}; border-bottom:none; border-radius:6px 6px 0 0; padding:6px 14px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">
+                ${label}
+            </button>
+        `;
+    }).join('');
+
+    let panelsHtml = normSelected.map(cKey => {
+        const isActive = (cKey === activeTab);
+        const detailStr = map[cKey] != null ? map[cKey] : (cKey === '__common__' ? (map['detailWorks'] || '') : '');
+        const labelName = cKey === '__common__' ? '共通' : cKey;
+        return `
+            <div id="${prefix}_panel_${cKey}" class="${prefix}_detail_panel" data-crop-key="${cKey}" style="display:${isActive ? 'block' : 'none'};">
+                <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">【${labelName}】の詳細作業リスト</div>
+                ${buildDetailWorksEditorHtml(`${prefix}_details_${cKey}`, detailStr)}
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div style="margin-top:10px;">
+            <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（作物別タブ設定）</div>
+            <div id="${prefix}_crop_tabs" data-active-tab="${activeTab}" style="display:flex; border-bottom:1px solid #ccc; margin-bottom:10px; overflow-x:auto;">
+                ${tabsHtml}
+            </div>
+            <div id="${prefix}_details_panels" style="background:#fff; border:1px solid #e0e0e0; border-radius:0 0 6px 6px; padding:10px;">
+                ${panelsHtml}
+            </div>
+        </div>
+    `;
+};
+
+window.collectPerCropDetailWorks = (prefix) => {
+    const selectedCrops = getSelectedWorkCrops(prefix);
+    const cropDetailsMap = {};
+    let commonDetailsStr = '';
+
+    selectedCrops.forEach(cKey => {
+        const containerId = `${prefix}_details_${cKey}`;
+        const str = collectDetailWorksFromInputs(containerId);
+        cropDetailsMap[cKey] = str;
+        if (cKey === '__common__') {
+            commonDetailsStr = str;
+        }
+    });
+
+    const realCrops = selectedCrops.filter(c => c !== '__common__');
+
+    return {
+        crops: realCrops,
+        cropName: realCrops.join(','),
+        cropDetails: cropDetailsMap,
+        detailWorks: commonDetailsStr || Object.values(cropDetailsMap)[0] || ''
+    };
+};
+
 window.openEditWorkMaster = (encodedStr) => {
     const v = JSON.parse(decodeURIComponent(encodedStr));
     const catOpts = pdlWorkCategories.map(c => `<option value="${c}" ${c===v.category?'selected':''}>${c}</option>`).join('');
-    const cropOpts = '<option value="">共通</option>' + (pdlCrops || []).map(c => `<option value="${c.name}" ${c.name===v.cropName?'selected':''}>${c.name}</option>`).join('');
     
+    let selectedCrops = [];
+    if (v.crops && Array.isArray(v.crops) && v.crops.length) {
+        selectedCrops = v.crops;
+    } else if (v.cropName) {
+        selectedCrops = String(v.cropName).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    }
+    if (!selectedCrops.length) selectedCrops = ['__common__'];
+
     const safeName = (v.name || "").replace(/"/g, '&quot;');
 
     const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; color:#2196F3; font-size:15px; border-bottom:2px solid #2196F3; padding-bottom:5px;">✏️ 作業マスタの編集</h4>
             <input type="hidden" id="edit_work_original_name" value="${safeName}">
-            <label class="form-label">カテゴリ</label>
+            <label class="form-label">作業カテゴリ</label>
             <select id="edit_work_category" class="form-input">
                 ${catOpts}
             </select>
-            <label class="form-label">作物名</label>
-            <select id="edit_work_crop" class="form-input">
-                ${cropOpts}
-            </select>
             <label class="form-label">作業名</label>
             <input type="text" id="edit_work_name" class="form-input" value="${safeName}">
-            <label class="form-label">詳細作業（各枠に1つ入力）</label>
-            ${buildDetailWorksEditorHtml('edit_work_details_list', v.detailWorks || '')}
+            <label class="form-label">対象作物（複数選択可）</label>
+            ${buildWorkCropsCheckboxesHtml('edit_work', selectedCrops)}
+            ${buildPerCropDetailWorksEditorHtml('edit_work', selectedCrops, v.cropDetails || { detailWorks: v.detailWorks })}
             <div style="display:flex; gap:10px; margin-top:15px;">
                 <button onclick="execMaster('work', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
                 <button onclick="openMasterDetail('work')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
@@ -1284,7 +1455,15 @@ window.execMaster = async (type, act, val) => {
                 customAlert(`作業名「${name}」は既に登録されています`);
                 return;
             }
-            value = { name: name, category: document.getElementById('add_work_category').value, cropName: document.getElementById('add_work_crop').value, detailWorks: collectDetailWorksFromInputs('add_work_details_list') };
+            const perCropData = collectPerCropDetailWorks('add_work');
+            value = {
+                name: name,
+                category: document.getElementById('add_work_category').value,
+                crops: perCropData.crops,
+                cropName: perCropData.cropName,
+                cropDetails: perCropData.cropDetails,
+                detailWorks: perCropData.detailWorks
+            };
         }
     } else if (act === 'edit') {
         if (!await customConfirm(`更新しますか？`)) return;
@@ -1311,13 +1490,16 @@ window.execMaster = async (type, act, val) => {
                 customAlert(`作業名「${newName}」は既に登録されています`);
                 return;
             }
+            const perCropData = collectPerCropDetailWorks('edit_work');
             value = {
                 originalName: originalName,
                 newData: {
                     name: newName,
                     category: document.getElementById('edit_work_category').value,
-                    cropName: document.getElementById('edit_work_crop').value,
-                    detailWorks: collectDetailWorksFromInputs('edit_work_details_list')
+                    crops: perCropData.crops,
+                    cropName: perCropData.cropName,
+                    cropDetails: perCropData.cropDetails,
+                    detailWorks: perCropData.detailWorks
                 }
             };
         } else if (type === 'machineGroup') {

@@ -460,7 +460,7 @@ function getInitData() {
       const headers = data[0].map(h => String(h).trim()); 
       
       const idxName = headers.indexOf('作業名');
-      const idxCrop = headers.indexOf('作物名');
+      const idxCrop = findWorkCropColumnIndex_(headers);
       const idxDetail = findWorkDetailColumnIndex_(headers);
       const idxStatus = headers.indexOf('進捗状況');
       const idxContainer = headers.indexOf('コンテナ名');
@@ -866,15 +866,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const newId = "MAT-" + Utilities.getUuid().substring(0,6);
       sheet.appendRow([newId, value.name, value.workCategory, value.size, value.unit, "", "", "", "", "", "", userName]);
     } else if (masterType === 'work') {
+      const workHeaders = ensureWorkMasterHeaders_(sheet);
       const workName = String(value.name || "").trim();
-      if (workMasterNameExists_(sheet, headers, workName)) {
+      if (workMasterNameExists_(sheet, workHeaders, workName)) {
         throw new Error(`作業名「${workName}」は既に登録されています`);
       }
-      const newRow = new Array(headers.length).fill("");
-      const map = buildWorkMasterColumnMap_(value);
-      for(let i=0; i<headers.length; i++) {
-        if(map[headers[i]] !== undefined) newRow[i] = map[headers[i]];
-      }
+      const newRow = new Array(workHeaders.length).fill("");
+      applyWorkMasterValuesToRow_(newRow, workHeaders, value);
       sheet.appendRow(newRow);
     } else if (masterType === 'location') {
       const loc = (typeof value === 'object' && value) ? value : { name: value };
@@ -908,23 +906,22 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (manageAction === 'edit') {
     const data = sheet.getDataRange().getValues();
     if (masterType === 'work') {
-      const keyIdx = headers.indexOf('作業名');
+      const workHeaders = ensureWorkMasterHeaders_(sheet);
+      const keyIdx = workHeaders.indexOf('作業名');
       const originalName = String(value.originalName || "").trim();
       const newName = String((value.newData && value.newData.name) || "").trim();
-      if (newName && newName !== originalName && workMasterNameExists_(sheet, headers, newName, originalName)) {
+      if (newName && newName !== originalName && workMasterNameExists_(sheet, workHeaders, newName, originalName)) {
         throw new Error(`作業名「${newName}」は既に登録されています`);
       }
-      for (let i = 1; i < data.length; i++) {
-        if (keyIdx >= 0 && String(data[i][keyIdx]).trim() === originalName) {
-          const map = buildWorkMasterColumnMap_(value.newData);
-          for(let col = 0; col < headers.length; col++) {
-            if(map[headers[col]] !== undefined) {
-              sheet.getRange(i + 1, col + 1).setValue(map[headers[col]]);
-            }
-          }
-          // ヘッダー名に関係なく、H列(8番目)にカテゴリを強制的に書き込む
-          sheet.getRange(i + 1, 8).setValue(value.newData.category || "圃場作業");
-          writeLog(userName, "マスタ編集", value.newData.name, `対象: ${sheetName} (元: ${value.originalName})`);
+      const latestData = sheet.getDataRange().getValues();
+      for (let i = 1; i < latestData.length; i++) {
+        if (keyIdx >= 0 && String(latestData[i][keyIdx]).trim() === originalName) {
+          // 既存行をベースに必要な列だけ更新（担当部署など他列は維持）
+          const rowVals = latestData[i].slice();
+          while (rowVals.length < workHeaders.length) rowVals.push("");
+          applyWorkMasterValuesToRow_(rowVals, workHeaders, value.newData || {});
+          sheet.getRange(i + 1, 1, i + 1, workHeaders.length).setValues([rowVals.slice(0, workHeaders.length)]);
+          writeLog(userName, "マスタ編集", (value.newData && value.newData.name) || originalName, `対象: ${sheetName} (元: ${originalName})`);
           break;
         }
       }
@@ -1021,16 +1018,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
   } else if (masterType === 'material') {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
   } else if (masterType === 'work') {
-    const idxName = returnHeaders.indexOf('作業名');
-    const idxCategory = findWorkCategoryColumnIndex_(returnHeaders);
-    const idxCrop = returnHeaders.indexOf('作物名');
-    const idxDetail = findWorkDetailColumnIndex_(returnHeaders);
-    return newData.slice(1).filter(r => idxName >= 0 && r[idxName]).map(r => ({
-      name: String(r[idxName] || "").trim(),
-      category: idxCategory >= 0 ? (r[idxCategory] || "圃場作業") : "圃場作業",
-      cropName: idxCrop >= 0 ? String(r[idxCrop] || "").trim() : "",
-      detailWorks: idxDetail >= 0 && r[idxDetail] ? String(r[idxDetail]).trim() : ""
-    }));
+    return readWorkMasterList_(sheet);
   } else {
     return newData.slice(1).map(r=>r[0]).filter(String);
   }
@@ -1053,9 +1041,115 @@ function workMasterNameExists_(sheet, headers, name, excludeName) {
   return false;
 }
 
+/** 作業マスタ必須ヘッダーを保証（欠けていれば末尾に追加） */
+function ensureWorkMasterHeaders_(sheet) {
+  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業'];
+  let lastCol = Math.max(sheet.getLastColumn(), 1);
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
+  let changed = false;
+  required.forEach(name => {
+    if (headers.indexOf(name) < 0) {
+      if (name === '作物名') {
+        const aliasIdx = findWorkCropColumnIndex_(headers);
+        if (aliasIdx >= 0) {
+          sheet.getRange(1, aliasIdx + 1).setValue('作物名');
+          headers[aliasIdx] = '作物名';
+          changed = true;
+          return;
+        }
+      }
+      if (name === 'カテゴリ') {
+        const aliasIdx = findWorkCategoryColumnIndex_(headers);
+        if (aliasIdx >= 0) return;
+      }
+      if (name === '詳細作業名') {
+        const aliasIdx = findWorkDetailColumnIndex_(headers);
+        if (aliasIdx >= 0) return;
+      }
+      lastCol += 1;
+      sheet.getRange(1, lastCol).setValue(name);
+      headers.push(name);
+      changed = true;
+    }
+  });
+  if (changed) {
+    SpreadsheetApp.flush();
+    lastCol = Math.max(sheet.getLastColumn(), 1);
+    headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
+  }
+  return headers;
+}
+
+/** 作業マスタ1行に値を反映（担当部署など未指定列は維持） */
+function applyWorkMasterValuesToRow_(rowVals, headers, value) {
+  const map = buildWorkMasterColumnMap_(value || {});
+  for (let i = 0; i < headers.length; i++) {
+    const h = String(headers[i] || '').trim();
+    if (map[h] !== undefined) rowVals[i] = map[h];
+  }
+  const idxName = headers.indexOf('作業名');
+  const idxCat = findWorkCategoryColumnIndex_(headers);
+  const idxCrop = findWorkCropColumnIndex_(headers);
+  const idxDetail = findWorkDetailColumnIndex_(headers);
+  const idxCropDetails = headers.indexOf('作物別詳細作業');
+
+  if (idxName >= 0) rowVals[idxName] = String((value && value.name) || '').trim();
+  if (idxCat >= 0) rowVals[idxCat] = String((value && value.category) || '圃場作業').trim() || '圃場作業';
+  if (idxCrop >= 0) rowVals[idxCrop] = String((value && value.cropName) || '').trim();
+  if (idxDetail >= 0) rowVals[idxDetail] = String((value && value.detailWorks) || '').trim();
+  if (idxCropDetails >= 0) {
+    const cd = value && value.cropDetails ? JSON.stringify(value.cropDetails) : '';
+    rowVals[idxCropDetails] = cd;
+  }
+  return rowVals;
+}
+
+/** 作業マスタ一覧を返す */
+function readWorkMasterList_(sheet) {
+  const headers = ensureWorkMasterHeaders_(sheet);
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const idxName = headers.indexOf('作業名');
+  const idxCategory = findWorkCategoryColumnIndex_(headers);
+  const idxCrop = findWorkCropColumnIndex_(headers);
+  const idxDetail = findWorkDetailColumnIndex_(headers);
+  const idxCropDetails = headers.indexOf('作物別詳細作業');
+
+  return data.slice(1).filter(r => idxName >= 0 && String(r[idxName] || '').trim()).map(r => {
+    const cropStr = idxCrop >= 0 ? String(r[idxCrop] || '').trim() : '';
+    const crops = cropStr ? cropStr.split(/[,、]/).map(s => s.trim()).filter(Boolean) : [];
+    let cropDetails = null;
+    if (idxCropDetails >= 0 && r[idxCropDetails]) {
+      try {
+        cropDetails = JSON.parse(r[idxCropDetails]);
+      } catch(e) {
+        cropDetails = null;
+      }
+    }
+    return {
+      name: String(r[idxName] || '').trim(),
+      category: idxCategory >= 0 ? (String(r[idxCategory] || '').trim() || '圃場作業') : '圃場作業',
+      cropName: cropStr,
+      crops: crops,
+      cropDetails: cropDetails,
+      detailWorks: idxDetail >= 0 && r[idxDetail] ? String(r[idxDetail]).trim() : ''
+    };
+  });
+}
+
 /** 作業マスタのカテゴリ列を解決（専用の「カテゴリ」列。担当部署列とは別物） */
 function findWorkCategoryColumnIndex_(headers) {
   const candidates = ['カテゴリ', '作業カテゴリ', 'カテゴリー', '作業カテゴリー'];
+  for (let i = 0; i < candidates.length; i++) {
+    const idx = headers.indexOf(candidates[i]);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+/** 作業マスタの作物名列を解決 */
+function findWorkCropColumnIndex_(headers) {
+  const candidates = ['作物名', '作物', '品種', '作物・品種'];
   for (let i = 0; i < candidates.length; i++) {
     const idx = headers.indexOf(candidates[i]);
     if (idx >= 0) return idx;
@@ -1077,17 +1171,23 @@ function findWorkDetailColumnIndex_(headers) {
 function buildWorkMasterColumnMap_(value) {
   const category = value.category || "圃場作業";
   const details = value.detailWorks || "";
+  const cropName = value.cropName != null ? String(value.cropName).trim() : "";
+  const cd = value && value.cropDetails ? JSON.stringify(value.cropDetails) : "";
   return {
     '作業名': value.name,
     'カテゴリ': category,
     '作業カテゴリ': category,
     'カテゴリー': category,
     '作業カテゴリー': category,
-    '作物名': value.cropName || "",
+    '作物名': cropName,
+    '作物': cropName,
+    '品種': cropName,
+    '作物・品種': cropName,
     '詳細作業名': details,
     '詳細作業': details,
     '詳細': details,
-    '詳細作業（カンマ区切り）': details
+    '詳細作業（カンマ区切り）': details,
+    '作物別詳細作業': cd
   };
 }
 // ==========================================
