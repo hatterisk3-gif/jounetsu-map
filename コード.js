@@ -3177,10 +3177,17 @@ function getTrackingData(params) {
     let startRow = 2;
     let numRows = lastRow - 1;
     let targetDateStr = null;
+    let daysBack = null;
+    const filterUser = (params && params.userName) ? String(params.userName).replace(/\s+/g, '') : '';
+    const attendanceOnly = !!(params && params.attendanceOnly);
     
     if (params && params.targetDate) {
       targetDateStr = params.targetDate;
       startRow = Math.max(2, lastRow - 9999);
+      numRows = lastRow - startRow + 1;
+    } else if (params && params.days) {
+      daysBack = Math.max(1, Math.min(90, parseInt(params.days, 10) || 30));
+      startRow = Math.max(2, lastRow - 14999);
       numRows = lastRow - startRow + 1;
     } else {
       startRow = Math.max(2, lastRow - 1999);
@@ -3191,6 +3198,12 @@ function getTrackingData(params) {
     
     const now = new Date().getTime();
     const oneDay = 24 * 60 * 60 * 1000;
+    const cutoff = daysBack ? (now - daysBack * oneDay) : null;
+    
+    function isAttendanceType(type) {
+      const t = String(type || '');
+      return t === '出勤' || t === 'アプリ起動' || t === '出勤取消' || t === '退勤' || t.indexOf('退勤(') === 0;
+    }
     
     const data = [];
     for (let i = 0; i < values.length; i++) {
@@ -3198,20 +3211,33 @@ function getTrackingData(params) {
       const userName = values[i][1];
       const lat = values[i][2];
       const lng = values[i][3];
+      const type = values[i][4];
       
       const tObj = new Date(timeStr);
       if (isNaN(tObj.getTime())) continue;
+
+      if (filterUser) {
+        const rowUser = String(userName || '').replace(/\s+/g, '');
+        if (!rowUser) continue;
+        if (rowUser !== filterUser && filterUser.indexOf(rowUser) < 0 && rowUser.indexOf(filterUser) < 0) continue;
+      }
+
+      if (attendanceOnly && !isAttendanceType(type)) continue;
       
       if (targetDateStr) {
         const y = tObj.getFullYear();
         const m = String(tObj.getMonth() + 1).padStart(2, '0');
         const d = String(tObj.getDate()).padStart(2, '0');
         if (`${y}-${m}-${d}` === targetDateStr) {
-          data.push({ type: values[i][4], time: timeStr, userName: userName, lat: lat, lng: lng });
+          data.push({ type: type, time: timeStr, userName: userName, lat: lat, lng: lng });
+        }
+      } else if (cutoff != null) {
+        if (tObj.getTime() >= cutoff) {
+          data.push({ type: type, time: timeStr, userName: userName, lat: lat, lng: lng });
         }
       } else {
         if (now - tObj.getTime() <= oneDay) {
-          data.push({ type: values[i][4], time: timeStr, userName: userName, lat: lat, lng: lng });
+          data.push({ type: type, time: timeStr, userName: userName, lat: lat, lng: lng });
         }
       }
     }

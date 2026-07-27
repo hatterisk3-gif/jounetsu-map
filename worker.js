@@ -1065,7 +1065,8 @@ function createSignboardMarker(name, pos, icon, id) {
         const hasWork = !p.isMarker || availableWorks.length > 0;
 
         let actions = `<div style="display:flex; gap:4px; width:100%; margin-bottom:6px;">`;
-        const isWorker2 = document.title.includes('プロ情熱MAP');
+        // worker2.html のみ圃場の生育記録ボタンを非表示（worker.html では表示）
+        const isWorker2 = /worker2\.html/i.test(location.pathname) || /worker2\.html/i.test(location.href);
         const hideGrowth = isWorker2 && !p.isMarker;
 
         if (hasWork) {
@@ -6153,6 +6154,21 @@ function formatTrackingClockTime(timeVal) {
     return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
+function trackingTimeToYmd(timeVal) {
+    const d = new Date(timeVal);
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatAttendanceDateLabel(ymd) {
+    if (!ymd) return '';
+    const parts = String(ymd).split('-').map(Number);
+    if (parts.length < 3 || parts.some((n) => isNaN(n))) return ymd;
+    const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+    const week = ['日', '月', '火', '水', '木', '金', '土'][dt.getDay()];
+    return `${parts[1]}/${parts[2]}（${week}）`;
+}
+
 function isClockInType(type) {
     return type === '出勤' || type === 'アプリ起動';
 }
@@ -6188,9 +6204,10 @@ function getLocalClockInHint(targetYmd) {
             return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
         })();
         if (!clockInYmd) clockInYmd = today;
-        if (clockInYmd !== targetYmd) return null;
+        if (targetYmd && clockInYmd !== targetYmd) return null;
         return {
             time: active.time || (todayState && todayState.time) || '--:--',
+            dateYmd: clockInYmd,
             source: 'local'
         };
     } catch (e) {
@@ -6198,7 +6215,8 @@ function getLocalClockInHint(targetYmd) {
     }
 }
 
-function summarizeMyAttendance(rows, userName, targetYmd) {
+/** 出退勤イベントを日付ごとのセッション一覧にまとめる（新しい日付が先） */
+function summarizeMyAttendanceList(rows, userName) {
     const normUser = (userName || '').replace(/\s+/g, '');
     const events = (rows || [])
         .filter((row) => {
@@ -6210,9 +6228,10 @@ function summarizeMyAttendance(rows, userName, targetYmd) {
         .map((row) => ({
             type: row.type,
             time: row.time,
+            ymd: trackingTimeToYmd(row.time),
             sortKey: new Date(row.time).getTime() || 0
         }))
-        .filter((ev) => !isNaN(ev.sortKey))
+        .filter((ev) => ev.ymd && !isNaN(ev.sortKey))
         .sort((a, b) => a.sortKey - b.sortKey);
 
     const sessions = [];
@@ -6224,74 +6243,83 @@ function summarizeMyAttendance(rows, userName, targetYmd) {
             openIn = null;
         } else if (isClockOutType(ev.type)) {
             sessions.push({
+                dateYmd: (openIn && openIn.ymd) || ev.ymd,
                 inTime: openIn ? formatTrackingClockTime(openIn.time) : '—',
                 outTime: formatTrackingClockTime(ev.time),
                 note: String(ev.type).indexOf('退勤(') === 0 ? String(ev.type).replace(/^退勤\(|\)$/g, '') : '',
-                open: false
+                open: false,
+                sortKey: openIn ? openIn.sortKey : ev.sortKey
             });
             openIn = null;
         }
     });
 
-    const localHint = getLocalClockInHint(targetYmd);
     if (openIn) {
         sessions.push({
+            dateYmd: openIn.ymd,
             inTime: formatTrackingClockTime(openIn.time),
             outTime: '未登録',
             note: '出勤中',
-            open: true
+            open: true,
+            sortKey: openIn.sortKey
         });
-    } else if (localHint && sessions.every((s) => !s.open)) {
-        // サーバー反映前でも、端末上の出勤中状態を表示
-        sessions.push({
-            inTime: localHint.time,
-            outTime: '未登録',
-            note: '出勤中（端末）',
-            open: true
-        });
+    } else {
+        const localHint = getLocalClockInHint();
+        if (localHint) {
+            const alreadyOpen = sessions.some((s) => s.open && s.dateYmd === localHint.dateYmd);
+            if (!alreadyOpen) {
+                sessions.push({
+                    dateYmd: localHint.dateYmd,
+                    inTime: localHint.time,
+                    outTime: '未登録',
+                    note: '出勤中（端末）',
+                    open: true,
+                    sortKey: Date.now()
+                });
+            }
+        }
     }
 
+    // 日付新しい順 → 同日内は時刻順
+    sessions.sort((a, b) => {
+        if (a.dateYmd !== b.dateYmd) return a.dateYmd < b.dateYmd ? 1 : -1;
+        return a.sortKey - b.sortKey;
+    });
     return sessions;
 }
 
-window.loadMyAttendance = async function(targetYmd) {
+window.loadMyAttendance = async function() {
     const box = document.getElementById('myAttendanceBody');
     if (!box) return;
-
-    const dateInput = document.getElementById('myAttendanceDate');
-    const ymd = targetYmd || (dateInput && dateInput.value) || '';
-    if (!ymd) {
-        box.innerHTML = `<div style="color:#888; font-size:13px;">日付を選択してください。</div>`;
-        return;
-    }
 
     box.innerHTML = `<div style="color:#888; font-size:13px;">読み込み中...</div>`;
     const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
 
     try {
-        const res = await callGAS('getTrackingData', { targetDate: ymd });
+        const res = await callGAS('getTrackingData', {
+            days: 30,
+            userName: userName,
+            attendanceOnly: true
+        });
         const rows = (res && res.trackingData) ? res.trackingData : (Array.isArray(res) ? res : []);
-        const sessions = summarizeMyAttendance(rows, userName, ymd);
+        const sessions = summarizeMyAttendanceList(rows, userName);
 
         if (!sessions.length) {
-            const localHint = getLocalClockInHint(ymd);
-            if (localHint) {
-                box.innerHTML = `
-                    <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #FF9800; border-radius:6px; padding:10px;">
-                        <div style="font-size:14px; font-weight:bold; color:#e65100;">出勤中</div>
-                        <div style="margin-top:6px; font-size:13px; color:#333;">出勤 <b>${localHint.time}</b> 〜 退勤 <b>未登録</b></div>
-                    </div>`;
-            } else {
-                box.innerHTML = `<div style="color:#888; font-size:13px; text-align:center; padding:8px 0;">この日の出退勤記録はありません。</div>`;
-            }
+            box.innerHTML = `<div style="color:#888; font-size:13px; text-align:center; padding:8px 0;">直近の出退勤記録はありません。</div>`;
             return;
         }
 
-        box.innerHTML = sessions.map((s) => {
+        let html = `<div style="max-height:280px; overflow-y:auto; padding-right:2px;">`;
+        let lastYmd = '';
+        sessions.forEach((s) => {
+            if (s.dateYmd !== lastYmd) {
+                lastYmd = s.dateYmd;
+                html += `<div style="font-size:12px; font-weight:bold; color:#1565c0; margin:10px 0 6px;">${formatAttendanceDateLabel(s.dateYmd)}</div>`;
+            }
             const border = s.open ? '#FF9800' : '#4CAF50';
             const status = s.open ? '出勤中' : '退勤済';
             const noteHtml = s.note ? `<div style="font-size:11px; color:#666; margin-top:4px;">${s.note}</div>` : '';
-            return `
+            html += `
                 <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid ${border}; border-radius:6px; padding:10px; margin-bottom:8px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-size:12px; font-weight:bold; color:${s.open ? '#e65100' : '#2e7d32'};">${status}</span>
@@ -6299,13 +6327,17 @@ window.loadMyAttendance = async function(targetYmd) {
                     <div style="margin-top:6px; font-size:14px; color:#333;">出勤 <b>${s.inTime}</b> 〜 退勤 <b>${s.outTime}</b></div>
                     ${noteHtml}
                 </div>`;
-        }).join('');
+        });
+        html += `</div>`;
+        html += `<div style="font-size:11px; color:#888; margin-top:6px;">直近30日分を新しい日付から表示</div>`;
+        box.innerHTML = html;
     } catch (e) {
         console.warn('出退勤取得エラー', e);
-        const localHint = getLocalClockInHint(ymd);
+        const localHint = getLocalClockInHint();
         if (localHint) {
             box.innerHTML = `
                 <div style="background:#fff3e0; border:1px solid #ffe0b2; border-radius:6px; padding:10px; font-size:13px; color:#e65100; margin-bottom:8px;">サーバーから取得できませんでした。端末の出勤状態を表示します。</div>
+                <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">${formatAttendanceDateLabel(localHint.dateYmd)}</div>
                 <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #FF9800; border-radius:6px; padding:10px;">
                     <div style="font-size:14px; font-weight:bold; color:#e65100;">出勤中</div>
                     <div style="margin-top:6px; font-size:13px; color:#333;">出勤 <b>${localHint.time}</b> 〜 退勤 <b>未登録</b></div>
@@ -6416,10 +6448,6 @@ window.openMyPage = function() {
             <span>🏃 出退勤時間</span>
         </h4>
         <div style="background:#e3f2fd; border:1px solid #bbdefb; border-radius:8px; padding:12px; margin-bottom:15px;">
-            <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-                <input type="date" id="myAttendanceDate" value="${todayStr}" onchange="loadMyAttendance()" style="flex:1; padding:8px; border:1px solid #90caf9; border-radius:4px; font-size:15px; box-sizing:border-box;">
-                <button type="button" onclick="loadMyAttendance()" style="background:#1976d2; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; white-space:nowrap;">表示</button>
-            </div>
             <div id="myAttendanceBody" style="min-height:40px;">
                 <div style="color:#888; font-size:13px;">読み込み中...</div>
             </div>
@@ -6453,7 +6481,7 @@ window.openMyPage = function() {
     `;
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('modal').style.display = 'flex';
-    loadMyAttendance(todayStr);
+    loadMyAttendance();
 };
 
 

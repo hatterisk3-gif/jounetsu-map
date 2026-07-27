@@ -723,122 +723,334 @@ window.getMachineGroupOptionsHtml = (selected) => {
 // 互換エイリアス
 window.getMachineCategoryOptionsHtml = window.getMachineGroupOptionsHtml;
 
-window.renderMasterSection = () => {
+let currentActiveMasterType = null;
+
+window.getMasterTypeInfo = (type) => {
+    const listMap = {
+        crop: { title: '🌱 作物マスタ', desc: '作物の種類と標準栽植密度の設定', list: window.pdlCrops || [] },
+        sign: { title: '🪧 看板機能マスタ', desc: '看板の機能分類・用途の設定', list: window.pdlSignFunctions || [] },
+        location: { title: '🏢 拠点マスタ', desc: '拠点名・都道府県・産地データの設定', list: (window.pdlLocationDetails && window.pdlLocationDetails.length) ? window.pdlLocationDetails : (window.pdlLocations || []) },
+        workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: window.pdlWorkCategories || [] },
+        machineType: { title: '🏷️ 機械カテゴリマスタ', desc: '車両・農機のカテゴリ区分設定', list: window.pdlMachineTypes || [] },
+        machineGroup: { title: '📁 機械グループマスタ', desc: '車両・農機のグループ設定', list: window.pdlMachineGroups || [] },
+        work: { title: '📋 作業記録マスタ', desc: '作業項目および詳細作業名リストの設定', list: window.pdlWorkMaster || [] },
+        machine: { title: '🚜 農機マスタ', desc: '管理車両・農業機械・機番・拠点・定位置の設定', list: window.pdlMachines || [] },
+        tool: { title: '🔧 道具マスタ', desc: '使用道具・備品と対応作業の設定', list: window.pdlTools || [] },
+        material: { title: '📦 資材マスタ', desc: '使用資材・規格・単位と対応作業の設定', list: window.pdlMaterials || [] }
+    };
+    return listMap[type] || { title: type, desc: '', list: [] };
+};
+
+window.renderMasterMenu = () => {
+    currentActiveMasterType = null;
+    const btnBack = document.getElementById('btnMasterBack');
+    if (btnBack) btnBack.style.display = 'none';
+    const titleEl = document.getElementById('masterModalTitle');
+    if (titleEl) titleEl.innerHTML = '⚙️ マスタ項目設定';
+
+    const masterTypes = [
+        'crop', 'sign', 'location', 'workCategory',
+        'machineType', 'machineGroup', 'work', 'machine', 'tool', 'material'
+    ];
+
+    let html = `
+      <div style="margin-bottom:15px;">
+        <div style="font-weight:bold; font-size:15px; color:#444; margin-bottom:5px;">編集するマスタを選択してください</div>
+        <div style="font-size:12px; color:#666;">各ボタンを押すと全画面で広々と項目の追加・編集・削除が行えます。</div>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:15px;">
+    `;
+
+    masterTypes.forEach(type => {
+        const info = getMasterTypeInfo(type);
+        const count = info.list ? info.list.length : 0;
+        html += `
+          <div onclick="openMasterDetail('${type}')" style="background:#fff; border:1px solid #e0e0e0; border-radius:10px; padding:16px; cursor:pointer; transition:all 0.2s ease; box-shadow:0 2px 6px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;"
+               onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 15px rgba(0,0,0,0.1)'; this.style.borderColor='#2196F3';"
+               onmouseout="this.style.transform='none'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.05)'; this.style.borderColor='#e0e0e0';">
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:16px; font-weight:bold; color:#1565c0;">${info.title}</span>
+                <span style="background:#e3f2fd; color:#1565c0; font-size:12px; font-weight:bold; padding:3px 8px; border-radius:12px;">${count}件</span>
+              </div>
+              <div style="font-size:12px; color:#666; line-height:1.4;">${info.desc}</div>
+            </div>
+            <div style="margin-top:12px; text-align:right; font-size:12px; font-weight:bold; color:#2196F3;">編集画面を開く →</div>
+          </div>
+        `;
+    });
+
+    html += `</div>`;
+    document.getElementById('masterSections').innerHTML = html;
+};
+
+window.openMasterDetail = (type, customEditHtml = null) => {
+    currentActiveMasterType = type;
+    const btnBack = document.getElementById('btnMasterBack');
+    if (btnBack) btnBack.style.display = 'inline-block';
+    
+    const info = getMasterTypeInfo(type);
+    const titleEl = document.getElementById('masterModalTitle');
+    if (titleEl) titleEl.innerHTML = `${info.title} の設定`;
+
     const pdlMachines = window.pdlMachines || [];
-    const buildHTML = (title, type, list) => {
-        let html = `<div style="background:#f4f6f8; padding:10px; margin-bottom:10px; border-radius:6px; color:#333;"><b style="color:#d32f2f;">${title}</b><br>`;
-        if (type === 'crop') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_crop_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作物名"><input type="number" id="add_crop_density" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="本/10a"><button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
-        else if (type === 'sign') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_sign_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="看板機能名 (例: 育苗センター)"><button onclick="execMaster('sign', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
-        else if (type === 'location') {
-            html += `<div style="display:flex; flex-direction:column; gap:5px; margin-top:5px; margin-bottom:5px;">
-              <input type="text" id="add_location_name" class="form-input" style="width:100%; margin-bottom:0; padding:6px;" placeholder="拠点名 (例: 本社農場)">
-              <div style="display:flex; gap:5px;">
-                <select id="add_location_pref" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml('')}</select>
-                <select id="add_location_city" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationCityChange(this)">
-                  <option value="">先に県を選択</option>
-                </select>
-              </div>
-              <input type="text" id="add_location_city_custom" class="form-input" style="width:100%; margin-bottom:0; padding:6px; display:none;" placeholder="市・町・村を手入力">
-              <div>
-                <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">産地（複数可）</div>
-                ${buildClimateCheckboxesHtml('add', [])}
-              </div>
-              <div style="display:flex; justify-content:flex-end;">
-                <button onclick="execMaster('location', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:8px 18px; font-weight:bold;">追加</button>
-              </div>
-              <div style="font-size:11px; color:#666;">※県を選ぶと市の候補が出ます。一覧に無い場合は「その他(手入力)」</div>
+    let list = info.list;
+    if (type === 'machine') {
+        list = [...pdlMachines].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+    }
+
+    // フォーム部分の生成
+    let formHtml = '';
+    if (customEditHtml) {
+        formHtml = customEditHtml;
+    } else {
+        formHtml = `<div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; margin-bottom:10px; color:#4CAF50; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px;">➕ 新規登録</h4>`;
+        
+        if (type === 'crop') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">作物名</label>
+                <input type="text" id="add_crop_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: トマト">
+                <label style="font-size:12px; font-weight:bold; color:#555;">標準栽植密度 (本/10a)</label>
+                <input type="number" id="add_crop_density" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 2500">
+                <button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
-        }
-        else if (type === 'workCategory') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_workCategory_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="カテゴリ名 (例: 圃場作業)"><button onclick="execMaster('workCategory', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
-        else if (type === 'machineType') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_machineType_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="カテゴリ名 (例: トラクター)"><button onclick="execMaster('machineType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
-        else if (type === 'machineGroup') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_machineGroup_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="グループ名 (例: 農業機械)"><button onclick="execMaster('machineGroup', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
-        else if (type === 'tool') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_tool_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="道具名 (例:草刈機)"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_tool_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select><button onclick="execMaster('tool', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div><input type="text" id="add_tool_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）">`; }
-        else if (type === 'material') { const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_mat_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="資材名"><select class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="let tb=document.getElementById('add_mat_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select></div><input type="text" id="add_mat_cat" class="form-input" style="width:100%; margin-bottom:5px; padding:6px; font-size:12px; background:#e8f0fe;" placeholder="↑プルダウンから選んだ作業がここに追加されます（手入力も可）"><div style="display:flex; gap:5px; margin-bottom:5px;"><input type="text" id="add_mat_size" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="容量 (例:20)"><input type="text" id="add_mat_unit" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="単位 (例:kg)"><button onclick="execMaster('material', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
-        else if (type === 'work') { const catOpts = pdlWorkCategories.map(c => `<option value="${c}">${c}</option>`).join(''); const cropOpts = '<option value="">共通</option>' + (pdlCrops || []).map(c => `<option value="${c.name}">${c.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><select id="add_work_category" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${catOpts}</select><select id="add_work_crop" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${cropOpts}</select><input type="text" id="add_work_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作業名"></div><div style="margin-bottom:5px;"><div style="font-size:11px; color:#666; margin-bottom:4px;">詳細作業（各枠に1つ）</div>${buildDetailWorksEditorHtml('add_work_details_list', '')}</div><button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; width:100%; border-radius:4px; border:none; padding:8px; font-weight:bold; margin-bottom:5px;">作業マスタを追加</button>`; }
-        else if (type === 'machine') {
+        } else if (type === 'sign') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">看板機能名</label>
+                <input type="text" id="add_sign_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 育苗センター">
+                <button onclick="execMaster('sign', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'location') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">拠点名</label>
+                <input type="text" id="add_location_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 本社農場">
+                <label style="font-size:12px; font-weight:bold; color:#555;">都道府県 / 市区町村</label>
+                <div style="display:flex; gap:5px;">
+                  <select id="add_location_pref" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml('')}</select>
+                  <select id="add_location_city" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="onLocationCityChange(this)">
+                    <option value="">先に県を選択</option>
+                  </select>
+                </div>
+                <input type="text" id="add_location_city_custom" class="form-input" style="margin-bottom:0; padding:8px; display:none;" placeholder="市・町・村を手入力">
+                <div>
+                  <label style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px; display:block;">産地（複数可）</label>
+                  ${buildClimateCheckboxesHtml('add', [])}
+                </div>
+                <button onclick="execMaster('location', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+                <div style="font-size:11px; color:#666;">※県を選ぶと市の候補が出ます。一覧に無い場合は「その他(手入力)」</div>
+            </div>`;
+        } else if (type === 'workCategory') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">カテゴリ名</label>
+                <input type="text" id="add_workCategory_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 圃場作業">
+                <button onclick="execMaster('workCategory', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'machineType') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ名</label>
+                <input type="text" id="add_machineType_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: トラクター">
+                <button onclick="execMaster('machineType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'machineGroup') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">機械グループ名</label>
+                <input type="text" id="add_machineGroup_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 農業機械">
+                <button onclick="execMaster('machineGroup', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'tool') {
+            const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">道具名</label>
+                <input type="text" id="add_tool_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 草刈機">
+                <label style="font-size:12px; font-weight:bold; color:#555;">関連作業 (任意)</label>
+                <select class="form-input" style="margin-bottom:0; padding:8px;" onchange="let tb=document.getElementById('add_tool_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select>
+                <input type="text" id="add_tool_cat" class="form-input" style="margin-bottom:0; padding:8px; font-size:12px; background:#e8f0fe;" placeholder="プルダウンから選んだ作業がここに追加されます">
+                <button onclick="execMaster('tool', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'material') {
+            const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">資材名</label>
+                <input type="text" id="add_mat_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 複合肥料1号">
+                <label style="font-size:12px; font-weight:bold; color:#555;">関連作業 (任意)</label>
+                <select class="form-input" style="margin-bottom:0; padding:8px;" onchange="let tb=document.getElementById('add_mat_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select>
+                <input type="text" id="add_mat_cat" class="form-input" style="margin-bottom:0; padding:8px; font-size:12px; background:#e8f0fe;" placeholder="プルダウンから選んだ作業がここに追加されます">
+                <div style="display:flex; gap:5px;">
+                  <input type="text" id="add_mat_size" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="容量 (例: 20)">
+                  <input type="text" id="add_mat_unit" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="単位 (例: kg)">
+                </div>
+                <button onclick="execMaster('material', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'work') {
+            const catOpts = pdlWorkCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+            const cropOpts = '<option value="">共通</option>' + (pdlCrops || []).map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">作業カテゴリ / 作物</label>
+                <div style="display:flex; gap:5px;">
+                  <select id="add_work_category" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${catOpts}</select>
+                  <select id="add_work_crop" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${cropOpts}</select>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">作業名</label>
+                <input type="text" id="add_work_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 播種">
+                <label style="font-size:12px; font-weight:bold; color:#555;">詳細作業（各枠に1つ）</label>
+                ${buildDetailWorksEditorHtml('add_work_details_list', '')}
+                <button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">作業マスタを追加</button>
+            </div>`;
+        } else if (type === 'machine') {
             const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
-            html += `<div style="display:flex; flex-direction:column; gap:6px; margin-top:5px; margin-bottom:8px;">
-              <div style="display:flex; gap:5px;">
-                <input type="text" id="add_mac_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="車両名・農機名 *">
-                <input type="text" id="add_mac_number" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="機械番号">
-              </div>
-              <div style="display:flex; gap:5px;">
-                <input type="text" id="add_mac_model" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="型式">
-                <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${getMachineTypeOptionsHtml('')}</select>
-              </div>
-              <div style="display:flex; gap:5px;">
-                <select id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${getMachineGroupOptionsHtml('')}</select>
-                <select id="add_mac_location" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${locOpts}</select>
-              </div>
-              <div style="display:flex; gap:5px;">
-                <input type="date" id="add_mac_date" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">
-                <select id="add_mac_fuel" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">
-                  <option value="">燃料...</option>
-                  <option value="軽油">軽油</option>
-                  <option value="ガソリン">ガソリン</option>
-                  <option value="混合油">混合油</option>
-                  <option value="電気100V">電気100V</option>
-                  <option value="電気200V">電気200V</option>
-                </select>
-              </div>
-              <select id="add_mac_sign" class="form-input" style="width:100%; margin-bottom:0; padding:6px;">${getAdminSignOptionsHtml('')}</select>
-              <div style="font-size:11px; color:#666; margin-top:2px;">作業分類（各枠で既存の作業から1つ選択）</div>
-              ${buildMachineWorkCategoryEditorHtml('add_mac_category_rows', '')}
-              <button onclick="execMaster('machine', 'add')" style="background:#4CAF50; color:white; width:100%; border-radius:4px; border:none; padding:8px; font-weight:bold;">農機を追加</button>
-              <div style="font-size:11px; color:#666;">※定位置は「車両・機械管理」機能付き看板のみ選択できます。機械カテゴリ・機械グループの追加・削除は下の各マスタから行えます。</div>
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">車両名・農機名 * / 機械番号</label>
+                <div style="display:flex; gap:5px;">
+                  <input type="text" id="add_mac_name" class="form-input" style="flex:2; margin-bottom:0; padding:8px;" placeholder="車両・農機名 *">
+                  <input type="text" id="add_mac_number" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="No.">
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">型式 / 機械カテゴリ</label>
+                <div style="display:flex; gap:5px;">
+                  <input type="text" id="add_mac_model" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="型式">
+                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${getMachineTypeOptionsHtml('')}</select>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">機械グループ / 拠点</label>
+                <div style="display:flex; gap:5px;">
+                  <select id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${getMachineGroupOptionsHtml('')}</select>
+                  <select id="add_mac_location" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${locOpts}</select>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">購入日 / 燃料</label>
+                <div style="display:flex; gap:5px;">
+                  <input type="date" id="add_mac_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
+                  <select id="add_mac_fuel" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
+                    <option value="">燃料...</option>
+                    <option value="軽油">軽油</option>
+                    <option value="ガソリン">ガソリン</option>
+                    <option value="混合油">混合油</option>
+                    <option value="電気100V">電気100V</option>
+                    <option value="電気200V">電気200V</option>
+                  </select>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">定位置（管理機能付き看板）</label>
+                <select id="add_mac_sign" class="form-input" style="width:100%; margin-bottom:0; padding:8px;">${getAdminSignOptionsHtml('')}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">作業分類</label>
+                ${buildMachineWorkCategoryEditorHtml('add_mac_category_rows', '')}
+                <button onclick="execMaster('machine', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">農機を追加する</button>
             </div>`;
         }
 
-        html += `<div style="max-height:140px; overflow-y:auto; border:1px solid #ddd; background:#fff; border-radius:4px; padding:5px;">`;
-        if (list.length === 0) html += `<div style="color:#888; font-size:12px; text-align:center;">データがありません</div>`;
+        formHtml += `</div>`;
+    }
+
+    // データ一覧テーブルの生成
+    let listHtml = `
+      <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid #e0e0e0;">
+          <div style="font-weight:bold; font-size:15px; color:#333;">登録済みデータ一覧 (${list.length}件)</div>
+          <input type="text" id="masterSearchFilter" oninput="filterMasterListTable(this.value)" placeholder="🔍 一覧から検索..." style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; width:180px;">
+        </div>
+        <div style="flex:1; overflow-y:auto;">
+          <table id="masterListTable" style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead>
+              <tr style="background:#f4f6f8; text-align:left; border-bottom:2px solid #e0e0e0; color:#555;">
+                <th style="padding:10px;">名称 / 詳細</th>
+                <th style="padding:10px; width:110px; text-align:right;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
+    if (list.length === 0) {
+        listHtml += `<tr><td colspan="2" style="padding:20px; text-align:center; color:#888;">登録されたデータはありません</td></tr>`;
+    } else {
         list.forEach(v => {
-            const dispName = v.name || v, deleteVal = v.id || v.name || v; let subInfo = "";
-            if (type === 'crop') subInfo = `(${v.density}本/10a)`;
+            const dispName = v.name || v, deleteVal = v.id || v.name || v;
+            let subInfo = "";
+
+            if (type === 'crop') subInfo = `<span style="color:#666;">(${v.density || 0}本/10a)</span>`;
             if (type === 'location' && typeof v === 'object') {
                 const climates = parseLocationClimates(v.climates != null ? v.climates : v.climate);
                 const climateLabel = climates.length ? climates.join('・') : '';
                 const bits = [v.prefecture, v.city, climateLabel].filter(Boolean);
-                if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0;">${bits.join(' / ')}</span>`;
+                if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">${bits.join(' / ')}</span>`;
             }
-            if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${v.workCategory || '汎用'}</span>`;
-            if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8;">単位:${v.unit}</span>`;
-            if (type === 'work') { subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 4px; border-radius:4px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 4px; border-radius:4px;">${v.cropName || '共通'}</span>`; if (v.detailWorks) subInfo += `<br><span style="font-size:11px; color:#666;">詳細: ${v.detailWorks}</span>`; }
+            if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.workCategory || '汎用'}</span>`;
+            if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8; margin-left:4px;">単位:${v.unit} (容量:${v.size||'-'})</span>`;
+            if (type === 'work') {
+                subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px; margin-left:4px;">${v.cropName || '共通'}</span>`;
+                if (v.detailWorks) subInfo += `<div style="font-size:11px; color:#666; margin-top:2px;">詳細: ${v.detailWorks}</div>`;
+            }
             if (type === 'machine') {
                 const bits = [];
                 if (v.machineNumber) bits.push(`No.${v.machineNumber}`);
+                if (v.type) bits.push(v.type);
+                if (v.group) bits.push(v.group);
                 if (v.workCategory) bits.push(v.workCategory);
                 if (v.signName || v.currentLocName) bits.push(`📍${v.signName || v.currentLocName}`);
-                if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0;">${bits.join(' / ')}</span>`;
+                if (bits.length) subInfo = `<div style="font-size:11px; color:#1565c0; margin-top:2px;">${bits.join(' / ')}</div>`;
             }
+
+            let actionBtns = '';
+            const safeV = encodeURIComponent(JSON.stringify(v));
             if (type === 'work') {
-                const safeV = encodeURIComponent(JSON.stringify(v));
-                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditWorkMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
-            } else             if (type === 'location' && typeof v === 'object') {
-                const safeV = encodeURIComponent(JSON.stringify(v));
-                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditLocationMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
+                actionBtns = `<button onclick="openEditWorkMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'location' && typeof v === 'object') {
+                actionBtns = `<button onclick="openEditLocationMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'machineGroup') {
                 const safeName = encodeURIComponent(String(dispName));
-                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span></div><div><span onclick="openEditMachineGroupMaster('${safeName}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
+                actionBtns = `<button onclick="openEditMachineGroupMaster('${safeName}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'machine') {
-                const safeV = encodeURIComponent(JSON.stringify(v));
-                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><div><span onclick="openEditMachineMaster('${safeV}')" style="color:#2196F3; cursor:pointer; font-weight:bold; font-size:16px; padding:0 10px;">✏️</span><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div></div>`;
+                actionBtns = `<button onclick="openEditMachineMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else {
-                html += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding:4px 0; font-size:14px;"><div style="line-height:1.2;"><span>${dispName}</span> <span style="margin-left:5px;">${subInfo}</span></div><span onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="color:red; cursor:pointer; font-weight:bold; font-size:18px; padding:0 10px;">×</span></div>`;
+                actionBtns = `<button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             }
+
+            listHtml += `<tr style="border-bottom:1px solid #eee;">
+                <td style="padding:10px; vertical-align:middle;">
+                  <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
+                </td>
+                <td style="padding:10px; vertical-align:middle; text-align:right;">
+                  ${actionBtns}
+                </td>
+            </tr>`;
         });
-        return html + `</div></div>`;
-    };
-    const machinesSorted = [...pdlMachines].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
-    let content = buildHTML('🌱 作物マスタ', 'crop', pdlCrops) + buildHTML('🪧 看板マスタ', 'sign', pdlSignFunctions) + buildHTML('🏢 拠点マスタ', 'location', pdlLocationDetails.length ? pdlLocationDetails : pdlLocations) + buildHTML('📂 作業カテゴリマスタ', 'workCategory', pdlWorkCategories) + buildHTML('🏷️ 機械カテゴリマスタ', 'machineType', pdlMachineTypes) + buildHTML('📁 機械グループマスタ', 'machineGroup', pdlMachineGroups) + buildHTML('🚜 作業記録マスタ', 'work', pdlWorkMaster) + buildHTML('🚜 農機マスタ', 'machine', machinesSorted) + buildHTML('🔧 道具マスタ', 'tool', pdlTools) + buildHTML('📦 資材マスタ', 'material', pdlMaterials);
-    document.getElementById('masterSections').innerHTML = content;
+    }
+
+    listHtml += `</tbody></table></div></div>`;
+
+    const containerHtml = `
+      <div style="display:flex; gap:20px; height:100%; flex-wrap:wrap; box-sizing:border-box;">
+        <div style="flex:1; min-width:320px; max-width:420px;">
+          ${formHtml}
+        </div>
+        <div style="flex:1.5; min-width:320px; height:100%;">
+          ${listHtml}
+        </div>
+      </div>
+    `;
+
+    document.getElementById('masterSections').innerHTML = containerHtml;
+};
+
+window.filterMasterListTable = (keyword) => {
+    const kw = (keyword || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#masterListTable tbody tr');
+    rows.forEach(tr => {
+        const text = tr.textContent.toLowerCase();
+        tr.style.display = text.includes(kw) ? '' : 'none';
+    });
+};
+
+window.renderMasterSection = () => {
+    if (currentActiveMasterType) {
+        openMasterDetail(currentActiveMasterType);
+    } else {
+        renderMasterMenu();
+    }
 };
 
 window.openEditLocationMaster = (encodedStr) => {
     const v = JSON.parse(decodeURIComponent(encodedStr));
     const safeName = (v.name || "").replace(/"/g, '&quot;');
-    const html = `
+    const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
-            <h3 style="margin-top:0; color:#2196F3;">✏️ 拠点マスタの編集</h3>
+            <h4 style="margin-top:0; color:#2196F3; font-size:15px; border-bottom:2px solid #2196F3; padding-bottom:5px;">✏️ 拠点マスタの編集</h4>
             <input type="hidden" id="edit_location_original_name" value="${safeName}">
             <label class="form-label">拠点名</label>
             <input type="text" id="edit_location_name" class="form-input" value="${safeName}">
@@ -849,15 +1061,15 @@ window.openEditLocationMaster = (encodedStr) => {
               <option value="">読込中...</option>
             </select>
             <input type="text" id="edit_location_city_custom" class="form-input" style="display:none; margin-top:6px;" placeholder="市・町・村を手入力" value="">
-            <label class="form-label">産地（複数可・栽培計画で一致する作型を読込）</label>
+            <label class="form-label">産地（複数可）</label>
             ${buildClimateCheckboxesHtml('edit', v.climates != null ? v.climates : (v.climate || ''))}
             <div style="display:flex; gap:10px; margin-top:15px;">
-                <button onclick="execMaster('location', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold;">更新する</button>
-                <button onclick="renderMasterSection()" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold;">キャンセル</button>
+                <button onclick="execMaster('location', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('location')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
             </div>
         </div>
     `;
-    document.getElementById('masterSections').innerHTML = html;
+    openMasterDetail('location', editHtml);
     ensureJpCitiesLoaded().then(() => {
         populateLocationCitySelect('edit', v.prefecture || '', v.city || '');
     });
@@ -866,20 +1078,20 @@ window.openEditLocationMaster = (encodedStr) => {
 window.openEditMachineGroupMaster = (encodedName) => {
     const name = decodeURIComponent(encodedName || '');
     const safeName = String(name).replace(/"/g, '&quot;');
-    const html = `
+    const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
-            <h3 style="margin-top:0; color:#FF9800;">✏️ 機械グループの編集</h3>
+            <h4 style="margin-top:0; color:#FF9800; font-size:15px; border-bottom:2px solid #FF9800; padding-bottom:5px;">✏️ 機械グループの編集</h4>
             <input type="hidden" id="edit_machineGroup_original_name" value="${safeName}">
             <label class="form-label">グループ名</label>
             <input type="text" id="edit_machineGroup_name" class="form-input" value="${safeName}">
-            <div style="font-size:12px; color:#666; margin-top:6px;">※名前を変更すると、農機マスタ側の同じグループもまとめて更新されます。</div>
+            <div style="font-size:11px; color:#666; margin-top:6px;">※名前を変更すると、農機マスタ側の同じグループもまとめて更新されます。</div>
             <div style="display:flex; gap:10px; margin-top:15px;">
-                <button onclick="execMaster('machineGroup', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold;">更新する</button>
-                <button onclick="renderMasterSection()" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold;">キャンセル</button>
+                <button onclick="execMaster('machineGroup', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('machineGroup')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
             </div>
         </div>
     `;
-    document.getElementById('masterSections').innerHTML = html;
+    openMasterDetail('machineGroup', editHtml);
 };
 
 window.openEditWorkMaster = (encodedStr) => {
@@ -889,9 +1101,9 @@ window.openEditWorkMaster = (encodedStr) => {
     
     const safeName = (v.name || "").replace(/"/g, '&quot;');
 
-    const html = `
+    const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
-            <h3 style="margin-top:0; color:#2196F3;">✏️ 作業マスタの編集</h3>
+            <h4 style="margin-top:0; color:#2196F3; font-size:15px; border-bottom:2px solid #2196F3; padding-bottom:5px;">✏️ 作業マスタの編集</h4>
             <input type="hidden" id="edit_work_original_name" value="${safeName}">
             <label class="form-label">カテゴリ</label>
             <select id="edit_work_category" class="form-input">
@@ -906,12 +1118,12 @@ window.openEditWorkMaster = (encodedStr) => {
             <label class="form-label">詳細作業（各枠に1つ入力）</label>
             ${buildDetailWorksEditorHtml('edit_work_details_list', v.detailWorks || '')}
             <div style="display:flex; gap:10px; margin-top:15px;">
-                <button onclick="execMaster('work', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold;">更新する</button>
-                <button onclick="renderMasterSection()" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold;">キャンセル</button>
+                <button onclick="execMaster('work', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('work')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
             </div>
         </div>
     `;
-    document.getElementById('masterSections').innerHTML = html;
+    openMasterDetail('work', editHtml);
 };
 
 window.openEditMachineMaster = (encodedStr) => {
@@ -929,9 +1141,9 @@ window.openEditMachineMaster = (encodedStr) => {
         if (!f) return `<option value="">燃料...</option>`;
         return `<option value="${f}" ${fuel === f ? 'selected' : ''}>${f}</option>`;
     }).join('');
-    const html = `
+    const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
-            <h3 style="margin-top:0; color:#1976D2;">✏️ 農機マスタの編集</h3>
+            <h4 style="margin-top:0; color:#1976D2; font-size:15px; border-bottom:2px solid #1976D2; padding-bottom:5px;">✏️ 農機マスタの編集</h4>
             <input type="hidden" id="edit_mac_id" value="${String(v.id || '').replace(/"/g, '&quot;')}">
             <label class="form-label">車両名・農機名</label>
             <input type="text" id="edit_mac_name" class="form-input" value="${safeName}">
@@ -954,12 +1166,12 @@ window.openEditMachineMaster = (encodedStr) => {
             <label class="form-label">作業分類（各枠で既存の作業から1つ選択）</label>
             ${buildMachineWorkCategoryEditorHtml('edit_mac_category_rows', v.workCategory || '')}
             <div style="display:flex; gap:10px; margin-top:15px;">
-                <button onclick="execMaster('machine', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold;">更新する</button>
-                <button onclick="renderMasterSection()" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold;">キャンセル</button>
+                <button onclick="execMaster('machine', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('machine')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
             </div>
         </div>
     `;
-    document.getElementById('masterSections').innerHTML = html;
+    openMasterDetail('machine', editHtml);
 };
 
 window.execMaster = async (type, act, val) => {

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 
 <head>
@@ -363,13 +363,16 @@
     <div class="modal-content" id="modalBody"></div>
   </div>
 
-  <div id="masterModal">
-    <div
-      style="background:#fff; color:#333; padding:20px; border-radius:8px; width:90%; max-width:400px; max-height:85%; display:flex; flex-direction:column;">
-      <h3 style="margin-top:0; color:#d32f2f;">⚙️ マスタ項目設定</h3>
-      <div id="masterSections" style="overflow-y:auto; flex:1; padding-right:5px;"></div>
-      <button onclick="document.getElementById('masterModal').style.display='none'"
-        style="width:100%; padding:12px; background:#666; color:#fff; border-radius:4px; margin-top:15px; border:none; font-weight:bold; font-size:16px;">閉じる</button>
+  <div id="masterModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:#f4f6f8; color:#333; width:95%; max-width:1100px; height:92vh; border-radius:12px; display:flex; flex-direction:column; box-shadow:0 10px 30px rgba(0,0,0,0.3); overflow:hidden;">
+      <div id="masterModalHeader" style="background:#fff; padding:12px 20px; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button id="btnMasterBack" onclick="renderMasterMenu()" style="display:none; background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:6px; padding:6px 12px; font-weight:bold; font-size:13px; cursor:pointer;">← マスタ一覧に戻る</button>
+          <h3 id="masterModalTitle" style="margin:0; color:#d32f2f; font-size:18px; display:flex; align-items:center; gap:6px;">⚙️ マスタ項目設定</h3>
+        </div>
+        <button onclick="document.getElementById('masterModal').style.display='none'" style="background:#f5f5f5; color:#666; border:1px solid #ccc; border-radius:6px; padding:6px 14px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる ×</button>
+      </div>
+      <div id="masterSections" style="overflow-y:auto; flex:1; padding:20px; box-sizing:border-box;"></div>
     </div>
   </div>
 
