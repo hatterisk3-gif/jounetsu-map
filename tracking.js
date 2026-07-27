@@ -723,7 +723,76 @@
     showReconcileUI();
   };
 
+  window.getUserTodayWorkRecordsCount = function (userName) {
+    const user = userName || (typeof currentUser !== 'undefined' ? currentUser : '') || localStorage.getItem('passionMapUserName') || '';
+    const normUser = String(user || '').replace(/\s+/g, '');
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${y}-${m}-${d}`;
+
+    function normDate(str) {
+      if (!str) return '';
+      if (typeof window.normalizeDateStr === 'function') return window.normalizeDateStr(str);
+      const bits = String(str).split(/[\/\-.]/);
+      if (bits.length === 3) {
+        return `${bits[0]}-${bits[1].padStart(2, '0')}-${bits[2].padStart(2, '0')}`;
+      }
+      return String(str);
+    }
+
+    let count = 0;
+    const seenIds = new Set();
+    const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : (window.loadedPolygons || {});
+
+    for (const pid in polys) {
+      const p = polys[pid];
+      if (p && p.photos && Array.isArray(p.photos)) {
+        p.photos.forEach((ph) => {
+          if (!ph) return;
+          const recId = ph.id || (ph.data && ph.data.recordId);
+          if (recId && seenIds.has(recId)) return;
+          if (recId) seenIds.add(recId);
+
+          const isWorkRecord = ph.type === 'work' || (ph.data && ph.data.workName);
+          if (isWorkRecord && ph.data) {
+            const phAuthor = String(ph.author || '').replace(/\s+/g, '');
+            const isAuthorMatch =
+              !normUser ||
+              !phAuthor ||
+              phAuthor === normUser ||
+              normUser.includes(phAuthor) ||
+              phAuthor.includes(normUser) ||
+              normUser === 'システム';
+
+            if (isAuthorMatch) {
+              const phWorkDate = normDate(ph.data.workDate);
+              const phDate = normDate(ph.date);
+              if (phWorkDate === todayStr || phDate === todayStr) {
+                count++;
+              }
+            }
+          }
+        });
+      }
+    }
+    return count;
+  };
+
   window.cancelClockIn = function () {
+    const user = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
+    const workRecordCount = window.getUserTodayWorkRecordsCount(user);
+    if (workRecordCount > 0) {
+      const msg = `本日の作業記録（${workRecordCount}件）が存在するため、出勤を取り消せません。\n出勤を取り消すには、まず本日の作業記録を削除してください。`;
+      if (typeof window.customAlert === 'function') {
+        window.customAlert(msg);
+      } else {
+        alert(msg);
+      }
+      return;
+    }
+
     hideClockModal();
     clearPending();
     clearWatchers();
@@ -736,7 +805,6 @@
     }
     if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
 
-    const user = typeof currentUser !== 'undefined' ? currentUser : '';
     if (user && typeof callGAS === 'function') {
       callGAS('saveTrackingData', {
         userName: user,
@@ -873,7 +941,11 @@
       html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">後で</button>`;
     }
     html += `  </div>`;
-    html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
+    const curUser = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
+    const hasWorkRecs = (typeof window.getUserTodayWorkRecordsCount === 'function' ? window.getUserTodayWorkRecordsCount(curUser) : 0) > 0;
+    if (!hasWorkRecs) {
+      html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
+    }
     html += `</div>`;
     showClockModal(html);
 

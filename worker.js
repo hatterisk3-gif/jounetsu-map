@@ -63,6 +63,21 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       };
 
       window.cancelClockIn = () => {
+          const user = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
+          const workRecordCount = (typeof window.getUserTodayWorkRecordsCount === 'function')
+              ? window.getUserTodayWorkRecordsCount(user)
+              : 0;
+
+          if (workRecordCount > 0) {
+              const msg = `本日の作業記録（${workRecordCount}件）が存在するため、出勤を取り消せません。\n出勤を取り消すには、まず本日の作業記録を削除してください。`;
+              if (typeof customAlert === 'function') {
+                  customAlert(msg);
+              } else {
+                  alert(msg);
+              }
+              return;
+          }
+
           document.getElementById('modal').style.display = 'none';
           
           localStorage.removeItem('passionMapClockIn');
@@ -73,11 +88,11 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
               window.clockInMarker = null;
           }
           
-          window.syncTrackingUI();
+          if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
 
-          if (currentUser && typeof callGAS === 'function') {
+          if (user && typeof callGAS === 'function') {
               callGAS('saveTrackingData', {
-                  userName: currentUser,
+                  userName: user,
                   lat: 0,
                   lng: 0,
                   type: '出勤取消',
@@ -6121,6 +6136,10 @@ window.deleteRecordFromMyPage = async function(polyId, recordId) {
             if (typeof customAlert === 'function') customAlert("記録を削除しました");
             else if (typeof alertMsg === 'function') alertMsg("記録を削除しました");
             if (typeof openMyPage === 'function') openMyPage();
+            const histModal = document.getElementById('myWorkHistoryModal');
+            if (histModal && histModal.style.display === 'flex' && typeof openMyWorkHistoryDetail === 'function') {
+                openMyWorkHistoryDetail();
+            }
         } else {
             if (typeof customAlert === 'function') customAlert("削除に失敗しました");
             else if (typeof alertMsg === 'function') alertMsg("削除に失敗しました", true);
@@ -6145,6 +6164,165 @@ window.normalizeDateStr = function(dateStr) {
         return `${y}-${m}-${d}`;
     }
     return str;
+};
+
+/** 今日を含む過去 N 日分の YMD セットを返す */
+window.getPastYmdSet = function(days) {
+    const set = new Set();
+    const now = new Date();
+    const n = Math.max(1, days || 1);
+    for (let i = 0; i < n; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
+    return set;
+};
+
+window.formatWorkRecordDateLabel = function(ymd) {
+    if (!ymd) return '';
+    const parts = String(ymd).split('-').map(Number);
+    if (parts.length < 3 || parts.some((n) => isNaN(n))) return ymd;
+    const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+    const week = ['日', '月', '火', '水', '木', '金', '土'][dt.getDay()];
+    return `${parts[1]}/${parts[2]}（${week}）`;
+};
+
+/** ログインユーザーの作業記録を loadedPolygons から収集。allowedYmds があればその日付のみ */
+window.collectMyWorkRecords = function(allowedYmds) {
+    const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+    const normUser = (userName || '').replace(/\s+/g, '');
+    const list = [];
+    const seenIds = new Set();
+
+    for (let pid in loadedPolygons) {
+        const p = loadedPolygons[pid];
+        if (!p || !p.photos || !Array.isArray(p.photos)) continue;
+        p.photos.forEach(ph => {
+            if (!ph) return;
+            const recId = ph.id || (ph.data && ph.data.recordId);
+            if (recId && seenIds.has(recId)) return;
+            if (recId) seenIds.add(recId);
+
+            const isWorkRecord = (ph.type === 'work') || (ph.data && ph.data.workName);
+            if (!isWorkRecord || !ph.data) return;
+
+            const phAuthor = (ph.author || '').replace(/\s+/g, '');
+            const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
+            if (!isAuthorMatch) return;
+
+            const phWorkDate = window.normalizeDateStr(ph.data.workDate);
+            const phDate = window.normalizeDateStr(ph.date);
+            const recordYmd = phWorkDate || phDate;
+            if (allowedYmds && !allowedYmds.has(recordYmd)) return;
+
+            list.push({
+                ...ph,
+                polyId: pid,
+                polyName: p.name,
+                isMarker: p.isMarker,
+                recordYmd: recordYmd
+            });
+        });
+    }
+
+    list.sort((a, b) => {
+        const yA = a.recordYmd || '';
+        const yB = b.recordYmd || '';
+        if (yA !== yB) return yB.localeCompare(yA);
+        const tA = (a.data && a.data.startTime) ? a.data.startTime : (a.time || '00:00');
+        const tB = (b.data && b.data.startTime) ? b.data.startTime : (b.time || '00:00');
+        return tB.localeCompare(tA);
+    });
+    return list;
+};
+
+window.renderMyWorkRecordCardHtml = function(rec) {
+    const d = rec.data || {};
+    const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `🕒 ${rec.time}` : '');
+    const fieldLabel = rec.isMarker ? '🪧 看板' : '🌿 圃場';
+    const placeName = d.multiFieldNames || rec.polyName || '未選択';
+    const safePolyId = String(rec.polyId || '').replace(/'/g, "\\'");
+    const safeRecId = String(rec.id || '').replace(/'/g, "\\'");
+
+    return `
+        <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #4CAF50; border-radius:6px; padding:10px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span style="font-size:11px; color:#1565C0; font-weight:bold; cursor:pointer;" onclick="document.getElementById('modal').style.display='none'; closeMyWorkHistoryDetail(); focusAndOpen('${safePolyId}')">
+                    ${fieldLabel}: ${placeName} ↗
+                </span>
+                <span style="font-size:11px; color:#666;">${timeSpan}</span>
+            </div>
+            <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:3px;">
+                🚜 ${d.workName || '作業'}
+                <span style="background:#fff3e0; color:#e65100; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:normal; margin-left:5px;">${d.progressStatus || '記録'}</span>
+            </div>
+            ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">✅ 詳細: ${d.detailedWorks}</div>` : ''}
+            ${d.crop ? `<div style="font-size:11px; color:#555;">🌱 作物: ${d.crop}</div>` : ''}
+            ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
+                <span onclick="window.deleteRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
+                <span onclick="document.getElementById('modal').style.display='none'; closeMyWorkHistoryDetail(); window.editRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
+            </div>
+        </div>
+    `;
+};
+
+window.renderMyWorkRecordsGroupedHtml = function(records, emptyMsg) {
+    if (!records || records.length === 0) {
+        return `<div style="background:#f9f9f9; padding:15px; border-radius:8px; text-align:center; color:#888; font-size:13px; border:1px dashed #ccc;">${emptyMsg || '作業記録はありません。'}</div>`;
+    }
+    let html = `<div style="display:flex; flex-direction:column; gap:8px;">`;
+    let lastYmd = '';
+    records.forEach(rec => {
+        const ymd = rec.recordYmd || '';
+        if (ymd !== lastYmd) {
+            lastYmd = ymd;
+            html += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin:8px 0 2px;">📅 ${window.formatWorkRecordDateLabel(ymd) || '日付不明'}</div>`;
+        }
+        html += window.renderMyWorkRecordCardHtml(rec);
+    });
+    html += `</div>`;
+    return html;
+};
+
+window.openMyWorkHistoryDetail = function() {
+    let modal = document.getElementById('myWorkHistoryModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'myWorkHistoryModal';
+        modal.style.cssText = 'display:none; position:fixed; z-index:10050; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); justify-content:center; align-items:center;';
+        modal.innerHTML = `
+          <div style="background:#fff; color:#333; width:94%; max-width:480px; height:88vh; max-height:88vh; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.35); display:flex; flex-direction:column; overflow:hidden;">
+            <div style="padding:14px 16px; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-shrink:0;">
+              <div>
+                <div style="font-weight:bold; font-size:16px; color:#2e7d32;">📋 作業記録（全期間）</div>
+                <div id="myWorkHistorySub" style="font-size:12px; color:#666; margin-top:2px;">読み込み中...</div>
+              </div>
+              <button type="button" onclick="closeMyWorkHistoryDetail()"
+                style="background:#666; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0;">閉じる</button>
+            </div>
+            <div id="myWorkHistoryBody" style="flex:1; overflow-y:auto; padding:12px 14px; -webkit-overflow-scrolling:touch;"></div>
+          </div>`;
+        document.body.appendChild(modal);
+    }
+    const body = document.getElementById('myWorkHistoryBody');
+    const sub = document.getElementById('myWorkHistorySub');
+    if (!body) return;
+
+    modal.style.display = 'flex';
+    body.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:14px;">読み込み中...</div>`;
+    if (sub) sub.innerText = '読み込み中...';
+
+    setTimeout(() => {
+        const all = window.collectMyWorkRecords(null);
+        if (sub) sub.innerText = `全 ${all.length} 件（新しい日付から）`;
+        body.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
+    }, 30);
+};
+
+window.closeMyWorkHistoryDetail = function() {
+    const modal = document.getElementById('myWorkHistoryModal');
+    if (modal) modal.style.display = 'none';
 };
 
 function formatTrackingClockTime(timeVal) {
@@ -6353,85 +6531,18 @@ window.openMyPage = function() {
     const userName = localStorage.getItem('passionMapUserName') || currentUser || '';
     const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
 
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const todayDisplayStr = `${now.getMonth() + 1}/${now.getDate()}`;
-    const normUser = (userName || '').replace(/\s+/g, '');
+    const recentYmds = window.getPastYmdSet(3);
+    const ymdList = Array.from(recentYmds).sort(); // ascending
+    const rangeLabel = ymdList.length >= 2
+        ? `${window.formatWorkRecordDateLabel(ymdList[0])} 〜 ${window.formatWorkRecordDateLabel(ymdList[ymdList.length - 1])}`
+        : (window.formatWorkRecordDateLabel(ymdList[0]) || '');
 
-    let myTodayRecords = [];
-    const seenIds = new Set();
-
-    for (let pid in loadedPolygons) {
-        const p = loadedPolygons[pid];
-        if (p && p.photos && Array.isArray(p.photos)) {
-            p.photos.forEach(ph => {
-                if (!ph) return;
-                const recId = ph.id || (ph.data && ph.data.recordId);
-                if (recId && seenIds.has(recId)) return;
-                if (recId) seenIds.add(recId);
-
-                const isWorkRecord = (ph.type === 'work') || (ph.data && ph.data.workName);
-                if (isWorkRecord && ph.data) {
-                    const phAuthor = (ph.author || '').replace(/\s+/g, '');
-                    const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
-                    if (isAuthorMatch) {
-                        const phWorkDate = window.normalizeDateStr(ph.data.workDate);
-                        const phDate = window.normalizeDateStr(ph.date);
-                        if (phWorkDate === todayStr || phDate === todayStr) {
-                            myTodayRecords.push({
-                                ...ph,
-                                polyId: pid,
-                                polyName: p.name,
-                                isMarker: p.isMarker
-                            });
-                        }
-                    }
-                }
-            });
-        }
-    }
-
-    myTodayRecords.sort((a, b) => {
-        const tA = (a.data && a.data.startTime) ? a.data.startTime : (a.time || '00:00');
-        const tB = (b.data && b.data.startTime) ? b.data.startTime : (b.time || '00:00');
-        return tB.localeCompare(tA);
-    });
-
-    let recordsHtml = '';
-    if (myTodayRecords.length === 0) {
-        recordsHtml = `<div style="background:#f9f9f9; padding:15px; border-radius:8px; text-align:center; color:#888; font-size:13px; margin-bottom:15px; border:1px dashed #ccc;">本日の作業記録はまだありません。</div>`;
-    } else {
-        recordsHtml = `<div style="display:flex; flex-direction:column; gap:10px; margin-bottom:15px; max-height:250px; overflow-y:auto; padding-right:2px;">`;
-        myTodayRecords.forEach(rec => {
-            const d = rec.data || {};
-            const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `🕒 ${rec.time}` : '');
-            const fieldLabel = rec.isMarker ? '🪧 看板' : '🌿 圃場';
-            const placeName = d.multiFieldNames || rec.polyName || '未選択';
-            
-            recordsHtml += `
-                <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #4CAF50; border-radius:6px; padding:10px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                        <span style="font-size:11px; color:#1565C0; font-weight:bold; cursor:pointer;" onclick="document.getElementById('modal').style.display='none'; focusAndOpen('${rec.polyId}')">
-                            ${fieldLabel}: ${placeName} ↗
-                        </span>
-                        <span style="font-size:11px; color:#666;">${timeSpan}</span>
-                    </div>
-                    <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:3px;">
-                        🚜 ${d.workName || '作業'}
-                        <span style="background:#fff3e0; color:#e65100; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:normal; margin-left:5px;">${d.progressStatus || '記録'}</span>
-                    </div>
-                    ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">✅ 詳細: ${d.detailedWorks}</div>` : ''}
-                    ${d.crop ? `<div style="font-size:11px; color:#555;">🌱 作物: ${d.crop}</div>` : ''}
-                    ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
-                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
-                        <span onclick="window.deleteRecordFromMyPage('${rec.polyId}', '${rec.id}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
-                        <span onclick="document.getElementById('modal').style.display='none'; window.editRecordFromMyPage('${rec.polyId}', '${rec.id}')" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
-                    </div>
-                </div>
-            `;
-        });
-        recordsHtml += `</div>`;
-    }
+    const myRecentRecords = window.collectMyWorkRecords(recentYmds);
+    const recordsHtml = `<div style="max-height:280px; overflow-y:auto; padding-right:2px; margin-bottom:10px;">${
+        window.renderMyWorkRecordsGroupedHtml(myRecentRecords, '直近3日の作業記録はまだありません。')
+    }</div>
+    <button type="button" onclick="openMyWorkHistoryDetail()"
+      style="width:100%; background:#1565C0; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">📖 詳細（全期間を表示）</button>`;
 
     let html = `
         <h3 style="color:#4CAF50; margin-top:0;">👤 マイページ</h3>
@@ -6453,10 +6564,10 @@ window.openMyPage = function() {
             </div>
         </div>
         
-        <h4 style="color:#2e7d32; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
-            <span>📋 本日の作業記録 (${myTodayRecords.length}件)</span>
-            <span style="font-size:12px; color:#666; font-weight:normal;">${todayDisplayStr}</span>
+        <h4 style="color:#2e7d32; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <span>📋 直近3日の作業記録 (${myRecentRecords.length}件)</span>
         </h4>
+        <div style="font-size:11px; color:#666; margin-bottom:8px;">${rangeLabel}</div>
         ${recordsHtml}
 
         <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
@@ -6641,7 +6752,11 @@ window.toggleTracking = () => {
         html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤する</button>`;
         html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
         html += `  </div>`;
-        html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
+        const curUser = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
+        const hasWorkRecs = (typeof window.getUserTodayWorkRecordsCount === 'function' ? window.getUserTodayWorkRecordsCount(curUser) : 0) > 0;
+        if (!hasWorkRecs) {
+            html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
+        }
         html += `</div>`;
         
         const modalBody = document.getElementById('modalBody');
