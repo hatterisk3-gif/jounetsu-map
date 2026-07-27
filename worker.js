@@ -6911,6 +6911,14 @@ window.openMyPage = function() {
         <div style="font-size:11px; color:#666; margin-bottom:8px;">${rangeLabel}</div>
         ${recordsHtml}
 
+        <h4 style="color:#c62828; margin-bottom:10px; margin-top:5px;">ğŸ“§ Gmailã‚¢ã‚«ã‚¦ãƒ³ãƒˆ</h4>
+        <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:12px; margin-bottom:15px;">
+            <div style="font-size:12px; color:#666; margin-bottom:8px;">Googleã‚«ãƒ¬ãƒ³ãƒ€ãƒ¼é€£å‹•ç”¨ã€‚ç™»éŒ²å¾Œã€ã‚¹ã‚±ã‚¸ãƒ¥ãƒ¼ãƒ«ç”»é¢ã‹ã‚‰ä»Šæ—¥ã®äºˆå®šã‚’è¡¨ç¤ºã§ãã¾ã™ã€‚</div>
+            <input type="email" id="myGmailInput" style="width:100%; padding:10px; margin-bottom:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="example@gmail.com" value="">
+            <button id="saveGmailBtn" onclick="doSaveUserGmail()" style="width:100%; background:#DB4437; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">Gmailã‚’ä¿å­˜</button>
+            <div id="saveGmailResult" style="margin-top:8px; font-size:13px; font-weight:bold;"></div>
+        </div>
+
         <h4 style="color:#555; margin-bottom:10px;">ğŸ”‘ ãƒ‘ã‚¹ãƒ¯ãƒ¼ãƒ‰å¤‰æ›´</h4>
         <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">ç¾åœ¨ã®ãƒ‘ã‚¹ãƒ¯ãƒ¼ãƒ‰</label>
         <input type="password" id="myCurrentPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="ç¾åœ¨ã®ãƒ‘ã‚¹ãƒ¯ãƒ¼ãƒ‰">
@@ -6934,6 +6942,46 @@ window.openMyPage = function() {
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('modal').style.display = 'flex';
     loadMyAttendance();
+    loadMyGmailIntoMyPage();
+};
+
+
+window.loadMyGmailIntoMyPage = async function() {
+    const input = document.getElementById('myGmailInput');
+    if (!input) return;
+    const staffId = localStorage.getItem('passionMapUserId') || '';
+    if (!staffId) return;
+    try {
+        const res = await callGAS('getUserGmail', { userId: staffId });
+        if (res && res.gmail) input.value = res.gmail;
+    } catch (e) { /* ignore */ }
+};
+
+window.doSaveUserGmail = async function() {
+    const input = document.getElementById('myGmailInput');
+    const resultDiv = document.getElementById('saveGmailResult');
+    const btn = document.getElementById('saveGmailBtn');
+    const staffId = localStorage.getItem('passionMapUserId') || '';
+    if (!staffId) {
+        if (resultDiv) { resultDiv.innerText = 'âŒ ãƒ­ã‚°ã‚¤ãƒ³æƒ…å ±ãŒã‚ã‚Šã¾ã›ã‚“'; resultDiv.style.color = 'red'; }
+        return;
+    }
+    const gmail = (input && input.value || '').trim();
+    if (btn) { btn.disabled = true; btn.innerText = 'ä¿å­˜ä¸­...'; }
+    try {
+        const res = await callGAS('saveUserGmail', { userId: staffId, gmail: gmail });
+        if (resultDiv) {
+            resultDiv.innerText = res && res.success ? 'âœ… Gmailã‚’ä¿å­˜ã—ã¾ã—ãŸ' : 'âŒ ä¿å­˜ã«å¤±æ•—ã—ã¾ã—ãŸ';
+            resultDiv.style.color = res && res.success ? 'green' : 'red';
+        }
+    } catch (e) {
+        if (resultDiv) {
+            resultDiv.innerText = 'âŒ ' + (e.message || 'é€šä¿¡ã‚¨ãƒ©ãƒ¼');
+            resultDiv.style.color = 'red';
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerText = 'Gmailã‚’ä¿å­˜'; }
+    }
 };
 
 
@@ -7291,4 +7339,168 @@ window.filterWorkChips = function() {
         select.innerHTML = '<option value="">é¸æŠã—ã¦ãã ã•ã„</option>' + filtered.map(w => `<option value="${String(w.name || '').replace(/"/g, '&quot;')}">${w.name}</option>`).join('');
         if (filtered.some(w => w.name === current)) select.value = current;
     }
+};
+
+// ========== ŒÂlƒXƒPƒWƒ…[ƒ‹iƒAƒJƒEƒ“ƒg•Êj ==========
+window._escapeHtmlPs = function(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+};
+
+window.openPersonalSchedule = function() {
+  const staffId = localStorage.getItem('passionMapUserId') || '';
+  if (!staffId) {
+    if (typeof customAlert === 'function') customAlert('ƒƒOƒCƒ“î•ñ‚ª‚ ‚è‚Ü‚¹‚ñ');
+    else alert('ƒƒOƒCƒ“î•ñ‚ª‚ ‚è‚Ü‚¹‚ñ');
+    return;
+  }
+  document.getElementById('rightPanelTitle').innerText = '??? ƒ}ƒCEƒXƒPƒWƒ…[ƒ‹';
+  document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">“Ç‚İ‚İ’†...</div>';
+  document.getElementById('rightPanelFooter').innerHTML = '<button onclick="closeRightPanel()" style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">•Â‚¶‚é</button>';
+  document.getElementById('rightPanel').classList.add('open');
+  window.renderPersonalSchedulePanel();
+};
+
+window.renderPersonalSchedulePanel = async function() {
+  const staffId = localStorage.getItem('passionMapUserId') || '';
+  const content = document.getElementById('rightPanelContent');
+  if (!content) return;
+  try {
+    const data = await callGAS('getPersonalSchedule', { userId: staffId });
+    const priority = (data && data.priority) || [];
+    const notes = (data && data.notes) || [];
+
+    const renderList = (items, cat) => {
+      if (!items.length) {
+        return '<div style="color:#999;font-size:13px;padding:8px 0;">‚Ü‚¾‚ ‚è‚Ü‚¹‚ñ</div>';
+      }
+      return items.map(it => {
+        const doneStyle = it.done ? 'text-decoration:line-through;color:#999;' : '';
+        const checked = it.done ? 'checked' : '';
+        const safeId = window._escapeHtmlPs(it.id);
+        const safeText = window._escapeHtmlPs(it.text);
+        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:10px;margin-bottom:8px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;">
+          <input type="checkbox" ${checked} onchange="togglePersonalScheduleDone('${safeId}', this.checked)" style="margin-top:3px;width:18px;height:18px;flex-shrink:0;">
+          <div style="flex:1;font-size:14px;line-height:1.4;${doneStyle}">${safeText}</div>
+          <button type="button" onclick="deletePersonalScheduleItem('${safeId}')" style="background:none;border:none;color:#e53935;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;" title="íœ">~</button>
+        </div>`;
+      }).join('');
+    };
+
+    content.innerHTML = `
+      <button type="button" id="btnTodayCalendar" onclick="showTodayGoogleCalendar()"
+        style="width:100%;background:#DB4437;color:#fff;border:none;padding:12px;border-radius:8px;font-weight:bold;font-size:14px;cursor:pointer;margin-bottom:14px;">?? ¡“ú‚ÌGoogleƒJƒŒƒ“ƒ_[—\’è</button>
+      <div id="todayCalendarBox" style="display:none;margin-bottom:16px;"></div>
+
+      <div style="background:#ffebee;border:1px solid #ef9a9a;border-radius:10px;padding:12px;margin-bottom:14px;">
+        <div style="font-weight:bold;color:#c62828;font-size:15px;margin-bottom:8px;">?? Å—Dæ</div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
+          <input type="text" id="psPriorityInput" placeholder="Å—Dæ‚ğ’Ç‰Á..." style="flex:1;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;">
+          <button type="button" onclick="addPersonalScheduleItem('Å—Dæ')" style="background:#c62828;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">’Ç‰Á</button>
+        </div>
+        <div id="psPriorityList">${renderList(priority, 'Å—Dæ')}</div>
+      </div>
+
+      <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:10px;padding:12px;margin-bottom:14px;">
+        <div style="font-weight:bold;color:#f57f17;font-size:15px;margin-bottom:8px;">?? —¯ˆÓ–€</div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
+          <input type="text" id="psNotesInput" placeholder="—¯ˆÓ–€‚ğ’Ç‰Á..." style="flex:1;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;">
+          <button type="button" onclick="addPersonalScheduleItem('—¯ˆÓ–€')" style="background:#f57f17;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">’Ç‰Á</button>
+        </div>
+        <div id="psNotesList">${renderList(notes, '—¯ˆÓ–€')}</div>
+      </div>
+
+      <div style="font-size:11px;color:#888;line-height:1.5;">¦‚±‚ÌƒXƒPƒWƒ…[ƒ‹‚Í‚ ‚È‚½‚ÌƒAƒJƒEƒ“ƒgê—p‚Å‚·B<br>GoogleƒJƒŒƒ“ƒ_[˜A“®‚É‚Íƒ}ƒCƒy[ƒW‚ÅGmail“o˜^‚ª•K—v‚Å‚·B</div>
+    `;
+  } catch (e) {
+    content.innerHTML = `<div style="color:red;text-align:center;margin-top:30px;">“Ç‚İ‚İƒGƒ‰[<br><span style="font-size:12px;">${window._escapeHtmlPs(e.message || e)}</span></div>`;
+  }
+};
+
+window.addPersonalScheduleItem = async function(category) {
+  const staffId = localStorage.getItem('passionMapUserId') || '';
+  const inputId = category === '—¯ˆÓ–€' ? 'psNotesInput' : 'psPriorityInput';
+  const input = document.getElementById(inputId);
+  const text = (input && input.value || '').trim();
+  if (!text) {
+    if (typeof customAlert === 'function') customAlert('“à—e‚ğ“ü—Í‚µ‚Ä‚­‚¾‚³‚¢');
+    else alert('“à—e‚ğ“ü—Í‚µ‚Ä‚­‚¾‚³‚¢');
+    return;
+  }
+  try {
+    await callGAS('addPersonalScheduleItem', { userId: staffId, category: category, text: text });
+    if (input) input.value = '';
+    await window.renderPersonalSchedulePanel();
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert('’Ç‰Á‚É¸”s‚µ‚Ü‚µ‚½: ' + (e.message || e));
+    else alert('’Ç‰Á‚É¸”s‚µ‚Ü‚µ‚½');
+  }
+};
+
+window.togglePersonalScheduleDone = async function(id, done) {
+  try {
+    await callGAS('updatePersonalScheduleItem', { id: id, done: !!done });
+    await window.renderPersonalSchedulePanel();
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert('XV‚É¸”s‚µ‚Ü‚µ‚½');
+    else alert('XV‚É¸”s‚µ‚Ü‚µ‚½');
+  }
+};
+
+window.deletePersonalScheduleItem = async function(id) {
+  const ok = (typeof customConfirm === 'function')
+    ? await customConfirm('‚±‚Ì€–Ú‚ğíœ‚µ‚Ü‚·‚©H')
+    : confirm('‚±‚Ì€–Ú‚ğíœ‚µ‚Ü‚·‚©H');
+  if (!ok) return;
+  try {
+    await callGAS('deletePersonalScheduleItem', { id: id });
+    await window.renderPersonalSchedulePanel();
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert('íœ‚É¸”s‚µ‚Ü‚µ‚½');
+    else alert('íœ‚É¸”s‚µ‚Ü‚µ‚½');
+  }
+};
+
+window.showTodayGoogleCalendar = async function() {
+  const staffId = localStorage.getItem('passionMapUserId') || '';
+  const box = document.getElementById('todayCalendarBox');
+  const btn = document.getElementById('btnTodayCalendar');
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = '<div style="text-align:center;padding:12px;color:#666;font-size:13px;">æ“¾’†...</div>';
+  if (btn) { btn.disabled = true; btn.innerText = 'æ“¾’†...'; }
+  try {
+    const res = await callGAS('getTodayGoogleCalendarEvents', { userId: staffId });
+    const events = (res && res.events) || [];
+    let html = `<div style="background:#fafafa;border:1px solid #e0e0e0;border-radius:8px;padding:12px;">
+      <div style="font-weight:bold;margin-bottom:8px;color:#333;">?? ¡“ú‚Ì—\’è${res && res.gmail ? 'i' + window._escapeHtmlPs(res.gmail) + 'j' : ''}</div>`;
+    if (events.length) {
+      html += events.map(ev => {
+        const loc = ev.location ? `<div style="font-size:11px;color:#666;">?? ${window._escapeHtmlPs(ev.location)}</div>` : '';
+        return `<div style="padding:8px 0;border-bottom:1px solid #eee;">
+          <div style="font-size:12px;color:#DB4437;font-weight:bold;">${window._escapeHtmlPs(ev.time)}</div>
+          <div style="font-size:14px;font-weight:bold;color:#222;">${window._escapeHtmlPs(ev.title)}</div>
+          ${loc}
+        </div>`;
+      }).join('');
+    } else {
+      html += `<div style="color:#666;font-size:13px;padding:6px 0;">${window._escapeHtmlPs((res && res.message) || '¡“ú‚Ì—\’è‚Í‚ ‚è‚Ü‚¹‚ñB')}</div>`;
+    }
+    if (res && res.calendarUrl) {
+      html += `<a href="${window._escapeHtmlPs(res.calendarUrl)}" target="_blank" rel="noopener"
+        style="display:block;margin-top:10px;text-align:center;background:#4285F4;color:#fff;text-decoration:none;padding:10px;border-radius:6px;font-weight:bold;font-size:13px;">GoogleƒJƒŒƒ“ƒ_[‚ğŠJ‚­</a>`;
+    }
+    if (!res || !res.success) {
+      html += `<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.4;">¦ƒJƒŒƒ“ƒ_[‚ªŒ©‚Â‚©‚ç‚È‚¢ê‡‚ÍA‘ÎÛƒJƒŒƒ“ƒ_[‚ğApps ScriptÀsƒAƒJƒEƒ“ƒg‚Öu—\’è‚Ì•\¦v‚Å‹¤—L‚µ‚Ä‚­‚¾‚³‚¢B</div>`;
+    }
+    html += '</div>';
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = `<div style="color:red;font-size:13px;padding:8px;">ƒGƒ‰[: ${window._escapeHtmlPs(e.message || e)}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = '?? ¡“ú‚ÌGoogleƒJƒŒƒ“ƒ_[—\’è'; }
+  }
 };
