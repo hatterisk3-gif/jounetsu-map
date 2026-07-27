@@ -615,7 +615,8 @@ window.updateCadSvgOverlay = (opts) => {
         pinsStateId = 'none_n' + (window.cadPinNumFontSize || 20);
     }
     let pinsGroup = svg ? svg.querySelector('#cadSvgPins') : null;
-    if (pinsGroup && svg._lastPinsStateId !== pinsStateId) {
+    // ドラッグ中はDOM再生成しない（毎回0,0に一瞬飛ぶ不具合を防ぐ）
+    if (pinsGroup && svg._lastPinsStateId !== pinsStateId && !window.cadPinDragging) {
         svg._lastPinsStateId = pinsStateId;
         pinsGroup.innerHTML = '';
         
@@ -660,7 +661,8 @@ window.updateCadSvgOverlay = (opts) => {
                     div.appendChild(numSpan);
                 }
                 
-                div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                div.className = 'cad-equip-pin';
+                div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                 fo.appendChild(div);
 
                 let delBtn = document.createElement('div');
@@ -674,6 +676,14 @@ window.updateCadSvgOverlay = (opts) => {
                 let dragStartX = 0;
                 let dragStartY = 0;
 
+                const syncPinFoPosition = (latLng) => {
+                    if (!mk._svgFoNode || !latLng) return;
+                    const foSize = parseFloat(mk._svgFoNode.getAttribute('width')) || 60;
+                    const screenPt = window.latLngToScreenPixel(latLng.lat(), latLng.lng());
+                    mk._svgFoNode.setAttribute('x', screenPt.x - (foSize / 2));
+                    mk._svgFoNode.setAttribute('y', screenPt.y - (foSize / 2));
+                };
+
                 const onMove = (ev) => {
                     if (ev.cancelable) ev.preventDefault();
                     if (!isDraggingPin) return;
@@ -686,13 +696,15 @@ window.updateCadSvgOverlay = (opts) => {
                     let newLatLng = window.screenPixelToLatLng(clientX, clientY);
                     if (newLatLng) {
                         mk.setPosition(newLatLng);
-                        window.updateCadSvgOverlay();
+                        // フル再描画せず、このピンの表示位置だけ更新
+                        syncPinFoPosition(newLatLng);
                     }
                 };
                 
                 const onEnd = () => {
                     if (!isDraggingPin) return;
                     isDraggingPin = false;
+                    window.cadPinDragging = false;
                     window.removeEventListener('mousemove', onMove);
                     window.removeEventListener('mouseup', onEnd);
                     window.removeEventListener('touchmove', onMove);
@@ -702,26 +714,33 @@ window.updateCadSvgOverlay = (opts) => {
                         let allDelBtns = document.querySelectorAll('.cad-pin-del-btn');
                         allDelBtns.forEach(btn => { if(btn !== delBtn) btn.style.display = 'none'; });
                         delBtn.style.display = delBtn.style.display === 'none' ? 'block' : 'none';
+                    } else {
+                        // 位置確定後に状態IDを更新（次回の通常再描画で同期）
+                        if (svg) svg._lastPinsStateId = null;
+                        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
                     }
-
-                    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
                 };
                 
                 div.addEventListener('mousedown', (e) => {
-                    isDraggingPin = true; 
+                    if (e.button != null && e.button !== 0) return;
+                    isDraggingPin = true;
+                    window.cadPinDragging = true;
                     dragDistance = 0; 
                     dragStartX = e.clientX;
                     dragStartY = e.clientY;
+                    e.preventDefault();
                     e.stopPropagation();
                     window.addEventListener('mousemove', onMove);
                     window.addEventListener('mouseup', onEnd);
                 });
                 
                 div.addEventListener('touchstart', (e) => {
-                    isDraggingPin = true; 
+                    isDraggingPin = true;
+                    window.cadPinDragging = true;
                     dragDistance = 0;
                     dragStartX = e.touches[0].clientX;
                     dragStartY = e.touches[0].clientY;
+                    e.preventDefault();
                     e.stopPropagation();
                     window.addEventListener('touchmove', onMove, {passive: false});
                     window.addEventListener('touchend', onEnd);
@@ -1384,8 +1403,8 @@ window.initCadTouchEvents = () => {
         // 2. つまみやピンの親要素や、ドラッグ防止対象の要素かを再帰的にチェック
         let currEl = target;
         let depth = 0;
-        // 探索の深さは最大3程度で十分（親要素にマーカー画像が含まれるかを querySelector で探索する重くてバグだらけの処理は廃止し、タップされた要素自身または直接の親だけをチェックする）
-        while (currEl && currEl !== wrapper && depth < 4) {
+        // 探索の深さは最大8（foreignObject内のピン階層まで）
+        while (currEl && currEl !== wrapper && depth < 8) {
             const currTagName = currEl.tagName.toLowerCase();
             if (['button', 'input', 'select', 'textarea'].includes(currTagName)) {
                 return true;
@@ -1413,10 +1432,14 @@ window.initCadTouchEvents = () => {
                 if (currEl.className.includes('gm-style-cc') || currEl.className.includes('gm-control-active')) {
                     return true;
                 }
+                // 設備ピン本体（SVG foreignObject 内）
+                if (currEl.className.includes('cad-equip-pin') || currEl.className.includes('cad-pin-del-btn') || currEl.className.includes('cad-pin-icon')) {
+                    return true;
+                }
             }
 
-            // 設備ピン（💧, 🕳️, 🛻, 🚜など）はドラッグできるようにする
-            if (currEl.innerText && (currEl.innerText.includes('💧') || currEl.innerText.includes('🕳️') || currEl.innerText.includes('🛻') || currEl.innerText.includes('🚜'))) {
+            // 設備ピン（💧, 🕳️, 🅿️, 🚜など）はドラッグできるようにする
+            if (currEl.innerText && (currEl.innerText.includes('💧') || currEl.innerText.includes('🕳️') || currEl.innerText.includes('🅿️') || currEl.innerText.includes('🚜') || currEl.innerText.includes('🛻'))) {
                 return true;
             }
             currEl = currEl.parentElement;
