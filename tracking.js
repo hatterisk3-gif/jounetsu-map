@@ -334,6 +334,36 @@
     return minsToHm(maxEnd);
   }
 
+  /** 退勤モーダル：退勤日の最後の作業終了時間を退勤時間欄へ反映 */
+  window.setClockOutToLastWorkEnd = function () {
+    const dateEl = document.getElementById('clockOutDate');
+    const timeEl = document.getElementById('clockOutTime');
+    if (!timeEl) return;
+
+    const workDateYmd =
+      (dateEl && dateEl.value) ||
+      (() => {
+        const n = new Date();
+        return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+      })();
+
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      '';
+
+    let endTime = getLastWorkEndTime(user, workDateYmd);
+    if (!endTime && typeof window.getLatestEndTimeForDate === 'function') {
+      endTime = window.getLatestEndTimeForDate(workDateYmd) || '';
+    }
+
+    if (!endTime) {
+      alertMsg(`${workDateYmd} の作業記録に終了時間がありません。`);
+      return;
+    }
+    timeEl.value = endTime;
+  };
+
   function analyzeClockOut(pending) {
     const inM = timeToMins(pending.clockInTime);
     let outM = timeToMins(pending.clockOutTime);
@@ -916,7 +946,8 @@
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
     html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${outDate}">`;
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
-    html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:12px;" value="${outTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '退勤時間')">`;
+    html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:8px;" value="${outTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '退勤時間')">`;
+    html += `<button type="button" onclick="setClockOutToLastWorkEnd()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; margin-bottom:12px;">⏱️ 最後の作業記録の終了時間に合わせる</button>`;
 
     html += `<div style="background:#f9fbe7; border:1px solid #e6ee9c; border-radius:8px; padding:12px; margin-bottom:12px;">`;
     html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;

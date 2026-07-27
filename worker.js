@@ -7,7 +7,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let latestUserPos = null;
       let map, infoWindow, loadedPolygons = {}, userLocationMarker = null;
 
-      // トラッキング（移動履歴）用
+      // ????????????????????
       let trackingWatchId = null;
       let lastTrackingTime = 0;
 
@@ -15,7 +15,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
           const dateInput = document.getElementById('clockOutDate') ? document.getElementById('clockOutDate').value : '';
           const timeInput = document.getElementById('clockOutTime').value;
           if (!dateInput || !timeInput) {
-              if (window.customAlert) customAlert("日付と時間を入力してください");
+              if (window.customAlert) customAlert("???????????????????????");
               return;
           }
           document.getElementById('modal').style.display = 'none';
@@ -46,18 +46,18 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                       userName: currentUser,
                       lat: p.coords.latitude,
                       lng: p.coords.longitude,
-                      type: '退勤',
+                      type: '????',
                       time: clockAt.getTime()
-                  }).catch(e => console.warn("退勤送信エラー", e));
+                  }).catch(e => console.warn("????????????", e));
               }, (err) => {
-                  console.warn("GPSエラー: 退勤時");
+                  console.warn("GPS?????: ?????");
                   callGAS('saveTrackingData', {
                       userName: currentUser,
                       lat: 0,
                       lng: 0,
-                      type: '退勤',
+                      type: '????',
                       time: clockAt.getTime()
-                  }).catch(e => console.warn("退勤送信エラー", e));
+                  }).catch(e => console.warn("????????????", e));
               }, { enableHighAccuracy: true });
           }
       };
@@ -69,7 +69,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
               : 0;
 
           if (workRecordCount > 0) {
-              const msg = `本日の作業記録（${workRecordCount}件）が存在するため、出勤を取り消せません。\n出勤を取り消すには、まず本日の作業記録を削除してください。`;
+              const msg = `?????????????${workRecordCount}?????????????????????????????????n???????????????????????????????????????????????????;
               if (typeof customAlert === 'function') {
                   customAlert(msg);
               } else {
@@ -95,108 +95,108 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                   userName: user,
                   lat: 0,
                   lng: 0,
-                  type: '出勤取消',
+                  type: '????????',
                   time: Date.now()
-              }).catch(e => console.warn("出勤取消送信エラー", e));
+              }).catch(e => console.warn("????????????????", e));
           }
       };
 
       window.toggleTracking = () => {
     const btn = document.getElementById('btnTracking');
     if (trackingWatchId !== null) {
-        // 退勤（トラッキング停止）
+        // ????????????????????
         navigator.geolocation.clearWatch(trackingWatchId);
         trackingWatchId = null;
         btn.style.backgroundColor = 'white';
         btn.style.color = '#4CAF50';
-        btn.innerHTML = '🏃‍♂️';
+        btn.innerHTML = '????????';
         
-        // ローカルストレージをクリア
+        // ????????????????????
         localStorage.removeItem('passionMapClockIn');
         
-        // 出勤マーカーを消去
+        // ????????????????
         if (window.clockInMarker) {
             window.clockInMarker.setMap(null);
             window.clockInMarker = null;
         }
 
-        // 退勤をGASへ送信
+        // ?????GAS?????
         if (currentUser) {
             navigator.geolocation.getCurrentPosition((p) => {
                 callGAS('saveTrackingData', {
                     userName: currentUser,
                     lat: p.coords.latitude,
                     lng: p.coords.longitude,
-                    type: '退勤'
-                }).catch(e => console.warn("退勤送信エラー", e));
+                    type: '????'
+                }).catch(e => console.warn("????????????", e));
             }, (err) => {
-                console.warn("GPSエラー: 退勤時");
+                console.warn("GPS?????: ?????");
             }, { enableHighAccuracy: true });
         }
     } else {
-        // 出勤（トラッキング開始）
+        // ???????????????????
         if (!navigator.geolocation) {
-            if (window.customAlert) customAlert("お使いの端末ではGPSがサポートされていません。");
+            if (window.customAlert) customAlert("?????????????GPS????????????????????");
             return;
         }
         btn.style.backgroundColor = '#4CAF50';
         btn.style.color = 'white';
-        btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
+        btn.innerHTML = '????????<br><span style="font-size:10px; line-height:1;">??????</span>';
         
-        // 現在位置を取得して出勤処理
+        // ??????????????????????
         navigator.geolocation.getCurrentPosition((p) => {
             const lat = p.coords.latitude;
             const lng = p.coords.longitude;
             const now = new Date();
             const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
             
-            // ローカルストレージに保存
+            // ??????????????????
             const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
             localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
             
-            // マーカーをプロット
+            // ???????????????
             if (window.plotClockInMarker) {
                 window.plotClockInMarker(clockInState, true);
             }
 
-            // 出勤をGASへ送信
+            // ???????AS?????
             if (currentUser) {
                 callGAS('saveTrackingData', {
                     userName: currentUser,
                     lat: lat,
                     lng: lng,
-                    type: '出勤'
-                }).catch(e => console.warn("出勤送信エラー", e));
+                    type: '????'
+                }).catch(e => console.warn("????????????", e));
             }
         }, (err) => {
-            if (window.customAlert) customAlert("GPSエラー: 現在地が取得できません。位置情報を許可してください。");
+            if (window.customAlert) customAlert("GPS?????: ??????????????????????????????????????????");
             btn.style.backgroundColor = 'white';
             btn.style.color = '#4CAF50';
-            btn.innerHTML = '🏃‍♂️';
+            btn.innerHTML = '????????';
             return;
         }, { enableHighAccuracy: true });
         
-        // 移動トラッキングを開始
+        // ?????????????????
         trackingWatchId = navigator.geolocation.watchPosition((p) => {
             const now = Date.now();
-            // 10秒に1回程度の頻度に制限（GASの呼び出し過多を防ぐ）
+            // 10???1???????????????GAS??????????????????
             if (now - lastTrackingTime < 10000) return;
             lastTrackingTime = now;
 
             const lat = p.coords.latitude;
             const lng = p.coords.longitude;
             
-            // GASへ送信
+            // GAS?????
             if (currentUser) {
                 callGAS('saveTrackingData', {
                     userName: currentUser,
                     lat: lat,
                     lng: lng,
-                    type: '移動'
-                }).catch(e => console.warn("トラッキング送信エラー", e));
+                    type: '???'
+                }).catch(e => console.warn("?????????????????", e));
             }
         }, (err) => {
-            console.warn("GPSエラー: ", err);
+            console.warn("GPS?????: ", err);
         }, {
             enableHighAccuracy: true,
             timeout: 10000,
@@ -224,20 +224,20 @@ window.plotClockInMarker = (state, doCenter) => {
     });
     
     const info = new google.maps.InfoWindow({
-        content: `<div style="padding:5px; font-weight:bold; color:#FF9800;">👨‍🌾 出勤時間: ${state.time}</div>`
+        content: `<div style="padding:5px; font-weight:bold; color:#FF9800;">??????? ???????: ${state.time}</div>`
     });
-    // 常に開いておくか、クリックで開くか（ここでは開いたままにする）
+    // ???????????????????????????????????????????????
     info.open(map, window.clockInMarker);
     if (doCenter) {
         map.setCenter(pos);
         map.setZoom(18);
     }
-    // クリック時にも開くようにする
+    // ?????????????????????
     window.clockInMarker.addListener('click', () => {
         info.open(map, window.clockInMarker);
     });
 };
-// 共通UI系
+// ????I??
       window.customAlert = (msg) => {
         document.getElementById('customAlertMessage').innerText = msg;
         document.getElementById('customAlertModal').style.display = 'flex';
@@ -261,18 +261,18 @@ window.plotClockInMarker = (state, doCenter) => {
           document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); };
         });
       };
-  // 🌟Worker用：座標検索ボタンを押したときの処理（短縮URLを展開して圃場を判定！）
+  // ??Worker?????????????????????????????????RL??????????????????
   window.promptLineUrl = async () => {
-          const input = await customPrompt("📍 LINE等でコピーした「短縮URL」を貼り付けてください");
+          const input = await customPrompt("?? LINE?????????????????RL??????????????????");
           if (!input) return;
 
           let shareLat = null, shareLng = null;
 
-          // 入力の中にhttpがあれば、GASの解読プログラムに投げる！
+          // ????????ttp????????AS????????????????????
           if (input.indexOf('http') !== -1) {
               const shortUrlMatch = input.match(/https?:\/\/[^\s]+/);
               if (shortUrlMatch) {
-                  customAlert("🔍 短縮URLを解析して座標を取得しています...");
+                  customAlert("?? ???URL????????????????????????...");
                   try {
                       const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
                       document.getElementById('customAlertModal').style.display = 'none';
@@ -281,23 +281,23 @@ window.plotClockInMarker = (state, doCenter) => {
                           shareLat = result.lat;
                           shareLng = result.lng;
                       } else {
-                          customAlert(`📍 解析エラー\n理由: ${result.error}\n展開後: ${result.expandedUrl || "なし"}`);
+                          customAlert(`?? ????????n???: ${result.error}\n?????: ${result.expandedUrl || "???"}`);
                           return; 
                       }
                   } catch(e) {
                       document.getElementById('customAlertModal').style.display = 'none';
-                      customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
+                      customAlert("???????????????????????????????????????????????????");
                       return;
                   }
               }
           }
 
-          // 座標が見つかったらピンを刺して自動判定！
+          // ???????????????????????????????
           if (shareLat && shareLng) {
               const sharedPos = new google.maps.LatLng(shareLat, shareLng);
               map.setCenter(sharedPos); map.setZoom(18);
               
-// 🌟前のピンを消してから、新しいピンを変数に記憶させる！
+// ??????????????????????????????????????????????
 if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               window.sharedLocationMarker = new google.maps.Marker({
                   position: sharedPos, map: map,
@@ -305,7 +305,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   zIndex: 9999, animation: google.maps.Animation.DROP
               });
 
-              // 🚀 Googleマップの機能で「図形（圃場）の内側か」を計算！
+              // ?? Google???????????????????????????????????????
               let foundHojoId = null;
               if (google.maps.geometry && google.maps.geometry.poly) {
                   for (let id in loadedPolygons) {
@@ -317,17 +317,17 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               }
 
               if (foundHojoId) {
-                  customAlert("📍 既存の圃場が見つかりました！");
-                  // 1秒後に詳細画面（作業記録モーダル）を自動で開く
+                  customAlert("?? ?????????????????????");
+                  // 1??????????????????????????????????????
                   setTimeout(() => { focusAndOpen(foundHojoId); }, 1000);
               } else {
-                  if (await customConfirm("📍 ここには圃場登録がありません。\n管理者画面を開いて新しく登録しますか？")) {
-                      // 「はい」ならAdminへパラメータを付けて飛ばす！
+                  if (await customConfirm("?? ????????????????????????n????????????????????????????????")) {
+                      // ???????????dmin?????????????????????
                       window.location.href = `/admin.html?lat=${shareLat}&lng=${shareLng}&action=draw`;
                   }
               }
           } else {
-              customAlert("📍 有効なURLが見つかりませんでした。");
+              customAlert("?? ?????RL????????????????????");
           }
       };
 
@@ -336,7 +336,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         if (action !== 'login') {
           const spreadsheetId = localStorage.getItem('spreadsheetId');
           if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
-            throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
+            throw new Error("???????????????????????????????????????D??????????????????????????????????????????????????????");
           }
           params.spreadsheetId = spreadsheetId;
         }
@@ -354,9 +354,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                     json = JSON.parse(text);
                 } catch (e) {
                     if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                        throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
+                        throw new Error("Google?????????????????????????????????????????????...??");
                     }
-                    throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
+                    throw new Error("???????????????????????????: " + text.substring(0, 50));
                 }
                 if (json.status !== "success") throw new Error(json.message);
                 return json.data;
@@ -369,22 +369,22 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                 }
             }
         }
-        lastError.message = lastError.message.replace("（リトライ中...）", "");
+        lastError.message = lastError.message.replace("?????????...??", "");
         if (lastError.name === 'AbortError') {
-            throw new Error("通信がタイムアウトしました。電波の良い場所で再度お試しください。");
+            throw new Error("???????????????????????????????????????????????????");
         }
         throw lastError;
       }
 
-   // 🌟 1. ログイン処理（完全版） 🌟
+   // ?? 1. ????????????????? ??
       async function executeLogin(isAuto = false) {
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
           const btn = document.querySelector('.login-btn');
           
-          // 自動ログイン時はボタンの文字を変えない（チラつき防止）
+          // ?????????????????????????????????????????
           if (!isAuto && btn) { 
-              btn.innerText = "通信中..."; 
+              btn.innerText = "?????..."; 
               btn.disabled = true; 
           }
 
@@ -396,22 +396,22 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
                   localStorage.setItem('passionMapUserName', result.name);
-                  localStorage.setItem('passionMapUserRole', result.role || '作業員');
+                  localStorage.setItem('passionMapUserRole', result.role || '??????');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
                   
-                  // 最新データを取りに行く
+                  // ??????????????????
                   loadInitData(); 
                   startLocationWatch();
               } else {
-                  // もし自動ログインに失敗したら、隠していたログイン画面を再表示する
+                  // ???????????????????????????????????????????????????
                   document.getElementById('loginScreen').style.display = 'flex';
                   document.getElementById('loginError').innerText = result.message;
-                  if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+                  if (btn) { btn.innerText = "??????"; btn.disabled = false; }
               }
           } catch(e) { 
               document.getElementById('loginScreen').style.display = 'flex';
-              document.getElementById('loginError').innerText = "通信エラー: " + e.message; 
-              if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+              document.getElementById('loginError').innerText = "????????: " + e.message; 
+              if (btn) { btn.innerText = "??????"; btn.disabled = false; }
           }
       }
 
@@ -434,27 +434,27 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
       }
 
-    // 🌟 2. データの取得とキャッシュ保存（超軽量化版！） 🌟
+    // ?? 2. ?????????????????????????????????? ??
       function loadInitData() {
           callGAS('getInitData').then(data => {
               const newDataStr = JSON.stringify(data);
               const oldDataStr = localStorage.getItem('passionMapInitData');
               
-              // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
+              // ????????????????????????????????????????????????????
               if (newDataStr === oldDataStr) {
-                  console.log("変更なし：再描画をスキップしました");
+                  console.log("?????????????????????????????");
                   return; 
               }
 
-              // 変更があった場合のみ保存して再描画
+              // ???????????????????????????
               localStorage.setItem('passionMapInitData', newDataStr);
               renderInitData(data); 
           }).catch(e => console.log("InitData Error:", e));
       }
 
-      // 🌟 3. キャッシュからも呼ばれる描画専用処理 🌟
+      // ?? 3. ???????????????????????????? ??
       function renderInitData(data) {
-          if (!data || !data.pdl) return; // データがない時は安全に止める
+          if (!data || !data.pdl) return; // ?????????????????????
 
           pdlLocations=data.pdl.locations||[]; pdlCrops=data.pdl.crops||[]; pdlStages=data.pdl.stages||[];
           pdlWorkMaster=data.pdl.workMaster||[]; pdlWorkStatuses=data.pdl.workStatuses||[];
@@ -466,11 +466,14 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           pdlSymptoms=data.pdl.symptoms||[];
           window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
           pdlSignFunctions = data.pdl.signFunctionsMaster || [];
-          pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
-          pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
-          pdlMachineGroups = data.pdl.machineGroups || ["農業機械", "農機インプルメント", "出荷機械"];
+          pdlWorkCategories = data.pdl.workCategories || ["?????", "??????", "????"];
+          pdlMachineTypes = data.pdl.machineTypes || ["?", "??"];
+          pdlMachineGroups = data.pdl.machineGroups || ["?????", "??????", "????"];
+          pdlWorkCategories = data.pdl.workCategories || ["?????", "??????", "????"];
+          pdlMachineTypes = data.pdl.machineTypes || ["?", "??"];
+          pdlMachineGroups = data.pdl.machineGroups || ["?????", "??????", "????"];
           if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
-              && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
+              && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === '?' || c === '??')) {
               pdlMachineGroups = data.pdl.machineCategories;
           }
 
@@ -480,12 +483,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
           loadedPolygons = {};
 
-          window.pdlSignLinks = data.pdl.signLinks || {}; // ★GASから連携IDを取得
+          window.pdlSignLinks = data.pdl.signLinks || {}; // AS???ID??
           
           if (data.polygons) {
               data.polygons.forEach(f => {
-                  const linkedSigns = window.pdlSignLinks[f.id] || ""; // ★看板マスタにセット
-                  // ★修正：f.location や f.signFunction など、元の変数名に完全一致させました！
+                  const linkedSigns = window.pdlSignLinks[f.id] || ""; // ???
+                  // ??f.location  f.signFunction ??????????
                   createPolygonObject(f.id, f.name, f.coords, f.color, f.photos, f.author, f.location, f.condition, f.area, f.status, f.signFunction, linkedSigns);
                   if (loadedPolygons[f.id] && !loadedPolygons[f.id].isMarker) {
                       loadedPolygons[f.id].uneSimData = f.uneSimData || '';
@@ -497,9 +500,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       }
           
 
-// ★修正後：
-      const cropColors = {}; const cropPalette = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#00BCD4', '#8BC34A', '#795548', '#3F51B5', '#9C27B0', '#F44336']; let cropColorIdx = 0;
-      function getCropColor(cropName) { if (!cropName) return '#8D6E63'; if (cropColors[cropName]) return cropColors[cropName]; const color = cropPalette[cropColorIdx % cropPalette.length]; cropColors[cropName] = color; cropColorIdx++; return color; }
+// ????????
+      const cropColors = {}; const cropPalette = ['#FFF176', '#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#00BCD4', '#8BC34A', '#795548', '#3F51B5', '#9C27B0', '#F44336']; let cropColorIdx = 0;
+      function getCropColor(cropName) { if (!cropName) return '#FFF176'; if (cropColors[cropName]) return cropColors[cropName]; const color = cropPalette[cropColorIdx % cropPalette.length]; cropColors[cropName] = color; cropColorIdx++; return color; }
 
       function getCurrentCrop(photos) {
           if (!photos || photos.length === 0) return null;
@@ -510,8 +513,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           });
           for (let ph of sorted) {
               if (ph.data && ph.data.workName) {
-                  if (ph.data.workName.includes('定植')) return ph.data.crop || '不明な作物';
-                  if (ph.data.workName.includes('チッパー') || ph.data.workName.includes('畝つぶし')) return null;
+                  if (ph.data.workName.includes('????')) return ph.data.crop || '????????';
+                  if (ph.data.workName.includes('??????') || ph.data.workName.includes('??????')) return null;
               }
           }
           return null;
@@ -525,8 +528,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               legendDiv.style.cssText = 'position:absolute; bottom:20px; left:20px; background:rgba(255,255,255,0.9); padding:10px; border-radius:8px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.2); max-height: 200px; overflow-y: auto; font-size:12px; pointer-events:none;';
               document.getElementById('map').appendChild(legendDiv);
           }
-          let html = '<div style="font-weight:bold; margin-bottom:5px; font-size:13px; color:#333;">🌾 作物色分け</div>';
-          html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#8D6E63; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">未定植</span></div>`;
+          let html = '<div style="font-weight:bold; margin-bottom:5px; font-size:13px; color:#333;">?? ?????????</div>';
+          html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#8D6E63; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">?????</span></div>`;
           for (let crop in cropColors) {
               html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:${cropColors[crop]}; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">${crop}</span></div>`;
           }
@@ -536,7 +539,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       function updatePolygonColor(id) {
           const p = loadedPolygons[id];
           if (!p || p.isMarker || !p.polygon) return;
-          const isUnused = (p.status === '未使用（返却）' || p.status === '未使用');
+          const isUnused = (p.status === '????????????' || p.status === '?????');
           let currentCrop = getCurrentCrop(p.photos);
           let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
           p.polygon.setOptions({ fillColor: dispColor, strokeColor: dispColor });
@@ -546,9 +549,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
     function createPolygonObject(id, name, coords, color, photos, author, loc, cond, area, status, signFunc, linkedSigns) { 
         if (coords.length === 1) {
           const marker = createSignboardMarker(name, new google.maps.LatLng(coords[0].lat, coords[0].lng), color, id);
-          loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, labelConfig: { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
+          loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, labelConfig: { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: signFunc || '???????', linkedSigns: linkedSigns || "" };
         } else {
-          const isUnused = (status === '未使用（返却）' || status === '未使用');
+          const isUnused = (status === '????????????' || status === '?????');
           let currentCrop = getCurrentCrop(photos);
           let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
           const polygon = new google.maps.Polygon({ paths: coords, map, fillColor: dispColor, fillOpacity: isUnused?0.5:0.5, strokeColor: dispColor, strokeOpacity: 1, strokeWeight: 3 });
@@ -557,7 +560,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           google.maps.event.addListener(polygon, 'click', (e) => { 
             if (isMapSelecting) {
                if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
-               if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ★追加
+               if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ?????
                if (selectedPolyIds.includes(id)) {
                   selectedPolyIds = selectedPolyIds.filter(i=>i!==id);
                } else { selectedPolyIds.push(id); }
@@ -569,35 +572,35 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         }
       }
 
-// ====== 天気予報関連 ======
+// ====== ??????????? ======
 let lastWeatherFetchPos = null;
 
 function getWeatherEmoji(code) {
-  if (code === 0) return '☀️';
-  if (code === 1 || code === 2 || code === 3) return '🌤️';
-  if (code === 45 || code === 48) return '🌫️';
-  if (code >= 51 && code <= 57) return '🌧️';
-  if (code >= 61 && code <= 67) return '☔';
-  if (code >= 71 && code <= 77) return '❄️';
-  if (code >= 80 && code <= 82) return '🌧️';
-  if (code >= 85 && code <= 86) return '⛄';
-  if (code >= 95) return '⚡';
-  return '☁️';
+  if (code === 0) return '????';
+  if (code === 1 || code === 2 || code === 3) return '?????';
+  if (code === 45 || code === 48) return '?????';
+  if (code >= 51 && code <= 57) return '????';
+  if (code >= 61 && code <= 67) return '??';
+  if (code >= 71 && code <= 77) return '???';
+  if (code >= 80 && code <= 82) return '????';
+  if (code >= 85 && code <= 86) return '??';
+  if (code >= 95) return '??';
+  return '???';
 }
 
 function getWeatherDescription(code) {
-  if (code === 0) return '快晴';
-  if (code === 1) return '晴れ';
-  if (code === 2) return '一部曇り';
-  if (code === 3) return '曇り';
-  if (code === 45 || code === 48) return '霧';
-  if (code >= 51 && code <= 57) return '霧雨';
-  if (code >= 61 && code <= 67) return '雨';
-  if (code >= 71 && code <= 77) return '雪';
-  if (code >= 80 && code <= 82) return 'にわか雨';
-  if (code >= 85 && code <= 86) return '雪あられ';
-  if (code >= 95) return '雷雨';
-  return '不明';
+  if (code === 0) return '???';
+  if (code === 1) return '???';
+  if (code === 2) return '???????';
+  if (code === 3) return '???';
+  if (code === 45 || code === 48) return '??';
+  if (code >= 51 && code <= 57) return '????';
+  if (code >= 61 && code <= 67) return '??';
+  if (code >= 71 && code <= 77) return '??';
+  if (code >= 80 && code <= 82) return '???????';
+  if (code >= 85 && code <= 86) return '??????';
+  if (code >= 95) return '????';
+  return '???';
 }
 
 
@@ -610,11 +613,11 @@ function renderSunshineDiffBadge(thisYearH, lastYearH) {
   let diff = Math.round((ty - ly) * 10) / 10;
   let ratio = Math.round((ty / ly) * 100);
   if (diff > 0) {
-    return `<span style="background:#ffebee; color:#c62828; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #ffcdd2;">+${diff.toFixed(1)}h 多 (${ratio}%)</span>`;
+    return `<span style="background:#ffebee; color:#c62828; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #ffcdd2;">+${diff.toFixed(1)}h ?? (${ratio}%)</span>`;
   } else if (diff < 0) {
-    return `<span style="background:#e3f2fd; color:#1565c0; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #bbdefb;">${diff.toFixed(1)}h 少 (${ratio}%)</span>`;
+    return `<span style="background:#e3f2fd; color:#1565c0; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #bbdefb;">${diff.toFixed(1)}h ?? (${ratio}%)</span>`;
   } else {
-    return `<span style="background:#f5f5f5; color:#616161; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #e0e0e0;">±0.0h (100%)</span>`;
+    return `<span style="background:#f5f5f5; color:#616161; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #e0e0e0;">?0.0h (100%)</span>`;
   }
 }
 
@@ -687,10 +690,10 @@ async function fetchWeatherAndUpdateUI() {
     let tomorrowEmoji = getWeatherEmoji(tomorrowCode);
     let btnWeather = document.getElementById('btnWeather');
     if (btnWeather) {
-      btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">明${tomorrowEmoji}</span></div>`;
+      btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">??${tomorrowEmoji}</span></div>`;
     }
 
-    // --- 日照比較ステート保持 ---
+    // --- ??????????????? ---
     if (typeof window.weatherSunshineState !== 'undefined') {
       window.weatherSunshineState.data = data;
       window.weatherSunshineState.historyData = historyData;
@@ -699,16 +702,16 @@ async function fetchWeatherAndUpdateUI() {
     }
 
     let html = `<div style="padding: 10px;">`;
-    html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
+    html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">????????: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}??)</div>`;
     
-    // --- ☀️ 日照時間比較パネル ---
+    // --- ???? ?????????????? ---
     if (historyData && historyData.daily && typeof window.renderSunshinePanelHtml === 'function') {
       html += window.renderSunshinePanelHtml();
     }
 
     html += `<div style="display:flex; margin-bottom:15px; border-bottom:1px solid #ccc;">
-      <div id="tabForecast" onclick="switchWeatherTab('forecast')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid #2196F3; color:#2196F3;">週間予報</div>
-      <div id="tabHistory" onclick="switchWeatherTab('history')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid transparent; color:#999;">昨年の同時期 (前後1ヶ月)</div>
+      <div id="tabForecast" onclick="switchWeatherTab('forecast')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid #2196F3; color:#2196F3;">???????</div>
+      <div id="tabHistory" onclick="switchWeatherTab('history')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid transparent; color:#999;">????????? (???1???)</div>
     </div>`;
 
     html += `<div id="contentForecast">`;
@@ -719,11 +722,11 @@ async function fetchWeatherAndUpdateUI() {
     
     if (data.hourly) {
       html += `<div style="margin-bottom:15px;">`;
-      html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕒 今後の天気 (1時間ごと)</div>`;
+      html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">?? ????????? (1???????)</div>`;
       html += `<div style="display:flex; overflow-x:auto; padding-bottom:5px; gap:10px;">`;
       for(let i = startIndex; i < startIndex + 12 && i < data.hourly.time.length; i++) {
           let t = new Date(data.hourly.time[i]);
-          let hStr = t.getHours() + "時";
+          let hStr = t.getHours() + "??";
           let hCode = data.hourly.weathercode[i];
           let hTemp = Math.round(data.hourly.temperature_2m[i] * 10) / 10;
           let hPrecip = data.hourly.precipitation[i];
@@ -731,7 +734,7 @@ async function fetchWeatherAndUpdateUI() {
           html += `<div style="min-width:50px; text-align:center; background:#f9f9f9; padding:5px; border-radius:5px; border:1px solid #eee;">
                      <div style="font-size:12px; color:#666;">${hStr}</div>
                      <div style="font-size:18px; margin:3px 0;">${hEmoji}</div>
-                     <div style="font-size:13px; font-weight:bold;">${hTemp}℃</div>
+                     <div style="font-size:13px; font-weight:bold;">${hTemp}??</div>
                      <div style="font-size:11px; color:#2196F3;">${hPrecip}mm</div>
                    </div>`;
       }
@@ -739,18 +742,18 @@ async function fetchWeatherAndUpdateUI() {
     }
 
     html += `<div style="margin-bottom:15px; text-align:center;">`;
-    html += `<button onclick="openRadarModal(${lat}, ${lng})" style="width:100%; max-width:300px; padding:12px; background:#2196F3; color:white; border:none; border-radius:6px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2);">🌧️ 雨雲レーダーを大画面で見る</button>`;
+    html += `<button onclick="openRadarModal(${lat}, ${lng})" style="width:100%; max-width:300px; padding:12px; background:#2196F3; color:white; border:none; border-radius:6px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2);">???? ??????????????????????</button>`;
     html += `</div>`;
 
-    html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 週間予報</div>`;
+    html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">?? ???????</div>`;
     html += `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">`;
     html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
-               <th style="padding: 6px 4px; text-align: left;">日付</th>
-               <th style="padding: 6px 4px; text-align: center;">天気</th>
-               <th style="padding: 6px 4px; text-align: right;">最高/最低</th>
-               <th style="padding: 6px 4px; text-align: right;">降水</th>
-               <th style="padding: 6px 4px; text-align: right;">日照</th>
-               <th style="padding: 6px 4px; text-align: right;">風速</th>
+               <th style="padding: 6px 4px; text-align: left;">???</th>
+               <th style="padding: 6px 4px; text-align: center;">???</th>
+               <th style="padding: 6px 4px; text-align: right;">????/????</th>
+               <th style="padding: 6px 4px; text-align: right;">???</th>
+               <th style="padding: 6px 4px; text-align: right;">???</th>
+               <th style="padding: 6px 4px; text-align: right;">????</th>
              </tr>`;
     
     for (let i = todayIndex; i < data.daily.time.length; i++) {
@@ -770,7 +773,7 @@ async function fetchWeatherAndUpdateUI() {
       html += `<tr style="border-bottom: 1px solid #eee;">
                  <td style="padding: 6px 4px; text-align: left;">${shortDate}</td>
                  <td style="padding: 6px 4px; text-align: center;" title="${dDesc}">${dEmoji}</td>
-                 <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                 <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>??</td>
                  <td style="padding: 6px 4px; text-align: right; color:#2196F3;">${pcp}</td>
                  <td style="padding: 6px 4px; text-align: right; color:#FF9800;">${sunHours}</td>
                  <td style="padding: 6px 4px; text-align: right; color:#4CAF50;">${wind}</td>
@@ -783,15 +786,15 @@ async function fetchWeatherAndUpdateUI() {
     html += `<div id="contentHistory" style="display:none;">`;
     if (historyData && historyData.daily) {
        let lastYearTodayStr = formatYMD(lastYearToday);
-       html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">📅 昨年の天気 (本日±1ヶ月) ★:本日の同日</div>`;
+       html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">?? ???????? (?????1???) ??:?????????</div>`;
        html += `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">`;
        html += `<tr style="background: #fff8e1; border-bottom: 1px solid #ccc;">
-                  <th style="padding: 6px 4px; text-align: left;">日付</th>
-                  <th style="padding: 6px 4px; text-align: center;">天気</th>
-                  <th style="padding: 6px 4px; text-align: right;">最高/最低</th>
-                  <th style="padding: 6px 4px; text-align: right;">降水</th>
-                  <th style="padding: 6px 4px; text-align: right;">日照</th>
-                  <th style="padding: 6px 4px; text-align: right;">風速</th>
+                  <th style="padding: 6px 4px; text-align: left;">???</th>
+                  <th style="padding: 6px 4px; text-align: center;">???</th>
+                  <th style="padding: 6px 4px; text-align: right;">????/????</th>
+                  <th style="padding: 6px 4px; text-align: right;">???</th>
+                  <th style="padding: 6px 4px; text-align: right;">???</th>
+                  <th style="padding: 6px 4px; text-align: right;">????</th>
                 </tr>`;
        for (let i = 0; i < historyData.daily.time.length; i++) {
           let dateStr = historyData.daily.time[i];
@@ -799,7 +802,7 @@ async function fetchWeatherAndUpdateUI() {
           let shortDate = `${d.getMonth()+1}/${d.getDate()}`;
           let isTodayLastYear = (dateStr === lastYearTodayStr);
           if (isTodayLastYear) {
-            shortDate += '★';
+            shortDate += '??';
           }
           let code = historyData.daily.weathercode[i];
           let maxT = historyData.daily.temperature_2m_max[i];
@@ -816,7 +819,7 @@ async function fetchWeatherAndUpdateUI() {
           html += `<tr style="${rowStyle}">
                      <td style="padding: 6px 4px; text-align: left;">${shortDate}</td>
                      <td style="padding: 6px 4px; text-align: center;" title="${dDesc}">${dEmoji}</td>
-                     <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                     <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>??</td>
                      <td style="padding: 6px 4px; text-align: right; color:#2196F3;">${pcp}</td>
                      <td style="padding: 6px 4px; text-align: right; color:#FF9800;">${sunHours}</td>
                      <td style="padding: 6px 4px; text-align: right; color:#4CAF50;">${wind}</td>
@@ -825,7 +828,7 @@ async function fetchWeatherAndUpdateUI() {
        html += `</table>`;
        html += `<div style="font-size: 11px; color: #999; text-align: right; margin-top: 10px;">Historical Data: Open-Meteo</div>`;
     } else {
-       html += `<div style="text-align:center; padding:20px; color:#666;">昨年のデータが取得できませんでした。</div>`;
+       html += `<div style="text-align:center; padding:20px; color:#666;">?????????????????????????????</div>`;
     }
     html += `</div>`; 
 
@@ -834,7 +837,7 @@ async function fetchWeatherAndUpdateUI() {
     window.cachedWeatherHtml = html;
 
   } catch (e) {
-    console.error("天気取得エラー:", e);
+    console.error("???????????:", e);
   }
 }
 
@@ -843,7 +846,7 @@ window.openWeatherModal = function() {
   if (window.cachedWeatherHtml) {
     contentDiv.innerHTML = window.cachedWeatherHtml;
   } else {
-    contentDiv.innerHTML = '<div style="text-align:center; padding:20px;">天気情報を取得できませんでした。</div>';
+    contentDiv.innerHTML = '<div style="text-align:center; padding:20px;">???????????????????????????</div>';
   }
   document.getElementById('weatherModal').style.display = 'flex';
 };
@@ -864,24 +867,24 @@ async function fetchTyphoonInfo() {
       if (btnTyphoon) btnTyphoon.style.display = 'flex';
       
       let html = `<div style="padding: 10px; text-align: center;">`;
-      html += `<h4 style="color:#d32f2f; margin-top:0; margin-bottom:15px; font-size:18px;">⚠️ 現在台風が発生しています</h4>`;
-      html += `<p style="font-size:14px; color:#333; line-height:1.6; text-align:left;">現在、気象庁より台風情報が発表されています。最新の進路予想や警報については、気象庁の公式ページをご確認ください。</p>`;
+      html += `<h4 style="color:#d32f2f; margin-top:0; margin-bottom:15px; font-size:18px;">???? ???????????????????</h4>`;
+      html += `<p style="font-size:14px; color:#333; line-height:1.6; text-align:left;">????????????????????????????????????????????????????????????????????????????????????????</p>`;
       
-      // もし号数が取れれば表示
+      // ?????????????????
       try {
         let typhoons = data.map(t => {
           let num = t.typhoonNumber ? parseInt(t.typhoonNumber.substring(2)) : 0;
-          return num ? `台風${num}号` : null;
+          return num ? `???${num}?? : null;
         }).filter(Boolean);
         
         if (typhoons.length > 0) {
           html += `<div style="background:#ffebee; padding:10px; border-radius:5px; margin:15px 0; font-weight:bold; color:#d32f2f;">`;
-          html += `発表中: ${typhoons.join('、 ')}`;
+          html += `?????: ${typhoons.join('?? ')}`;
           html += `</div>`;
         }
       } catch(e) {}
       
-      html += `<a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" style="display:inline-block; margin-top:15px; padding:12px 20px; background:#d32f2f; color:white; font-weight:bold; border-radius:8px; text-decoration:none; box-shadow:0 2px 5px rgba(0,0,0,0.2);">👉 気象庁の台風情報を見る</a>`;
+      html += `<a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" style="display:inline-block; margin-top:15px; padding:12px 20px; background:#d32f2f; color:white; font-weight:bold; border-radius:8px; text-decoration:none; box-shadow:0 2px 5px rgba(0,0,0,0.2);">?? ???????????????????</a>`;
       html += `</div>`;
       
       window.cachedTyphoonHtml = html;
@@ -889,7 +892,7 @@ async function fetchTyphoonInfo() {
       if (btnTyphoon) btnTyphoon.style.display = 'none';
     }
   } catch (e) {
-    console.error("台風情報取得エラー:", e);
+    console.error("???????????????:", e);
     let btn = document.getElementById('btnTyphoon');
     if (btn) btn.style.display = 'none';
   }
@@ -920,7 +923,7 @@ window.openTyphoonModal = function() {
         google.maps.event.addListener(map, 'click', () => { if(isMapSelecting) return; infoWindow.close(); closeRightPanel(); document.getElementById('searchSuggestions').style.display='none';});
         map.addListener('zoom_changed', updateMarkersVisibility);
         
-        fetchTyphoonInfo(); // 起動時に台風情報を取得
+        fetchTyphoonInfo(); // ??????????????????
 
         map.addListener('idle', () => {
           let center = map.getCenter();
@@ -934,12 +937,12 @@ window.openTyphoonModal = function() {
           if (latestUserPos) { map.setCenter(latestUserPos); map.setZoom(18); } 
           else if(navigator.geolocation) {
             const btn = document.getElementById('btnCurrentLocation');
-            const orgText = btn.innerHTML; btn.innerHTML = "取得中..."; btn.disabled = true;
+            const orgText = btn.innerHTML; btn.innerHTML = "?????..."; btn.disabled = true;
             navigator.geolocation.getCurrentPosition(p => { 
                 latestUserPos = {lat:p.coords.latitude, lng:p.coords.longitude}; 
                 map.setCenter(latestUserPos); map.setZoom(18); 
                 btn.innerHTML = orgText; btn.disabled = false;
-            }, function(){ customAlert("現在地を取得できませんでした"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true }); 
+            }, function(){ customAlert("??????????????????????"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true }); 
           }
         };
         setupSearch();
@@ -954,7 +957,7 @@ window.openTyphoonModal = function() {
             if (!isMapSelecting) {
               if (zoom < close) p.marker.setLabel(null); else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
             }
-          } else p.marker.setVisible(zoom >= 16); // ← ★ここの「14」を変更
+          } else p.marker.setVisible(zoom >= 16); // ?? ????????14??????
         }
       }
 
@@ -964,7 +967,7 @@ function createSignboardMarker(name, pos, icon, id) {
         google.maps.event.addListener(marker, 'click', (e) => { 
           if (isMapSelecting) {
              if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
-             if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ★追加
+             if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ?????
              return;
           }
           openMainMenu(id); infoWindow.setPosition(e.latLng); infoWindow.open(map); 
@@ -974,23 +977,23 @@ function createSignboardMarker(name, pos, icon, id) {
       function createLabelMarker(n,c,col,a) { 
         const b=new google.maps.LatLngBounds(); 
         c.forEach(pt=>b.extend(pt)); 
-        return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=16, clickable:false, /* ← ★ここの「14」を変更 */ label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); 
+        return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=16, clickable:false, /* ?? ????????14?????? */ label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); 
       }
       window.openFieldWorkRecordSelect = (id) => {
           const p = loadedPolygons[id];
           let html = `
             <div style="text-align:center; padding: 10px;">
-               <div style="margin-bottom: 15px; font-size: 16px; font-weight: bold; line-height: 1.5; color: #333;">記録方法を選んでください</div>
+               <div style="margin-bottom: 15px; font-size: 16px; font-weight: bold; line-height: 1.5; color: #333;">???????????????????</div>
                
                <div style="background: #E0F7FA; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #00BCD4; text-align: left;">
-                  <div style="font-size: 13px; font-weight: bold; color: #00838F; margin-bottom: 8px;">🤖 AIオート作業記録</div>
-                  <input type="text" id="autoRecordInput_${id}" placeholder="自由記述 (例: 草刈り 2時間)" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; margin-bottom: 10px; font-size: 14px;" onkeydown="if(event.key==='Enter') { executeFieldAutoRecord('${id}'); }">
-                  <button onclick="executeFieldAutoRecord('${id}')" style="width: 100%; background: #00BCD4; color: white; padding: 12px; border-radius: 6px; border: none; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">✨ 解析して開く</button>
+                  <div style="font-size: 13px; font-weight: bold; color: #00838F; margin-bottom: 8px;">?? AI???????????</div>
+                  <input type="text" id="autoRecordInput_${id}" placeholder="?????? (??: ????? 2???)" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; margin-bottom: 10px; font-size: 14px;" onkeydown="if(event.key==='Enter') { executeFieldAutoRecord('${id}'); }">
+                  <button onclick="executeFieldAutoRecord('${id}')" style="width: 100%; background: #00BCD4; color: white; padding: 12px; border-radius: 6px; border: none; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">?? ??????????</button>
                </div>
                
                <div style="display: flex; flex-direction: column; gap: 10px;">
-                  <button onclick="document.getElementById('modal').style.display='none'; actionManagePhotos('${id}', 'work')" style="width: 100%; background: #FF9800; color: white; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜 通常の作業記録</button>
-                  <button onclick="document.getElementById('modal').style.display='none'" style="width: 100%; background: #eee; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer;">キャンセル</button>
+                  <button onclick="document.getElementById('modal').style.display='none'; actionManagePhotos('${id}', 'work')" style="width: 100%; background: #FF9800; color: white; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">?? ????????????</button>
+                  <button onclick="document.getElementById('modal').style.display='none'" style="width: 100%; background: #eee; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer;">????????</button>
                </div>
             </div>
           `;
@@ -1000,7 +1003,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.executeFieldAutoRecord = (id) => {
           const text = document.getElementById('autoRecordInput_' + id).value;
-          if(!text) { if(typeof customAlert !== 'undefined') customAlert('作業内容を入力してください。'); return; }
+          if(!text) { if(typeof customAlert !== 'undefined') customAlert('????????????????????????'); return; }
           document.getElementById('modal').style.display = 'none';
           
           const p = loadedPolygons[id];
@@ -1017,22 +1020,22 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.openMainMenu = (id) => {
-        const p = loadedPolygons[id], isU = (p.status === '未使用（返却）' || p.status === '未使用');
-        const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">🚗 ナビ開始</button>`;
+        const p = loadedPolygons[id], isU = (p.status === '????????????' || p.status === '?????');
+        const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">?? ???????</button>`;
         
         const workCount = p.photos.filter(ph => ph.type === 'work').length;
         const growthCount = p.photos.filter(ph => ph.type === 'growth' || (!ph.type && !p.isMarker)).length;
 
-        const growthText = p.isMarker ? '現地写真' : '生育記録';
-        const workText = p.isMarker ? '作業登録' : '作業記録';
-        const growthIcon = p.isMarker ? '📷' : '🌱';
-        const workIcon = '🚜';
+        const growthText = p.isMarker ? '???????' : '??????';
+        const workText = p.isMarker ? '???????' : '???????';
+        const growthIcon = p.isMarker ? '???' : '??';
+        const workIcon = '??';
 
         let availableWorks = pdlWorkMaster || [];
         const hasWork = !p.isMarker || availableWorks.length > 0;
 
         let actions = `<div style="display:flex; gap:4px; width:100%; margin-bottom:6px;">`;
-        // worker2.html のみ圃場の生育記録ボタンを非表示（worker.html では表示）
+        // worker2.html ??????????????????????????orker.html ????????
         const isWorker2 = /worker2\.html/i.test(location.pathname) || /worker2\.html/i.test(location.href);
         const hideGrowth = isWorker2 && !p.isMarker;
 
@@ -1050,42 +1053,42 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         actions += `</div>`;
 
-        if (p.isMarker && p.signFunction && String(p.signFunction).includes('在庫')) {
-            actions += `<button onclick="openInventoryUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#8BC34A; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">📦 在庫状況・入出庫</button>`;
+        if (p.isMarker && p.signFunction && String(p.signFunction).includes('???')) {
+            actions += `<button onclick="openInventoryUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#8BC34A; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">??? ????????????</button>`;
         }
-        // ★ここを追加！：「給油機能」がある看板なら給油ボタンを表示
-        if (p.isMarker && p.signFunction && String(p.signFunction).includes('給油')) {
-            actions += `<button onclick="openRefuelUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#E91E63; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">⛽ 給油する</button>`;
+        // ??????????????????????????????????????????????
+        if (p.isMarker && p.signFunction && String(p.signFunction).includes('???')) {
+            actions += `<button onclick="openRefuelUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#E91E63; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">?? ??????</button>`;
         }
-// ★名称変更：「車両・機械管理機能」がある看板ならボタンを表示
-        if (p.isMarker && p.signFunction && String(p.signFunction).includes('車両・機械管理')) {
-            actions += `<button onclick="openMachineStatusUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#1976D2; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🚜 車両・農機状況</button>`;
+// ??????????????????????????????????????????????
+        if (p.isMarker && p.signFunction && String(p.signFunction).includes('????????????')) {
+            actions += `<button onclick="openMachineStatusUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#1976D2; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">?? ?????????????</button>`;
         }
-        if (p.isMarker && p.signFunction && String(p.signFunction).includes('道具管理')) {
-            actions += `<button onclick="openToolManagementUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#00BCD4; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🪚 道具状況</button>`;
+        if (p.isMarker && p.signFunction && String(p.signFunction).includes('??????')) {
+            actions += `<button onclick="openToolManagementUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#00BCD4; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">?? ??????</button>`;
         }
-        actions += `<button onclick="directOpenReportForm('${id}')" style="width:100%; padding:8px 0; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box;">⚠️ 問題を報告する</button>`;
+        actions += `<button onclick="directOpenReportForm('${id}')" style="width:100%; padding:8px 0; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box;">???? ?????????????</button>`;
 
-        const content = `<div style="text-align:center; width:220px; max-width:100%; box-sizing:border-box; padding:2px; font-family:sans-serif;"><b>${p.name}</b><br><div style="font-size:11px; color:#555; margin-bottom:6px;">${!p.isMarker?(isU?'<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ':'')+(p.location||'-')+' / '+(p.condition||'-')+' / '+p.area+'a':(p.signFunction ? `[${p.signFunction}]` : '')}</div>${navBtn}${actions}</div>`;
+        const content = `<div style="text-align:center; width:220px; max-width:100%; box-sizing:border-box; padding:2px; font-family:sans-serif;"><b>${p.name}</b><br><div style="font-size:11px; color:#555; margin-bottom:6px;">${!p.isMarker?(isU?'<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">?????</span> ':'')+(p.location||'-')+' / '+(p.condition||'-')+' / '+p.area+'a':(p.signFunction ? `[${p.signFunction}]` : '')}</div>${navBtn}${actions}</div>`;
         infoWindow.setContent(content);
       };
 
-      // --- 在庫管理の画面表示（アコーディオン版！） ---
+      // --- ??????????????????????????????? ---
       window.openInventoryUI = (signId) => {
           const p = loadedPolygons[signId];
-          document.getElementById('rightPanelTitle').innerText = `📦 ${p.name} - 在庫管理`;
+          document.getElementById('rightPanelTitle').innerText = `??? ${p.name} - ??????`;
           const signMats = pdlMaterials.filter(m => m.signId === signId || m.signName === p.name);
 
           let html = '';
           if (signMats.length === 0) {
-              html = `<div style="text-align:center; color:#666; padding:15px; font-size:13px; background:#fff; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">この場所に登録されている資材はありません。<br>下の「新規資材登録」ボタンから追加してください。</div>`;
+              html = `<div style="text-align:center; color:#666; padding:15px; font-size:13px; background:#fff; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">?????????????????????????????????<br>???????????????????????????????????????</div>`;
           } else {
-              html += `<div style="margin-bottom:15px; font-size:12px; color:#666;">💡 資材名をタップすると入出庫ボタンと履歴が開きます。</div>`;
+              html += `<div style="margin-bottom:15px; font-size:12px; color:#666;">?? ???????????????????????????????????????</div>`;
 
-              // 検索バー
+              // ???????
               html += `
               <div style="margin-bottom:15px;">
-                  <input type="text" id="invSearchInput" oninput="filterInventory()" placeholder="🔍 品目を検索..." style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; font-size:16px; box-sizing:border-box; background:#f9f9f9;">
+                  <input type="text" id="invSearchInput" oninput="filterInventory()" placeholder="?? ?????????..." style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; font-size:16px; box-sizing:border-box; background:#f9f9f9;">
               </div>
               `;
 
@@ -1104,7 +1107,7 @@ function createSignboardMarker(name, pos, icon, id) {
                               <div style="font-size:12px; color:#666;">${sizeStr}</div>
                           </div>
                           <div style="text-align:right;">
-                              <div style="font-size:11px; color:#666; margin-bottom:2px;">現在の在庫</div>
+                              <div style="font-size:11px; color:#666; margin-bottom:2px;">????????</div>
                               <div style="font-size:24px; font-weight:bold; color:#1a73e8; line-height:1;">${stock} <span style="font-size:13px; color:#666; font-weight:normal;">${unitStr}</span></div>
                           </div>
                       </div>
@@ -1112,18 +1115,18 @@ function createSignboardMarker(name, pos, icon, id) {
                       <div id="${accordionId}" style="display:none; padding:15px; border-top:1px solid #eee; background:#fff;">
                           
                           <div style="display:flex; gap:10px; margin-bottom:15px;">
-                              <button onclick="execInventoryUpdate('${m.id}', '${m.name}', '${signId}', '${p.name}', 1)" style="flex:1; background:#4CAF50; color:white; border:none; border-radius:6px; padding:15px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">➕ 入庫</button>
-                              <button onclick="execInventoryUpdate('${m.id}', '${m.name}', '${signId}', '${p.name}', -1)" style="flex:1; background:#FF9800; color:white; border:none; border-radius:6px; padding:15px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">➖ 出庫</button>
+                              <button onclick="execInventoryUpdate('${m.id}', '${m.name}', '${signId}', '${p.name}', 1)" style="flex:1; background:#4CAF50; color:white; border:none; border-radius:6px; padding:15px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?? ???</button>
+                              <button onclick="execInventoryUpdate('${m.id}', '${m.name}', '${signId}', '${p.name}', -1)" style="flex:1; background:#FF9800; color:white; border:none; border-radius:6px; padding:15px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?? ???</button>
                           </div>
                           
                           <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:15px; padding-bottom:10px; border-bottom:1px dashed #ccc;">
-                               <button onclick="openEditMatModal('${m.id}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:6px 12px; font-size:12px; cursor:pointer; color:#333;">✏️ 資材マスタの編集</button>
-                               <button onclick="deleteMaterial('${m.id}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:6px 12px; font-size:12px; cursor:pointer;">🗑️ 削除</button>
+                               <button onclick="openEditMatModal('${m.id}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:6px 12px; font-size:12px; cursor:pointer; color:#333;">???? ?????????????</button>
+                               <button onclick="deleteMaterial('${m.id}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:6px 12px; font-size:12px; cursor:pointer;">???? ????</button>
                           </div>
 
-                          <div style="font-size:13px; font-weight:bold; color:#555; margin-bottom:8px;">📋 入出庫履歴</div>
+                          <div style="font-size:13px; font-weight:bold; color:#555; margin-bottom:8px;">?? ????????</div>
                           <div id="history_list_${m.id}" style="max-height:250px; overflow-y:auto; background:#fdfdfd; border:1px solid #eee; border-radius:6px; padding:10px;">
-                              <div style="text-align:center; padding:10px; color:#999;">履歴を読み込んでいます...</div>
+                              <div style="text-align:center; padding:10px; color:#999;">?????????????????...</div>
                           </div>
                       </div>
                   </div>
@@ -1134,8 +1137,8 @@ function createSignboardMarker(name, pos, icon, id) {
           document.getElementById('rightPanelContent').innerHTML = html;
           document.getElementById('rightPanelFooter').innerHTML = `
               <div style="display:flex; gap:10px;">
-                  <button onclick="openNewMatModal('${signId}', '${p.name}')" style="background:#2196F3; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">➕ 新規資材登録</button>
-                  <button onclick="closeRightPanel()" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">閉じる</button>
+                  <button onclick="openNewMatModal('${signId}', '${p.name}')" style="background:#2196F3; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?? ?????????</button>
+                  <button onclick="closeRightPanel()" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?????</button>
               </div>
           `;
           if(typeof infoWindow !== 'undefined') infoWindow.close();
@@ -1143,35 +1146,35 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.showInventoryHistory = async (matId, matName, unitStr, currentStock, signId) => {
-         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>履歴を読み込み中...</div>";
+         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>????????????...</div>";
          document.getElementById('modal').style.display = 'flex';
          try {
             const history = await callGAS('getInventoryHistory', { materialId: matId });
             let html = `
                <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #1a73e8; padding-bottom:8px; margin-bottom:10px;">
-                  <h3 style="margin:0; color:#1a73e8;">📦 ${matName} の履歴</h3>
+                  <h3 style="margin:0; color:#1a73e8;">??? ${matName} ?????</h3>
                   <div style="text-align:right;">
-                     <div style="font-size:11px; color:#666;">現在の在庫</div>
+                     <div style="font-size:11px; color:#666;">????????</div>
                      <div style="font-size:18px; font-weight:bold; color:#1a73e8;">${currentStock} <span style="font-size:12px; color:#666;">${unitStr}</span></div>
                   </div>
                </div>
             `;
             if (history.length === 0) {
-               html += `<div style="text-align:center; color:#666; padding:20px;">履歴がありません。</div>`;
+               html += `<div style="text-align:center; color:#666; padding:20px;">???????????????</div>`;
             } else {
                html += `<div style="max-height:60vh; overflow-y:auto; padding-right:5px;">`;
                history.forEach(h => {
-                  const isAdd = (h.action === "入庫" || h.action === "初期入庫");
+                  const isAdd = (h.action === "???" || h.action === "??????");
                   const color = isAdd ? '#4CAF50' : '#FF9800';
-                  const sign = isAdd ? '＋' : '－';
+                  const sign = isAdd ? '??' : '??';
                   html += `
                     <div style="border-bottom:1px solid #eee; padding:12px 0; display:flex; justify-content:space-between; align-items:center;">
                       <div>
-                        <div style="font-size:11px; color:#888;">${h.date} / 👤 ${h.user}</div>
+                        <div style="font-size:11px; color:#888;">${h.date} / ??? ${h.user}</div>
                         <div style="font-size:13px; font-weight:bold; margin-top:4px; color:#555;">${h.action}</div>
                         <div style="margin-top:6px; display:flex; gap:8px;">
-                          <button onclick="editInvHistory('${matId}', ${h.rowIndex}, '${h.action}', ${h.amount}, '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">✏️編集</button>
-                          <button onclick="deleteInvHistory('${matId}', ${h.rowIndex}, '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">🗑️削除</button>
+                          <button onclick="editInvHistory('${matId}', ${h.rowIndex}, '${h.action}', ${h.amount}, '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">???????</button>
+                          <button onclick="deleteInvHistory('${matId}', ${h.rowIndex}, '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">???????</button>
                         </div>
                       </div>
                       <div style="font-size:22px; font-weight:bold; color:${color};">
@@ -1182,62 +1185,62 @@ function createSignboardMarker(name, pos, icon, id) {
                });
                html += `</div>`;
             }
-            html += `<button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; margin-top:15px; background:#ccc; color:#333; border:none; border-radius:4px; font-weight:bold; font-size:15px; cursor:pointer;">閉じる</button>`;
+            html += `<button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; margin-top:15px; background:#ccc; color:#333; border:none; border-radius:4px; font-weight:bold; font-size:15px; cursor:pointer;">?????</button>`;
             document.getElementById('modalBody').innerHTML = html;
          } catch (e) {
-            document.getElementById('modalBody').innerHTML = `<div style="color:red; text-align:center; padding:20px;">エラー: ${e.message}</div><button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; margin-top:15px; background:#ccc; border:none; border-radius:4px; font-weight:bold;">閉じる</button>`;
+            document.getElementById('modalBody').innerHTML = `<div style="color:red; text-align:center; padding:20px;">?????: ${e.message}</div><button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; margin-top:15px; background:#ccc; border:none; border-radius:4px; font-weight:bold;">?????</button>`;
          }
       };
 
       window.deleteInvHistory = async (matId, rowIndex, signId) => {
          const confirmModal = document.getElementById('customConfirmModal');
          if (confirmModal) confirmModal.style.zIndex = "100000"; 
-         if (!await customConfirm("この履歴を削除して、現在の在庫数を再計算しますか？")) return;
-         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>削除中...</div>";
+         if (!await customConfirm("????????????????????????????????????????")) return;
+         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>??????...</div>";
          try {
             const newStock = await callGAS('deleteInventoryHistory', { rowIndex, materialId: matId });
             updateLocalStock(matId, newStock, signId);
             document.getElementById('modal').style.display = 'none'; 
             const alertModal = document.getElementById('customAlertModal');
             if (alertModal) alertModal.style.zIndex = "100000";
-            customAlert("履歴を削除し、在庫を再計算しました。");
+            customAlert("?????????????????????????????");
          } catch(e) { 
             document.getElementById('modal').style.display = 'none';
             const alertModal = document.getElementById('customAlertModal');
             if (alertModal) alertModal.style.zIndex = "100000";
-            customAlert("エラーが発生しました: " + e.message); 
+            customAlert("?????????????????: " + e.message); 
          }
       };
 
      window.editInvHistory = (matId, rowIndex, currentAction, oldAmount, signId) => {
           let actionOptions = '';
-          if (currentAction === '初期入庫') {
-              actionOptions = `<option value="初期入庫" selected>初期入庫</option><option value="入庫">入庫</option><option value="出庫">出庫</option>`;
+          if (currentAction === '??????') {
+              actionOptions = `<option value="??????" selected>??????</option><option value="???">???</option><option value="???">???</option>`;
           } else {
               actionOptions = `
-                  <option value="入庫" ${currentAction === '入庫' ? 'selected' : ''}>入庫</option>
-                  <option value="出庫" ${currentAction === '出庫' ? 'selected' : ''}>出庫</option>
+                  <option value="???" ${currentAction === '???' ? 'selected' : ''}>???</option>
+                  <option value="???" ${currentAction === '???' ? 'selected' : ''}>???</option>
               `;
           }
 
           const html = `
-              <h3 style="margin-top:0; color:#FF9800; border-bottom:2px solid #FF9800; padding-bottom:8px;">✏️ 履歴の編集</h3>
+              <h3 style="margin-top:0; color:#FF9800; border-bottom:2px solid #FF9800; padding-bottom:8px;">???? ????????</h3>
               
               <div style="margin-bottom:15px; text-align:left;">
-                  <label class="form-label" style="font-size:12px; color:#666;">操作（入出庫の切り替え）</label>
+                  <label class="form-label" style="font-size:12px; color:#666;">????????????????????</label>
                   <select id="edit_hist_action" class="form-input" style="font-size:16px;">
                       ${actionOptions}
                   </select>
               </div>
               
               <div style="margin-bottom:15px; text-align:left;">
-                  <label class="form-label" style="font-size:12px; color:#666;">数量</label>
+                  <label class="form-label" style="font-size:12px; color:#666;">???</label>
                   <input type="number" id="edit_hist_amount" class="form-input" value="${oldAmount}" min="1" style="font-size:16px;">
               </div>
               
               <div style="display:flex; gap:10px; margin-top:20px;">
-                  <button onclick="execEditInvHistory('${matId}', '${rowIndex}', '${signId}')" style="flex:2; padding:12px; background:#FF9800; color:white; font-weight:bold; border:none; border-radius:8px; cursor:pointer; font-size:15px;">更新する</button>
-                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px; cursor:pointer; font-size:15px;">キャンセル</button>
+                  <button onclick="execEditInvHistory('${matId}', '${rowIndex}', '${signId}')" style="flex:2; padding:12px; background:#FF9800; color:white; font-weight:bold; border:none; border-radius:8px; cursor:pointer; font-size:15px;">??????</button>
+                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px; cursor:pointer; font-size:15px;">????????</button>
               </div>
           `;
           
@@ -1256,27 +1259,27 @@ function createSignboardMarker(name, pos, icon, id) {
          const html = `
            <div style="text-align:left;">
              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1a73e8; padding-bottom:8px; margin-bottom:15px;">
-               <h3 style="margin:0; color:#1a73e8;">➕ 新しい資材を登録</h3>
-               <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">×</span>
+               <h3 style="margin:0; color:#1a73e8;">?? ????????????</h3>
+               <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">?</span>
              </div>
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">資材名</label>
-             <input type="text" id="new_mat_name" class="form-input" placeholder="例: 尿素" style="margin-bottom:10px;">
+             <label class="form-label" style="font-size:11px; margin-bottom:2px;">?????</label>
+             <input type="text" id="new_mat_name" class="form-input" placeholder="??: ???" style="margin-bottom:10px;">
              <div style="display:flex; gap:5px; margin-bottom:10px;">
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">容量</label><input type="text" id="new_mat_size" class="form-input" placeholder="例: 20" style="margin-bottom:0;"></div>
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">容量単位</label><input type="text" id="new_mat_vol_unit" class="form-input" placeholder="例: kg" style="margin-bottom:0;"></div>
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">在庫単位</label><input type="text" id="new_mat_stock_unit" class="form-input" placeholder="例: 袋" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">???</label><input type="text" id="new_mat_size" class="form-input" placeholder="??: 20" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">??????</label><input type="text" id="new_mat_vol_unit" class="form-input" placeholder="??: kg" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">??????</label><input type="text" id="new_mat_stock_unit" class="form-input" placeholder="??: ??" style="margin-bottom:0;"></div>
              </div>
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">初期数量</label>
-             <input type="number" id="new_mat_init_stock" class="form-input" placeholder="例: 10" style="margin-bottom:10px;">
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">📷 写真 (最大2枚)</label>
+             <label class="form-label" style="font-size:11px; margin-bottom:2px;">??????</label>
+             <input type="number" id="new_mat_init_stock" class="form-input" placeholder="??: 10" style="margin-bottom:10px;">
+             <label class="form-label" style="font-size:11px; margin-bottom:2px;">??? ??? (????2??)</label>
              <div style="display:flex; gap:10px; margin-bottom:10px;">
-               <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">📸 カメラ<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleNewMatPhoto(this)"></label>
-               <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🖼️ フォルダ<input type="file" accept="image/*" multiple style="display:none;" onchange="handleNewMatPhoto(this)"></label>
+               <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">??? ?????<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleNewMatPhoto(this)"></label>
+               <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">???? ???????<input type="file" accept="image/*" multiple style="display:none;" onchange="handleNewMatPhoto(this)"></label>
              </div>
              <div id="new_mat_photos_preview" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:5px; min-height:10px;"></div>
              <div style="display:flex; gap:10px; margin-top:15px;">
-               <button onclick="execAddMaterialToSign('${signId}', '${signName}')" style="background:#1a73e8; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">マスタに登録</button>
-               <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px;">キャンセル</button>
+               <button onclick="execAddMaterialToSign('${signId}', '${signName}')" style="background:#1a73e8; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">??????????</button>
+               <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px;">????????</button>
              </div>
            </div>
          `;
@@ -1288,7 +1291,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if(!input.files || input.files.length === 0) return;
         for(let f of input.files) {
             if(window.newMatPendingFiles.length < 2) window.newMatPendingFiles.push(f);
-            else { customAlert("写真は最大2枚までです"); break; }
+            else { customAlert("????????2?????????"); break; }
         }
         input.value = ""; renderNewMatPhotos();
       };
@@ -1299,7 +1302,7 @@ function createSignboardMarker(name, pos, icon, id) {
         let html = '';
         window.newMatPendingFiles.forEach((f, i) => {
             const url = URL.createObjectURL(f);
-            html += `<div style="position:relative;flex-shrink:0;"><img src="${url}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #ccc;"><div onclick="removeNewMatPhoto(${i})" style="position:absolute;top:-5px;right:-5px;background:#F44336;color:white;width:20px;height:20px;text-align:center;line-height:20px;border-radius:50%;cursor:pointer;font-weight:bold;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.3);">×</div></div>`;
+            html += `<div style="position:relative;flex-shrink:0;"><img src="${url}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #ccc;"><div onclick="removeNewMatPhoto(${i})" style="position:absolute;top:-5px;right:-5px;background:#F44336;color:white;width:20px;height:20px;text-align:center;line-height:20px;border-radius:50%;cursor:pointer;font-weight:bold;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.3);">?</div></div>`;
         });
         container.innerHTML = html;
       };
@@ -1308,31 +1311,31 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.execAddMaterialToSign = async (signId, signName) => {
          const name = document.getElementById('new_mat_name').value.trim(), size = document.getElementById('new_mat_size').value.trim(), volUnit = document.getElementById('new_mat_vol_unit').value.trim(), stockUnit = document.getElementById('new_mat_stock_unit').value.trim(), initStock = document.getElementById('new_mat_init_stock').value.trim();
-         if (!name) { customAlert("資材名を入力してください。"); return; }
-         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:16px; font-weight:bold; color:#1a73e8;'>処理中...<br><span style='font-size:12px; color:#666;'>写真がある場合は少し時間がかかります</span></div>";
+         if (!name) { customAlert("??????????????????????"); return; }
+         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:16px; font-weight:bold; color:#1a73e8;'>?????...<br><span style='font-size:12px; color:#666;'>???????????????????????????</span></div>";
          try {
             let photos = [];
             for(let f of window.newMatPendingFiles) { const b64 = await resizeImg(f); photos.push({filename: f.name, base64: b64}); }
             const newMat = await callGAS('addMaterialToSign', { name, size, volUnit, stockUnit, initialStock: initStock, photos, signId, signName, userName: currentUser });
             pdlMaterials.push(newMat);
             document.getElementById('modal').style.display = 'none'; 
-            customAlert(`「${name}」をマスタに登録しました！`);
+            customAlert(`??${name}???????????????????????);
             openInventoryUI(signId); 
-         } catch(e) { document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生しました: " + e.message); openInventoryUI(signId); }
+         } catch(e) { document.getElementById('modal').style.display = 'none'; customAlert("?????????????????: " + e.message); openInventoryUI(signId); }
       };
 
       window.execInventoryUpdate = async (matId, matName, signId, signName, direction) => {
-         const actionName = direction > 0 ? "入庫" : "出庫";
-         const numStr = await customPrompt(`${matName} をいくつ【${actionName}】しますか？\n半角数字で入力してください。`, "1");
+         const actionName = direction > 0 ? "???" : "???";
+         const numStr = await customPrompt(`${matName} ????????${actionName}?????????\n????????????????????????, "1");
          if (!numStr) return; 
          const num = parseInt(numStr);
-         if (isNaN(num) || num <= 0) { customAlert("正しい数字を入力してください。"); return; }
-         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
+         if (isNaN(num) || num <= 0) { customAlert("??????????????????????????"); return; }
+         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>?????...</div>";
          try {
             const newStock = await callGAS('updateInventory', { materialId: matId, materialName: matName, signId, signName, amount: num * direction, userName: currentUser });
             updateLocalStock(matId, newStock, signId);
-            customAlert(`【${actionName}】が完了しました！\n現在の在庫: ${newStock}`);
-         } catch(e) { customAlert("エラーが発生しました: " + e.message); openInventoryUI(signId); }
+            customAlert(`??${actionName}????????????????n????????: ${newStock}`);
+         } catch(e) { customAlert("?????????????????: " + e.message); openInventoryUI(signId); }
       };
 
       window.executeNavigation = (id) => {
@@ -1347,7 +1350,7 @@ function createSignboardMarker(name, pos, icon, id) {
         input.oninput = () => {
           const val = input.value.toLowerCase(); sug.innerHTML = ''; if (!val) { sug.style.display = 'none'; return; }
           const matches = Object.values(loadedPolygons).filter(p => p.name.toLowerCase().includes(val));
-          matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'🪧':'🌿')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); });
+          matches.forEach(m => { const d = document.createElement('div'); d.className = 'suggestion-item'; d.innerHTML = (m.isMarker?'??':'??')+' '+m.name; d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); }; sug.appendChild(d); });
           sug.style.display = matches.length ? 'block' : 'none';
         };
       }
@@ -1361,7 +1364,7 @@ function createSignboardMarker(name, pos, icon, id) {
       
       window.focusAndOpenByName = (name) => {
         const target = Object.values(loadedPolygons).find(p => p.name === name);
-        if (target) { focusAndOpen(target.id); } else { customAlert("指定された場所が地図上に見つかりません。"); }
+        if (target) { focusAndOpen(target.id); } else { customAlert("??????????????????????????????????"); }
       };
 
       window.actionManagePhotos = (id, filterType) => {
@@ -1384,12 +1387,12 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
         currentRecordType = currentFilterType;
-        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業記録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 圃場 作業記録" : "🌱 圃場 生育記録");
+        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "?? ???? ???????" : "??? ???? ???????") : (currentRecordType === 'work' ? "?? ??? ???????" : "?? ??? ??????");
         document.getElementById('rightPanelTitle').innerText = `${p.name} - ${formTitle}`;
         let h = '';
         
         if (!p.photos || p.photos.length === 0) {
-          h = '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
+          h = '<div style="color:#666;text-align:center;padding:20px;">??????????????????</div>';
         } else {
           const filtered = p.photos.filter(item => {
              const isWork = (item.type === 'work') || (item.data && item.data.workName);
@@ -1398,7 +1401,7 @@ function createSignboardMarker(name, pos, icon, id) {
           });
           
           if(filtered.length === 0) {
-             h = '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
+             h = '<div style="color:#666;text-align:center;padding:20px;">??????????????????</div>';
           } else {
             filtered.sort((a,b) => {
                 const da = new Date((a.date||'').replace(/\//g,'-') + 'T' + (a.time||'00:00') + ':00');
@@ -1407,50 +1410,50 @@ function createSignboardMarker(name, pos, icon, id) {
             });
             
             filtered.forEach(item => {
-              const isOwner = item.author === currentUser || currentUser === 'システム';
+              const isOwner = item.author === currentUser || currentUser === '??????';
               
               h += `<div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 1px 4px rgba(0,0,0,0.1); position:relative;">`;
               h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px;">
-                      <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''} / 👤 ${item.author}</span>
-                      ${isOwner ? `<div><span onclick="deleteRecord('${item.id}')" style="cursor:pointer;color:#F44336;font-size:12px;margin-right:10px;">🗑️ 削除</span><span onclick="editRecord('${item.id}', '${item.type||'growth'}')" style="cursor:pointer;color:#2196F3;font-size:12px;">✏️ 編集</span></div>` : ''}
+                      <span style="font-size:11px;color:#888;">?? ${item.date} ${item.time || ''} / ??? ${item.author}</span>
+                      ${isOwner ? `<div><span onclick="deleteRecord('${item.id}')" style="cursor:pointer;color:#F44336;font-size:12px;margin-right:10px;">???? ????</span><span onclick="editRecord('${item.id}', '${item.type||'growth'}')" style="cursor:pointer;color:#2196F3;font-size:12px;">???? ???</span></div>` : ''}
                     </div>`;
 
               if (item.data && item.data.multiFieldNames && item.data.multiFieldNames.includes(',')) { 
-                h += `<div style="font-size:11px; color:#2196F3; margin-bottom:5px; background:#e3f2fd; padding:4px; border-radius:4px; display:inline-block;">🔗一括: ${item.data.multiFieldNames}</div>`; 
+                h += `<div style="font-size:11px; color:#2196F3; margin-bottom:5px; background:#e3f2fd; padding:4px; border-radius:4px; display:inline-block;">??????: ${item.data.multiFieldNames}</div>`; 
               }
 
               if (item.type === 'work' && item.data) {
-                 const workLabel = p.isMarker ? "作業登録" : "作業記録";
-                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
-                 if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
+                 const workLabel = p.isMarker ? "???????" : "???????";
+                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>?? ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
+                 if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">????? ?????: ????=${item.data.workedRidges||'?????'} / ???=${item.data.nextRidge||'?????'}</div>`;
                  if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
-                   const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
-                   h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 給水栓: ${irrigText}</div>`;
+                   const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ?? ');
+                   h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">?? ?????: ${irrigText}</div>`;
                  }
                  if (item.data.installedPumps && Array.isArray(item.data.installedPumps) && item.data.installedPumps.length) {
-                   const pumpText = item.data.installedPumps.map(p => p.name || p.id).join('、');
-                   h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
+                   const pumpText = item.data.installedPumps.map(p => p.name || p.id).join('??');
+                   h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">?? ??????????: ${pumpText}</div>`;
                  }
-                 if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
+                 if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">?? ???: ${item.data.detailedWorks}</div>`;
                  
-                 if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
-                 if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
-                 if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime||'--:--'} 〜 ${item.data.endTime||'--:--'} ➔ 計: <b>${item.data.totalTime||'--'}</b></span>`;
-                 if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
-                 if (item.data.usedMaterials) h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
+                 if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">????: ${item.data.crop}</div>`;
+                 if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">??????: ${item.data.workDate}</div>`;
+                 if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">???: ${item.data.startTime||'--:--'} ?? ${item.data.endTime||'--:--'} ?? ??: <b>${item.data.totalTime||'--'}</b></span>`;
+                 if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">?? ???: ${item.data.usedTools}</div>`;
+                 if (item.data.usedMaterials) h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">??? ????????: ${item.data.usedMaterials}</div>`;
                  if (item.data.maintenanceTool) {
                     h += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
-                            <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
-                            症状: ${item.data.maintenanceSymptom || '-'}<br>
-                            内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}
+                            <b>[??????]</b> ???: ${item.data.maintenanceTool}<br>
+                            ????: ${item.data.maintenanceSymptom || '-'}<br>
+                            ???: ${item.data.maintenanceContent || '-'} / ???: ${item.data.maintenanceParts || '-'}
                           </div>`;
                  }
               } 
               else if (item.type !== 'work' && item.data) {
-                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🌱 生育記録: ${item.data.crop||'-'}</b> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${item.data.fieldStatus||'-'}</span></div>`;
+                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>?? ??????: ${item.data.crop||'-'}</b> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${item.data.fieldStatus||'-'}</span></div>`;
                  let tags = [];
-                 if(item.data.mowing) tags.push('草刈り'); if(item.data.weeding) tags.push('草抜き'); if(item.data.drainage) tags.push('排水');
-                 if(item.data.bug) tags.push('虫食有'); if(item.data.disease) tags.push('病気有'); if(item.data.flower) tags.push('花芽有');
+                 if(item.data.mowing) tags.push('?????'); if(item.data.weeding) tags.push('?????'); if(item.data.drainage) tags.push('???');
+                 if(item.data.bug) tags.push('?????'); if(item.data.disease) tags.push('?????'); if(item.data.flower) tags.push('??????');
                  if(tags.length) h += `<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:4px;">${tags.map(t=>`<span style="background:#eee;color:#333;font-size:11px;padding:2px 6px;border-radius:10px;">${t}</span>`).join('')}</div>`;
                  if (item.data.notes) h += `<div style="font-size:12px; color:#444; background:#f9f9f9; padding:8px; border-radius:4px; margin-bottom:5px; white-space:pre-wrap;">${item.data.notes}</div>`;
               }
@@ -1470,13 +1473,13 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         document.getElementById('rightPanelContent').innerHTML = h;
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
-        const btnLabel = currentRecordType === 'work' ? '🚜 作業記録を追加' : '📷 新しい記録を追加';
+        const btnLabel = currentRecordType === 'work' ? '?? ????????????' : '??? ????????????';
         document.getElementById('rightPanelFooter').innerHTML = `<button onclick="directOpenForm('${activePolyId}', '${currentRecordType}')" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${btnLabel}</button>`;
         document.getElementById('rightPanel').classList.add('open');
       };
 
       window.openAllHistory = () => {
-         document.getElementById('rightPanelTitle').innerText = "📖 全履歴一覧";
+         document.getElementById('rightPanelTitle').innerText = "?? ????????";
          let h = '';
          let allRecs = [];
          for(let pid in loadedPolygons) {
@@ -1493,51 +1496,51 @@ function createSignboardMarker(name, pos, icon, id) {
          });
 
          if(allRecs.length === 0) {
-            h = '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
+            h = '<div style="color:#666;text-align:center;padding:20px;">??????????????????</div>';
          } else {
             allRecs.forEach(item => {
               h += `<div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 1px 4px rgba(0,0,0,0.1); position:relative;">`;
               
               h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid #eee;padding-bottom:5px;">
-                      <span style="font-size:13px;font-weight:bold;color:#1a73e8;cursor:pointer;" onclick="focusAndOpen('${item.polyId}')">${item.isMarker?'🪧':'🌿'} ${item.polyName}</span>
-                      <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''}</span>
+                      <span style="font-size:13px;font-weight:bold;color:#1a73e8;cursor:pointer;" onclick="focusAndOpen('${item.polyId}')">${item.isMarker?'??':'??'} ${item.polyName}</span>
+                      <span style="font-size:11px;color:#888;">?? ${item.date} ${item.time || ''}</span>
                     </div>`;
-              h += `<div style="font-size:11px;color:#888;margin-bottom:10px;text-align:right;">👤 ${item.author}</div>`;
+              h += `<div style="font-size:11px;color:#888;margin-bottom:10px;text-align:right;">??? ${item.author}</div>`;
 
               if (item.data && item.data.multiFieldNames && item.data.multiFieldNames.includes(',')) { 
-                h += `<div style="font-size:11px; color:#2196F3; margin-bottom:5px; background:#e3f2fd; padding:4px; border-radius:4px; display:inline-block;">🔗一括: ${item.data.multiFieldNames}</div>`; 
+                h += `<div style="font-size:11px; color:#2196F3; margin-bottom:5px; background:#e3f2fd; padding:4px; border-radius:4px; display:inline-block;">??????: ${item.data.multiFieldNames}</div>`; 
               }
 
               if (item.type === 'work' && item.data) {
-                 const workLabel = item.isMarker ? "作業登録" : "作業記録";
-                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
-                 if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
+                 const workLabel = item.isMarker ? "???????" : "???????";
+                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>?? ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
+                 if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">????? ?????: ????=${item.data.workedRidges||'?????'} / ???=${item.data.nextRidge||'?????'}</div>`;
                  if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
-                   const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
-                   h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 給水栓: ${irrigText}</div>`;
+                   const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ?? ');
+                   h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">?? ?????: ${irrigText}</div>`;
                  }
                  if (item.data.installedPumps && Array.isArray(item.data.installedPumps) && item.data.installedPumps.length) {
-                   const pumpText = item.data.installedPumps.map(p => p.name || p.id).join('、');
-                   h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
+                   const pumpText = item.data.installedPumps.map(p => p.name || p.id).join('??');
+                   h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">?? ??????????: ${pumpText}</div>`;
                  }
-                 if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
+                 if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">?? ???: ${item.data.detailedWorks}</div>`;
 
-                 if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
-                 if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
-                 if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime||'--:--'} 〜 ${item.data.endTime||'--:--'} ➔ 計: <b>${item.data.totalTime||'--'}</b></span>`;
-                 if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
-                 if (item.data.usedMaterials) h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
+                 if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">????: ${item.data.crop}</div>`;
+                 if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">??????: ${item.data.workDate}</div>`;
+                 if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">???: ${item.data.startTime||'--:--'} ?? ${item.data.endTime||'--:--'} ?? ??: <b>${item.data.totalTime||'--'}</b></span>`;
+                 if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">?? ???: ${item.data.usedTools}</div>`;
+                 if (item.data.usedMaterials) h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">??? ????????: ${item.data.usedMaterials}</div>`;
                  if (item.data.maintenanceTool) {
                     h += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
-                            <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
-                            内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}
+                            <b>[??????]</b> ???: ${item.data.maintenanceTool}<br>
+                            ???: ${item.data.maintenanceContent || '-'} / ???: ${item.data.maintenanceParts || '-'}
                           </div>`;
                  }
               } else if (item.type !== 'work' && item.data) {
-                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🌱 生育記録: ${item.data.crop||'-'}</b> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${item.data.fieldStatus||'-'}</span></div>`;
+                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>?? ??????: ${item.data.crop||'-'}</b> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${item.data.fieldStatus||'-'}</span></div>`;
                  let tags = [];
-                 if(item.data.mowing) tags.push('草刈り'); if(item.data.weeding) tags.push('草抜き'); if(item.data.drainage) tags.push('排水');
-                 if(item.data.bug) tags.push('虫食有'); if(item.data.disease) tags.push('病気有'); if(item.data.flower) tags.push('花芽有');
+                 if(item.data.mowing) tags.push('?????'); if(item.data.weeding) tags.push('?????'); if(item.data.drainage) tags.push('???');
+                 if(item.data.bug) tags.push('?????'); if(item.data.disease) tags.push('?????'); if(item.data.flower) tags.push('??????');
                  if(tags.length) h += `<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:4px;">${tags.map(t=>`<span style="background:#eee;color:#333;font-size:11px;padding:2px 6px;border-radius:10px;">${t}</span>`).join('')}</div>`;
                  if (item.data.notes) h += `<div style="font-size:12px; color:#444; background:#f9f9f9; padding:8px; border-radius:4px; margin-bottom:5px; white-space:pre-wrap;">${item.data.notes}</div>`;
               }
@@ -1560,56 +1563,56 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.editRecord = (id, type) => { currentEditRecordId = id; currentRecordType = type; renderRecordForm(); };
-// 🌟作業記録・生育記録の削除処理🌟
+// ??????????????
       window.deleteRecord = async (recordId) => {
-          if (!await customConfirm("本当にこの記録を削除しますか？\n※復元できません")) return;
+          if (!await customConfirm("????????????n????")) return;
 
-          // 画面を「削除中」に切り替え
-          document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#f44336;'>削除中...</div>";
+          // ????????
+          document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#f44336;'>????...</div>";
 
           try {
-              // GASへ削除依頼を送信
+              // GAS????
               const updatedPhotos = await callGAS('deleteRecordItem', { 
                   id: activePolyId, 
                   recordId: recordId, 
                   userName: currentUser 
               });
 
-              // アプリのローカルデータからも削除して画面を更新
+              // ??????????????????????????????????????
               if (Array.isArray(updatedPhotos)) {
                   loadedPolygons[activePolyId].photos = updatedPhotos;
               } else {
                   loadedPolygons[activePolyId].photos = loadedPolygons[activePolyId].photos.filter(p => p.id !== recordId);
               }
 
-              customAlert("記録を削除しました。");
-              renderHistoryList(); // 履歴リストを再描画して元に戻す
+              customAlert("????????????????");
+              renderHistoryList(); // ???????????????????????
               
           } catch (e) {
-              customAlert("エラーが発生しました: " + e.message);
-              renderHistoryList(); // エラー時もリストを再描画して復帰させる
+              customAlert("?????????????????: " + e.message);
+              renderHistoryList(); // ????????????????????????????????
           }
       };
-      window.removeExistingPhoto = async (idx) => { if(await customConfirm("削除しますか？")) { existingUrlsInEdit[idx]=null; document.getElementById(`edit-photo-${idx}`).style.display='none'; } };
+      window.removeExistingPhoto = async (idx) => { if(await customConfirm("?????????????")) { existingUrlsInEdit[idx]=null; document.getElementById(`edit-photo-${idx}`).style.display='none'; } };
       // ==========================================
-      // 部品の新規追加（フロント側）
+      // ???????????????????????
       // ==========================================
       window.addNewMachinePart = async () => {
          const machineId = document.getElementById('m_tool').value;
-         if(!machineId) { customAlert("先に対象農機を選択してください。"); return; }
-         const n = await customPrompt("新しく追加する部品名:");
+         if(!machineId) { customAlert("???????????????????????????"); return; }
+         const n = await customPrompt("????????????????:");
          if(!n) return;
          
          const machine = pdlMachines.find(m => m.id === machineId);
-         if(machine.parts && machine.parts.includes(n.trim())) { customAlert("既に登録されています。"); return; }
+         if(machine.parts && machine.parts.includes(n.trim())) { customAlert("??????????????????"); return; }
          
          try {
             const newPartsStr = await callGAS('addMachinePart', { machineId: machineId, newPart: n.trim() });
-            machine.parts = newPartsStr; // ローカルのマスタも更新
-            updatePartsList(); // プルダウンを作り直す
-            setTimeout(() => { document.getElementById('m_parts').value = n.trim(); }, 50); // 追加した部品を選択状態にする
-            customAlert("新しい部品を追加しました！");
-         } catch(e) { customAlert("失敗しました: " + e.message); }
+            machine.parts = newPartsStr; // ?????????????????
+            updatePartsList(); // ?????????????????
+            setTimeout(() => { document.getElementById('m_parts').value = n.trim(); }, 50); // ???????????????????????
+            customAlert("??????????????????????");
+         } catch(e) { customAlert("???????????: " + e.message); }
       };
       window.selectedWorkCrops = [];
 
@@ -1621,7 +1624,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!container) return;
 
         if (!pdlCrops || pdlCrops.length === 0) {
-          container.innerHTML = `<span style="color:#999; font-size:12px; padding:4px;">登録されている作物がありません</span>`;
+          container.innerHTML = `<span style="color:#999; font-size:12px; padding:4px;">????????????????????????</span>`;
           return;
         }
 
@@ -1630,7 +1633,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const bg = isSelected ? '#e8f5e9' : '#fff';
           const color = isSelected ? '#2e7d32' : '#333';
           const border = isSelected ? '1px solid #81c784' : '1px solid #ccc';
-          const icon = isSelected ? '✅ ' : '🌱 ';
+          const icon = isSelected ? '?? ' : '?? ';
           const safeName = String(c.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           return `<button type="button" class="work-crop-chip" data-crop="${String(c.name).replace(/"/g, '&quot;')}" onclick="toggleWorkCropChip('${safeName}')" style="background:${bg}; color:${color}; border:${border}; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:${isSelected ? 'bold' : 'normal'}; cursor:pointer;">${icon}${c.name}</button>`;
         }).join('');
@@ -1660,9 +1663,9 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.addNewCrop = async () => { 
-        const n = await customPrompt("新規作物名:"); 
+        const n = await customPrompt("?????????:"); 
         if(!n) return; 
-        if(pdlCrops.some(c=>c.name===n.trim())){customAlert("登録済み"); return;} 
+        if(pdlCrops.some(c=>c.name===n.trim())){customAlert("??????"); return;} 
         try { 
           await callGAS('addCrop',{cropData:{name:n.trim(), density:0}}); 
           pdlCrops.push({name:n.trim(), density:0}); 
@@ -1671,7 +1674,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           if(document.getElementById('rec_crop')) {document.getElementById('rec_crop').value=n.trim(); if(typeof handleCropSelection==='function') handleCropSelection();}
           if (typeof window.renderCropChips === 'function') window.renderCropChips();
-        } catch(e) { customAlert("失敗"); } 
+        } catch(e) { customAlert("???"); } 
       };
 
       window.addPhotoFromInput = (input) => {
@@ -1689,7 +1692,7 @@ function createSignboardMarker(name, pos, icon, id) {
             const url = URL.createObjectURL(f);
             html += `<div style="position:relative;flex-shrink:0;">
                 <img src="${url}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ccc;">
-                <div onclick="removePendingPhoto(${i})" style="position:absolute;top:-8px;right:-8px;background:#F44336;color:white;width:24px;height:24px;text-align:center;line-height:24px;border-radius:50%;cursor:pointer;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.3);">×</div>
+                <div onclick="removePendingPhoto(${i})" style="position:absolute;top:-8px;right:-8px;background:#F44336;color:white;width:24px;height:24px;text-align:center;line-height:24px;border-radius:50%;cursor:pointer;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.3);">?</div>
             </div>`;
         });
         container.innerHTML = html;
@@ -1703,30 +1706,29 @@ function createSignboardMarker(name, pos, icon, id) {
       
       window.updateMapSelectVisuals = () => {
         const countUI = document.getElementById('mapSelectCount');
-        if(countUI) countUI.innerText = `🗺️ 記録する対象 (${selectedPolyIds.length}箇所選択中)`;
+        if(countUI) countUI.innerText = `???? ????????? (${selectedPolyIds.length}????????)`;
         
-        // ★追加: 給油する農機を探すモードの見た目
+        // ?????: ?????????????????????????
         if (window.selectingSignForRefuel) {
-           const validIds = pdlMachines.filter(m => m.category && m.category.includes('作業機（軽油）')).map(m => m.currentLocId || m.signId);
+           const validIds = pdlMachines.filter(m => m.category && m.category.includes('????????????')).map(m => m.currentLocId || m.signId);
            for(let id in loadedPolygons) {
                const p = loadedPolygons[id];
                if (p.isMarker && p.marker) {
-                   p.marker.setOpacity(validIds.includes(id) ? 1.0 : 0.2); // 軽油の農機がない看板は薄くする
+                   p.marker.setOpacity(validIds.includes(id) ? 1.0 : 0.2); // ????????????????????????
                } else if (p.polygon) {
-                   p.polygon.setOptions({fillOpacity: 0.05, strokeOpacity: 0.1}); // 圃場も薄くする
+                   p.polygon.setOptions({fillOpacity: 0.05, strokeOpacity: 0.1}); // ???????????
                }
            }
            return;
         }
 
-        // 通常のマップ選択見た目処理
+        // ??????????????????????
         for(let id in loadedPolygons) {
           const p = loadedPolygons[id];
           if(!p.isMarker && p.polygon) {
-            const isU = (p.status === '未使用（返却）' || p.status === '未使用'), baseColor = isU ? '#999999' : p.color;
+            const isU = (p.status === '????????????' || p.status === '?????'), baseColor = isU ? '#999999' : p.color;
             if (isMapSelecting) {
-              if (selectedPolyIds.includes(id)) { p.polygon.setOptions({fillColor: '#FFEB3B', strokeColor: '#F57F17', fillOpacity: 0.8, strokeWeight: 4}); }
-              else { p.polygon.setOptions({fillColor: baseColor, strokeColor: baseColor, fillOpacity: 0.2, strokeWeight: 1}); }
+              updatePolygonColor(id);
             } else { p.polygon.setOptions({fillColor: baseColor, strokeColor: baseColor, fillOpacity: isU ? 0.5 : 0.3, strokeWeight: 3}); }
           }
         }
@@ -1743,18 +1745,18 @@ function createSignboardMarker(name, pos, icon, id) {
         const disp = document.getElementById('selected_polys_display');
         if(!disp) return;
         if(selectedPolyIds.length === 0) {
-          disp.innerHTML = `<span style="color:#999; font-size:13px; font-weight:bold; padding:4px 0;">対象なし（任意）</span>`;
+          disp.innerHTML = `<span style="color:#999; font-size:13px; font-weight:bold; padding:4px 0;">?????????????</span>`;
         } else { 
           disp.innerHTML = selectedPolyIds.map(id => {
-            const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "不明な圃場";
+            const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "????????";
             return `<span style="display:inline-flex; align-items:center; gap:4px; background:#e8f0fe; color:#1a73e8; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid #aecbfa; margin-top:4px;">
               ${name}
-              <span onclick="removeSelectedPoly('${id}')" style="cursor:pointer; font-weight:bold; color:#d32f2f; margin-left:2px; font-size:14px; line-height:1;" title="対象から外す">×</span>
+              <span onclick="removeSelectedPoly('${id}')" style="cursor:pointer; font-weight:bold; color:#d32f2f; margin-left:2px; font-size:14px; line-height:1;" title="?????????">?</span>
             </span>`;
           }).join(''); 
         }
 
-        // 圃場が選択されている場合、その圃場の最新の進捗状況を反省
+        // ????????????????????????????????????????????
         if (typeof currentEditRecordId === 'undefined' || !currentEditRecordId) {
           const targetPolyId = (selectedPolyIds && selectedPolyIds.length > 0) ? selectedPolyIds[0] : activePolyId;
           if (targetPolyId && loadedPolygons && loadedPolygons[targetPolyId] && !loadedPolygons[targetPolyId].isMarker) {
@@ -1810,7 +1812,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (recId) seenIds.add(recId);
 
               const phAuthor = (ph.author || '').replace(/\s+/g, '');
-              const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser === 'システム';
+              const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser === '??????';
               if (isAuthorMatch) {
                 const phWorkDate = window.normalizeDateStr(ph.data && ph.data.workDate);
                 const phDate = window.normalizeDateStr(ph.date);
@@ -1825,7 +1827,7 @@ function createSignboardMarker(name, pos, icon, id) {
             });
           }
         }
-        if (latestEnd === '12:00' || latestEnd === '12:00:00' || latestEnd === '12時') {
+        if (latestEnd === '12:00' || latestEnd === '12:00:00' || latestEnd === '12??') {
           latestEnd = '13:00';
         }
         return latestEnd;
@@ -1871,11 +1873,11 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!box) return;
         const catEl = document.getElementById('rec_work_category');
         const cat = catEl ? catEl.value : '';
-        // 圃場作業・「すべて」のときは圃場記録対象を表示
-        const show = cat === '圃場作業' || cat === 'すべて';
+        // ????????????????????????????????????
+        const show = cat === '???????' || cat === '?????';
         box.style.display = show ? 'block' : 'none';
         if (!show) {
-          // 事務・保全などでは複数圃場選択を解除し、起点があればそれのみ残す
+          // ???????????????????????????????????????????????????
           if (activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker) {
             selectedPolyIds = [activePolyId];
           } else if (activePolyId && loadedPolygons[activePolyId]) {
@@ -1892,14 +1894,14 @@ function createSignboardMarker(name, pos, icon, id) {
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
         if (!wName || typeof pdlWorkMaster === 'undefined') return '';
         const wObj = pdlWorkMaster.find(w => String(w.name || '').trim() === wName);
-        return wObj ? (wObj.category || '圃場作業') : '';
+        return wObj ? (wObj.category || '???????') : '';
       };
 
       window.workRecordRequiresField = () => {
         const catEl = document.getElementById('rec_work_category');
         const cat = catEl ? catEl.value : '';
-        if (cat === '圃場作業') return true;
-        if (cat === 'すべて') return window.getSelectedWorkCategory() === '圃場作業';
+        if (cat === '???????') return true;
+        if (cat === '?????') return window.getSelectedWorkCategory() === '???????';
         return false;
       };
 
@@ -1908,19 +1910,19 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!box) return;
         const catEl = document.getElementById('rec_work_category');
         const cat = catEl ? catEl.value : '';
-        const show = selectedPolyIds.length > 0 && cat === '圃場作業';
+        const show = selectedPolyIds.length > 0 && cat === '???????';
         if (!show) {
           box.style.display = 'none';
           box.innerHTML = '';
           return;
         }
         box.style.display = 'block';
-        let html = `<label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗（圃場別）</label>`;
+        let html = `<label class="form-label" style="color:#00838f; margin-bottom:8px;">????? ???????????????</label>`;
         selectedPolyIds.forEach((pid, idx) => {
           const poly = loadedPolygons[pid];
           if (!poly || poly.isMarker) return;
           const uneCount = window.getCadUneCount(poly);
-          const uneLabel = uneCount > 0 ? `${uneCount}畝` : '登録なし';
+          const uneLabel = uneCount > 0 ? `${uneCount}?? : '??????';
           let lastNext = '';
           if (poly.photos) {
             const pastWorks = poly.photos.filter(ph => ph.type === 'work' && ph.data && ph.data.nextRidge).sort((a,b) => {
@@ -1932,15 +1934,15 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           html += `<div class="ridge-field-block" data-poly-id="${pid}" style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:10px; border:1px solid #80deea;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px;">
-              <div style="font-weight:bold; color:#00695c; font-size:13px;">📍 ${poly.name || pid}</div>
-              <div style="font-size:12px; color:#00695c;">CAD畝数: <b>${uneLabel}</b></div>
+              <div style="font-weight:bold; color:#00695c; font-size:13px;">?? ${poly.name || pid}</div>
+              <div style="font-size:12px; color:#00695c;">CAD???: <b>${uneLabel}</b></div>
             </div>
             <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#00695c; margin-bottom:8px; cursor:pointer;">
-              <input type="checkbox" class="ridge-complete-check" data-poly-id="${pid}" data-une-count="${uneCount}" onchange="onRidgeCompleteToggle(this)"> 完了（全畝をセット）
+              <input type="checkbox" class="ridge-complete-check" data-poly-id="${pid}" data-une-count="${uneCount}" onchange="onRidgeCompleteToggle(this)"> ???????????????
             </label>
             <div style="display:flex; gap:10px;">
-              <div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" class="form-input ridge-worked" data-poly-id="${pid}" placeholder="${uneCount > 0 ? '例: 1-' + uneCount : '例: 1-5'}" style="margin-bottom:0;"></div>
-              <div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" class="form-input ridge-next" data-poly-id="${pid}" placeholder="例: 6" value="${lastNext}" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label style="font-size:11px; color:#555;">?? ??????????????</label><input type="text" class="form-input ridge-worked" data-poly-id="${pid}" placeholder="${uneCount > 0 ? '??: 1-' + uneCount : '??: 1-5'}" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label style="font-size:11px; color:#555;">??? ???????????</label><input type="text" class="form-input ridge-next" data-poly-id="${pid}" placeholder="??: 6" value="${lastNext}" style="margin-bottom:0;"></div>
             </div>
           </div>`;
         });
@@ -1959,7 +1961,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (worked) worked.value = `1-${uneCount}`;
             if (next) next.value = String(uneCount + 1);
           } else {
-            customAlert('この圃場はCAD畝数が登録なしのため、完了セットできません。');
+            customAlert('????????AD????????????????????????????????????');
             chk.checked = false;
           }
         } else {
@@ -1987,16 +1989,16 @@ function createSignboardMarker(name, pos, icon, id) {
         return rows;
       };
 
-      // ===== 潅水作業：給水栓 開/閉・ポンプ設置 =====
+      // ===== ?????????????? ??/???????????? =====
       window.isIrrigationWork = (wName) => {
         const n = String(wName || '');
-        return n.includes('潅水') || n.includes('灌水');
+        return n.includes('???') || n.includes('???');
       };
 
       window.isPumpMachine = (m) => {
         if (!m) return false;
         const workCat = String(m.workCategory || '');
-        return workCat.includes('潅水') || workCat.includes('灌水');
+        return workCat.includes('???') || workCat.includes('???');
       };
 
       window.getPumpMachines = () => (pdlMachines || []).filter(m => window.isPumpMachine(m));
@@ -2030,16 +2032,44 @@ function createSignboardMarker(name, pos, icon, id) {
       window.applyPumpInstallButtonStyle = (btn, installed) => {
         if (!btn) return;
         btn.setAttribute('data-installed', installed ? '1' : '0');
+        btn.setAttribute('aria-pressed', installed ? 'true' : 'false');
+        const row = btn.closest('.pump-install-row');
         if (installed) {
-          btn.style.background = '#00897B';
+          btn.style.background = 'linear-gradient(180deg, #26A69A 0%, #00897B 100%)';
           btn.style.color = '#fff';
-          btn.style.border = '1px solid #00695C';
-          btn.textContent = '設置中';
+          btn.style.border = '2px solid #004D40';
+          btn.style.boxShadow = '0 2px 0 #004D40, 0 4px 10px rgba(0,137,123,0.35)';
+          btn.style.minWidth = '110px';
+          btn.innerHTML = '<div style="font-size:15px; line-height:1.2;">\u2713 \u8a2d\u7f6e\u4e2d</div><div style="font-size:10px; opacity:0.9; font-weight:normal; margin-top:2px;">ON \u00b7 \u30bf\u30c3\u30d7\u3067\u89e3\u9664</div>';
+          if (row) {
+            row.style.background = '#E0F2F1';
+            row.style.borderColor = '#00897B';
+            row.style.boxShadow = 'inset 4px 0 0 #00897B';
+          }
+          const badge = row && row.querySelector('.pump-install-status');
+          if (badge) {
+            badge.textContent = '\u8a2d\u7f6e\u4e2d';
+            badge.style.background = '#00897B';
+            badge.style.color = '#fff';
+          }
         } else {
-          btn.style.background = '#fff';
-          btn.style.color = '#00897B';
-          btn.style.border = '1px solid #80CBC4';
-          btn.textContent = '設置中';
+          btn.style.background = '#FAFAFA';
+          btn.style.color = '#546E7A';
+          btn.style.border = '2px dashed #90A4AE';
+          btn.style.boxShadow = 'none';
+          btn.style.minWidth = '110px';
+          btn.innerHTML = '<div style="font-size:15px; line-height:1.2;">\u672a\u8a2d\u7f6e</div><div style="font-size:10px; opacity:0.85; font-weight:normal; margin-top:2px;">OFF \u00b7 \u30bf\u30c3\u30d7\u3067\u8a2d\u7f6e</div>';
+          if (row) {
+            row.style.background = '#fff';
+            row.style.borderColor = '#b2dfdb';
+            row.style.boxShadow = 'none';
+          }
+          const badge = row && row.querySelector('.pump-install-status');
+          if (badge) {
+            badge.textContent = '\u672a\u8a2d\u7f6e';
+            badge.style.background = '#ECEFF1';
+            badge.style.color = '#607D8B';
+          }
         }
       };
 
@@ -2074,15 +2104,15 @@ function createSignboardMarker(name, pos, icon, id) {
 
         let html = `<div style="background:#e0f2f1; padding:12px; border-radius:8px; border:1px solid #80cbc4;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-            <div style="font-weight:bold; color:#00695C;">🚰 ポンプ設置</div>
-            ${isAdmin ? `<button type="button" onclick="openNewMachineFromIrrigationPump()" style="background:#1976D2; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">➕ 機械マスタに追加</button>` : ''}
+            <div style="font-weight:bold; color:#00695C;">?? ?????????</div>
+            ${isAdmin ? `<button type="button" onclick="openNewMachineFromIrrigationPump()" style="background:#1976D2; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">?? ?????????????</button>` : ''}
           </div>
-          <div style="font-size:11px; color:#546e7a; margin-bottom:10px;">農機マスタの作業分類に「潅水」が含まれるものを表示します。「設置中」を押すとこの圃場への設置として記録されます。</div>`;
+          <div style="font-size:11px; color:#546e7a; margin-bottom:10px;">??????????????????????????????????????????????????????????????????????????????????????????</div>`;
 
         if (pumps.length === 0) {
-          html += `<div style="font-size:12px; color:#c62828;">作業分類に「潅水」が設定された農機がありません。農機マスタの作業分類を確認してください。</div>`;
+          html += `<div style="font-size:12px; color:#c62828;">?????????????????????????????????????????????????????????????????????????</div>`;
           if (isAdmin) {
-            html += `<div style="margin-top:8px; font-size:11px; color:#546e7a;">管理者は「機械マスタに追加」から作業分類に「潅水」を入れて登録できます。</div>`;
+            html += `<div style="margin-top:8px; font-size:11px; color:#546e7a;">??????????????????????????????????????????????????????????</div>`;
           }
         } else {
           pumps.forEach(m => {
@@ -2094,14 +2124,17 @@ function createSignboardMarker(name, pos, icon, id) {
             } else {
               installed = fieldIds.includes(m.currentLocId);
             }
-            const locLabel = m.currentLocName || m.signName || '場所未設定';
+            const locLabel = m.currentLocName || m.signName || '????????';
             const safeId = String(m.id || '').replace(/'/g, "\\'");
-            html += `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; padding:10px; border:1px solid #b2dfdb; border-radius:6px; background:#fff;">
+            html += `<div class="pump-install-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; padding:10px; border:1px solid #b2dfdb; border-radius:6px; background:#fff;">
               <div style="min-width:0; flex:1;">
-                <div style="font-weight:bold; font-size:14px; color:#004D40;">${m.name}</div>
-                <div style="font-size:11px; color:#666; margin-top:2px;">📍 現在地: ${locLabel}</div>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <div style="font-weight:bold; font-size:14px; color:#004D40;">${m.name}</div>
+                  <span class="pump-install-status" style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:999px; background:#ECEFF1; color:#607D8B;">\u672a\u8a2d\u7f6e</span>
+                </div>
+                <div style="font-size:11px; color:#666; margin-top:2px;">\uD83D\uDCCD \u73fe\u5728\u5730: ${locLabel}</div>
               </div>
-              <button type="button" class="pump-install-btn" data-id="${m.id}" data-name="${String(m.name || '').replace(/"/g, '&quot;')}" data-installed="${installed ? '1' : '0'}" onclick="togglePumpInstall('${safeId}')" style="flex-shrink:0; padding:10px 14px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; min-width:84px;"></button>
+              <button type="button" class="pump-install-btn" data-id="${m.id}" data-name="${String(m.name || '').replace(/"/g, '&quot;')}" data-installed="${installed ? '1' : '0'}" onclick="togglePumpInstall('${safeId}')" style="flex-shrink:0; padding:10px 12px; border-radius:10px; font-weight:bold; font-size:13px; cursor:pointer; min-width:110px; text-align:center;"></button>
             </div>`;
           });
         }
@@ -2137,16 +2170,16 @@ function createSignboardMarker(name, pos, icon, id) {
         if (fieldIds.length === 0) {
           box.style.display = 'block';
           box.innerHTML = `<div style="background:#e3f2fd; padding:12px; border-radius:8px; border:1px solid #90caf9;">
-            <div style="font-weight:bold; color:#1565C0; margin-bottom:6px;">💧 給水栓 開・閉</div>
-            <div style="font-size:12px; color:#555;">圃場を選択すると、CAD登録の給水栓番号が表示されます。</div>
+            <div style="font-weight:bold; color:#1565C0; margin-bottom:6px;">?? ????? ?????</div>
+            <div style="font-size:12px; color:#555;">???????????????AD?????????????????????????</div>
           </div>`;
           if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
           return;
         }
 
         let html = `<div style="background:#e3f2fd; padding:12px; border-radius:8px; border:1px solid #90caf9;">
-          <div style="font-weight:bold; color:#1565C0; margin-bottom:8px;">💧 給水栓 開・閉登録</div>
-          <div style="font-size:11px; color:#546e7a; margin-bottom:10px;">農業CADの吸水ピン番号に対応しています（開＝給水中 / 閉＝止水中）</div>`;
+          <div style="font-weight:bold; color:#1565C0; margin-bottom:8px;">?? ????? ????????</div>
+          <div style="font-size:11px; color:#546e7a; margin-bottom:10px;">???CAD??????????????????????????????????? / ?????????</div>`;
 
         let anyValve = false;
         fieldIds.forEach(pid => {
@@ -2156,25 +2189,25 @@ function createSignboardMarker(name, pos, icon, id) {
           const safePid = String(pid).replace(/'/g, "\\'");
           html += `<div class="irrig-field-block" data-poly-id="${pid}" style="background:#fff; padding:10px; border-radius:8px; margin-bottom:10px; border:1px solid #bbdefb;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-              <div style="font-weight:bold; color:#0d47a1; font-size:13px;">📍 ${poly.name || pid}</div>
-              ${isAdmin ? `<button type="button" onclick="openAdminCadForField('${safePid}')" style="background:#FF9800; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">🚜 農業CADを開く</button>` : ''}
+              <div style="font-weight:bold; color:#0d47a1; font-size:13px;">?? ${poly.name || pid}</div>
+              ${isAdmin ? `<button type="button" onclick="openAdminCadForField('${safePid}')" style="background:#FF9800; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">?? ???CAD?????</button>` : ''}
             </div>`;
           if (pins.length === 0) {
-            html += `<div style="font-size:12px; color:#888;">この圃場にはCADの給水栓（吸水ピン）が登録されていません。</div>`;
+            html += `<div style="font-size:12px; color:#888;">?????????CAD??????????????????????????????????</div>`;
           } else {
             anyValve = true;
             html += `<div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-              <button type="button" onclick="setAllIrrigationValves('${pid}', 'supplying')" style="background:#E3F2FD; color:#1976D2; border:1px solid #2196F3; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">すべて開</button>
-              <button type="button" onclick="setAllIrrigationValves('${pid}', 'stopped')" style="background:#FFEBEE; color:#D32F2F; border:1px solid #F44336; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">すべて閉</button>
+              <button type="button" onclick="setAllIrrigationValves('${pid}', 'supplying')" style="background:#E3F2FD; color:#1976D2; border:1px solid #2196F3; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">??????</button>
+              <button type="button" onclick="setAllIrrigationValves('${pid}', 'stopped')" style="background:#FFEBEE; color:#D32F2F; border:1px solid #F44336; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">??????</button>
             </div>`;
             for (let i = 1; i <= pins.length; i++) {
               const key = `${pid}_${i}`;
               const cur = prev[key] || (statusObj[String(i)] === 'supplying' ? 'supplying' : 'stopped');
               html += `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; padding:8px; border:1px solid #e3f2fd; border-radius:6px; background:#fafcff;">
-                <span style="font-weight:bold; font-size:14px; color:#1565C0;">💧 給水栓 ${i}</span>
+                <span style="font-weight:bold; font-size:14px; color:#1565C0;">?? ????? ${i}</span>
                 <select class="form-input irrig-valve-select" data-poly-id="${pid}" data-valve="${i}" style="width:auto; min-width:110px; margin-bottom:0; padding:8px; font-weight:bold;">
-                  <option value="supplying" ${cur === 'supplying' ? 'selected' : ''}>🔓 開</option>
-                  <option value="stopped" ${cur === 'stopped' ? 'selected' : ''}>🔒 閉</option>
+                  <option value="supplying" ${cur === 'supplying' ? 'selected' : ''}>?? ??</option>
+                  <option value="stopped" ${cur === 'stopped' ? 'selected' : ''}>?? ??</option>
                 </select>
               </div>`;
             }
@@ -2183,10 +2216,10 @@ function createSignboardMarker(name, pos, icon, id) {
         });
 
         if (!anyValve) {
-          html += `<div style="font-size:12px; color:#c62828; margin-top:4px;">選択中の圃場に給水栓がありません。農業CADで吸水ピンを登録してください。</div>`;
+          html += `<div style="font-size:12px; color:#c62828; margin-top:4px;">??????????????????????????????AD??????????????????????????</div>`;
           if (isAdmin && fieldIds.length > 0) {
             const firstId = String(fieldIds[0]).replace(/'/g, "\\'");
-            html += `<button type="button" onclick="openAdminCadForField('${firstId}')" style="margin-top:8px; width:100%; background:#FF9800; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">🚜 農業CADを開いて吸水ピンを登録</button>`;
+            html += `<button type="button" onclick="openAdminCadForField('${firstId}')" style="margin-top:8px; width:100%; background:#FF9800; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">?? ???CAD??????????????????</button>`;
           }
         }
         html += `</div>`;
@@ -2195,24 +2228,24 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
       };
 
-      // ===== 管理者：農業CAD / 機械マスタ追加（潅水UIから） =====
+      // ===== ?????????CAD / ?????????????????UI????? =====
       window.openAdminCadForField = (polyId) => {
         if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
-          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
-          else alert('管理者権限が必要です。');
+          if (typeof customAlert === 'function') customAlert('?????????????????');
+          else alert('?????????????????');
           return;
         }
         const pid = String(polyId || '');
         const poly = loadedPolygons[pid];
         if (!poly || poly.isMarker) {
-          if (typeof customAlert === 'function') customAlert('対象の圃場が見つかりません。');
-          else alert('対象の圃場が見つかりません。');
+          if (typeof customAlert === 'function') customAlert('??????????????????????');
+          else alert('??????????????????????');
           return;
         }
         const modal = document.getElementById('adminCadModal');
         const iframe = document.getElementById('adminCadIframe');
         if (!modal || !iframe) {
-          if (typeof customAlert === 'function') customAlert('農業CAD画面の準備ができていません。ページを再読み込みしてください。');
+          if (typeof customAlert === 'function') customAlert('???CAD?????????????????????????????????????????????????');
           return;
         }
         window._adminCadTargetFieldId = pid;
@@ -2221,7 +2254,7 @@ function createSignboardMarker(name, pos, icon, id) {
           fieldId: pid,
           v: String(Date.now())
         });
-        // 可能なら中心座標も渡して地図位置を合わせる
+        // ??????????????????????????????????
         try {
           if (poly.coords && poly.coords.length) {
             let latSum = 0, lngSum = 0, n = 0;
@@ -2246,13 +2279,13 @@ function createSignboardMarker(name, pos, icon, id) {
         const iframe = document.getElementById('adminCadIframe');
         if (modal) modal.style.display = 'none';
         if (iframe) iframe.src = '';
-        // CAD更新後の給水栓情報を反映
+        // CAD???????????????????
         try {
           if (typeof loadInitData === 'function') {
             await loadInitData();
           }
         } catch (e) {
-          console.warn('CAD閉じ後の再読込失敗:', e);
+          console.warn('CAD??????????????:', e);
         }
         setTimeout(() => {
           if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
@@ -2261,39 +2294,39 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.openNewMachineFromIrrigationPump = () => {
         if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
-          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
-          else alert('管理者権限が必要です。');
+          if (typeof customAlert === 'function') customAlert('?????????????????');
+          else alert('?????????????????');
           return;
         }
-        // 定位置用の看板を探す（なければ未設定看板でも可）
+        // ??????????????????????????????????????
         let signId = '';
-        let signName = '定位置未設定';
+        let signName = '??????????';
         const signs = Object.keys(loadedPolygons || {})
           .map(id => loadedPolygons[id])
           .filter(p => p && p.isMarker);
         if (signs.length > 0) {
-          // 選択中圃場に近い看板を優先（簡易：先頭）
+          // ????????????????????????????????
           signId = signs[0].id;
-          signName = signs[0].name || '看板';
+          signName = signs[0].name || '????';
         } else {
           if (typeof customAlert === 'function') {
-            customAlert('定位置となる看板が地図上にありません。\n先に看板を登録するか、看板画面から農機登録してください。');
+            customAlert('????????????????????????????????n??????????????????????????????????????????????');
           } else {
-            alert('定位置となる看板がありません。');
+            alert('?????????????????????????');
           }
           return;
         }
         if (typeof window.openNewMachineModal !== 'function') {
-          if (typeof customAlert === 'function') customAlert('農機登録画面を開けませんでした。');
+          if (typeof customAlert === 'function') customAlert('??????????????????????????');
           return;
         }
         window._openMachineFromIrrigation = true;
         window.openNewMachineModal(signId, signName);
-        // 作業分類の初期値を「潅水」に寄せる
+        // ????????????????????????????
         setTimeout(() => {
           try {
             if (typeof window.renderWorkCategoryRows === 'function') {
-              window.renderWorkCategoryRows('new_mac_category_rows', ['潅水']);
+              window.renderWorkCategoryRows('new_mac_category_rows', ['???']);
             }
           } catch (e) {}
         }, 80);
@@ -2316,7 +2349,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           const val = el.value === 'supplying' ? 'supplying' : 'stopped';
           byPoly[pid].status[String(valve)] = val;
-          byPoly[pid].summary.push(`栓${valve}:${val === 'supplying' ? '開' : '閉'}`);
+          byPoly[pid].summary.push(`??${valve}:${val === 'supplying' ? '??' : '??'}`);
         });
         return Object.values(byPoly);
       };
@@ -2351,7 +2384,7 @@ function createSignboardMarker(name, pos, icon, id) {
            }
         });
 
-        // カテゴリ変更後はデフォルト作物（共通優先）を選び、作業一覧をすぐ出す
+        // ?????????????????????????????????????????????????????
         const defaultCrop = window.getDefaultWorkCropKey(catName);
         if (defaultCrop && typeof window.selectWorkCropFilter === 'function') {
           window.selectWorkCropFilter(defaultCrop);
@@ -2371,7 +2404,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.getWorkCropLabel = (val) => {
         const s = String(val || '').trim();
-        return s || '共通';
+        return s || '????';
       };
 
       window.getBaseWorksForPoly = (p) => {
@@ -2380,12 +2413,12 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.getWorksByCategoryAndCrop = (category, cropKey, p) => {
         let works = window.getBaseWorksForPoly(p) || [];
-        if (category && category !== 'すべて') {
+        if (category && category !== '?????') {
           const catNorm = String(category).trim();
           const inCat = works.filter(w => {
             const wCat = String((w && w.category) != null && String(w.category).trim() !== ''
               ? w.category
-              : '圃場作業').trim();
+              : '???????').trim();
             return wCat === catNorm;
           });
           if (inCat.length) {
@@ -2397,14 +2430,14 @@ function createSignboardMarker(name, pos, icon, id) {
         if (cropKey) {
           works = works.filter(w => {
             if (!w) return false;
-            // 複数作物（crops配列 または カンマ区切り文字列）での判定
+            // ?????????rops??? ????? ??????????????????????
             let cropList = [];
             if (w.crops && Array.isArray(w.crops) && w.crops.length) {
               cropList = w.crops;
             } else if (w.cropName) {
-              cropList = String(w.cropName).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+              cropList = String(w.cropName).split(/[,??/).map(s => s.trim()).filter(Boolean);
             }
-            if (!cropList.length || cropList.includes('共通') || cropList.includes('__common__')) return true;
+            if (!cropList.length || cropList.includes('????') || cropList.includes('__common__')) return true;
 
             const normKey = window.normalizeWorkCropKey(cropKey);
             return cropList.some(c => window.normalizeWorkCropKey(c) === normKey);
@@ -2430,21 +2463,21 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         if (!detailsStr) return [];
-        return String(detailsStr).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        return String(detailsStr).split(/[,??/).map(s => s.trim()).filter(Boolean);
       };
 
       window.getCropOptionsForCategory = (category, p) => {
         let works = window.getBaseWorksForPoly(p) || [];
-        if (category && category !== 'すべて') {
+        if (category && category !== '?????') {
           const catNorm = String(category).trim();
           const inCat = works.filter(w => {
             const wCat = String((w && w.category) != null && String(w.category).trim() !== ''
               ? w.category
-              : '圃場作業').trim();
+              : '???????').trim();
             return wCat === catNorm;
           });
           if (inCat.length) works = inCat;
-          // 不一致時は全件から作物候補を出す（作業名と同じフォールバック）
+          // ?????????????????????????????????????????????????
         }
         const keys = new Set();
         works.forEach(w => keys.add(window.normalizeWorkCropKey(w && w.cropName)));
@@ -2460,7 +2493,7 @@ function createSignboardMarker(name, pos, icon, id) {
         return labels;
       };
 
-      /** 作業一覧の初期作物キー（共通があれば優先） */
+      /** ??????????????????????????????????? */
       window.getDefaultWorkCropKey = (category, p) => {
         const options = window.getCropOptionsForCategory(category, p);
         if (!options.length) return '';
@@ -2480,12 +2513,12 @@ function createSignboardMarker(name, pos, icon, id) {
         const wrapper = document.getElementById('work_crop_buttons_wrapper');
         if (!wrapper) return;
         const p = loadedPolygons[activePolyId];
-        const category = document.getElementById('rec_work_category')?.value || 'すべて';
+        const category = document.getElementById('rec_work_category')?.value || '?????';
         const options = window.getCropOptionsForCategory(category, p);
         const currentKey = selectedCropKey || document.getElementById('rec_work_crop_filter')?.value || '';
 
         if (!options.length) {
-          wrapper.innerHTML = `<span style="color:#888; font-size:12px;">このカテゴリに登録された作物がありません</span>`;
+          wrapper.innerHTML = `<span style="color:#888; font-size:12px;">????????????????????????????????</span>`;
           return;
         }
 
@@ -2507,13 +2540,13 @@ function createSignboardMarker(name, pos, icon, id) {
         const hiddenInput = document.getElementById('rec_work_crop_filter');
         if (hiddenInput) hiddenInput.value = cropKey || '';
 
-        // ボタン未描画のときもあるので、選択状態つきで描画し直す
+        // ?????????????????????????????????????????????
         if (typeof window.renderCropFilterButtons === 'function') {
           window.renderCropFilterButtons(cropKey || '');
         }
 
         window.syncRecordCropFromFilter(cropKey);
-        const category = document.getElementById('rec_work_category')?.value || 'すべて';
+        const category = document.getElementById('rec_work_category')?.value || '?????';
         if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(category, cropKey);
         if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
       };
@@ -2522,8 +2555,8 @@ function createSignboardMarker(name, pos, icon, id) {
         const wrapper = document.getElementById('work_category_buttons_wrapper');
         if (!wrapper) return;
 
-        const categories = ["すべて", ...(pdlWorkCategories || ["圃場作業", "事務作業", "保全・整備"])];
-        const currentCat = selectedCategory || (document.getElementById('rec_work_category') ? document.getElementById('rec_work_category').value : 'すべて') || 'すべて';
+        const categories = ["?????", ...(pdlWorkCategories || ["???????", "???????", "????????"])];
+        const currentCat = selectedCategory || (document.getElementById('rec_work_category') ? document.getElementById('rec_work_category').value : '?????') || '?????';
 
         wrapper.innerHTML = categories.map(c => {
            const isSelected = (c === currentCat);
@@ -2561,7 +2594,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (latestStatus) return latestStatus;
         }
         if (p.progressStatus) return p.progressStatus;
-        if (p.status && ['未着手', '途中', '作業中', '完了'].includes(p.status)) return p.status;
+        if (p.status && ['?????', '????', '??????', '???'].includes(p.status)) return p.status;
         return '';
       };
 
@@ -2572,11 +2605,11 @@ function createSignboardMarker(name, pos, icon, id) {
         document.querySelectorAll('.progress-status-btn').forEach(btn => {
            const isSelected = (btn.dataset.status === statusName);
            if (isSelected) {
-              if (statusName === '完了') {
+              if (statusName === '???') {
                  btn.style.background = '#4CAF50';
                  btn.style.color = '#fff';
                  btn.style.borderColor = '#388E3C';
-              } else if (statusName === '途中' || statusName === '作業中') {
+              } else if (statusName === '????' || statusName === '??????') {
                  btn.style.background = '#FF9800';
                  btn.style.color = '#fff';
                  btn.style.borderColor = '#F57C00';
@@ -2599,14 +2632,14 @@ function createSignboardMarker(name, pos, icon, id) {
         const wrapper = document.getElementById('progress_status_buttons_wrapper');
         if (!wrapper) return;
 
-        const statuses = (pdlWorkStatuses && pdlWorkStatuses.length > 0) ? pdlWorkStatuses : ["未着手", "途中", "完了"];
+        const statuses = (pdlWorkStatuses && pdlWorkStatuses.length > 0) ? pdlWorkStatuses : ["?????", "????", "???"];
         
         let currentStatus = selectedStatus;
         if (!currentStatus) {
            currentStatus = (document.getElementById('rec_progress_status') ? document.getElementById('rec_progress_status').value : '') || '';
         }
 
-        // 圃場が選択されている場合は圃場ごとに最新の進捗状況を適用
+        // ????????????????????????????????????????????
         if (!currentStatus && activePolyId && loadedPolygons && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker) {
            if (typeof window.getFieldLatestProgressStatus === 'function') {
               currentStatus = window.getFieldLatestProgressStatus(activePolyId);
@@ -2619,9 +2652,9 @@ function createSignboardMarker(name, pos, icon, id) {
            let color = '#333';
            let border = '1px solid #ccc';
            if (isSelected) {
-              if (s === '完了') {
+              if (s === '???') {
                  bg = '#4CAF50'; color = '#fff'; border = '1px solid #388E3C';
-              } else if (s === '途中' || s === '作業中') {
+              } else if (s === '????' || s === '??????') {
                  bg = '#FF9800'; color = '#fff'; border = '1px solid #F57C00';
               } else {
                  bg = '#2196F3'; color = '#fff'; border = '1px solid #1976D2';
@@ -2651,7 +2684,7 @@ function createSignboardMarker(name, pos, icon, id) {
         return str.split(',').map(s => {
            const item = s.trim();
            if (!item) return null;
-           const match = item.match(/^(.+?)\s*[\(（](\d+(?:\.\d+)?)\s*分?[\)）]$/);
+           const match = item.match(/^(.+?)\s*[\(??(\d+(?:\.\d+)?)\s*???[\)??$/);
            if (match) {
               return { name: match[1].trim(), minutes: match[2] };
            }
@@ -2727,10 +2760,10 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const formattedList = items.map(item => {
            if (item.isManual) {
-              return `${item.name} (${item.minNum}分)`;
+              return `${item.name} (${item.minNum}??)`;
            } else {
               if (totalWorkMins > 0 || unenteredItems.length < items.length) {
-                 return `${item.name} (${autoMinPerItem}分)`;
+                 return `${item.name} (${autoMinPerItem}??)`;
               } else {
                  return item.name;
               }
@@ -2745,11 +2778,11 @@ function createSignboardMarker(name, pos, icon, id) {
         if(s && e && disp) {
            let sMins = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]), eMins = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
            let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
-           disp.innerText = Math.floor(diff / 60) + "時間" + (diff % 60) + "分";
+           disp.innerText = Math.floor(diff / 60) + "???" + (diff % 60) + "??";
         } else if (disp) { disp.innerText = "--"; }
       };
 
-      // スマホでネイティブ time ピッカーの「設定」が見切れる対策（独自ピッカー）
+      // ?????????????? time ????????????????????????????????????????
       let _timePickerTargetId = null;
       window.openAppTimePicker = (inputId, title) => {
         const input = document.getElementById(inputId);
@@ -2761,7 +2794,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const titleEl = document.getElementById('timePickerTitle');
         if (!modal || !hourSel || !minSel) return;
 
-        if (titleEl) titleEl.textContent = title || '時間を設定';
+        if (titleEl) titleEl.textContent = title || '????????';
 
         if (!hourSel.options.length) {
           for (let h = 0; h < 24; h++) {
@@ -2803,21 +2836,21 @@ function createSignboardMarker(name, pos, icon, id) {
       window.updatePartsList = () => {
          const toolId = document.getElementById('m_tool').value;
          const partsSelect = document.getElementById('m_parts');
-         const symptomSelect = document.getElementById('m_symptom_sel'); // ★追加
+         const symptomSelect = document.getElementById('m_symptom_sel'); // ?????
          
-         partsSelect.innerHTML = '<option value="">選択してください</option>';
-         if(symptomSelect) symptomSelect.innerHTML = '<option value="">選択...</option>'; // ★追加
+         partsSelect.innerHTML = '<option value="">??????????????</option>';
+         if(symptomSelect) symptomSelect.innerHTML = '<option value="">???...</option>'; // ?????
          
          if(!toolId) return;
          const machine = pdlMachines.find(t => t.id === toolId);
          
          if(machine) {
             if(machine.parts) {
-               const partsList = machine.parts.split(/[,、]/).map(s => s.trim()).filter(String);
+               const partsList = machine.parts.split(/[,??/).map(s => s.trim()).filter(String);
                partsSelect.innerHTML += partsList.map(p => `<option value="${p}">${p}</option>`).join('');
             }
-            if(machine.symptoms && symptomSelect) { // ★追加：農機ごとの症状リスト
-               const sympList = machine.symptoms.split(/[,、]/).map(s => s.trim()).filter(String);
+            if(machine.symptoms && symptomSelect) { // ???????????????????????
+               const sympList = machine.symptoms.split(/[,??/).map(s => s.trim()).filter(String);
                symptomSelect.innerHTML += sympList.map(s => `<option value="${s}">${s}</option>`).join('');
             }
          }
@@ -2828,15 +2861,15 @@ function createSignboardMarker(name, pos, icon, id) {
         if(crop && pdlCrops) {
            const cData = pdlCrops.find(c => c.name === crop);
            const disp = document.getElementById('disp_plant_density');
-           if(cData && cData.density && disp) { disp.innerText = `${Math.floor((loadedPolygons[activePolyId].area / 10) * cData.density).toLocaleString()} 本`; }
-           else if (disp) { disp.innerText = `-- 本`; }
+           if(cData && cData.density && disp) { disp.innerText = `${Math.floor((loadedPolygons[activePolyId].area / 10) * cData.density).toLocaleString()} ??; }
+           else if (disp) { disp.innerText = `-- ??; }
         }
       };
       
       window.selectWorkChip = (wName) => {
           const wObj = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === String(wName || '').trim());
           if (wObj) {
-              const wCat = wObj.category || '圃場作業';
+              const wCat = wObj.category || '???????';
               const wCropKey = window.normalizeWorkCropKey(wObj.cropName);
               if (typeof window.selectWorkCategory === 'function') {
                   const catInput = document.getElementById('rec_work_category');
@@ -2875,12 +2908,15 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar(wName);
       };
 
-      window.isWorkerAdmin = () => (localStorage.getItem('passionMapUserRole') || '作業員') === '管理者';
+      window.isWorkerAdmin = () => {
+          const role = String(localStorage.getItem('passionMapUserRole') || '').trim();
+          return role === '???' || role.indexOf('??') === 0;
+      };
 
       window.buildWorkChipHtml = (w, isRecent) => {
           const wName = typeof w === 'string' ? w.trim() : String((w && typeof w.name === 'string') ? w.name : (w && w.name ? w.name : '')).trim();
           if (!wName || wName === '[object Object]') return '';
-          const wCat = (w && w.category) ? w.category : '圃場作業';
+          const wCat = (w && w.category) ? w.category : '???????';
           const wCrop = window.normalizeWorkCropKey(w && w.cropName);
           const details = (w && w.detailWorks) ? w.detailWorks : '';
           const safeName = wName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -2893,26 +2929,26 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.renderWorkOptions = (category, cropKey) => {
-          // 圃場未選択（activePolyId なし）でも作業マスタは表示する
+          // ?????????activePolyId ???????????????????????
           const p = (activePolyId && loadedPolygons[activePolyId]) ? loadedPolygons[activePolyId] : null;
-          const cat = category != null ? category : (document.getElementById('rec_work_category')?.value || 'すべて');
+          const cat = category != null ? category : (document.getElementById('rec_work_category')?.value || '?????');
           const crop = cropKey != null ? cropKey : (document.getElementById('rec_work_crop_filter')?.value || '');
-          // 作物未選択でもカテゴリ内の作業を出す（作物は絞り込み用）
+          // ?????????????????????????????????????????????
           const filteredWorks = window.getWorksByCategoryAndCrop(cat, crop, p);
 
           let allChipsHTML = '';
           if (!filteredWorks.length) {
             const masterCount = (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) ? pdlWorkMaster.length : 0;
             const tip = masterCount === 0
-              ? '作業マスタに作業がありません。管理者は「作業マスタ」から追加してください。'
-              : '該当する作業がありません（カテゴリ／作物の条件を変えてください）';
+              ? '???????????????????????????????????????????????????????????????'
+              : '????????????????????????????????????????????????????';
             allChipsHTML = `<div id="all_chips_container" style="padding:12px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px; color:#888; font-size:13px; text-align:center;">${tip}</div>`;
           } else {
             allChipsHTML = '<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">' +
                 filteredWorks.map(w => window.buildWorkChipHtml(w, false)).join('') + '</div>';
           }
 
-          let wNames = '<option value="">選択してください</option>' + filteredWorks.map(w => `<option value="${String(w.name || '').replace(/"/g, '&quot;')}">${w.name}</option>`).join('');
+          let wNames = '<option value="">??????????????</option>' + filteredWorks.map(w => `<option value="${String(w.name || '').replace(/"/g, '&quot;')}">${w.name}</option>`).join('');
 
           const container = document.getElementById('all_chips_container');
           const wrapper = document.getElementById('work_chips_wrapper');
@@ -2945,10 +2981,10 @@ function createSignboardMarker(name, pos, icon, id) {
           bar.style.display = 'flex';
           const safe = String(wName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           bar.innerHTML = `
-            <button type="button" onclick="openWorkMasterManager()" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📋 作業マスタ</button>
-            <button type="button" onclick="adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業名を追加</button>
-            ${wName ? `<button type="button" onclick="adminEditWorkName('${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
-            <button type="button" onclick="adminDeleteWorkName('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>` : `<span style="font-size:11px; color:#888;">全件の追加・編集・削除は「作業マスタ」から</span>`}
+            <button type="button" onclick="openWorkMasterManager()" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">?? ??????????</button>
+            <button type="button" onclick="adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">?? ??????????</button>
+            ${wName ? `<button type="button" onclick="adminEditWorkName('${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">???? ?????????</button>
+            <button type="button" onclick="adminDeleteWorkName('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">???? ??????????</button>` : `<span style="font-size:11px; color:#888;">?????????????????????????????????</span>`}
           `;
       };
 
@@ -2968,27 +3004,27 @@ function createSignboardMarker(name, pos, icon, id) {
           row.className = 'detail-work-row';
           row.style.cssText = 'display:flex; gap:6px; align-items:center; margin-bottom:6px;';
           const safeVal = String(value || '').replace(/"/g, '&quot;');
-          row.innerHTML = `<input type="text" class="detail-work-input" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" placeholder="詳細作業名" value="${safeVal}"><button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>`;
+          row.innerHTML = `<input type="text" class="detail-work-input" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" placeholder="?????????" value="${safeVal}"><button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">?</button>`;
           box.appendChild(row);
           const input = row.querySelector('input');
           if (input && !value) input.focus();
       };
 
       window.buildWorkerDetailWorksHtml = (containerId, detailWorksStr) => {
-          const items = String(detailWorksStr || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+          const items = String(detailWorksStr || '').split(/[,??/).map(s => s.trim()).filter(Boolean);
           const rows = (items.length ? items : ['']).map((item) => {
               const safe = String(item).replace(/"/g, '&quot;');
               return `<div class="detail-work-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
-                <input type="text" class="detail-work-input" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" placeholder="詳細作業名" value="${safe}">
-                <button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>
+                <input type="text" class="detail-work-input" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" placeholder="?????????" value="${safe}">
+                <button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">?</button>
               </div>`;
           }).join('');
           return `<div id="${containerId}" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:8px;">${rows}</div>
-            <button type="button" onclick="addWorkerDetailWorkRow('${containerId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ 詳細作業を追加</button>`;
+            <button type="button" onclick="addWorkerDetailWorkRow('${containerId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">?? ????????????</button>`;
       };
 
       window.refreshWorkChipsAfterMasterChange = (selectedName) => {
-          const cat = document.getElementById('rec_work_category')?.value || 'すべて';
+          const cat = document.getElementById('rec_work_category')?.value || '?????';
           const crop = document.getElementById('rec_work_crop_filter')?.value || '';
           if (typeof window.renderCropFilterButtons === 'function') window.renderCropFilterButtons(crop);
           if (typeof renderWorkOptions === 'function') renderWorkOptions(cat, crop);
@@ -3006,7 +3042,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.openWorkMasterManager = () => {
           if (!window.isWorkerAdmin()) {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
           window.closeWorkMasterManager();
@@ -3016,23 +3052,23 @@ function createSignboardMarker(name, pos, icon, id) {
           modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:520px; max-height:88vh; border-radius:14px 14px 0 0; box-shadow:0 -8px 28px rgba(0,0,0,0.25); display:flex; flex-direction:column;">
               <div style="padding:14px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:8px;">
                 <div>
-                  <div style="font-size:16px; font-weight:bold; color:#FF9800;">🚜 作業マスタ</div>
-                  <div style="font-size:11px; color:#888; margin-top:2px;">追加・編集・削除（管理者のみ）</div>
+                  <div style="font-size:16px; font-weight:bold; color:#FF9800;">?? ??????????</div>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">????????????????????????</div>
                 </div>
-                <button type="button" onclick="closeWorkMasterManager()" style="background:#eee; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer;">閉じる</button>
+                <button type="button" onclick="closeWorkMasterManager()" style="background:#eee; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer;">?????</button>
               </div>
               <div style="padding:10px 16px; border-bottom:1px solid #f0f0f0; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                <input type="search" id="wm_mgr_filter" placeholder="作業名で検索..." oninput="renderWorkMasterManagerList()" style="flex:1; min-width:140px; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box;">
+                <input type="search" id="wm_mgr_filter" placeholder="???????????..." oninput="renderWorkMasterManagerList()" style="flex:1; min-width:140px; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box;">
                 <select id="wm_mgr_cat_filter" onchange="renderWorkMasterManagerList()" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
-                  <option value="">全カテゴリ</option>
+                  <option value="">????????</option>
                   ${(pdlWorkCategories || []).map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">${c}</option>`).join('')}
                 </select>
                 <select id="wm_mgr_crop_filter" onchange="renderWorkMasterManagerList()" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
-                  <option value="">全作物</option>
+                  <option value="">?????</option>
                   ${(pdlCrops || []).map(c => `<option value="${String(c.name).replace(/"/g, '&quot;')}">${c.name}</option>`).join('')}
-                  <option value="__common__">共通</option>
+                  <option value="__common__">????</option>
                 </select>
-                <button type="button" onclick="adminAddWorkName()" style="background:#4CAF50; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 追加</button>
+                <button type="button" onclick="adminAddWorkName()" style="background:#4CAF50; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">?? ???</button>
               </div>
               <div id="wm_mgr_list" style="flex:1; overflow-y:auto; padding:8px 12px 20px;"></div>
             </div>`;
@@ -3048,12 +3084,12 @@ function createSignboardMarker(name, pos, icon, id) {
           const cropF = String(document.getElementById('wm_mgr_crop_filter')?.value || '').trim();
           let works = Array.isArray(pdlWorkMaster) ? [...pdlWorkMaster] : [];
           works.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
-          if (catF) works = works.filter(w => (w.category || '圃場作業') === catF);
+          if (catF) works = works.filter(w => (w.category || '???????') === catF);
           if (cropF) works = works.filter(w => window.normalizeWorkCropKey(w.cropName) === cropF);
           if (q) works = works.filter(w => String(w.name || '').toLowerCase().includes(q) || String(w.detailWorks || '').toLowerCase().includes(q) || String(w.cropName || '').toLowerCase().includes(q));
 
           if (!works.length) {
-              list.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">該当する作業がありません</div>`;
+              list.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">????????????????????</div>`;
               return;
           }
 
@@ -3062,21 +3098,21 @@ function createSignboardMarker(name, pos, icon, id) {
               const safe = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               const details = String(w.detailWorks || '').trim();
               const detailPreview = details
-                  ? `<div style="font-size:11px; color:#666; margin-top:4px; line-height:1.35;">詳細: ${details.split(/[,、]/).map(s => s.trim()).filter(Boolean).slice(0, 6).join(' / ')}${details.split(/[,、]/).filter(s => s.trim()).length > 6 ? ' …' : ''}</div>`
-                  : `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし</div>`;
+                  ? `<div style="font-size:11px; color:#666; margin-top:4px; line-height:1.35;">???: ${details.split(/[,??/).map(s => s.trim()).filter(Boolean).slice(0, 6).join(' / ')}${details.split(/[,??/).filter(s => s.trim()).length > 6 ? ' ??' : ''}</div>`
+                  : `<div style="font-size:11px; color:#bbb; margin-top:4px;">??????????</div>`;
               return `<div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; margin-bottom:8px; background:#fafafa;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div style="min-width:0; flex:1;">
                     <div style="font-weight:bold; font-size:14px; color:#333; word-break:break-all;">${name.replace(/</g, '&lt;')}</div>
                     <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">
-                      <span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px;">${(w.category || '圃場作業').replace(/</g, '&lt;')}</span>
+                      <span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px;">${(w.category || '???????').replace(/</g, '&lt;')}</span>
                       <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px;">${window.getWorkCropLabel(w.cropName).replace(/</g, '&lt;')}</span>
                     </div>
                     ${detailPreview}
                   </div>
                   <div style="display:flex; gap:4px; flex-shrink:0;">
-                    <button type="button" onclick="adminEditWorkName('${safe}')" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">✏️</button>
-                    <button type="button" onclick="adminDeleteWorkName('${safe}')" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">🗑️</button>
+                    <button type="button" onclick="adminEditWorkName('${safe}')" title="???" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">????</button>
+                    <button type="button" onclick="adminDeleteWorkName('${safe}')" title="????" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">????</button>
                   </div>
                 </div>
               </div>`;
@@ -3090,7 +3126,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.openWorkNameEditorModal = (mode, originalName) => {
           if (!window.isWorkerAdmin()) {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
           window.closeWorkNameEditorModal();
@@ -3100,37 +3136,37 @@ function createSignboardMarker(name, pos, icon, id) {
           const catNow = document.getElementById('rec_work_category')?.value || '';
           const cropNow = document.getElementById('rec_work_crop_filter')?.value || '';
           const defaultCat = (existing && existing.category)
-              || (catNow && catNow !== 'すべて' ? catNow : (pdlWorkCategories[0] || '圃場作業'));
+              || (catNow && catNow !== '?????' ? catNow : (pdlWorkCategories[0] || '???????'));
           const defaultCrop = (existing && existing.cropName) || (cropNow && cropNow !== '__common__' ? cropNow : '');
-          const catOpts = (pdlWorkCategories || ['圃場作業', '事務作業', '保全・整備']).map(c =>
+          const catOpts = (pdlWorkCategories || ['???????', '???????', '????????']).map(c =>
               `<option value="${String(c).replace(/"/g, '&quot;')}" ${c === defaultCat ? 'selected' : ''}>${c}</option>`
           ).join('');
           const cropNames = (pdlCrops || []).map(c => c.name);
           if (defaultCrop && !cropNames.includes(defaultCrop)) cropNames.unshift(defaultCrop);
-          const cropOpts = '<option value="">共通（全作物）</option>' + cropNames.map(name =>
+          const cropOpts = '<option value="">????????????</option>' + cropNames.map(name =>
               `<option value="${String(name).replace(/"/g, '&quot;')}" ${name === defaultCrop ? 'selected' : ''}>${name}</option>`
           ).join('');
-          const title = mode === 'edit' ? '作業マスタを編集' : '作業マスタを追加';
+          const title = mode === 'edit' ? '??????????????' : '??????????????';
           const detailsHtml = window.buildWorkerDetailWorksHtml('wn_edit_details_list', (existing && existing.detailWorks) || '');
           const modal = document.createElement('div');
           modal.id = 'workNameEditorModal';
           modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12100; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
           modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:400px; max-height:90vh; overflow-y:auto; border-radius:10px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
               <h3 style="margin:0 0 12px; font-size:16px; color:#FF9800;">${title}</h3>
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">カテゴリ</label>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">??????</label>
               <select id="wn_edit_category" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:14px;">${catOpts}</select>
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作物名</label>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">??????</label>
               <div style="display:flex; gap:6px; margin-bottom:10px;">
                 <select id="wn_edit_crop" style="flex:1; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; font-size:14px;">${cropOpts}</select>
-                <button type="button" onclick="addNewCropFromWorkMaster()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:0 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋</button>
+                <button type="button" onclick="addNewCropFromWorkMaster()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:0 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">??</button>
               </div>
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業名</label>
-              <input type="text" id="wn_edit_name" value="${String((existing && existing.name) || '').replace(/"/g, '&quot;')}" placeholder="例: 定植" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:15px;">
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（各枠に1つ）</label>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">??????</label>
+              <input type="text" id="wn_edit_name" value="${String((existing && existing.name) || '').replace(/"/g, '&quot;')}" placeholder="??: ????" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:15px;">
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">??????????????1???</label>
               ${detailsHtml}
               <div style="display:flex; gap:8px; margin-top:4px;">
-                <button type="button" onclick="closeWorkNameEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
-                <button type="button" onclick="submitWorkNameEditor('${mode}', '${String(originalName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="flex:1; background:#FF9800; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${mode === 'edit' ? '更新する' : '追加する'}</button>
+                <button type="button" onclick="closeWorkNameEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">????????</button>
+                <button type="button" onclick="submitWorkNameEditor('${mode}', '${String(originalName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="flex:1; background:#FF9800; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${mode === 'edit' ? '??????' : '??????'}</button>
               </div>
             </div>`;
           document.body.appendChild(modal);
@@ -3141,7 +3177,7 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.addNewCropFromWorkMaster = async () => {
-          const n = await customPrompt('新規作物名:');
+          const n = await customPrompt('?????????:');
           if (!n || !String(n).trim()) return;
           const name = String(n).trim();
           if ((pdlCrops || []).some(c => c.name === name)) {
@@ -3160,27 +3196,27 @@ function createSignboardMarker(name, pos, icon, id) {
                   sel.value = name;
               }
           } catch (e) {
-              if (typeof customAlert === 'function') customAlert('作物の追加に失敗しました');
+              if (typeof customAlert === 'function') customAlert('??????????????????????');
           }
       };
 
       window.submitWorkNameEditor = async (mode, originalName) => {
           if (!window.isWorkerAdmin()) {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
           const name = String(document.getElementById('wn_edit_name')?.value || '').trim();
-          const category = document.getElementById('wn_edit_category')?.value || '圃場作業';
+          const category = document.getElementById('wn_edit_category')?.value || '???????';
           const cropName = String(document.getElementById('wn_edit_crop')?.value || '').trim();
           const detailWorks = window.collectWorkerDetailWorks('wn_edit_details_list');
           if (!name) {
-              if (typeof customAlert === 'function') customAlert('作業名を入力してください。');
+              if (typeof customAlert === 'function') customAlert('???????????????????????');
               return;
           }
           const orig = String(originalName || '').trim();
           if (mode === 'add' || (mode === 'edit' && name !== orig)) {
               if ((pdlWorkMaster || []).some(w => String(w.name || '').trim() === name)) {
-                  if (typeof customAlert === 'function') customAlert(`作業名「${name}」は既に登録されています。`);
+                  if (typeof customAlert === 'function') customAlert(`????????${name}?????????????????????);
                   return;
               }
           }
@@ -3209,15 +3245,15 @@ function createSignboardMarker(name, pos, icon, id) {
               localStorage.removeItem('pMapAdminInitData');
               window.closeWorkNameEditorModal();
               window.refreshWorkChipsAfterMasterChange(name);
-              if (typeof customAlert === 'function') customAlert(mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！');
+              if (typeof customAlert === 'function') customAlert(mode === 'edit' ? '?? ????????????????????????' : '?? ????????????????????????');
           } catch (e) {
-              if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました。');
+              if (typeof customAlert === 'function') customAlert(e.message || '?????????????????');
           }
       };
 
       window.adminAddWorkName = () => {
           if (!window.isWorkerAdmin()) {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
           window.openWorkNameEditorModal('add', '');
@@ -3225,7 +3261,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.adminEditWorkName = (wName) => {
           if (!window.isWorkerAdmin()) {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
           const name = String(wName || '').trim();
@@ -3235,12 +3271,12 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.adminDeleteWorkName = async (wName) => {
           if (!window.isWorkerAdmin()) {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
           const name = String(wName || '').trim();
           if (!name) return;
-          if (!await customConfirm(`作業名「${name}」を削除しますか？\n（詳細作業の設定も消えます）`)) return;
+          if (!await customConfirm(`????????${name}????????????????n?????????????????????`)) return;
           try {
               const updatedList = await callGAS('manageMaster', {
                   masterType: 'work',
@@ -3255,9 +3291,9 @@ function createSignboardMarker(name, pos, icon, id) {
               const keep = (sel && sel.value && sel.value !== name) ? sel.value : '';
               if (sel && sel.value === name) sel.value = '';
               window.refreshWorkChipsAfterMasterChange(keep);
-              if (typeof customAlert === 'function') customAlert('✅ 作業マスタを削除しました！');
+              if (typeof customAlert === 'function') customAlert('?? ?????????????????????????');
           } catch (e) {
-              if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました。');
+              if (typeof customAlert === 'function') customAlert(e.message || '??????????????????');
           }
       };
 
@@ -3279,7 +3315,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.parseDetailWorksList = (raw) => {
         if (!raw) return [];
-        return String(raw).split(/[,、，\n]/).map(s => s.trim()).filter(Boolean);
+        return String(raw).split(/[,???\n]/).map(s => s.trim()).filter(Boolean);
       };
 
       window.renderDetailWorksSection = (wName) => {
@@ -3301,19 +3337,19 @@ function createSignboardMarker(name, pos, icon, id) {
            }
          }
          const details = window.parseDetailWorksList(rawDetails);
-         const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
-         const isAdmin = (userRole === '管理者');
+         const userRole = localStorage.getItem('passionMapUserRole') || '??????';
+         const isAdmin = (userRole === '?????');
 
          if (details.length > 0 || isAdmin) {
             const safeWName = String(wName).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,"\\'");
             let dHtml = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-               <div style="font-size:13px; font-weight:bold; color:#1a73e8;">✅ 詳細作業を選択（複数可・任意で分数指定）</div>
-               ${isAdmin ? `<button type="button" onclick="adminAddDetailWork('${safeWName}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px;">＋ 詳細を追加</button>` : ''}
+               <div style="font-size:13px; font-weight:bold; color:#1a73e8;">?? ????????????????????????????????</div>
+               ${isAdmin ? `<button type="button" onclick="adminAddDetailWork('${safeWName}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px;">?? ????????</button>` : ''}
             </div>
             <div style="display:flex; flex-direction:column; gap:8px;">`;
 
             if (details.length === 0 && isAdmin) {
-               dHtml += `<div style="font-size:12px; color:#888; padding:10px; text-align:center; background:#fff; border:1px dashed #90caf9; border-radius:6px;">詳細作業がまだ登録されていません。「＋ 詳細を追加」ボタンから追加できます。</div>`;
+               dHtml += `<div style="font-size:12px; color:#888; padding:10px; text-align:center; background:#fff; border:1px dashed #90caf9; border-radius:6px;">?????????????????????????????? ?????????????????????????????</div>`;
             }
 
             details.forEach((d, idx) => {
@@ -3325,12 +3361,12 @@ function createSignboardMarker(name, pos, icon, id) {
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                      <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
-                        <input type="number" name="detail_work_min_${safeVal}" class="detail-work-min-input" data-work="${safeVal}" placeholder="自動" min="0" style="width:60px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()">
-                        <span style="font-size:12px; color:#666;">分</span>
+                        <input type="number" name="detail_work_min_${safeVal}" class="detail-work-min-input" data-work="${safeVal}" placeholder="???" min="0" style="width:60px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()">
+                        <span style="font-size:12px; color:#666;">??</span>
                      </div>
                      ${isAdmin ? `
-                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${idx})" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">✏️</button>
-                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${idx})" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">🗑️</button>
+                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${idx})" title="???" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">????</button>
+                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${idx})" title="????" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">????</button>
                      ` : ''}
                   </div>
                </label>`;
@@ -3351,7 +3387,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const genSec = document.getElementById('lot_generate_section'), useSec = document.getElementById('lot_use_section');
         if(genSec) genSec.style.display = 'none'; 
         if(useSec) {
-           if (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')) useSec.style.display = 'block';
+           if (wName.includes('?????') || wName.includes('????') || wName.includes('????????')) useSec.style.display = 'block';
            else useSec.style.display = 'none';
         }
         
@@ -3361,35 +3397,35 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.adminAddDetailWork = async function(wName) {
-          const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
-          if (userRole !== '管理者') {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          const userRole = localStorage.getItem('passionMapUserRole') || '??????';
+          if (userRole !== '?????') {
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
           
-          let newDetail = await customPrompt(`「${wName}」に新しく追加する詳細作業名を入力してください:`);
+          let newDetail = await customPrompt(`??${wName}?????????????????????????????????????:`);
           if (newDetail === null) return;
           newDetail = String(newDetail).trim();
           if (!newDetail) {
-              if (typeof customAlert === 'function') customAlert('詳細作業名を入力してください。');
+              if (typeof customAlert === 'function') customAlert('??????????????????????????');
               return;
           }
 
           const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
           let details = window.parseDetailWorksList(workData ? workData.detailWorks : '');
           if (details.includes(newDetail)) {
-              if (typeof customAlert === 'function') customAlert(`「${newDetail}」は既に追加されています。`);
+              if (typeof customAlert === 'function') customAlert(`??${newDetail}?????????????????????);
               return;
           }
 
           details.push(newDetail);
-          await window.saveAdminDetailWorks(wName, details, '追加');
+          await window.saveAdminDetailWorks(wName, details, '???');
       };
 
       window.adminEditDetailWork = async function(wName, index) {
-          const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
-          if (userRole !== '管理者') {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          const userRole = localStorage.getItem('passionMapUserRole') || '??????';
+          if (userRole !== '?????') {
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
 
@@ -3398,27 +3434,27 @@ function createSignboardMarker(name, pos, icon, id) {
           if (index < 0 || index >= details.length) return;
 
           const oldVal = details[index];
-          let newVal = await customPrompt(`詳細作業名の編集:`, oldVal);
+          let newVal = await customPrompt(`?????????????:`, oldVal);
           if (newVal === null) return;
           newVal = String(newVal).trim();
           if (!newVal) {
-              if (typeof customAlert === 'function') customAlert('詳細作業名を入力してください。');
+              if (typeof customAlert === 'function') customAlert('??????????????????????????');
               return;
           }
 
           if (newVal !== oldVal && details.includes(newVal)) {
-              if (typeof customAlert === 'function') customAlert(`「${newVal}」は既に存在します。`);
+              if (typeof customAlert === 'function') customAlert(`??${newVal}?????????????????);
               return;
           }
 
           details[index] = newVal;
-          await window.saveAdminDetailWorks(wName, details, '更新');
+          await window.saveAdminDetailWorks(wName, details, '???');
       };
 
       window.adminDeleteDetailWork = async function(wName, index) {
-          const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
-          if (userRole !== '管理者') {
-              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          const userRole = localStorage.getItem('passionMapUserRole') || '??????';
+          if (userRole !== '?????') {
+              if (typeof customAlert === 'function') customAlert('?????????????????');
               return;
           }
 
@@ -3427,10 +3463,10 @@ function createSignboardMarker(name, pos, icon, id) {
           if (index < 0 || index >= details.length) return;
 
           const targetVal = details[index];
-          if (!await customConfirm(`詳細作業「${targetVal}」を削除しますか？`)) return;
+          if (!await customConfirm(`?????????${targetVal}????????????????)) return;
 
           details.splice(index, 1);
-          await window.saveAdminDetailWorks(wName, details, '削除');
+          await window.saveAdminDetailWorks(wName, details, '????');
       };
 
       window.saveAdminDetailWorks = async function(wName, newDetailsArray, actionLabel) {
@@ -3440,7 +3476,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!workData) {
               workData = {
                   name: wName,
-                  category: '圃場作業',
+                  category: '???????',
                   cropName: '',
                   detailWorks: newDetailWorksStr
               };
@@ -3455,7 +3491,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   originalName: wName,
                   newData: {
                       name: workData.name,
-                      category: workData.category || '圃場作業',
+                      category: workData.category || '???????',
                       cropName: workData.cropName || '',
                       detailWorks: newDetailWorksStr
                   }
@@ -3476,11 +3512,11 @@ function createSignboardMarker(name, pos, icon, id) {
               localStorage.removeItem('pMapAdminInitData');
 
               window.renderDetailWorksSection(wName);
-              if (typeof customAlert === 'function') customAlert(`✅ 詳細作業を${actionLabel}しました！`);
+              if (typeof customAlert === 'function') customAlert(`?? ?????????${actionLabel}??????????);
           } catch (e) {
               console.warn('saveAdminDetailWorks Error:', e);
               window.renderDetailWorksSection(wName);
-              if (typeof customAlert === 'function') customAlert(`詳細作業をローカルで${actionLabel}しました（通信: ${e.message || e}）`);
+              if (typeof customAlert === 'function') customAlert(`????????????????${actionLabel}?????????????: ${e.message || e}??);
           }
       };
 
@@ -3490,17 +3526,17 @@ function createSignboardMarker(name, pos, icon, id) {
 
          const mSection = document.getElementById('maintenance_section');
          if (mSection) {
-            if (workName && (workName.includes("整備") || workName.includes("修理")) && !workName.includes("圃場")) {
+            if (workName && (workName.includes("???") || workName.includes("???")) && !workName.includes("???")) {
                mSection.style.display = "block";
               if(document.getElementById('m_tool').options.length <= 1) { 
-                   document.getElementById('m_tool').innerHTML = '<option value="">選択してください</option>' + pdlMachines.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-                   document.getElementById('m_content').innerHTML = '<option value="">選択してください</option>' + (window.pdlMaintenanceContents || []).map(c => `<option value="${c}">${c}</option>`).join('');
-                   document.getElementById('m_symptom_sel').innerHTML = '<option value="">選択...</option>'; // ★シンプルに変更
+                   document.getElementById('m_tool').innerHTML = '<option value="">??????????????</option>' + pdlMachines.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+                   document.getElementById('m_content').innerHTML = '<option value="">??????????????</option>' + (window.pdlMaintenanceContents || []).map(c => `<option value="${c}">${c}</option>`).join('');
+                   document.getElementById('m_symptom_sel').innerHTML = '<option value="">???...</option>'; // ????????????
                }
             } else { mSection.style.display = "none"; }
          }
 
-         if (!workName || workName === "選択してください" || workName === "") { container.innerHTML = ""; return; }
+         if (!workName || workName === "??????????????" || workName === "") { container.innerHTML = ""; return; }
          
          const isMatch = (catStr) => {
             if (!catStr) return false;
@@ -3513,63 +3549,82 @@ function createSignboardMarker(name, pos, icon, id) {
          
          const matchMats = pdlMaterials.filter(m => isMatch(m.workCategory));
          let matchMachines = pdlMachines.filter(m => isMatch(m.workCategory));
-         // 潅水作業のポンプは専用UI（設置中ボタン）で扱うため、ここでは除外
+         // ??????????????????I???????????????????????????????
          if (typeof window.isIrrigationWork === 'function' && window.isIrrigationWork(workName) && typeof window.isPumpMachine === 'function') {
             matchMachines = matchMachines.filter(m => !window.isPumpMachine(m));
          }
 
-         if (matchMats.length === 0 && matchMachines.length === 0) { container.innerHTML = ""; return; }
+         const isUsedItemsAdmin = (typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin());
+         if (matchMats.length === 0 && matchMachines.length === 0 && !isUsedItemsAdmin) { container.innerHTML = ""; return; }
 
-         let html = `<div style="font-size:13px; font-weight:bold; color:#4CAF50; margin-bottom:5px;">🛠️ 使ったもの記録</div><div style="max-height:350px; overflow-y:auto; border:1px solid #81c784; padding:8px; background:#f1f8e9; border-radius:6px; margin-bottom:15px;">`;
+         let html = `<div style="font-size:13px; font-weight:bold; color:#4CAF50; margin-bottom:5px;">???? ???????????</div><div style="max-height:350px; overflow-y:auto; border:1px solid #81c784; padding:8px; background:#f1f8e9; border-radius:6px; margin-bottom:15px;">`;
          
-         if(matchMachines.length > 0) { 
-            html += `<div style="font-size:11px; font-weight:bold; color:#1976d2; margin-bottom:4px;">🚜 使用した農機と片づけ場所</div>`;
-
-            const signOptions = Object.values(loadedPolygons).filter(p => p.isMarker).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-
+         if (matchMachines.length > 0 || isUsedItemsAdmin) {
+            const safeWorkMac = String(workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            html += `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+              <div style="font-size:11px; font-weight:bold; color:#1976d2;">?? ?????????????????????</div>
+              ${isUsedItemsAdmin ? `<button type="button" onclick="openAddMachineFromUsedItems('${safeWorkMac}')" style="background:#1976d2; color:#fff; border:none; border-radius:4px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">? ?????</button>` : ''}
+            </div>`;
+            if (matchMachines.length === 0 && isUsedItemsAdmin) {
+              html += `<div style="font-size:12px; color:#888; background:#fff; border:1px dashed #90caf9; border-radius:4px; padding:10px; margin-bottom:6px;">??????????????????????????????????</div>`;
+            }
            matchMachines.forEach(m => {
-              const baseLocStr = m.signName ? `${m.signName} (定位置)` : "定位置"; // ★変更
-              
+              const homeName = m.signName || '??????';
+              const baseLocStr = m.signName ? (m.signName + ' (???)') : '???';
+              const fieldName = (activePolyId && loadedPolygons[activePolyId]) ? (loadedPolygons[activePolyId].name || '') : '';
+              const safeId = String(m.id || '').replace(/'/g, "\\'");
+              const safeHome = String(homeName).replace(/</g, '&lt;').replace(/"/g, '&quot;');
                html += `
                  <div style="margin-bottom:8px; background:#fff; padding:8px; border-radius:4px; border:1px solid #bbdefb;">
-                   <label style="font-size:14px; color:#333; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                     <input type="checkbox" class="used-machine-check" value="${m.id}" data-name="${m.name}" onchange="document.getElementById('machine_loc_${m.id}').style.display = this.checked ? 'block' : 'none';" style="transform:scale(1.2);">
-                     <b>${m.name}</b>
-                   </label>
-                   
+                   <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                     <label style="font-size:14px; color:#333; display:flex; align-items:center; gap:8px; cursor:pointer; flex:1; min-width:140px;">
+                       <input type="checkbox" class="used-machine-check" value="${m.id}" data-name="${m.name}" onchange="document.getElementById('machine_loc_${m.id}').style.display = this.checked ? 'block' : 'none';" style="transform:scale(1.2);">
+                       <b>${m.name}</b>
+                     </label>
+                     ${isUsedItemsAdmin ? `<div style="display:flex; gap:4px;">
+                       <button type="button" onclick="event.preventDefault(); openEditMachineFromUsedItems('${safeId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">??</button>
+                       <button type="button" onclick="event.preventDefault(); deleteMachineFromUsedItems('${safeId}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">??</button>
+                     </div>` : ''}
+                   </div>
+                   <div style="font-size:11px; color:#546e7a; margin:4px 0 0 28px;">?? ???(????): ${safeHome}</div>
                    <div id="machine_loc_${m.id}" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed #eee;">
-                      <div style="font-size:11px; color:#666; margin-bottom:4px;">📍 片づけた場所を選択:</div>
+                      <div style="font-size:11px; color:#666; margin-bottom:4px;">?? ????????:</div>
                       <label style="display:block; font-size:12px; margin-bottom:6px; cursor:pointer;">
-                        <input type="radio" name="loc_${m.id}" value="keep" checked data-signid="${m.signId}" data-signname="${m.signName}"> ① ${baseLocStr} <!-- ★変更 -->
+                        <input type="radio" name="loc_${m.id}" value="keep" checked data-signid="${m.signId || ''}" data-signname="${String(m.signName || '').replace(/"/g, '&quot;')}"> ?? ${baseLocStr}
                       </label>
                       <label style="display:block; font-size:12px; margin-bottom:6px; cursor:pointer;">
-                        <input type="radio" name="loc_${m.id}" value="here" data-signid="${activePolyId}" data-signname="${loadedPolygons[activePolyId].name}"> ② この圃場 (${loadedPolygons[activePolyId].name})
+                        <input type="radio" name="loc_${m.id}" value="here" data-signid="${activePolyId || ''}" data-signname="${String(fieldName).replace(/"/g, '&quot;')}"> ?? ???? (${fieldName || '-'})
                       </label>
-                      
-                      <!-- ★修正：プルダウンを廃止し、マップ選択ボタンに変更！ -->
                       <div style="display:flex; align-items:center; gap:8px;">
                         <label style="display:flex; align-items:center; font-size:12px; gap:5px; cursor:pointer; margin:0;">
-                          <input type="radio" name="loc_${m.id}" value="other" id="radio_other_${m.id}"> ③ その他: 
+                          <input type="radio" name="loc_${m.id}" value="other" id="radio_other_${m.id}"> ?? ???:
                         </label>
-                        <button type="button" onclick="openMachineLocSelect('${m.id}')" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:12px; padding:4px 10px; font-weight:bold; font-size:11px; cursor:pointer;">🗺️ マップから選択</button>
+                        <button type="button" onclick="openMachineLocSelect('${safeId}')" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:12px; padding:4px 10px; font-weight:bold; font-size:11px; cursor:pointer;">?? ??????</button>
                       </div>
                       <div id="disp_loc_other_${m.id}" style="margin-left:22px; margin-top:4px; font-size:11px; font-weight:bold; color:#1976d2; display:none;"></div>
                       <input type="hidden" id="val_loc_other_${m.id}" value="">
-                      
+                      ${isUsedItemsAdmin ? `<div style="margin-top:8px;"><button type="button" onclick="openEditMachineHomeFromUsedItems('${safeId}')" style="width:100%; background:#fff8e1; color:#f57f17; border:1px solid #ffe082; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">?? ???(????)???</button></div>` : ''}
                    </div>
                  </div>
                `;
             });
-         
          }
-         
-         if(matchMats.length > 0) { 
-            html += `<div style="font-size:11px; font-weight:bold; color:#e65100; margin-top:12px; margin-bottom:4px;">📦 使用した資材 (※在庫からは引かれません)</div>`;
+
+         if (matchMats.length > 0 || isUsedItemsAdmin) {
+            const safeWork = String(workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            html += `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; margin-bottom:4px; flex-wrap:wrap;">
+              <div style="font-size:11px; font-weight:bold; color:#e65100;">\uD83D\uDCE6 \u4f7f\u7528\u3057\u305f\u8cc7\u6750\uff08\u6570\u91cf\u5165\u529b\u53ef\uff09</div>
+              ${isUsedItemsAdmin ? `<button type="button" onclick="openAddMaterialFromUsedItems('${safeWork}')" style="background:#e65100; color:#fff; border:none; border-radius:4px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">\uff0b \u8cc7\u6750\u3092\u8ffd\u52a0</button>` : ''}
+            </div>`;
+            if (matchMats.length === 0 && isUsedItemsAdmin) {
+              html += `<div style="font-size:12px; color:#888; background:#fff; border:1px dashed #ffcc80; border-radius:4px; padding:10px; margin-bottom:6px;">\u3053\u306e\u4f5c\u696d\u306b\u7d50\u3073\u4ed8\u3044\u305f\u8cc7\u6750\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093\u3002\u300c\u8ffd\u52a0\u300d\u304b\u3089\u767b\u9332\u3067\u304d\u307e\u3059\u3002</div>`;
+            }
             matchMats.forEach(m => {
-               const unitStr = m.stockUnit ? m.stockUnit : (m.unit || '個');
+               const unitStr = m.stockUnit ? m.stockUnit : (m.unit || '\u500b');
+               const safeId = String(m.id || '').replace(/'/g, "\\'");
                html += `
-                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; background:#fff; padding:8px; border-radius:4px; border:1px solid #ffe0b2;">
-                   <label style="font-size:13px; color:#333; display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; background:#fff; padding:8px; border-radius:4px; border:1px solid #ffe0b2; gap:6px; flex-wrap:wrap;">
+                   <label style="font-size:13px; color:#333; display:flex; align-items:center; gap:8px; cursor:pointer; flex:1; min-width:120px;">
                      <input type="checkbox" class="used-mat-check" value="${m.name}" data-unit="${unitStr}" onchange="document.getElementById('mat_num_${m.id}').disabled = !this.checked; if(this.checked) document.getElementById('mat_num_${m.id}').focus();" style="transform:scale(1.2);">
                      <b>${m.name}</b>
                    </label>
@@ -3577,6 +3632,10 @@ function createSignboardMarker(name, pos, icon, id) {
                      <input type="number" id="mat_num_${m.id}" class="used-mat-num" placeholder="0" disabled style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; text-align:right;">
                      <span style="font-size:12px; color:#666; width:20px;">${unitStr}</span>
                    </div>
+                   ${isUsedItemsAdmin ? `<div style="display:flex; gap:4px; width:100%; justify-content:flex-end;">
+                     <button type="button" onclick="event.preventDefault(); openEditMaterialFromUsedItems('${safeId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">\u7de8\u96c6</button>
+                     <button type="button" onclick="event.preventDefault(); deleteMaterialFromUsedItems('${safeId}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">\u524a\u9664</button>
+                   </div>` : ''}
                  </div>
                `;
             });
@@ -3591,7 +3650,7 @@ function createSignboardMarker(name, pos, icon, id) {
          if (macChecks.length > 0) {
             let usedMacs = [];
             macChecks.forEach(chk => { usedMacs.push(chk.getAttribute('data-name')); });
-            text += "\n\n【使用農機】\n・" + usedMacs.join('\n・');
+            text += "\n\n???????????n??" + usedMacs.join('\n??');
          }
 
          const matChecks = document.querySelectorAll('.used-mat-check:checked');
@@ -3602,40 +3661,456 @@ function createSignboardMarker(name, pos, icon, id) {
                const num = numInput && numInput.value ? numInput.value : 0;
                usedMats.push(`${chk.value}: ${num}${chk.getAttribute('data-unit')}`);
             });
-            text += "\n\n【使用資材】\n・" + usedMats.join('\n・');
+            text += "\n\n???????????n??" + usedMats.join('\n??');
          }
          return text;
+      }
+
+      window._getCurrentUsedItemsWorkName = () => {
+        const sel = document.getElementById('rec_work_name');
+        return String((sel && sel.value) || '').trim();
       };
+
+      window._bumpModalZ = () => {
+        const m = document.getElementById('modal');
+        if (m) m.style.zIndex = '100000';
+        const a = document.getElementById('customAlertModal');
+        if (a) a.style.zIndex = '100001';
+        const c = document.getElementById('customConfirmModal');
+        if (c) c.style.zIndex = '100001';
+      };
+
+      window.openAddMaterialFromUsedItems = (workName) => {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+          if (typeof customAlert === 'function') customAlert('\u7ba1\u7406\u8005\u306e\u307f\u64cd\u4f5c\u3067\u304d\u307e\u3059');
+          return;
+        }
+        const wName = String(workName || window._getCurrentUsedItemsWorkName() || '').trim();
+        const html = `
+          <div style="text-align:left;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #e65100; padding-bottom:8px; margin-bottom:15px;">
+              <h3 style="margin:0; color:#e65100;">\uD83D\uDCE6 \u8cc7\u6750\u3092\u8ffd\u52a0</h3>
+              <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">\u00d7</span>
+            </div>
+            <div style="font-size:12px; color:#666; margin-bottom:10px;">\u4f5c\u696d\u8a18\u9332\u306e\u300c\u4f7f\u3063\u305f\u3082\u306e\u300d\u306b\u8868\u793a\u3059\u308b\u305f\u3081\u3001\u4f5c\u696d\u5206\u985e\u306b\u4f5c\u696d\u540d\u3092\u542b\u3081\u3066\u304f\u3060\u3055\u3044\u3002</div>
+            <label class="form-label" style="font-size:11px; margin-bottom:2px;">\u8cc7\u6750\u540d</label>
+            <input type="text" id="used_mat_name" class="form-input" placeholder="\u4f8b: \u8907\u5408\u80a5\u65991\u53f7" style="margin-bottom:10px;">
+            ${typeof window.buildWorkCategoryFieldHTML === 'function' ? window.buildWorkCategoryFieldHTML('used_mat_category_rows', '\u4f5c\u696d\u5206\u985e') : ''}
+            <div style="display:flex; gap:5px; margin-bottom:10px;">
+              <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5bb9\u91cf</label><input type="text" id="used_mat_size" class="form-input" placeholder="\u4f8b: 20" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5bb9\u91cf\u5358\u4f4d</label><input type="text" id="used_mat_vol_unit" class="form-input" placeholder="\u4f8b: kg" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5728\u5eab\u5358\u4f4d</label><input type="text" id="used_mat_stock_unit" class="form-input" placeholder="\u4f8b: \u888b" style="margin-bottom:0;"></div>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+              <button onclick="execSaveMaterialFromUsedItems()" style="background:#e65100; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">\u8ffd\u52a0\u3059\u308b</button>
+              <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">\u30ad\u30e3\u30f3\u30bb\u30eb</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('modalBody').innerHTML = html;
+        document.getElementById('modal').style.display = 'flex';
+        window._bumpModalZ();
+        if (typeof window.renderWorkCategoryRows === 'function') {
+          window.renderWorkCategoryRows('used_mat_category_rows', wName ? [wName] : []);
+        }
+      };
+
+      window.openEditMaterialFromUsedItems = (matId) => {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+          if (typeof customAlert === 'function') customAlert('\u7ba1\u7406\u8005\u306e\u307f\u64cd\u4f5c\u3067\u304d\u307e\u3059');
+          return;
+        }
+        const mat = (pdlMaterials || []).find(m => String(m.id) === String(matId));
+        if (!mat) {
+          if (typeof customAlert === 'function') customAlert('\u8cc7\u6750\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093');
+          return;
+        }
+        const safeId = String(mat.id).replace(/'/g, "\\'");
+        const html = `
+          <div style="text-align:left;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1565c0; padding-bottom:8px; margin-bottom:15px;">
+              <h3 style="margin:0; color:#1565c0;">\u270f\ufe0f \u8cc7\u6750\u3092\u7de8\u96c6</h3>
+              <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">\u00d7</span>
+            </div>
+            <label class="form-label" style="font-size:11px; margin-bottom:2px;">\u8cc7\u6750\u540d</label>
+            <input type="text" id="used_mat_name" class="form-input" value="${String(mat.name || '').replace(/"/g, '&quot;')}" style="margin-bottom:10px;">
+            ${typeof window.buildWorkCategoryFieldHTML === 'function' ? window.buildWorkCategoryFieldHTML('used_mat_category_rows', '\u4f5c\u696d\u5206\u985e') : ''}
+            <div style="display:flex; gap:5px; margin-bottom:10px;">
+              <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5bb9\u91cf</label><input type="text" id="used_mat_size" class="form-input" value="${String(mat.size || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5bb9\u91cf\u5358\u4f4d</label><input type="text" id="used_mat_vol_unit" class="form-input" value="${String(mat.volUnit || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5728\u5eab\u5358\u4f4d</label><input type="text" id="used_mat_stock_unit" class="form-input" value="${String(mat.stockUnit || mat.unit || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+              <button onclick="execSaveMaterialFromUsedItems('${safeId}')" style="background:#1565c0; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">\u66f4\u65b0\u3059\u308b</button>
+              <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">\u30ad\u30e3\u30f3\u30bb\u30eb</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('modalBody').innerHTML = html;
+        document.getElementById('modal').style.display = 'flex';
+        window._bumpModalZ();
+        if (typeof window.renderWorkCategoryRows === 'function') {
+          window.renderWorkCategoryRows('used_mat_category_rows', window.parseWorkCategoryList(mat.workCategory));
+        }
+      };
+
+      window.execSaveMaterialFromUsedItems = async (matId) => {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) return;
+        const name = (document.getElementById('used_mat_name')?.value || '').trim();
+        const category = typeof window.collectWorkCategoryValue === 'function'
+          ? window.collectWorkCategoryValue('used_mat_category_rows')
+          : '';
+        const size = (document.getElementById('used_mat_size')?.value || '').trim();
+        const volUnit = (document.getElementById('used_mat_vol_unit')?.value || '').trim();
+        const stockUnit = (document.getElementById('used_mat_stock_unit')?.value || '').trim();
+        if (!name) {
+          if (typeof customAlert === 'function') customAlert('\u8cc7\u6750\u540d\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044');
+          return;
+        }
+        const workName = window._getCurrentUsedItemsWorkName();
+        document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#e65100;'>\u4fdd\u5b58\u4e2d...</div>";
+        try {
+          if (matId) {
+            await callGAS('editMaterial', {
+              id: matId, name: name, workCategory: category, size: size, volUnit: volUnit, stockUnit: stockUnit
+            });
+            const mat = (pdlMaterials || []).find(m => String(m.id) === String(matId));
+            if (mat) {
+              mat.name = name;
+              mat.workCategory = category;
+              mat.size = size;
+              mat.volUnit = volUnit;
+              mat.stockUnit = stockUnit;
+              mat.unit = stockUnit || volUnit || mat.unit;
+            }
+          } else {
+            const unitForMaster = stockUnit || volUnit || '';
+            const updatedList = await callGAS('manageMaster', {
+              masterType: 'material',
+              manageAction: 'add',
+              value: { name: name, workCategory: category, size: size, unit: unitForMaster },
+              userName: currentUser
+            });
+            if (Array.isArray(updatedList)) {
+              const byId = {};
+              (pdlMaterials || []).forEach(m => { byId[String(m.id)] = m; });
+              pdlMaterials = updatedList.map(m => {
+                const old = byId[String(m.id)] || {};
+                return {
+                  ...old,
+                  ...m,
+                  size: old.size || size || '',
+                  volUnit: old.volUnit || volUnit || '',
+                  stockUnit: old.stockUnit || stockUnit || m.unit || '',
+                  unit: old.unit || stockUnit || volUnit || m.unit || ''
+                };
+              });
+              // Ensure newly added has full fields even if merge missed
+              const newest = pdlMaterials.find(m => m.name === name && String(m.workCategory || '') === String(category));
+              if (newest) {
+                newest.size = size;
+                newest.volUnit = volUnit;
+                newest.stockUnit = stockUnit || unitForMaster;
+                newest.unit = stockUnit || unitForMaster;
+              }
+            } else {
+              if (!Array.isArray(pdlMaterials)) pdlMaterials = [];
+              pdlMaterials.push({
+                id: 'MAT-TMP-' + Date.now(),
+                name: name,
+                workCategory: category,
+                size: size,
+                volUnit: volUnit,
+                stockUnit: stockUnit || unitForMaster,
+                unit: stockUnit || unitForMaster
+              });
+            }
+          }
+          document.getElementById('modal').style.display = 'none';
+          if (typeof customAlert === 'function') customAlert(matId ? '\u8cc7\u6750\u3092\u66f4\u65b0\u3057\u307e\u3057\u305f' : '\u8cc7\u6750\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f');
+          if (typeof window.renderUsedItems === 'function') window.renderUsedItems(workName);
+        } catch (e) {
+          document.getElementById('modal').style.display = 'none';
+          if (typeof customAlert === 'function') customAlert('\u4fdd\u5b58\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + (e.message || e));
+        }
+      };
+
+      window.deleteMaterialFromUsedItems = async (matId) => {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) return;
+        const mat = (pdlMaterials || []).find(m => String(m.id) === String(matId));
+        const label = mat ? mat.name : matId;
+        window._bumpModalZ();
+        const ok = (typeof customConfirm === 'function')
+          ? await customConfirm('\u8cc7\u6750\u300c' + label + '\u300d\u3092\u30de\u30b9\u30bf\u304b\u3089\u524a\u9664\u3057\u307e\u3059\u304b\uff1f\n\u203b\u5fa9\u5143\u3067\u304d\u307e\u305b\u3093')
+          : confirm('\u8cc7\u6750\u300c' + label + '\u300d\u3092\u524a\u9664\u3057\u307e\u3059\u304b\uff1f');
+        if (!ok) return;
+        const workName = window._getCurrentUsedItemsWorkName();
+        try {
+          const updatedList = await callGAS('manageMaster', {
+            masterType: 'material',
+            manageAction: 'delete',
+            value: { id: matId },
+            userName: currentUser
+          });
+          if (Array.isArray(updatedList)) {
+            const byId = {};
+            (pdlMaterials || []).forEach(m => { byId[String(m.id)] = m; });
+            pdlMaterials = updatedList.map(m => ({ ...(byId[String(m.id)] || {}), ...m }));
+          } else {
+            pdlMaterials = (pdlMaterials || []).filter(m => String(m.id) !== String(matId));
+          }
+          if (typeof customAlert === 'function') customAlert('\u8cc7\u6750\u3092\u524a\u9664\u3057\u307e\u3057\u305f');
+          if (typeof window.renderUsedItems === 'function') window.renderUsedItems(workName);
+        } catch (e) {
+          if (typeof customAlert === 'function') customAlert('\u524a\u9664\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + (e.message || e));
+        }
+      }
+      window._getSignOptionsForUsedItems = function () {
+        return Object.keys(loadedPolygons || {})
+          .map(function (id) { return loadedPolygons[id]; })
+          .filter(function (p) { return p && p.isMarker; })
+          .map(function (p) { return { id: p.id, name: p.name || p.id }; });
+      };
+
+      window.openAddMachineFromUsedItems = function (workName) {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+          if (typeof customAlert === 'function') customAlert('\u7ba1\u7406\u8005\u306e\u307f\u64cd\u4f5c\u3067\u304d\u307e\u3059');
+          return;
+        }
+        var wName = String(workName || (typeof window._getCurrentUsedItemsWorkName === 'function' ? window._getCurrentUsedItemsWorkName() : '') || '').trim();
+        var signs = window._getSignOptionsForUsedItems();
+        if (!signs.length) {
+          if (typeof customAlert === 'function') customAlert('\u5b9a\u4f4d\u7f6e\u7528\u306e\u770b\u677f\u304c\u3042\u308a\u307e\u305b\u3093\u3002\u5148\u306b\u770b\u677f\u3092\u767b\u9332\u3057\u3066\u304f\u3060\u3055\u3044\u3002');
+          return;
+        }
+        var signOpts = signs.map(function (sg) {
+          return '<option value="' + String(sg.id).replace(/"/g, '&quot;') + '" data-name="' + String(sg.name).replace(/"/g, '&quot;') + '">' + sg.name + '</option>';
+        }).join('');
+        var catHtml = (typeof window.buildWorkCategoryFieldHTML === 'function') ? window.buildWorkCategoryFieldHTML('used_mac_category_rows', '\u4f5c\u696d\u5206\u985e') : '';
+        var html = ''
+          + '<div style="text-align:left;">'
+          + '<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1976d2; padding-bottom:8px; margin-bottom:15px;">'
+          + '<h3 style="margin:0; color:#1976d2;">\uD83D\uDE9C \u8fb2\u6a5f\u3092\u8ffd\u52a0</h3>'
+          + '<span onclick="document.getElementById(\'modal\').style.display=\'none\'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">\u00d7</span>'
+          + '</div>'
+          + '<div style="font-size:12px; color:#666; margin-bottom:10px; background:#e3f2fd; padding:8px; border-radius:4px;">\u5b9a\u4f4d\u7f6e\u306f\u3001\u4f5c\u696d\u5f8c\u306e\u300c\u7247\u4ed8\u3051\u5834\u6240\u300d\u3067\u9078\u3079\u308b\u5e30\u5b85\u5834\u6240\u3067\u3059\u3002</div>'
+          + '<label class="form-label" style="font-size:11px; margin-bottom:2px;">\u8fb2\u6a5f\u540d <span style="color:red;">*</span></label>'
+          + '<input type="text" id="used_mac_name" class="form-input" placeholder="\u4f8b: \u30c8\u30e9\u30af\u30bf\u30fc" style="margin-bottom:10px;">'
+          + '<label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5b9a\u4f4d\u7f6e(\u7247\u4ed8\u3051\u5148) <span style="color:red;">*</span></label>'
+          + '<select id="used_mac_home_sign" class="form-input" style="margin-bottom:10px;">' + signOpts + '</select>'
+          + catHtml
+          + '<div style="display:flex; gap:5px; margin-bottom:10px;">'
+          + '<div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u767b\u9332\u756a\u53f7</label><input type="text" id="used_mac_number" class="form-input" style="margin-bottom:0;"></div>'
+          + '<div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u578b\u5f0f</label><input type="text" id="used_mac_model" class="form-input" style="margin-bottom:0;"></div>'
+          + '</div>'
+          + '<div style="display:flex; gap:10px; margin-top:15px;">'
+          + '<button onclick="execSaveMachineFromUsedItems()" style="background:#1976d2; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">\u8ffd\u52a0\u3059\u308b</button>'
+          + '<button onclick="document.getElementById(\'modal\').style.display=\'none\'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">\u30ad\u30e3\u30f3\u30bb\u30eb</button>'
+          + '</div></div>';
+        document.getElementById('modalBody').innerHTML = html;
+        document.getElementById('modal').style.display = 'flex';
+        if (typeof window._bumpModalZ === 'function') window._bumpModalZ();
+        if (typeof window.renderWorkCategoryRows === 'function') {
+          window.renderWorkCategoryRows('used_mac_category_rows', wName ? [wName] : []);
+        }
+      };
+
+      window.openEditMachineFromUsedItems = function (machineId) {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) return;
+        var m = (pdlMachines || []).find(function (x) { return String(x.id) === String(machineId); });
+        if (!m) {
+          if (typeof customAlert === 'function') customAlert('\u8fb2\u6a5f\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093');
+          return;
+        }
+        var signs = window._getSignOptionsForUsedItems();
+        var signOpts = '';
+        if (m.signId && !signs.some(function (sg) { return String(sg.id) === String(m.signId); })) {
+          signOpts += '<option value="' + String(m.signId).replace(/"/g, '&quot;') + '" data-name="' + String(m.signName || '').replace(/"/g, '&quot;') + '" selected>' + (m.signName || m.signId) + ' (\u73fe\u5728)</option>';
+        }
+        signOpts += signs.map(function (sg) {
+          var sel = String(sg.id) === String(m.signId || '') ? ' selected' : '';
+          return '<option value="' + String(sg.id).replace(/"/g, '&quot;') + '" data-name="' + String(sg.name).replace(/"/g, '&quot;') + '"' + sel + '>' + sg.name + '</option>';
+        }).join('');
+        var safeId = String(m.id).replace(/'/g, "\\'");
+        var catHtml = (typeof window.buildWorkCategoryFieldHTML === 'function') ? window.buildWorkCategoryFieldHTML('used_mac_category_rows', '\u4f5c\u696d\u5206\u985e') : '';
+        var html = ''
+          + '<div style="text-align:left;">'
+          + '<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1565c0; padding-bottom:8px; margin-bottom:15px;">'
+          + '<h3 style="margin:0; color:#1565c0;">\u270f\ufe0f \u8fb2\u6a5f\u3092\u7de8\u96c6</h3>'
+          + '<span onclick="document.getElementById(\'modal\').style.display=\'none\'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">\u00d7</span>'
+          + '</div>'
+          + '<label class="form-label" style="font-size:11px; margin-bottom:2px;">\u8fb2\u6a5f\u540d <span style="color:red;">*</span></label>'
+          + '<input type="text" id="used_mac_name" class="form-input" value="' + String(m.name || '').replace(/"/g, '&quot;') + '" style="margin-bottom:10px;">'
+          + '<label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5b9a\u4f4d\u7f6e(\u7247\u4ed8\u3051\u5148)</label>'
+          + '<select id="used_mac_home_sign" class="form-input" style="margin-bottom:10px;">' + signOpts + '</select>'
+          + catHtml
+          + '<div style="display:flex; gap:5px; margin-bottom:10px;">'
+          + '<div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u767b\u9332\u756a\u53f7</label><input type="text" id="used_mac_number" class="form-input" value="' + String(m.machineNumber || '').replace(/"/g, '&quot;') + '" style="margin-bottom:0;"></div>'
+          + '<div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">\u578b\u5f0f</label><input type="text" id="used_mac_model" class="form-input" value="' + String(m.model || '').replace(/"/g, '&quot;') + '" style="margin-bottom:0;"></div>'
+          + '</div>'
+          + '<div style="display:flex; gap:10px; margin-top:15px;">'
+          + '<button onclick="execSaveMachineFromUsedItems(\'' + safeId + '\')" style="background:#1565c0; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">\u66f4\u65b0\u3059\u308b</button>'
+          + '<button onclick="document.getElementById(\'modal\').style.display=\'none\'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">\u30ad\u30e3\u30f3\u30bb\u30eb</button>'
+          + '</div></div>';
+        document.getElementById('modalBody').innerHTML = html;
+        document.getElementById('modal').style.display = 'flex';
+        if (typeof window._bumpModalZ === 'function') window._bumpModalZ();
+        if (typeof window.renderWorkCategoryRows === 'function') {
+          window.renderWorkCategoryRows('used_mac_category_rows', window.parseWorkCategoryList(m.workCategory));
+        }
+      };
+
+      window.openEditMachineHomeFromUsedItems = function (machineId) {
+        window.openEditMachineFromUsedItems(machineId);
+      };
+
+      window.execSaveMachineFromUsedItems = async function (machineId) {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) return;
+        var nameEl = document.getElementById('used_mac_name');
+        var name = (nameEl && nameEl.value || '').trim();
+        if (!name) {
+          if (typeof customAlert === 'function') customAlert('\u8fb2\u6a5f\u540d\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044');
+          return;
+        }
+        var sel = document.getElementById('used_mac_home_sign');
+        var signId = sel ? sel.value : '';
+        var signName = '';
+        if (sel && sel.selectedOptions && sel.selectedOptions[0]) {
+          signName = sel.selectedOptions[0].getAttribute('data-name') || sel.selectedOptions[0].textContent || '';
+        }
+        if (!signId) {
+          if (typeof customAlert === 'function') customAlert('\u5b9a\u4f4d\u7f6e(\u7247\u4ed8\u3051\u5148)\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044');
+          return;
+        }
+        var category = typeof window.collectWorkCategoryValue === 'function' ? window.collectWorkCategoryValue('used_mac_category_rows') : '';
+        var numberEl = document.getElementById('used_mac_number');
+        var modelEl = document.getElementById('used_mac_model');
+        var number = (numberEl && numberEl.value || '').trim();
+        var model = (modelEl && modelEl.value || '').trim();
+        var workName = (typeof window._getCurrentUsedItemsWorkName === 'function') ? window._getCurrentUsedItemsWorkName() : '';
+        document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1976d2;'>\u4fdd\u5b58\u4e2d...</div>";
+        try {
+          if (machineId) {
+            var m = (pdlMachines || []).find(function (x) { return String(x.id) === String(machineId); });
+            await callGAS('editMachineInMaster', {
+              machineId: machineId,
+              name: name,
+              machineNumber: number,
+              model: model,
+              type: (m && m.type) || '',
+              group: (m && m.group) || '',
+              location: (m && m.location) || '',
+              fuel: (m && m.fuel) || '',
+              purchaseDate: (m && m.purchaseDate) || '',
+              workCategory: category,
+              signId: signId,
+              signName: signName
+            });
+            if (m) {
+              m.name = name;
+              m.machineNumber = number;
+              m.model = model;
+              m.workCategory = category;
+              m.signId = signId;
+              m.signName = signName;
+            }
+          } else {
+            var newMac = await callGAS('addMachineToSign', {
+              name: name,
+              machineNumber: number,
+              model: model,
+              type: '',
+              group: '',
+              location: '',
+              fuel: '',
+              workCategory: category,
+              purchaseDate: '',
+              parts: '',
+              photos: [],
+              signId: signId,
+              signName: signName,
+              userName: currentUser
+            });
+            if (!Array.isArray(pdlMachines)) pdlMachines = [];
+            pdlMachines.push({
+              id: newMac.id,
+              name: newMac.name || name,
+              machineNumber: newMac.machineNumber || number,
+              workCategory: newMac.workCategory || category,
+              model: newMac.model || model,
+              type: newMac.type || '',
+              group: newMac.group || '',
+              location: newMac.location || '',
+              fuel: newMac.fuel || '',
+              signName: newMac.signName || signName,
+              signId: newMac.signId || signId,
+              parts: newMac.parts || '',
+              currentLocName: newMac.signName || signName,
+              currentLocId: newMac.signId || signId
+            });
+          }
+          document.getElementById('modal').style.display = 'none';
+          if (typeof customAlert === 'function') customAlert(machineId ? '\u8fb2\u6a5f\u3092\u66f4\u65b0\u3057\u307e\u3057\u305f' : '\u8fb2\u6a5f\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f');
+          if (typeof window.renderUsedItems === 'function') window.renderUsedItems(workName);
+          if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
+        } catch (e) {
+          document.getElementById('modal').style.display = 'none';
+          if (typeof customAlert === 'function') customAlert('\u4fdd\u5b58\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + (e.message || e));
+        }
+      };
+
+      window.deleteMachineFromUsedItems = async function (machineId) {
+        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) return;
+        var m = (pdlMachines || []).find(function (x) { return String(x.id) === String(machineId); });
+        var label = m ? m.name : machineId;
+        if (typeof window._bumpModalZ === 'function') window._bumpModalZ();
+        var ok = (typeof customConfirm === 'function')
+          ? await customConfirm('\u8fb2\u6a5f\u300c' + label + '\u300d\u3092\u30de\u30b9\u30bf\u304b\u3089\u524a\u9664\u3057\u307e\u3059\u304b\uff1f\n\u203b\u5fa9\u5143\u3067\u304d\u307e\u305b\u3093')
+          : confirm('\u8fb2\u6a5f\u300c' + label + '\u300d\u3092\u524a\u9664\u3057\u307e\u3059\u304b\uff1f');
+        if (!ok) return;
+        var workName = (typeof window._getCurrentUsedItemsWorkName === 'function') ? window._getCurrentUsedItemsWorkName() : '';
+        try {
+          await callGAS('deleteMachineFromMaster', { machineId: machineId });
+          pdlMachines = (pdlMachines || []).filter(function (x) { return String(x.id) !== String(machineId); });
+          if (typeof customAlert === 'function') customAlert('\u8fb2\u6a5f\u3092\u524a\u9664\u3057\u307e\u3057\u305f');
+          if (typeof window.renderUsedItems === 'function') window.renderUsedItems(workName);
+          if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
+        } catch (e) {
+          if (typeof customAlert === 'function') customAlert('\u524a\u9664\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + (e.message || e));
+        }
+      };
+;
+;
 
       window.renderRecordForm = () => {
         window.selectedWorkCrops = [];
-        const p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [], area: 0 };
+        const p = activePolyId ? loadedPolygons[activePolyId] : { name: "?????", isMarker: false, photos: [], area: 0 };
         const isEdit = !!currentEditRecordId;
         selectedPolyIds = activePolyId ? [activePolyId] : []; pendingFiles = []; 
-        const addBtnStyle = ''; // ★変更：編集時もボタンを常に表示する！
+        const addBtnStyle = ''; // ?????????????????????????????
         let tgt = null; existingUrlsInEdit = [];
         if(isEdit){ tgt = p.photos.find(ph => ph.id===currentEditRecordId || ph.url===currentEditRecordId); if(tgt) existingUrlsInEdit=tgt.urls?[...tgt.urls]:(tgt.url?[tgt.url]:[]); }
         
-        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業登録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 圃場 作業記録" : "🌱 圃場 生育記録");
+        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "?? ???? ???????" : "??? ???? ???????") : (currentRecordType === 'work' ? "?? ??? ???????" : "?? ??? ??????");
         document.getElementById('rightPanelTitle').innerText = `${p.name} - ${formTitle}`;
 
-        let exPhotos = existingUrlsInEdit.length ? `<label class="form-label">📸 登録済みの写真 (×で削除)</label><div style="display:flex;gap:10px;overflow-x:auto;margin-bottom:15px;padding-bottom:5px;">${existingUrlsInEdit.map((u,i)=>u?`<div id="edit-photo-${i}" style="position:relative;flex-shrink:0;"><img src="${u.replace('sz=w1600','sz=w800')}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ccc;"><div onclick="removeExistingPhoto(${i})" style="position:absolute;top:-8px;right:-8px;background:#F44336;color:white;width:24px;height:24px;text-align:center;line-height:24px;border-radius:50%;cursor:pointer;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.3);">×</div></div>`:'').join('')}</div>` : '';
+        let exPhotos = existingUrlsInEdit.length ? `<label class="form-label">??? ??????????? (??????)</label><div style="display:flex;gap:10px;overflow-x:auto;margin-bottom:15px;padding-bottom:5px;">${existingUrlsInEdit.map((u,i)=>u?`<div id="edit-photo-${i}" style="position:relative;flex-shrink:0;"><img src="${u.replace('sz=w1600','sz=w800')}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ccc;"><div onclick="removeExistingPhoto(${i})" style="position:absolute;top:-8px;right:-8px;background:#F44336;color:white;width:24px;height:24px;text-align:center;line-height:24px;border-radius:50%;cursor:pointer;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.3);">?</div></div>`:'').join('')}</div>` : '';
         
         let photoUI = `
-          <label class="form-label" style="margin-top:15px;">📷 新しく写真を追加</label>
+          <label class="form-label" style="margin-top:15px;">??? ????????????</label>
           <div style="display:flex; gap:10px; margin-bottom:10px;">
              <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:4px; font-weight:bold; cursor:pointer; box-sizing:border-box; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
-                 📸 カメラ<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="addPhotoFromInput(this)">
+                 ??? ?????<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="addPhotoFromInput(this)">
              </label>
              <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:12px; border-radius:4px; font-weight:bold; cursor:pointer; box-sizing:border-box; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
-                 🖼️ フォルダ<input type="file" accept="image/*" multiple style="display:none;" onchange="addPhotoFromInput(this)">
+                 ???? ???????<input type="file" accept="image/*" multiple style="display:none;" onchange="addPhotoFromInput(this)">
              </label>
           </div>
           <div id="new_photos_preview" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:5px; min-height:10px;"></div>`;
         
         let targetSection = '';
         if (currentRecordType === 'work' && !p.isMarker) {
-           targetSection = `<div id="field_target_section" style="display:none; margin-bottom:15px; background:white; padding:10px; border-radius:8px; border:1px solid #ddd;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><label class="form-label" style="margin:0; color:#2196F3;">📍 圃場記録対象 <span style="font-size:11px; color:#888; font-weight:normal;">（任意・複数可）</span></label><button onclick="openMapSelect()" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = `<div id="field_target_section" style="display:none; margin-bottom:15px; background:white; padding:10px; border-radius:8px; border:1px solid #ddd;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><label class="form-label" style="margin:0; color:#2196F3;">?? ????????? <span style="font-size:11px; color:#888; font-weight:normal;">????????????</span></label><button onclick="openMapSelect()" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">???? ?????????????</button></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
         }
         
         const now = new Date(); const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -3655,27 +4130,27 @@ function createSignboardMarker(name, pos, icon, id) {
 
         let timeUI = `
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-            <label class="form-label" style="margin:0;">⏰ 時間</label>
-            <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア(記録しない)</button>
+            <label class="form-label" style="margin:0;">?? ???</label>
+            <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">????????(?????????)</button>
           </div>
           <div class="form-grid" style="margin-bottom:15px;">
             <div>
-              <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
-              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" onclick="openAppTimePicker('rec_start_time', '開始時間')" onchange="calcTotalTime()">
+              <label class="form-label" style="font-size:11px; margin-bottom:2px;">??? ???</label>
+              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" onclick="openAppTimePicker('rec_start_time', '??????')" onchange="calcTotalTime()">
               <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
-                <input type="checkbox" id="sync_clockin" ${!latestEndTime ? 'checked' : ''}>出勤時間と同期
+                <input type="checkbox" id="sync_clockin" ${!latestEndTime ? 'checked' : ''}>????????????
               </label>
             </div>
             <div>
-              <label class="form-label" style="font-size:11px; margin-bottom:2px;">⏹️ 終了</label>
-              <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:0;" value="${isEdit ? '' : currentTimeStr}" onclick="openAppTimePicker('rec_end_time', '終了時間')" onchange="calcTotalTime()">
+              <label class="form-label" style="font-size:11px; margin-bottom:2px;">??? ???</label>
+              <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:0;" value="${isEdit ? '' : currentTimeStr}" onclick="openAppTimePicker('rec_end_time', '??????')" onchange="calcTotalTime()">
             </div>
           </div>
         `;
 
         let html = '';
         if (currentRecordType === 'work') {
-          // 畝UIはカテゴリ×圃場選択に応じて動的表示（placeholder）
+          // ??I?????????????????????????????placeholder??
           let ridgeUI = p.isMarker ? '' : `<div id="ridge_progress_section" style="display:none; margin-bottom:15px;"></div>`;
           let irrigationUI = p.isMarker ? '' : `<div id="irrigation_valve_section" style="display:none; margin-bottom:15px;"></div><div id="irrigation_pump_section" style="display:none; margin-bottom:15px;"></div>`;
           
@@ -3696,7 +4171,7 @@ function createSignboardMarker(name, pos, icon, id) {
           
           let recentChipsHTML = '';
           if (uniqueRecent.length > 0) {
-              recentChipsHTML = `<div id="recent_chips_container" style="margin-bottom:10px;"><div style="font-size:11px; color:#888; margin-bottom:5px;">🕒 最近使った作業</div><div style="display:flex; flex-wrap:wrap; gap:8px;">` + 
+              recentChipsHTML = `<div id="recent_chips_container" style="margin-bottom:10px;"><div style="font-size:11px; color:#888; margin-bottom:5px;">?? ????????????</div><div style="display:flex; flex-wrap:wrap; gap:8px;">` + 
                   uniqueRecent.map(wName => {
                       const wObj = pdlWorkMaster.find(w => w.name === wName) || { name: wName };
                       return (typeof window.buildWorkChipHtml === 'function')
@@ -3705,54 +4180,54 @@ function createSignboardMarker(name, pos, icon, id) {
                   }).join('') + `</div></div>`;
           }
 
-          let allChipsHTML = `<div id="all_chips_container" style="padding:12px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px; color:#888; font-size:13px; text-align:center;">読み込み中...</div>`;
+          let allChipsHTML = `<div id="all_chips_container" style="padding:12px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px; color:#888; font-size:13px; text-align:center;">????????...</div>`;
 
-          let wNames = '<option value="">選択してください</option>';
-          let wStats = '<option value="">選択してください</option>' + pdlWorkStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
-          let cNames = '<option value="">選択してください</option>' + pdlContainerNames.map(c => `<option value="${c}">${c}</option>`).join('');
-          let lotsHtml = activeLots.map(l => `<div><label class="checkbox-label"><input type="checkbox" name="use_lots" value="${l.lotId}"> ${l.lotId} <span style="color:#2196F3; margin-left:5px;">(${l.containerType||'種類不明'} 残:${l.remain})</span></label></div>`).join('');
-          if(!lotsHtml) lotsHtml = '<div style="color:#888; font-size:12px;">使用可能なロットがありません</div>';
+          let wNames = '<option value="">??????????????</option>';
+          let wStats = '<option value="">??????????????</option>' + pdlWorkStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
+          let cNames = '<option value="">??????????????</option>' + pdlContainerNames.map(c => `<option value="${c}">${c}</option>`).join('');
+          let lotsHtml = activeLots.map(l => `<div><label class="checkbox-label"><input type="checkbox" name="use_lots" value="${l.lotId}"> ${l.lotId} <span style="color:#2196F3; margin-left:5px;">(${l.containerType||'??????'} ??:${l.remain})</span></label></div>`).join('');
+          if(!lotsHtml) lotsHtml = '<div style="color:#888; font-size:12px;">??????????????????????</div>';
           
          let workTimeUI = `
             <div style="background:#f4f6f8; padding:10px; border-radius:8px; margin-bottom:15px; text-align:center;">
-              <label class="form-label">⏱️ 実作業時間</label>
+              <label class="form-label">??? ????????</label>
               <div id="rec_total_time_display" style="padding:10px; background:#fff; border-radius:4px; font-weight:bold; color:#FF9800; border:1px solid #ccc;">--</div>
             </div>
             <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:6px; margin-bottom:15px; border:1px solid #ffcc80;">
-              <div style="font-weight:bold; color:#e65100; margin-bottom:10px; font-size:13px;">🔧 整備・修理の詳細</div>
-              <label class="form-label">対象農機</label>
-              <select id="m_tool" class="form-input" onchange="updatePartsList()"><option value="">選択してください</option></select>
+              <div style="font-weight:bold; color:#e65100; margin-bottom:10px; font-size:13px;">?? ????????????</div>
+              <label class="form-label">??????</label>
+              <select id="m_tool" class="form-input" onchange="updatePartsList()"><option value="">??????????????</option></select>
               
-              <label class="form-label">症状</label>
+              <label class="form-label">????</label>
               <div style="display:flex; gap:5px; margin-bottom:15px;">
                  <select id="m_symptom_sel" class="form-input" style="flex:1; margin-bottom:0;" onchange="document.getElementById('m_symptom').value=this.value">
-                   <option value="">選択...</option>
+                   <option value="">???...</option>
                  </select>
-                 <input type="text" id="m_symptom" class="form-input" style="flex:2; margin-bottom:0;" placeholder="入力 (または選択)">
+                 <input type="text" id="m_symptom" class="form-input" style="flex:2; margin-bottom:0;" placeholder="??? (????????)">
               </div>
 
-              <label class="form-label">整備内容</label>
-              <select id="m_content" class="form-input"><option value="">選択してください</option></select>
+              <label class="form-label">??????</label>
+              <select id="m_content" class="form-input"><option value="">??????????????</option></select>
               
-              <label class="form-label">交換部品名</label>
+              <label class="form-label">????????</label>
               <div style="display:flex; gap:5px; margin-bottom:15px;">
-                 <select id="m_parts" class="form-input" style="flex:1; margin-bottom:0;"><option value="">選択してください</option></select>
-                 <button onclick="addNewMachinePart()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">＋</button>
+                 <select id="m_parts" class="form-input" style="flex:1; margin-bottom:0;"><option value="">??????????????</option></select>
+                 <button onclick="addNewMachinePart()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">??</button>
               </div>
             </div>
           `;
 
-          html = `<label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;">
-                  <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
+          html = `<label class="form-label">??? ????????</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;">
+                  <label class="form-label">?? ??????</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
                   ${timeUI}
                   ${workTimeUI}
-                  <label class="form-label" style="margin-top:15px;">📁 カテゴリ</label>
-                  <input type="hidden" id="rec_work_category" value="すべて">
+                  <label class="form-label" style="margin-top:15px;">?? ??????</label>
+                  <input type="hidden" id="rec_work_category" value="?????">
                   <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
-                  <label class="form-label" style="margin-top:10px;">🌱 作物名</label>
+                  <label class="form-label" style="margin-top:10px;">?? ??????</label>
                   <input type="hidden" id="rec_work_crop_filter" value="">
                   <div id="work_crop_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
-                  <label class="form-label" style="margin-top:10px;">🚜 作業名</label>
+                  <label class="form-label" style="margin-top:10px;">?? ??????</label>
                   <div id="work_name_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <div id="work_chips_wrapper">
                     ${recentChipsHTML}
@@ -3763,12 +4238,12 @@ function createSignboardMarker(name, pos, icon, id) {
                   ${targetSection}
                   ${ridgeUI}
                   ${irrigationUI}
-                  <label class="form-label" style="margin-top:10px;">💬 コメント</label>
-                  <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="伝達事項・メモなど"></textarea>
+                  <label class="form-label" style="margin-top:10px;">?? ??????</label>
+                  <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="??????????????"></textarea>
                   <div id="used_items_section"></div>
-                  <div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div>
-                  <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
-                   <label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label>
+                  <div id="lot_generate_section" class="lot-section"><b>??? ??????????????????????</b><br><span style="font-size:12px; color:#666;">???ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="?? (??: 10)" style="flex:1; margin-bottom:0;"></div></div>
+                  <div id="lot_use_section" class="lot-section"><b>??? ????????</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="??????????" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="?????">????</option><option value="???">???</option></select></div></div>
+                   <label class="form-label" style="margin-top:15px;">?? ?????? <span style="color:red;">*</span></label>
                    <input type="hidden" id="rec_progress_status" value="">
                    <div id="progress_status_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
                    ${exPhotos}
@@ -3776,9 +4251,9 @@ function createSignboardMarker(name, pos, icon, id) {
         } else if (p.isMarker) {
           html = `${targetSection}${timeUI}${exPhotos}${photoUI}`;
         } else {
-          let crops = '<option value="">選択してください</option>' + pdlCrops.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-          let stages = '<option value="">選択してください</option>' + pdlStages.map(s => `<option value="${s}">${s}</option>`).join('');
-          html = `${targetSection}<label class="form-label">🌱 作物名</label><div style="display:flex; gap:5px; margin-bottom:15px;"><select id="rec_crop" class="form-input" style="margin-bottom:0; flex-grow:1;" onchange="handleCropSelection()">${crops}</select><button onclick="addNewCrop()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">＋</button></div><div style="background:#e8f4fd; padding:10px; border-radius:8px; border:1px solid #bbdefb; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#555; font-weight:bold;">📍 この圃場(${p.area}a)の推定栽植本数:</span><span id="disp_plant_density" style="font-size:16px; font-weight:bold; color:#1a73e8;">-- 本</span></div>${timeUI}<label class="form-label">✅ 作業・状態チェック</label><div class="form-grid"><label class="checkbox-label"><input type="checkbox" id="rec_mowing"> 草刈り</label><label class="checkbox-label"><input type="checkbox" id="rec_weeding"> 草抜き</label><label class="checkbox-label"><input type="checkbox" id="rec_drainage"> 排水</label><label class="checkbox-label"><input type="checkbox" id="rec_bug"> 虫食い有</label><label class="checkbox-label"><input type="checkbox" id="rec_disease"> 病気有</label><label class="checkbox-label"><input type="checkbox" id="rec_flower"> 花芽有</label></div><div class="form-grid"><div><label class="form-label">📅 収穫見込</label><input type="date" id="rec_harvest" class="form-input"></div><div><label class="form-label">💯 残存率(%)</label><input type="number" id="rec_survival" class="form-input" placeholder="80"></div><div><label class="form-label">📏 葉長(cm)</label><input type="number" id="rec_leaf" class="form-input" placeholder="15"></div><div><label class="form-label">🍎 収穫ｻｲｽﾞ(cm)</label><input type="number" id="rec_harvest_size" class="form-input" placeholder="10"></div><div><label class="form-label">📦 収穫可能量</label><input type="number" id="rec_harvest_amount" class="form-input" placeholder="100"></div><div><label class="form-label">🧪 土壌pH</label><input type="number" step="0.1" id="rec_ph" class="form-input" placeholder="6.5"></div></div><label class="form-label">📊 栽培ステージ</label><select id="rec_field_status" class="form-input" style="padding: 10px;">${stages}</select><label class="form-label">📝 気づいたこと</label><textarea id="rec_notes" class="form-input" rows="3" placeholder="コメントを入力..."></textarea>${exPhotos}${photoUI}`;
+          let crops = '<option value="">??????????????</option>' + pdlCrops.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+          let stages = '<option value="">??????????????</option>' + pdlStages.map(s => `<option value="${s}">${s}</option>`).join('');
+          html = `${targetSection}<label class="form-label">?? ??????</label><div style="display:flex; gap:5px; margin-bottom:15px;"><select id="rec_crop" class="form-input" style="margin-bottom:0; flex-grow:1;" onchange="handleCropSelection()">${crops}</select><button onclick="addNewCrop()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">??</button></div><div style="background:#e8f4fd; padding:10px; border-radius:8px; border:1px solid #bbdefb; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#555; font-weight:bold;">?? ??????(${p.area}a)??????????????:</span><span id="disp_plant_density" style="font-size:16px; font-weight:bold; color:#1a73e8;">-- ??</span></div>${timeUI}<label class="form-label">?? ????????????????</label><div class="form-grid"><label class="checkbox-label"><input type="checkbox" id="rec_mowing"> ?????</label><label class="checkbox-label"><input type="checkbox" id="rec_weeding"> ?????</label><label class="checkbox-label"><input type="checkbox" id="rec_drainage"> ???</label><label class="checkbox-label"><input type="checkbox" id="rec_bug"> ??????</label><label class="checkbox-label"><input type="checkbox" id="rec_disease"> ?????</label><label class="checkbox-label"><input type="checkbox" id="rec_flower"> ??????</label></div><div class="form-grid"><div><label class="form-label">?? ???????</label><input type="date" id="rec_harvest" class="form-input"></div><div><label class="form-label">?? ?????(%)</label><input type="number" id="rec_survival" class="form-input" placeholder="80"></div><div><label class="form-label">?? ????(cm)</label><input type="number" id="rec_leaf" class="form-input" placeholder="15"></div><div><label class="form-label">?? ??????????(cm)</label><input type="number" id="rec_harvest_size" class="form-input" placeholder="10"></div><div><label class="form-label">??? ?????????</label><input type="number" id="rec_harvest_amount" class="form-input" placeholder="100"></div><div><label class="form-label">?? ???pH</label><input type="number" step="0.1" id="rec_ph" class="form-input" placeholder="6.5"></div></div><label class="form-label">?? ?????????</label><select id="rec_field_status" class="form-input" style="padding: 10px;">${stages}</select><label class="form-label">?? ??????????</label><textarea id="rec_notes" class="form-input" rows="3" placeholder="???????????..."></textarea>${exPhotos}${photoUI}`;
         }
 
         let tempLoadBtn = '';
@@ -3786,21 +4261,21 @@ function createSignboardMarker(name, pos, icon, id) {
             const tempParsed = getLocalTempWorkRecord_(currentRecordType);
             if (tempParsed) {
                 const savedPolyName = tempParsed.polyName
-                  || (tempParsed.polyId && loadedPolygons[tempParsed.polyId] ? loadedPolygons[tempParsed.polyId].name : '未選択');
+                  || (tempParsed.polyId && loadedPolygons[tempParsed.polyId] ? loadedPolygons[tempParsed.polyId].name : '?????');
                 const savedTime = tempParsed.savedAt || '';
-                tempLoadBtn = `<button type="button" id="tempLoadBtn" onclick="loadTempRecord()" style="width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;">📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${savedPolyName} ${savedTime ? '(' + savedTime + ')' : ''}</span></button>`;
+                tempLoadBtn = `<button type="button" id="tempLoadBtn" onclick="loadTempRecord()" style="width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;">?? ???????????????????<br><span style='font-size:11px;color:#00838F;'>?????: ${savedPolyName} ${savedTime ? '(' + savedTime + ')' : ''}</span></button>`;
             }
         } catch(e) {}
 
         document.getElementById('rightPanelContent').innerHTML = `<div style="background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.05);">${tempLoadBtn}${html}</div>`;
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
-        document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
-        // 他端末で保存した一時保存があればクラウドから取得して復元ボタンを更新
+        document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'??????':'??????'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">???????</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">???</button></div>`;
+        // ???????????????????????????????????????????????????????
         setTimeout(() => { refreshTempRecordButtonFromCloud_(); }, 50);
         
         if (currentRecordType === 'work') setTimeout(() => {
             if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons();
-            const cat = document.getElementById('rec_work_category')?.value || 'すべて';
+            const cat = document.getElementById('rec_work_category')?.value || '?????';
             const defaultCrop = (typeof window.getDefaultWorkCropKey === 'function')
               ? window.getDefaultWorkCropKey(cat, p)
               : '';
@@ -3832,7 +4307,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (currentRecordType === 'work') {
             document.getElementById('rec_work_date').value = d.workDate || ''; 
             const wObj = pdlWorkMaster.find(w => w.name === d.workName);
-            const wCat = (wObj && wObj.category) ? wObj.category : (pdlWorkCategories[0] || "圃場作業");
+            const wCat = (wObj && wObj.category) ? wObj.category : (pdlWorkCategories[0] || "???????");
             const wCropKey = wObj ? window.normalizeWorkCropKey(wObj.cropName) : (d.crop ? window.normalizeWorkCropKey(String(d.crop).split(',')[0].trim()) : '');
             if (typeof window.selectWorkCategory === 'function') {
                 window.selectWorkCategory(wCat);
@@ -3897,46 +4372,46 @@ function createSignboardMarker(name, pos, icon, id) {
                   }
                }, 50);
             }
-           // ★追加：使ったもの（農機・資材）のチェックと数値を復元する処理
+           // ????????????????????????????????????????????????
              if (d.usedMaterials) {
                 setTimeout(() => {
                    const usedStr = d.usedMaterials;
                    
-                   // 使用農機の復元
+                   // ???????????
                    document.querySelectorAll('.used-machine-check').forEach(chk => {
                       const mName = chk.getAttribute('data-name');
-                      if (usedStr.includes('・' + mName)) {
+                      if (usedStr.includes('??' + mName)) {
                          chk.checked = true;
                          const locDiv = document.getElementById('machine_loc_' + chk.value);
                          if (locDiv) locDiv.style.display = 'block';
                       }
                    });
                    
-                   // 使用資材と使用量の復元
+                   // ?????????????????
                    document.querySelectorAll('.used-mat-check').forEach(chk => {
                       const matName = chk.value;
-                      // 特殊文字対策をして正規表現で検索
+                      // ?????????????????????????
                       const escapedMatName = matName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                      // 「・尿素: 8袋」などの文字列から数値を抽出する
-                      const regex = new RegExp('・' + escapedMatName + ':\\s*(\\d+)');
+                      // ??????: 8???????????????????????????
+                      const regex = new RegExp('??' + escapedMatName + ':\\s*(\\d+)');
                       const match = usedStr.match(regex);
                       
                       if (match) {
-                         chk.checked = true; // チェックを入れる
+                         chk.checked = true; // ????????????
                          const numInput = chk.closest('div').parentElement.querySelector('.used-mat-num');
                          if (numInput) {
-                            numInput.disabled = false; // 入力不可を解除
-                            numInput.value = match[1]; // 数値をセット
+                            numInput.disabled = false; // ???????????
+                            numInput.value = match[1]; // ??????????
                          }
                       }
                    });
-                }, 100); // リストの描画が終わるのを待つため少し遅延させる
+                }, 100); // ??????????????????????????????????????
              }
-           if (d.workName && (d.workName.includes("整備") || d.workName.includes("修理")) && !d.workName.includes("圃場")) {
+           if (d.workName && (d.workName.includes("???") || d.workName.includes("???")) && !d.workName.includes("???")) {
                setTimeout(() => {
                   if(document.getElementById('m_tool')) document.getElementById('m_tool').value = d.maintenanceToolId || "";
                   updatePartsList();
-                  if(document.getElementById('m_symptom')) document.getElementById('m_symptom').value = d.maintenanceSymptom || ""; // ★追加
+                  if(document.getElementById('m_symptom')) document.getElementById('m_symptom').value = d.maintenanceSymptom || ""; // ?????
                   if(document.getElementById('m_content')) document.getElementById('m_content').value = d.maintenanceContent || "";
                   setTimeout(() => { if(document.getElementById('m_parts')) document.getElementById('m_parts').value = d.maintenanceParts || ""; }, 50);
                }, 100);
@@ -3988,7 +4463,7 @@ function createSignboardMarker(name, pos, icon, id) {
               btn.style.cssText = 'width:100%; background:#E0F7FA; color:#00BCD4; border:1px solid #00BCD4; padding:10px; border-radius:4px; font-weight:bold; margin-bottom:15px; cursor:pointer;';
               formWrapper.insertBefore(btn, formWrapper.firstChild);
           }
-          btn.innerHTML = `📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${polyName || '未選択'} (${savedAt || ''})</span>`;
+          btn.innerHTML = `?? ???????????????????<br><span style='font-size:11px;color:#00838F;'>?????: ${polyName || '?????'} (${savedAt || ''})</span>`;
       }
 
       async function refreshTempRecordButtonFromCloud_() {
@@ -4000,10 +4475,10 @@ function createSignboardMarker(name, pos, icon, id) {
               if (!draft) return;
               setLocalTempWorkRecord_(draft);
               const polyName = draft.polyName
-                || (draft.polyId && loadedPolygons[draft.polyId] ? loadedPolygons[draft.polyId].name : '未選択');
+                || (draft.polyId && loadedPolygons[draft.polyId] ? loadedPolygons[draft.polyId].name : '?????');
               upsertTempLoadButton_(polyName, draft.savedAt || '');
           } catch (e) {
-              console.warn('一時保存クラウド取得スキップ:', e);
+              console.warn('???????????????????????:', e);
           }
       }
 
@@ -4012,7 +4487,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!container) return;
           const inputs = container.querySelectorAll('input, select, textarea');
           let tempData = [];
-          // 選択中の作業チップ名も保存する
+          // ????????????????????????
           let selectedChipName = '';
           const selectedChip = container.querySelector('.work-chip[style*="#1976d2"]');
           if (selectedChip) selectedChipName = selectedChip.dataset.wname || '';
@@ -4028,7 +4503,7 @@ function createSignboardMarker(name, pos, icon, id) {
           });
           const now = new Date();
           const savedAt = `${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-          const polyName = activePolyId && loadedPolygons[activePolyId] ? loadedPolygons[activePolyId].name : '未選択';
+          const polyName = activePolyId && loadedPolygons[activePolyId] ? loadedPolygons[activePolyId].name : '?????';
           const payload = {
               type: currentRecordType,
               polyId: activePolyId,
@@ -4058,16 +4533,16 @@ function createSignboardMarker(name, pos, icon, id) {
                   });
                   synced = true;
               } catch (e) {
-                  console.warn('一時保存クラウド同期失敗:', e);
+                  console.warn('???????????????????:', e);
               }
           }
 
           if (typeof customAlert !== 'undefined') {
               customAlert(synced
-                ? "✅ 入力内容を一時保存しました！（全端末で同期）"
-                : "✅ この端末に一時保存しました。\n（通信エラーのため他端末への同期は未完了）");
+                ? "?? ?????????????????????????????????"
+                : "?? ??????????????????????n?????????????????????????????????");
           } else {
-              alert(synced ? "✅ 入力内容を一時保存しました！（全端末で同期）" : "✅ この端末に一時保存しました。");
+              alert(synced ? "?? ?????????????????????????????????" : "?? ??????????????????????");
           }
 
           upsertTempLoadButton_(polyName, savedAt);
@@ -4076,15 +4551,15 @@ function createSignboardMarker(name, pos, icon, id) {
       window.loadTempRecord = () => {
           const parsed = getLocalTempWorkRecord_(currentRecordType);
           if (!parsed) {
-              if (typeof customAlert !== 'undefined') customAlert("一時保存データがありません。");
-              else alert("一時保存データがありません。");
+              if (typeof customAlert !== 'undefined') customAlert("???????????????????????");
+              else alert("???????????????????????");
               return;
           }
           
           const container = document.getElementById('rightPanelContent');
           if(!container) return;
 
-          // 選択圃場も復元
+          // ???????????
           if (Array.isArray(parsed.selectedPolyIds) && parsed.selectedPolyIds.length > 0) {
               selectedPolyIds = parsed.selectedPolyIds.filter(id => id && loadedPolygons[id]);
               if (typeof renderSelectedPolys === 'function') {
@@ -4117,49 +4592,49 @@ function createSignboardMarker(name, pos, icon, id) {
                   } else {
                       el.value = savedEl.value;
                   }
-                  // イベント発火して関連UIを更新
+                  // ?????????????????I?????
                   el.dispatchEvent(new Event('change'));
               }
           });
           
-          // 特定のUI更新処理を手動呼び出し
+          // ?????I?????????????????
           if (typeof handleWorkNameChange === 'function' && document.getElementById('rec_work_name')) handleWorkNameChange();
           if (typeof calcTotalTime === 'function') calcTotalTime();
           
-          // 作業チップのハイライトも復元する
+          // ??????????????????????????
           if (parsed.selectedChipName && typeof selectWorkChip === 'function') {
               selectWorkChip(parsed.selectedChipName);
           }
           
-          // 復元後、一時保存データは送信完了まで残す（安全のため）
-          if(typeof customAlert !== 'undefined') customAlert("✅ 一時保存データを復元しました！");
-          else alert("✅ 一時保存データを復元しました！");
+          // ??????????????????????????????????????????
+          if(typeof customAlert !== 'undefined') customAlert("?? ???????????????????????");
+          else alert("?? ???????????????????????");
       };
 
       async function submitRecord() {
-        // 紐づけ先の解決（圃場作業のときだけ圃場必須）
+        // ??????????????????????????????????
         let targetIds = [...selectedPolyIds].filter(id => id && loadedPolygons[id]);
         if (targetIds.length === 0) {
           const requiresField = currentRecordType === 'work' && typeof window.workRecordRequiresField === 'function'
             ? window.workRecordRequiresField()
             : (currentRecordType === 'work');
           if (requiresField) {
-            customAlert("記録を保存するには、紐づける圃場（または看板）が必要です。マップから選択してください。");
+            customAlert("????????????????????????????????????????????????????????????????????");
             return;
           }
-          // 非圃場作業: 技術上の保存先として看板を1つ使う（なければエラー）
+          // ?????????: ????????????????????1??????????????????
           const signId = Object.keys(loadedPolygons).find(id => loadedPolygons[id] && loadedPolygons[id].isMarker);
           if (signId) {
             targetIds = [signId];
           } else {
-            customAlert("保存先となる看板が見つかりません。地図に看板を登録するか、拠点看板から記録を開いてください。");
+            customAlert("???????????????????????????????????????????????????????????????????????????");
             return;
           }
         }
         selectedPolyIds = targetIds;
-        if (currentRecordType === 'work') { const prog = document.getElementById('rec_progress_status').value; if (!prog) { customAlert("進捗状況は必須項目です。選択してください。"); return; } }
-        const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
-        if (btn) { btn.disabled = true; btn.innerText = "通信中..."; }
+        if (currentRecordType === 'work') { const prog = document.getElementById('rec_progress_status').value; if (!prog) { customAlert("???????????????????????????????????"); return; } }
+        const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "?????", isMarker: false, photos: [] };
+        if (btn) { btn.disabled = true; btn.innerText = "?????..."; }
         
         try {
           const files = pendingFiles || [];
@@ -4178,7 +4653,7 @@ function createSignboardMarker(name, pos, icon, id) {
                let sMins = parseInt(sTime.split(':')[0]) * 60 + parseInt(sTime.split(':')[1]);
                let eMins = parseInt(eTime.split(':')[0]) * 60 + parseInt(eTime.split(':')[1]);
                let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
-               totalTimeStr = Math.floor(diff / 60) + "時間" + (diff % 60) + "分";
+               totalTimeStr = Math.floor(diff / 60) + "???" + (diff % 60) + "??";
             }
             
             let syncClockin = document.getElementById('sync_clockin') ? document.getElementById('sync_clockin').checked : false;
@@ -4210,7 +4685,7 @@ function createSignboardMarker(name, pos, icon, id) {
                         userName: currentUser,
                         lat: exLat,
                         lng: exLng,
-                        type: '出勤',
+                        type: '????',
                         time: now.getTime()
                     }).catch(e => console.warn(e));
                 }
@@ -4260,7 +4735,7 @@ function createSignboardMarker(name, pos, icon, id) {
               data.installedPumps = installedPumps;
             }
 
-           if ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")) {
+           if ((wName.includes("???") || wName.includes("???")) && !wName.includes("???")) {
                const tId = document.getElementById('m_tool')?.value || "";
                const toolObj = (pdlMachines || []).find(t => t.id === tId); 
                data.maintenanceToolId = tId; data.maintenanceTool = toolObj ? toolObj.name : "";
@@ -4269,7 +4744,7 @@ function createSignboardMarker(name, pos, icon, id) {
                data.maintenanceSymptom = inputSymptom; 
                
                if (toolObj && inputSymptom) {
-                   const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,、]/).map(s => s.trim()) : [];
+                   const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,??/).map(s => s.trim()) : [];
                    if (!currentSymp.includes(inputSymptom)) {
                        await callGAS('addMachineSymptom', { machineId: tId, newSymptom: inputSymptom });
                        toolObj.symptoms = toolObj.symptoms ? toolObj.symptoms + "," + inputSymptom : inputSymptom;
@@ -4279,7 +4754,7 @@ function createSignboardMarker(name, pos, icon, id) {
                data.maintenanceContent = document.getElementById('m_content')?.value || ""; 
                data.maintenanceParts = document.getElementById('m_parts')?.value || "";
             }
-            if (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')) { 
+            if (wName.includes('?????') || wName.includes('????') || wName.includes('????????')) { 
               data.lotAction = 'use'; 
               const checked = Array.from(document.querySelectorAll('input[name="use_lots"]:checked')).map(cb => cb.value); 
               data.selectedLots = checked.join(','); 
@@ -4310,7 +4785,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 if (sId && sName) { machineUpdates.push({ id: mId, signId: sId, signName: sName }); }
              });
 
-             // 潅水ポンプの設置中 → 現在地を選択圃場へ。解除時は定位置へ戻す
+             // ??????????????? ?? ???????????????????????????????
              if (typeof window.isIrrigationWork === 'function' && window.isIrrigationWork(document.getElementById('rec_work_name')?.value || '')) {
                 const fieldIds = (selectedPolyIds || []).filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker);
                 const targetFieldId = fieldIds[0] || (activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker ? activePolyId : '');
@@ -4380,7 +4855,7 @@ function createSignboardMarker(name, pos, icon, id) {
               updatePolygonColor(activePolyId);
           }
           localStorage.removeItem('jmap_temp_work_record');
-          // 本保存後はクラウド側の一時保存も削除
+          // ????????????????????????????
           try {
               const uid = localStorage.getItem('passionMapUserId') || '';
               if (uid && typeof callGAS === 'function') {
@@ -4391,20 +4866,20 @@ function createSignboardMarker(name, pos, icon, id) {
           closeRightPanel();
           const resumeClock = typeof window.resumeClockOutAfterWorkSave === 'function' && sessionStorage.getItem('passionMapPendingClockOut');
           if (resumeClock) {
-            document.getElementById('customAlertMessage').innerText = "記録を保存しました！続けて退勤時間の確認を行います。";
+            document.getElementById('customAlertMessage').innerText = "??????????????????????????????????????????";
             document.getElementById('customAlertModal').style.display = 'flex';
             document.getElementById('customAlertOk').onclick = () => {
               document.getElementById('customAlertModal').style.display = 'none';
               window.resumeClockOutAfterWorkSave();
             };
           } else {
-            customAlert("記録を保存しました！");
+            customAlert("???????????????");
           }
         } catch(e) {
           console.error("submitRecord error:", e);
-          customAlert("保存中にエラーが発生しました: " + e.message);
+          customAlert("???????????????????????: " + e.message);
         } finally {
-          if (btn) { btn.disabled = false; btn.innerText = "保存する"; }
+          if (btn) { btn.disabled = false; btn.innerText = "??????"; }
         }
       }
 
@@ -4412,121 +4887,121 @@ function createSignboardMarker(name, pos, icon, id) {
          let locOpts = pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
          let cropOpts = pdlCrops.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
          let contOpts = pdlContainerNames.map(c => `<option value="${c}">${c}</option>`).join('');  
-         document.getElementById('modalBody').innerHTML = `<h3 style="color:#4CAF50; margin-top:0;">🚜 収穫記録（ロット生成）</h3><p style="font-size:12px; color:#666;">※選択した「拠点」で本日「収穫」が行われた圃場が自動で紐付きます。</p><label class="form-label">📍 拠点</label><select id="gh_location" class="form-input"><option value="">選択してください</option>${locOpts}</select><label class="form-label">🌱 収穫した作物</label><select id="gh_crop" class="form-input"><option value="">選択してください</option>${cropOpts}</select><label class="form-label">📦 コンテナ種類</label><select id="gh_container" class="form-input"><option value="">選択してください</option>${contOpts}</select><label class="form-label">🔢 総収穫数（コンテナ数）</label><input type="number" id="gh_count" class="form-input" placeholder="例: 10"><div style="display:flex; gap:10px; margin-top:15px;"><button onclick="submitGlobalHarvest()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">ロット作成</button><button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">戻る</button></div>`;
+         document.getElementById('modalBody').innerHTML = `<h3 style="color:#4CAF50; margin-top:0;">?? ??????????????????</h3><p style="font-size:12px; color:#666;">????????????????????????????????????????????????????????</p><label class="form-label">?? ???</label><select id="gh_location" class="form-input"><option value="">??????????????</option>${locOpts}</select><label class="form-label">?? ????????????</label><select id="gh_crop" class="form-input"><option value="">??????????????</option>${cropOpts}</select><label class="form-label">??? ?????????</label><select id="gh_container" class="form-input"><option value="">??????????????</option>${contOpts}</select><label class="form-label">??? ??????????????????</label><input type="number" id="gh_count" class="form-input" placeholder="??: 10"><div style="display:flex; gap:10px; margin-top:15px;"><button onclick="submitGlobalHarvest()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">????????</button><button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">???</button></div>`;
          document.getElementById('modal').style.display = 'flex';
       };
 
       window.submitGlobalHarvest = async () => {
          const location = document.getElementById('gh_location').value, crop = document.getElementById('gh_crop').value, container = document.getElementById('gh_container').value, count = document.getElementById('gh_count').value;
-         if(!location || !crop || !count) { customAlert("拠点、作物名、収穫数をすべて入力してください"); return; }
-         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px;'>ロットを編成中...</div>";
+         if(!location || !crop || !count) { customAlert("???????????????????????????????????"); return; }
+         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px;'>???????????...</div>";
          try {
             const res = await callGAS('saveGlobalHarvest', { location, crop, containerType: container, count: parseInt(count), author: currentUser });
-            customAlert(`ロット【${res.lotId}】を作成しました！\n\n📍 拠点: ${location}\n🔗 自動紐付された圃場:\n${res.fields}`);
+            customAlert(`???????${res.lotId}?????????????????n\n?? ???: ${location}\n?? ????????????????:\n${res.fields}`);
             document.getElementById('modal').style.display = 'none'; if(typeof loadInitData === 'function') loadInitData();
-         } catch(e) { customAlert("エラーが発生しました: " + e.message); document.getElementById('modal').style.display = 'none'; }
+         } catch(e) { customAlert("?????????????????: " + e.message); document.getElementById('modal').style.display = 'none'; }
       };
 
       window.openGlobalShipping = () => {
-         if(!window.activeLots || window.activeLots.length === 0) { customAlert("現在、出荷可能なロット（使用中）がありません。"); return; }
+         if(!window.activeLots || window.activeLots.length === 0) { customAlert("????????????????????????????????????"); return; }
          let locOpts = pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
-         document.getElementById('modalBody').innerHTML = `<h3 style="color:#FF9800; margin-top:0;">📦 出荷記録</h3><label class="form-label">📍 出荷元の拠点</label><select id="gs_location" class="form-input" onchange="filterShippingLots()"><option value="all">すべての拠点</option>${locOpts}</select><label class="form-label">🚚 出荷先・備考</label><input type="text" id="gs_dest" class="form-input" placeholder="例: 農協、〇〇市場など"><label class="form-label" style="margin-top:10px;">📦 出荷するロットを選択（複数可）</label><div id="gs_lot_container" style="max-height:200px; overflow-y:auto; margin-bottom:10px; padding:2px; background:#fff; border:1px solid #ccc; border-radius:4px;"></div><div style="display:flex; gap:10px; margin-top:15px;"><button onclick="submitGlobalShipping()" style="background:#FF9800; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">出荷登録</button><button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">戻る</button></div>`;
+         document.getElementById('modalBody').innerHTML = `<h3 style="color:#FF9800; margin-top:0;">??? ??????</h3><label class="form-label">?? ?????????</label><select id="gs_location" class="form-input" onchange="filterShippingLots()"><option value="all">?????????</option>${locOpts}</select><label class="form-label">?? ??????????</label><input type="text" id="gs_dest" class="form-input" placeholder="??: ???????????????"><label class="form-label" style="margin-top:10px;">??? ???????????????????????</label><div id="gs_lot_container" style="max-height:200px; overflow-y:auto; margin-bottom:10px; padding:2px; background:#fff; border:1px solid #ccc; border-radius:4px;"></div><div style="display:flex; gap:10px; margin-top:15px;"><button onclick="submitGlobalShipping()" style="background:#FF9800; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">??????</button><button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">???</button></div>`;
          document.getElementById('modal').style.display = 'flex'; window.filterShippingLots();
       };
 
       window.filterShippingLots = () => {
          const selectedLoc = document.getElementById('gs_location').value, container = document.getElementById('gs_lot_container');
          const filteredLots = window.activeLots.filter(l => selectedLoc === 'all' || l.location === selectedLoc);
-         if (filteredLots.length === 0) { container.innerHTML = `<div style="padding:10px; color:#888; text-align:center; font-size:13px;">この拠点の出荷可能ロットはありません。</div>`; return; }
-         container.innerHTML = filteredLots.map(l => `<label style="display:flex; align-items:center; gap:10px; margin-bottom:8px; padding:10px; background:#f9f9f9; border-radius:4px; border:1px solid #ddd; cursor:pointer;"><input type="checkbox" name="gs_lots" value="${l.lotId}" style="width:20px; height:20px;"><span style="color:#333; line-height:1.3;"><b>${l.lotId}</b> <span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${l.location}</span><br><span style="font-size:12px; color:#666;">${l.containerType} (残: ${l.remain} 個)</span></span></label>`).join('');
+         if (filteredLots.length === 0) { container.innerHTML = `<div style="padding:10px; color:#888; text-align:center; font-size:13px;">??????????????????????????????</div>`; return; }
+         container.innerHTML = filteredLots.map(l => `<label style="display:flex; align-items:center; gap:10px; margin-bottom:8px; padding:10px; background:#f9f9f9; border-radius:4px; border:1px solid #ddd; cursor:pointer;"><input type="checkbox" name="gs_lots" value="${l.lotId}" style="width:20px; height:20px;"><span style="color:#333; line-height:1.3;"><b>${l.lotId}</b> <span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${l.location}</span><br><span style="font-size:12px; color:#666;">${l.containerType} (??: ${l.remain} ??)</span></span></label>`).join('');
       };
 
       window.submitGlobalShipping = async () => {
          const dest = document.getElementById('gs_dest').value, checked = Array.from(document.querySelectorAll('input[name="gs_lots"]:checked')).map(cb => cb.value);
-         if(checked.length === 0) { customAlert("出荷するロットを選択してください"); return; }
-         if(!await customConfirm(`選択した ${checked.length} 件のロットを出荷済みにしますか？`)) return;
-         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px;'>登録中...</div>";
+         if(checked.length === 0) { customAlert("??????????????????????????"); return; }
+         if(!await customConfirm(`??????? ${checked.length} ????????????????????????`)) return;
+         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px;'>?????...</div>";
          try {
             await callGAS('saveGlobalShipping', { selectedLots: checked, destination: dest, author: currentUser });
-            customAlert("出荷記録を登録しました！\n選択したロットは出荷済（残0）になります。");
+            customAlert("??????????????????\n?????????????????????0???????????");
             document.getElementById('modal').style.display = 'none'; if(typeof loadInitData === 'function') loadInitData();
-         } catch(e) { customAlert("エラーが発生しました"); document.getElementById('modal').style.display = 'none'; }
+         } catch(e) { customAlert("?????????????????"); document.getElementById('modal').style.display = 'none'; }
       };
 
       window.directOpenReportForm = (id) => {
         activePolyId = id; const p = loadedPolygons[activePolyId];
-        document.getElementById('rightPanelTitle').innerText = `${p.name} - ⚠️ 問題報告`;
+        document.getElementById('rightPanelTitle').innerText = `${p.name} - ???? ??????`;
         const options = pdlPastReports[activePolyId] || [];
-        let selectHtml = `<option value="">選択してください</option>`; options.forEach(opt => { selectHtml += `<option value="${opt}">${opt}</option>`; }); selectHtml += `<option value="その他">新しい問題を報告（自由記述）</option>`;
-        let photoUI = `<label class="form-label" style="margin-top:15px;">📷 現場の写真を追加</label><div style="display:flex; gap:10px; margin-bottom:10px;"><label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:4px; font-weight:bold; cursor:pointer; box-sizing:border-box; box-shadow:0 2px 4px rgba(0,0,0,0.2);">📸 カメラ<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="addPhotoFromInput(this)"></label><label style="flex:1; background:#2196F3; color:white; text-align:center; padding:12px; border-radius:4px; font-weight:bold; cursor:pointer; box-sizing:border-box; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🖼️ フォルダ<input type="file" accept="image/*" multiple style="display:none;" onchange="addPhotoFromInput(this)"></label></div><div id="new_photos_preview" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:5px; min-height:10px;"></div>`;
-        let html = `<label class="form-label">👤 報告者</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;"><label class="form-label">📝 問題の分類を選択</label><select id="rep_select" class="form-input">${selectHtml}</select><label class="form-label">📝 詳細・自由記述</label><textarea id="rep_text" class="form-input" rows="3" placeholder="※「その他」を選んでここに入力すると、次回以降この場所の選択肢に表示されます"></textarea>${photoUI}`;
+        let selectHtml = `<option value="">??????????????</option>`; options.forEach(opt => { selectHtml += `<option value="${opt}">${opt}</option>`; }); selectHtml += `<option value="?????">?????????????????????</option>`;
+        let photoUI = `<label class="form-label" style="margin-top:15px;">??? ????????????</label><div style="display:flex; gap:10px; margin-bottom:10px;"><label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:4px; font-weight:bold; cursor:pointer; box-sizing:border-box; box-shadow:0 2px 4px rgba(0,0,0,0.2);">??? ?????<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="addPhotoFromInput(this)"></label><label style="flex:1; background:#2196F3; color:white; text-align:center; padding:12px; border-radius:4px; font-weight:bold; cursor:pointer; box-sizing:border-box; box-shadow:0 2px 4px rgba(0,0,0,0.2);">???? ???????<input type="file" accept="image/*" multiple style="display:none;" onchange="addPhotoFromInput(this)"></label></div><div id="new_photos_preview" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:5px; min-height:10px;"></div>`;
+        let html = `<label class="form-label">??? ?????</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;"><label class="form-label">?? ?????????????</label><select id="rep_select" class="form-input">${selectHtml}</select><label class="form-label">?? ???????????</label><textarea id="rep_text" class="form-input" rows="3" placeholder="???????????????????????????????????????????????????????????"></textarea>${photoUI}`;
         document.getElementById('rightPanelContent').innerHTML = `<div style="background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.05);">${html}</div>`;
-        document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitReport()" style="background:#d32f2f;color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">報告を送信</button><button onclick="closeRightPanel()" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">キャンセル</button></div>`;
+        document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitReport()" style="background:#d32f2f;color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">????????</button><button onclick="closeRightPanel()" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">????????</button></div>`;
         pendingFiles = []; document.getElementById('rightPanel').classList.add('open');
       };
 
       window.submitReport = async () => {
         const sel = document.getElementById('rep_select').value, txt = document.getElementById('rep_text').value.trim();
-        if (!sel && !txt) { customAlert("問題の分類を選択するか、詳細を入力してください"); return; }
+        if (!sel && !txt) { customAlert("??????????????????????????????????????"); return; }
         let finalText = "";
-        if (sel && sel !== "その他") { finalText = sel; if (txt) finalText += " / " + txt; } 
-        else { if (!txt) { customAlert("「その他」を選んだ場合は、詳細を入力してください"); return; } finalText = txt; }
+        if (sel && sel !== "?????") { finalText = sel; if (txt) finalText += " / " + txt; } 
+        else { if (!txt) { customAlert("??????????????????????????????????????"); return; } finalText = txt; }
         const btn = document.getElementById('submitBtn'), p = loadedPolygons[activePolyId];
-        btn.disabled = true; btn.innerText = "通信中...";
+        btn.disabled = true; btn.innerText = "?????...";
         let photos = []; for(let f of pendingFiles) { const b64 = await resizeImg(f); photos.push({filename:f.name, base64:b64}); }
         try {
           await callGAS('saveReport', { id: activePolyId, name: p.name, author: currentUser, text: finalText, photos: photos });
-          customAlert("問題を報告し、作業予定に追加しました！");
+          customAlert("??????????????????????????????????");
           const mainReason = finalText.split(' / ')[0].trim();
           if (!pdlPastReports[activePolyId]) pdlPastReports[activePolyId] = [];
           if (!pdlPastReports[activePolyId].includes(mainReason)) { pdlPastReports[activePolyId].push(mainReason); }
           closeRightPanel();
-        } catch(e) { customAlert("エラーが発生しました: " + e.message); btn.disabled = false; btn.innerText = "報告を送信"; }
+        } catch(e) { customAlert("?????????????????: " + e.message); btn.disabled = false; btn.innerText = "????????"; }
       };
 
       window.openScheduleList = () => {
-        document.getElementById('rightPanelTitle').innerText = `📅 作業予定一覧`;
-        document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:50px;">通信中...</div>';
-        document.getElementById('rightPanelFooter').innerHTML = `<button onclick="closeRightPanel()" style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">閉じる</button>`;
+        document.getElementById('rightPanelTitle').innerText = `?? ???????????;
+        document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:50px;">?????...</div>';
+        document.getElementById('rightPanelFooter').innerHTML = `<button onclick="closeRightPanel()" style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">?????</button>`;
         document.getElementById('rightPanel').classList.add('open');
 
         callGAS('getScheduleData').then(data => {
           const schedules = data.activeSchedules || [];
-          if (schedules.length === 0) { document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:50px;color:#666;">現在必要な作業・問題報告はありません</div>'; return; }
+          if (schedules.length === 0) { document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:50px;color:#666;">????????????????????????????</div>'; return; }
           let sorted = [...schedules].sort((a, b) => { if(a.deadline === '-') return 1; if(b.deadline === '-') return -1; return new Date(a.deadline) - new Date(b.deadline); });
           let html = sorted.map(t => {
-            let isProblem = String(t.workName).includes('⚠️'), bgColor = isProblem ? '#ffebee' : (t.isOverdue ? '#fff3e0' : 'white'), borderColor = isProblem ? '#f44336' : (t.isOverdue ? '#ff9800' : '#ddd'), titleColor = isProblem ? '#d32f2f' : '#333';
-            let h = `<div style="background:${bgColor}; padding:15px; margin-bottom:12px; border-radius:8px; border:1px solid ${borderColor}; box-shadow:0 1px 3px rgba(0,0,0,0.1);"><div style="font-size:12px; color:#666; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center;"><span>📍 ${t.fieldName} ${t.cropName ? `(${t.cropName})` : ''}</span><span style="color:#2196F3; cursor:pointer; font-weight:bold; border:1px solid #2196F3; padding:2px 6px; border-radius:4px; font-size:11px;" onclick="focusAndOpenByName('${t.fieldName}')">場所へ</span></div><div style="font-size:15px; font-weight:bold; color:${titleColor}; margin-bottom:8px;">${t.workName}</div><div style="font-size:12px; color:#555; display:flex; justify-content:space-between;"><span>📅 予定: ${t.schedDate}</span><span style="${t.isOverdue || isProblem ? 'color:#d32f2f; font-weight:bold;' : ''}">期限: ${t.deadline}</span></div>`;
-            if(t.person || t.hours) { h += `<div style="font-size:12px; color:#555; margin-top:8px; border-top:1px solid ${borderColor}; padding-top:8px;">担当: ${t.person || '-'} / 時間: ${t.hours ? t.hours+'h' : '-'}</div>`; }
+            let isProblem = String(t.workName).includes('????'), bgColor = isProblem ? '#ffebee' : (t.isOverdue ? '#fff3e0' : 'white'), borderColor = isProblem ? '#f44336' : (t.isOverdue ? '#ff9800' : '#ddd'), titleColor = isProblem ? '#d32f2f' : '#333';
+            let h = `<div style="background:${bgColor}; padding:15px; margin-bottom:12px; border-radius:8px; border:1px solid ${borderColor}; box-shadow:0 1px 3px rgba(0,0,0,0.1);"><div style="font-size:12px; color:#666; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center;"><span>?? ${t.fieldName} ${t.cropName ? `(${t.cropName})` : ''}</span><span style="color:#2196F3; cursor:pointer; font-weight:bold; border:1px solid #2196F3; padding:2px 6px; border-radius:4px; font-size:11px;" onclick="focusAndOpenByName('${t.fieldName}')">?????</span></div><div style="font-size:15px; font-weight:bold; color:${titleColor}; margin-bottom:8px;">${t.workName}</div><div style="font-size:12px; color:#555; display:flex; justify-content:space-between;"><span>?? ???: ${t.schedDate}</span><span style="${t.isOverdue || isProblem ? 'color:#d32f2f; font-weight:bold;' : ''}">???: ${t.deadline}</span></div>`;
+            if(t.person || t.hours) { h += `<div style="font-size:12px; color:#555; margin-top:8px; border-top:1px solid ${borderColor}; padding-top:8px;">???: ${t.person || '-'} / ???: ${t.hours ? t.hours+'h' : '-'}</div>`; }
             h += `</div>`; return h;
           }).join('');
           document.getElementById('rightPanelContent').innerHTML = html;
-        }).catch(e => { document.getElementById('rightPanelContent').innerHTML = `<div style="color:red; text-align:center; margin-top:20px;">エラーが発生しました</div>`; });
+        }).catch(e => { document.getElementById('rightPanelContent').innerHTML = `<div style="color:red; text-align:center; margin-top:20px;">?????????????????</div>`; });
       };
 
       function openFeedback() { document.getElementById('feedbackModal').style.display = 'flex'; }
       function closeFeedback() { document.getElementById('feedbackModal').style.display = 'none'; }
       async function sendFeedback() {
          const text = document.getElementById('feedbackText').value;
-         if (!text.trim()) { customAlert("内容を入力してください"); return; }
-         const btn = document.getElementById('sendFeedbackBtn'); btn.disabled = true; btn.innerText = "送信中...";
+         if (!text.trim()) { customAlert("??????????????????"); return; }
+         const btn = document.getElementById('sendFeedbackBtn'); btn.disabled = true; btn.innerText = "?????...";
          try {
             await callGAS('manageMaster', { masterType: 'crop', manageAction: 'feedback', value: text, userName: currentUser }); 
-            customAlert("開発者に連絡を送信しました！\nご協力ありがとうございます。");
+            customAlert("????????????????????????n?????????????????????????");
             document.getElementById('feedbackText').value = ""; closeFeedback();
-         } catch(e) { customAlert("エラーが発生しました。"); } 
-         finally { btn.disabled = false; btn.innerText = "送信する"; }
+         } catch(e) { customAlert("???????????????????"); } 
+         finally { btn.disabled = false; btn.innerText = "??????"; }
       }
 
       function resizeImg(file) { return new Promise(res => { const r = new FileReader(); r.onload = e => { const img = new Image(); img.onload = () => { const cvs = document.createElement('canvas'); let w=img.width, h=img.height, max=1200; if(w>h && w>max){h*=max/w;w=max;}else if(h>max){w*=max/h;h=max;} cvs.width=w; cvs.height=h; cvs.getContext('2d').drawImage(img,0,0,w,h); res(cvs.toDataURL('image/jpeg',0.8)); }; img.src=e.target.result; }; r.readAsDataURL(file); }); }
-     // 🌟右パネルを閉じた時（作業終了時や地図の余白タップ時）に検索ピンも一緒に消し去る！
+     // ?????????????????????????????????????????????????????????????????
      function closeRightPanel() { 
           if (window.sharedLocationMarker) { window.sharedLocationMarker.setMap(null); window.sharedLocationMarker = null; }
           document.getElementById('rightPanel').classList.remove('open'); 
       }
       window.openLightbox = (u) => { document.getElementById('lightbox-img').src = u.replace('sz=w800','sz=w1600'); document.getElementById('lightbox').style.display = 'flex'; };
       // ==========================================
-      // 農機の片づけ場所をマップから選ぶ機能
+      // ???????????????????????????
       // ==========================================
       window.selectingMachineIdForLoc = null;
 
@@ -4538,8 +5013,8 @@ function createSignboardMarker(name, pos, icon, id) {
           
           const selectUI = document.getElementById('mapSelectUI');
           selectUI.innerHTML = `
-            <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;">🗺️ 片づけた場所をタップ</div>
-            <button onclick="cancelMachineLocSelect()" style="width:100%; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">キャンセル</button>
+            <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;">???? ???????????????</div>
+            <button onclick="cancelMachineLocSelect()" style="width:100%; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">????????</button>
           `;
           selectUI.style.display = 'flex';
       };
@@ -4548,13 +5023,13 @@ function createSignboardMarker(name, pos, icon, id) {
           const p = loadedPolygons[polyId];
           const mId = window.selectingMachineIdForLoc;
           
-          // 選択した看板の名前を表示してラジオボタンをONにする
-          document.getElementById('disp_loc_other_' + mId).innerText = `✅ 選択中: ${p.name}`;
+          // ????????????????????????????????????N?????
+          document.getElementById('disp_loc_other_' + mId).innerText = `?? ?????: ${p.name}`;
           document.getElementById('disp_loc_other_' + mId).style.display = 'block';
           document.getElementById('val_loc_other_' + mId).value = polyId;
           document.getElementById('radio_other_' + mId).checked = true;
           
-          cancelMachineLocSelect(); // 終了処理
+          cancelMachineLocSelect(); // ??????
       };
 
       window.cancelMachineLocSelect = () => {
@@ -4563,35 +5038,35 @@ function createSignboardMarker(name, pos, icon, id) {
           document.getElementById('mapSelectUI').style.display = 'none';
           document.getElementById('rightPanel').style.display = 'flex';
           
-          // 次のために元のUI構造に戻しておく
+          // ???????????I??????????????
           document.getElementById('mapSelectUI').innerHTML = `
-            <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;" id="mapSelectCount">🗺️ 記録する対象をタップしてください</div>
-            <button onclick="applyMapSelect()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定する</button>
-            <button onclick="cancelMapSelect()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">キャンセル</button>
+            <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;" id="mapSelectCount">???? ??????????????????????????</div>
+            <button onclick="applyMapSelect()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">??????</button>
+            <button onclick="cancelMapSelect()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">????????</button>
           `;
       };
 // ==========================================
-      // 🚜 車両・農機の状況一覧パネル（アコーディオン式）
+      // ?? ?????????????????????????????????????
       // ==========================================
       window.openMachineStatusUI = (signId) => {
           const p = loadedPolygons[signId];
-          document.getElementById('rightPanelTitle').innerText = `🚜 車両・農機状況`;
+          document.getElementById('rightPanelTitle').innerText = `?? ?????????????;
 
           const machinesHere = pdlMachines.filter(m => m.signId === signId || m.currentLocId === signId);
 
           let html = '';
           if (machinesHere.length === 0) {
-              html = `<div style="text-align:center; color:#666; padding:15px; font-size:13px; background:#fff; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">関連する車両・農機はありません。<br>下の「新規登録」ボタンから追加してください。</div>`;
+              html = `<div style="text-align:center; color:#666; padding:15px; font-size:13px; background:#fff; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">??????????????????????????<br>????????????????????????????????????</div>`;
           } else {
-              // 🌟機械名でグループ化（アコーディオン用）🌟
+              // ?????????????????????????????????
               const groupedMachines = {};
               machinesHere.forEach(m => {
-                  const name = m.name || '名称未設定';
+                  const name = m.name || '????????';
                   if (!groupedMachines[name]) groupedMachines[name] = [];
                   groupedMachines[name].push(m);
               });
 
-              html += `<div style="margin-bottom:15px; font-size:12px; color:#666;">💡 車両・農機名をタップすると詳細（機械番号など）が開きます。</div>`;
+              html += `<div style="margin-bottom:15px; font-size:12px; color:#666;">?? ?????????????????????????????????????????????</div>`;
 
               let groupIndex = 0;
               for (const [macName, items] of Object.entries(groupedMachines)) {
@@ -4601,7 +5076,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div style="background:white; margin-bottom:10px; border-radius:8px; border:1px solid #ddd; box-shadow:0 1px 3px rgba(0,0,0,0.05); overflow:hidden;">
                       <div style="padding:15px; display:flex; justify-content:space-between; align-items:center; cursor:pointer; background:#f8f9fa;" onclick="document.getElementById('${groupId}').style.display = document.getElementById('${groupId}').style.display === 'none' ? 'block' : 'none';">
                           <div style="font-weight:bold; font-size:16px; color:#333;">${macName}</div>
-                          <div style="font-size:12px; color:#666;">全${items.length}台 ▼</div>
+                          <div style="font-size:12px; color:#666;">??${items.length}?? ??</div>
                       </div>
                       <div id="${groupId}" style="display:none; padding:10px; background:#fff; border-top:1px solid #eee;">
                   `;
@@ -4611,15 +5086,15 @@ function createSignboardMarker(name, pos, icon, id) {
                       const isCurrent = (m.currentLocId === signId);
                       let locColor, locText, bgColor, borderColor;
 
-                      // 状態の判定
+                      // ????????
                       if (isBase && isCurrent) {
-                          locColor = '#4CAF50'; locText = `📍 ここにあります<br><span style="font-size:10px;font-weight:normal;">(定位置)</span>`;
+                          locColor = '#4CAF50'; locText = `?? ????????????<br><span style="font-size:10px;font-weight:normal;">(?????)</span>`;
                           bgColor = '#f1f8e9'; borderColor = '#81c784';
                       } else if (isBase && !isCurrent) {
-                          locColor = '#d32f2f'; locText = `⚠️ 貸出中<br><span style="font-size:10px;font-weight:normal;">(現在: ${m.currentLocName || '不明'})</span>`;
+                          locColor = '#d32f2f'; locText = `???? ?????<br><span style="font-size:10px;font-weight:normal;">(???: ${m.currentLocName || '???'})</span>`;
                           bgColor = '#fff'; borderColor = '#ddd';
                       } else if (!isBase && isCurrent) {
-                          locColor = '#4CAF50'; locText = `📍 ここにあります<br><span style="font-size:10px;font-weight:normal;">(定位置: ${m.signName || '不明'})</span>`;
+                          locColor = '#4CAF50'; locText = `?? ????????????<br><span style="font-size:10px;font-weight:normal;">(?????: ${m.signName || '???'})</span>`;
                           bgColor = '#fff3e0'; borderColor = '#ffb74d';
                       }
 
@@ -4627,18 +5102,18 @@ function createSignboardMarker(name, pos, icon, id) {
                           <div style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:8px; padding:12px; margin-bottom:10px; box-shadow:0 1px 2px rgba(0,0,0,0.05); cursor:pointer;" onclick="openMachineActionModal('${m.id}', '${signId}')">
                               <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">
                                   <div>
-                                      <div style="font-weight:bold; font-size:14px; color:#1a73e8;">🔢 番号: ${m.machineNumber || '未設定'}</div>
-                                      <div style="font-size:11px; color:#777; margin-top:4px;">型式: ${m.model || '-'} / 分類: ${m.workCategory || '-'}</div>
+                                      <div style="font-weight:bold; font-size:14px; color:#1a73e8;">??? ???: ${m.machineNumber || '?????'}</div>
+                                      <div style="font-size:11px; color:#777; margin-top:4px;">???: ${m.model || '-'} / ???: ${m.workCategory || '-'}</div>
                                   </div>
                                   <div style="text-align:right;">
-                                      <div style="font-size:11px; color:#666; margin-bottom:2px;">現在の置き場所</div>
+                                      <div style="font-size:11px; color:#666; margin-bottom:2px;">???????????</div>
                                       <div style="font-size:13px; font-weight:bold; color:${locColor}; line-height:1.3;">${locText}</div>
                                   </div>
                               </div>
                               <div style="margin-top:8px; display:flex; justify-content:flex-end; gap:8px;">
-                                  <button onclick="event.stopPropagation(); openEditMachineModal('${m.id}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer; color:#333;">✏️ 編集</button>
-                                  <button onclick="event.stopPropagation(); openMaintenanceForm('${m.id}', '${signId}')" style="background:#e3f2fd; color:#1976D2; border:1px solid #bbdefb; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer;">🔧 整備記録</button>
-                                  <button onclick="event.stopPropagation(); deleteMachine('${m.id}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer;">🗑️ 削除</button>
+                                  <button onclick="event.stopPropagation(); openEditMachineModal('${m.id}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer; color:#333;">???? ???</button>
+                                  <button onclick="event.stopPropagation(); openMaintenanceForm('${m.id}', '${signId}')" style="background:#e3f2fd; color:#1976D2; border:1px solid #bbdefb; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer;">?? ??????</button>
+                                  <button onclick="event.stopPropagation(); deleteMachine('${m.id}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer;">???? ????</button>
                               </div>
                           </div>
                       `;
@@ -4650,46 +5125,46 @@ function createSignboardMarker(name, pos, icon, id) {
           document.getElementById('rightPanelContent').innerHTML = html;
           document.getElementById('rightPanelFooter').innerHTML = `
               <div style="display:flex; gap:10px;">
-                  <button onclick="openNewMachineModal('${signId}', '${p.name}')" style="background:#1976D2; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">➕ 車両・農機をここに登録</button>
-                  <button onclick="closeRightPanel()" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">閉じる</button>
+                  <button onclick="openNewMachineModal('${signId}', '${p.name}')" style="background:#1976D2; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?? ??????????????????</button>
+                  <button onclick="closeRightPanel()" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?????</button>
               </div>
           `;
           if(typeof infoWindow !== 'undefined') infoWindow.close();
           document.getElementById('rightPanel').classList.add('open');
       };
-// 🌟農機を定位置に戻す処理🌟
+// ??????????????????????
       window.returnMachineToBase = async (machineId, baseSignId, baseSignName) => {
-          if (!await customConfirm("この車両・農機を「定位置」に戻しますか？")) return;
+          if (!await customConfirm("???????????????????????????????")) return;
 
-          // 画面を通信中に切り替え
-          document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1a73e8;'>通信中...</div>";
+          // ??????????????????
+          document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1a73e8;'>?????...</div>";
 
           try {
-              // GASへ場所更新を送信（配列形式で送る仕様に合わせる）
+              // GAS?????????????????????????????????????
               await callGAS('updateMachineLocations', { 
                   updates: [{ id: machineId, signId: baseSignId, signName: baseSignName }] 
               });
 
-              // ローカルのデータも更新してあげる
+              // ????????????????????????
               const m = pdlMachines.find(x => x.id === machineId);
               if (m) {
                   m.currentLocId = baseSignId;
                   m.currentLocName = baseSignName;
               }
 
-              customAlert("定位置に戻しました！");
-              openMachineStatusUI(baseSignId); // 画面を再描画
+              customAlert("???????????????");
+              openMachineStatusUI(baseSignId); // ???????????
           } catch(e) {
-              customAlert("エラーが発生しました: " + e.message);
+              customAlert("?????????????????: " + e.message);
               openMachineStatusUI(baseSignId);
           }
       };
 // ==========================================
-      // 作業分類（複数枠）入力UI
+      // ???????????????????I
       // ==========================================
       window.parseWorkCategoryList = (raw) => {
          return String(raw || '')
-            .split(/[,、]/)
+            .split(/[,??/)
             .map(s => s.trim())
             .filter(Boolean);
       };
@@ -4710,7 +5185,7 @@ function createSignboardMarker(name, pos, icon, id) {
          const workNames = (pdlWorkMaster || []).map(w => String((w && w.name) || w || '').trim()).filter(Boolean);
          const optionsFor = (selected) => {
             const selectedVal = String(selected || '').trim();
-            let opts = '<option value="">作業を選択...</option>';
+            let opts = '<option value="">?????????...</option>';
             const seen = {};
             workNames.forEach(name => {
                if (seen[name]) return;
@@ -4725,10 +5200,10 @@ function createSignboardMarker(name, pos, icon, id) {
          box.innerHTML = list.map((v, i) => `
             <div class="work-cat-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
               <select class="form-input work-cat-input" style="margin-bottom:0; flex:1;">${optionsFor(v)}</select>
-              <button type="button" onclick="removeWorkCategoryRow('${containerId}', ${i})" title="削除" style="background:#fff; color:#F44336; border:1px solid #ef9a9a; border-radius:6px; width:36px; height:36px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:16px; line-height:1;">×</button>
+              <button type="button" onclick="removeWorkCategoryRow('${containerId}', ${i})" title="????" style="background:#fff; color:#F44336; border:1px solid #ef9a9a; border-radius:6px; width:36px; height:36px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:16px; line-height:1;">?</button>
             </div>
          `).join('') + `
-            <button type="button" onclick="addWorkCategoryRow('${containerId}')" style="background:#E8F5E9; color:#2E7D32; border:1px dashed #81C784; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer; width:100%; margin-bottom:10px;">＋ 作業分類を追加</button>
+            <button type="button" onclick="addWorkCategoryRow('${containerId}')" style="background:#E8F5E9; color:#2E7D32; border:1px dashed #81C784; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer; width:100%; margin-bottom:10px;">?? ????????????</button>
          `;
       };
 
@@ -4755,19 +5230,19 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.buildWorkCategoryFieldHTML = (containerId, labelText) => `
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">${labelText || '作業分類'}（既存の作業から選択）</label>
+             <label class="form-label" style="font-size:11px; margin-bottom:2px;">${labelText || '???????'}???????????????????</label>
              <div id="${containerId}" style="margin-bottom:4px;"></div>
       `;
 
 // ==========================================
-      // 農機・車両の新規登録ポップアップ
+      // ?????????????????????????
       // ==========================================
       window.addMachineTypeFromForm = async (selectId) => {
-          const name = prompt('新しい機械カテゴリ名を入力してください:');
+          const name = prompt('??????????????????????????????:');
           if (!name || !name.trim()) return;
           const t = name.trim();
           if ((pdlMachineTypes || []).includes(t)) {
-              customAlert('既に登録されています');
+              customAlert('????????????????');
               const sel = document.getElementById(selectId);
               if (sel) sel.value = t;
               return;
@@ -4777,20 +5252,20 @@ function createSignboardMarker(name, pos, icon, id) {
               pdlMachineTypes = updated || [...(pdlMachineTypes || []), t];
               const sel = document.getElementById(selectId);
               if (sel) {
-                  sel.innerHTML = '<option value="">選択...</option>' + pdlMachineTypes.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+                  sel.innerHTML = '<option value="">???...</option>' + pdlMachineTypes.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
                   sel.value = t;
               }
           } catch (e) {
-              customAlert(e.message || '機械カテゴリの追加に失敗しました');
+              customAlert(e.message || '???????????????????????????');
           }
       };
 
       window.addMachineGroupFromForm = async (selectId) => {
-          const name = prompt('新しい機械グループ名を入力してください:');
+          const name = prompt('??????????????????????????????:');
           if (!name || !name.trim()) return;
           const t = name.trim();
           if ((pdlMachineGroups || []).includes(t)) {
-              customAlert('既に登録されています');
+              customAlert('????????????????');
               const sel = document.getElementById(selectId);
               if (sel) sel.value = t;
               return;
@@ -4800,24 +5275,24 @@ function createSignboardMarker(name, pos, icon, id) {
               pdlMachineGroups = updated || [...(pdlMachineGroups || []), t];
               const sel = document.getElementById(selectId);
               if (sel) {
-                  sel.innerHTML = '<option value="">選択...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+                  sel.innerHTML = '<option value="">???...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
                   sel.value = t;
               }
           } catch (e) {
-              customAlert(e.message || '機械グループの追加に失敗しました');
+              customAlert(e.message || '???????????????????????????');
           }
       };
 
       window.renameMachineGroupFromForm = async (selectId) => {
           const sel = document.getElementById(selectId);
-          if (!sel || !sel.value) { customAlert('編集するグループを選択してください'); return; }
+          if (!sel || !sel.value) { customAlert('????????????????????????????'); return; }
           const oldName = sel.value;
-          const next = prompt('グループ名を編集してください:', oldName);
+          const next = prompt('???????????????????????:', oldName);
           if (next == null) return;
           const newName = next.trim();
-          if (!newName) { customAlert('グループ名を入力してください'); return; }
+          if (!newName) { customAlert('???????????????????????'); return; }
           if (newName === oldName) return;
-          if ((pdlMachineGroups || []).includes(newName)) { customAlert('既に登録されています'); return; }
+          if ((pdlMachineGroups || []).includes(newName)) { customAlert('????????????????'); return; }
           try {
               const updated = await callGAS('manageMaster', {
                   masterType: 'machineGroup',
@@ -4827,109 +5302,113 @@ function createSignboardMarker(name, pos, icon, id) {
               });
               pdlMachineGroups = updated || (pdlMachineGroups || []).map(c => c === oldName ? newName : c);
               (pdlMachines || []).forEach(m => { if (m.group === oldName) m.group = newName; });
-              sel.innerHTML = '<option value="">選択...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+              sel.innerHTML = '<option value="">???...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
               sel.value = newName;
-              customAlert('グループ名を更新しました');
+              customAlert('????????????????????');
           } catch (e) {
-              customAlert(e.message || '編集に失敗しました');
+              customAlert(e.message || '???????????????');
           }
       };
 
       window.removeMachineGroupFromForm = async (selectId) => {
           const sel = document.getElementById(selectId);
-          if (!sel || !sel.value) { customAlert('削除するグループを選択してください'); return; }
+          if (!sel || !sel.value) { customAlert('?????????????????????????????'); return; }
           const val = sel.value;
-          if (!await customConfirm(`機械グループ「${val}」をマスタから削除しますか？`)) return;
+          if (!await customConfirm(`???????????${val}??????????????????????`)) return;
           try {
               const updated = await callGAS('manageMaster', { masterType: 'machineGroup', manageAction: 'delete', value: val, userName: currentUser });
               pdlMachineGroups = updated || (pdlMachineGroups || []).filter(c => c !== val);
-              sel.innerHTML = '<option value="">選択...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+              sel.innerHTML = '<option value="">???...</option>' + pdlMachineGroups.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
           } catch (e) {
-              customAlert(e.message || '削除に失敗しました');
+              customAlert(e.message || '????????????????');
           }
       };
 
-      // 互換エイリアス（旧名）
+      // ?????????????????
       window.addMachineCategoryFromForm = window.addMachineGroupFromForm;
       window.renameMachineCategoryFromForm = window.renameMachineGroupFromForm;
       window.removeMachineCategoryFromForm = window.removeMachineGroupFromForm;
 
       window.openNewMachineModal = (signId, signName) => {
          window.newMachinePendingFiles = []; 
-         const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
+         const locOpts = '<option value="">????????...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
          
          const html = `
            <div style="text-align:left;">
              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1976D2; padding-bottom:8px; margin-bottom:15px;">
-               <h3 style="margin:0; color:#1976D2;">🚜 新しい車両・農機を登録</h3>
-               <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">×</span>
+               <h3 style="margin:0; color:#1976D2;">?? ?????????????????</h3>
+               <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">?</span>
              </div>
-             <div style="font-size:12px; color:#666; margin-bottom:15px; background:#e3f2fd; padding:8px; border-radius:4px;">📍 定位置: <b>${signName}</b> に設定されます</div>
+             <div style="margin-bottom:12px;">
+              <label class="form-label" style="font-size:11px; margin-bottom:2px;">\u5b9a\u4f4d\u7f6e\u30fb\u7247\u4ed8\u3051\u5834\u6240\uff08\u770b\u677f\uff09 <span style="color:red;">*</span></label>
+              <select id="new_mac_home_sign" class="form-input" style="margin-bottom:4px;">${window.getWorkerHomeSignOptionsHtml(signId || '')}</select>
+              <div style="font-size:11px; color:#666;">\u4f5c\u696d\u5f8c\u306e\u7247\u4ed8\u3051\u5148\uff08\u5b9a\u4f4d\u7f6e\uff09\u306b\u306a\u308b\u770b\u677f\u3092\u9078\u3093\u3067\u304f\u3060\u3055\u3044\u3002</div>
+             </div>
              
             <div style="display:flex; gap:5px; margin-bottom:10px;">
     <div style="flex:2;">
-        <label class="form-label" style="font-size:11px; margin-bottom:2px;">車両名・農機名 <span style="color:red;">*</span></label>
-        <input type="text" id="new_mac_name" class="form-input" placeholder="例: イセキ管理機" style="margin-bottom:0;">
+        <label class="form-label" style="font-size:11px; margin-bottom:2px;">???????????? <span style="color:red;">*</span></label>
+        <input type="text" id="new_mac_name" class="form-input" placeholder="??: ?????????" style="margin-bottom:0;">
     </div>
     <div style="flex:1;">
-        <label class="form-label" style="font-size:11px; margin-bottom:2px;">🔢 機械番号</label>
-        <input type="text" id="new_mac_number" class="form-input" placeholder="例: 1" style="margin-bottom:0;">
+        <label class="form-label" style="font-size:11px; margin-bottom:2px;">??? ??????</label>
+        <input type="text" id="new_mac_number" class="form-input" placeholder="??: 1" style="margin-bottom:0;">
     </div>
 </div>
              <div style="display:flex; gap:5px; margin-bottom:10px;">
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">型式</label><input type="text" id="new_mac_model" class="form-input" placeholder="例: K001" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">???</label><input type="text" id="new_mac_model" class="form-input" placeholder="??: K001" style="margin-bottom:0;"></div>
                <div style="flex:1;">
-                 <label class="form-label" style="font-size:11px; margin-bottom:2px;">機械カテゴリ</label>
+                 <label class="form-label" style="font-size:11px; margin-bottom:2px;">?????????</label>
                  <div style="display:flex; gap:4px;">
                    <select id="new_mac_type" class="form-input" style="flex:1; margin-bottom:0;">
-                     <option value="">選択...</option>
+                     <option value="">???...</option>
                      ${(pdlMachineTypes || []).map(t => `<option value="${String(t).replace(/"/g, '&quot;')}">${t}</option>`).join('')}
                    </select>
-                   <button type="button" onclick="addMachineTypeFromForm('new_mac_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;">➕</button>
+                   <button type="button" onclick="addMachineTypeFromForm('new_mac_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;">??</button>
                  </div>
                </div>
              </div>
              <div style="display:flex; gap:5px; margin-bottom:10px;">
                <div style="flex:1;">
-                 <label class="form-label" style="font-size:11px; margin-bottom:2px;">機械グループ</label>
+                 <label class="form-label" style="font-size:11px; margin-bottom:2px;">?????????</label>
                  <div style="display:flex; gap:4px;">
                    <select id="new_mac_group" class="form-input" style="flex:1; margin-bottom:0;">
-                     <option value="">選択...</option>
+                     <option value="">???...</option>
                      ${(pdlMachineGroups || []).map(t => `<option value="${String(t).replace(/"/g, '&quot;')}">${t}</option>`).join('')}
                    </select>
-                   <button type="button" onclick="addMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="追加">➕</button>
-                   <button type="button" onclick="renameMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="編集">✏️</button>
-                   <button type="button" onclick="removeMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; color:#c62828; cursor:pointer;" title="削除">➖</button>
+                   <button type="button" onclick="addMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="???">??</button>
+                   <button type="button" onclick="renameMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="???">????</button>
+                   <button type="button" onclick="removeMachineGroupFromForm('new_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; color:#c62828; cursor:pointer;" title="????">??</button>
                  </div>
                </div>
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">拠点</label><select id="new_mac_location" class="form-input" style="margin-bottom:0;">${locOpts}</select></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">???</label><select id="new_mac_location" class="form-input" style="margin-bottom:0;">${locOpts}</select></div>
              </div>
              <div style="display:flex; gap:5px; margin-bottom:10px;">
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">購入年月日</label><input type="date" id="new_mac_date" class="form-input" style="margin-bottom:0;"></div>
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">燃料</label>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">????????</label><input type="date" id="new_mac_date" class="form-input" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">???</label>
                  <select id="new_mac_fuel" class="form-input" style="margin-bottom:0;">
-                   <option value="">-- 選択 --</option>
-                   <option value="軽油">軽油</option>
-                   <option value="ガソリン">ガソリン</option>
-                   <option value="混合油">混合油</option>
-                   <option value="電気100V">電気100V</option>
-                   <option value="電気200V">電気200V</option>
+                   <option value="">-- ??? --</option>
+                   <option value="???">???</option>
+                   <option value="??????">??????</option>
+                   <option value="?????">?????</option>
+                   <option value="???100V">???100V</option>
+                   <option value="???200V">???200V</option>
                  </select>
                </div>
              </div>
 
-             ${window.buildWorkCategoryFieldHTML('new_mac_category_rows', '作業分類')}
+             ${window.buildWorkCategoryFieldHTML('new_mac_category_rows', '???????')}
 
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">📷 写真 (最大2枚)</label>
+             <label class="form-label" style="font-size:11px; margin-bottom:2px;">??? ??? (????2??)</label>
              <div style="display:flex; gap:10px; margin-bottom:10px;">
-               <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">📸 カメラ<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleNewMachinePhoto(this)"></label>
-               <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🖼️ フォルダ<input type="file" accept="image/*" multiple style="display:none;" onchange="handleNewMachinePhoto(this)"></label>
+               <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">??? ?????<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleNewMachinePhoto(this)"></label>
+               <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">???? ???????<input type="file" accept="image/*" multiple style="display:none;" onchange="handleNewMachinePhoto(this)"></label>
              </div>
              <div id="new_mac_photos_preview" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:5px; min-height:10px;"></div>
 
              <div style="display:flex; gap:10px; margin-top:15px;">
-               <button onclick="execAddMachineToSign('${signId}', '${signName}')" style="background:#1976D2; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">マスタに登録</button>
-               <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px;">キャンセル</button>
+               <button onclick="execAddMachineToSign('${signId}', '${signName}')" style="background:#1976D2; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">??????????</button>
+               <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px;">????????</button>
              </div>
            </div>
          `;
@@ -4942,7 +5421,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if(!input.files || input.files.length === 0) return;
         for(let f of input.files) {
             if(window.newMachinePendingFiles.length < 2) window.newMachinePendingFiles.push(f);
-            else { customAlert("写真は最大2枚までです"); break; }
+            else { customAlert("????????2?????????"); break; }
         }
         input.value = ""; renderNewMachinePhotos();
       };
@@ -4953,7 +5432,7 @@ function createSignboardMarker(name, pos, icon, id) {
         let html = '';
         window.newMachinePendingFiles.forEach((f, i) => {
             const url = URL.createObjectURL(f);
-            html += `<div style="position:relative;flex-shrink:0;"><img src="${url}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #ccc;"><div onclick="removeNewMachinePhoto(${i})" style="position:absolute;top:-5px;right:-5px;background:#F44336;color:white;width:20px;height:20px;text-align:center;line-height:20px;border-radius:50%;cursor:pointer;font-weight:bold;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.3);">×</div></div>`;
+            html += `<div style="position:relative;flex-shrink:0;"><img src="${url}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #ccc;"><div onclick="removeNewMachinePhoto(${i})" style="position:absolute;top:-5px;right:-5px;background:#F44336;color:white;width:20px;height:20px;text-align:center;line-height:20px;border-radius:50%;cursor:pointer;font-weight:bold;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.3);">?</div></div>`;
         });
         container.innerHTML = html;
       };
@@ -4961,7 +5440,17 @@ function createSignboardMarker(name, pos, icon, id) {
       window.removeNewMachinePhoto = (idx) => { window.newMachinePendingFiles.splice(idx, 1); renderNewMachinePhotos(); };
 
      window.execAddMachineToSign = async (signId, signName) => {
-         const name = document.getElementById('new_mac_name').value.trim();
+         
+         const homeSel = document.getElementById('new_mac_home_sign');
+         if (homeSel && homeSel.value) {
+             signId = homeSel.value;
+             signName = (loadedPolygons[signId] && loadedPolygons[signId].name) ? loadedPolygons[signId].name : (signName || '');
+         }
+         if (!signId) {
+             if (typeof customAlert === 'function') customAlert('\u5b9a\u4f4d\u7f6e\u30fb\u7247\u4ed8\u3051\u5834\u6240\u306e\u770b\u677f\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044');
+             return;
+         }
+const name = document.getElementById('new_mac_name').value.trim();
          const number = document.getElementById('new_mac_number').value.trim();
          const model = document.getElementById('new_mac_model').value.trim();
          const type = (document.getElementById('new_mac_type') || {}).value || '';
@@ -4971,9 +5460,9 @@ function createSignboardMarker(name, pos, icon, id) {
          const workCategory = window.collectWorkCategoryValue('new_mac_category_rows');
          const purchaseDate = document.getElementById('new_mac_date').value;
          
-         if (!name) { customAlert("車両名・農機名を入力してください。"); return; }
+         if (!name) { customAlert("?????????????????????????????"); return; }
          
-         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:16px; font-weight:bold; color:#1976D2;'>処理中...<br><span style='font-size:12px; color:#666;'>写真がある場合は少し時間がかかります</span></div>";
+         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:16px; font-weight:bold; color:#1976D2;'>?????...<br><span style='font-size:12px; color:#666;'>???????????????????????????</span></div>";
          
          try {
             let photos = [];
@@ -4992,51 +5481,57 @@ function createSignboardMarker(name, pos, icon, id) {
             currentLocId: newMac.signId
         });
             document.getElementById('modal').style.display = 'none'; 
-            customAlert(`「${name}」をマスタに登録し、定位置を\n【${signName}】に設定しました！`);
+            customAlert(`??${name}?????????????????????????n??${signName}????????????????);
             if (window._openMachineFromIrrigation) {
               window._openMachineFromIrrigation = false;
               if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
             }
+            if (window._openMachineFromUsedItems) {
+              window._openMachineFromUsedItems = false;
+              const wn = (typeof window._getCurrentUsedItemsWorkName === 'function') ? window._getCurrentUsedItemsWorkName() : '';
+              if (typeof window.renderUsedItems === 'function') window.renderUsedItems(wn);
+              if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
+            }
             infoWindow.close(); 
          } catch(e) { 
-            customAlert("エラーが発生しました: " + e.message); 
+            customAlert("?????????????????: " + e.message); 
          } finally {
             document.getElementById('modal').style.display = 'none'; 
          }
       };
 // ==========================================
-      // 資材の削除機能
+      // ???????????
       // ==========================================
       window.deleteMaterial = async (matId, signId) => {
          const confirmModal = document.getElementById('customConfirmModal');
          if (confirmModal) confirmModal.style.zIndex = "100000";
          
-         if (!await customConfirm("この資材をマスタから完全に削除しますか？\n（関連する履歴が見えなくなる場合があります）")) return;
+         if (!await customConfirm("??????????????????????????????\n??????????????????????????????????")) return;
          
-         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>削除中...</div>";
+         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>??????...</div>";
          
          try {
-            // 管理者用の削除機能を使い回して削除
+            // ???????????????????????????
             const updatedList = await callGAS('manageMaster', { 
                 masterType: 'material', manageAction: 'delete', value: { id: matId }, userName: currentUser 
             });
-            pdlMaterials = updatedList; // 最新のリストに更新
+            pdlMaterials = updatedList; // ??????????????
             
             const alertModal = document.getElementById('customAlertModal');
             if (alertModal) alertModal.style.zIndex = "100000";
-            customAlert("資材を削除しました。");
+            customAlert("????????????????");
             
-            openInventoryUI(signId); // UIを再描画
+            openInventoryUI(signId); // UI???????
          } catch(e) {
             const alertModal = document.getElementById('customAlertModal');
             if (alertModal) alertModal.style.zIndex = "100000";
-            customAlert("エラーが発生しました: " + e.message);
+            customAlert("?????????????????: " + e.message);
             openInventoryUI(signId);
          }
       };
 
   // ==========================================
-      // 資材の編集機能（モーダルを開く）
+      // ?????????????????????????
       // ==========================================
       window.openEditMatModal = (matId, signId) => {
          const mat = pdlMaterials.find(m => m.id === matId);
@@ -5045,23 +5540,23 @@ function createSignboardMarker(name, pos, icon, id) {
          const html = `
            <div style="text-align:left;">
              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1a73e8; padding-bottom:8px; margin-bottom:15px;">
-               <h3 style="margin:0; color:#1a73e8;">✏️ 資材の編集</h3>
-               <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">×</span>
+               <h3 style="margin:0; color:#1a73e8;">???? ????????</h3>
+               <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; color:#666; font-size:24px; line-height:1;">?</span>
              </div>
-             <label class="form-label" style="font-size:11px; margin-bottom:2px;">資材名</label>
+             <label class="form-label" style="font-size:11px; margin-bottom:2px;">?????</label>
              <input type="text" id="edit_mat_name" class="form-input" value="${mat.name}" style="margin-bottom:10px;">
              
-             ${window.buildWorkCategoryFieldHTML('edit_mat_category_rows', '作業分類')}
+             ${window.buildWorkCategoryFieldHTML('edit_mat_category_rows', '???????')}
              
              <div style="display:flex; gap:5px; margin-bottom:10px;">
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">容量</label><input type="text" id="edit_mat_size" class="form-input" value="${mat.size || ''}" style="margin-bottom:0;"></div>
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">容量単位</label><input type="text" id="edit_mat_vol_unit" class="form-input" value="${mat.volUnit || ''}" style="margin-bottom:0;"></div>
-               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">在庫単位</label><input type="text" id="edit_mat_stock_unit" class="form-input" value="${mat.stockUnit || ''}" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">???</label><input type="text" id="edit_mat_size" class="form-input" value="${mat.size || ''}" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">??????</label><input type="text" id="edit_mat_vol_unit" class="form-input" value="${mat.volUnit || ''}" style="margin-bottom:0;"></div>
+               <div style="flex:1;"><label class="form-label" style="font-size:11px; margin-bottom:2px;">??????</label><input type="text" id="edit_mat_stock_unit" class="form-input" value="${mat.stockUnit || ''}" style="margin-bottom:0;"></div>
              </div>
              
              <div style="display:flex; gap:10px; margin-top:15px;">
-               <button onclick="execEditMaterial('${mat.id}', '${signId}')" style="background:#1a73e8; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">更新する</button>
-               <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px;">キャンセル</button>
+               <button onclick="execEditMaterial('${mat.id}', '${signId}')" style="background:#1a73e8; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">??????</button>
+               <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:14px;">????????</button>
              </div>
            </div>
          `;
@@ -5069,26 +5564,26 @@ function createSignboardMarker(name, pos, icon, id) {
          document.getElementById('modal').style.display = 'flex';
          window.renderWorkCategoryRows('edit_mat_category_rows', window.parseWorkCategoryList(mat.workCategory));
       };
-// 🌟 履歴の編集保存処理 🌟
+// ?? ??????????????? ??
       window.execEditInvHistory = async (matId, rowIndex, signId) => {
           const newAction = document.getElementById('edit_hist_action').value;
           const newAmountStr = document.getElementById('edit_hist_amount').value;
           const newAmount = parseInt(newAmountStr);
 
           if (isNaN(newAmount) || newAmount <= 0) {
-              customAlert("正しい数量を入力してください。");
+              customAlert("?????????????????????????");
               return;
           }
 
-          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#FF9800;'>更新中...</div>";
+          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#FF9800;'>?????...</div>";
 
           try {
-              // ★ GAS側に新しいアクション(newAction)も送るように進化！
+              // ?? GAS???????????????(newAction)???????????????
               const newStock = await callGAS('editInventoryHistory', { 
                   rowIndex: rowIndex, 
                   materialId: matId, 
                   newAmount: newAmount,
-                  newAction: newAction // 追加された操作内容
+                  newAction: newAction // ????????????????
               });
               
               updateLocalStock(matId, newStock, signId);
@@ -5096,17 +5591,17 @@ function createSignboardMarker(name, pos, icon, id) {
               
               const alertModal = document.getElementById('customAlertModal');
               if (alertModal) alertModal.style.zIndex = "100000";
-              customAlert("履歴を修正し、在庫を再計算しました。");
+              customAlert("?????????????????????????????");
               
-              openInventoryUI(signId); // UIを再描画して最新化
+              openInventoryUI(signId); // UI????????????????
               
           } catch(e) {
               document.getElementById('modal').style.display = 'none';
-              customAlert("エラーが発生しました: " + e.message);
+              customAlert("?????????????????: " + e.message);
           }
       };
       
-      // 編集内容の保存処理
+      // ???????????????
       window.execEditMaterial = async (matId, signId) => {
          const name = document.getElementById('edit_mat_name').value.trim();
          const category = window.collectWorkCategoryValue('edit_mat_category_rows');
@@ -5117,22 +5612,22 @@ function createSignboardMarker(name, pos, icon, id) {
          if (!name) { 
             const alertModal = document.getElementById('customAlertModal');
             if (alertModal) alertModal.style.zIndex = "100000";
-            customAlert("資材名を入力してください。"); return; 
+            customAlert("??????????????????????"); return; 
          }
          
-         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:16px; font-weight:bold; color:#1a73e8;'>更新中...</div>";
+         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:16px; font-weight:bold; color:#1a73e8;'>?????...</div>";
          
          try {
-            // ★送信データに workCategory を追加
+            // ??????????? workCategory ?????
             await callGAS('editMaterial', { 
                id: matId, name: name, workCategory: category, size: size, volUnit: volUnit, stockUnit: stockUnit 
             });
             
-            // ローカルのリストも更新
+            // ?????????????????
             const mat = pdlMaterials.find(m => m.id === matId);
             if (mat) {
                mat.name = name;
-               mat.workCategory = category; // ★追加
+               mat.workCategory = category; // ?????
                mat.size = size;
                mat.volUnit = volUnit;
                mat.stockUnit = stockUnit;
@@ -5141,28 +5636,28 @@ function createSignboardMarker(name, pos, icon, id) {
             document.getElementById('modal').style.display = 'none'; 
             const alertModal = document.getElementById('customAlertModal');
             if (alertModal) alertModal.style.zIndex = "100000";
-            customAlert("資材情報を更新しました！");
+            customAlert("???????????????????");
             
-            openInventoryUI(signId); // UIを再描画
+            openInventoryUI(signId); // UI???????
          } catch(e) { 
             document.getElementById('modal').style.display = 'none'; 
             const alertModal = document.getElementById('customAlertModal');
             if (alertModal) alertModal.style.zIndex = "100000";
-            customAlert("エラーが発生しました: " + e.message); 
+            customAlert("?????????????????: " + e.message); 
          }
       };
 // ==========================================
-      // 給油機能（直接フォームを開く最新版！）
+      // ??????????????????????????????
       // ==========================================
       window.openRefuelUI = async (signId) => {
          const p = loadedPolygons[signId];
-         document.getElementById('rightPanelTitle').innerText = `⛽ ${p.name} - 給油管理`;
-         document.getElementById('rightPanelContent').innerHTML = "<div id='refuel_loading' style='text-align:center; padding:20px; font-weight:bold;'>履歴を読み込み中...</div>";
+         document.getElementById('rightPanelTitle').innerText = `?? ${p.name} - ??????`;
+         document.getElementById('rightPanelContent').innerHTML = "<div id='refuel_loading' style='text-align:center; padding:20px; font-weight:bold;'>????????????...</div>";
          
          document.getElementById('rightPanelFooter').innerHTML = `
            <div style="display:flex; gap:10px;">
-              <button onclick="openRefuelForm('${signId}')" style="background:#E91E63; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">➕ 給油を記録する</button>
-              <button onclick="closeRightPanel()" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">閉じる</button>
+              <button onclick="openRefuelForm('${signId}')" style="background:#E91E63; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?? ???????????</button>
+              <button onclick="closeRightPanel()" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?????</button>
            </div>
          `;
          infoWindow.close();
@@ -5172,16 +5667,16 @@ function createSignboardMarker(name, pos, icon, id) {
             const history = await callGAS('getRefuelHistory');
             if (!document.getElementById('refuel_loading')) return;
 
-            let html = `<div style="margin-bottom:15px; font-size:12px; color:#666;">最近の給油履歴です。</div>`;
+            let html = `<div style="margin-bottom:15px; font-size:12px; color:#666;">????????????????</div>`;
             if (history.length === 0) {
-               html += `<div style="text-align:center; color:#666; padding:15px; background:#fff; border-radius:8px; border:1px solid #ddd;">給油履歴はありません。</div>`;
+               html += `<div style="text-align:center; color:#666; padding:15px; background:#fff; border-radius:8px; border:1px solid #ddd;">??????????????????</div>`;
             } else {
                history.forEach(h => {
                   html += `
                     <div style="background:white; border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;">
                       <div>
                         <div style="font-weight:bold; font-size:14px; color:#333;">${h.machineName}</div>
-                        <div style="font-size:11px; color:#888; margin-top:4px;">👤 ${h.user} / ⏱️ ${h.hourMeter}h</div>
+                        <div style="font-size:11px; color:#888; margin-top:4px;">??? ${h.user} / ??? ${h.hourMeter}h</div>
                       </div>
                       <div style="text-align:right;">
                         <div style="font-size:11px; color:#666;">${h.date}</div>
@@ -5194,74 +5689,74 @@ function createSignboardMarker(name, pos, icon, id) {
             document.getElementById('rightPanelContent').innerHTML = html;
          } catch(e) {
             if (!document.getElementById('refuel_loading')) return;
-            document.getElementById('rightPanelContent').innerHTML = `<div style="color:red; text-align:center;">エラー: ${e.message}</div>`;
+            document.getElementById('rightPanelContent').innerHTML = `<div style="color:red; text-align:center;">?????: ${e.message}</div>`;
          }
       };
 
-// --- 給油フォーム ---
+// --- ?????????? ---
       window.openRefuelForm = async (targetSignId, baseSignId) => {
          const returnSignId = baseSignId || targetSignId;
-         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#E91E63;'>車両データを準備中...</div>";
+         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#E91E63;'>???????????????...</div>";
          
          try { window.lastHourMeters = await callGAS('getMachineLastHourMeters'); } catch(e) { window.lastHourMeters = {}; }
 
          const p = loadedPolygons[targetSignId];
          const targetSignIds = p && p.linkedSigns ? p.linkedSigns.split(',').map(s => String(s).trim().toLowerCase()) : [];
 
-         // ★修正：Q列（fuel）に軽油と入っている車両を抽出！
+         // ??????Q???fuel??????????????????????????
          let machines = pdlMachines.filter(m => {
-             if (!m.fuel || !m.fuel.includes('軽油')) return false; 
+             if (!m.fuel || !m.fuel.includes('???')) return false; 
              
              if (targetSignIds.length > 0) {
                  const mSign = m.signId ? String(m.signId).trim().toLowerCase() : "";
                  const mLoc = m.currentLocId ? String(m.currentLocId).trim().toLowerCase() : "";
                  return targetSignIds.includes(mSign) || targetSignIds.includes(mLoc);
              }
-             return true; // 紐付けが1つもなければ全表示（フェイルセーフ）
+             return true; // ???????1?????????????????????????????
          });
 
-         const macOpts = '<option value="">選択してください</option>' + machines.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+         const macOpts = '<option value="">??????????????</option>' + machines.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
          const todayStr = new Date().toISOString().split('T')[0];
 
          const html = `
            <div style="background:white; padding:20px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
-             <h3 style="margin-top:0; color:#E91E63; border-bottom:2px solid #E91E63; padding-bottom:8px;">⛽ 給油記録の登録</h3>
-             ${targetSignIds.length > 0 ? `<div style="font-size:12px; color:#666; margin-bottom:10px;">📍 選択中の場所: ${p.name}</div>` : ''}
+             <h3 style="margin-top:0; color:#E91E63; border-bottom:2px solid #E91E63; padding-bottom:8px;">?? ???????????</h3>
+             ${targetSignIds.length > 0 ? `<div style="font-size:12px; color:#666; margin-bottom:10px;">?? ?????????: ${p.name}</div>` : ''}
              
-             <label class="form-label">🚜 給油する車両 (軽油)</label>
+             <label class="form-label">?? ?????????? (???)</label>
              <select id="rf_machine" class="form-input" onchange="handleRefuelMachineChange()">${macOpts}</select>
              
              <div style="display:flex; gap:10px;">
                <div style="flex:1;">
-                 <label class="form-label">📅 給油日</label>
+                 <label class="form-label">?? ?????</label>
                  <input type="date" id="rf_date" class="form-input" value="${todayStr}">
                </div>
                <div style="flex:1;">
-                 <label class="form-label">💧 給油量 (L)</label>
-                 <input type="number" id="rf_amount" class="form-input" placeholder="例: 20">
+                 <label class="form-label">?? ????? (L)</label>
+                 <input type="number" id="rf_amount" class="form-input" placeholder="??: 20">
                </div>
              </div>
              
              <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:2px;">
-               <label class="form-label" style="margin-bottom:0;">⏱️ アワメーター (h)</label>
-               <span id="rf_last_hour_disp" style="font-size:12px; color:#888; font-weight:bold;">(前回: --)</span>
+               <label class="form-label" style="margin-bottom:0;">??? ????????? (h)</label>
+               <span id="rf_last_hour_disp" style="font-size:12px; color:#888; font-weight:bold;">(???: --)</span>
              </div>
-             <input type="number" id="rf_hour" class="form-input" placeholder="例: 150.5">
+             <input type="number" id="rf_hour" class="form-input" placeholder="??: 150.5">
              
-             <label class="form-label">🔧 使うアタッチメント</label>
-             <select id="rf_attach" class="form-input" onchange="handleRefuelAttachChange()"><option value="">なし</option></select>
+             <label class="form-label">?? ??????????????</label>
+             <select id="rf_attach" class="form-input" onchange="handleRefuelAttachChange()"><option value="">???</option></select>
              
              <div style="margin-top:15px; background:#fef4f4; padding:15px; border-radius:8px; border:1px solid #f8bbd0;">
-               <div style="font-size:13px; font-weight:bold; margin-bottom:10px; color:#c2185b;">✅ 作業前点検</div>
-               <label class="checkbox-label" style="margin-bottom:5px;"><input type="checkbox" id="chk_cap"> 給油キャップ確認</label>
-               <label class="checkbox-label" style="margin-bottom:5px;"><input type="checkbox" id="chk_oil"> エンジンオイル確認</label>
-               <label class="checkbox-label" style="margin-bottom:5px;"><input type="checkbox" id="chk_net"> 防虫網確認</label>
-               <label class="checkbox-label" style="margin-bottom:5px;"><input type="checkbox" id="chk_water"> 冷却水確認</label>
+               <div style="font-size:13px; font-weight:bold; margin-bottom:10px; color:#c2185b;">?? ?????????</div>
+               <label class="checkbox-label" style="margin-bottom:5px;"><input type="checkbox" id="chk_cap"> ????????????</label>
+               <label class="checkbox-label" style="margin-bottom:5px;"><input type="checkbox" id="chk_oil"> ??????????????</label>
+               <label class="checkbox-label" style="margin-bottom:5px;"><input type="checkbox" id="chk_net"> ????????</label>
+               <label class="checkbox-label" style="margin-bottom:5px;"><input type="checkbox" id="chk_water"> ????????</label>
                
                <div id="attach_checks" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed #f48fb1;">
-                 <div style="font-size:12px; color:#d81b60; font-weight:bold; margin-bottom:8px;">⚠️ アタッチメント専用点検</div>
-                 <label id="lbl_chk_chain" class="checkbox-label" style="margin-bottom:5px; display:none;"><input type="checkbox" id="chk_chain"> チェーンケースカバー確認</label>
-                 <label id="lbl_chk_claw" class="checkbox-label" style="margin-bottom:5px; display:none;"><input type="checkbox" id="chk_claw"> 爪の状態確認</label>
+                 <div style="font-size:12px; color:#d81b60; font-weight:bold; margin-bottom:8px;">???? ?????????????????</div>
+                 <label id="lbl_chk_chain" class="checkbox-label" style="margin-bottom:5px; display:none;"><input type="checkbox" id="chk_chain"> ??????????????????</label>
+                 <label id="lbl_chk_claw" class="checkbox-label" style="margin-bottom:5px; display:none;"><input type="checkbox" id="chk_claw"> ?????????</label>
                </div>
              </div>
            </div>
@@ -5270,43 +5765,43 @@ function createSignboardMarker(name, pos, icon, id) {
          
          document.getElementById('rightPanelFooter').innerHTML = `
            <div style="display:flex; gap:10px;">
-              <button onclick="execSaveRefuel('${returnSignId}')" style="background:#E91E63; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">保存する</button>
-              <button onclick="openRefuelUI('${returnSignId}')" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:15px;">キャンセル</button>
+              <button onclick="execSaveRefuel('${returnSignId}')" style="background:#E91E63; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">??????</button>
+              <button onclick="openRefuelUI('${returnSignId}')" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:15px;">????????</button>
            </div>
          `;
          handleRefuelMachineChange();
       };
-// ★ここに関数を丸ごと復活させます！
+// ????????????????????????????
       window.handleRefuelMachineChange = () => {
          const mId = document.getElementById('rf_machine').value;
          
-         // アワメーター表示の更新
+         // ?????????????????
          const disp = document.getElementById('rf_last_hour_disp');
          if (disp) {
             if (mId && window.lastHourMeters && window.lastHourMeters[mId]) {
-               disp.innerHTML = `(前回: <span style="color:#E91E63; font-size:14px;">${window.lastHourMeters[mId]}</span> h)`;
+               disp.innerHTML = `(???: <span style="color:#E91E63; font-size:14px;">${window.lastHourMeters[mId]}</span> h)`;
             } else {
-               disp.innerHTML = `(前回: 記録なし)`;
+               disp.innerHTML = `(???: ??????)`;
             }
          }
 
-         // 空白などを無視して確実にアタッチメントを抽出する処理
+         // ???????????????????????????????????????
          const attachSelect = document.getElementById('rf_attach');
          if (attachSelect) {
-            let attOpts = '<option value="">なし</option>';
+            let attOpts = '<option value="">???</option>';
             if (mId) {
-               const cleanMId = String(mId).trim(); // 選択された車両IDの空白を除去
+               const cleanMId = String(mId).trim(); // ????????????D?????????
                
                const matchedAttach = pdlMachines.filter(m => {
-                  // アタッチメントでなければ除外
-                  if (!m.category || !m.category.includes('アタッチメント')) return false;
-                  // P列（対応農機ID）が空なら除外
+                  // ?????????????????????
+                  if (!m.category || !m.category.includes('???????????')) return false;
+                  // P?????????ID???????????
                   if (!m.targetMachineIds) return false;
                   
-                  // カンマや読点で区切り、前後の空白を除去して配列にする
-                  const targetIds = String(m.targetMachineIds).split(/[,、]/).map(id => id.trim());
+                  // ?????????????????????????????????????????
+                  const targetIds = String(m.targetMachineIds).split(/[,??/).map(id => id.trim());
                   
-                  // 一致するかチェック
+                  // ??????????????
                   return targetIds.includes(cleanMId);
                });
                
@@ -5314,11 +5809,11 @@ function createSignboardMarker(name, pos, icon, id) {
             }
             attachSelect.innerHTML = attOpts;
             
-            // アタッチメントの選択肢が変わったので、点検項目の表示もリセットする
+            // ???????????????????????????????????????????????????
             if(typeof handleRefuelAttachChange === 'function') handleRefuelAttachChange();
          }
       };
-      // ★追加：アタッチメントの分類に応じて出すチェック項目を変える処理
+      // ??????????????????????????????????????????????????
       window.handleRefuelAttachChange = () => {
          const sel = document.getElementById('rf_attach');
          const opt = sel.options[sel.selectedIndex];
@@ -5331,10 +5826,10 @@ function createSignboardMarker(name, pos, icon, id) {
 
          if (opt && opt.getAttribute('data-category')) {
             const cat = opt.getAttribute('data-category');
-            // ロータリーならチェーンカバーを出す
-            let showChain = cat.includes('ロータリー');
-            // ロータリーかプラウなら爪の状態を出す
-            let showClaw = cat.includes('ロータリー') || cat.includes('プラウ');
+            // ??????????????????????????
+            let showChain = cat.includes('????????');
+            // ?????????????????????????????
+            let showClaw = cat.includes('????????') || cat.includes('??????');
 
             if (showChain || showClaw) {
                if(attachChecks) attachChecks.style.display = 'block';
@@ -5356,7 +5851,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.execSaveRefuel = async (signId) => {
          const machineId = document.getElementById('rf_machine').value;
-         if (!machineId) { customAlert("車両を選択してください。"); return; }
+         if (!machineId) { customAlert("??????????????????????"); return; }
          
          const selMac = document.getElementById('rf_machine');
          const machineName = selMac.options[selMac.selectedIndex].text;
@@ -5365,7 +5860,7 @@ function createSignboardMarker(name, pos, icon, id) {
          const hourMeter = document.getElementById('rf_hour').value;
          const attachment = document.getElementById('rf_attach').value;
          
-         if (!date || !amount) { customAlert("給油日と給油量は必須です。"); return; }
+         if (!date || !amount) { customAlert("????????????????????"); return; }
 
          const params = {
             machineId: machineId, machineName: machineName, date: date, amount: amount, hourMeter: hourMeter, attachment: attachment,
@@ -5374,66 +5869,66 @@ function createSignboardMarker(name, pos, icon, id) {
             userName: currentUser
          };
 
-         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#E91E63;'>保存中...</div>";
+         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#E91E63;'>?????...</div>";
          try {
             await callGAS('saveRefuelRecord', params);
-            customAlert("給油記録を保存しました！");
+            customAlert("??????????????????");
             openRefuelUI(signId);
          } catch(e) {
-            customAlert("エラーが発生しました: " + e.message);
+            customAlert("?????????????????: " + e.message);
             openRefuelUI(signId);
          }
       };
-// 1. 道具状況の画面（右パネル）を開く【階層式（折りたたみ）バージョン】
+// 1. ????????????????????????????????????????????????????
       window.openToolManagementUI = (signId) => {
           const p = loadedPolygons[signId];
-          document.getElementById('rightPanelTitle').innerText = `🪚 ${p.name} - 道具状況`;
+          document.getElementById('rightPanelTitle').innerText = `?? ${p.name} - ??????`;
           
           const tools = (pdlTools || []).filter(t => t.signId === signId || t.signName === p.name);
           
           let html = '';
           if(tools.length === 0){
-               html = `<div style="text-align:center; padding:20px; color:#666; background:white; border-radius:8px;">登録されている道具はありません。<br>下のボタンから登録してください。</div>`;
+               html = `<div style="text-align:center; padding:20px; color:#666; background:white; border-radius:8px;">??????????????????????????<br>??????????????????????????</div>`;
           } else {
-               // ★追加：道具名でグループ化（まとめる）
+               // ??????????????????????????????
                const groupedTools = {};
                tools.forEach(t => {
                    if (!groupedTools[t.name]) groupedTools[t.name] = [];
                    groupedTools[t.name].push(t);
                });
                
-               html += `<div style="margin-bottom:15px; font-size:12px; color:#666;">💡 資材名をタップすると登録番号の一覧が開きます。</div>`;
+               html += `<div style="margin-bottom:15px; font-size:12px; color:#666;">?? ????????????????????????????????????</div>`;
                
                let groupIndex = 0;
                for (const [toolName, items] of Object.entries(groupedTools)) {
-                   // その道具の中で「使用可」の数をカウント
-                   const availableCount = items.filter(t => t.status === '使用可').length;
+                   // ?????????????????????????????
+                   const availableCount = items.filter(t => t.status === '?????').length;
                    const groupId = 'tool_group_' + groupIndex++;
                    
                    html += `
                    <div style="background:white; margin-bottom:10px; border-radius:8px; border:1px solid #ddd; box-shadow:0 1px 3px rgba(0,0,0,0.05); overflow:hidden;">
                        <div style="padding:15px; display:flex; justify-content:space-between; align-items:center; cursor:pointer; background:#f8f9fa;" onclick="document.getElementById('${groupId}').style.display = document.getElementById('${groupId}').style.display === 'none' ? 'block' : 'none';">
                            <div style="font-weight:bold; font-size:16px; color:#333;">${toolName}</div>
-                           <div style="font-size:12px; color:#666;">全${items.length}件 <span style="color:#4CAF50; font-weight:bold;">(使用可: ${availableCount})</span> ▼</div>
+                           <div style="font-size:12px; color:#666;">??${items.length}?? <span style="color:#4CAF50; font-weight:bold;">(?????: ${availableCount})</span> ??</div>
                        </div>
                        
                        <div id="${groupId}" style="display:none; padding:10px; background:#fff; border-top:1px solid #eee;">
                    `;
                    
-                 // グループの中の個別の道具（番号）を描画
+                 // ???????????????????????????????
                    items.forEach(t => {
-                       const statusColor = t.status === '使用可' ? '#4CAF50' : (t.status === '貸出中' ? '#FF9800' : '#f44336');
+                       const statusColor = t.status === '?????' ? '#4CAF50' : (t.status === '?????' ? '#FF9800' : '#f44336');
                        html += `
                            <div style="background:#fdfdfd; margin-bottom:8px; padding:12px; border-radius:6px; border:1px solid #e0e0e0; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.05); transition:0.2s;" onclick="openToolActionModal('${t.id}')">
                                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                                   <div style="font-weight:bold; font-size:15px; color:#1a73e8;">🔢 番号: ${t.regNumber || '未設定'}</div>
+                                   <div style="font-weight:bold; font-size:15px; color:#1a73e8;">??? ???: ${t.regNumber || '?????'}</div>
                                    <div style="background:${statusColor}; color:white; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:bold;">${t.status}</div>
                                </div>
-                               <div style="font-size:11px; color:#888; margin-top:4px;">対応: ${t.workTypes || '未設定'}</div>
+                               <div style="font-size:11px; color:#888; margin-top:4px;">???: ${t.workTypes || '?????'}</div>
                                
                                <div style="margin-top:8px; display:flex; justify-content:flex-end; gap:8px;">
-                                   <button onclick="event.stopPropagation(); openEditToolModal('${t.id}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer; color:#333;">✏️ 編集</button>
-                                   <button onclick="event.stopPropagation(); deleteTool('${t.id}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer;">🗑️ 削除</button>
+                                   <button onclick="event.stopPropagation(); openEditToolModal('${t.id}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer; color:#333;">???? ???</button>
+                                   <button onclick="event.stopPropagation(); deleteTool('${t.id}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 10px; font-size:11px; cursor:pointer;">???? ????</button>
                                </div>
                            </div>`;
                    });
@@ -5447,8 +5942,8 @@ function createSignboardMarker(name, pos, icon, id) {
           document.getElementById('rightPanelContent').innerHTML = html;
           document.getElementById('rightPanelFooter').innerHTML = `
               <div style="display:flex; gap:10px;">
-                  <button onclick="openNewToolModal('${signId}', '${p.name}')" style="background:#00BCD4; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">➕ 新規道具を登録</button>
-                  <button onclick="closeRightPanel()" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px;">閉じる</button>
+                  <button onclick="openNewToolModal('${signId}', '${p.name}')" style="background:#00BCD4; color:white; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?? ???????????</button>
+                  <button onclick="closeRightPanel()" style="background:#ccc; color:#333; flex:1; padding:15px; border-radius:8px; border:none; font-weight:bold; font-size:15px;">?????</button>
               </div>
           `;
           
@@ -5456,13 +5951,13 @@ function createSignboardMarker(name, pos, icon, id) {
           document.getElementById('rightPanel').classList.add('open');
       };
 
-      // 2. 新規道具の登録フォーム（モーダル）を開く
+      // 2. ????????????????????????????????
       window.openNewToolModal = (signId, signName) => {
-          // ★修正：window. を外しました
+          // ??????window. ???????????
           const toolNames = [...new Set((pdlTools || []).map(t => t.name).filter(String))];
           const nameOpts = toolNames.map(n => `<option value="${n}">${n}</option>`).join('');
           
-          // ★修正：window. を外しました
+          // ??????window. ???????????
           const workNames = [...new Set((pdlWorkMaster || []).map(w => w.name).filter(String))];
           let workChecks = workNames.map(w => 
               `<label class="checkbox-label" style="display:block; margin-bottom:6px; padding:8px; border:1px solid #ddd; border-radius:4px; cursor:pointer; background:#fff;">
@@ -5470,57 +5965,57 @@ function createSignboardMarker(name, pos, icon, id) {
                </label>`
           ).join('');
           
-          if(!workChecks) workChecks = `<div style="color:#999; font-size:12px;">作業マスタが読み込まれていません</div>`;
+          if(!workChecks) workChecks = `<div style="color:#999; font-size:12px;">??????????????????????????</div>`;
 
           const todayStr = new Date().toISOString().split('T')[0];
 
           const html = `
-              <h3 style="margin-top:0; color:#00BCD4; border-bottom:2px solid #00BCD4; padding-bottom:8px;">➕ 新規道具の登録</h3>
-              <div style="font-size:12px; color:#666; margin-bottom:15px;">📍 場所: ${signName}</div>
+              <h3 style="margin-top:0; color:#00BCD4; border-bottom:2px solid #00BCD4; padding-bottom:8px;">?? ???????????</h3>
+              <div style="font-size:12px; color:#666; margin-bottom:15px;">?? ???: ${signName}</div>
               
               <div style="display:flex; gap:10px; margin-bottom:10px;">
                   <div style="flex:1;">
-                      <label class="form-label">📅 登録日</label>
+                      <label class="form-label">?? ?????</label>
                       <input type="date" id="new_tool_date" class="form-input" value="${todayStr}">
                   </div>
                   <div style="flex:1;">
-                      <label class="form-label">🔢 登録番号</label>
-                      <input type="text" id="new_tool_reg" class="form-input" placeholder="例: 1">
+                      <label class="form-label">??? ??????</label>
+                      <input type="text" id="new_tool_reg" class="form-input" placeholder="??: 1">
                   </div>
               </div>
 
-              <label class="form-label">🪚 資材名 (道具名)</label>
+              <label class="form-label">?? ????? (?????)</label>
               <select id="new_tool_name" class="form-input" onchange="handleNewToolNameChange(this)">
-                  <option value="">選択してください</option>
+                  <option value="">??????????????</option>
                   ${nameOpts}
-                  <option value="__NEW__" style="font-weight:bold; color:#00BCD4;">➕ 新しく追加する...</option>
+                  <option value="__NEW__" style="font-weight:bold; color:#00BCD4;">?? ????????????...</option>
               </select>
               
-              <label class="form-label">🛠️ 使う作業 (複数選択可)</label>
+              <label class="form-label">???? ??????? (????????)</label>
               <div style="max-height:150px; overflow-y:auto; border:1px solid #ccc; padding:10px; border-radius:4px; margin-bottom:15px; background:#f9f9f9;">
                   ${workChecks}
               </div>
               
-              <label class="form-label">📷 写真</label>
+              <label class="form-label">??? ???</label>
               <input type="file" id="new_tool_photo" accept="image/*" class="form-input">
 
               <div style="display:flex; gap:10px; margin-top:15px;">
-                  <button onclick="execSaveNewTool('${signId}', '${signName}')" style="flex:2; padding:12px; background:#00BCD4; color:white; font-weight:bold; border:none; border-radius:8px;">マスターに登録する</button>
-                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px;">キャンセル</button>
+                  <button onclick="execSaveNewTool('${signId}', '${signName}')" style="flex:2; padding:12px; background:#00BCD4; color:white; font-weight:bold; border:none; border-radius:8px;">???????????????</button>
+                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px;">????????</button>
               </div>
           `;
           
           document.getElementById('modalBody').innerHTML = html;
           document.getElementById('modal').style.display = 'flex';
       };
-// 道具名のプルダウンが変更された時の処理（自動チェック機能付き！）
+// ???????????????????????????????????????????????????
       window.handleNewToolNameChange = async (sel) => {
           if (sel.value === '__NEW__') {
-              // 【新規追加モード】
+              // ???????????????
               const promptModal = document.getElementById('customPromptModal');
               if (promptModal) promptModal.style.zIndex = "100000";
               
-              const newName = await customPrompt("新しい道具名を入力してください:");
+              const newName = await customPrompt("????????????????????????:");
               if (newName && newName.trim()) {
                   const opt = document.createElement('option');
                   opt.value = newName.trim();
@@ -5528,87 +6023,87 @@ function createSignboardMarker(name, pos, icon, id) {
                   sel.insertBefore(opt, sel.options[sel.options.length - 1]);
                   sel.value = newName.trim();
                   
-                  // 新しい道具なのでチェックボックスをすべて空にする
+                  // ????????????????????????????????????
                   document.querySelectorAll('.tool-work-check').forEach(cb => cb.checked = false);
               } else {
-                  sel.value = ""; // キャンセル時は未選択に戻す
+                  sel.value = ""; // ?????????????????????
               }
           } else if (sel.value !== "") {
-              // 【既存の道具が選ばれたモード】
-              // pdlTools（読み込んであるデータ）の中から、同じ名前で作業が登録されているものを1つ探す
+              // ????????????????????????
+              // pdlTools???????????????????????????????????????????????????????1?????
               const existingTool = pdlTools.find(t => t.name === sel.value && t.workTypes);
               
               if (existingTool) {
-                  // 登録されていた「使う作業（カンマ区切り）」を配列にする
+                  // ????????????????????????????????????????????
                   const worksArray = existingTool.workTypes.split(',').map(w => w.trim());
                   
-                  // チェックボックスを回して、配列に含まれていればチェックを入れる！
+                  // ??????????????????????????????????????????????????
                   document.querySelectorAll('.tool-work-check').forEach(cb => {
                       cb.checked = worksArray.includes(cb.value);
                   });
               } else {
-                  // 万が一過去のデータに作業が紐付いていなければクリア
+                  // ????????????????????????????????????????
                   document.querySelectorAll('.tool-work-check').forEach(cb => cb.checked = false);
               }
           } else {
-              // 「選択してください」に戻した時はすべてクリア
+              // ????????????????????????????????????
               document.querySelectorAll('.tool-work-check').forEach(cb => cb.checked = false);
           }
       };
-    // 3. 道具アクション（使う・返却・故障）のメニュー表示（本物）
+    // 3. ???????????????????????????????????????????
       window.openToolActionModal = (toolId) => {
           const t = pdlTools.find(x => x.id === toolId);
           if(!t) return;
 
           let buttonsHtml = '';
-          // ステータスに応じて表示するボタンを切り替える
-          if (t.status === '使用可') {
-              buttonsHtml += `<button onclick="execToolAction('${toolId}', '貸出中')" style="width:100%; padding:15px; margin-bottom:10px; background:#4CAF50; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🟢 この道具を使う（貸出）</button>`;
-          } else if (t.status === '貸出中') {
-              buttonsHtml += `<button onclick="execToolAction('${toolId}', '使用可')" style="width:100%; padding:15px; margin-bottom:10px; background:#FF9800; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">↩️ 返却する</button>`;
+          // ???????????????????????????????????
+          if (t.status === '?????') {
+              buttonsHtml += `<button onclick="execToolAction('${toolId}', '?????')" style="width:100%; padding:15px; margin-bottom:10px; background:#4CAF50; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?? ?????????????????</button>`;
+          } else if (t.status === '?????') {
+              buttonsHtml += `<button onclick="execToolAction('${toolId}', '?????')" style="width:100%; padding:15px; margin-bottom:10px; background:#FF9800; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">??? ???????</button>`;
           }
 
-          if (t.status === '故障中') {
-              buttonsHtml = `<button onclick="execToolAction('${toolId}', '使用可')" style="width:100%; padding:15px; margin-bottom:10px; background:#2196F3; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🔧 修理完了（使用可に戻す）</button>`;
+          if (t.status === '?????') {
+              buttonsHtml = `<button onclick="execToolAction('${toolId}', '?????')" style="width:100%; padding:15px; margin-bottom:10px; background:#2196F3; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">?? ??????????????????</button>`;
           } else {
-              buttonsHtml += `<button onclick="execToolAction('${toolId}', '故障中')" style="width:100%; padding:15px; margin-bottom:10px; background:#f44336; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">⚠️ 故障を報告する</button>`;
+              buttonsHtml += `<button onclick="execToolAction('${toolId}', '?????')" style="width:100%; padding:15px; margin-bottom:10px; background:#f44336; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">???? ?????????????</button>`;
           }
 
           const html = `
-              <h3 style="margin-top:0; color:#333; border-bottom:2px solid #ddd; padding-bottom:8px;">🪚 道具の操作</h3>
-              <div style="font-size:18px; font-weight:bold; margin-bottom:5px;">${t.name} <span style="font-size:12px; font-weight:normal; color:#666;">(番号: ${t.regNumber||'未設定'})</span></div>
-              <div style="margin-bottom:20px; font-size:14px;">現在の状態: <b>${t.status}</b></div>
+              <h3 style="margin-top:0; color:#333; border-bottom:2px solid #ddd; padding-bottom:8px;">?? ????????</h3>
+              <div style="font-size:18px; font-weight:bold; margin-bottom:5px;">${t.name} <span style="font-size:12px; font-weight:normal; color:#666;">(???: ${t.regNumber||'?????'})</span></div>
+              <div style="margin-bottom:20px; font-size:14px;">?????????: <b>${t.status}</b></div>
               
               ${buttonsHtml}
               
-              <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; background:#ccc; color:#333; font-weight:bold; font-size:15px; border:none; border-radius:8px; cursor:pointer; margin-top:10px;">キャンセル</button>
+              <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; background:#ccc; color:#333; font-weight:bold; font-size:15px; border:none; border-radius:8px; cursor:pointer; margin-top:10px;">????????</button>
           `;
           document.getElementById('modalBody').innerHTML = html;
           document.getElementById('modal').style.display = 'flex';
       };
 
-      // 4. アクションボタンを押したときの通信処理
+      // 4. ???????????????????????????????
       window.execToolAction = async (toolId, newStatus) => {
           const t = pdlTools.find(x => x.id === toolId);
           if(!t) return;
           
-          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1a73e8;'>ステータスを更新中...</div>";
+          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1a73e8;'>??????????????...</div>";
 
           try {
-              // GASへ更新依頼を飛ばす
+              // GAS??????????????
               await callGAS('updateToolStatus', { toolId: toolId, newStatus: newStatus, userName: currentUser });
               
-              // 成功したらアプリ側のデータも書き換えて画面を更新
+              // ????????????????????????????????????????
               t.status = newStatus;
               document.getElementById('modal').style.display = 'none';
-              customAlert(`状態を「${newStatus}」に更新しました！`);
-              openToolManagementUI(t.signId); // リストを再描画
+              customAlert(`???????${newStatus}????????????????);
+              openToolManagementUI(t.signId); // ???????????
           } catch(e) {
               document.getElementById('modal').style.display = 'none';
-              customAlert("エラーが発生しました: " + e.message);
+              customAlert("?????????????????: " + e.message);
           }
       };
-// 5. 道具の編集フォーム（モーダル）を開く
+// 5. ?????????????????????????????
       window.openEditToolModal = (toolId, signId) => {
           const t = pdlTools.find(x => x.id === toolId);
           if(!t) return;
@@ -5627,109 +6122,109 @@ function createSignboardMarker(name, pos, icon, id) {
           }).join('');
           
           const html = `
-              <h3 style="margin-top:0; color:#4CAF50; border-bottom:2px solid #4CAF50; padding-bottom:8px;">✏️ 道具の編集</h3>
+              <h3 style="margin-top:0; color:#4CAF50; border-bottom:2px solid #4CAF50; padding-bottom:8px;">???? ????????</h3>
               
               <div style="display:flex; gap:10px; margin-bottom:10px;">
                   <div style="flex:1;">
-                      <label class="form-label">📅 登録日</label>
+                      <label class="form-label">?? ?????</label>
                       <input type="date" id="edit_tool_date" class="form-input" value="${(t.date || '').replace(/\//g, '-')}">
                   </div>
                   <div style="flex:1;">
-                      <label class="form-label">🔢 登録番号</label>
+                      <label class="form-label">??? ??????</label>
                       <input type="text" id="edit_tool_reg" class="form-input" value="${t.regNumber || ''}">
                   </div>
               </div>
 
-              <label class="form-label">🪚 資材名 (道具名)</label>
+              <label class="form-label">?? ????? (?????)</label>
               <select id="edit_tool_name" class="form-input" onchange="handleNewToolNameChange(this)">
                   ${nameOpts}
-                  <option value="__NEW__" style="font-weight:bold; color:#00BCD4;">➕ 新しく追加する...</option>
+                  <option value="__NEW__" style="font-weight:bold; color:#00BCD4;">?? ????????????...</option>
               </select>
               
-              <label class="form-label">🛠️ 使う作業 (複数選択可)</label>
+              <label class="form-label">???? ??????? (????????)</label>
               <div style="max-height:150px; overflow-y:auto; border:1px solid #ccc; padding:10px; border-radius:4px; margin-bottom:15px; background:#f9f9f9;">
                   ${workChecks}
               </div>
               
               <div style="display:flex; gap:10px; margin-top:15px;">
-                  <button onclick="execEditTool('${toolId}', '${signId}')" style="flex:2; padding:12px; background:#4CAF50; color:white; font-weight:bold; border:none; border-radius:8px;">更新する</button>
-                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px;">キャンセル</button>
+                  <button onclick="execEditTool('${toolId}', '${signId}')" style="flex:2; padding:12px; background:#4CAF50; color:white; font-weight:bold; border:none; border-radius:8px;">??????</button>
+                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px;">????????</button>
               </div>
           `;
           document.getElementById('modalBody').innerHTML = html;
           document.getElementById('modal').style.display = 'flex';
       };
 
-      // 6. 編集の保存処理
+      // 6. ????????????
       window.execEditTool = async (toolId, signId) => {
           const t = pdlTools.find(x => x.id === toolId);
           const date = document.getElementById('edit_tool_date').value.replace(/-/g, '/');
           const regNumber = document.getElementById('edit_tool_reg').value;
           const name = document.getElementById('edit_tool_name').value;
-          if(!name || name === '__NEW__') { customAlert("道具名を選択または入力してください"); return; }
+          if(!name || name === '__NEW__') { customAlert("???????????????????????????"); return; }
           
           const checkedWorks = Array.from(document.querySelectorAll('.edit-tool-work-check:checked')).map(cb => cb.value).join(',');
-          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#4CAF50;'>更新中...</div>";
+          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#4CAF50;'>?????...</div>";
           
           try {
               await callGAS('editToolInMaster', { toolId: toolId, date: date, regNumber: regNumber, name: name, works: checkedWorks, userName: currentUser });
-              t.date = date; t.regNumber = regNumber; t.name = name; t.workTypes = checkedWorks; // アプリのデータも更新
+              t.date = date; t.regNumber = regNumber; t.name = name; t.workTypes = checkedWorks; // ???????????????
               document.getElementById('modal').style.display = 'none';
-              customAlert("道具情報を更新しました！");
+              customAlert("???????????????????");
               openToolManagementUI(signId);
           } catch(e) {
               document.getElementById('modal').style.display = 'none';
-              customAlert("エラーが発生しました: " + e.message);
+              customAlert("?????????????????: " + e.message);
           }
       };
 
-      // 7. 削除処理
+      // 7. ???????
       window.deleteTool = async (toolId, signId) => {
-          if (!await customConfirm("本当にこの道具を削除しますか？\\n※復元できません")) return;
-          document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#f44336;'>削除中...</div>";
+          if (!await customConfirm("?????????????????????????\n????????????")) return;
+          document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#f44336;'>??????...</div>";
           
           try {
               await callGAS('deleteToolFromMaster', { toolId: toolId, userName: currentUser });
-              pdlTools = pdlTools.filter(x => x.id !== toolId); // アプリのデータから削除
-              customAlert("道具を削除しました。");
+              pdlTools = pdlTools.filter(x => x.id !== toolId); // ?????????????????
+              customAlert("????????????????");
               openToolManagementUI(signId);
           } catch(e) {
-              customAlert("エラーが発生しました: " + e.message);
+              customAlert("?????????????????: " + e.message);
               openToolManagementUI(signId);
           }
       };
 // ==========================================
-      // 🚜 農機のアクション・編集・削除機能
+      // ?? ?????????????????????????
       // ==========================================
 
-      // アクションモーダル（使う・破損・戻す）
+      // ?????????????????????????????
       window.openMachineActionModal = (machineId, signId) => {
           const m = pdlMachines.find(x => x.id === machineId);
           if(!m) return;
           
           let btns = '';
-          // 貸出中なら定位置に戻すボタンを表示
+          // ??????????????????????????
           if (m.signId === signId && m.currentLocId !== signId) {
-              btns += `<button onclick="returnMachineToBase('${m.id}', '${m.signId}', '${m.signName}')" style="width:100%; padding:15px; margin-bottom:10px; background:#4CAF50; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer;">↩️ 定位置に戻す</button>`;
+              btns += `<button onclick="returnMachineToBase('${m.id}', '${m.signId}', '${m.signName}')" style="width:100%; padding:15px; margin-bottom:10px; background:#4CAF50; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer;">??? ?????????</button>`;
           } else {
-              btns += `<button onclick="customAlert('作業記録からこの農機を選択して使用してください。'); document.getElementById('modal').style.display='none';" style="width:100%; padding:15px; margin-bottom:10px; background:#2196F3; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer;">🚜 今から使う（作業記録へ）</button>`;
+              btns += `<button onclick="customAlert('????????????????????????????????????????'); document.getElementById('modal').style.display='none';" style="width:100%; padding:15px; margin-bottom:10px; background:#2196F3; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer;">?? ????????????????????</button>`;
           }
           
-          // 破損報告は既存の問題報告フォームへ誘導
-          btns += `<button onclick="document.getElementById('modal').style.display='none'; directOpenReportForm('${m.currentLocId}')" style="width:100%; padding:15px; margin-bottom:10px; background:#f44336; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer;">⚠️ 破損・故障を報告する</button>`;
+          // ???????????????????????????????
+          btns += `<button onclick="document.getElementById('modal').style.display='none'; directOpenReportForm('${m.currentLocId}')" style="width:100%; padding:15px; margin-bottom:10px; background:#f44336; color:white; font-weight:bold; font-size:16px; border:none; border-radius:8px; cursor:pointer;">???? ???????????????</button>`;
 
           document.getElementById('modalBody').innerHTML = `
-              <h3 style="margin-top:0; color:#1976D2; border-bottom:2px solid #1976D2; padding-bottom:8px;">🚜 農機の操作</h3>
-              <div style="font-size:16px; font-weight:bold; margin-bottom:15px;">${m.name} <span style="font-size:12px; color:#666;">(番号: ${m.machineNumber||'未設定'})</span></div>
+              <h3 style="margin-top:0; color:#1976D2; border-bottom:2px solid #1976D2; padding-bottom:8px;">?? ????????</h3>
+              <div style="font-size:16px; font-weight:bold; margin-bottom:15px;">${m.name} <span style="font-size:12px; color:#666;">(???: ${m.machineNumber||'?????'})</span></div>
               ${btns}
-              <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; background:#ccc; color:#333; font-weight:bold; font-size:15px; border:none; border-radius:8px; cursor:pointer;">キャンセル</button>
+              <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; background:#ccc; color:#333; font-weight:bold; font-size:15px; border:none; border-radius:8px; cursor:pointer;">????????</button>
           `;
           document.getElementById('modal').style.display = 'flex';
       };
 
-      // 編集モーダルを開く
+      // ??????????????
       
-      // 車両・農機状況から直接整備記録を開く
+      // ?????????????????????????????
       window.openMaintenanceForm = (machineId, signId) => {
           window.pendingMaintenanceMachineId = machineId;
           document.getElementById('rightPanel').classList.remove('open');
@@ -5738,14 +6233,14 @@ function createSignboardMarker(name, pos, icon, id) {
               document.getElementById('modal').style.display = 'none';
           }
           
-          // 作業記録フォームを開く
+          // ???????????????????
           directOpenForm(signId, 'work');
           
           setTimeout(() => {
               const workSelect = document.getElementById('workNameSelect');
               if (workSelect) {
                   for (let i = 0; i < workSelect.options.length; i++) {
-                      if (workSelect.options[i].text.includes("整備") || workSelect.options[i].text.includes("修理")) {
+                      if (workSelect.options[i].text.includes("???") || workSelect.options[i].text.includes("???")) {
                           workSelect.selectedIndex = i;
                           workSelect.dispatchEvent(new Event('change'));
                           break;
@@ -5763,73 +6258,105 @@ function createSignboardMarker(name, pos, icon, id) {
           }, 300);
       };
 
+      
+      window.isWorkerMachineManageSign = (p) => {
+          const f = String((p && p.signFunction) || '');
+          return f.indexOf('\u8eca\u4e21\u30fb\u6a5f\u68b0\u7ba1\u7406') >= 0 || f.indexOf('\u8fb2\u6a5f\u7ba1\u7406') >= 0;
+      };
+
+      window.getWorkerHomeSignOptionsHtml = (selectedId) => {
+          let signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker && window.isWorkerMachineManageSign(p));
+          if (selectedId && loadedPolygons[selectedId] && loadedPolygons[selectedId].isMarker) {
+              if (!signs.some(p => String(p.id) === String(selectedId))) {
+                  signs = [loadedPolygons[selectedId], ...signs];
+              }
+          }
+          if (signs.length === 0) {
+              signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker);
+          }
+          signs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+          let html = '<option value="">\u5b9a\u4f4d\u7f6e\u30fb\u7247\u4ed8\u3051\u5834\u6240\u306e\u770b\u677f\u3092\u9078\u629e...</option>';
+          if (signs.length === 0) {
+              html += '<option value="" disabled>\u203b\u5730\u56f3\u4e0a\u306b\u770b\u677f\u304c\u3042\u308a\u307e\u305b\u3093</option>';
+          }
+          signs.forEach(p => {
+              const sel = String(p.id) === String(selectedId || '') ? 'selected' : '';
+              html += '<option value="' + String(p.id).replace(/"/g, '&quot;') + '" ' + sel + '>' + (p.name || p.id) + '</option>';
+          });
+          return html;
+      };
+
       window.openEditMachineModal = (machineId, signId) => {
           const m = pdlMachines.find(x => x.id === machineId);
           if(!m) return;
-          const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => {
+          const locOpts = '<option value="">????????...</option>' + (pdlLocations || []).map(l => {
               const sel = String(l) === String(m.location || '') ? 'selected' : '';
               return `<option value="${String(l).replace(/"/g, '&quot;')}" ${sel}>${l}</option>`;
           }).join('');
           const fuel = m.fuel || m.fuelType || '';
-          const fuelOpts = ['', '軽油', 'ガソリン', '混合油', '電気100V', '電気200V'].map(f => {
-              if (!f) return `<option value="">-- 選択 --</option>`;
+          const fuelOpts = ['', '???', '??????', '?????', '???100V', '???200V'].map(f => {
+              if (!f) return `<option value="">-- ??? --</option>`;
               return `<option value="${f}" ${fuel === f ? 'selected' : ''}>${f}</option>`;
           }).join('');
           
           document.getElementById('modalBody').innerHTML = `
-              <h3 style="margin-top:0; color:#1976D2; border-bottom:2px solid #1976D2; padding-bottom:8px;">✏️ 農機の編集</h3>
+              <h3 style="margin-top:0; color:#1976D2; border-bottom:2px solid #1976D2; padding-bottom:8px;">???? ????????</h3>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
-                  <div style="flex:2;"><label class="form-label">🚜 車両名</label><input type="text" id="edit_mac_name" class="form-input" value="${(m.name || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
-                  <div style="flex:1;"><label class="form-label">🔢 機械番号</label><input type="text" id="edit_mac_number" class="form-input" value="${(m.machineNumber || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+                  <div style="flex:2;"><label class="form-label">?? ??????</label><input type="text" id="edit_mac_name" class="form-input" value="${(m.name || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;"><label class="form-label">??? ??????</label><input type="text" id="edit_mac_number" class="form-input" value="${(m.machineNumber || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
               </div>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
-                  <div style="flex:1;"><label class="form-label">型式</label><input type="text" id="edit_mac_model" class="form-input" value="${(m.model || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;"><label class="form-label">???</label><input type="text" id="edit_mac_model" class="form-input" value="${(m.model || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
                   <div style="flex:1;">
-                    <label class="form-label">機械カテゴリ</label>
+                    <label class="form-label">?????????</label>
                     <div style="display:flex; gap:4px;">
                       <select id="edit_mac_type" class="form-input" style="flex:1; margin-bottom:0;">
-                        <option value="">選択...</option>
+                        <option value="">???...</option>
                         ${(pdlMachineTypes || []).map(t => `<option value="${String(t).replace(/"/g, '&quot;')}" ${String(t) === String(m.type || '') ? 'selected' : ''}>${t}</option>`).join('')}
                       </select>
-                      <button type="button" onclick="addMachineTypeFromForm('edit_mac_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;">➕</button>
+                      <button type="button" onclick="addMachineTypeFromForm('edit_mac_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;">??</button>
                     </div>
                   </div>
               </div>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
                   <div style="flex:1;">
-                    <label class="form-label">機械グループ</label>
+                    <label class="form-label">?????????</label>
                     <div style="display:flex; gap:4px;">
                       <select id="edit_mac_group" class="form-input" style="flex:1; margin-bottom:0;">
-                        <option value="">選択...</option>
+                        <option value="">???...</option>
                         ${(() => { const groups = [...(pdlMachineGroups || [])]; if (m.group && !groups.includes(m.group)) groups.unshift(m.group); return groups.map(t => `<option value="${String(t).replace(/"/g, '&quot;')}" ${String(t) === String(m.group || '') ? 'selected' : ''}>${t}</option>`).join(''); })()}
                       </select>
-                      <button type="button" onclick="addMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="追加">➕</button>
-                      <button type="button" onclick="renameMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="編集">✏️</button>
-                      <button type="button" onclick="removeMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; color:#c62828; cursor:pointer;" title="削除">➖</button>
+                      <button type="button" onclick="addMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="???">??</button>
+                      <button type="button" onclick="renameMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer;" title="???">????</button>
+                      <button type="button" onclick="removeMachineGroupFromForm('edit_mac_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:4px; background:#fff; color:#c62828; cursor:pointer;" title="????">??</button>
                     </div>
                   </div>
-                  <div style="flex:1;"><label class="form-label">拠点</label><select id="edit_mac_location" class="form-input" style="margin-bottom:0;">${locOpts}</select></div>
+                  <div style="flex:1;"><label class="form-label">???</label><select id="edit_mac_location" class="form-input" style="margin-bottom:0;">${locOpts}</select></div>
               </div>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
-                  <div style="flex:1;"><label class="form-label">購入年月日</label><input type="date" id="edit_mac_date" class="form-input" value="${(m.purchaseDate || '').replace(/\//g, '-')}" style="margin-bottom:0;"></div>
-                  <div style="flex:1;"><label class="form-label">燃料</label><select id="edit_mac_fuel" class="form-input" style="margin-bottom:0;">${fuelOpts}</select></div>
+                  <div style="flex:1;"><label class="form-label">????????</label><input type="date" id="edit_mac_date" class="form-input" value="${(m.purchaseDate || '').replace(/\//g, '-')}" style="margin-bottom:0;"></div>
+                  <div style="flex:1;"><label class="form-label">???</label><select id="edit_mac_fuel" class="form-input" style="margin-bottom:0;">${fuelOpts}</select></div>
               </div>
-              ${window.buildWorkCategoryFieldHTML('edit_mac_category_rows', '作業分類')}
+              
+              <label class="form-label">\u5b9a\u4f4d\u7f6e\u30fb\u7247\u4ed8\u3051\u5834\u6240\uff08\u770b\u677f\uff09 <span style="color:red;">*</span></label>
+              <select id="edit_mac_home_sign" class="form-input" style="margin-bottom:8px;">${window.getWorkerHomeSignOptionsHtml(m.signId || m.currentLocId || signId || '')}</select>
+              <div style="font-size:11px; color:#666; margin:-4px 0 10px;">\u4f5c\u696d\u5f8c\u306e\u300c\u7247\u4ed8\u3051\u5834\u6240 \u2192 \u5b9a\u4f4d\u7f6e\u300d\u306e\u5019\u88dc\u306b\u306a\u308a\u307e\u3059\u3002</div>
+              ${window.buildWorkCategoryFieldHTML('edit_mac_category_rows', '???????')}
               
               <div style="display:flex; gap:10px; margin-top:15px;">
-                  <button onclick="execEditMachine('${machineId}', '${signId}')" style="flex:2; padding:12px; background:#1976D2; color:white; font-weight:bold; border:none; border-radius:8px;">更新する</button>
-                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px;">キャンセル</button>
+                  <button onclick="execEditMachine('${machineId}', '${signId}')" style="flex:2; padding:12px; background:#1976D2; color:white; font-weight:bold; border:none; border-radius:8px;">??????</button>
+                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px;">????????</button>
               </div>
           `;
           document.getElementById('modal').style.display = 'flex';
           window.renderWorkCategoryRows('edit_mac_category_rows', window.parseWorkCategoryList(m.workCategory));
       };
 
-      // 編集の保存処理
+      // ????????????
       window.execEditMachine = async (machineId, signId) => {
           const m = pdlMachines.find(x => x.id === machineId);
           const name = document.getElementById('edit_mac_name').value.trim();
-          if(!name) { customAlert("名前を入力してください"); return; }
+          if(!name) { customAlert("??????????????????"); return; }
           const number = document.getElementById('edit_mac_number').value.trim();
           const model = document.getElementById('edit_mac_model').value.trim();
           const type = (document.getElementById('edit_mac_type') || {}).value || '';
@@ -5838,60 +6365,66 @@ function createSignboardMarker(name, pos, icon, id) {
           const fuel = (document.getElementById('edit_mac_fuel') || {}).value || '';
           const date = document.getElementById('edit_mac_date').value.replace(/-/g, '/');
           const category = window.collectWorkCategoryValue('edit_mac_category_rows');
+          const homeSel = document.getElementById('edit_mac_home_sign');
+          const homeSignId = homeSel ? homeSel.value : '';
+          const homeSignName = (homeSignId && loadedPolygons[homeSignId]) ? (loadedPolygons[homeSignId].name || '') : '';
+          if (!homeSignId) { customAlert('\u5b9a\u4f4d\u7f6e\u30fb\u7247\u4ed8\u3051\u5834\u6240\u306e\u770b\u677f\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044'); return; }
 
-          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1976D2;'>更新中...</div>";
+          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1976D2;'>?????...</div>";
           try {
               await callGAS('editMachineInMaster', {
                   machineId: machineId, name: name, machineNumber: number, model: model,
                   type: type, group: group, location: location, fuel: fuel,
-                  purchaseDate: date, workCategory: category
+                  purchaseDate: date, workCategory: category,
+                  signId: homeSignId, signName: homeSignName
               });
               m.name = name; m.machineNumber = number; m.model = model; m.purchaseDate = date; m.workCategory = category;
               m.type = type; m.group = group; m.location = location; m.fuel = fuel;
+              m.signId = homeSignId; m.signName = homeSignName;
               document.getElementById('modal').style.display = 'none';
-              customAlert("更新しました！");
-              openMachineStatusUI(signId);
+              customAlert("?????????????");
+              openMachineStatusUI(homeSignId || signId);
           } catch(e) {
               document.getElementById('modal').style.display = 'none';
-              customAlert("エラー: " + e.message);
+              customAlert("?????: " + e.message);
           }
       };
 
-      // 削除処理
+      // ???????
       window.deleteMachine = async (machineId, signId) => {
-          if (!await customConfirm("本当にこの農機を削除しますか？\n※復元できません")) return;
-          document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#f44336;'>削除中...</div>";
+          if (!await customConfirm("?????????????????????????n????????????")) return;
+          document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#f44336;'>??????...</div>";
           try {
               await callGAS('deleteMachineFromMaster', { machineId: machineId });
               pdlMachines = pdlMachines.filter(x => x.id !== machineId);
-              customAlert("削除しました。");
+              customAlert("??????????????");
               openMachineStatusUI(signId);
           } catch(e) {
-              customAlert("エラー: " + e.message);
+              customAlert("?????: " + e.message);
               openMachineStatusUI(signId);
           }
       };
 
-// 🌟 アコーディオン開閉＆履歴取得の処理 🌟
+// ?? ??????????????????????????? ??
       window.toggleInventoryAccordion = async (matId, matName, unitStr, signId) => {
           const accDiv = document.getElementById(`inv_history_${matId}`);
           const listDiv = document.getElementById(`history_list_${matId}`);
           
           if (accDiv.style.display === 'none') {
-              // 閉じていたら開く
+              // ????????????
               accDiv.style.display = 'block';
-              listDiv.innerHTML = '<div style="text-align:center; padding:10px; color:#1a73e8; font-weight:bold;">履歴を読み込み中...</div>';
+              listDiv.innerHTML = '<div style="text-align:center; padding:10px; color:#1a73e8; font-weight:bold;">????????????...</div>';
               
               try {
-                  // 裏側(GAS)から履歴を引っ張ってくる
+                  // ???(GAS)??????????????????
                   const history = await callGAS('getInventoryHistory', { materialId: matId });
                   
                   if (history.length === 0) {
-                      listDiv.innerHTML = '<div style="text-align:center; color:#666; padding:10px;">履歴はありません。</div>';
+                      listDiv.innerHTML = '<div style="text-align:center; color:#666; padding:10px;">???????????????</div>';
                   } else {
                       let hHtml = '';
                       history.forEach(h => {
-                          const isAdd = (h.action === "入庫" || h.action === "初期入庫");
+                          const isAdd = (h.action === "???" || h.action === "??????");
                           const constColor = isAdd ? '#4CAF50' : '#FF9800';
                           const constSign = isAdd ? '+' : '-';
                           
@@ -5899,62 +6432,62 @@ function createSignboardMarker(name, pos, icon, id) {
                           <div style="border-bottom:1px solid #eee; padding:10px 0;">
                               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                                   <div>
-                                      <div style="font-size:11px; color:#888;">${h.date} / 👤 ${h.user}</div>
+                                      <div style="font-size:11px; color:#888;">${h.date} / ??? ${h.user}</div>
                                       <div style="font-size:13px; font-weight:bold; margin-top:2px; color:#555;">${h.action}</div>
                                   </div>
                                   <div style="font-size:18px; font-weight:bold; color:${constColor};">${constSign}${h.amount} <span style="font-size:11px; color:#666;">${unitStr}</span></div>
                               </div>
                               
                               <div style="display:flex; justify-content:flex-end; gap:8px;">
-                                  <button onclick="editInvHistory('${matId}', '${h.rowIndex}', '${h.action}', '${h.amount}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:6px 12px; font-size:11px; cursor:pointer; color:#333;">✏️ 履歴の編集</button>
-                                  <button onclick="deleteInvHistory('${matId}', '${h.rowIndex}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:6px 12px; font-size:11px; cursor:pointer;">🗑️ 削除</button>
+                                  <button onclick="editInvHistory('${matId}', '${h.rowIndex}', '${h.action}', '${h.amount}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:6px 12px; font-size:11px; cursor:pointer; color:#333;">???? ????????</button>
+                                  <button onclick="deleteInvHistory('${matId}', '${h.rowIndex}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:6px 12px; font-size:11px; cursor:pointer;">???? ????</button>
                               </div>
                           </div>`;
                       });
                       listDiv.innerHTML = hHtml;
                   }
               } catch(e) {
-                  listDiv.innerHTML = `<div style="text-align:center; color:red; padding:10px;">エラー: ${e.message}</div>`;
+                  listDiv.innerHTML = `<div style="text-align:center; color:red; padding:10px;">?????: ${e.message}</div>`;
               }
           } else {
-              // 開いていたら閉じる
+              // ??????????????
               accDiv.style.display = 'none';
           }
       };
-// 🌟 現在地から最も近いポリゴンを判定して直接フォームを開く処理 🌟
+// ?? ???????????????????????????????????????????????? ??
       window.findCurrentFieldAndOpenForm = (recordType = 'work') => {
-          // すでに取得している現在地(latestUserPos)を利用する
+          // ?????????????????????(latestUserPos)????????
           if (!latestUserPos) {
-              // GPSがまだの場合も空欄で開く
+              // GPS???????????????????
               if (typeof directOpenForm === 'function') {
                   directOpenForm(null, recordType);
               } else {
-                  customAlert("📍 まだ現在地を取得できていません。数秒待ってからもう一度お試しください。");
+                  customAlert("?? ???????????????????????????????????????????????????????");
               }
               return;
           }
 
-          // 現在地の座標オブジェクトを作成
+          // ???????????????????????
           const currentLatLng = new google.maps.LatLng(latestUserPos.lat, latestUserPos.lng);
           let matchedId = null;
           let matchedName = "";
           let minDistance = Infinity;
           let closestId = null;
 
-          // 地図上のすべてのポリゴンをループして、現在地が「中に入っているか」をチェック
-          // 中に入っていない場合は「最も近い」ポリゴンを記録しておく
+          // ???????????????????????????????????????????????????????????????
+          // ?????????????????????????????????????????????
           for (let id in loadedPolygons) {
               const p = loadedPolygons[id];
-              // ポリゴン（面）が存在する場合のみ判定
+              // ????????????????????????????
               if (p.polygon && !p.isMarker) {
-                  // google.maps.geometryライブラリを使って内外判定！
+                  // google.maps.geometry??????????????????????
                   if (google.maps.geometry.poly.containsLocation(currentLatLng, p.polygon)) {
                       matchedId = id;
                       matchedName = p.name;
-                      break; // 見つかったらループ終了
+                      break; // ?????????????????
                   }
                   
-                  // 内外判定に漏れた場合のために、ポリゴンの中心との距離を計算
+                  // ?????????????????????????????????????????????
                   if (p.marker) {
                       const centerLatLng = p.marker.getPosition();
                       const dist = google.maps.geometry.spherical.computeDistanceBetween(currentLatLng, centerLatLng);
@@ -5966,9 +6499,9 @@ function createSignboardMarker(name, pos, icon, id) {
               }
           }
 
-          // もし中に入っているポリゴンが見つからなかったら、一番近いものを採用
+          // ??????????????????????????????????????????????????
           if (!matchedId && closestId) {
-              // 10m以内なら自動選択、それ以上離れていたら空欄(null)
+              // 10m??????????????????????????????????(null)
               if (minDistance < 10) {
                   matchedId = closestId;
                   matchedName = loadedPolygons[closestId].name;
@@ -5978,42 +6511,42 @@ function createSignboardMarker(name, pos, icon, id) {
           }
 
           if (matchedId) {
-              // 🌟 圃場が見つかった！
-              // 地図をその場所にズームして移動
+              // ?? ??????????????
+              // ?????????????????????????
               map.setCenter(currentLatLng);
               map.setZoom(18);
               
-              // 藤田さんの既存関数「directOpenForm」を使って、作業記録フォームをいきなり開く！
+              // ???????????????????irectOpenForm???????????????????????????????????
               if (typeof directOpenForm === 'function') {
                   directOpenForm(matchedId, recordType);
               } else {
-                  // 万が一 directOpenForm が無い場合はメニューを開く
+                  // ????? directOpenForm ?????????????????????
                   activePolyId = matchedId;
                   openMainMenu(matchedId); 
               }
           } else {
-              // 🌟 圃場が見つからない、または10m以上離れている場合 -> 空欄で開く
+              // ?? ????????????????????10m?????????????? -> ????????
               if (typeof directOpenForm === 'function') {
                   directOpenForm(null, recordType);
               } else {
-                  customAlert("⚠️ 近くに圃場が見つかりませんでした。");
+                  customAlert("???? ???????????????????????????");
               }
           }
       };
-    // 🌟ここから上書き：共有されたURLを開いた瞬間に「全自動」で解析＆判定する！🌟
+    // ????????????????????????RL???????????????????????????????????
       const urlParams = new URLSearchParams(window.location.search);
       const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
       
       if (sharedText) {
-          // アプリの地図や圃場データが読み込まれるのを待つため、2秒遅らせてから自動実行する
+          // ?????????????????????????????????????????2????????????????????
           setTimeout(() => {
-              customAlert("🔍 共有された場所を解析中です...");
+              customAlert("?? ??????????????????????...");
               
               (async () => {
                   let shareLat = null, shareLng = null;
                   
                   const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-                  const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
+                  const matchDMS = sharedText.match(/(\d+)?(\d+)'([\d.]+)"N\s*(\d+)?(\d+)'([\d.]+)"E/);
                   const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
 
                   if (matchURL) { shareLat = parseFloat(matchURL[1]); shareLng = parseFloat(matchURL[2]); } 
@@ -6026,7 +6559,7 @@ function createSignboardMarker(name, pos, icon, id) {
                           try {
                               const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
                               if (result && result.success) { shareLat = result.lat; shareLng = result.lng; }
-                          } catch(e) { console.warn("短縮URL展開エラー", e); }
+                          } catch(e) { console.warn("???URL????????", e); }
                       }
                   }
 
@@ -6041,7 +6574,7 @@ function createSignboardMarker(name, pos, icon, id) {
                           zIndex: 9999, animation: google.maps.Animation.DROP
                       });
 
-                      // 🚀 Googleマップの機能で「図形（圃場）の内側か」を計算！
+                      // ?? Google???????????????????????????????????????
                       let foundHojoId = null;
                       if (google.maps.geometry && google.maps.geometry.poly) {
                           for (let id in loadedPolygons) {
@@ -6053,22 +6586,22 @@ function createSignboardMarker(name, pos, icon, id) {
                       }
 
                       if (foundHojoId) {
-                          customAlert("📍 既存の圃場が見つかりました！");
-                          // 1秒後に詳細画面（作業記録モーダル）を自動で開く
+                          customAlert("?? ?????????????????????");
+                          // 1??????????????????????????????????????
                           setTimeout(() => { focusAndOpen(foundHojoId); }, 1000);
                       } else {
-                          if (await customConfirm("📍 ここには圃場登録がありません。\n管理者画面を開いて新しく登録しますか？")) {
-                              // 「はい」ならAdminへ座標を持たせて飛ばす！
+                          if (await customConfirm("?? ????????????????????????n????????????????????????????????")) {
+                              // ???????????dmin??????????????????
                               window.location.href = `/admin.html?lat=${shareLat}&lng=${shareLng}&action=draw`;
                           }
                       }
                   } else {
-                      customAlert("📍 座標を取得できませんでした。");
+                      customAlert("?? ???????????????????????");
                   }
               })();
-          }, 2000); // 読み込み待機2秒
+          }, 2000); // ?????????2??
       }
-// 🌟 オート作業記録（自由記述からの自動抽出機能）🌟
+// ?? ????????????????????????????????????
 window.autoRecordData = null;
 
 window.parseAutoRecord = (text) => {
@@ -6082,7 +6615,7 @@ window.parseAutoRecord = (text) => {
 
     if (!text) return result;
 
-    // 1. 場所（圃場・看板名）の抽出
+    // 1. ??????????????????????
     for (let id in loadedPolygons) {
         if (loadedPolygons[id].name && text.includes(loadedPolygons[id].name)) {
             result.polyId = id;
@@ -6090,7 +6623,7 @@ window.parseAutoRecord = (text) => {
         }
     }
 
-    // 2. 作業名の抽出
+    // 2. ??????????
     if (typeof pdlWorkMaster !== 'undefined') {
         for (let w of pdlWorkMaster) {
             if (w.name && text.includes(w.name)) {
@@ -6100,7 +6633,7 @@ window.parseAutoRecord = (text) => {
         }
     }
 
-    // 3. 作物名の抽出
+    // 3. ??????????
     if (typeof pdlCrops !== 'undefined') {
         for (let c of pdlCrops) {
             if (c.name && text.includes(c.name)) {
@@ -6110,41 +6643,41 @@ window.parseAutoRecord = (text) => {
         }
     }
 
-    // 4. 時間の抽出
-    // 時間帯 (例: "10:30", "14時", "9時半")
-    const timeRegex = /(\d{1,2})[:時](\d{1,2})?(?:分|半)?/g;
+    // 4. ?????????
+    // ????? (??: "10:30", "14??", "9???")
+    const timeRegex = /(\d{1,2})[:??(\d{1,2})?(?:????)?/g;
     let times = [];
     let match;
     while ((match = timeRegex.exec(text)) !== null) {
         let hour = match[1].padStart(2, '0');
         let minStr = match[2];
-        if (!minStr && match[0].includes('半')) minStr = '30';
+        if (!minStr && match[0].includes('??')) minStr = '30';
         let minute = (minStr || '00').padStart(2, '0');
         times.push(`${hour}:${minute}`);
     }
     
-    // 時間長 (例: "2時間", "1.5時間", "30分")
+    // ????? (??: "2???", "1.5???", "30??")
     let durationMins = 0;
-    const durationHourMatch = text.match(/(\d+(?:\.\d+)?)時間/);
+    const durationHourMatch = text.match(/(\d+(?:\.\d+)?)???/);
     if (durationHourMatch) durationMins += parseFloat(durationHourMatch[1]) * 60;
-    const durationMinMatch = text.match(/(\d+)分/);
-    if (durationMinMatch && !text.includes('時' + durationMinMatch[1] + '分')) {
-        // "10時30分" のような時刻表現でない場合のみ加算
+    const durationMinMatch = text.match(/(\d+)??/);
+    if (durationMinMatch && !text.includes('??' + durationMinMatch[1] + '??')) {
+        // "10??30??" ???????????????????????????
         durationMins += parseInt(durationMinMatch[1]);
     }
 
     if (times.length >= 2) {
-        // "10時から12時"
+        // "10?????12??"
         result.startTime = times[0];
         result.endTime = times[times.length - 1];
     } else if (times.length === 1 && durationMins > 0) {
-        // "10時から2時間"
+        // "10?????2???"
         result.startTime = times[0];
         let d = new Date(`2000-01-01T${times[0]}:00`);
         d.setMinutes(d.getMinutes() + durationMins);
         result.endTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     } else if (durationMins > 0) {
-        // "2時間" (終了を現在時刻とする)
+        // "2???" (????????????????)
         let now = new Date();
         result.endTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         now.setMinutes(now.getMinutes() - durationMins);
@@ -6157,36 +6690,36 @@ window.parseAutoRecord = (text) => {
 window.executeAutoRecord = async () => {
     const inputEl = document.getElementById('autoRecordInput');
     if (!inputEl || !inputEl.value.trim()) {
-        if(typeof customAlert !== 'undefined') customAlert('作業内容を入力してください。');
+        if(typeof customAlert !== 'undefined') customAlert('????????????????????????');
         return;
     }
     const text = inputEl.value.trim();
     
-    // UIをローディング中にする
+    // UI?????????????????
     const btnEl = inputEl.nextElementSibling;
-    const originalBtnText = btnEl ? btnEl.innerText : '✨ 解析して開く';
+    const originalBtnText = btnEl ? btnEl.innerText : '?? ??????????';
     if (btnEl) {
-        btnEl.innerText = '✨ 瞬速解析中...';
+        btnEl.innerText = '?? ?????????...';
         btnEl.style.opacity = '0.7';
         btnEl.disabled = true;
     }
 
-    // 🌟 AI通信を待たずにローカルで瞬速解析 🌟
+    // ?? AI????????????????????????? ??
     let data = parseAutoRecord(text);
     
-    // 該当する作業がない場合、入力文から残りの単語を抽出して新しい作業名とする
+    // ???????????????????????????????????????????????????????????
     if (!data.workName) {
         let remaining = text;
         if (data.polyId && loadedPolygons[data.polyId]) remaining = remaining.replace(loadedPolygons[data.polyId].name, '');
         if (data.cropName) remaining = remaining.replace(data.cropName, '');
-        remaining = remaining.replace(/(\d{1,2})[:時](\d{1,2})?(?:分|半)?/g, '');
-        remaining = remaining.replace(/(\d+(?:\.\d+)?)時間/g, '');
-        remaining = remaining.replace(/(\d+)分/g, '');
-        // 助詞や空白を削除して一番最初の単語を抽出
-        remaining = remaining.replace(/[でからまでをにの]/g, ' ').replace(/\s+/g, ' ').trim();
+        remaining = remaining.replace(/(\d{1,2})[:??(\d{1,2})?(?:????)?/g, '');
+        remaining = remaining.replace(/(\d+(?:\.\d+)?)???/g, '');
+        remaining = remaining.replace(/(\d+)??/g, '');
+        // ??????????????????????????????????
+        remaining = remaining.replace(/[????????????]/g, ' ').replace(/\s+/g, ' ').trim();
         if (remaining) {
-            data.workName = remaining.split(' ')[0]; // 新しい作業名候補
-            data.isNewWork = true; // 新規追加フラグ
+            data.workName = remaining.split(' ')[0]; // ????????????
+            data.isNewWork = true; // ????????????
         }
     }
 
@@ -6196,7 +6729,7 @@ window.executeAutoRecord = async () => {
         btnEl.disabled = false;
     }
 
-    // モーダルを開く処理
+    // ??????????????
     window.autoRecordData = data;
     
     if (data.polyId) {
@@ -6209,7 +6742,7 @@ window.executeAutoRecord = async () => {
             document.getElementById('rightPanel').classList.add('open');
         }
     } else {
-        // 圃場が見つからない場合は空欄で開く
+        // ??????????????????????????
         if (typeof directOpenForm === 'function') {
             directOpenForm(null, 'work');
         } else {
@@ -6220,7 +6753,7 @@ window.executeAutoRecord = async () => {
         }
     }
     
-    // フォームが開かれた直後に値を注入する
+    // ????????????????????????????
     setTimeout(() => {
         if (window.autoRecordData) {
             const d = window.autoRecordData;
@@ -6228,12 +6761,12 @@ window.executeAutoRecord = async () => {
             
             if (d.workName && document.getElementById('rec_work_name')) {
                 const selectEl = document.getElementById('rec_work_name');
-                // 新しい作業名の場合、選択肢に動的に追加する
+                // ????????????????????????????????
                 let optionExists = Array.from(selectEl.options).some(opt => opt.value === d.workName);
                 if (!optionExists) {
                     const newOption = document.createElement('option');
                     newOption.value = d.workName;
-                    newOption.text = d.workName + " (新規追加)";
+                    newOption.text = d.workName + " (??????)";
                     selectEl.appendChild(newOption);
                 }
                 selectEl.value = d.workName;
@@ -6262,25 +6795,25 @@ window.executeAutoRecord = async () => {
                 calcTotalTime();
             }
             
-            inputEl.value = ''; // 入力欄をクリア
-            window.autoRecordData = null; // リセット
+            inputEl.value = ''; // ???????????
+            window.autoRecordData = null; // ??????
             
             if(typeof customAlert !== 'undefined') {
                 if (d.isNewWork) {
-                    customAlert('✨ 解析が完了しました！\n新しい作業「' + d.workName + '」をリストに追加しました。\n内容を確認して保存してください。');
+                    customAlert('?? ???????????????\n??????????' + d.workName + '??????????????????????n??????????????????????????');
                 } else {
-                    customAlert('✨ 解析が完了しました！\n内容を確認して保存してください。');
+                    customAlert('?? ???????????????\n??????????????????????????');
                 }
             }
         }
-    }, 300); // フォーム描画の完了を少し待つ
+    }, 300); // ???????????????????????
 };
 
-// 🌟 4. アプリ起動時の爆速処理（window.onloadをやめる！） 🌟
+// ?? 4. ???????????????????window.onload????????? ??
       document.addEventListener('DOMContentLoaded', () => {
           initMap();
           
-          // 出勤状態の復元とトラッキング自動再開
+          // ????????????????????????????
           const clockInStr = localStorage.getItem('passionMapClockIn');
           if (clockInStr) {
               try {
@@ -6290,14 +6823,14 @@ window.executeAutoRecord = async () => {
                       if(btn) {
                           btn.style.backgroundColor = '#4CAF50';
                           btn.style.color = 'white';
-                          btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">出勤中</span>';
+                          btn.innerHTML = '????????<br><span style="font-size:10px; line-height:1;">??????</span>';
                       }
-                      // マーカー表示（mapはinitMap()で作成済み）
+                      // ????????????ap??nitMap()?????????
                       if (window.plotClockInMarker) {
                           window.plotClockInMarker(state);
                       }
                       
-                      // 移動トラッキング再開
+                      // ???????????????
                       if (navigator.geolocation && trackingWatchId === null) {
                           trackingWatchId = navigator.geolocation.watchPosition((p) => {
                               const now = Date.now();
@@ -6308,7 +6841,7 @@ window.executeAutoRecord = async () => {
                                       userName: currentUser, 
                                       lat: p.coords.latitude, 
                                       lng: p.coords.longitude, 
-                                      type: '移動' 
+                                      type: '???' 
                                   }).catch(e=>console.warn(e));
                               }
                           }, (err) => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
@@ -6323,22 +6856,22 @@ window.executeAutoRecord = async () => {
           if(document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw; 
           
           if(id && pw) { 
-              // 画面を即座に隠す
+              // ??????????????
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
            
-              // キャッシュがあれば先に0.1秒で地図を描画する！
+              // ?????????????????0.1????????????????
               const cachedData = localStorage.getItem('passionMapInitData');
               if (cachedData) {
                   try { 
                       renderInitData(JSON.parse(cachedData)); 
-                      // ★爆速化の秘訣：地図が画面に表示されてから、1.5秒後に裏でこっそりログイン＆更新通信を開始する
+                      // ??????????????????????????????????????1.5????????????????????????????????????
                       setTimeout(() => { executeLogin(true); }, 1500);
                   } catch(e) {
                       executeLogin(true);
                   }
               } else {
-                  // キャッシュがない初回はすぐに通信する
+                  // ???????????????????????????
                   executeLogin(true);
               }
           }
@@ -6353,7 +6886,7 @@ window.closeRadarModal = function() {
   if (modal) modal.style.display = `none`;
 };
 
-// ====== マイページ ======
+// ====== ?????????? ======
 window.editRecordFromMyPage = function(polyId, recordId) {
     if (polyId && loadedPolygons[polyId]) {
         activePolyId = polyId;
@@ -6366,9 +6899,9 @@ window.editRecordFromMyPage = function(polyId, recordId) {
 };
 
 window.deleteRecordFromMyPage = async function(polyId, recordId) {
-    if (!await customConfirm("本当にこの記録を削除しますか？\n※復元できません")) return;
+    if (!await customConfirm("?????????????????????????n????????????")) return;
 
-    if (typeof showLoader === 'function') showLoader("削除中...");
+    if (typeof showLoader === 'function') showLoader("??????...");
 
     try {
         const updatedPhotos = await callGAS('deleteRecordItem', {
@@ -6381,21 +6914,21 @@ window.deleteRecordFromMyPage = async function(polyId, recordId) {
             if (loadedPolygons[polyId]) {
                 loadedPolygons[polyId].photos = updatedPhotos;
             }
-            if (typeof customAlert === 'function') customAlert("記録を削除しました");
-            else if (typeof alertMsg === 'function') alertMsg("記録を削除しました");
+            if (typeof customAlert === 'function') customAlert("??????????????");
+            else if (typeof alertMsg === 'function') alertMsg("??????????????");
             if (typeof openMyPage === 'function') openMyPage();
             const histModal = document.getElementById('myWorkHistoryModal');
             if (histModal && histModal.style.display === 'flex' && typeof openMyWorkHistoryDetail === 'function') {
                 openMyWorkHistoryDetail();
             }
         } else {
-            if (typeof customAlert === 'function') customAlert("削除に失敗しました");
-            else if (typeof alertMsg === 'function') alertMsg("削除に失敗しました", true);
+            if (typeof customAlert === 'function') customAlert("????????????????");
+            else if (typeof alertMsg === 'function') alertMsg("????????????????", true);
         }
     } catch (e) {
         console.error("deleteRecordFromMyPage Error:", e);
-        if (typeof customAlert === 'function') customAlert("通信エラーが発生しました");
-        else if (typeof alertMsg === 'function') alertMsg("通信エラーが発生しました", true);
+        if (typeof customAlert === 'function') customAlert("????????????????????");
+        else if (typeof alertMsg === 'function') alertMsg("????????????????????", true);
     } finally {
         if (typeof hideLoader === 'function') hideLoader();
     }
@@ -6414,7 +6947,7 @@ window.normalizeDateStr = function(dateStr) {
     return str;
 };
 
-/** 今日を含む過去 N 日分の YMD セットを返す */
+/** ?????????????? N ????? YMD ?????????? */
 window.getPastYmdSet = function(days) {
     const set = new Set();
     const now = new Date();
@@ -6431,11 +6964,11 @@ window.formatWorkRecordDateLabel = function(ymd) {
     const parts = String(ymd).split('-').map(Number);
     if (parts.length < 3 || parts.some((n) => isNaN(n))) return ymd;
     const dt = new Date(parts[0], parts[1] - 1, parts[2]);
-    const week = ['日', '月', '火', '水', '木', '金', '土'][dt.getDay()];
-    return `${parts[1]}/${parts[2]}（${week}）`;
+    const week = ['??', '??', '??', '??', '??', '??', '??'][dt.getDay()];
+    return `${parts[1]}/${parts[2]}??${week}??;
 };
 
-/** ログインユーザーの作業記録を loadedPolygons から収集。allowedYmds があればその日付のみ */
+/** ????????????????????? loadedPolygons ?????????llowedYmds ??????????????? */
 window.collectMyWorkRecords = function(allowedYmds) {
     const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
     const normUser = (userName || '').replace(/\s+/g, '');
@@ -6455,7 +6988,7 @@ window.collectMyWorkRecords = function(allowedYmds) {
             if (!isWorkRecord || !ph.data) return;
 
             const phAuthor = (ph.author || '').replace(/\s+/g, '');
-            const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
+            const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === '??????';
             if (!isAuthorMatch) return;
 
             const phWorkDate = window.normalizeDateStr(ph.data.workDate);
@@ -6486,7 +7019,7 @@ window.collectMyWorkRecords = function(allowedYmds) {
 
 window.renderMyWorkRecordCardHtml = function(rec) {
     const d = rec.data || {};
-    const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `🕒 ${rec.time}` : '');
+    const timeSpan = d.startTime ? `?? ${d.startTime} ?? ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `?? ${rec.time}` : '');
     const safePolyId = String(rec.polyId || '').replace(/'/g, "\\'");
     const safeRecId = String(rec.id || '').replace(/'/g, "\\'");
 
@@ -6496,15 +7029,15 @@ window.renderMyWorkRecordCardHtml = function(rec) {
                 <span style="font-size:11px; color:#666;">${timeSpan}</span>
             </div>
             <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:3px;">
-                🚜 ${d.workName || '作業'}
-                <span style="background:#fff3e0; color:#e65100; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:normal; margin-left:5px;">${d.progressStatus || '記録'}</span>
+                ?? ${d.workName || '????'}
+                <span style="background:#fff3e0; color:#e65100; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:normal; margin-left:5px;">${d.progressStatus || '???'}</span>
             </div>
-            ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">✅ 詳細: ${d.detailedWorks}</div>` : ''}
-            ${d.crop ? `<div style="font-size:11px; color:#555;">🌱 作物: ${d.crop}</div>` : ''}
+            ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">?? ???: ${d.detailedWorks}</div>` : ''}
+            ${d.crop ? `<div style="font-size:11px; color:#555;">?? ????: ${d.crop}</div>` : ''}
             ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
-                <span onclick="window.deleteRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
-                <span onclick="document.getElementById('modal').style.display='none'; closeMyWorkHistoryDetail(); window.editRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
+                <span onclick="window.deleteRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">???? ????</span>
+                <span onclick="document.getElementById('modal').style.display='none'; closeMyWorkHistoryDetail(); window.editRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">???? ???</span>
             </div>
         </div>
     `;
@@ -6512,7 +7045,7 @@ window.renderMyWorkRecordCardHtml = function(rec) {
 
 window.renderMyWorkRecordsGroupedHtml = function(records, emptyMsg) {
     if (!records || records.length === 0) {
-        return `<div style="background:#f9f9f9; padding:15px; border-radius:8px; text-align:center; color:#888; font-size:13px; border:1px dashed #ccc;">${emptyMsg || '作業記録はありません。'}</div>`;
+        return `<div style="background:#f9f9f9; padding:15px; border-radius:8px; text-align:center; color:#888; font-size:13px; border:1px dashed #ccc;">${emptyMsg || '???????????????????'}</div>`;
     }
     let html = `<div style="display:flex; flex-direction:column; gap:8px;">`;
     let lastYmd = '';
@@ -6520,7 +7053,7 @@ window.renderMyWorkRecordsGroupedHtml = function(records, emptyMsg) {
         const ymd = rec.recordYmd || '';
         if (ymd !== lastYmd) {
             lastYmd = ymd;
-            html += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin:8px 0 2px;">📅 ${window.formatWorkRecordDateLabel(ymd) || '日付不明'}</div>`;
+            html += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin:8px 0 2px;">?? ${window.formatWorkRecordDateLabel(ymd) || '??????'}</div>`;
         }
         html += window.renderMyWorkRecordCardHtml(rec);
     });
@@ -6538,11 +7071,11 @@ window.openMyWorkHistoryDetail = function() {
           <div style="background:#fff; color:#333; width:94%; max-width:480px; height:88vh; max-height:88vh; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.35); display:flex; flex-direction:column; overflow:hidden;">
             <div style="padding:14px 16px; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-shrink:0;">
               <div>
-                <div style="font-weight:bold; font-size:16px; color:#2e7d32;">📋 作業記録（全期間）</div>
-                <div id="myWorkHistorySub" style="font-size:12px; color:#666; margin-top:2px;">読み込み中...</div>
+                <div style="font-weight:bold; font-size:16px; color:#2e7d32;">?? ???????????????</div>
+                <div id="myWorkHistorySub" style="font-size:12px; color:#666; margin-top:2px;">????????...</div>
               </div>
               <button type="button" onclick="closeMyWorkHistoryDetail()"
-                style="background:#666; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0;">閉じる</button>
+                style="background:#666; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0;">?????</button>
             </div>
             <div id="myWorkHistoryBody" style="flex:1; overflow-y:auto; padding:12px 14px; -webkit-overflow-scrolling:touch;"></div>
           </div>`;
@@ -6553,13 +7086,13 @@ window.openMyWorkHistoryDetail = function() {
     if (!body) return;
 
     modal.style.display = 'flex';
-    body.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:14px;">読み込み中...</div>`;
-    if (sub) sub.innerText = '読み込み中...';
+    body.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:14px;">????????...</div>`;
+    if (sub) sub.innerText = '????????...';
 
     setTimeout(() => {
         const all = window.collectMyWorkRecords(null);
-        if (sub) sub.innerText = `全 ${all.length} 件（新しい日付から）`;
-        body.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
+        if (sub) sub.innerText = `?? ${all.length} ????????????????`;
+        body.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '???????????????????????');
     }, 30);
 };
 
@@ -6586,21 +7119,21 @@ function formatAttendanceDateLabel(ymd) {
     const parts = String(ymd).split('-').map(Number);
     if (parts.length < 3 || parts.some((n) => isNaN(n))) return ymd;
     const dt = new Date(parts[0], parts[1] - 1, parts[2]);
-    const week = ['日', '月', '火', '水', '木', '金', '土'][dt.getDay()];
-    return `${parts[1]}/${parts[2]}（${week}）`;
+    const week = ['??', '??', '??', '??', '??', '??', '??'][dt.getDay()];
+    return `${parts[1]}/${parts[2]}??${week}??;
 }
 
 function isClockInType(type) {
-    return type === '出勤' || type === 'アプリ起動';
+    return type === '????' || type === '????????';
 }
 
 function isClockOutType(type) {
     const t = String(type || '');
-    return t === '退勤' || t.indexOf('退勤(') === 0;
+    return t === '????' || t.indexOf('????(') === 0;
 }
 
 function isClockCancelType(type) {
-    return String(type || '') === '出勤取消';
+    return String(type || '') === '????????';
 }
 
 function getLocalClockInHint(targetYmd) {
@@ -6636,7 +7169,7 @@ function getLocalClockInHint(targetYmd) {
     }
 }
 
-/** 作業記録データから日付ごとの最早開始時間・最遅終了時間を抽出する */
+/** ???????????????????????????????????????????????????? */
 function getWorkRecordAttendanceSummaryMap(userName) {
     const normUser = (userName || '').replace(/\s+/g, '');
     const seenIds = new Set();
@@ -6665,7 +7198,7 @@ function getWorkRecordAttendanceSummaryMap(userName) {
                 const isWorkRecord = (ph.type === 'work') || (ph.data && ph.data.workName);
                 if (isWorkRecord && ph.data) {
                     const phAuthor = String(ph.author || '').replace(/\s+/g, '');
-                    const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
+                    const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === '??????';
                     if (isAuthorMatch) {
                         const dateYmd = normalizeDate(ph.data.workDate) || normalizeDate(ph.date);
                         if (!dateYmd) return;
@@ -6698,7 +7231,7 @@ function getWorkRecordAttendanceSummaryMap(userName) {
     return map;
 }
 
-/** 出退勤イベントを作業記録とあわせて日付ごとのセッション一覧にまとめる（新しい日付が先） */
+/** ????????????????????????????????????????????????????????????????????? */
 function summarizeMyAttendanceList(rows, userName) {
     const normUser = (userName || '').replace(/\s+/g, '');
     const events = (rows || [])
@@ -6727,9 +7260,9 @@ function summarizeMyAttendanceList(rows, userName) {
         } else if (isClockOutType(ev.type)) {
             sessions.push({
                 dateYmd: (openIn && openIn.ymd) || ev.ymd,
-                inTime: openIn ? formatTrackingClockTime(openIn.time) : '—',
+                inTime: openIn ? formatTrackingClockTime(openIn.time) : '??',
                 outTime: formatTrackingClockTime(ev.time),
-                note: String(ev.type).indexOf('退勤(') === 0 ? String(ev.type).replace(/^退勤\(|\)$/g, '') : '',
+                note: String(ev.type).indexOf('????(') === 0 ? String(ev.type).replace(/^????(|\)$/g, '') : '',
                 open: false,
                 sortKey: openIn ? openIn.sortKey : ev.sortKey
             });
@@ -6741,8 +7274,8 @@ function summarizeMyAttendanceList(rows, userName) {
         sessions.push({
             dateYmd: openIn.ymd,
             inTime: formatTrackingClockTime(openIn.time),
-            outTime: '未登録',
-            note: '出勤中',
+            outTime: '?????',
+            note: '??????',
             open: true,
             sortKey: openIn.sortKey
         });
@@ -6754,8 +7287,8 @@ function summarizeMyAttendanceList(rows, userName) {
                 sessions.push({
                     dateYmd: localHint.dateYmd,
                     inTime: localHint.time,
-                    outTime: '未登録',
-                    note: '出勤中（端末）',
+                    outTime: '?????',
+                    note: '????????????',
                     open: true,
                     sortKey: Date.now()
                 });
@@ -6763,43 +7296,43 @@ function summarizeMyAttendanceList(rows, userName) {
         }
     }
 
-    // 作業記録データとのマージ（打刻ログ補正 ＋ 打刻が無い日の自動生成）
+    // ?????????????????????????????? ?? ????????????????????
     const workMap = getWorkRecordAttendanceSummaryMap(userName);
     const existingDates = new Set(sessions.map(s => s.dateYmd));
 
-    // A. 既存の打刻セッションへの補正
+    // A. ??????????????????????
     sessions.forEach(s => {
         const wInfo = workMap[s.dateYmd];
         if (wInfo) {
-            if (s.inTime === '—' && wInfo.minStart) {
+            if (s.inTime === '??' && wInfo.minStart) {
                 s.inTime = wInfo.minStart;
-                s.note = s.note ? `${s.note} (作業記録より)` : '作業記録より';
+                s.note = s.note ? `${s.note} (??????????)` : '??????????';
             }
-            if (s.outTime === '未登録' && wInfo.maxEnd && !s.open) {
+            if (s.outTime === '?????' && wInfo.maxEnd && !s.open) {
                 s.outTime = wInfo.maxEnd;
-                s.note = s.note ? `${s.note} (作業記録より)` : '作業記録より';
+                s.note = s.note ? `${s.note} (??????????)` : '??????????';
             }
         }
     });
 
-    // B. 打刻ログが無いが作業記録が存在する日付の自動カード作成
+    // B. ?????????????????????????????????????????????
     Object.keys(workMap).forEach(ymd => {
         if (!existingDates.has(ymd)) {
             const wInfo = workMap[ymd];
-            const inTimeStr = wInfo.minStart || '—';
-            const outTimeStr = wInfo.maxEnd ? wInfo.maxEnd : (wInfo.hasOpen ? '未登録' : (wInfo.minStart ? wInfo.minStart : '—'));
+            const inTimeStr = wInfo.minStart || '??';
+            const outTimeStr = wInfo.maxEnd ? wInfo.maxEnd : (wInfo.hasOpen ? '?????' : (wInfo.minStart ? wInfo.minStart : '??'));
             sessions.push({
                 dateYmd: ymd,
                 inTime: inTimeStr,
                 outTime: outTimeStr,
-                note: `作業記録より算出 (${wInfo.count}件)`,
+                note: `????????????? (${wInfo.count}??)`,
                 open: wInfo.hasOpen && !wInfo.maxEnd,
-                sortKey: new Date(`${ymd}T${inTimeStr !== '—' ? inTimeStr : '00:00'}:00`).getTime() || 0
+                sortKey: new Date(`${ymd}T${inTimeStr !== '??' ? inTimeStr : '00:00'}:00`).getTime() || 0
             });
         }
     });
 
-    // 日付新しい順 → 同日内は時刻順
+    // ????????? ?? ????????????
     sessions.sort((a, b) => {
         if (a.dateYmd !== b.dateYmd) return a.dateYmd < b.dateYmd ? 1 : -1;
         return a.sortKey - b.sortKey;
@@ -6811,7 +7344,7 @@ window.loadMyAttendance = async function() {
     const box = document.getElementById('myAttendanceBody');
     if (!box) return;
 
-    box.innerHTML = `<div style="color:#888; font-size:13px;">読み込み中...</div>`;
+    box.innerHTML = `<div style="color:#888; font-size:13px;">????????...</div>`;
     const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
 
     try {
@@ -6824,7 +7357,7 @@ window.loadMyAttendance = async function() {
         const sessions = summarizeMyAttendanceList(rows, userName);
 
         if (!sessions.length) {
-            box.innerHTML = `<div style="color:#888; font-size:13px; text-align:center; padding:8px 0;">直近の出退勤記録はありません。</div>`;
+            box.innerHTML = `<div style="color:#888; font-size:13px; text-align:center; padding:8px 0;">????????????????????????</div>`;
             return;
         }
 
@@ -6836,111 +7369,130 @@ window.loadMyAttendance = async function() {
                 html += `<div style="font-size:12px; font-weight:bold; color:#1565c0; margin:10px 0 6px;">${formatAttendanceDateLabel(s.dateYmd)}</div>`;
             }
             const border = s.open ? '#FF9800' : '#4CAF50';
-            const status = s.open ? '出勤中' : '退勤済';
+            const status = s.open ? '??????' : '?????';
             const noteHtml = s.note ? `<div style="font-size:11px; color:#666; margin-top:4px;">${s.note}</div>` : '';
             html += `
                 <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid ${border}; border-radius:6px; padding:10px; margin-bottom:8px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-size:12px; font-weight:bold; color:${s.open ? '#e65100' : '#2e7d32'};">${status}</span>
                     </div>
-                    <div style="margin-top:6px; font-size:14px; color:#333;">出勤 <b>${s.inTime}</b> 〜 退勤 <b>${s.outTime}</b></div>
+                    <div style="margin-top:6px; font-size:14px; color:#333;">???? <b>${s.inTime}</b> ?? ???? <b>${s.outTime}</b></div>
                     ${noteHtml}
                 </div>`;
         });
         html += `</div>`;
-        html += `<div style="font-size:11px; color:#888; margin-top:6px;">直近30日分を新しい日付から表示</div>`;
+        html += `<div style="font-size:11px; color:#888; margin-top:6px;">???30???????????????????</div>`;
         box.innerHTML = html;
     } catch (e) {
-        console.warn('出退勤取得エラー', e);
+        console.warn('??????????????', e);
         const localHint = getLocalClockInHint();
         if (localHint) {
             box.innerHTML = `
-                <div style="background:#fff3e0; border:1px solid #ffe0b2; border-radius:6px; padding:10px; font-size:13px; color:#e65100; margin-bottom:8px;">サーバーから取得できませんでした。端末の出勤状態を表示します。</div>
+                <div style="background:#fff3e0; border:1px solid #ffe0b2; border-radius:6px; padding:10px; font-size:13px; color:#e65100; margin-bottom:8px;">?????????????????????????????????????????????????</div>
                 <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">${formatAttendanceDateLabel(localHint.dateYmd)}</div>
                 <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #FF9800; border-radius:6px; padding:10px;">
-                    <div style="font-size:14px; font-weight:bold; color:#e65100;">出勤中</div>
-                    <div style="margin-top:6px; font-size:13px; color:#333;">出勤 <b>${localHint.time}</b> 〜 退勤 <b>未登録</b></div>
+                    <div style="font-size:14px; font-weight:bold; color:#e65100;">??????</div>
+                    <div style="margin-top:6px; font-size:13px; color:#333;">???? <b>${localHint.time}</b> ?? ???? <b>?????</b></div>
                 </div>`;
         } else {
-            box.innerHTML = `<div style="color:#c62828; font-size:13px;">出退勤の取得に失敗しました。</div>`;
+            box.innerHTML = `<div style="color:#c62828; font-size:13px;">????????????????????????</div>`;
         }
     }
+};
+
+window.closeAppModal = function() {
+    const modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.bindAppModalBackdropClose = function() {
+    const modal = document.getElementById('modal');
+    if (!modal || modal.dataset.backdropBound === '1') return;
+    modal.dataset.backdropBound = '1';
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) window.closeAppModal();
+    });
 };
 
 window.openMyPage = function() {
     const staffId = localStorage.getItem('passionMapUserId') || '';
     const userName = localStorage.getItem('passionMapUserName') || currentUser || '';
-    const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+    const userRole = localStorage.getItem('passionMapUserRole') || '??????';
 
     const recentYmds = window.getPastYmdSet(3);
     const ymdList = Array.from(recentYmds).sort(); // ascending
     const rangeLabel = ymdList.length >= 2
-        ? `${window.formatWorkRecordDateLabel(ymdList[0])} 〜 ${window.formatWorkRecordDateLabel(ymdList[ymdList.length - 1])}`
+        ? `${window.formatWorkRecordDateLabel(ymdList[0])} ?? ${window.formatWorkRecordDateLabel(ymdList[ymdList.length - 1])}`
         : (window.formatWorkRecordDateLabel(ymdList[0]) || '');
 
     const myRecentRecords = window.collectMyWorkRecords(recentYmds);
     const recordsHtml = `<div style="max-height:280px; overflow-y:auto; padding-right:2px; margin-bottom:10px;">${
-        window.renderMyWorkRecordsGroupedHtml(myRecentRecords, '直近3日の作業記録はまだありません。')
+        window.renderMyWorkRecordsGroupedHtml(myRecentRecords, '???3??????????????????????????')
     }</div>
     <button type="button" onclick="openMyWorkHistoryDetail()"
-      style="width:100%; background:#1565C0; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">📖 詳細（全期間を表示）</button>`;
+      style="width:100%; background:#1565C0; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">?? ???????????????</button>`;
 
     let html = `
-        <h3 style="color:#4CAF50; margin-top:0;">👤 マイページ</h3>
+        <div style="position:sticky; top:0; z-index:5; background:#fff; margin:-20px -20px 12px; padding:14px 16px 12px; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center; gap:10px; border-radius:12px 12px 0 0;">
+            <h3 style="color:#4CAF50; margin:0; font-size:18px;">\uD83D\uDC64 \u30de\u30a4\u30da\u30fc\u30b8</h3>
+            <button type="button" onclick="closeAppModal()" aria-label="\u9589\u3058\u308b"
+              style="background:#f5f5f5; color:#555; border:1px solid #ddd; width:40px; height:40px; border-radius:50%; font-size:22px; line-height:1; font-weight:bold; cursor:pointer; flex-shrink:0; padding:0;">\u00d7</button>
+        </div>
         <div style="background:#f5f5f5; padding:15px; border-radius:8px; margin-bottom:15px;">
-            <div style="font-size:13px; color:#999;">スタッフID</div>
+            <div style="font-size:13px; color:#999;">\u30b9\u30bf\u30c3\u30d5ID</div>
             <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${staffId}</div>
-            <div style="font-size:13px; color:#999;">名前</div>
+            <div style="font-size:13px; color:#999;">\u540d\u524d</div>
             <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${userName}</div>
-            <div style="font-size:13px; color:#999;">権限</div>
+            <div style="font-size:13px; color:#999;">\u6a29\u9650</div>
             <div style="font-size:16px; font-weight:bold;">${userRole}</div>
         </div>
 
         <h4 style="color:#1565c0; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
-            <span>🏃 出退勤時間</span>
+            <span>?? ?????????</span>
         </h4>
         <div style="background:#e3f2fd; border:1px solid #bbdefb; border-radius:8px; padding:12px; margin-bottom:15px;">
             <div id="myAttendanceBody" style="min-height:40px;">
-                <div style="color:#888; font-size:13px;">読み込み中...</div>
+                <div style="color:#888; font-size:13px;">????????...</div>
             </div>
         </div>
         
         <h4 style="color:#2e7d32; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-            <span>📋 直近3日の作業記録 (${myRecentRecords.length}件)</span>
+            <span>?? ???3?????????? (${myRecentRecords.length}??)</span>
         </h4>
         <div style="font-size:11px; color:#666; margin-bottom:8px;">${rangeLabel}</div>
         ${recordsHtml}
 
-        <h4 style="color:#c62828; margin-bottom:10px; margin-top:5px;">📧 Gmailアカウント</h4>
+        <h4 style="color:#c62828; margin-bottom:10px; margin-top:5px;">??? Gmail????????</h4>
         <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:12px; margin-bottom:15px;">
-            <div style="font-size:12px; color:#666; margin-bottom:8px;">Googleカレンダー連動用。登録後、スケジュール画面から今日の予定を表示できます。</div>
+            <div style="font-size:12px; color:#666; margin-bottom:8px;">Google?????????????????????????????????????????????????????????</div>
             <input type="email" id="myGmailInput" style="width:100%; padding:10px; margin-bottom:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="example@gmail.com" value="">
-            <button id="saveGmailBtn" onclick="doSaveUserGmail()" style="width:100%; background:#DB4437; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">Gmailを保存</button>
+            <button id="saveGmailBtn" onclick="doSaveUserGmail()" style="width:100%; background:#DB4437; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">Gmail?????</button>
             <div id="saveGmailResult" style="margin-top:8px; font-size:13px; font-weight:bold;"></div>
         </div>
 
-        <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">現在のパスワード</label>
-        <input type="password" id="myCurrentPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="現在のパスワード">
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいパスワード</label>
-        <input type="password" id="myNewPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="新しいパスワード (4文字以上)">
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいパスワード (確認)</label>
-        <input type="password" id="myNewPwConfirm" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="もう一度入力">
-        <button id="changePwBtn" onclick="doChangePassword()" style="width:100%; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">パスワードを変更する</button>
+        <h4 style="color:#555; margin-bottom:10px;">?? ???????????</h4>
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">????????????</label>
+        <input type="password" id="myCurrentPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="????????????">
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">????????????</label>
+        <input type="password" id="myNewPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="???????????? (4??????)">
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">???????????? (???)</label>
+        <input type="password" id="myNewPwConfirm" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="??????????">
+        <button id="changePwBtn" onclick="doChangePassword()" style="width:100%; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">???????????????</button>
         <div id="changePwResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
 
-        <h4 style="color:#555; margin-bottom:10px; margin-top:20px;">🆔 ID変更</h4>
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいID</label>
-        <input type="text" id="myNewId" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="新しいID">
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">現在のパスワード</label>
-        <input type="password" id="myPwForIdChange" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="認証のため入力">
-        <button id="changeIdBtn" onclick="doChangeId()" style="width:100%; background:#2196F3; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">IDを変更する</button>
+        <h4 style="color:#555; margin-bottom:10px; margin-top:20px;">?? ID???</h4>
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">?????D</label>
+        <input type="text" id="myNewId" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="?????D">
+        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">????????????</label>
+        <input type="password" id="myPwForIdChange" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="???????????">
+        <button id="changeIdBtn" onclick="doChangeId()" style="width:100%; background:#2196F3; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">ID????????</button>
         <div id="changeIdResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
 
-        <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">閉じる</button>
+        <button onclick="closeAppModal()" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">?????</button>
     `;
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('modal').style.display = 'flex';
+    if (typeof window.bindAppModalBackdropClose === 'function') window.bindAppModalBackdropClose();
     loadMyAttendance();
     loadMyGmailIntoMyPage();
 };
@@ -6963,24 +7515,24 @@ window.doSaveUserGmail = async function() {
     const btn = document.getElementById('saveGmailBtn');
     const staffId = localStorage.getItem('passionMapUserId') || '';
     if (!staffId) {
-        if (resultDiv) { resultDiv.innerText = '❌ ログイン情報がありません'; resultDiv.style.color = 'red'; }
+        if (resultDiv) { resultDiv.innerText = '?? ????????????????????'; resultDiv.style.color = 'red'; }
         return;
     }
     const gmail = (input && input.value || '').trim();
-    if (btn) { btn.disabled = true; btn.innerText = '保存中...'; }
+    if (btn) { btn.disabled = true; btn.innerText = '?????...'; }
     try {
         const res = await callGAS('saveUserGmail', { userId: staffId, gmail: gmail });
         if (resultDiv) {
-            resultDiv.innerText = res && res.success ? '✅ Gmailを保存しました' : '❌ 保存に失敗しました';
+            resultDiv.innerText = res && res.success ? '?? Gmail???????????' : '?? ???????????????';
             resultDiv.style.color = res && res.success ? 'green' : 'red';
         }
     } catch (e) {
         if (resultDiv) {
-            resultDiv.innerText = '❌ ' + (e.message || '通信エラー');
+            resultDiv.innerText = '?? ' + (e.message || '????????');
             resultDiv.style.color = 'red';
         }
     } finally {
-        if (btn) { btn.disabled = false; btn.innerText = 'Gmailを保存'; }
+        if (btn) { btn.disabled = false; btn.innerText = 'Gmail?????'; }
     }
 };
 
@@ -6992,25 +7544,25 @@ window.doChangeId = async function() {
     const btn = document.getElementById('changeIdBtn');
     const staffId = localStorage.getItem('passionMapUserId') || (typeof currentStaffId !== 'undefined' ? currentStaffId : '');
 
-    if (!newId || !currentPw) { resultDiv.innerText = '❌ すべての項目を入力してください'; resultDiv.style.color = 'red'; return; }
+    if (!newId || !currentPw) { resultDiv.innerText = '?? ?????????????????????????'; resultDiv.style.color = 'red'; return; }
     
-    btn.disabled = true; btn.innerText = '変更中...';
+    btn.disabled = true; btn.innerText = '?????...';
     try {
         const res = await callGAS('changeId', { userId: staffId, password: currentPw, newId: newId });
         if (res.success) {
-            resultDiv.innerText = '✅ ' + res.message;
+            resultDiv.innerText = '?? ' + res.message;
             resultDiv.style.color = 'green';
             localStorage.setItem('passionMapUserId', newId);
             if (typeof currentStaffId !== 'undefined') currentStaffId = newId; // Update global var if it exists
         } else {
-            resultDiv.innerText = '❌ ' + res.message;
+            resultDiv.innerText = '?? ' + res.message;
             resultDiv.style.color = 'red';
-            btn.disabled = false; btn.innerText = 'IDを変更する';
+            btn.disabled = false; btn.innerText = 'ID????????';
         }
     } catch (e) {
-        resultDiv.innerText = '❌ エラーが発生しました';
+        resultDiv.innerText = '?? ?????????????????';
         resultDiv.style.color = 'red';
-        btn.disabled = false; btn.innerText = 'IDを変更する';
+        btn.disabled = false; btn.innerText = 'ID????????';
     }
 };
 
@@ -7022,26 +7574,26 @@ window.doChangePassword = async function() {
     const btn = document.getElementById('changePwBtn');
     const staffId = localStorage.getItem('passionMapUserId');
 
-    if (!current || !newPw) { resultDiv.innerText = '❌ すべての項目を入力してください'; resultDiv.style.color = 'red'; return; }
-    if (newPw !== confirmPw) { resultDiv.innerText = '❌ 新しいパスワードが一致しません'; resultDiv.style.color = 'red'; return; }
-    if (newPw.length < 4) { resultDiv.innerText = '❌ 4文字以上で入力してください'; resultDiv.style.color = 'red'; return; }
+    if (!current || !newPw) { resultDiv.innerText = '?? ?????????????????????????'; resultDiv.style.color = 'red'; return; }
+    if (newPw !== confirmPw) { resultDiv.innerText = '?? ???????????????????????'; resultDiv.style.color = 'red'; return; }
+    if (newPw.length < 4) { resultDiv.innerText = '?? 4?????????????????????'; resultDiv.style.color = 'red'; return; }
 
-    btn.disabled = true; btn.innerText = '変更中...';
+    btn.disabled = true; btn.innerText = '?????...';
     try {
         const res = await callGAS('changePassword', { userId: staffId, currentPassword: current, newPassword: newPw });
         if (res.success) {
-            resultDiv.innerText = '✅ ' + res.message;
+            resultDiv.innerText = '?? ' + res.message;
             resultDiv.style.color = 'green';
             localStorage.setItem('passionMapUserPw', newPw);
         } else {
-            resultDiv.innerText = '❌ ' + res.message;
+            resultDiv.innerText = '?? ' + res.message;
             resultDiv.style.color = 'red';
         }
     } catch (e) {
-        resultDiv.innerText = '❌ 通信エラー: ' + e.message;
+        resultDiv.innerText = '?? ????????: ' + e.message;
         resultDiv.style.color = 'red';
     }
-    btn.disabled = false; btn.innerText = 'パスワードを変更する';
+    btn.disabled = false; btn.innerText = '???????????????';
 };
 
 
@@ -7126,25 +7678,25 @@ window.syncTrackingUI = function() {
 
 window.toggleTracking = () => {
     if (window.passionWatchId !== null || localStorage.getItem('passionMapClockIn')) {
-        // 退勤（トラッキング停止） - ポップアップ表示
+        // ???????????????????? - ?????????????
         const now = new Date();
         const defaultDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const defaultTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         
-        let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 退勤処理</h3>`;
-        html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
+        let html = `<h3 style="margin-top:0; color:#4CAF50;">???????? ????????</h3>`;
+        html += `<label class="form-label" style="display:block; margin-bottom:5px;">??????</label>`;
         html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
-        html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
-        html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '退勤時間')">`;
+        html += `<label class="form-label" style="display:block; margin-bottom:5px;">???????</label>`;
+        html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '???????')">`;
         html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">`;
         html += `  <div style="display:flex; gap:10px;">`;
-        html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤する</button>`;
-        html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
+        html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">???????</button>`;
+        html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">????????</button>`;
         html += `  </div>`;
         const curUser = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
         const hasWorkRecs = (typeof window.getUserTodayWorkRecordsCount === 'function' ? window.getUserTodayWorkRecordsCount(curUser) : 0) > 0;
         if (!hasWorkRecs) {
-            html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
+            html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">???????????????????????</button>`;
         }
         html += `</div>`;
         
@@ -7159,24 +7711,24 @@ window.toggleTracking = () => {
     } else {
         if (!navigator.geolocation) {
             if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') {
-                customAlert("お使いの端末ではGPSがサポートされていません。");
+                customAlert("?????????????GPS????????????????????");
             }
             return;
         }
         
-        // 出勤（トラッキング開始） - ポップアップ表示
+        // ??????????????????? - ?????????????
         const now = new Date();
         const defaultDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const defaultTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         
-        let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>`;
-        html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
+        let html = `<h3 style="margin-top:0; color:#4CAF50;">???????? ???????</h3>`;
+        html += `<label class="form-label" style="display:block; margin-bottom:5px;">??????</label>`;
         html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
-        html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
-        html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+        html += `<label class="form-label" style="display:block; margin-bottom:5px;">???????</label>`;
+        html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '???????')">`;
         html += `<div style="display:flex; gap:10px;">`;
-        html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
-        html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
+        html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">???????</button>`;
+        html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">????????</button>`;
         html += `</div>`;
         
         const modalBody = document.getElementById('modalBody');
@@ -7194,7 +7746,7 @@ window.confirmClockIn = () => {
     const dateInput = document.getElementById('clockInDate') ? document.getElementById('clockInDate').value : '';
     const timeInput = document.getElementById('clockInTime').value;
     if (!dateInput || !timeInput) {
-        if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') customAlert("日付と時間を入力してください");
+        if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') customAlert("???????????????????????");
         return;
     }
     document.getElementById('modal').style.display = 'none';
@@ -7233,15 +7785,15 @@ window.confirmClockIn = () => {
                     userName: currentUser,
                     lat: lat,
                     lng: lng,
-                    type: '出勤',
+                    type: '????',
                     time: clockAt.getTime()
                 }).catch(e => console.warn(e));
             }
         }
     }, (err) => {
-        console.warn('GPSエラー', err);
+        console.warn('GPS?????', err);
         if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') {
-            customAlert('GPSの取得に失敗しましたが、出勤時間は記録しました。');
+            customAlert('GPS??????????????????????????????????????????');
         }
         if (typeof currentUser !== 'undefined' && currentUser) {
             if(typeof callGAS === 'function') {
@@ -7249,7 +7801,7 @@ window.confirmClockIn = () => {
                     userName: currentUser,
                     lat: '',
                     lng: '',
-                    type: '出勤',
+                    type: '????',
                     time: clockAt.getTime()
                 }).catch(e => console.warn(e));
             }
@@ -7272,19 +7824,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 window.filterWorkChips = function() {
-    const cat = document.getElementById('rec_work_category') ? document.getElementById('rec_work_category').value : 'すべて';
+    const cat = document.getElementById('rec_work_category') ? document.getElementById('rec_work_category').value : '?????';
     const crop = document.getElementById('rec_work_crop_filter') ? document.getElementById('rec_work_crop_filter').value : '';
     const chips = document.querySelectorAll('.work-chip');
     let recentVisible = 0;
     let allVisible = 0;
 
-    // カテゴリ名がマスタと一致する作業があるか（無いならカテゴリでは絞らない）
-    let useCategoryFilter = cat && cat !== 'すべて';
+    // ?????????????????????????????????????????????????????????
+    let useCategoryFilter = cat && cat !== '?????';
     if (useCategoryFilter && typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster) && pdlWorkMaster.length) {
         const catNorm = String(cat).trim();
         const anyInCat = pdlWorkMaster.some(w => {
             const wCat = String((w && w.category) != null && String(w.category).trim() !== ''
-              ? w.category : '圃場作業').trim();
+              ? w.category : '???????').trim();
             return wCat === catNorm;
         });
         if (!anyInCat) useCategoryFilter = false;
@@ -7296,11 +7848,11 @@ window.filterWorkChips = function() {
         if (!chipCat || !chipCrop) {
             const wName = c.getAttribute('data-wname');
             const wObj = (typeof pdlWorkMaster !== 'undefined') ? pdlWorkMaster.find(w => w.name === wName) : null;
-            if (!chipCat) chipCat = (wObj && wObj.category) ? wObj.category : '圃場作業';
+            if (!chipCat) chipCat = (wObj && wObj.category) ? wObj.category : '???????';
             if (!chipCrop) chipCrop = wObj ? window.normalizeWorkCropKey(wObj.cropName) : '__common__';
         }
         const catOk = !useCategoryFilter || String(chipCat || '').trim() === String(cat).trim();
-        // 共通作業はどの作物選択時も候補に残す
+        // ?????????????????????????????
         const cropOk = !crop || chipCrop === crop || chipCrop === '__common__';
         if (catOk && cropOk) {
             c.style.display = 'inline-block';
@@ -7321,7 +7873,7 @@ window.filterWorkChips = function() {
                 const msg = document.createElement('div');
                 msg.id = 'no_work_msg';
                 msg.style.cssText = "color:#888; font-size:12px; width:100%; text-align:center; margin-top:10px;";
-                msg.innerText = "該当する作業がありません";
+                msg.innerText = "????????????????????";
                 allContainer.appendChild(msg);
             } else {
                 document.getElementById('no_work_msg').style.display = 'block';
@@ -7336,12 +7888,12 @@ window.filterWorkChips = function() {
           ? loadedPolygons[activePolyId] : null;
         const filtered = window.getWorksByCategoryAndCrop(cat, crop, p);
         const current = select.value;
-        select.innerHTML = '<option value="">選択してください</option>' + filtered.map(w => `<option value="${String(w.name || '').replace(/"/g, '&quot;')}">${w.name}</option>`).join('');
+        select.innerHTML = '<option value="">??????????????</option>' + filtered.map(w => `<option value="${String(w.name || '').replace(/"/g, '&quot;')}">${w.name}</option>`).join('');
         if (filtered.some(w => w.name === current)) select.value = current;
     }
 };
 
-// ========== �l�X�P�W���[���i�A�J�E���g�ʁj ==========
+// ========== ?????????????????? ==========
 window._escapeHtmlPs = function(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -7353,13 +7905,13 @@ window._escapeHtmlPs = function(s) {
 window.openPersonalSchedule = function() {
   const staffId = localStorage.getItem('passionMapUserId') || '';
   if (!staffId) {
-    if (typeof customAlert === 'function') customAlert('���O�C����񂪂���܂���');
-    else alert('���O�C����񂪂���܂���');
+    if (typeof customAlert === 'function') customAlert('??????????????');
+    else alert('??????????????');
     return;
   }
-  document.getElementById('rightPanelTitle').innerText = '??? �}�C�E�X�P�W���[��';
-  document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">�ǂݍ��ݒ�...</div>';
-  document.getElementById('rightPanelFooter').innerHTML = '<button onclick="closeRightPanel()" style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">����</button>';
+  document.getElementById('rightPanelTitle').innerText = '??? ?????????';
+  document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">??????...</div>';
+  document.getElementById('rightPanelFooter').innerHTML = '<button onclick="closeRightPanel()" style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">????</button>';
   document.getElementById('rightPanel').classList.add('open');
   window.renderPersonalSchedulePanel();
 };
@@ -7375,7 +7927,7 @@ window.renderPersonalSchedulePanel = async function() {
 
     const renderList = (items, cat) => {
       if (!items.length) {
-        return '<div style="color:#999;font-size:13px;padding:8px 0;">�܂�����܂���</div>';
+        return '<div style="color:#999;font-size:13px;padding:8px 0;">???????</div>';
       }
       return items.map(it => {
         const doneStyle = it.done ? 'text-decoration:line-through;color:#999;' : '';
@@ -7385,49 +7937,49 @@ window.renderPersonalSchedulePanel = async function() {
         return `<div style="display:flex;align-items:flex-start;gap:8px;padding:10px;margin-bottom:8px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;">
           <input type="checkbox" ${checked} onchange="togglePersonalScheduleDone('${safeId}', this.checked)" style="margin-top:3px;width:18px;height:18px;flex-shrink:0;">
           <div style="flex:1;font-size:14px;line-height:1.4;${doneStyle}">${safeText}</div>
-          <button type="button" onclick="deletePersonalScheduleItem('${safeId}')" style="background:none;border:none;color:#e53935;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;" title="�폜">�~</button>
+          <button type="button" onclick="deletePersonalScheduleItem('${safeId}')" style="background:none;border:none;color:#e53935;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;" title="??">?</button>
         </div>`;
       }).join('');
     };
 
     content.innerHTML = `
       <button type="button" id="btnTodayCalendar" onclick="showTodayGoogleCalendar()"
-        style="width:100%;background:#DB4437;color:#fff;border:none;padding:12px;border-radius:8px;font-weight:bold;font-size:14px;cursor:pointer;margin-bottom:14px;">?? ������Google�J�����_�[�\��</button>
+        style="width:100%;background:#DB4437;color:#fff;border:none;padding:12px;border-radius:8px;font-weight:bold;font-size:14px;cursor:pointer;margin-bottom:14px;">?? ????Google???????</button>
       <div id="todayCalendarBox" style="display:none;margin-bottom:16px;"></div>
 
       <div style="background:#ffebee;border:1px solid #ef9a9a;border-radius:10px;padding:12px;margin-bottom:14px;">
-        <div style="font-weight:bold;color:#c62828;font-size:15px;margin-bottom:8px;">?? �ŗD��</div>
+        <div style="font-weight:bold;color:#c62828;font-size:15px;margin-bottom:8px;">?? ????</div>
         <div style="display:flex;gap:6px;margin-bottom:10px;">
-          <input type="text" id="psPriorityInput" placeholder="�ŗD���ǉ�..." style="flex:1;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;">
-          <button type="button" onclick="addPersonalScheduleItem('�ŗD��')" style="background:#c62828;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">�ǉ�</button>
+          <input type="text" id="psPriorityInput" placeholder="???????..." style="flex:1;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;">
+          <button type="button" onclick="addPersonalScheduleItem('????')" style="background:#c62828;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">??</button>
         </div>
-        <div id="psPriorityList">${renderList(priority, '�ŗD��')}</div>
+        <div id="psPriorityList">${renderList(priority, '????')}</div>
       </div>
 
       <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:10px;padding:12px;margin-bottom:14px;">
-        <div style="font-weight:bold;color:#f57f17;font-size:15px;margin-bottom:8px;">?? ���ӎ���</div>
+        <div style="font-weight:bold;color:#f57f17;font-size:15px;margin-bottom:8px;">?? ????</div>
         <div style="display:flex;gap:6px;margin-bottom:10px;">
-          <input type="text" id="psNotesInput" placeholder="���ӎ�����ǉ�..." style="flex:1;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;">
-          <button type="button" onclick="addPersonalScheduleItem('���ӎ���')" style="background:#f57f17;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">�ǉ�</button>
+          <input type="text" id="psNotesInput" placeholder="???????..." style="flex:1;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;">
+          <button type="button" onclick="addPersonalScheduleItem('????')" style="background:#f57f17;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">??</button>
         </div>
-        <div id="psNotesList">${renderList(notes, '���ӎ���')}</div>
+        <div id="psNotesList">${renderList(notes, '????')}</div>
       </div>
 
-      <div style="font-size:11px;color:#888;line-height:1.5;">�����̃X�P�W���[���͂��Ȃ��̃A�J�E���g��p�ł��B<br>Google�J�����_�[�A���ɂ̓}�C�y�[�W��Gmail�o�^���K�v�ł��B</div>
+      <div style="font-size:11px;color:#888;line-height:1.5;">????????????????????????<br>Google?????????????????Gmail?????????</div>
     `;
   } catch (e) {
-    content.innerHTML = `<div style="color:red;text-align:center;margin-top:30px;">�ǂݍ��݃G���[<br><span style="font-size:12px;">${window._escapeHtmlPs(e.message || e)}</span></div>`;
+    content.innerHTML = `<div style="color:red;text-align:center;margin-top:30px;">????????<br><span style="font-size:12px;">${window._escapeHtmlPs(e.message || e)}</span></div>`;
   }
 };
 
 window.addPersonalScheduleItem = async function(category) {
   const staffId = localStorage.getItem('passionMapUserId') || '';
-  const inputId = category === '���ӎ���' ? 'psNotesInput' : 'psPriorityInput';
+  const inputId = category === '????' ? 'psNotesInput' : 'psPriorityInput';
   const input = document.getElementById(inputId);
   const text = (input && input.value || '').trim();
   if (!text) {
-    if (typeof customAlert === 'function') customAlert('���e����͂��Ă�������');
-    else alert('���e����͂��Ă�������');
+    if (typeof customAlert === 'function') customAlert('???????????');
+    else alert('???????????');
     return;
   }
   try {
@@ -7435,8 +7987,8 @@ window.addPersonalScheduleItem = async function(category) {
     if (input) input.value = '';
     await window.renderPersonalSchedulePanel();
   } catch (e) {
-    if (typeof customAlert === 'function') customAlert('�ǉ��Ɏ��s���܂���: ' + (e.message || e));
-    else alert('�ǉ��Ɏ��s���܂���');
+    if (typeof customAlert === 'function') customAlert('??????????: ' + (e.message || e));
+    else alert('??????????');
   }
 };
 
@@ -7445,22 +7997,22 @@ window.togglePersonalScheduleDone = async function(id, done) {
     await callGAS('updatePersonalScheduleItem', { id: id, done: !!done });
     await window.renderPersonalSchedulePanel();
   } catch (e) {
-    if (typeof customAlert === 'function') customAlert('�X�V�Ɏ��s���܂���');
-    else alert('�X�V�Ɏ��s���܂���');
+    if (typeof customAlert === 'function') customAlert('???????????');
+    else alert('???????????');
   }
 };
 
 window.deletePersonalScheduleItem = async function(id) {
   const ok = (typeof customConfirm === 'function')
-    ? await customConfirm('���̍��ڂ��폜���܂����H')
-    : confirm('���̍��ڂ��폜���܂����H');
+    ? await customConfirm('?????????????')
+    : confirm('?????????????');
   if (!ok) return;
   try {
     await callGAS('deletePersonalScheduleItem', { id: id });
     await window.renderPersonalSchedulePanel();
   } catch (e) {
-    if (typeof customAlert === 'function') customAlert('�폜�Ɏ��s���܂���');
-    else alert('�폜�Ɏ��s���܂���');
+    if (typeof customAlert === 'function') customAlert('??????????');
+    else alert('??????????');
   }
 };
 
@@ -7470,13 +8022,13 @@ window.showTodayGoogleCalendar = async function() {
   const btn = document.getElementById('btnTodayCalendar');
   if (!box) return;
   box.style.display = 'block';
-  box.innerHTML = '<div style="text-align:center;padding:12px;color:#666;font-size:13px;">�擾��...</div>';
-  if (btn) { btn.disabled = true; btn.innerText = '�擾��...'; }
+  box.innerHTML = '<div style="text-align:center;padding:12px;color:#666;font-size:13px;">???...</div>';
+  if (btn) { btn.disabled = true; btn.innerText = '???...'; }
   try {
     const res = await callGAS('getTodayGoogleCalendarEvents', { userId: staffId });
     const events = (res && res.events) || [];
     let html = `<div style="background:#fafafa;border:1px solid #e0e0e0;border-radius:8px;padding:12px;">
-      <div style="font-weight:bold;margin-bottom:8px;color:#333;">?? �����̗\��${res && res.gmail ? '�i' + window._escapeHtmlPs(res.gmail) + '�j' : ''}</div>`;
+      <div style="font-weight:bold;margin-bottom:8px;color:#333;">?? ??????${res && res.gmail ? '?' + window._escapeHtmlPs(res.gmail) + '?' : ''}</div>`;
     if (events.length) {
       html += events.map(ev => {
         const loc = ev.location ? `<div style="font-size:11px;color:#666;">?? ${window._escapeHtmlPs(ev.location)}</div>` : '';
@@ -7487,20 +8039,20 @@ window.showTodayGoogleCalendar = async function() {
         </div>`;
       }).join('');
     } else {
-      html += `<div style="color:#666;font-size:13px;padding:6px 0;">${window._escapeHtmlPs((res && res.message) || '�����̗\��͂���܂���B')}</div>`;
+      html += `<div style="color:#666;font-size:13px;padding:6px 0;">${window._escapeHtmlPs((res && res.message) || '?????????????')}</div>`;
     }
     if (res && res.calendarUrl) {
       html += `<a href="${window._escapeHtmlPs(res.calendarUrl)}" target="_blank" rel="noopener"
-        style="display:block;margin-top:10px;text-align:center;background:#4285F4;color:#fff;text-decoration:none;padding:10px;border-radius:6px;font-weight:bold;font-size:13px;">Google�J�����_�[���J��</a>`;
+        style="display:block;margin-top:10px;text-align:center;background:#4285F4;color:#fff;text-decoration:none;padding:10px;border-radius:6px;font-weight:bold;font-size:13px;">Google????????</a>`;
     }
     if (!res || !res.success) {
-      html += `<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.4;">���J�����_�[��������Ȃ��ꍇ�́A�ΏۃJ�����_�[��Apps Script���s�A�J�E���g�ցu�\��̕\���v�ŋ��L���Ă��������B</div>`;
+      html += `<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.4;">???????????????????????????Apps Script????????????????????????????</div>`;
     }
     html += '</div>';
     box.innerHTML = html;
   } catch (e) {
-    box.innerHTML = `<div style="color:red;font-size:13px;padding:8px;">�G���[: ${window._escapeHtmlPs(e.message || e)}</div>`;
+    box.innerHTML = `<div style="color:red;font-size:13px;padding:8px;">???: ${window._escapeHtmlPs(e.message || e)}</div>`;
   } finally {
-    if (btn) { btn.disabled = false; btn.innerText = '?? ������Google�J�����_�[�\��'; }
+    if (btn) { btn.disabled = false; btn.innerText = '?? ????Google???????'; }
   }
 };

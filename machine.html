@@ -242,7 +242,8 @@
   <!-- 機械登録モーダル -->
   <div id="modalMachineRegister" class="modal-overlay" onclick="if(event.target===this) closeModal('modalMachineRegister')">
     <div class="modal-content" onclick="event.stopPropagation()">
-      <h3 style="margin-top:0; color:#43A047;">⚙️ 機械登録</h3>
+      <h3 id="macModalTitle" style="margin-top:0; color:#43A047;">⚙️ 機械登録</h3>
+      <input type="hidden" id="regMachineEditId" value="">
       <div class="form-group">
         <label>機械名</label>
         <input type="text" id="regMachineName" placeholder="例：ヤンマー トラクター">
@@ -393,19 +394,14 @@
     <div class="modal-content" onclick="event.stopPropagation()">
       <h3 style="margin-top:0; color:#1E88E5;">📋 機械一覧</h3>
 
-      <div id="machineListPanel" style="max-height:35vh; overflow-y:auto; margin-bottom:12px; border:1px solid #eee; border-radius:8px;"></div>
-
-      <div class="form-group">
-        <label>対象の機械を選択</label>
-        <select id="settingMachineSelect" onchange="loadMachineSettings()">
-          <option value="">-- 機械を選択 --</option>
-        </select>
-      </div>
+      <div id="machineListPanel" style="max-height:45vh; overflow-y:auto; margin-bottom:12px; border:1px solid #eee; border-radius:8px;"></div>
 
       <div id="machineActionPanel" style="display:none; margin-top:10px; border-top:1px solid #eee; padding-top:15px;">
         <h4 id="selectedMachineTitle" style="margin:0 0 8px 0; color:#333;"></h4>
         <div id="selectedMachineDetail" style="font-size:13px; color:#555; margin-bottom:12px; line-height:1.6;"></div>
         <div class="modal-actions">
+          <button class="btn" style="background:#1E88E5;" onclick="editSelectedMachine()"><span class="btn-ico">✏️</span><span class="btn-txt">編集</span></button>
+          <button class="btn" style="background:#E53935;" onclick="deleteSelectedMachine()"><span class="btn-ico">🗑</span><span class="btn-txt">削除</span></button>
           <button class="btn" style="background:#FB8C00;" onclick="openStatusModal()"><span class="btn-ico">🔄</span><span class="btn-txt">稼働状況</span></button>
           <button class="btn" style="background:#546E7A;" onclick="openMaintenanceHistoryModal()"><span class="btn-ico">📋</span><span class="btn-txt">整備履歴</span></button>
           <button class="btn" style="background:#00897B;" onclick="openMaintenanceSettingsModal()"><span class="btn-ico">⚙️</span><span class="btn-txt">整備設定</span></button>
@@ -433,7 +429,7 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly&callback=initMap" async defer></script>
-  <script src="machine.js?v=1785310000001" defer></script>
+  <script src="machine.js?v=1785310000002" defer></script>
   <script src="tracking.js?v=1784615000002" defer></script>
   <script>
     function openMachineActionSheet(id) {

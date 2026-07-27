@@ -418,7 +418,7 @@ function onBadgeSelected(targetId, kind) {
 // ======================
 // 機械登録
 // ======================
-function openMachineRegisterModal() {
+function openMachineRegisterModal(editId) {
     updateSelectOptions('regMachineGroup', machineGroups);
     updateSelectOptions('regMachineType', machineTypes);
     
@@ -435,17 +435,13 @@ function openMachineRegisterModal() {
             (pdlSigns.length ? pdlSigns.map(s => `<option value="${String(s.id).replace(/"/g, '&quot;')}">${s.name || s.id}</option>`).join('')
             : '<option value="" disabled>※「車両・機械管理」機能の看板がありません</option>');
     }
-    
-    // フォームリセット
-    document.getElementById('regMachineName').value = '';
-    document.getElementById('regMachineNumber').value = '';
-    document.getElementById('regLocation').value = '';
-    document.getElementById('regSign').value = '';
-    renderRegWorkCategoryRows(['']);
-    document.getElementById('regPurchaseDate').value = '';
-    document.getElementById('regModel').value = '';
-    document.getElementById('regFuel').value = '';
-    document.getElementById('photoPreview').innerHTML = '';
+
+    const editingId = editId || '';
+    const editIdEl = document.getElementById('regMachineEditId');
+    if (editIdEl) editIdEl.value = editingId;
+    const title = document.getElementById('macModalTitle');
+    const existing = editingId && machines[editingId] ? machines[editingId] : null;
+
     pendingMachinePhotoBase64 = '';
     const photoInput = document.getElementById('regPhoto');
     if (photoInput) {
@@ -460,6 +456,35 @@ function openMachineRegisterModal() {
             };
             reader.readAsDataURL(file);
         };
+    }
+
+    if (existing) {
+        if (title) title.textContent = '✏️ 機械を編集';
+        document.getElementById('regMachineName').value = existing.name || '';
+        document.getElementById('regMachineNumber').value = existing.machineNumber || existing.serialNo || '';
+        document.getElementById('regMachineGroup').value = existing.group || '';
+        document.getElementById('regMachineType').value = existing.type || '';
+        document.getElementById('regLocation').value = existing.location || '';
+        document.getElementById('regSign').value = existing.signId || existing.currentLocId || '';
+        const workCats = String(existing.workCategory || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        renderRegWorkCategoryRows(workCats.length ? workCats : ['']);
+        document.getElementById('regPurchaseDate').value = formatDateInputValue(existing.purchaseDate);
+        document.getElementById('regModel').value = existing.model || existing.modelType || '';
+        document.getElementById('regFuel').value = existing.fuel || existing.fuelType || '';
+        document.getElementById('photoPreview').innerHTML = existing.photo
+            ? `<img src="${existing.photo}" style="max-width:100%; max-height:140px;">`
+            : '';
+    } else {
+        if (title) title.textContent = '⚙️ 機械登録';
+        document.getElementById('regMachineName').value = '';
+        document.getElementById('regMachineNumber').value = '';
+        document.getElementById('regLocation').value = '';
+        document.getElementById('regSign').value = '';
+        renderRegWorkCategoryRows(['']);
+        document.getElementById('regPurchaseDate').value = '';
+        document.getElementById('regModel').value = '';
+        document.getElementById('regFuel').value = '';
+        document.getElementById('photoPreview').innerHTML = '';
     }
     
     document.getElementById('modalMachineRegister').style.display = "flex";
@@ -642,7 +667,10 @@ async function saveMachineRegistration() {
     const signId = document.getElementById('regSign').value;
     const sign = pdlSigns.find(s => String(s.id) === String(signId));
     const signName = sign ? (sign.name || '') : '';
+    const editId = (document.getElementById('regMachineEditId') || {}).value || '';
+    const existing = editId && machines[editId] ? machines[editId] : null;
     let m = {
+        id: existing ? existing.id : undefined,
         name: document.getElementById('regMachineName').value.trim(),
         machineNumber: document.getElementById('regMachineNumber').value.trim(),
         group: document.getElementById('regMachineGroup').value,
@@ -654,11 +682,13 @@ async function saveMachineRegistration() {
         workCategory: collectRegWorkCategoryValue(),
         signId: signId,
         signName: signName,
-        currentLocId: signId,
-        currentLocName: signName,
-        status: "使用可能",
-        lat: null, lng: null,
-        maintenanceSettings: [],
+        currentLocId: existing ? (existing.currentLocId || signId) : signId,
+        currentLocName: existing ? (existing.currentLocName || signName) : signName,
+        status: existing ? (existing.status || '使用可能') : '使用可能',
+        lat: existing ? (existing.lat || null) : null,
+        lng: existing ? (existing.lng || null) : null,
+        maintenanceSettings: existing ? (existing.maintenanceSettings || []) : [],
+        photo: existing ? (existing.photo || '') : '',
         photoBase64: pendingMachinePhotoBase64 || ""
     };
 
@@ -668,11 +698,12 @@ async function saveMachineRegistration() {
     try {
         const res = await callGAS('machine_saveMachine', m);
         const saved = (res && res.machine) ? res.machine : m;
-        if (saved.id) machines[saved.id] = saved;
+        if (saved.id) machines[saved.id] = Object.assign({}, existing || {}, saved);
         closeModal('modalMachineRegister');
-        showToast("機械を登録しました");
-        updateMachineSettingsDropdown();
+        showToast(existing ? "機械を更新しました" : "機械を登録しました");
+        if (saved.id) currentMachineId = saved.id;
         renderMachineList();
+        loadMachineSettings();
         renderMachineMarkers();
     } catch(e) {
         alert("保存に失敗しました: " + e.message);
@@ -951,23 +982,13 @@ async function saveVehicleStatus(btn) {
 // 機械一覧・設定メイン
 // ======================
 function openMachineSettingsModal() {
-    updateMachineSettingsDropdown();
     renderMachineList();
-    document.getElementById('machineActionPanel').style.display = "none";
+    if (currentMachineId && machines[currentMachineId]) {
+        loadMachineSettings();
+    } else {
+        document.getElementById('machineActionPanel').style.display = "none";
+    }
     document.getElementById('modalMachineSettings').style.display = "flex";
-}
-
-function updateMachineSettingsDropdown() {
-    let sel = document.getElementById('settingMachineSelect');
-    if (!sel) return;
-    let html = '<option value="">-- 機械を選択 --</option>';
-    Object.keys(machines).sort((a, b) => String(machines[a].name || '').localeCompare(String(machines[b].name || ''), 'ja'))
-        .forEach(id => {
-            html += `<option value="${id}">${machines[id].name || id}</option>`;
-        });
-    let currentVal = sel.value;
-    sel.innerHTML = html;
-    if (machines[currentVal]) sel.value = currentVal;
 }
 
 function renderMachineList() {
@@ -986,15 +1007,21 @@ function renderMachineList() {
             const pin = (m.lat && m.lng) ? '📍' : '・';
             const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const sub = [m.group, m.type, m.machineNumber || m.serialNo].filter(Boolean).join(' / ') || '-';
-            const loc = m.currentLocName || m.signName || m.location || '置き場所未設定';
-            html += `<div onclick="selectMachineFromList('${safeId}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
+            const home = m.signName || m.location || '定位置未設定';
+            const cur = m.currentLocName || m.signName || '-';
+            const selected = String(currentMachineId) === String(id);
+            html += `<div onclick="selectMachineFromList('${safeId}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; background:${selected ? '#e3f2fd' : 'transparent'};">
                 <div style="width:48px; height:48px; border-radius:6px; overflow:hidden; background:#eee; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
                     ${m.photo ? `<img src="${m.photo}" style="width:100%; height:100%; object-fit:cover;">` : '🚜'}
                 </div>
                 <div style="flex:1; min-width:0;">
                     <div style="font-weight:bold; color:#333;">${statusIcon} ${m.name || '(名称未設定)'}</div>
                     <div style="font-size:12px; color:#666;">${sub}</div>
-                    <div style="font-size:11px; color:#888;">${pin} ${loc}</div>
+                    <div style="font-size:11px; color:#888;">${pin} 定位置: ${home} / 現在地: ${cur}</div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:4px; flex-shrink:0;" onclick="event.stopPropagation();">
+                    <button type="button" onclick="editMachineFromList('${safeId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">編集</button>
+                    <button type="button" onclick="deleteMachineFromList('${safeId}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
                 </div>
             </div>`;
         });
@@ -1002,14 +1029,54 @@ function renderMachineList() {
 }
 
 function selectMachineFromList(id) {
-    const sel = document.getElementById('settingMachineSelect');
-    if (sel) sel.value = id;
+    currentMachineId = id;
     loadMachineSettings();
+    renderMachineList();
+}
+
+function editMachineFromList(id) {
+    if (!id || !machines[id]) return;
+    currentMachineId = id;
+    closeModal('modalMachineSettings');
+    openMachineRegisterModal(id);
+}
+
+function editSelectedMachine() {
+    if (!currentMachineId || !machines[currentMachineId]) return;
+    editMachineFromList(currentMachineId);
+}
+
+async function deleteMachineFromList(id) {
+    if (!id || !machines[id]) return;
+    const name = machines[id].name || id;
+    if (!confirm(`機械「${name}」を削除しますか？\nこの操作は取り消せません。`)) return;
+    showToast("削除中...");
+    try {
+        await callGAS('deleteMachineFromMaster', { machineId: id });
+        delete machines[id];
+        if (machineMarkers[id]) {
+            machineMarkers[id].setMap(null);
+            delete machineMarkers[id];
+        }
+        if (String(currentMachineId) === String(id)) {
+            currentMachineId = null;
+            const panel = document.getElementById('machineActionPanel');
+            if (panel) panel.style.display = 'none';
+        }
+        renderMachineList();
+        renderMachineMarkers();
+        showToast("機械を削除しました");
+    } catch (e) {
+        alert("削除に失敗しました: " + e.message);
+    }
+}
+
+async function deleteSelectedMachine() {
+    if (!currentMachineId) return;
+    await deleteMachineFromList(currentMachineId);
 }
 
 function loadMachineSettings() {
-    let sel = document.getElementById('settingMachineSelect');
-    currentMachineId = sel ? sel.value : '';
     let panel = document.getElementById('machineActionPanel');
     if (currentMachineId && machines[currentMachineId]) {
         const m = machines[currentMachineId];
@@ -1019,16 +1086,16 @@ function loadMachineSettings() {
             const photoHtml = m.photo
                 ? `<div style="margin-bottom:8px;"><img src="${m.photo}" style="max-width:100%; max-height:120px; border-radius:6px;"></div>`
                 : '';
+            const homeLabel = m.signName || m.location || '-';
             detailEl.innerHTML =
                 photoHtml +
                 `機番: <b>${m.machineNumber || m.serialNo || '-'}</b><br>` +
                 `グループ: <b>${m.group || '-'}</b> / カテゴリ: <b>${m.type || '-'}</b><br>` +
                 `型式: <b>${m.model || m.modelType || '-'}</b> / 燃料: <b>${m.fuel || m.fuelType || '-'}</b><br>` +
                 `拠点: <b>${m.location || '-'}</b><br>` +
-                `定位置: <b>${m.signName || '-'}</b><br>` +
+                `定位置: <b>${homeLabel}</b>${(m.lat && m.lng) ? ' <span style="color:#888; font-size:12px;">(地図ピンあり)</span>' : ''}<br>` +
                 `現在地: <b>${m.currentLocName || m.signName || '-'}</b><br>` +
-                `稼働状況: <b>${m.status || '使用可能'}</b><br>` +
-                `置き場所: <b>${(m.lat && m.lng) ? '設定済み' : '未設定'}</b>`;
+                `稼働状況: <b>${m.status || '使用可能'}</b>`;
         }
         panel.style.display = "block";
     } else {
@@ -1040,7 +1107,7 @@ function focusSelectedMachine() {
     if (!currentMachineId || !machines[currentMachineId]) return;
     const m = machines[currentMachineId];
     if (!m.lat || !m.lng) {
-        alert("置き場所が未設定です。先に置き場所を登録してください。");
+        alert("地図上の定位置が未設定です。先に定位置（地図ピン）を登録してください。");
         return;
     }
     closeModal('modalMachineSettings');

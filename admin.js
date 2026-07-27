@@ -686,15 +686,28 @@ window.isMachineManageSign = (p) => {
 };
 
 window.getAdminSignOptionsHtml = (selectedId) => {
-    const signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker && isMachineManageSign(p));
+    let signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker && isMachineManageSign(p));
+    // 既存の定位置看板がフィルタ外でも選べるよう追加
+    if (selectedId && loadedPolygons[selectedId] && loadedPolygons[selectedId].isMarker) {
+        if (!signs.some(p => String(p.id) === String(selectedId))) {
+            signs = [loadedPolygons[selectedId], ...signs];
+        }
+    }
     signs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
-    let html = '<option value="">定位置の看板を選択（農機管理機能付き）...</option>';
+    let html = '<option value="">定位置・片付け場所の看板を選択...</option>';
     if (signs.length === 0) {
-        html += '<option value="" disabled>※「車両・機械管理」機能の看板がありません</option>';
+        // フォールバック: 全看板
+        signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker);
+        signs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+        html = '<option value="">定位置・片付け場所の看板を選択...</option>';
+        if (signs.length === 0) {
+            html += '<option value="" disabled>※地図上に看板がありません</option>';
+        }
     }
     signs.forEach(p => {
         const sel = String(p.id) === String(selectedId || '') ? 'selected' : '';
-        html += `<option value="${String(p.id).replace(/"/g, '&quot;')}" ${sel}>${p.name || p.id}</option>`;
+        const mark = isMachineManageSign(p) ? '' : '（一般看板）';
+        html += `<option value="${String(p.id).replace(/"/g, '&quot;')}" ${sel}>${(p.name || p.id)}${mark}</option>`;
     });
     return html;
 };
@@ -1333,8 +1346,9 @@ window.openEditMachineMaster = (encodedStr) => {
             <select id="edit_mac_fuel" class="form-input">${fuelOpts}</select>
             <label class="form-label">購入年月日</label>
             <input type="date" id="edit_mac_date" class="form-input" value="${purchaseDate}">
-            <label class="form-label">定位置（参考表示）</label>
-            <input type="text" class="form-input" value="${(v.signName || v.currentLocName || '未設定').replace(/"/g, '&quot;')}" readonly style="background:#f4f6f8; color:#666;">
+            <label class="form-label">定位置・片付け場所（看板）*</label>
+            <select id="edit_mac_sign" class="form-input">${getAdminSignOptionsHtml(v.signId || v.currentLocId || '')}</select>
+            <div style="font-size:11px; color:#666; margin:-6px 0 10px;">作業後の「片付け場所 → 定位置」の候補になります。看板機能に「車両・機械管理」または「農機管理」がある看板から選べます。</div>
             <label class="form-label">作業分類（各枠で既存の作業から1つ選択）</label>
             ${buildMachineWorkCategoryEditorHtml('edit_mac_category_rows', v.workCategory || '')}
             <div style="display:flex; gap:10px; margin-top:15px;">
@@ -1400,16 +1414,21 @@ window.execMaster = async (type, act, val) => {
                 const fuel = (document.getElementById('edit_mac_fuel') || {}).value || '';
                 const date = (document.getElementById('edit_mac_date').value || '').replace(/-/g, '/');
                 const category = collectDetailWorksFromInputs('edit_mac_category_rows');
+                const signId = (document.getElementById('edit_mac_sign') || {}).value || '';
+                if (!signId) { customAlert("定位置・片付け場所の看板を選択してください"); return; }
+                const sign = loadedPolygons[signId];
+                const signName = sign ? (sign.name || '') : '';
                 document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
                 await callGAS('editMachineInMaster', {
                     machineId, name, machineNumber: number, model, type, group, location, fuel,
-                    purchaseDate: date, workCategory: category
+                    purchaseDate: date, workCategory: category, signId, signName
                 });
                 const m = (window.pdlMachines || []).find(x => String(x.id) === String(machineId));
                 if (m) {
                     m.name = name; m.machineNumber = number; m.model = model;
                     m.type = type; m.group = group; m.location = location; m.fuel = fuel;
                     m.purchaseDate = date; m.workCategory = category;
+                    m.signId = signId; m.signName = signName;
                 }
             } else {
                 if (!await customConfirm('削除しますか？')) return;
