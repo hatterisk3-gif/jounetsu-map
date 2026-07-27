@@ -2,6 +2,7 @@
  * 出退勤UI（全ページ共通）
  * - 出勤/退勤（日付＋時間）
  * - 退勤時: 昼休憩・作業中休憩、勤務時間と作業記録の整合チェック
+ * - 日付を跨いだ退勤忘れの確認・登録誘導
  */
 (function () {
   const TOLERANCE_MIN = 1;
@@ -45,6 +46,67 @@
     if (typeof customAlert === 'function') customAlert(msg);
     else if (window.customAlert) window.customAlert(msg);
     else alert(msg);
+  }
+
+  function confirmMsg(msg) {
+    if (typeof customConfirm === 'function') return customConfirm(msg);
+    if (typeof window.customConfirm === 'function') return window.customConfirm(msg);
+    return Promise.resolve(window.confirm(msg));
+  }
+
+  function toYmd(dateObj) {
+    const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function todayYmd() {
+    return toYmd(new Date());
+  }
+
+  function localeDateToYmd(localeStr) {
+    if (!localeStr) return '';
+    const normalized = normalizeDateKey(localeStr);
+    if (normalized) return normalized;
+    try {
+      const d = new Date(localeStr);
+      if (!isNaN(d.getTime())) return toYmd(d);
+    } catch (e) {}
+    return '';
+  }
+
+  /** 出勤中かつ出勤日が今日より前 → 退勤忘れ */
+  function getForgotClockOutInfo() {
+    try {
+      const active = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null');
+      if (!active || !active.active) return null;
+
+      const todayState = JSON.parse(localStorage.getItem('passionMapClockInToday') || 'null');
+      const todayLocale = new Date().toLocaleDateString();
+      const todayIso = todayYmd();
+
+      let clockInDateYmd =
+        (active.dateYmd && normalizeDateKey(active.dateYmd)) ||
+        (todayState && todayState.dateYmd && normalizeDateKey(todayState.dateYmd)) ||
+        '';
+
+      const storedLocale = (todayState && todayState.date) || active.dateLocale || '';
+      if (!clockInDateYmd && storedLocale) {
+        if (storedLocale === todayLocale) return null;
+        clockInDateYmd = localeDateToYmd(storedLocale);
+      }
+
+      if (!clockInDateYmd) return null;
+      if (clockInDateYmd >= todayIso) return null;
+
+      return {
+        clockInTime: active.time || (todayState && todayState.time) || getClockInTimeStr(),
+        clockInDateYmd: clockInDateYmd,
+        clockInDateLocale: storedLocale || clockInDateYmd
+      };
+    } catch (e) {
+      return null;
+    }
   }
 
   function parseClockDateTime(dateInput, timeInput) {
@@ -559,6 +621,7 @@
     const typeLabel = '退勤(' + breakNote + ')';
 
     clearPending();
+    window._forgotClockOutPromptedOnce = false;
 
     if (!user || typeof callGAS !== 'function') return;
 
@@ -616,12 +679,17 @@
     });
 
     const user = typeof currentUser !== 'undefined' ? currentUser : '';
+    const forgotInfo = getForgotClockOutInfo();
+    const workDateYmd =
+      (forgotInfo && forgotInfo.clockInDateYmd) ||
+      ymdFromDateInput(dateInput);
     const pending = {
       user: user,
       clockInTime: getClockInTimeStr(),
+      clockInDateYmd: workDateYmd,
       clockOutDate: dateInput,
       clockOutTime: timeInput,
-      workDateYmd: ymdFromDateInput(dateInput),
+      workDateYmd: workDateYmd,
       lunchEnabled: lunchEnabled,
       lunchStart: lunchStart || '12:00',
       lunchEnd: lunchEnd || '13:00',
@@ -649,6 +717,7 @@
     clearWatchers();
     localStorage.removeItem('passionMapClockIn');
     localStorage.removeItem('passionMapClockInToday');
+    window._forgotClockOutPromptedOnce = false;
     if (window.clockInMarker) {
       window.clockInMarker.setMap(null);
       window.clockInMarker = null;
@@ -680,9 +749,10 @@
     const clockAt = parseClockDateTime(dateInput, timeInput);
     const timeStr = timeInput;
     const dateStr = clockAt.toLocaleDateString();
+    const dateYmd = normalizeDateKey(dateInput) || toYmd(clockAt);
 
-    const clockInState = { lat: '', lng: '', time: timeStr, active: true };
-    const clockInTodayState = { lat: '', lng: '', time: timeStr, date: dateStr };
+    const clockInState = { lat: '', lng: '', time: timeStr, active: true, dateYmd: dateYmd, dateLocale: dateStr };
+    const clockInTodayState = { lat: '', lng: '', time: timeStr, date: dateStr, dateYmd: dateYmd };
     localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
     localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
     if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
@@ -733,6 +803,116 @@
   }
   window._toggleClockLunchFields = toggleLunchFields;
 
+  /** 退勤モーダルを開く（通常／退勤忘れ共通） */
+  function openClockOutModal(options) {
+    options = options || {};
+    const forgotInfo = options.forgotInfo || getForgotClockOutInfo();
+    const isForgot = !!forgotInfo;
+    const dt = defaultDateTime();
+    const pref = loadBreakDefaults();
+    const clockInTime = (forgotInfo && forgotInfo.clockInTime) || getClockInTimeStr();
+    const outDate = options.forceDateYmd || (isForgot ? forgotInfo.clockInDateYmd : dt.date);
+    // 退勤忘れ時は「今」ではなく前日の退勤想定時刻を初期表示
+    const outTime = options.defaultTime || (isForgot ? '17:00' : dt.time);
+
+    let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 退勤処理</h3>`;
+    if (isForgot) {
+      html += `<div style="background:#fff3e0; color:#e65100; padding:10px 12px; border-radius:8px; font-size:13px; line-height:1.5; margin-bottom:12px; border:1px solid #ffe0b2;">`;
+      html += `<b>前日の退勤が未登録です</b><br>出勤日（${forgotInfo.clockInDateYmd}）の退勤時刻を登録してください。`;
+      html += `</div>`;
+    }
+    html += `<div style="font-size:12px; color:#555; margin-bottom:10px;">出勤時刻: <b>${clockInTime}</b></div>`;
+    html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
+    html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${outDate}">`;
+    html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
+    html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:12px;" value="${outTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '退勤時間')">`;
+
+    html += `<div style="background:#f9fbe7; border:1px solid #e6ee9c; border-radius:8px; padding:12px; margin-bottom:12px;">`;
+    html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
+    html += `<input type="checkbox" id="clockLunchEnabled" ${pref.lunchEnabled ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
+    html += `</label>`;
+    html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center; opacity:${pref.lunchEnabled ? '1' : '0.45'};">`;
+    html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${pref.lunchStart || '12:00'}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
+    html += `<span style="color:#666;">〜</span>`;
+    html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${pref.lunchEnd || '13:00'}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
+    html += `</div>`;
+    html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（分）</label>`;
+    html += `<input type="number" id="clockMidBreak" class="form-input" min="0" step="5" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin:0;" value="${pref.midBreakMins || 0}" placeholder="例: 30">`;
+    html += `<div style="font-size:11px; color:#888; margin-top:6px;">必要作業時間 ＝ 出勤〜退勤 − 昼休憩 − 作業中休憩</div>`;
+    html += `</div>`;
+
+    html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">`;
+    html += `  <div style="display:flex; gap:10px;">`;
+    html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">次へ（時間確認）</button>`;
+    if (!isForgot) {
+      html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
+    } else {
+      html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">後で</button>`;
+    }
+    html += `  </div>`;
+    html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
+    html += `</div>`;
+    showClockModal(html);
+  }
+  window.openClockOutModal = openClockOutModal;
+
+  async function promptForgotClockOut(options) {
+    options = options || {};
+    const info = getForgotClockOutInfo();
+    if (!info) return false;
+    if (window._forgotClockOutPromptOpen) return true;
+
+    // 途中の整合確認が残っていればそちらを優先
+    const pending = loadPending();
+    if (pending && !options.forcePrompt) {
+      showReconcileUI();
+      return true;
+    }
+
+    // 同じセッションで既に確認済みなら、そのまま退勤UIを開く
+    if (window._forgotClockOutPromptedOnce && !options.forcePrompt) {
+      openClockOutModal({ forgotInfo: info });
+      return true;
+    }
+
+    window._forgotClockOutPromptOpen = true;
+    try {
+      const msg =
+        '前日の退勤登録がされていないようです。\n出勤日（' +
+        info.clockInDateYmd +
+        '）の退勤を登録してください。';
+      const ok = await confirmMsg(msg);
+      window._forgotClockOutPromptedOnce = true;
+      if (ok || options.openEvenIfCancel !== false) {
+        openClockOutModal({ forgotInfo: info });
+      }
+      return true;
+    } finally {
+      window._forgotClockOutPromptOpen = false;
+    }
+  }
+  window.promptForgotClockOut = promptForgotClockOut;
+
+  function scheduleForgotClockOutCheck() {
+    if (window._forgotClockOutCheckScheduled) return;
+    window._forgotClockOutCheckScheduled = true;
+
+    const run = () => {
+      if (!document.getElementById('btnTracking')) return;
+      if (!getForgotClockOutInfo()) return;
+      // ログイン画面表示中は待たない（トラッキングボタンがあるページ向け）
+      const login = document.getElementById('loginScreen');
+      if (login && login.style.display !== 'none' && login.offsetParent !== null) {
+        setTimeout(run, 1500);
+        return;
+      }
+      promptForgotClockOut({ openEvenIfCancel: true });
+    };
+
+    // UI・ログイン復元のあとで表示
+    setTimeout(run, 1200);
+  }
+
   window.toggleTracking = function () {
     if ((window.passionWatchId !== null && window.passionWatchId !== undefined) || localStorage.getItem('passionMapClockIn')) {
       // 途中の退勤確認が残っていれば再開
@@ -742,39 +922,13 @@
         return;
       }
 
-      const dt = defaultDateTime();
-      const pref = loadBreakDefaults();
-      const clockInTime = getClockInTimeStr();
+      const forgotInfo = getForgotClockOutInfo();
+      if (forgotInfo) {
+        promptForgotClockOut({ openEvenIfCancel: true });
+        return;
+      }
 
-      let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 退勤処理</h3>`;
-      html += `<div style="font-size:12px; color:#555; margin-bottom:10px;">出勤時刻: <b>${clockInTime}</b></div>`;
-      html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
-      html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
-      html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
-      html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:12px;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '退勤時間')">`;
-
-      html += `<div style="background:#f9fbe7; border:1px solid #e6ee9c; border-radius:8px; padding:12px; margin-bottom:12px;">`;
-      html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
-      html += `<input type="checkbox" id="clockLunchEnabled" ${pref.lunchEnabled ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
-      html += `</label>`;
-      html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center; opacity:${pref.lunchEnabled ? '1' : '0.45'};">`;
-      html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${pref.lunchStart || '12:00'}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
-      html += `<span style="color:#666;">〜</span>`;
-      html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${pref.lunchEnd || '13:00'}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
-      html += `</div>`;
-      html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（分）</label>`;
-      html += `<input type="number" id="clockMidBreak" class="form-input" min="0" step="5" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin:0;" value="${pref.midBreakMins || 0}" placeholder="例: 30">`;
-      html += `<div style="font-size:11px; color:#888; margin-top:6px;">必要作業時間 ＝ 出勤〜退勤 − 昼休憩 − 作業中休憩</div>`;
-      html += `</div>`;
-
-      html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">`;
-      html += `  <div style="display:flex; gap:10px;">`;
-      html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">次へ（時間確認）</button>`;
-      html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
-      html += `  </div>`;
-      html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
-      html += `</div>`;
-      showClockModal(html);
+      openClockOutModal();
     } else {
       if (!navigator.geolocation) {
         alertMsg('お使いの端末ではGPSがサポートされていません。');
@@ -785,7 +939,7 @@
       html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
       html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
       html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
-      html += `<input type="time" id="clockInTime" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px;" value="${dt.time}">`;
+      html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
       html += `<div style="display:flex; gap:10px;">`;
       html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
       html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
@@ -793,4 +947,10 @@
       showClockModal(html);
     }
   };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scheduleForgotClockOutCheck);
+  } else {
+    scheduleForgotClockOutCheck();
+  }
 })();

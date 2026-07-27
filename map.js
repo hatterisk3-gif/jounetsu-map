@@ -341,11 +341,57 @@ function openManureStatusModal(pData) {
         navUrl = `https://www.google.com/maps/dir/?api=1&destination=${center.lat()},${center.lng()}&travelmode=driving`;
     }
 
+    // 圃場面積の取得・算出
+    let areaA = parseFloat(pData.area) || 0;
+    if ((!areaA || areaA <= 0) && pData.coords && pData.coords.length > 2 && typeof google === 'object' && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
+        try {
+            const latLngs = pData.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
+            const sqM = google.maps.geometry.spherical.computeArea(latLngs);
+            areaA = Math.round(sqM / 100 * 10) / 10;
+        } catch (e) {}
+    }
+
+    let bagsStr = '-';
+    let trucksStr = '-';
+    let areaStr = areaA > 0 ? `${areaA.toLocaleString()} a (${Math.round(areaA * 100).toLocaleString()} ㎡)` : '未設定';
+
+    if (areaA > 0) {
+        // 34袋 / 10a (1aあたり3.4袋)
+        const rawBags = areaA * 3.4;
+        const roundedBags = Math.round(rawBags * 10) / 10;
+        const intBags = Math.round(rawBags);
+        bagsStr = (roundedBags % 1 === 0) ? `${roundedBags} 袋` : `${roundedBags} 袋 (約 ${intBags} 袋)`;
+
+        // 0.5車 / 10a (1aあたり0.05車)
+        const rawTrucks = areaA * 0.05;
+        const roundedTrucks = Math.round(rawTrucks * 100) / 100;
+        trucksStr = `${roundedTrucks} 車`;
+    }
+
     let html = `
         <h3 style="color:#795548; margin-top:0;">🐓 鶏糞散布ステータス変更</h3>
         <div style="margin-bottom:15px;">
             <div style="margin-bottom:10px;"><strong>圃場名:</strong> ${pData.name}</div>
-            ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🚗 ナビ開始</button>` : ''}
+            ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="width:100%; padding:8px; margin-bottom:10px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🚗 ナビ開始</button>` : ''}
+            
+            <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:12px;">
+                <div style="font-weight:bold; color:#795548; margin-bottom:8px; font-size:14px; border-bottom:1px dashed #FFD54F; padding-bottom:4px; display:flex; align-items:center; gap:6px;">
+                    <span>🌾 圃場面積 & 鶏糞散布目安</span>
+                </div>
+                <div style="margin-bottom:6px; font-size:13px; color:#333; display:flex; justify-content:space-between;">
+                    <span><strong>圃場面積:</strong></span>
+                    <span style="font-weight:bold; color:#2E7D32;">${areaStr}</span>
+                </div>
+                <div style="margin-bottom:6px; font-size:13px; color:#333; display:flex; justify-content:space-between; align-items:center;">
+                    <span><strong>鶏糞目安 (34袋/10a):</strong></span>
+                    <span style="font-weight:bold; color:#D32F2F; font-size:15px;">${bagsStr}</span>
+                </div>
+                <div style="font-size:13px; color:#333; display:flex; justify-content:space-between; align-items:center;">
+                    <span><strong>運搬車数 (0.5車/10a):</strong></span>
+                    <span style="font-weight:bold; color:#E65100; font-size:15px;">${trucksStr}</span>
+                </div>
+            </div>
+            <button type="button" onclick="openFieldMemo(currentEditPoly)" style="width:100%; margin-top:12px; padding:12px; border:none; border-radius:6px; background:#5D4037; color:white; font-weight:bold; font-size:14px; cursor:pointer; box-sizing:border-box;">📝 圃場メモ（分割・散布記録）</button>
         </div>
         
         <label class="form-label">ステータス</label>

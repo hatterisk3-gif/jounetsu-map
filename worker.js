@@ -2508,8 +2508,8 @@ function createSignboardMarker(name, pos, icon, id) {
       window.isWorkerAdmin = () => (localStorage.getItem('passionMapUserRole') || '作業員') === '管理者';
 
       window.buildWorkChipHtml = (w, isRecent) => {
-          const wName = String((w && w.name) || w || '').trim();
-          if (!wName) return '';
+          const wName = typeof w === 'string' ? w.trim() : String((w && typeof w.name === 'string') ? w.name : (w && w.name ? w.name : '')).trim();
+          if (!wName || wName === '[object Object]') return '';
           const wCat = (w && w.category) ? w.category : '圃場作業';
           const details = (w && w.detailWorks) ? w.detailWorks : '';
           const safeName = wName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -2518,14 +2518,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const chipColor = isRecent ? '#e65100' : '#333';
           const chipBorder = isRecent ? '#ffb74d' : '#ccc';
           const chipClass = isRecent ? 'work-chip recent-work-chip' : 'work-chip all-work-chip';
-          const adminBtns = window.isWorkerAdmin()
-              ? `<button type="button" onclick="event.stopPropagation(); adminEditWorkName('${safeName}')" title="作業名を編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:12px; padding:0; flex-shrink:0;">✏️</button>
-                 <button type="button" onclick="event.stopPropagation(); adminDeleteWorkName('${safeName}')" title="作業名を削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:12px; padding:0; flex-shrink:0;">🗑️</button>`
-              : '';
-          return `<div class="work-chip-row" style="display:inline-flex; align-items:center; gap:3px;">
-              <button type="button" class="${chipClass}" data-recent="${isRecent ? 'true' : 'false'}" data-category="${String(wCat).replace(/"/g, '&quot;')}" data-wname="${safeAttr}" data-details="${encodeURIComponent(details)}" onclick="selectWorkChip('${safeName}')" style="background:${chipBg}; color:${chipColor}; border:1px solid ${chipBorder}; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>
-              ${adminBtns}
-            </div>`;
+          return `<button type="button" class="${chipClass}" data-recent="${isRecent ? 'true' : 'false'}" data-category="${String(wCat).replace(/"/g, '&quot;')}" data-wname="${safeAttr}" data-details="${encodeURIComponent(details)}" onclick="selectWorkChip('${safeName}')" style="background:${chipBg}; color:${chipColor}; border:1px solid ${chipBorder}; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${wName}</button>`;
       };
 
       window.renderWorkOptions = (category) => {
@@ -3662,6 +3655,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (syncClockin && sTime) {
                 const now = new Date();
                 const dateStr = now.toLocaleDateString();
+                const dateYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                 const [hh, mm] = sTime.split(':');
                 now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
 
@@ -3675,8 +3669,8 @@ function createSignboardMarker(name, pos, icon, id) {
                     } catch(e) {}
                 }
 
-                const clockInState = { lat: exLat, lng: exLng, time: sTime, active: true };
-                const clockInTodayState = { lat: exLat, lng: exLng, time: sTime, date: dateStr };
+                const clockInState = { lat: exLat, lng: exLng, time: sTime, active: true, dateYmd: dateYmd, dateLocale: dateStr };
+                const clockInTodayState = { lat: exLat, lng: exLng, time: sTime, date: dateStr, dateYmd: dateYmd };
                 localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
                 localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
                 if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
@@ -6151,7 +6145,7 @@ window.toggleTracking = () => {
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
         html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
-        html += `<input type="time" id="clockOutTime" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px;" value="${defaultTime}">`;
+        html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '退勤時間')">`;
         html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">`;
         html += `  <div style="display:flex; gap:10px;">`;
         html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤する</button>`;
@@ -6185,7 +6179,7 @@ window.toggleTracking = () => {
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
         html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
-        html += `<input type="time" id="clockInTime" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px;" value="${defaultTime}">`;
+        html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
         html += `<div style="display:flex; gap:10px;">`;
         html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
         html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;

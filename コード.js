@@ -77,6 +77,8 @@ function doPost(e) {
     else if (action === 'parseWithGemini') result = parseWithGemini(params);
     else if (action === 'parseCropImageWithGemini') result = parseCropImageWithGemini(params);
     else if (action === "getPolygonDrawingHistory") result = getPolygonDrawingHistory(params);
+    else if (action === "saveFieldMemo") result = saveFieldMemo(params);
+    else if (action === "getFieldMemoHistory") result = getFieldMemoHistory(params);
     else if (action === "saveTrackingData") result = saveTrackingData(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
     else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
@@ -1237,6 +1239,15 @@ function getSavedPolygons() {
         result[result.length - 1].manure_scheduled_date = manureData.manure_scheduled_date || '';
         result[result.length - 1].manure_cancel_reason = manureData.manure_cancel_reason || '';
         result[result.length - 1].manure_has_pin = manureData.manure_has_pin || false;
+
+        // S列(19): 圃場メモ（鶏糞CAD風）
+        let fieldMemo = null;
+        try {
+          if (data[i][18]) {
+            fieldMemo = (typeof data[i][18] === 'string') ? JSON.parse(data[i][18]) : data[i][18];
+          }
+        } catch (e) { fieldMemo = null; }
+        result[result.length - 1].fieldMemo = fieldMemo;
       } catch (rowErr) {
         console.warn('圃場行の読込スキップ:', data[i][0], rowErr);
       }
@@ -2987,13 +2998,13 @@ function getPolygonDrawingHistory(params) {
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('図面履歴');
     if (!sheet) return [];
-    
+
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) return []; // データがない場合
-    
+
     const history = [];
     const targetId = String(params.id || "");
-    
+
     // 後ろから検索して最新の20件だけ取得する
     for (let i = data.length - 1; i >= 1; i--) {
       if (String(data[i][0]) === targetId) {
@@ -3004,22 +3015,123 @@ function getPolygonDrawingHistory(params) {
         } else {
           dateStr = String(dateVal || "");
         }
-        
+
         let dataVal = data[i][3];
-        
+
         history.push({
           date: dateStr,
           data: dataVal ? String(dataVal) : ""
         });
-        
+
         if (history.length >= 20) break;
       }
     }
-    
+
     return history;
   } catch(e) {
     throw new Error("履歴取得エラー: " + e.message);
 }}
+
+// ==========================================
+// 圃場メモ（鶏糞CAD風）保存・履歴
+// ==========================================
+function ensureFieldMemoHistorySheet_(ss) {
+  let sheet = ss.getSheetByName('圃場メモ履歴');
+  if (!sheet) {
+    sheet = ss.insertSheet('圃場メモ履歴');
+    sheet.appendRow(['圃場ID', '圃場名', '作業日', '更新日時', '更新者', 'JSON']);
+  }
+  return sheet;
+}
+
+function ensureFieldMemoColumnHeader_(sheet) {
+  try {
+    const header = sheet.getRange(1, 19).getValue();
+    if (!header) sheet.getRange(1, 19).setValue('圃場メモ');
+  } catch (e) {}
+}
+
+function saveFieldMemo(params) {
+  const ss = TENANT_SS;
+  if (!ss) throw new Error('スプレッドシートが未設定です');
+  const id = String(params.id || '');
+  if (!id) throw new Error('圃場IDがありません');
+
+  const sheet = ss.getSheetByName('圃場');
+  if (!sheet) throw new Error('圃場シートが見つかりません');
+  ensureFieldMemoColumnHeader_(sheet);
+
+  const data = sheet.getDataRange().getValues();
+  let targetRow = -1;
+  let fieldName = '';
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === id) {
+      targetRow = i + 1;
+      fieldName = String(data[i][1] || '');
+      break;
+    }
+  }
+  if (targetRow === -1) throw new Error('対象の圃場が見つかりません');
+
+  let memoObj = params.fieldMemo;
+  if (typeof memoObj === 'string') {
+    try { memoObj = JSON.parse(memoObj); } catch (e) { throw new Error('メモデータの形式が不正です'); }
+  }
+  if (!memoObj || typeof memoObj !== 'object') throw new Error('メモデータがありません');
+
+  const userName = params.userName || memoObj.updatedBy || '不明';
+  const workDate = memoObj.workDate || Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+  const updatedAt = Utilities.formatDate(new Date(), 'JST', 'yyyy/MM/dd HH:mm:ss');
+  memoObj.workDate = workDate;
+  memoObj.updatedAt = updatedAt;
+  memoObj.updatedBy = userName;
+
+  const jsonStr = JSON.stringify(memoObj);
+  sheet.getRange(targetRow, 19).setValue(jsonStr); // S列
+
+  const historySheet = ensureFieldMemoHistorySheet_(ss);
+  historySheet.appendRow([id, fieldName || params.name || '', workDate, updatedAt, userName, jsonStr]);
+
+  writeLog(userName, '圃場メモ保存', fieldName || id, '作業日: ' + workDate);
+  return { success: true, fieldMemo: memoObj };
+}
+
+function getFieldMemoHistory(params) {
+  try {
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('圃場メモ履歴');
+    if (!sheet) return [];
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return [];
+
+    const history = [];
+    const targetId = String(params.id || '');
+
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][0]) !== targetId) continue;
+
+      let workDate = data[i][2];
+      let updatedAt = data[i][3];
+      if (workDate instanceof Date) workDate = Utilities.formatDate(workDate, 'JST', 'yyyy-MM-dd');
+      else workDate = String(workDate || '');
+      if (updatedAt instanceof Date) updatedAt = Utilities.formatDate(updatedAt, 'JST', 'yyyy/MM/dd HH:mm:ss');
+      else updatedAt = String(updatedAt || '');
+
+      let dataVal = data[i][5];
+      history.push({
+        workDate: workDate,
+        date: updatedAt,
+        updatedBy: String(data[i][4] || ''),
+        data: dataVal ? String(dataVal) : ''
+      });
+      if (history.length >= 20) break;
+    }
+    return history;
+  } catch (e) {
+    throw new Error('圃場メモ履歴取得エラー: ' + e.message);
+  }
+}
 
 // ==========================================
 // 📍 トラッキングデータの保存

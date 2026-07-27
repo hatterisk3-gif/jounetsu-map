@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>情熱MAP [鶏糞散布用] v1.12</title>
+    <title>情熱MAP [鶏糞散布用] v1.13</title>
     <link rel="apple-touch-icon" href="icon.png">
     <link rel="icon" href="icon.png">
     <link rel="manifest" href="manifest.json">
@@ -17,7 +17,7 @@
     <!-- プロポータルに戻る×ボタン -->
         <div id="loginScreen">
         <div class="login-box">
-            <h2 style="color:#795548;">鶏糞散布MAP (v1.12)</h2>
+            <h2 style="color:#795548;">鶏糞散布MAP (v1.13)</h2>
             <div id="loginError" style="color:red; margin-bottom:10px;"></div>
             <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
             <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -67,6 +67,63 @@
 
     <div id="map"></div>
 
+    <!-- 圃場メモ（CAD風） -->
+    <div id="fieldMemoOverlay">
+      <div id="fieldMemoHeader">
+        <div style="min-width:0; flex:1;">
+          <div style="font-weight:bold; font-size:15px;">📝 圃場メモ</div>
+          <div id="fieldMemoTargetName" style="font-size:12px; opacity:0.9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+          <label style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
+            作業日
+            <input type="date" id="fieldMemoWorkDate" style="padding:4px 6px; border-radius:4px; border:1px solid #ccc; font-size:13px; width:140px;">
+          </label>
+          <button type="button" class="fm-btn" style="background:#f44336; color:#fff;" onclick="closeFieldMemo()">閉じる</button>
+        </div>
+      </div>
+      <div id="fieldMemoMapWrap">
+        <div id="fieldMemoMap"></div>
+      </div>
+      <div id="fieldMemoPanel">
+        <div id="fieldMemoHint" style="font-size:12px; color:#FFE082; margin-bottom:6px;">ツールを選んで地図を操作してください</div>
+        <div class="fm-btn-row">
+          <button type="button" id="fmBtnLine" class="fm-btn fm-tool" style="background:#5D4037; color:#fff;" onclick="setFieldMemoMode('line')">✏️ 線で分割</button>
+          <button type="button" id="fmBtnPin" class="fm-btn fm-tool" style="background:#455A64; color:#fff;" onclick="setFieldMemoMode('pin')">📍 ピン</button>
+          <button type="button" id="fmBtnSprayed" class="fm-btn fm-tool" style="background:#2E7D32; color:#fff;" onclick="setFieldMemoMode('sprayed')">🟢 散布</button>
+          <button type="button" id="fmBtnUnsprayed" class="fm-btn fm-tool" style="background:#E65100; color:#fff;" onclick="setFieldMemoMode('unsprayed')">🟠 未散布</button>
+        </div>
+        <div class="fm-btn-row">
+          <button type="button" class="fm-btn" style="background:#6D4C41; color:#fff;" onclick="undoFieldMemoLinePoint()">↩ 点取消</button>
+          <button type="button" class="fm-btn" style="background:#795548; color:#fff;" onclick="confirmFieldMemoLine()">✓ 線確定</button>
+          <button type="button" class="fm-btn" style="background:#BF360C; color:#fff;" onclick="clearFieldMemoDrawing()">クリア</button>
+        </div>
+        <div id="fieldMemoStats" style="background:#3E2723; border:1px solid #5D4037; border-radius:8px; padding:10px; margin-top:8px; font-size:13px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#A5D6A7;">
+            <span>散布合計</span>
+            <span id="fmStatSprayed">—</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px; color:#FFCC80;">
+            <span>未散布合計</span>
+            <span id="fmStatUnsprayed">—</span>
+          </div>
+          <div style="font-size:11px; color:#BCAAA4;">基準: 34袋/10a ・ 0.5車/10a</div>
+        </div>
+        <div class="fm-btn-row" style="margin-top:10px;">
+          <button type="button" id="fmBtnSave" class="fm-btn" style="background:#4CAF50; color:#fff;" onclick="saveFieldMemo()">💾 保存</button>
+          <button type="button" class="fm-btn" style="background:#1565C0; color:#fff;" onclick="openFieldMemoHistory()">📅 履歴</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fieldMemoHistoryModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:13000; justify-content:center; align-items:center;">
+      <div style="background:#fff; color:#333; width:90%; max-width:360px; max-height:80vh; border-radius:12px; padding:16px; display:flex; flex-direction:column; box-shadow:0 4px 20px rgba(0,0,0,0.4);">
+        <h3 style="margin:0 0 12px; border-bottom:2px solid #795548; padding-bottom:8px; font-size:16px; text-align:center;">📅 圃場メモ履歴</h3>
+        <div id="fieldMemoHistoryList" style="flex:1; overflow-y:auto; margin-bottom:12px;"></div>
+        <button type="button" onclick="closeFieldMemoHistory()" style="width:100%; background:#666; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
+    </div>
+
     <!-- 汎用モーダル -->
     <div id="modal">
         <div class="modal-content" id="modalBody"></div>
@@ -100,8 +157,10 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-    <script src="map.js"></script>
+    <script src="map.js?v=1785200000001"></script>
+    <script src="field-memo.js?v=1785200000001"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=map', { scope: '/' });
