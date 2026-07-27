@@ -460,7 +460,7 @@ function getInitData() {
       const headers = data[0].map(h => String(h).trim()); 
       
       const idxName = headers.indexOf('作業名');
-      const idxPlace = headers.indexOf('表示場所');
+      const idxCrop = headers.indexOf('作物名');
       const idxFunc = headers.indexOf('対応看板機能');
       const idxDetail = findWorkDetailColumnIndex_(headers);
       const idxStatus = headers.indexOf('進捗状況');
@@ -477,8 +477,8 @@ function getInitData() {
 
           workMaster.push({ 
             category: cat, 
-            name: wName, 
-            displayPlace: idxPlace >= 0 ? data[i][idxPlace] : "", 
+            name: wName,
+            cropName: idxCrop >= 0 ? String(data[i][idxCrop] || "").trim() : "",
             targetFunction: idxFunc >= 0 && data[i][idxFunc] ? String(data[i][idxFunc]).trim() : "",
             detailWorks: idxDetail >= 0 && data[i][idxDetail] ? String(data[i][idxDetail]).trim() : ""
           });
@@ -1026,13 +1026,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
   } else if (masterType === 'work') {
     const idxName = returnHeaders.indexOf('作業名');
     const idxCategory = findWorkCategoryColumnIndex_(returnHeaders);
-    const idxPlace = returnHeaders.indexOf('表示場所');
+    const idxCrop = returnHeaders.indexOf('作物名');
     const idxFunc = returnHeaders.indexOf('対応看板機能');
     const idxDetail = findWorkDetailColumnIndex_(returnHeaders);
     return newData.slice(1).filter(r => idxName >= 0 && r[idxName]).map(r => ({
       name: String(r[idxName] || "").trim(),
       category: idxCategory >= 0 ? (r[idxCategory] || "圃場作業") : "圃場作業",
-      displayPlace: idxPlace >= 0 ? r[idxPlace] : "",
+      cropName: idxCrop >= 0 ? String(r[idxCrop] || "").trim() : "",
       targetFunction: idxFunc >= 0 ? r[idxFunc] : "",
       detailWorks: idxDetail >= 0 && r[idxDetail] ? String(r[idxDetail]).trim() : ""
     }));
@@ -1088,7 +1088,7 @@ function buildWorkMasterColumnMap_(value) {
     '作業カテゴリ': category,
     'カテゴリー': category,
     '作業カテゴリー': category,
-    '表示場所': value.displayPlace || "圃場",
+    '作物名': value.cropName || "",
     '対応看板機能': value.targetFunction || "",
     '詳細作業名': details,
     '詳細作業': details,
