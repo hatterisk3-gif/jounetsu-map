@@ -244,8 +244,7 @@ function renderMachineMarkers() {
             marker.addListener('click', () => {
                 currentMachineId = id;
                 openMachineSettingsModal();
-                document.getElementById('settingMachineSelect').value = id;
-                loadMachineSettings();
+                selectMachineFromList(id);
             });
             machineMarkers[id] = marker;
         }
@@ -664,6 +663,7 @@ async function saveMachineRegistration() {
         closeModal('modalMachineRegister');
         showToast("機械を登録しました");
         updateMachineSettingsDropdown();
+        renderMachineList();
         renderMachineMarkers();
     } catch(e) {
         alert("保存に失敗しました: " + e.message);
@@ -942,10 +942,11 @@ async function saveVehicleStatus(btn) {
 }
 
 // ======================
-// 機械設定メイン
+// 機械一覧・設定メイン
 // ======================
 function openMachineSettingsModal() {
     updateMachineSettingsDropdown();
+    renderMachineList();
     document.getElementById('machineActionPanel').style.display = "none";
     document.getElementById('modalMachineSettings').style.display = "flex";
 }
@@ -954,24 +955,91 @@ function updateMachineSettingsDropdown() {
     let sel = document.getElementById('settingMachineSelect');
     if (!sel) return;
     let html = '<option value="">-- 機械を選択 --</option>';
-    for (let id in machines) {
-        html += `<option value="${id}">${machines[id].name}</option>`;
-    }
+    Object.keys(machines).sort((a, b) => String(machines[a].name || '').localeCompare(String(machines[b].name || ''), 'ja'))
+        .forEach(id => {
+            html += `<option value="${id}">${machines[id].name || id}</option>`;
+        });
     let currentVal = sel.value;
     sel.innerHTML = html;
-    if(machines[currentVal]) sel.value = currentVal;
+    if (machines[currentVal]) sel.value = currentVal;
+}
+
+function renderMachineList() {
+    const panel = document.getElementById('machineListPanel');
+    if (!panel) return;
+    const ids = Object.keys(machines);
+    if (ids.length === 0) {
+        panel.innerHTML = '<p style="text-align:center; color:#888; padding:16px; margin:0;">登録済みの機械はありません。</p>';
+        return;
+    }
+    let html = '';
+    ids.sort((a, b) => String(machines[a].name || '').localeCompare(String(machines[b].name || ''), 'ja'))
+        .forEach(id => {
+            const m = machines[id];
+            const statusIcon = m.status === '修理中' ? '🔴' : '🟢';
+            const pin = (m.lat && m.lng) ? '📍' : '・';
+            const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const sub = [m.group, m.type, m.machineNumber || m.serialNo].filter(Boolean).join(' / ') || '-';
+            const loc = m.currentLocName || m.signName || m.location || '置き場所未設定';
+            html += `<div onclick="selectMachineFromList('${safeId}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
+                <div style="width:48px; height:48px; border-radius:6px; overflow:hidden; background:#eee; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+                    ${m.photo ? `<img src="${m.photo}" style="width:100%; height:100%; object-fit:cover;">` : '🚜'}
+                </div>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:bold; color:#333;">${statusIcon} ${m.name || '(名称未設定)'}</div>
+                    <div style="font-size:12px; color:#666;">${sub}</div>
+                    <div style="font-size:11px; color:#888;">${pin} ${loc}</div>
+                </div>
+            </div>`;
+        });
+    panel.innerHTML = html;
+}
+
+function selectMachineFromList(id) {
+    const sel = document.getElementById('settingMachineSelect');
+    if (sel) sel.value = id;
+    loadMachineSettings();
 }
 
 function loadMachineSettings() {
     let sel = document.getElementById('settingMachineSelect');
-    currentMachineId = sel.value;
+    currentMachineId = sel ? sel.value : '';
     let panel = document.getElementById('machineActionPanel');
     if (currentMachineId && machines[currentMachineId]) {
-        document.getElementById('selectedMachineTitle').innerText = machines[currentMachineId].name;
+        const m = machines[currentMachineId];
+        document.getElementById('selectedMachineTitle').innerText = m.name || currentMachineId;
+        const detailEl = document.getElementById('selectedMachineDetail');
+        if (detailEl) {
+            const photoHtml = m.photo
+                ? `<div style="margin-bottom:8px;"><img src="${m.photo}" style="max-width:100%; max-height:120px; border-radius:6px;"></div>`
+                : '';
+            detailEl.innerHTML =
+                photoHtml +
+                `機番: <b>${m.machineNumber || m.serialNo || '-'}</b><br>` +
+                `グループ: <b>${m.group || '-'}</b> / カテゴリ: <b>${m.type || '-'}</b><br>` +
+                `型式: <b>${m.model || m.modelType || '-'}</b> / 燃料: <b>${m.fuel || m.fuelType || '-'}</b><br>` +
+                `拠点: <b>${m.location || '-'}</b><br>` +
+                `定位置: <b>${m.signName || '-'}</b><br>` +
+                `現在地: <b>${m.currentLocName || m.signName || '-'}</b><br>` +
+                `稼働状況: <b>${m.status || '使用可能'}</b><br>` +
+                `置き場所: <b>${(m.lat && m.lng) ? '設定済み' : '未設定'}</b>`;
+        }
         panel.style.display = "block";
     } else {
         panel.style.display = "none";
     }
+}
+
+function focusSelectedMachine() {
+    if (!currentMachineId || !machines[currentMachineId]) return;
+    const m = machines[currentMachineId];
+    if (!m.lat || !m.lng) {
+        alert("置き場所が未設定です。先に置き場所を登録してください。");
+        return;
+    }
+    closeModal('modalMachineSettings');
+    map.setCenter({ lat: parseFloat(m.lat), lng: parseFloat(m.lng) });
+    map.setZoom(18);
 }
 
 // ======================
@@ -1009,6 +1077,8 @@ async function saveStatus(btn) {
         machines[currentMachineId].status = val;
         removeDynamicModal('modalStatus');
         renderMachineMarkers();
+        renderMachineList();
+        loadMachineSettings();
         showToast("稼働状況を更新しました");
     } catch(e) {
         btn.disabled = false;
@@ -1069,6 +1139,8 @@ async function savePickedLocation() {
             machines[currentMachineId].lng = pendingLocation.lng;
             showToast("置き場所を保存しました");
             renderMachineMarkers();
+            renderMachineList();
+            if (typeof loadMachineSettings === 'function') loadMachineSettings();
         }
         cancelPicking();
     } catch(e) {

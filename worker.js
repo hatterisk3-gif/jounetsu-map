@@ -2279,10 +2279,16 @@ function createSignboardMarker(name, pos, icon, id) {
            }
         });
 
-        const cropInput = document.getElementById('rec_work_crop_filter');
-        if (cropInput) cropInput.value = '';
-        if (typeof window.renderCropFilterButtons === 'function') window.renderCropFilterButtons('');
-        if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(catName, '');
+        // カテゴリ変更後はデフォルト作物（共通優先）を選び、作業一覧をすぐ出す
+        const defaultCrop = window.getDefaultWorkCropKey(catName);
+        if (defaultCrop && typeof window.selectWorkCropFilter === 'function') {
+          window.selectWorkCropFilter(defaultCrop);
+        } else {
+          const cropInput = document.getElementById('rec_work_crop_filter');
+          if (cropInput) cropInput.value = '';
+          if (typeof window.renderCropFilterButtons === 'function') window.renderCropFilterButtons('');
+          if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(catName, '');
+        }
         if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
       };
 
@@ -2330,6 +2336,14 @@ function createSignboardMarker(name, pos, icon, id) {
         return labels;
       };
 
+      /** 作業一覧の初期作物キー（共通があれば優先） */
+      window.getDefaultWorkCropKey = (category, p) => {
+        const options = window.getCropOptionsForCategory(category, p);
+        if (!options.length) return '';
+        const common = options.find(o => o.key === '__common__');
+        return common ? common.key : options[0].key;
+      };
+
       window.syncRecordCropFromFilter = (cropKey) => {
         if (cropKey && cropKey !== '__common__') {
           window.selectedWorkCrops = [cropKey];
@@ -2369,20 +2383,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const hiddenInput = document.getElementById('rec_work_crop_filter');
         if (hiddenInput) hiddenInput.value = cropKey || '';
 
-        document.querySelectorAll('.work-crop-filter-btn').forEach(btn => {
-          const isSelected = (btn.dataset.cropKey === cropKey);
-          if (isSelected) {
-            btn.style.background = '#4CAF50';
-            btn.style.color = '#fff';
-            btn.style.borderColor = '#388E3C';
-            btn.style.fontWeight = 'bold';
-          } else {
-            btn.style.background = '#f4f6f8';
-            btn.style.color = '#333';
-            btn.style.borderColor = '#ccc';
-            btn.style.fontWeight = 'normal';
-          }
-        });
+        // ボタン未描画のときもあるので、選択状態つきで描画し直す
+        if (typeof window.renderCropFilterButtons === 'function') {
+          window.renderCropFilterButtons(cropKey || '');
+        }
 
         window.syncRecordCropFromFilter(cropKey);
         const category = document.getElementById('rec_work_category')?.value || 'すべて';
@@ -2765,8 +2769,8 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.renderWorkOptions = (category, cropKey) => {
-          const p = loadedPolygons[activePolyId];
-          if (!p) return;
+          // 圃場未選択（activePolyId なし）でも作業マスタは表示する
+          const p = (activePolyId && loadedPolygons[activePolyId]) ? loadedPolygons[activePolyId] : null;
           const cat = category != null ? category : (document.getElementById('rec_work_category')?.value || 'すべて');
           const crop = cropKey != null ? cropKey : (document.getElementById('rec_work_crop_filter')?.value || '');
           const filteredWorks = crop
@@ -3130,10 +3134,17 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.handleCategoryChange = () => {
           const cat = document.getElementById('rec_work_category').value;
-          const cropInput = document.getElementById('rec_work_crop_filter');
-          if (cropInput) cropInput.value = '';
-          if (typeof window.renderCropFilterButtons === 'function') window.renderCropFilterButtons('');
-          renderWorkOptions(cat, '');
+          const defaultCrop = (typeof window.getDefaultWorkCropKey === 'function')
+            ? window.getDefaultWorkCropKey(cat)
+            : '';
+          if (defaultCrop && typeof window.selectWorkCropFilter === 'function') {
+            window.selectWorkCropFilter(defaultCrop);
+          } else {
+            const cropInput = document.getElementById('rec_work_crop_filter');
+            if (cropInput) cropInput.value = '';
+            if (typeof window.renderCropFilterButtons === 'function') window.renderCropFilterButtons('');
+            renderWorkOptions(cat, '');
+          }
           handleWorkNameChange();
       };
 
@@ -3659,14 +3670,25 @@ function createSignboardMarker(name, pos, icon, id) {
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
         document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
         
-        if (currentRecordType === 'work' && !p.isMarker) setTimeout(() => {
+        if (currentRecordType === 'work') setTimeout(() => {
             if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons();
-            if (typeof window.renderCropFilterButtons === 'function') window.renderCropFilterButtons('');
+            const cat = document.getElementById('rec_work_category')?.value || 'すべて';
+            const defaultCrop = (typeof window.getDefaultWorkCropKey === 'function')
+              ? window.getDefaultWorkCropKey(cat, p)
+              : '';
+            if (defaultCrop && typeof window.selectWorkCropFilter === 'function') {
+              window.selectWorkCropFilter(defaultCrop);
+            } else if (typeof window.renderCropFilterButtons === 'function') {
+              window.renderCropFilterButtons('');
+              if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(cat, '');
+            }
             if (typeof window.renderProgressStatusButtons === 'function') window.renderProgressStatusButtons();
-            updateSelectedPolysDisplay();
-            if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
+            if (!p.isMarker) {
+              updateSelectedPolysDisplay();
+              if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
+              if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+            }
             if (typeof window.applyPrefillWorkTime === 'function') window.applyPrefillWorkTime();
-            if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
             if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar('');
         }, 50);
 
