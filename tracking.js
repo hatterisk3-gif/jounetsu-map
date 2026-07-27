@@ -322,6 +322,18 @@
     return intervals;
   }
 
+  /** 指定日の作業記録のうち、最も遅い終了時刻（HH:MM）。なければ空文字 */
+  function getLastWorkEndTime(user, workDateYmd) {
+    const intervals = collectUserWorkIntervals(user, workDateYmd);
+    if (!intervals.length) return '';
+    let maxEnd = -1;
+    intervals.forEach((iv) => {
+      if (iv.end > maxEnd) maxEnd = iv.end;
+    });
+    if (maxEnd < 0) return '';
+    return minsToHm(maxEnd);
+  }
+
   function analyzeClockOut(pending) {
     const inM = timeToMins(pending.clockInTime);
     let outM = timeToMins(pending.clockOutTime);
@@ -812,8 +824,19 @@
     const pref = loadBreakDefaults();
     const clockInTime = (forgotInfo && forgotInfo.clockInTime) || getClockInTimeStr();
     const outDate = options.forceDateYmd || (isForgot ? forgotInfo.clockInDateYmd : dt.date);
-    // 退勤忘れ時は「今」ではなく前日の退勤想定時刻を初期表示
-    const outTime = options.defaultTime || (isForgot ? '17:00' : dt.time);
+    // 退勤忘れ時は「今」ではなく、前日の作業記録の最終終了時間を初期表示（なければ出勤時間）
+    let outTime = options.defaultTime || '';
+    if (!outTime) {
+      if (isForgot) {
+        const user =
+          (typeof currentUser !== 'undefined' && currentUser) ||
+          localStorage.getItem('passionMapUserName') ||
+          '';
+        outTime = getLastWorkEndTime(user, forgotInfo.clockInDateYmd) || clockInTime;
+      } else {
+        outTime = dt.time;
+      }
+    }
 
     let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 退勤処理</h3>`;
     if (isForgot) {
@@ -853,6 +876,31 @@
     html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
     html += `</div>`;
     showClockModal(html);
+
+    // 退勤忘れ時: 地図データ未読込だと最終終了時間が取れないため、読み込み後に再セット
+    if (isForgot && !options.defaultTime) {
+      const user =
+        (typeof currentUser !== 'undefined' && currentUser) ||
+        localStorage.getItem('passionMapUserName') ||
+        '';
+      const workDateYmd = forgotInfo.clockInDateYmd;
+      const initialOutTime = outTime;
+      let tries = 0;
+      const refreshOutTime = () => {
+        tries += 1;
+        const input = document.getElementById('clockOutTime');
+        if (!input) return;
+        // ユーザーが既に手で変えた場合は上書きしない
+        if (input.value !== initialOutTime) return;
+        const latest = getLastWorkEndTime(user, workDateYmd);
+        if (latest) {
+          input.value = latest;
+          return;
+        }
+        if (tries < 8) setTimeout(refreshOutTime, 800);
+      };
+      setTimeout(refreshOutTime, 800);
+    }
   }
   window.openClockOutModal = openClockOutModal;
 

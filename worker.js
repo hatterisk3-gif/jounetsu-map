@@ -951,14 +951,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const growthIcon = p.isMarker ? '📷' : '🌱';
         const workIcon = '🚜';
 
-        let availableWorks = [];
-        if (p.isMarker) {
-          const func = p.signFunction || '一般看板';
-          availableWorks = pdlWorkMaster.filter(w => {
-            const tf = String(w.targetFunction || '').trim();
-            return tf && (tf === func || tf.includes(func));
-          });
-        } else { availableWorks = pdlWorkMaster; }
+        let availableWorks = pdlWorkMaster || [];
         const hasWork = !p.isMarker || availableWorks.length > 0;
 
         let actions = `<div style="display:flex; gap:4px; width:100%; margin-bottom:6px;">`;
@@ -2178,14 +2171,6 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.getBaseWorksForPoly = (p) => {
-        if (!p) return [];
-        if (p.isMarker) {
-          const func = p.signFunction || '一般看板';
-          return (pdlWorkMaster || []).filter(w => {
-            const tf = String(w.targetFunction || '').trim();
-            return tf && (tf === func || tf.includes(func));
-          });
-        }
         return pdlWorkMaster || [];
       };
 
@@ -2829,7 +2814,6 @@ function createSignboardMarker(name, pos, icon, id) {
                     <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">
                       <span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px;">${(w.category || '圃場作業').replace(/</g, '&lt;')}</span>
                       <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px;">${window.getWorkCropLabel(w.cropName).replace(/</g, '&lt;')}</span>
-                      ${w.targetFunction ? `<span style="font-size:11px; background:#fff3e0; color:#e65100; padding:2px 6px; border-radius:4px;">看板:${String(w.targetFunction).replace(/</g, '&lt;')}</span>` : ''}
                     </div>
                     ${detailPreview}
                   </div>
@@ -2853,7 +2837,6 @@ function createSignboardMarker(name, pos, icon, id) {
               return;
           }
           window.closeWorkNameEditorModal();
-          const p = loadedPolygons[activePolyId];
           const existing = (mode === 'edit')
               ? (pdlWorkMaster || []).find(w => String(w.name || '').trim() === String(originalName || '').trim())
               : null;
@@ -2862,15 +2845,11 @@ function createSignboardMarker(name, pos, icon, id) {
           const defaultCat = (existing && existing.category)
               || (catNow && catNow !== 'すべて' ? catNow : (pdlWorkCategories[0] || '圃場作業'));
           const defaultCrop = (existing && existing.cropName) || (cropNow && cropNow !== '__common__' ? cropNow : '');
-          const defaultFunc = (existing && existing.targetFunction) || (p && p.isMarker ? (p.signFunction || '') : '');
           const catOpts = (pdlWorkCategories || ['圃場作業', '事務作業', '保全・整備']).map(c =>
               `<option value="${String(c).replace(/"/g, '&quot;')}" ${c === defaultCat ? 'selected' : ''}>${c}</option>`
           ).join('');
           const cropOpts = '<option value="">共通（全作物）</option>' + (pdlCrops || []).map(c =>
               `<option value="${String(c.name).replace(/"/g, '&quot;')}" ${c.name === defaultCrop ? 'selected' : ''}>${c.name}</option>`
-          ).join('');
-          const funcOpts = '<option value="">なし</option>' + (pdlSignFunctions || []).map(f =>
-              `<option value="${String(f).replace(/"/g, '&quot;')}" ${f === defaultFunc ? 'selected' : ''}>${f}</option>`
           ).join('');
           const title = mode === 'edit' ? '作業マスタを編集' : '作業マスタを追加';
           const detailsHtml = window.buildWorkerDetailWorksHtml('wn_edit_details_list', (existing && existing.detailWorks) || '');
@@ -2890,9 +2869,7 @@ function createSignboardMarker(name, pos, icon, id) {
               <input type="text" id="wn_edit_name" value="${String((existing && existing.name) || '').replace(/"/g, '&quot;')}" placeholder="例: 定植" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:15px;">
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（各枠に1つ）</label>
               ${detailsHtml}
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">対応看板機能</label>
-              <select id="wn_edit_func" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:14px; font-size:14px;">${funcOpts}</select>
-              <div style="display:flex; gap:8px;">
+              <div style="display:flex; gap:8px; margin-top:4px;">
                 <button type="button" onclick="closeWorkNameEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
                 <button type="button" onclick="submitWorkNameEditor('${mode}', '${String(originalName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="flex:1; background:#FF9800; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${mode === 'edit' ? '更新する' : '追加する'}</button>
               </div>
@@ -2936,7 +2913,6 @@ function createSignboardMarker(name, pos, icon, id) {
           const name = String(document.getElementById('wn_edit_name')?.value || '').trim();
           const category = document.getElementById('wn_edit_category')?.value || '圃場作業';
           const cropName = String(document.getElementById('wn_edit_crop')?.value || '').trim();
-          const targetFunction = String(document.getElementById('wn_edit_func')?.value || '').trim();
           const detailWorks = window.collectWorkerDetailWorks('wn_edit_details_list');
           if (!name) {
               if (typeof customAlert === 'function') customAlert('作業名を入力してください。');
@@ -2955,7 +2931,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   updatedList = await callGAS('manageMaster', {
                       masterType: 'work',
                       manageAction: 'add',
-                      value: { name, category, cropName, targetFunction, detailWorks },
+                      value: { name, category, cropName, detailWorks },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
               } else {
@@ -2964,7 +2940,7 @@ function createSignboardMarker(name, pos, icon, id) {
                       manageAction: 'edit',
                       value: {
                           originalName: orig,
-                          newData: { name, category, cropName, targetFunction, detailWorks }
+                          newData: { name, category, cropName, detailWorks }
                       },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
@@ -3200,7 +3176,6 @@ function createSignboardMarker(name, pos, icon, id) {
                   name: wName,
                   category: '圃場作業',
                   cropName: '',
-                  targetFunction: '',
                   detailWorks: newDetailWorksStr
               };
               if (!Array.isArray(pdlWorkMaster)) pdlWorkMaster = [];
@@ -3216,7 +3191,6 @@ function createSignboardMarker(name, pos, icon, id) {
                       name: workData.name,
                       category: workData.category || '圃場作業',
                       cropName: workData.cropName || '',
-                      targetFunction: workData.targetFunction || '',
                       detailWorks: newDetailWorksStr
                   }
               };
@@ -3439,13 +3413,7 @@ function createSignboardMarker(name, pos, icon, id) {
           let ridgeUI = p.isMarker ? '' : `<div id="ridge_progress_section" style="display:none; margin-bottom:15px;"></div>`;
           let irrigationUI = p.isMarker ? '' : `<div id="irrigation_valve_section" style="display:none; margin-bottom:15px;"></div><div id="irrigation_pump_section" style="display:none; margin-bottom:15px;"></div>`;
           
-          let availableWorks = p.isMarker
-              ? pdlWorkMaster.filter(w => {
-                  const func = p.signFunction || '一般看板';
-                  const tf = String(w.targetFunction || '').trim();
-                  return tf && (tf === func || tf.includes(func));
-                })
-              : pdlWorkMaster;
+          let availableWorks = pdlWorkMaster || [];
           
           let recentWorks = [];
           for (let id in loadedPolygons) {
