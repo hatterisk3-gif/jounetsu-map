@@ -1048,7 +1048,7 @@ async function fetchWeatherAndUpdateUI() {
   lastWeatherFetchPos = {lat, lng};
 
   try {
-    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=7&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
+    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
     
     let today = new Date();
     let formatYMD = (d) => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
@@ -1056,8 +1056,8 @@ async function fetchWeatherAndUpdateUI() {
 
     let lastYearToday = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
     let lastYearTodayStr = formatYMD(lastYearToday);
-    let lastYearStart = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() - 30);
-    let lastYearEnd = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() + 30);
+    let lastYearStart = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() - 31);
+    let lastYearEnd = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() + 31);
     
     let historyUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${formatYMD(lastYearStart)}&end_date=${formatYMD(lastYearEnd)}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
 
@@ -1070,7 +1070,7 @@ async function fetchWeatherAndUpdateUI() {
     let historyData = resHistory && resHistory.ok ? await resHistory.json() : null;
 
     let todayIndex = data.daily && data.daily.time ? data.daily.time.indexOf(todayStr) : -1;
-    if (todayIndex === -1) todayIndex = 7;
+    if (todayIndex === -1) todayIndex = 31;
     
     let currentCode = data.current_weather.weathercode;
     let emoji = getWeatherEmoji(currentCode);
@@ -1081,63 +1081,21 @@ async function fetchWeatherAndUpdateUI() {
       btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">明${tomorrowEmoji}</span></div>`;
     }
 
-    // --- 日照時間比較計算 ---
-    let past7ThisYearSec = 0;
-    for (let i = Math.max(0, todayIndex - 7); i < todayIndex; i++) {
-      if (data.daily.sunshine_duration && data.daily.sunshine_duration[i] != null) {
-        past7ThisYearSec += data.daily.sunshine_duration[i];
-      }
-    }
-    let past7ThisYearH = (past7ThisYearSec / 3600).toFixed(1);
-
-    let next7ThisYearSec = 0;
-    for (let i = todayIndex; i < todayIndex + 7 && i < data.daily.time.length; i++) {
-      if (data.daily.sunshine_duration && data.daily.sunshine_duration[i] != null) {
-        next7ThisYearSec += data.daily.sunshine_duration[i];
-      }
-    }
-    let next7ThisYearH = (next7ThisYearSec / 3600).toFixed(1);
-
-    let past7LastYearH = "-", next7LastYearH = "-";
-    if (historyData && historyData.daily && historyData.daily.time) {
-      let lyTodayIdx = historyData.daily.time.indexOf(lastYearTodayStr);
-      if (lyTodayIdx !== -1) {
-        let past7LySec = 0;
-        for (let i = Math.max(0, lyTodayIdx - 7); i < lyTodayIdx; i++) {
-          if (historyData.daily.sunshine_duration && historyData.daily.sunshine_duration[i] != null) {
-            past7LySec += historyData.daily.sunshine_duration[i];
-          }
-        }
-        past7LastYearH = (past7LySec / 3600).toFixed(1);
-
-        let next7LySec = 0;
-        for (let i = lyTodayIdx; i < lyTodayIdx + 7 && i < historyData.daily.time.length; i++) {
-          if (historyData.daily.sunshine_duration && historyData.daily.sunshine_duration[i] != null) {
-            next7LySec += historyData.daily.sunshine_duration[i];
-          }
-        }
-        next7LastYearH = (next7LySec / 3600).toFixed(1);
-      }
+    // --- 日照比較ステート保持 ---
+    if (typeof window.weatherSunshineState !== 'undefined') {
+      window.weatherSunshineState.data = data;
+      window.weatherSunshineState.historyData = historyData;
+      window.weatherSunshineState.todayStr = todayStr;
+      window.weatherSunshineState.lastYearTodayStr = lastYearTodayStr;
     }
 
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
     
     // --- ☀️ 日照時間比較パネル ---
-    if (historyData && historyData.daily) {
-      let pastBadge = renderSunshineDiffBadge(past7ThisYearH, past7LastYearH);
-      let nextBadge = renderSunshineDiffBadge(next7ThisYearH, next7LastYearH);
-
-      html += `<div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
-        <div style="font-weight:bold; color:#e65100; margin-bottom:8px; display:flex; align-items:center; gap:5px;">
-          <span>☀️ 昨年との日照時間比較 (7日間合計)</span>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:6px 10px; border-radius:6px; border:1px solid #fff3e0;">
-            <span><b>直近7日間</b> (今年:<b>${past7ThisYearH}h</b> / 昨年:${past7LastYearH}h)</span>
-            <div>${pastBadge}</div>
-          </div>
-          <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:6px 10px; border-radius:6px; border:1px solid #fff3e0;">
+    if (historyData && historyData.daily && typeof window.renderSunshinePanelHtml === 'function') {
+      html += window.renderSunshinePanelHtml();
+    }
             <span><b>今後7日間</b> (今年:<b>${next7ThisYearH}h</b> / 昨年:${next7LastYearH}h)</span>
             <div>${nextBadge}</div>
           </div>

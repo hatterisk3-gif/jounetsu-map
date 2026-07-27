@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pw = localStorage.getItem('passionMapUserPw');
     if (document.getElementById('loginId') && id) document.getElementById('loginId').value = id;
     if (document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw;
+    updateAdminOnlyButtons();
     if (id && pw) {
         document.getElementById('loginScreen').style.display = 'none';
         initMap();
@@ -89,12 +90,7 @@ async function executeLogin(isAuto = false) {
             localStorage.setItem('passionMapUserRole', result.role || '作業員');
             localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
-            // 管理者用ボタン表示
-            const resetBtn = document.getElementById('btnResetAllManure');
-            if (resetBtn && currentUserRole === '管理者') resetBtn.style.display = 'inline-block';
-
-            const openAdminFieldBtn = document.getElementById('btnOpenAdminField');
-            if (openAdminFieldBtn && currentUserRole === '管理者') openAdminFieldBtn.style.display = 'inline-block';
+            updateAdminOnlyButtons();
 
             if (!isAuto) initMap();
             
@@ -127,6 +123,42 @@ async function executeLogin(isAuto = false) {
 
 function executeLogout() { localStorage.clear(); location.reload(); }
 
+/** 管理者専用ボタンの表示制御 */
+function updateAdminOnlyButtons() {
+    const isAdmin = currentUserRole === '管理者';
+    const resetBtn = document.getElementById('btnResetAllManure');
+    if (resetBtn) resetBtn.style.display = isAdmin ? 'inline-block' : 'none';
+    const openAdminFieldBtn = document.getElementById('btnOpenAdminField');
+    if (openAdminFieldBtn) openAdminFieldBtn.style.display = isAdmin ? 'inline-block' : 'none';
+}
+
+/** 鶏糞ステータス全リセット（管理者のみ） */
+async function resetAllManureStatus() {
+    if (currentUserRole !== '管理者') {
+        alert('管理者のみ実行できます');
+        return;
+    }
+    if (!confirm('すべての圃場の鶏糞ステータスを「未（青）」にリセットします。\nよろしいですか？')) return;
+
+    const btn = document.getElementById('btnResetAllManure');
+    const prevLabel = btn ? btn.innerText : '';
+    if (btn) { btn.disabled = true; btn.innerText = 'リセット中...'; }
+
+    try {
+        const res = await callGAS('resetAllManureStatus', {
+            userName: currentUserName || localStorage.getItem('passionMapUserName') || ''
+        });
+        localStorage.removeItem('manureMapData');
+        await loadInitData();
+        alert(`全リセット完了（${res && res.count != null ? res.count : 0}件）`);
+    } catch (e) {
+        alert('リセットに失敗しました: ' + (e.message || e));
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerText = prevLabel || '🔄 全リセット'; }
+    }
+}
+window.resetAllManureStatus = resetAllManureStatus;
+
 // ====== 管理者：圃場追加（admin.html を iframe 表示） ======
 window.openAdminFieldModal = function () {
     if (currentUserRole !== '管理者') { alert('管理者のみ利用できます'); return; }
@@ -135,15 +167,50 @@ window.openAdminFieldModal = function () {
     if (!modal || !iframe) return;
 
     modal.style.display = 'flex';
-    // iframe を差し替えて、admin.html 側の自動「圃場作成モード開始」パラメータを反映
-    iframe.src = `admin.html?startDraw=1&v=${Date.now()}`;
+    // map 側で見ている中心座標・ズームを admin 側へ引き継ぐ
+    const center = map && typeof map.getCenter === 'function' ? map.getCenter() : null;
+    const lat = center && typeof center.lat === 'function' ? center.lat() : parseFloat(localStorage.getItem('manureMapLat') || '');
+    const lng = center && typeof center.lng === 'function' ? center.lng() : parseFloat(localStorage.getItem('manureMapLng') || '');
+    const zoom = map && typeof map.getZoom === 'function' ? map.getZoom() : '';
+    const params = new URLSearchParams({
+        startDraw: '1',
+        action: 'draw',
+        v: String(Date.now())
+    });
+    if (!isNaN(lat)) params.set('lat', String(lat));
+    if (!isNaN(lng)) params.set('lng', String(lng));
+    if (!isNaN(parseInt(zoom, 10))) params.set('zoom', String(zoom));
+    iframe.src = `admin.html?${params.toString()}`;
 };
 
-window.closeAdminFieldModal = function () {
+window.closeAdminFieldModal = async function () {
     const modal = document.getElementById('adminFieldModal');
     const iframe = document.getElementById('adminFieldIframe');
     if (modal) modal.style.display = 'none';
     if (iframe) iframe.src = '';
+
+    // admin 側で最後に見ていた位置を map 側へ引き継ぐ
+    const adminLat = parseFloat(localStorage.getItem('pMapAdminLastLat') || '');
+    const adminLng = parseFloat(localStorage.getItem('pMapAdminLastLng') || '');
+    const adminZoom = parseInt(localStorage.getItem('pMapAdminLastZoom') || '', 10);
+    if (!isNaN(adminLat) && !isNaN(adminLng)) {
+        localStorage.setItem('manureMapLat', String(adminLat));
+        localStorage.setItem('manureMapLng', String(adminLng));
+        if (map && typeof map.setCenter === 'function') {
+            map.setCenter({ lat: adminLat, lng: adminLng });
+            if (!isNaN(adminZoom) && typeof map.setZoom === 'function') {
+                map.setZoom(adminZoom);
+            }
+        }
+    }
+
+    // 圃場登録後の内容を自動再読込
+    localStorage.removeItem('manureMapData');
+    try {
+        await loadInitData();
+    } catch (e) {
+        console.warn('Admin close refresh failed:', e);
+    }
 };
 
 // ====== 地図初期化 ======
@@ -264,7 +331,9 @@ function drawPolygons(dataList) {
                     manure_deadline: pData.manure_deadline || '',
                     manure_scheduled_date: pData.manure_scheduled_date || '',
                     manure_cancel_reason: pData.manure_cancel_reason || '',
-                    manure_has_pin: false
+                    manure_has_pin: false,
+                    manure_route_selected: !!pData.manure_route_selected,
+                    transplant_jun: pData.transplant_jun || ''
                 };
                 callGAS('updatePolygon', { id: pData.id, manureData: JSON.stringify(manureData) }).catch(() => {});
             }
@@ -397,7 +466,10 @@ function openManureStatusModal(pData) {
     let html = `
         <h3 style="color:#795548; margin-top:0;">🐓 鶏糞散布ステータス変更</h3>
         <div style="margin-bottom:15px;">
-            <div style="margin-bottom:10px;"><strong>圃場名:</strong> ${pData.name}</div>
+            <div style="margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                <div><strong>圃場名:</strong> ${pData.name}</div>
+                <div style="font-size:13px; font-weight:bold; color:#2E7D32;">${areaStr}</div>
+            </div>
             ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="width:100%; padding:8px; margin-bottom:10px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🚗 ナビ開始</button>` : ''}
             
             <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:12px;">
@@ -486,6 +558,7 @@ async function saveManureStatus(btnElement) {
     currentEditPoly.manure_deadline = (status === 'request') ? deadline : '';
     currentEditPoly.manure_scheduled_date = (status === 'accepted') ? scheduled : '';
     currentEditPoly.manure_cancel_reason = (status === 'canceled') ? cancelReason : '';
+    currentEditPoly.manure_route_selected = !!currentEditPoly.manure_route_selected && (status === 'accepted' || status === 'completed');
 
     try {
         const manureData = {
@@ -493,7 +566,9 @@ async function saveManureStatus(btnElement) {
             manure_deadline: currentEditPoly.manure_deadline,
             manure_scheduled_date: currentEditPoly.manure_scheduled_date,
             manure_cancel_reason: currentEditPoly.manure_cancel_reason,
-            manure_has_pin: currentEditPoly.manure_has_pin
+            manure_has_pin: currentEditPoly.manure_has_pin,
+            manure_route_selected: !!currentEditPoly.manure_route_selected,
+            transplant_jun: currentEditPoly.transplant_jun || ''
         };
         await callGAS('updatePolygon', { id: currentEditPoly.id, manureData: JSON.stringify(manureData) });
         closeModal();
@@ -715,6 +790,142 @@ window.switchWeatherTab = function(tabName) {
     }
 };
 
+// --- 日照時間比較ステート・関数群 ---
+window.weatherSunshineState = window.weatherSunshineState || {
+  data: null,
+  historyData: null,
+  todayStr: '',
+  lastYearTodayStr: '',
+  activeDays: 7
+};
+
+window.calculateSunshineDiff = (days) => {
+  const st = window.weatherSunshineState;
+  if (!st.data || !st.data.daily || !st.data.daily.time) return null;
+  const todayIndex = st.data.daily.time.indexOf(st.todayStr);
+  if (todayIndex === -1) return null;
+
+  // 1. 直近 (過去 days 日間) の今年・昨年日照時間
+  let pastThisYearSec = 0;
+  let pastStartIdx = Math.max(0, todayIndex - days);
+  for (let i = pastStartIdx; i < todayIndex; i++) {
+    if (st.data.daily.sunshine_duration && st.data.daily.sunshine_duration[i] != null) {
+      pastThisYearSec += st.data.daily.sunshine_duration[i];
+    }
+  }
+  let pastThisYearH = (pastThisYearSec / 3600).toFixed(1);
+
+  let pastLastYearH = "-";
+  let lyTodayIdx = (st.historyData && st.historyData.daily && st.historyData.daily.time) ? st.historyData.daily.time.indexOf(st.lastYearTodayStr) : -1;
+  if (lyTodayIdx !== -1) {
+    let pastLySec = 0;
+    let lyPastStartIdx = Math.max(0, lyTodayIdx - days);
+    for (let i = lyPastStartIdx; i < lyTodayIdx; i++) {
+      if (st.historyData.daily.sunshine_duration && st.historyData.daily.sunshine_duration[i] != null) {
+        pastLySec += st.historyData.daily.sunshine_duration[i];
+      }
+    }
+    pastLastYearH = (pastLySec / 3600).toFixed(1);
+  }
+
+  // 2. 今後 (未来 days 日間) の今年・昨年日照時間
+  let nextThisYearSec = 0;
+  let nextEndIdx = Math.min(st.data.daily.time.length, todayIndex + days);
+  let actualNextDays = nextEndIdx - todayIndex;
+  for (let i = todayIndex; i < nextEndIdx; i++) {
+    if (st.data.daily.sunshine_duration && st.data.daily.sunshine_duration[i] != null) {
+      nextThisYearSec += st.data.daily.sunshine_duration[i];
+    }
+  }
+  let nextThisYearH = (nextThisYearSec / 3600).toFixed(1);
+
+  let nextLastYearH = "-";
+  if (lyTodayIdx !== -1) {
+    let nextLySec = 0;
+    let lyNextEndIdx = Math.min(st.historyData.daily.time.length, lyTodayIdx + actualNextDays);
+    for (let i = lyTodayIdx; i < lyNextEndIdx; i++) {
+      if (st.historyData.daily.sunshine_duration && st.historyData.daily.sunshine_duration[i] != null) {
+        nextLySec += st.historyData.daily.sunshine_duration[i];
+      }
+    }
+    nextLastYearH = (nextLySec / 3600).toFixed(1);
+  }
+
+  return {
+    days: days,
+    actualNextDays: actualNextDays,
+    pastThisYearH: pastThisYearH,
+    pastLastYearH: pastLastYearH,
+    nextThisYearH: nextThisYearH,
+    nextLastYearH: nextLastYearH,
+    pastBadge: renderSunshineDiffBadge(pastThisYearH, pastLastYearH),
+    nextBadge: renderSunshineDiffBadge(nextThisYearH, nextLastYearH)
+  };
+};
+
+window.renderSunshineContentHtml = (diff) => {
+  if (!diff) return '<div style="color:#888; text-align:center; padding:10px;">比較データなし</div>';
+  const pastLabel = diff.days === 7 ? '7日間' : (diff.days === 14 ? '2週間' : '1ヶ月');
+  const nextLabel = diff.actualNextDays === 7 ? '7日間' : (diff.actualNextDays === 14 ? '2週間' : `${diff.actualNextDays}日間`);
+  return `
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:6px 10px; border-radius:6px; border:1px solid #fff3e0;">
+        <span><b>直近${pastLabel}</b> (今年:<b>${diff.pastThisYearH}h</b> / 昨年:${diff.pastLastYearH}h)</span>
+        <div>${diff.pastBadge}</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:6px 10px; border-radius:6px; border:1px solid #fff3e0;">
+        <span><b>今後${nextLabel}</b> (今年:<b>${diff.nextThisYearH}h</b> / 昨年:${diff.nextLastYearH}h)</span>
+        <div>${diff.nextBadge}</div>
+      </div>
+    </div>
+  `;
+};
+
+window.switchSunshinePeriod = (days) => {
+  window.weatherSunshineState.activeDays = days;
+  const btn7 = document.getElementById('btnSun7');
+  const btn14 = document.getElementById('btnSun14');
+  const btn30 = document.getElementById('btnSun30');
+
+  [ {el: btn7, d: 7}, {el: btn14, d: 14}, {el: btn30, d: 30} ].forEach(item => {
+    if (item.el) {
+      if (item.d === days) {
+        item.el.style.background = '#e65100';
+        item.el.style.color = '#ffffff';
+      } else {
+        item.el.style.background = 'transparent';
+        item.el.style.color = '#e65100';
+      }
+    }
+  });
+
+  const diff = window.calculateSunshineDiff(days);
+  const container = document.getElementById('sunshineComparisonContent');
+  if (container) {
+    container.innerHTML = window.renderSunshineContentHtml(diff);
+  }
+};
+
+window.renderSunshinePanelHtml = () => {
+  const activeDays = (window.weatherSunshineState && window.weatherSunshineState.activeDays) || 7;
+  const diff = window.calculateSunshineDiff(activeDays);
+  return `
+    <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+        <span style="font-weight:bold; color:#e65100;">☀️ 昨年との日照時間比較</span>
+        <div style="display:flex; gap:3px; background:#ffe0b2; padding:2px; border-radius:6px;">
+          <button type="button" onclick="switchSunshinePeriod(7)" id="btnSun7" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===7?'#e65100':'transparent'}; color:${activeDays===7?'#fff':'#e65100'};">7日間</button>
+          <button type="button" onclick="switchSunshinePeriod(14)" id="btnSun14" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===14?'#e65100':'transparent'}; color:${activeDays===14?'#fff':'#e65100'};">2週間</button>
+          <button type="button" onclick="switchSunshinePeriod(30)" id="btnSun30" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===30?'#e65100':'transparent'}; color:${activeDays===30?'#fff':'#e65100'};">1ヶ月</button>
+        </div>
+      </div>
+      <div id="sunshineComparisonContent">
+        ${window.renderSunshineContentHtml(diff)}
+      </div>
+    </div>
+  `;
+};
+
 async function fetchWeatherAndUpdateUI() {
   if (!map) return;
   let center = map.getCenter();
@@ -729,7 +940,7 @@ async function fetchWeatherAndUpdateUI() {
   lastWeatherFetchPos = {lat, lng};
 
   try {
-    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=7&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
+    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
     
     let today = new Date();
     let formatYMD = (d) => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
@@ -737,8 +948,8 @@ async function fetchWeatherAndUpdateUI() {
 
     let lastYearToday = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
     let lastYearTodayStr = formatYMD(lastYearToday);
-    let lastYearStart = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() - 30);
-    let lastYearEnd = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() + 30);
+    let lastYearStart = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() - 31);
+    let lastYearEnd = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate() + 31);
     
     let historyUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${formatYMD(lastYearStart)}&end_date=${formatYMD(lastYearEnd)}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
 
@@ -751,7 +962,7 @@ async function fetchWeatherAndUpdateUI() {
     let historyData = resHistory && resHistory.ok ? await resHistory.json() : null;
 
     let todayIndex = data.daily && data.daily.time ? data.daily.time.indexOf(todayStr) : -1;
-    if (todayIndex === -1) todayIndex = 7;
+    if (todayIndex === -1) todayIndex = 31;
     
     let currentCode = data.current_weather.weathercode;
     let emoji = getWeatherEmoji(currentCode);
@@ -762,68 +973,18 @@ async function fetchWeatherAndUpdateUI() {
       btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">明${tomorrowEmoji}</span></div>`;
     }
 
-    // --- 日照時間比較計算 ---
-    let past7ThisYearSec = 0;
-    for (let i = Math.max(0, todayIndex - 7); i < todayIndex; i++) {
-      if (data.daily.sunshine_duration && data.daily.sunshine_duration[i] != null) {
-        past7ThisYearSec += data.daily.sunshine_duration[i];
-      }
-    }
-    let past7ThisYearH = (past7ThisYearSec / 3600).toFixed(1);
-
-    let next7ThisYearSec = 0;
-    for (let i = todayIndex; i < todayIndex + 7 && i < data.daily.time.length; i++) {
-      if (data.daily.sunshine_duration && data.daily.sunshine_duration[i] != null) {
-        next7ThisYearSec += data.daily.sunshine_duration[i];
-      }
-    }
-    let next7ThisYearH = (next7ThisYearSec / 3600).toFixed(1);
-
-    let past7LastYearH = "-", next7LastYearH = "-";
-    if (historyData && historyData.daily && historyData.daily.time) {
-      let lyTodayIdx = historyData.daily.time.indexOf(lastYearTodayStr);
-      if (lyTodayIdx !== -1) {
-        let past7LySec = 0;
-        for (let i = Math.max(0, lyTodayIdx - 7); i < lyTodayIdx; i++) {
-          if (historyData.daily.sunshine_duration && historyData.daily.sunshine_duration[i] != null) {
-            past7LySec += historyData.daily.sunshine_duration[i];
-          }
-        }
-        past7LastYearH = (past7LySec / 3600).toFixed(1);
-
-        let next7LySec = 0;
-        for (let i = lyTodayIdx; i < lyTodayIdx + 7 && i < historyData.daily.time.length; i++) {
-          if (historyData.daily.sunshine_duration && historyData.daily.sunshine_duration[i] != null) {
-            next7LySec += historyData.daily.sunshine_duration[i];
-          }
-        }
-        next7LastYearH = (next7LySec / 3600).toFixed(1);
-      }
-    }
+    // --- 日照比較ステート保持 ---
+    window.weatherSunshineState.data = data;
+    window.weatherSunshineState.historyData = historyData;
+    window.weatherSunshineState.todayStr = todayStr;
+    window.weatherSunshineState.lastYearTodayStr = lastYearTodayStr;
 
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
     
     // --- ☀️ 日照時間比較パネル ---
     if (historyData && historyData.daily) {
-      let pastBadge = renderSunshineDiffBadge(past7ThisYearH, past7LastYearH);
-      let nextBadge = renderSunshineDiffBadge(next7ThisYearH, next7LastYearH);
-
-      html += `<div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
-        <div style="font-weight:bold; color:#e65100; margin-bottom:8px; display:flex; align-items:center; gap:5px;">
-          <span>☀️ 昨年との日照時間比較 (7日間合計)</span>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:6px 10px; border-radius:6px; border:1px solid #fff3e0;">
-            <span><b>直近7日間</b> (今年:<b>${past7ThisYearH}h</b> / 昨年:${past7LastYearH}h)</span>
-            <div>${pastBadge}</div>
-          </div>
-          <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:6px 10px; border-radius:6px; border:1px solid #fff3e0;">
-            <span><b>今後7日間</b> (今年:<b>${next7ThisYearH}h</b> / 昨年:${next7LastYearH}h)</span>
-            <div>${nextBadge}</div>
-          </div>
-        </div>
-      </div>`;
+      html += window.renderSunshinePanelHtml();
     }
 
     html += `<div style="display:flex; margin-bottom:15px; border-bottom:1px solid #ccc;">
@@ -1194,14 +1355,14 @@ function toggleIdForm() {
     div.style.display = div.style.display === 'none' ? 'block' : 'none';
 }
 
-// ====== 散布ルート設定 ＆ 本日のルート表 機能 ======
+// ====== 散布ルート設定 ＆ 設定ルート表 機能 ======
 let currentCandidateRoute = null;
 let candidateHighlightOverlays = [];
 
 // 散布容量表示の更新
 window.updateSprayRouteCapacityDisplay = function() {
     const trucks = parseInt(document.getElementById('sprayTruckCount')?.value || 1, 10);
-    const capPerTruckA = parseFloat(document.getElementById('sprayCapacityPerTruck')?.value || 40);
+    const capPerTruckA = parseFloat(document.getElementById('sprayCapacityPerTruck')?.value || 20);
     const totalA = (trucks * capPerTruckA).toFixed(1);
     const totalSqm = Math.round(totalA * 100).toLocaleString();
     
@@ -1278,7 +1439,7 @@ function clearCandidateHighlights() {
 // 散布ルート（候補圃場群）の算出
 window.calculateSprayRoute = function(isRecalculate = false) {
     const trucks = parseInt(document.getElementById('sprayTruckCount')?.value || 1, 10);
-    const capPerTruckA = parseFloat(document.getElementById('sprayCapacityPerTruck')?.value || 40);
+    const capPerTruckA = parseFloat(document.getElementById('sprayCapacityPerTruck')?.value || 20);
     const maxCapacitySqm = trucks * capPerTruckA * 100;
 
     // 散布対象候補となる圃場を収集 (依頼中 'request', 未 'none', 予定 'accepted')
@@ -1426,19 +1587,22 @@ window.applySprayRouteCandidate = async function() {
             pData.manure_status = 'accepted';
             pData.manure_scheduled_date = todayStr;
             pData.manure_has_pin = true;
+            pData.manure_route_selected = true;
 
             const manureData = {
                 manure_status: 'accepted',
                 manure_deadline: pData.manure_deadline || '',
                 manure_scheduled_date: todayStr,
                 manure_cancel_reason: '',
-                manure_has_pin: true
+                manure_has_pin: true,
+                manure_route_selected: true,
+                transplant_jun: pData.transplant_jun || ''
             };
             await callGAS('updatePolygon', { id: p.id || pData.id, manureData: JSON.stringify(manureData) });
         }
 
         closeSprayRouteModal();
-        alert(`✅ ${count} 筆の圃場を本日の「散布予定」に設定しました！`);
+        alert(`✅ ${count} 筆の圃場を「設定ルート表」に登録しました！`);
         localStorage.removeItem('manureMapData');
         loadInitData();
     } catch (e) {
@@ -1447,7 +1611,7 @@ window.applySprayRouteCandidate = async function() {
     }
 };
 
-// ====== 本日のルート表 モーダル ======
+// ====== 設定ルート表 モーダル ======
 window.openTodayRouteTableModal = function() {
     renderTodayRouteTable();
     document.getElementById('todayRouteTableModal').style.display = 'flex';
@@ -1457,19 +1621,19 @@ function renderTodayRouteTable() {
     const container = document.getElementById('todayRouteTableContent');
     if (!container) return;
 
-    // 散布予定 'accepted' または 散布完了 'completed' の圃場を抽出
+    // 散布ルート設定で選ばれ、かつ 散布予定/完了 の圃場のみ抽出
     const routePolys = polygons.filter(p => {
         if (!p || !p.pData) return false;
         const st = p.pData.manure_status;
-        return st === 'accepted' || st === 'completed';
+        return !!p.pData.manure_route_selected && (st === 'accepted' || st === 'completed');
     });
 
     if (routePolys.length === 0) {
         container.innerHTML = `
             <div style="text-align:center; padding:30px 10px; color:#888;">
                 <div style="font-size:32px; margin-bottom:10px;">🗺️</div>
-                <div style="font-size:14px; font-weight:bold; margin-bottom:6px;">本日の散布ルート対象の圃場はありません</div>
-                <div style="font-size:12px;">「🚜 散布ルート設定」から本日の対象圃場を設定してください。</div>
+                <div style="font-size:14px; font-weight:bold; margin-bottom:6px;">設定ルート表の対象圃場はありません</div>
+                <div style="font-size:12px;">「🚜 散布ルート設定」から対象圃場を設定してください。</div>
             </div>
         `;
         return;
@@ -1519,7 +1683,7 @@ function renderTodayRouteTable() {
     container.innerHTML = `
         <div style="background:#E8F5E9; border:1px solid #C8E6C9; border-radius:8px; padding:10px 14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
             <div>
-                <span style="font-size:13px; color:#2E7D32; font-weight:bold;">本日の散布対象:</span>
+                <span style="font-size:13px; color:#2E7D32; font-weight:bold;">設定ルート対象:</span>
                 <b style="font-size:16px; color:#1B5E20; margin-left:6px;">${routePolys.length} 筆</b>
                 <span style="font-size:12px; color:#555; margin-left:8px;">(計 ${totalA} a)</span>
             </div>
@@ -1557,6 +1721,7 @@ window.markFieldSprayCompleted = async function(polyId, polyName) {
     const pData = polyObj.pData || {};
     pData.manure_status = 'completed';
     pData.manure_has_pin = true;
+    pData.manure_route_selected = !!pData.manure_route_selected;
 
     try {
         const manureData = {
@@ -1564,7 +1729,9 @@ window.markFieldSprayCompleted = async function(polyId, polyName) {
             manure_deadline: pData.manure_deadline || '',
             manure_scheduled_date: pData.manure_scheduled_date || '',
             manure_cancel_reason: '',
-            manure_has_pin: true
+            manure_has_pin: true,
+            manure_route_selected: !!pData.manure_route_selected,
+            transplant_jun: pData.transplant_jun || ''
         };
         await callGAS('updatePolygon', { id: polyId, manureData: JSON.stringify(manureData) });
         
@@ -1585,6 +1752,221 @@ window.hideTodayRouteRow = function(polyId) {
     const row = document.getElementById(`routeRow_${polyId}`);
     if (row) {
         row.style.display = 'none';
+    }
+};
+
+// ====== 定植設定 ======
+const TRANSPLANT_PERIOD_LABELS = ['上前', '上後', '中前', '中後', '下前', '下後'];
+let transplantSettingRows = [];
+
+function getTransplantJunOptionsHtml(selectedValue) {
+    let html = '<option value="">未設定</option>';
+    for (let month = 1; month <= 12; month++) {
+        for (const label of TRANSPLANT_PERIOD_LABELS) {
+            const value = `${month}月${label}`;
+            html += `<option value="${value}" ${value === selectedValue ? 'selected' : ''}>${value}</option>`;
+        }
+    }
+    return html;
+}
+
+function parseTransplantJun(value) {
+    const m = String(value || '').trim().match(/^(\d{1,2})月(上前|上後|中前|中後|下前|下後)$/);
+    if (!m) return null;
+    return { month: parseInt(m[1], 10), period: m[2] };
+}
+
+function getPeriodStartDate(year, month, periodLabel) {
+    const dayMap = { '上前': 1, '上後': 6, '中前': 11, '中後': 16, '下前': 21, '下後': 26 };
+    const day = dayMap[periodLabel];
+    if (!day) return null;
+    return new Date(year, month - 1, day);
+}
+
+function formatDateInputValue(dt) {
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function calcDeadlineFromTransplantJun(junValue) {
+    const parsed = parseTransplantJun(junValue);
+    if (!parsed) return '';
+    const now = new Date();
+    const baseDate = getPeriodStartDate(now.getFullYear(), parsed.month, parsed.period);
+    if (!baseDate) return '';
+    // 定植旬開始の20日前を期限日にする（例: 5月上前 -> 4/11）
+    baseDate.setDate(baseDate.getDate() - 20);
+    return formatDateInputValue(baseDate);
+}
+
+function isPolygonVisibleInCurrentMap(polyObj) {
+    if (!polyObj || !polyObj.pData || typeof polyObj.getPath !== 'function' || polyObj.getMap() !== map) return false;
+    const mapBounds = map && typeof map.getBounds === 'function' ? map.getBounds() : null;
+    if (!mapBounds) return true;
+
+    const path = polyObj.getPath();
+    if (!path || path.getLength() === 0) return false;
+
+    for (let i = 0; i < path.getLength(); i++) {
+        if (mapBounds.contains(path.getAt(i))) return true;
+    }
+
+    const localBounds = new google.maps.LatLngBounds();
+    for (let i = 0; i < path.getLength(); i++) {
+        localBounds.extend(path.getAt(i));
+    }
+    return mapBounds.contains(localBounds.getCenter());
+}
+
+function renderTransplantSettingTable() {
+    const area = document.getElementById('transplantSettingTableArea');
+    if (!area) return;
+
+    if (!transplantSettingRows.length) {
+        area.innerHTML = `<div style="text-align:center; padding:24px; color:#888;">表示中の圃場がありません</div>`;
+        return;
+    }
+
+    const rowsHtml = transplantSettingRows.map((row, idx) => {
+        const deadline = row.transplantJun ? calcDeadlineFromTransplantJun(row.transplantJun) : '';
+        return `
+            <tr style="border-bottom:1px solid #eee;">
+                <td style="padding:8px; text-align:center;">${idx + 1}</td>
+                <td style="padding:8px;">
+                    <div style="font-weight:bold; color:#333;">${row.name}</div>
+                    <div style="font-size:11px; color:#666;">面積: ${row.areaA} a</div>
+                </td>
+                <td style="padding:8px; text-align:center; white-space:nowrap;">${getStatusLabel(row.status || 'none')}</td>
+                <td style="padding:8px;">
+                    <select onchange="onTransplantJunChange('${row.id}', this.value)" style="width:100%; min-width:130px;">
+                        ${getTransplantJunOptionsHtml(row.transplantJun)}
+                    </select>
+                </td>
+                <td style="padding:8px; white-space:nowrap; color:${deadline ? '#D84315' : '#999'};">${deadline || '—'}</td>
+            </tr>
+        `;
+    }).join('');
+
+    area.innerHTML = `
+        <table style="width:100%; border-collapse:collapse; font-size:13px; background:#fff;">
+            <thead>
+                <tr style="background:#F1F8E9; color:#2E7D32;">
+                    <th style="padding:8px; width:40px;">No</th>
+                    <th style="padding:8px;">圃場名</th>
+                    <th style="padding:8px; width:110px;">現在ステータス</th>
+                    <th style="padding:8px; width:170px;">定植旬</th>
+                    <th style="padding:8px; width:120px;">自動期限日</th>
+                </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>
+    `;
+}
+
+window.onTransplantJunChange = function(fieldId, value) {
+    transplantSettingRows = transplantSettingRows.map(row =>
+        String(row.id) === String(fieldId) ? { ...row, transplantJun: value } : row
+    );
+    renderTransplantSettingTable();
+};
+
+window.openTransplantSettingModal = function() {
+    const modal = document.getElementById('transplantSettingModal');
+    if (!modal) return;
+    transplantSettingRows = [];
+    renderTransplantSettingTable();
+    modal.style.display = 'flex';
+};
+
+window.closeTransplantSettingModal = function() {
+    const modal = document.getElementById('transplantSettingModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.loadVisibleFieldsForTransplantSetting = function() {
+    const visiblePolys = polygons
+        .filter(isPolygonVisibleInCurrentMap)
+        .sort((a, b) => String((a.pData && a.pData.name) || '').localeCompare(String((b.pData && b.pData.name) || ''), 'ja'));
+
+    transplantSettingRows = visiblePolys.map(poly => {
+        const pData = poly.pData || {};
+        const areaA = (getPolygonAreaSqm(poly) / 100).toFixed(1);
+        return {
+            id: poly.id || pData.id,
+            name: pData.name || '圃場',
+            areaA,
+            status: pData.manure_status || 'none',
+            transplantJun: pData.transplant_jun || ''
+        };
+    });
+
+    renderTransplantSettingTable();
+};
+
+window.saveTransplantSettings = async function() {
+    if (!transplantSettingRows.length) {
+        alert('先に「表示中の圃場を全て表示」を押してください。');
+        return;
+    }
+
+    const area = document.getElementById('transplantSettingTableArea');
+    if (area) area.style.pointerEvents = 'none';
+
+    try {
+        let updatedCount = 0;
+        for (const row of transplantSettingRows) {
+            const polyObj = polygons.find(p => String(p.id || (p.pData && p.pData.id)) === String(row.id));
+            if (!polyObj || !polyObj.pData) continue;
+
+            const pData = polyObj.pData;
+            pData.transplant_jun = row.transplantJun || '';
+
+            let manureStatus = pData.manure_status || 'none';
+            let manureDeadline = pData.manure_deadline || '';
+            let manureScheduledDate = pData.manure_scheduled_date || '';
+            let manureCancelReason = pData.manure_cancel_reason || '';
+            let manureHasPin = pData.manure_has_pin || false;
+            let manureRouteSelected = !!pData.manure_route_selected;
+
+            if (row.transplantJun && manureStatus !== 'completed') {
+                manureStatus = 'request';
+                manureDeadline = calcDeadlineFromTransplantJun(row.transplantJun);
+                manureScheduledDate = '';
+                manureCancelReason = '';
+                manureHasPin = true;
+                manureRouteSelected = false;
+            }
+
+            pData.manure_status = manureStatus;
+            pData.manure_deadline = manureDeadline;
+            pData.manure_scheduled_date = manureScheduledDate;
+            pData.manure_cancel_reason = manureCancelReason;
+            pData.manure_has_pin = manureHasPin;
+            pData.manure_route_selected = manureRouteSelected;
+
+            const manureData = {
+                manure_status: manureStatus,
+                manure_deadline: manureDeadline,
+                manure_scheduled_date: manureScheduledDate,
+                manure_cancel_reason: manureCancelReason,
+                manure_has_pin: manureHasPin,
+                manure_route_selected: manureRouteSelected,
+                transplant_jun: row.transplantJun || ''
+            };
+            await callGAS('updatePolygon', { id: row.id, manureData: JSON.stringify(manureData) });
+            updatedCount++;
+        }
+
+        closeTransplantSettingModal();
+        localStorage.removeItem('manureMapData');
+        await loadInitData();
+        alert(`定植設定を保存しました（${updatedCount}件）`);
+    } catch (e) {
+        alert('定植設定の保存に失敗しました: ' + (e.message || e));
+    } finally {
+        if (area) area.style.pointerEvents = '';
     }
 };
 

@@ -3876,6 +3876,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const directLat = urlParams.get('lat');
             const directLng = urlParams.get('lng');
             const directAction = urlParams.get('action');
+            const directZoom = parseInt(urlParams.get('zoom') || '', 10);
 
             if (directLat && directLng) {
                 // 🚀【パターンA】Workerから「登録しますか？→はい」で飛んできた場合
@@ -3888,7 +3889,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // ログイン処理や地図データの読み込みが終わるのを2.5秒だけ待ってから実行
                 setTimeout(() => {
                     const sharedPos = { lat: shareLat, lng: shareLng };
-                    map.setCenter(sharedPos); map.setZoom(18);
+                    map.setCenter(sharedPos);
+                    map.setZoom(isNaN(directZoom) ? 18 : directZoom);
                     // 🌟前のピンを消してから、新しいピンを変数に記憶させる！
                     if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                     window.sharedLocationMarker = new google.maps.Marker({

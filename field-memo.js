@@ -288,13 +288,12 @@
     }
 
     function highlightToolButtons() {
-        ['fmBtnLine', 'fmBtnPin', 'fmBtnSprayed', 'fmBtnUnsprayed'].forEach(id => {
+        ['fmBtnLine', 'fmBtnSprayed', 'fmBtnUnsprayed'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.classList.remove('active');
         });
         const map = {
             line: 'fmBtnLine',
-            pin: 'fmBtnPin',
             sprayed: 'fmBtnSprayed',
             unsprayed: 'fmBtnUnsprayed'
         };
@@ -313,14 +312,12 @@
         } else {
             fmMode = mode;
             if (mode !== 'line') clearDraftLine();
-            if (mode === 'line') setHint('地図をタップして分割線の点を置き、「線確定」で分割します');
-            else if (mode === 'pin') setHint('地図をタップしてピンを立てます（ピンタップで削除）');
+            if (mode === 'line') setHint('地図をタップして分割線の点を置き、「線確定」で分割します（確定時に自動でピンがさされます）');
             else if (mode === 'sprayed') setHint('散布した区画をタップしてください');
             else if (mode === 'unsprayed') setHint('未散布の区画をタップしてください');
         }
         highlightToolButtons();
-        // 線・ピン時は区画クリックを外し、地図クリックを通す
-        if (fmMode === 'line' || fmMode === 'pin' || fmMode === 'sprayed' || fmMode === 'unsprayed' || fmMode === null) {
+        if (fmMode === 'line' || fmMode === 'sprayed' || fmMode === 'unsprayed' || fmMode === null) {
             renderRegions();
             renderSplitLines();
         }
@@ -340,7 +337,7 @@
         }
         applySplitLine(fmDraftLine.slice());
         clearDraftLine();
-        setHint('分割しました。続けて線を引くか、散布/未散布を指定してください');
+        setHint('分割しました。分割位置に自動でピンを配置しました');
     };
 
     function applySplitLine(lineCoords) {
@@ -372,9 +369,22 @@
 
         fmRegions = nextRegions;
         fmSplitLines.push(lineCoords.map(p => ({ lat: p.lat, lng: p.lng })));
+
+        // 線で分割の点の位置に自動でピンを立てる
+        lineCoords.forEach((p, idx) => {
+            fmPins.push({
+                lat: Number(p.lat),
+                lng: Number(p.lng),
+                label: `分割点${idx + 1}`,
+                type: 'note',
+                marker: null
+            });
+        });
+
         fmDirty = true;
         renderRegions();
         renderSplitLines();
+        renderPins();
     }
 
     window.clearFieldMemoDrawing = function () {
@@ -529,18 +539,6 @@
                 fmDraftLine.push({ lat: e.latLng.lat(), lng: e.latLng.lng() });
                 updateDraftLineVisual();
                 setHint(`分割線の点: ${fmDraftLine.length}（2点以上で「線確定」）`);
-            } else if (fmMode === 'pin') {
-                const pin = {
-                    lat: e.latLng.lat(),
-                    lng: e.latLng.lng(),
-                    label: '',
-                    type: 'note',
-                    marker: null
-                };
-                fmPins.push(pin);
-                fmDirty = true;
-                renderPins();
-                setHint('ピンを追加しました（タップで削除）');
             }
         });
     }

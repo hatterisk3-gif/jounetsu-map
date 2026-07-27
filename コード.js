@@ -1335,6 +1335,8 @@ function getSavedPolygons() {
         result[result.length - 1].manure_scheduled_date = manureData.manure_scheduled_date || '';
         result[result.length - 1].manure_cancel_reason = manureData.manure_cancel_reason || '';
         result[result.length - 1].manure_has_pin = manureData.manure_has_pin || false;
+        result[result.length - 1].manure_route_selected = manureData.manure_route_selected || false;
+        result[result.length - 1].transplant_jun = manureData.transplant_jun || '';
 
         // S列(19): 圃場メモ（鶏糞CAD風）
         let fieldMemo = null;
@@ -5089,11 +5091,21 @@ function resetAllManureStatus(userName) {
   const sheet = ss.getSheetByName('圃場');
   if (!sheet) throw new Error("圃場シートが見つかりません");
   const data = sheet.getDataRange().getValues();
-  const emptyManure = JSON.stringify({ manure_status: 'none', manure_deadline: '', manure_scheduled_date: '', manure_cancel_reason: '', manure_has_pin: false });
   let count = 0;
   for (let i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
-    sheet.getRange(i + 1, 18).setValue(emptyManure);
+    let existing = {};
+    try { if (data[i][17]) existing = JSON.parse(data[i][17]); } catch (e) {}
+    const resetManure = {
+      manure_status: 'none',
+      manure_deadline: '',
+      manure_scheduled_date: '',
+      manure_cancel_reason: '',
+      manure_has_pin: false,
+      manure_route_selected: false,
+      transplant_jun: existing.transplant_jun || ''
+    };
+    sheet.getRange(i + 1, 18).setValue(JSON.stringify(resetManure));
     count++;
   }
   SpreadsheetApp.flush();
