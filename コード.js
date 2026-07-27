@@ -917,10 +917,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
       for (let i = 1; i < latestData.length; i++) {
         if (keyIdx >= 0 && String(latestData[i][keyIdx]).trim() === originalName) {
           // 既存行をベースに必要な列だけ更新（担当部署など他列は維持）
+          // getRange(row, column, numRows, numColumns) ※3つ目は行数
           const rowVals = latestData[i].slice();
           while (rowVals.length < workHeaders.length) rowVals.push("");
           applyWorkMasterValuesToRow_(rowVals, workHeaders, value.newData || {});
-          sheet.getRange(i + 1, 1, i + 1, workHeaders.length).setValues([rowVals.slice(0, workHeaders.length)]);
+          const outRow = rowVals.slice(0, workHeaders.length);
+          sheet.getRange(i + 1, 1, 1, outRow.length).setValues([outRow]);
           writeLog(userName, "マスタ編集", (value.newData && value.newData.name) || originalName, `対象: ${sheetName} (元: ${originalName})`);
           break;
         }
