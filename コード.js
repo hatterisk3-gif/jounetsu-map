@@ -81,6 +81,7 @@ function doPost(e) {
     else if (action === "getFieldMemoHistory") result = getFieldMemoHistory(params);
     else if (action === "saveTrackingData") result = saveTrackingData(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
+    else if (action === "getOpenClockInStatus") result = getOpenClockInStatus(params);
     else if (action === "resetAllManureStatus") result = resetAllManureStatus(params.userName);
     else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
     else if (action === "changePassword") result = changePassword(params.userId, params.currentPassword, params.newPassword);
@@ -3359,6 +3360,65 @@ function getTrackingData(params) {
     return { trackingData: data, allUsers: allUsers };
   } catch(e) {
     throw new Error("トラッキング取得エラー: " + e.message);
+  }
+}
+
+// ==========================================
+// 📍 未退勤（開いている出勤）の有無をサーバーで判定
+// ==========================================
+function getOpenClockInStatus(params) {
+  try {
+    const userName = String((params && params.userName) || '').replace(/\s+/g, '');
+    if (!userName) return { open: false, forgot: false };
+
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('トラッキング');
+    const todayYmd = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return { open: false, forgot: false, todayYmd: todayYmd };
+    }
+
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - 4999);
+    const numRows = lastRow - startRow + 1;
+    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
+
+    let openIn = null;
+    for (let i = 0; i < values.length; i++) {
+      const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
+      if (!rowUser) continue;
+      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
+
+      const type = String(values[i][4] || '');
+      const tObj = new Date(values[i][0]);
+      if (isNaN(tObj.getTime())) continue;
+
+      const isIn = (type === '出勤' || type === 'アプリ起動');
+      const isOut = (type === '退勤' || type.indexOf('退勤(') === 0);
+      const isCancel = (type === '出勤取消');
+
+      if (isIn) {
+        openIn = { ms: tObj.getTime() };
+      } else if (isOut || isCancel) {
+        openIn = null;
+      }
+    }
+
+    if (!openIn) {
+      return { open: false, forgot: false, todayYmd: todayYmd };
+    }
+
+    const clockInDateYmd = Utilities.formatDate(new Date(openIn.ms), 'JST', 'yyyy-MM-dd');
+    const clockInTime = Utilities.formatDate(new Date(openIn.ms), 'JST', 'HH:mm');
+    return {
+      open: true,
+      forgot: clockInDateYmd < todayYmd,
+      clockInDateYmd: clockInDateYmd,
+      clockInTime: clockInTime,
+      todayYmd: todayYmd
+    };
+  } catch (e) {
+    throw new Error('出退勤状態取得エラー: ' + e.message);
   }
 }
 
