@@ -4147,13 +4147,17 @@ function createSignboardMarker(name, pos, icon, id) {
             customAlert("記録を保存するには、紐づける圃場（または看板）が必要です。マップから選択してください。");
             return;
           }
-          // 非圃場作業: 技術上の保存先として看板を1つ使う（なければエラー）
-          const signId = Object.keys(loadedPolygons).find(id => loadedPolygons[id] && loadedPolygons[id].isMarker);
-          if (signId) {
-            targetIds = [signId];
+          // 非畜場作業: 技術上の保存先が必要（表示用の場所名には使わない）
+          if (activePolyId && loadedPolygons[activePolyId]) {
+            targetIds = [activePolyId];
           } else {
-            customAlert("保存先となる看板が見つかりません。地図に看板を登録するか、拠点看板から記録を開いてください。");
-            return;
+            const signId = Object.keys(loadedPolygons).find(id => loadedPolygons[id] && loadedPolygons[id].isMarker);
+            if (signId) {
+              targetIds = [signId];
+            } else {
+              customAlert("保存先となる看板が見つかりません。地図に看板を登録するか、拠点看板から記録を開いてください。");
+              return;
+            }
           }
         }
         selectedPolyIds = targetIds;
@@ -4340,8 +4344,13 @@ function createSignboardMarker(name, pos, icon, id) {
           }
 
           const keptUrls = existingUrlsInEdit.filter(u=>u!==null);
-          const nameStr = selectedPolyIds.map(i => loadedPolygons[i] ? loadedPolygons[i].name : "").join(', ');
-          data.multiFieldNames = nameStr;
+          // ?????????????????????????????????????????
+          const fieldNames = selectedPolyIds
+            .filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker)
+            .map(id => loadedPolygons[id].name)
+            .filter(Boolean);
+          const nameStr = fieldNames.join(', ') || selectedPolyIds.map(i => loadedPolygons[i] ? loadedPolygons[i].name : "").filter(Boolean).join(', ');
+          data.multiFieldNames = fieldNames.join(', ');
 
           if (currentEditRecordId) {
               let updated = await callGAS('updateRecordItem', {id: activePolyId, recordId: currentEditRecordId, recordType: currentRecordType, data, photos, keptUrls, userName: currentUser});

@@ -497,7 +497,7 @@
       a.records.forEach((r) => {
         html += `<div style="padding:8px 10px; border-bottom:1px solid #f0f0f0; font-size:12px;">`;
         html += `<b>${minsToHm(r.start)}〜${minsToHm(r.end)}</b> ${r.name}`;
-        if (r.multiFieldNames) {
+        if (r.multiFieldNames && r.multiFieldNames.includes(',')) {
           html += ` <span style="color:#1565c0;">（${r.multiFieldNames}）</span>`;
         }
         html += `</div>`;
