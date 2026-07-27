@@ -69,7 +69,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
               : 0;
 
           if (workRecordCount > 0) {
-              const msg = `?????????????${workRecordCount}?????????????????????????????????n???????????????????????????????????????????????????;
+              const msg = `\u672C\u65E5\u306E\u4F5C\u696D\u8A18\u9332\uFF08${workRecordCount}\u4EF6\uFF09\u304C\u5B58\u5728\u3059\u308B\u305F\u3081\u3001\u51FA\u52E4\u3092\u53D6\u308A\u6D88\u305B\u307E\u305B\u3093\u3002\n\u51FA\u52E4\u3092\u53D6\u308A\u6D88\u3059\u306B\u306F\u3001\u307E\u305A\u672C\u65E5\u306E\u4F5C\u696D\u8A18\u9332\u3092\u524A\u9664\u3057\u3066\u304F\u3060\u3055\u3044\u3002`;
               if (typeof customAlert === 'function') {
                   customAlert(msg);
               } else {
@@ -874,7 +874,7 @@ async function fetchTyphoonInfo() {
       try {
         let typhoons = data.map(t => {
           let num = t.typhoonNumber ? parseInt(t.typhoonNumber.substring(2)) : 0;
-          return num ? `???${num}?? : null;
+          return num ? `\u53F0\u98A8${num}\u53F7` : null;
         }).filter(Boolean);
         
         if (typhoons.length > 0) {
@@ -1319,23 +1319,23 @@ function createSignboardMarker(name, pos, icon, id) {
             const newMat = await callGAS('addMaterialToSign', { name, size, volUnit, stockUnit, initialStock: initStock, photos, signId, signName, userName: currentUser });
             pdlMaterials.push(newMat);
             document.getElementById('modal').style.display = 'none'; 
-            customAlert(`??${name}???????????????????????);
+            customAlert(`\u2705${name}\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f`);
             openInventoryUI(signId); 
-         } catch(e) { document.getElementById('modal').style.display = 'none'; customAlert("?????????????????: " + e.message); openInventoryUI(signId); }
+         } catch(e) { document.getElementById('modal').style.display = 'none'; customAlert("\u8ffd\u52a0\u306b\u5931\u6557\u3057\u307e\u3057\u305f: " + e.message); openInventoryUI(signId); }
       };
 
       window.execInventoryUpdate = async (matId, matName, signId, signName, direction) => {
-         const actionName = direction > 0 ? "???" : "???";
-         const numStr = await customPrompt(`${matName} ????????${actionName}?????????\n????????????????????????, "1");
+         const actionName = direction > 0 ? "\u5165\u5eab" : "\u51fa\u5eab";
+         const numStr = await customPrompt(`${matName} \u306e${actionName}\u6570\u91cf\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044\n\uff08\u6570\u5024\u306e\u307f\uff09`, "1");
          if (!numStr) return; 
          const num = parseInt(numStr);
-         if (isNaN(num) || num <= 0) { customAlert("??????????????????????????"); return; }
-         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>?????...</div>";
+         if (isNaN(num) || num <= 0) { customAlert("\u6b63\u3057\u3044\u6570\u5024\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044"); return; }
+         document.getElementById('rightPanelContent').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>\u66f4\u65b0\u4e2d...</div>";
          try {
             const newStock = await callGAS('updateInventory', { materialId: matId, materialName: matName, signId, signName, amount: num * direction, userName: currentUser });
             updateLocalStock(matId, newStock, signId);
-            customAlert(`??${actionName}????????????????n????????: ${newStock}`);
-         } catch(e) { customAlert("?????????????????: " + e.message); openInventoryUI(signId); }
+            customAlert(`\u2705${actionName}\u5b8c\u4e86\n\u73fe\u5728\u5eab: ${newStock}`);
+         } catch(e) { customAlert("\u66f4\u65b0\u306b\u5931\u6557\u3057\u307e\u3057\u305f: " + e.message); openInventoryUI(signId); }
       };
 
       window.executeNavigation = (id) => {
@@ -1922,7 +1922,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const poly = loadedPolygons[pid];
           if (!poly || poly.isMarker) return;
           const uneCount = window.getCadUneCount(poly);
-          const uneLabel = uneCount > 0 ? `${uneCount}?? : '??????';
+          const uneLabel = uneCount > 0 ? `${uneCount}\u755D` : '\u672A\u8A2D\u5B9A';
           let lastNext = '';
           if (poly.photos) {
             const pastWorks = poly.photos.filter(ph => ph.type === 'work' && ph.data && ph.data.nextRidge).sort((a,b) => {
@@ -2435,7 +2435,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (w.crops && Array.isArray(w.crops) && w.crops.length) {
               cropList = w.crops;
             } else if (w.cropName) {
-              cropList = String(w.cropName).split(/[,??/).map(s => s.trim()).filter(Boolean);
+              cropList = String(w.cropName).split(/[,??]/).map(s => s.trim()).filter(Boolean);
             }
             if (!cropList.length || cropList.includes('????') || cropList.includes('__common__')) return true;
 
@@ -2463,7 +2463,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         if (!detailsStr) return [];
-        return String(detailsStr).split(/[,??/).map(s => s.trim()).filter(Boolean);
+        return String(detailsStr).split(/[,??]/).map(s => s.trim()).filter(Boolean);
       };
 
       window.getCropOptionsForCategory = (category, p) => {
@@ -2684,7 +2684,7 @@ function createSignboardMarker(name, pos, icon, id) {
         return str.split(',').map(s => {
            const item = s.trim();
            if (!item) return null;
-           const match = item.match(/^(.+?)\s*[\(??(\d+(?:\.\d+)?)\s*???[\)??$/);
+           const match = item.match(/^(.+?)\s*[\uFF08(](\d+(?:\.\d+)?)\s*\u5206?[\uFF09)]$/);
            if (match) {
               return { name: match[1].trim(), minutes: match[2] };
            }
@@ -2846,11 +2846,11 @@ function createSignboardMarker(name, pos, icon, id) {
          
          if(machine) {
             if(machine.parts) {
-               const partsList = machine.parts.split(/[,??/).map(s => s.trim()).filter(String);
+               const partsList = machine.parts.split(/[,??]/).map(s => s.trim()).filter(String);
                partsSelect.innerHTML += partsList.map(p => `<option value="${p}">${p}</option>`).join('');
             }
             if(machine.symptoms && symptomSelect) { // ???????????????????????
-               const sympList = machine.symptoms.split(/[,??/).map(s => s.trim()).filter(String);
+               const sympList = machine.symptoms.split(/[,??]/).map(s => s.trim()).filter(String);
                symptomSelect.innerHTML += sympList.map(s => `<option value="${s}">${s}</option>`).join('');
             }
          }
@@ -2861,8 +2861,8 @@ function createSignboardMarker(name, pos, icon, id) {
         if(crop && pdlCrops) {
            const cData = pdlCrops.find(c => c.name === crop);
            const disp = document.getElementById('disp_plant_density');
-           if(cData && cData.density && disp) { disp.innerText = `${Math.floor((loadedPolygons[activePolyId].area / 10) * cData.density).toLocaleString()} ??; }
-           else if (disp) { disp.innerText = `-- ??; }
+           if(cData && cData.density && disp) { disp.innerText = `${Math.floor((loadedPolygons[activePolyId].area / 10) * cData.density).toLocaleString()} ??`; }
+           else if (disp) { disp.innerText = `-- ??`; }
         }
       };
       
@@ -3011,7 +3011,7 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.buildWorkerDetailWorksHtml = (containerId, detailWorksStr) => {
-          const items = String(detailWorksStr || '').split(/[,??/).map(s => s.trim()).filter(Boolean);
+          const items = String(detailWorksStr || '').split(/[,??]/).map(s => s.trim()).filter(Boolean);
           const rows = (items.length ? items : ['']).map((item) => {
               const safe = String(item).replace(/"/g, '&quot;');
               return `<div class="detail-work-row" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
@@ -3098,7 +3098,7 @@ function createSignboardMarker(name, pos, icon, id) {
               const safe = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               const details = String(w.detailWorks || '').trim();
               const detailPreview = details
-                  ? `<div style="font-size:11px; color:#666; margin-top:4px; line-height:1.35;">???: ${details.split(/[,??/).map(s => s.trim()).filter(Boolean).slice(0, 6).join(' / ')}${details.split(/[,??/).filter(s => s.trim()).length > 6 ? ' ??' : ''}</div>`
+                  ? `<div style="font-size:11px; color:#666; margin-top:4px; line-height:1.35;">???: ${details.split(/[,??]/).map(s => s.trim()).filter(Boolean).slice(0, 6).join(' / ')}${details.split(/[,??]/).filter(s => s.trim()).length > 6 ? ' ??' : ''}</div>`
                   : `<div style="font-size:11px; color:#bbb; margin-top:4px;">??????????</div>`;
               return `<div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; margin-bottom:8px; background:#fafafa;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
@@ -3216,7 +3216,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const orig = String(originalName || '').trim();
           if (mode === 'add' || (mode === 'edit' && name !== orig)) {
               if ((pdlWorkMaster || []).some(w => String(w.name || '').trim() === name)) {
-                  if (typeof customAlert === 'function') customAlert(`????????${name}?????????????????????);
+                  if (typeof customAlert === 'function') customAlert(`????????${name}?????????????????????`);
                   return;
               }
           }
@@ -3315,7 +3315,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.parseDetailWorksList = (raw) => {
         if (!raw) return [];
-        return String(raw).split(/[,???\n]/).map(s => s.trim()).filter(Boolean);
+        return String(raw).split(/[,??\n]/).map(s => s.trim()).filter(Boolean);
       };
 
       window.renderDetailWorksSection = (wName) => {
@@ -3414,7 +3414,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
           let details = window.parseDetailWorksList(workData ? workData.detailWorks : '');
           if (details.includes(newDetail)) {
-              if (typeof customAlert === 'function') customAlert(`??${newDetail}?????????????????????);
+              if (typeof customAlert === 'function') customAlert(`??${newDetail}?????????????????????`);
               return;
           }
 
@@ -3443,7 +3443,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }
 
           if (newVal !== oldVal && details.includes(newVal)) {
-              if (typeof customAlert === 'function') customAlert(`??${newVal}?????????????????);
+              if (typeof customAlert === 'function') customAlert(`??${newVal}?????????????????`);
               return;
           }
 
@@ -3463,7 +3463,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (index < 0 || index >= details.length) return;
 
           const targetVal = details[index];
-          if (!await customConfirm(`?????????${targetVal}????????????????)) return;
+          if (!await customConfirm(`\u300C${targetVal}\u300D\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F`)) return;
 
           details.splice(index, 1);
           await window.saveAdminDetailWorks(wName, details, '????');
@@ -3512,11 +3512,11 @@ function createSignboardMarker(name, pos, icon, id) {
               localStorage.removeItem('pMapAdminInitData');
 
               window.renderDetailWorksSection(wName);
-              if (typeof customAlert === 'function') customAlert(`?? ?????????${actionLabel}??????????);
+              if (typeof customAlert === 'function') customAlert(`?? ?????????${actionLabel}??????????`);
           } catch (e) {
               console.warn('saveAdminDetailWorks Error:', e);
               window.renderDetailWorksSection(wName);
-              if (typeof customAlert === 'function') customAlert(`????????????????${actionLabel}?????????????: ${e.message || e}??);
+              if (typeof customAlert === 'function') customAlert(`????????????????${actionLabel}?????????????: ${e.message || e}??`);
           }
       };
 
@@ -4744,7 +4744,7 @@ function createSignboardMarker(name, pos, icon, id) {
                data.maintenanceSymptom = inputSymptom; 
                
                if (toolObj && inputSymptom) {
-                   const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,??/).map(s => s.trim()) : [];
+                   const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,??]/).map(s => s.trim()) : [];
                    if (!currentSymp.includes(inputSymptom)) {
                        await callGAS('addMachineSymptom', { machineId: tId, newSymptom: inputSymptom });
                        toolObj.symptoms = toolObj.symptoms ? toolObj.symptoms + "," + inputSymptom : inputSymptom;
@@ -4960,7 +4960,7 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.openScheduleList = () => {
-        document.getElementById('rightPanelTitle').innerText = `?? ???????????;
+        document.getElementById('rightPanelTitle').innerText = `?? ???????????`;
         document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:50px;">?????...</div>';
         document.getElementById('rightPanelFooter').innerHTML = `<button onclick="closeRightPanel()" style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">?????</button>`;
         document.getElementById('rightPanel').classList.add('open');
@@ -5050,7 +5050,7 @@ function createSignboardMarker(name, pos, icon, id) {
       // ==========================================
       window.openMachineStatusUI = (signId) => {
           const p = loadedPolygons[signId];
-          document.getElementById('rightPanelTitle').innerText = `?? ?????????????;
+          document.getElementById('rightPanelTitle').innerText = `?? ?????????????`;
 
           const machinesHere = pdlMachines.filter(m => m.signId === signId || m.currentLocId === signId);
 
@@ -5164,7 +5164,7 @@ function createSignboardMarker(name, pos, icon, id) {
       // ==========================================
       window.parseWorkCategoryList = (raw) => {
          return String(raw || '')
-            .split(/[,??/)
+            .split(/[,??]/)
             .map(s => s.trim())
             .filter(Boolean);
       };
@@ -5481,7 +5481,7 @@ const name = document.getElementById('new_mac_name').value.trim();
             currentLocId: newMac.signId
         });
             document.getElementById('modal').style.display = 'none'; 
-            customAlert(`??${name}?????????????????????????n??${signName}????????????????);
+            customAlert(`??${name}?????????????????????????n??${signName}????????????????`);
             if (window._openMachineFromIrrigation) {
               window._openMachineFromIrrigation = false;
               if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
@@ -5799,7 +5799,7 @@ const name = document.getElementById('new_mac_name').value.trim();
                   if (!m.targetMachineIds) return false;
                   
                   // ?????????????????????????????????????????
-                  const targetIds = String(m.targetMachineIds).split(/[,??/).map(id => id.trim());
+                  const targetIds = String(m.targetMachineIds).split(/[,??]/).map(id => id.trim());
                   
                   // ??????????????
                   return targetIds.includes(cleanMId);
@@ -6096,7 +6096,7 @@ const name = document.getElementById('new_mac_name').value.trim();
               // ????????????????????????????????????????
               t.status = newStatus;
               document.getElementById('modal').style.display = 'none';
-              customAlert(`???????${newStatus}????????????????);
+              customAlert(`???????${newStatus}????????????????`);
               openToolManagementUI(t.signId); // ???????????
           } catch(e) {
               document.getElementById('modal').style.display = 'none';
@@ -6645,24 +6645,24 @@ window.parseAutoRecord = (text) => {
 
     // 4. ?????????
     // ????? (??: "10:30", "14??", "9???")
-    const timeRegex = /(\d{1,2})[:??(\d{1,2})?(?:????)?/g;
+    const timeRegex = /(\d{1,2})[:\u6642](\d{1,2})?(?:\u5206)?/g;
     let times = [];
     let match;
     while ((match = timeRegex.exec(text)) !== null) {
         let hour = match[1].padStart(2, '0');
         let minStr = match[2];
-        if (!minStr && match[0].includes('??')) minStr = '30';
+        if (!minStr && match[0].includes('\u534A')) minStr = '30';
         let minute = (minStr || '00').padStart(2, '0');
         times.push(`${hour}:${minute}`);
     }
     
     // ????? (??: "2???", "1.5???", "30??")
     let durationMins = 0;
-    const durationHourMatch = text.match(/(\d+(?:\.\d+)?)???/);
+    const durationHourMatch = text.match(/(\d+(?:\.\d+)?)\u6642\u9593/);
     if (durationHourMatch) durationMins += parseFloat(durationHourMatch[1]) * 60;
-    const durationMinMatch = text.match(/(\d+)??/);
-    if (durationMinMatch && !text.includes('??' + durationMinMatch[1] + '??')) {
-        // "10??30??" ???????????????????????????
+    const durationMinMatch = text.match(/(\d+)\u5206/);
+    if (durationMinMatch && !text.includes('\u6642' + durationMinMatch[1] + '\u5206')) {
+        // "10\u664230\u5206" no add as duration
         durationMins += parseInt(durationMinMatch[1]);
     }
 
@@ -6712,11 +6712,11 @@ window.executeAutoRecord = async () => {
         let remaining = text;
         if (data.polyId && loadedPolygons[data.polyId]) remaining = remaining.replace(loadedPolygons[data.polyId].name, '');
         if (data.cropName) remaining = remaining.replace(data.cropName, '');
-        remaining = remaining.replace(/(\d{1,2})[:??(\d{1,2})?(?:????)?/g, '');
-        remaining = remaining.replace(/(\d+(?:\.\d+)?)???/g, '');
-        remaining = remaining.replace(/(\d+)??/g, '');
-        // ??????????????????????????????????
-        remaining = remaining.replace(/[????????????]/g, ' ').replace(/\s+/g, ' ').trim();
+        remaining = remaining.replace(/(\d{1,2})[:\u6642](\d{1,2})?(?:\u5206)?/g, '');
+        remaining = remaining.replace(/(\d+(?:\.\d+)?)\u6642\u9593/g, '');
+        remaining = remaining.replace(/(\d+)\u5206/g, '');
+        // strip common particles / punctuation
+        remaining = remaining.replace(/[\u3067\u3092\u306B\u306E\u304C\u3068\u3078\u304B\u3089\u307E\u3067\u3001\u3002]/g, ' ').replace(/\s+/g, ' ').trim();
         if (remaining) {
             data.workName = remaining.split(' ')[0]; // ????????????
             data.isNewWork = true; // ????????????
@@ -6965,7 +6965,7 @@ window.formatWorkRecordDateLabel = function(ymd) {
     if (parts.length < 3 || parts.some((n) => isNaN(n))) return ymd;
     const dt = new Date(parts[0], parts[1] - 1, parts[2]);
     const week = ['??', '??', '??', '??', '??', '??', '??'][dt.getDay()];
-    return `${parts[1]}/${parts[2]}??${week}??;
+    return `${parts[1]}/${parts[2]}??${week}??`;
 };
 
 /** ????????????????????? loadedPolygons ?????????llowedYmds ??????????????? */
@@ -7120,7 +7120,7 @@ function formatAttendanceDateLabel(ymd) {
     if (parts.length < 3 || parts.some((n) => isNaN(n))) return ymd;
     const dt = new Date(parts[0], parts[1] - 1, parts[2]);
     const week = ['??', '??', '??', '??', '??', '??', '??'][dt.getDay()];
-    return `${parts[1]}/${parts[2]}??${week}??;
+    return `${parts[1]}/${parts[2]}??${week}??`;
 }
 
 function isClockInType(type) {
@@ -7262,7 +7262,7 @@ function summarizeMyAttendanceList(rows, userName) {
                 dateYmd: (openIn && openIn.ymd) || ev.ymd,
                 inTime: openIn ? formatTrackingClockTime(openIn.time) : '??',
                 outTime: formatTrackingClockTime(ev.time),
-                note: String(ev.type).indexOf('????(') === 0 ? String(ev.type).replace(/^????(|\)$/g, '') : '',
+                note: String(ev.type).indexOf('\u9000\u52E4(') === 0 ? String(ev.type).replace(/^\u9000\u52E4\(|\)$/g, '') : '',
                 open: false,
                 sortKey: openIn ? openIn.sortKey : ev.sortKey
             });
