@@ -6393,7 +6393,69 @@ function getLocalClockInHint(targetYmd) {
     }
 }
 
-/** 出退勤イベントを日付ごとのセッション一覧にまとめる（新しい日付が先） */
+/** 作業記録データから日付ごとの最早開始時間・最遅終了時間を抽出する */
+function getWorkRecordAttendanceSummaryMap(userName) {
+    const normUser = (userName || '').replace(/\s+/g, '');
+    const seenIds = new Set();
+    const map = {};
+
+    const normalizeDate = (typeof window.normalizeDateStr === 'function')
+        ? window.normalizeDateStr
+        : (str) => {
+            if (!str) return '';
+            const bits = String(str).split(/[\/\-.]/);
+            if (bits.length === 3) return `${bits[0]}-${bits[1].padStart(2, '0')}-${bits[2].padStart(2, '0')}`;
+            return String(str);
+          };
+
+    const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : (window.loadedPolygons || {});
+
+    for (let pid in polys) {
+        const p = polys[pid];
+        if (p && p.photos && Array.isArray(p.photos)) {
+            p.photos.forEach(ph => {
+                if (!ph) return;
+                const recId = ph.id || (ph.data && ph.data.recordId);
+                if (recId && seenIds.has(recId)) return;
+                if (recId) seenIds.add(recId);
+
+                const isWorkRecord = (ph.type === 'work') || (ph.data && ph.data.workName);
+                if (isWorkRecord && ph.data) {
+                    const phAuthor = String(ph.author || '').replace(/\s+/g, '');
+                    const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
+                    if (isAuthorMatch) {
+                        const dateYmd = normalizeDate(ph.data.workDate) || normalizeDate(ph.date);
+                        if (!dateYmd) return;
+
+                        const startTime = (ph.data.startTime || '').trim();
+                        const endTime = (ph.data.endTime || '').trim();
+
+                        if (!map[dateYmd]) {
+                            map[dateYmd] = { minStart: null, maxEnd: null, hasOpen: false, count: 0 };
+                        }
+                        map[dateYmd].count++;
+
+                        if (startTime) {
+                            if (!map[dateYmd].minStart || startTime < map[dateYmd].minStart) {
+                                map[dateYmd].minStart = startTime;
+                            }
+                        }
+                        if (endTime) {
+                            if (!map[dateYmd].maxEnd || endTime > map[dateYmd].maxEnd) {
+                                map[dateYmd].maxEnd = endTime;
+                            }
+                        } else {
+                            map[dateYmd].hasOpen = true;
+                        }
+                    }
+                }
+            });
+        }
+    }
+    return map;
+}
+
+/** 出退勤イベントを作業記録とあわせて日付ごとのセッション一覧にまとめる（新しい日付が先） */
 function summarizeMyAttendanceList(rows, userName) {
     const normUser = (userName || '').replace(/\s+/g, '');
     const events = (rows || [])
@@ -6457,6 +6519,42 @@ function summarizeMyAttendanceList(rows, userName) {
             }
         }
     }
+
+    // 作業記録データとのマージ（打刻ログ補正 ＋ 打刻が無い日の自動生成）
+    const workMap = getWorkRecordAttendanceSummaryMap(userName);
+    const existingDates = new Set(sessions.map(s => s.dateYmd));
+
+    // A. 既存の打刻セッションへの補正
+    sessions.forEach(s => {
+        const wInfo = workMap[s.dateYmd];
+        if (wInfo) {
+            if (s.inTime === '—' && wInfo.minStart) {
+                s.inTime = wInfo.minStart;
+                s.note = s.note ? `${s.note} (作業記録より)` : '作業記録より';
+            }
+            if (s.outTime === '未登録' && wInfo.maxEnd && !s.open) {
+                s.outTime = wInfo.maxEnd;
+                s.note = s.note ? `${s.note} (作業記録より)` : '作業記録より';
+            }
+        }
+    });
+
+    // B. 打刻ログが無いが作業記録が存在する日付の自動カード作成
+    Object.keys(workMap).forEach(ymd => {
+        if (!existingDates.has(ymd)) {
+            const wInfo = workMap[ymd];
+            const inTimeStr = wInfo.minStart || '—';
+            const outTimeStr = wInfo.maxEnd ? wInfo.maxEnd : (wInfo.hasOpen ? '未登録' : (wInfo.minStart ? wInfo.minStart : '—'));
+            sessions.push({
+                dateYmd: ymd,
+                inTime: inTimeStr,
+                outTime: outTimeStr,
+                note: `作業記録より算出 (${wInfo.count}件)`,
+                open: wInfo.hasOpen && !wInfo.maxEnd,
+                sortKey: new Date(`${ymd}T${inTimeStr !== '—' ? inTimeStr : '00:00'}:00`).getTime() || 0
+            });
+        }
+    });
 
     // 日付新しい順 → 同日内は時刻順
     sessions.sort((a, b) => {

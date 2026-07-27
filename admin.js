@@ -726,17 +726,18 @@ window.getMachineCategoryOptionsHtml = window.getMachineGroupOptionsHtml;
 let currentActiveMasterType = null;
 
 window.getMasterTypeInfo = (type) => {
+    // pdl* は script スコープの let（window には載らない）。農機のみ window.pdlMachines を使う。
     const listMap = {
-        crop: { title: '🌱 作物マスタ', desc: '作物の種類と標準栽植密度の設定', list: window.pdlCrops || [] },
-        sign: { title: '🪧 看板機能マスタ', desc: '看板の機能分類・用途の設定', list: window.pdlSignFunctions || [] },
-        location: { title: '🏢 拠点マスタ', desc: '拠点名・都道府県・産地データの設定', list: (window.pdlLocationDetails && window.pdlLocationDetails.length) ? window.pdlLocationDetails : (window.pdlLocations || []) },
-        workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: window.pdlWorkCategories || [] },
-        machineType: { title: '🏷️ 機械カテゴリマスタ', desc: '車両・農機のカテゴリ区分設定', list: window.pdlMachineTypes || [] },
-        machineGroup: { title: '📁 機械グループマスタ', desc: '車両・農機のグループ設定', list: window.pdlMachineGroups || [] },
-        work: { title: '📋 作業記録マスタ', desc: '作業項目および詳細作業名リストの設定', list: window.pdlWorkMaster || [] },
+        crop: { title: '🌱 作物マスタ', desc: '作物の種類と標準栽植密度の設定', list: pdlCrops || [] },
+        sign: { title: '🪧 看板機能マスタ', desc: '看板の機能分類・用途の設定', list: pdlSignFunctions || [] },
+        location: { title: '🏢 拠点マスタ', desc: '拠点名・都道府県・産地データの設定', list: (pdlLocationDetails && pdlLocationDetails.length) ? pdlLocationDetails : (pdlLocations || []) },
+        workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: pdlWorkCategories || [] },
+        machineType: { title: '🏷️ 機械カテゴリマスタ', desc: '車両・農機のカテゴリ区分設定', list: pdlMachineTypes || [] },
+        machineGroup: { title: '📁 機械グループマスタ', desc: '車両・農機のグループ設定', list: pdlMachineGroups || [] },
+        work: { title: '📋 作業記録マスタ', desc: '作業項目および詳細作業名リストの設定', list: pdlWorkMaster || [] },
         machine: { title: '🚜 農機マスタ', desc: '管理車両・農業機械・機番・拠点・定位置の設定', list: window.pdlMachines || [] },
-        tool: { title: '🔧 道具マスタ', desc: '使用道具・備品と対応作業の設定', list: window.pdlTools || [] },
-        material: { title: '📦 資材マスタ', desc: '使用資材・規格・単位と対応作業の設定', list: window.pdlMaterials || [] }
+        tool: { title: '🔧 道具マスタ', desc: '使用道具・備品と対応作業の設定', list: pdlTools || [] },
+        material: { title: '📦 資材マスタ', desc: '使用資材・規格・単位と対応作業の設定', list: pdlMaterials || [] }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
 };
