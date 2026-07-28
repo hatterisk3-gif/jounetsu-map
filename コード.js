@@ -108,6 +108,7 @@ function doPost(e) {
     else if (action === "getUserGmail") result = getUserGmail(params);
     else if (action === "getTodayGoogleCalendarEvents") result = getTodayGoogleCalendarEvents(params);
     else if (action === "getScriptAuthorizationInfo") result = getScriptAuthorizationInfo(params);
+    else if (action === "getLotList") result = getLotList(params);
 
 
 
@@ -2590,7 +2591,9 @@ function getOrCreateCropColor(cropName) {
 // ==========================================
 function saveGlobalHarvest(params) {
   const ss = TENANT_SS;
-  const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
+  const targetDateStr = params.date
+    ? Utilities.formatDate(new Date(params.date.replace(/-/g, '/')), "JST", "yyyy/MM/dd")
+    : Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
   const time = Utilities.formatDate(new Date(), "JST", "HH:mm");
   
   // ① 圃場マスタから 圃場名 => 拠点名 の辞書を作る
@@ -2605,7 +2608,7 @@ function saveGlobalHarvest(params) {
     }
   }
 
-  // ② 今日の「作業記録」から、指定拠点＆指定作物の「収穫」を行った畑を自動検索
+  // ② 指定日の「作業記録」から、指定拠点＆指定作物の「収穫」を行った畑を自動検索
   const workSheet = ss.getSheetByName('作業記録');
   let harvestedFields = [];
   if (workSheet) {
@@ -2622,7 +2625,7 @@ function saveGlobalHarvest(params) {
            const fieldLoc = fieldLocationMap[fieldName] || '未設定';
 
            // 日付、収穫作業、作物名、そして【拠点】が完全に一致するか判定！
-           if (recordDate === today && wName.includes('収穫') && cropName === params.crop && fieldLoc === params.location) {
+           if (recordDate === targetDateStr && wName.includes('収穫') && cropName === params.crop && fieldLoc === params.location) {
               harvestedFields.push(fieldName);
            }
          }
@@ -2654,7 +2657,7 @@ function saveGlobalHarvest(params) {
   // A:ID, B:日時, C:生成者, D:作物名, E:圃場名, F:コンテナ種類, G:初期数, H:残数, I:ステータス, J:拠点, K:内容単位, L:内容個数
   lotSheet.appendRow([
     lotId,
-    today + " " + time,
+    targetDateStr + " " + time,
     params.author,
     params.crop,
     fieldNamesStr,
@@ -2667,9 +2670,96 @@ function saveGlobalHarvest(params) {
     contentQty === '' ? '' : contentQty
   ]);
   
-  writeLog(params.author, "一括ロット生成", lotId, `拠点: ${params.location}, 作物: ${params.crop}, 内容: ${contentQty}${contentUnit}, 自動紐付: ${fieldNamesStr}`);
+  writeLog(params.author, "一括ロット生成", lotId, `拠点: ${params.location}, 日付: ${targetDateStr}, 作物: ${params.crop}, 内容: ${contentQty}${contentUnit}, 自動紐付: ${fieldNamesStr}`);
   return { lotId: lotId, fields: fieldNamesStr, contentUnit: contentUnit, contentQty: contentQty };
 }
+
+/**
+ * ロット記録一覧を返す。
+ * params.status: 'all' | 'active' | '使用中' | '出荷済' | '完了' など
+ * params.location: 拠点名（空ならすべて）
+ * params.limit: 最大件数（既定 200）
+ */
+function getLotList(params) {
+  params = params || {};
+  const statusFilter = String(params.status || 'all').trim();
+  const locationFilter = String(params.location || '').trim();
+  const limit = Math.max(1, Math.min(500, parseInt(params.limit, 10) || 200));
+  const lotSheet = ssGetLotSheet_();
+  if (!lotSheet) return { lots: [], total: 0 };
+
+  ensureLotRecordContentHeaders_(lotSheet);
+  const data = lotSheet.getDataRange().getValues();
+  if (data.length <= 1) return { lots: [], total: 0 };
+
+  const head = data[0].map(h => String(h).trim());
+  const idx = {
+    lotId: 0,
+    createdAt: 1,
+    author: 2,
+    crop: 3,
+    fields: 4,
+    containerType: 5,
+    initialCount: 6,
+    remain: 7,
+    status: 8,
+    location: head.indexOf('拠点') >= 0 ? head.indexOf('拠点') : 9,
+    contentUnit: head.indexOf('内容単位') >= 0 ? head.indexOf('内容単位') : 10,
+    contentQty: head.indexOf('内容個数') >= 0 ? head.indexOf('内容個数') : 11
+  };
+
+  const lots = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const lotId = String(row[idx.lotId] || '').trim();
+    if (!lotId) continue;
+    const status = String(row[idx.status] || '').trim() || '使用中';
+    const location = String(row[idx.location] || '').trim() || '未設定';
+
+    if (statusFilter === 'active') {
+      if (status === '完了' || status === '出荷済') continue;
+    } else if (statusFilter !== 'all' && statusFilter) {
+      if (status !== statusFilter) continue;
+    }
+    if (locationFilter && locationFilter !== 'all' && location !== locationFilter) continue;
+
+    let createdAt = row[idx.createdAt];
+    if (createdAt instanceof Date && !isNaN(createdAt.getTime())) {
+      createdAt = Utilities.formatDate(createdAt, 'JST', 'yyyy/MM/dd HH:mm');
+    } else {
+      createdAt = String(createdAt || '').trim();
+    }
+
+    lots.push({
+      lotId: lotId,
+      createdAt: createdAt,
+      author: String(row[idx.author] || '').trim(),
+      crop: String(row[idx.crop] || '').trim(),
+      fields: String(row[idx.fields] || '').trim(),
+      containerType: String(row[idx.containerType] || '').trim(),
+      initialCount: row[idx.initialCount] != null ? row[idx.initialCount] : '',
+      remain: row[idx.remain] != null ? row[idx.remain] : '',
+      status: status,
+      location: location,
+      contentUnit: String(row[idx.contentUnit] || '').trim(),
+      contentQty: row[idx.contentQty] != null && row[idx.contentQty] !== '' ? row[idx.contentQty] : ''
+    });
+  }
+
+  // 新しい順（下の行が新しい想定。生成日時でもソート）
+  lots.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt), 'ja'));
+  const total = lots.length;
+  return { lots: lots.slice(0, limit), total: total };
+}
+
+function ssGetLotSheet_() {
+  try {
+    return TENANT_SS ? TENANT_SS.getSheetByName('ロット記録') : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // ==========================================
 // 📦 出荷記録処理
 // ==========================================

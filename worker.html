@@ -151,6 +151,10 @@
           style="background: #66BB6A; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜
           収穫記録</button>
         <button
+          onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openLotList()"
+          style="background: #43A047; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📋
+          ロット一覧</button>
+        <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openGlobalShipping()"
           style="background: #FB8C00; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📦
           出荷記録</button>
@@ -297,7 +301,7 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-  <script src="worker.js?v=1785311000023"></script>
+  <script src="worker.js?v=1785311000026"></script>
   <script src="tracking.js?v=1784615000008"></script>
   <script>
     if ('serviceWorker' in navigator) {

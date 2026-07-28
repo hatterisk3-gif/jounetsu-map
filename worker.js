@@ -2007,9 +2007,33 @@ function createSignboardMarker(name, pos, icon, id) {
         el.value = start;
         if (opts.markAutofill) el.setAttribute('data-autofill', '1');
         else if (opts.clearAutofill) el.removeAttribute('data-autofill');
+        if (opts.source) el.setAttribute('data-start-source', String(opts.source));
         const syncEl = document.getElementById('sync_clockin');
         if (syncEl && opts.syncClockIn != null) syncEl.checked = !!opts.syncClockIn;
         if (typeof calcTotalTime === 'function') calcTotalTime();
+      };
+
+      window._timeToMinsSafe = (hhmm) => {
+        if (!hhmm || !String(hhmm).includes(':')) return null;
+        const [h, m] = String(hhmm).split(':').map(Number);
+        if (isNaN(h) || isNaN(m)) return null;
+        return h * 60 + m;
+      };
+
+      /** 開始時間を更新してよいか（既存より早い時刻への上書きはしない） */
+      window.shouldUpdateStartTime = (current, next, opts = {}) => {
+        if (!next) return false;
+        const cur = String(current || '').trim();
+        if (!cur) return true;
+        if (opts.force) return true;
+        const autofill = !!opts.autofill;
+        const c = window._timeToMinsSafe(cur);
+        const n = window._timeToMinsSafe(next);
+        if (c == null || n == null) return autofill;
+        // 既に入っている開始時刻より早い値では上書きしない（昼休憩終了→午前の作業終了への巻き戻し防止）
+        if (n < c) return false;
+        if (n > c) return true;
+        return autofill; // 同時刻
       };
 
       /** サーバーから軽量ヒントを取得してキャッシュ＆フォーム反映 */
@@ -2050,19 +2074,23 @@ function createSignboardMarker(name, pos, icon, id) {
             if (el) {
               const autofill = el.getAttribute('data-autofill') === '1';
               const cur = String(el.value || '').trim();
-              if (hints.latestEndTime) {
-                const canRaise = !cur || hints.latestEndTime > cur;
-                if (autofill || opts.onlyIfAutofill === false || canRaise) {
-                  window.applyStartTimeToForm(hints.latestEndTime, {
-                    syncClockIn: false,
-                    clearAutofill: true
+              // 昼休憩終了などを含むローカル解決を優先（サーバーの latestEnd だけだと午前作業に巻き戻る）
+              const resolved = (typeof window.resolveDefaultStartTime === 'function')
+                ? window.resolveDefaultStartTime(ymd)
+                : { start: hints.latestEndTime || '', syncClockIn: false, isFallback: false, source: 'hint' };
+              const next = resolved.start || '';
+              if (next && window.shouldUpdateStartTime(cur, next, { autofill: autofill })) {
+                // onlyIfAutofill=true のときは未入力フォールバック中だけ更新
+                if (opts.onlyIfAutofill === true && !autofill && cur) {
+                  // skip
+                } else {
+                  window.applyStartTimeToForm(next, {
+                    syncClockIn: !!resolved.syncClockIn,
+                    clearAutofill: !resolved.isFallback,
+                    markAutofill: !!resolved.isFallback,
+                    source: resolved.source || ''
                   });
                 }
-              } else if (hints.clockInTime && hints.clockInDateYmd === ymd && (autofill || !cur)) {
-                window.applyStartTimeToForm(hints.clockInTime, {
-                  syncClockIn: true,
-                  clearAutofill: true
-                });
               }
             }
           }
@@ -2084,10 +2112,12 @@ function createSignboardMarker(name, pos, icon, id) {
         window.applyStartTimeToForm(resolved.start, {
           markAutofill: resolved.isFallback,
           clearAutofill: !resolved.isFallback,
-          syncClockIn: resolved.syncClockIn
+          syncClockIn: resolved.syncClockIn,
+          source: resolved.source || ''
         });
         // 裏でサーバー確認（フォールバック時やキャッシュ不足時）
-        window.prefetchWorkTimeHints(selectedDate, { applyToForm: true, onlyIfAutofill: resolved.isFallback });
+        // onlyIfAutofill: フォールバック中のみ積極更新。それ以外は「より遅い時刻」だけ反映
+        window.prefetchWorkTimeHints(selectedDate, { applyToForm: true, onlyIfAutofill: !!resolved.isFallback });
       };
 
       window.refreshFieldTargetUI = () => {
@@ -4301,7 +4331,7 @@ function createSignboardMarker(name, pos, icon, id) {
           <div class="form-grid" style="margin-bottom:15px;">
             <div>
               <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
-              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${(!isEdit && resolvedStart.isFallback) ? 'data-autofill="1"' : ''} onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()">
+              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${(!isEdit && resolvedStart.isFallback) ? 'data-autofill="1"' : ''} data-start-source="${(!isEdit && resolvedStart.source) ? String(resolvedStart.source).replace(/"/g, '') : ''}" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()">
               <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
                 <input type="checkbox" id="sync_clockin" ${resolvedStart.syncClockIn ? 'checked' : ''}>出勤時間と同期
               </label>
@@ -5072,6 +5102,25 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       }
 
+      window.updateHarvestTotalDisplay = () => {
+         const containerCount = parseFloat(document.getElementById('gh_count')?.value || '0') || 0;
+         const contentQty = parseFloat(document.getElementById('gh_content_qty')?.value || '0') || 0;
+         const contentUnit = (document.getElementById('gh_content_unit')?.value || '').trim();
+         const displayEl = document.getElementById('gh_total_harvest_display');
+         if (!displayEl) return;
+         if (containerCount > 0 && contentQty > 0) {
+            const total = containerCount * contentQty;
+            const totalStr = Number.isInteger(total) ? total.toString() : total.toFixed(2).replace(/\.?0+$/, '');
+            const unitStr = contentUnit ? ` ${contentUnit}` : '';
+            displayEl.innerHTML = `<span style="font-size:12px; color:#555;">総収穫数:</span> <strong style="font-size:18px; color:#1b5e20;">${totalStr}${unitStr}</strong> <span style="font-size:11px; color:#666;">（${containerCount}コンテナ × ${contentQty}${unitStr}）</span>`;
+         } else if (containerCount > 0) {
+            const unitStr = contentUnit ? ` ${contentUnit}` : '';
+            displayEl.innerHTML = `<span style="font-size:12px; color:#555;">総収穫数:</span> <strong style="font-size:16px; color:#333;">${containerCount} コンテナ</strong>${unitStr ? ` <span style="font-size:11px; color:#888;">(内容個数未設定)</span>` : ''}`;
+         } else {
+            displayEl.innerHTML = `<span style="font-size:12px; color:#888;">総収穫数: --</span>`;
+         }
+      };
+
       window.openGlobalHarvest = () => {
          const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
          let locOpts = pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
@@ -5079,8 +5128,10 @@ function createSignboardMarker(name, pos, icon, id) {
          const adminBar = isAdmin ? `
            <div id="gh_container_admin_bar" style="display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 12px; align-items:center;"></div>
          ` : '';
+         const n = new Date();
+         const todayDate = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
          document.getElementById('modalBody').innerHTML = `<h3 style="color:#4CAF50; margin-top:0;">🚜 収穫記録（ロット生成）</h3>
-           <p style="font-size:12px; color:#666;">※選択した「拠点」で本日「収穫」が行われた圃場が自動で紐付きます。</p>
+           <p style="font-size:12px; color:#666;">※選択した「拠点」で指定日に「収穫」が行われた圃場が自動で紐付きます。</p>
            <label class="form-label">📍 拠点</label>
            <select id="gh_location" class="form-input"><option value="">選択してください</option>${locOpts}</select>
            <label class="form-label">🌱 収穫した作物（品目）</label>
@@ -5089,6 +5140,8 @@ function createSignboardMarker(name, pos, icon, id) {
            <select id="gh_container" class="form-input" onchange="applyHarvestContainerDefaults()"><option value="">選択してください</option></select>
            ${adminBar}
            <div style="font-size:11px; color:#888; margin:-4px 0 12px;">※作物を選ぶと、その品目に登録されたコンテナだけが表示されます</div>
+           <label class="form-label">📦 コンテナ個数</label>
+           <input type="number" id="gh_count" class="form-input" placeholder="例: 10" oninput="updateHarvestTotalDisplay()" min="0">
            <div style="display:flex; gap:10px;">
              <div style="flex:1;">
                <label class="form-label">📏 内容単位</label>
@@ -5100,15 +5153,20 @@ function createSignboardMarker(name, pos, icon, id) {
              </div>
            </div>
            <div style="font-size:11px; color:#888; margin:-8px 0 12px;">※内容単位・内容個数は品目ごとのマスタ設定です（変更は管理者のみ）</div>
-           <label class="form-label">📦 総収穫数（コンテナ数）</label>
-           <input type="number" id="gh_count" class="form-input" placeholder="例: 10">
+           <label class="form-label">📅 収穫日付</label>
+           <input type="date" id="gh_date" class="form-input" value="${todayDate}">
+           <div id="gh_total_harvest_box" style="margin:14px 0; padding:12px 14px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px;">
+             <div id="gh_total_harvest_display" style="font-size:14px; font-weight:bold; color:#2e7d32;">総収穫数: --</div>
+           </div>
            <div style="display:flex; gap:10px; margin-top:15px;">
              <button onclick="submitGlobalHarvest()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">ロット作成</button>
+             <button onclick="openLotList()" style="background:#1565C0; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">📋 一覧</button>
              <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">戻る</button>
            </div>`;
          document.getElementById('modal').style.display = 'flex';
          window.filterHarvestContainers();
          if (isAdmin) window.renderHarvestContainerAdminBar();
+         window.updateHarvestTotalDisplay();
       };
 
       window.getContainerMasterList = () => {
@@ -5168,6 +5226,7 @@ function createSignboardMarker(name, pos, icon, id) {
          unitEl.value = found ? String(found.contentUnit || '') : '';
          qtyEl.value = (found && found.contentQty !== '' && found.contentQty != null) ? String(found.contentQty) : '';
          if (typeof window.renderHarvestContainerAdminBar === 'function') window.renderHarvestContainerAdminBar();
+         window.updateHarvestTotalDisplay();
       };
 
       window.renderHarvestContainerAdminBar = () => {
@@ -5349,18 +5408,24 @@ function createSignboardMarker(name, pos, icon, id) {
          const crop = document.getElementById('gh_crop').value;
          const container = document.getElementById('gh_container').value;
          const count = document.getElementById('gh_count').value;
-         if(!location || !crop || !container || !count) { customAlert("拠点、作物名、コンテナ種類、収穫数をすべて入力してください"); return; }
+         const harvestDate = document.getElementById('gh_date')?.value || '';
+         if(!location || !crop || !container || !count) { customAlert("拠点、作物名、コンテナ種類、コンテナ個数をすべて入力してください"); return; }
          const found = window.findHarvestContainerEntry(container, crop);
          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px;'>ロットを編成中...</div>";
          try {
             const res = await callGAS('saveGlobalHarvest', {
               location, crop, containerType: container, count: parseInt(count),
+              date: harvestDate,
               author: currentUser
             });
             const contentUnit = res.contentUnit != null ? String(res.contentUnit) : (found ? String(found.contentUnit || '').trim() : '');
             const contentQty = (res.contentQty !== '' && res.contentQty != null) ? res.contentQty : ((found && found.contentQty !== '' && found.contentQty != null) ? Number(found.contentQty) || 0 : '');
-            const contentLabel = (contentUnit || contentQty !== '') ? `\n📏 内容: ${contentQty !== '' ? contentQty : ''}${contentUnit}` : '';
-            customAlert(`ロット【${res.lotId}】を作成しました！\n\n📍 拠点: ${location}${contentLabel}\n🔗 自動紐付された圃場:\n${res.fields}`);
+            const totalHarvest = (parseInt(count) || 0) * (parseFloat(contentQty) || 0);
+            const totalFormatted = (totalHarvest > 0) ? (Number.isInteger(totalHarvest) ? totalHarvest.toString() : totalHarvest.toFixed(2).replace(/\.?0+$/, '')) : '';
+            const totalLabel = totalFormatted ? `\n📊 総収穫数: ${totalFormatted} ${contentUnit}` : '';
+            const contentLabel = (contentUnit || contentQty !== '') ? `\n📏 中身: ${contentQty !== '' ? contentQty : ''}${contentUnit}` : '';
+            const dateLabel = harvestDate ? `\n📅 日付: ${harvestDate}` : '';
+            customAlert(`ロット【${res.lotId}】を作成しました！\n\n📍 拠点: ${location}${dateLabel}${contentLabel}${totalLabel}\n🔗 自動紐付された圃場:\n${res.fields}`);
             document.getElementById('modal').style.display = 'none'; if(typeof loadInitData === 'function') loadInitData();
          } catch(e) { customAlert("エラーが発生しました: " + e.message); document.getElementById('modal').style.display = 'none'; }
       };
@@ -5368,8 +5433,103 @@ function createSignboardMarker(name, pos, icon, id) {
       window.openGlobalShipping = () => {
          if(!window.activeLots || window.activeLots.length === 0) { customAlert("現在、出荷可能なロット（使用中）がありません。"); return; }
          let locOpts = pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
-         document.getElementById('modalBody').innerHTML = `<h3 style="color:#FF9800; margin-top:0;">📦 出荷記録</h3><label class="form-label">📍 出荷元の拠点</label><select id="gs_location" class="form-input" onchange="filterShippingLots()"><option value="all">すべての拠点</option>${locOpts}</select><label class="form-label">🚚 出荷先・備考</label><input type="text" id="gs_dest" class="form-input" placeholder="例: 農協、〇〇市場など"><label class="form-label" style="margin-top:10px;">📦 出荷するロットを選択（複数可）</label><div id="gs_lot_container" style="max-height:200px; overflow-y:auto; margin-bottom:10px; padding:2px; background:#fff; border:1px solid #ccc; border-radius:4px;"></div><div style="display:flex; gap:10px; margin-top:15px;"><button onclick="submitGlobalShipping()" style="background:#FF9800; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">出荷登録</button><button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">戻る</button></div>`;
+         document.getElementById('modalBody').innerHTML = `<h3 style="color:#FF9800; margin-top:0;">📦 出荷記録</h3><label class="form-label">📍 出荷元の拠点</label><select id="gs_location" class="form-input" onchange="filterShippingLots()"><option value="all">すべての拠点</option>${locOpts}</select><label class="form-label">🚚 出荷先・備考</label><input type="text" id="gs_dest" class="form-input" placeholder="例: 農協、〇〇市場など"><label class="form-label" style="margin-top:10px;">📦 出荷するロットを選択（複数可）</label><div id="gs_lot_container" style="max-height:200px; overflow-y:auto; margin-bottom:10px; padding:2px; background:#fff; border:1px solid #ccc; border-radius:4px;"></div><div style="display:flex; gap:10px; margin-top:15px;"><button onclick="submitGlobalShipping()" style="background:#FF9800; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">出荷登録</button><button onclick="openLotList()" style="background:#1565C0; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">📋 一覧</button><button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">戻る</button></div>`;
          document.getElementById('modal').style.display = 'flex'; window.filterShippingLots();
+      };
+
+      window._lotListCache = [];
+      window.openLotList = async (opts = {}) => {
+         const status = opts.status || 'all';
+         const location = opts.location || 'all';
+         let locOpts = (pdlLocations || []).map(l =>
+           `<option value="${String(l).replace(/"/g, '&quot;')}" ${location === l ? 'selected' : ''}>${l}</option>`
+         ).join('');
+         document.getElementById('modalBody').innerHTML = `
+           <h3 style="color:#2e7d32; margin-top:0;">📋 ロット一覧</h3>
+           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+             <select id="lot_list_status" class="form-input" style="flex:1; min-width:120px; margin:0;" onchange="refreshLotList()">
+               <option value="all" ${status === 'all' ? 'selected' : ''}>すべて</option>
+               <option value="active" ${status === 'active' ? 'selected' : ''}>使用中のみ</option>
+               <option value="使用中" ${status === '使用中' ? 'selected' : ''}>使用中</option>
+               <option value="出荷済" ${status === '出荷済' ? 'selected' : ''}>出荷済</option>
+               <option value="完了" ${status === '完了' ? 'selected' : ''}>完了</option>
+             </select>
+             <select id="lot_list_location" class="form-input" style="flex:1; min-width:120px; margin:0;" onchange="refreshLotList()">
+               <option value="all">すべての拠点</option>
+               ${locOpts}
+             </select>
+           </div>
+           <input type="search" id="lot_list_q" class="form-input" placeholder="ロットID・作物・コンテナで検索..." style="margin-bottom:10px;" oninput="renderLotListRows()">
+           <div id="lot_list_meta" style="font-size:12px; color:#666; margin-bottom:8px;">読み込み中...</div>
+           <div id="lot_list_body" style="max-height:55vh; overflow-y:auto; border:1px solid #e0e0e0; border-radius:8px; background:#fafafa;"></div>
+           <div style="display:flex; gap:10px; margin-top:12px;">
+             <button onclick="openGlobalHarvest()" style="background:#66BB6A; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">🚜 収穫記録</button>
+             <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">閉じる</button>
+           </div>`;
+         document.getElementById('modal').style.display = 'flex';
+         await window.refreshLotList();
+      };
+
+      window.refreshLotList = async () => {
+         const statusEl = document.getElementById('lot_list_status');
+         const locEl = document.getElementById('lot_list_location');
+         const body = document.getElementById('lot_list_body');
+         const meta = document.getElementById('lot_list_meta');
+         if (!body) return;
+         body.innerHTML = `<div style="padding:20px; text-align:center; color:#888;">読み込み中...</div>`;
+         if (meta) meta.innerText = '読み込み中...';
+         try {
+           const res = await callGAS('getLotList', {
+             status: statusEl ? statusEl.value : 'all',
+             location: locEl ? locEl.value : 'all',
+             limit: 200
+           });
+           window._lotListCache = (res && res.lots) ? res.lots : [];
+           if (meta) meta.innerText = `表示 ${window._lotListCache.length} 件` + ((res && res.total > window._lotListCache.length) ? ` / 全${res.total}件` : '');
+           window.renderLotListRows();
+         } catch (e) {
+           window._lotListCache = [];
+           body.innerHTML = `<div style="padding:16px; color:#c62828; text-align:center;">取得に失敗しました<br><span style="font-size:12px;">${(e && e.message) || e}</span></div>`;
+           if (meta) meta.innerText = '';
+         }
+      };
+
+      window.renderLotListRows = () => {
+         const body = document.getElementById('lot_list_body');
+         if (!body) return;
+         const q = String(document.getElementById('lot_list_q')?.value || '').trim().toLowerCase();
+         let list = window._lotListCache || [];
+         if (q) {
+           list = list.filter(l => {
+             const hay = [l.lotId, l.crop, l.containerType, l.location, l.author, l.fields, l.status]
+               .map(v => String(v || '').toLowerCase()).join(' ');
+             return hay.includes(q);
+           });
+         }
+         if (!list.length) {
+           body.innerHTML = `<div style="padding:20px; text-align:center; color:#888;">該当するロットがありません</div>`;
+           return;
+         }
+         const statusColor = (s) => {
+           if (s === '出荷済') return '#FB8C00';
+           if (s === '完了') return '#757575';
+           return '#2e7d32';
+         };
+         body.innerHTML = list.map(l => {
+           const contentBit = (l.contentUnit || l.contentQty !== '')
+             ? `中身: ${l.contentQty !== '' && l.contentQty != null ? l.contentQty : ''}${l.contentUnit || ''}`
+             : '';
+           return `<div style="padding:12px; border-bottom:1px solid #eee; background:#fff;">
+             <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
+               <div style="font-weight:bold; color:#1565c0; font-size:15px;">${l.lotId}</div>
+               <span style="font-size:11px; font-weight:bold; color:#fff; background:${statusColor(l.status)}; padding:2px 8px; border-radius:10px; white-space:nowrap;">${l.status || '使用中'}</span>
+             </div>
+             <div style="font-size:13px; color:#333; margin-top:4px;">🌱 ${l.crop || '-'} ／ 📦 ${l.containerType || '-'}（残 ${l.remain ?? '-'} / 初期 ${l.initialCount ?? '-'}）</div>
+             <div style="font-size:12px; color:#666; margin-top:2px;">📍 ${l.location || '未設定'}${contentBit ? ` ／ ${contentBit}` : ''}</div>
+             <div style="font-size:11px; color:#888; margin-top:2px;">🕒 ${l.createdAt || '-'} ／ 👤 ${l.author || '-'}</div>
+             ${l.fields ? `<div style="font-size:11px; color:#888; margin-top:2px;">圃場: ${l.fields}</div>` : ''}
+           </div>`;
+         }).join('');
       };
 
       window.filterShippingLots = () => {
