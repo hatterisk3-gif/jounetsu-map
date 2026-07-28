@@ -3993,6 +3993,10 @@ function getWorkRecordTimeHints(params) {
         result.open = true;
         result.clockInTime = openSt.clockInTime || '';
         result.clockInDateYmd = openSt.clockInDateYmd || '';
+        result.lunchRegistered = !!openSt.lunchRegistered;
+        result.lunchEnabled = !!openSt.lunchEnabled;
+        result.lunchStart = openSt.lunchStart || '';
+        result.lunchEnd = openSt.lunchEnd || '';
         // 対象日の出勤なら開始候補に使える
         if (result.clockInDateYmd === dateYmd) {
           // ok
@@ -4058,13 +4062,13 @@ function getWorkRecordTimeHints(params) {
 function getOpenClockInStatus(params) {
   try {
     const userName = String((params && params.userName) || '').replace(/\s+/g, '');
-    if (!userName) return { open: false, forgot: false };
+    if (!userName) return { open: false, forgot: false, lunchRegistered: false };
 
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('トラッキング');
     const todayYmd = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
     if (!sheet || sheet.getLastRow() <= 1) {
-      return { open: false, forgot: false, todayYmd: todayYmd };
+      return { open: false, forgot: false, lunchRegistered: false, todayYmd: todayYmd };
     }
 
     const lastRow = sheet.getLastRow();
@@ -4072,7 +4076,14 @@ function getOpenClockInStatus(params) {
     const numRows = lastRow - startRow + 1;
     const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
 
+    const padHm = (hm) => {
+      const m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return String(hm || '');
+      return ('0' + m[1]).slice(-2) + ':' + m[2];
+    };
+
     let openIn = null;
+    let lunch = null;
     for (let i = 0; i < values.length; i++) {
       const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
       if (!rowUser) continue;
@@ -4088,13 +4099,26 @@ function getOpenClockInStatus(params) {
 
       if (isIn) {
         openIn = { ms: tObj.getTime() };
+        lunch = null;
       } else if (isOut || isCancel) {
         openIn = null;
+        lunch = null;
+      } else if (openIn) {
+        if (type === '昼休憩なし') {
+          lunch = { registered: true, enabled: false, start: '', end: '' };
+        } else if (type.indexOf('昼休憩') === 0) {
+          const m = type.match(/昼休憩[（(]\s*(\d{1,2}:\d{2})\s*[-〜~－–]\s*(\d{1,2}:\d{2})\s*[）)]/);
+          if (m) {
+            lunch = { registered: true, enabled: true, start: padHm(m[1]), end: padHm(m[2]) };
+          } else {
+            lunch = { registered: true, enabled: true, start: '', end: '' };
+          }
+        }
       }
     }
 
     if (!openIn) {
-      return { open: false, forgot: false, todayYmd: todayYmd };
+      return { open: false, forgot: false, lunchRegistered: false, todayYmd: todayYmd };
     }
 
     const clockInDateYmd = Utilities.formatDate(new Date(openIn.ms), 'JST', 'yyyy-MM-dd');
@@ -4104,7 +4128,11 @@ function getOpenClockInStatus(params) {
       forgot: clockInDateYmd < todayYmd,
       clockInDateYmd: clockInDateYmd,
       clockInTime: clockInTime,
-      todayYmd: todayYmd
+      todayYmd: todayYmd,
+      lunchRegistered: !!(lunch && lunch.registered),
+      lunchEnabled: !!(lunch && lunch.enabled),
+      lunchStart: (lunch && lunch.start) || '',
+      lunchEnd: (lunch && lunch.end) || ''
     };
   } catch (e) {
     throw new Error('出退勤状態取得エラー: ' + e.message);

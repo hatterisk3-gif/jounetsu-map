@@ -230,8 +230,68 @@
   window.getActiveClockInDateYmd = getActiveClockInDateYmd;
 
   /**
-   * サーバーの出退勤記録を正として退勤忘れを判定する。
-   * 他端末で退勤済みなら、この端末の古い出勤状態を消して通知しない。
+   * サーバーの出勤中状態をこの端末の localStorage / ボタン表示へ反映する。
+   * （端末を変えても出退勤ボタンが連動するようにする）
+   */
+  function applyOpenClockInFromServer(res) {
+    if (!res || !res.open || res.forgot) return false;
+    try {
+      let lat = 0;
+      let lng = 0;
+      try {
+        const existing = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null');
+        if (existing) {
+          if (existing.lat != null) lat = existing.lat;
+          if (existing.lng != null) lng = existing.lng;
+        }
+      } catch (e) {}
+
+      const dateYmd = res.clockInDateYmd || todayYmd();
+      const time = res.clockInTime || getClockInTimeStr() || '';
+      const clockInState = {
+        lat: lat,
+        lng: lng,
+        time: time,
+        active: true,
+        dateYmd: dateYmd,
+        dateLocale: new Date().toLocaleDateString(),
+        syncedFromServer: true
+      };
+      localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+      localStorage.setItem(
+        'passionMapClockInToday',
+        JSON.stringify({
+          time: time,
+          dateYmd: dateYmd,
+          date: clockInState.dateLocale
+        })
+      );
+
+      // 昼休憩もサーバー記録を正として同期（他端末で登録済みなら退勤ボタンへ）
+      if (res.lunchRegistered === true) {
+        saveLunchBreak({
+          registered: true,
+          enabled: !!res.lunchEnabled,
+          dateYmd: dateYmd,
+          start: res.lunchStart || '',
+          end: res.lunchEnd || ''
+        });
+      }
+
+      if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+      else refreshTrackingModeUI();
+      return true;
+    } catch (e) {
+      console.warn('出勤状態の端末同期に失敗:', e);
+      return false;
+    }
+  }
+  window.applyOpenClockInFromServer = applyOpenClockInFromServer;
+
+  /**
+   * サーバーの出退勤記録を正として退勤忘れを判定し、ボタン状態も端末間で揃える。
+   * - 他端末で退勤済み → この端末の古い出勤状態を消す
+   * - 他端末で出勤中 → この端末にも出勤中として反映する
    */
   async function resolveForgotClockOutInfo() {
     const localInfo = getForgotClockOutInfo();
@@ -246,28 +306,15 @@
       if (!res.open) {
         if (localInfo || localStorage.getItem('passionMapClockIn') || loadPending()) {
           clearStaleLocalClockInState();
+        } else if (typeof window.refreshTrackingModeUI === 'function') {
+          refreshTrackingModeUI();
         }
         return null;
       }
 
-      // サーバー上は出勤中だが、日付は今日 → 前日忘れではない
+      // サーバー上は出勤中だが、日付は今日 → 前日忘れではない（端末間で出勤状態を同期）
       if (res.open && !res.forgot) {
-        if (localInfo) {
-          // ローカルだけ日付ずれしている場合は、今日の出勤として同期
-          try {
-            const active = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null') || {};
-            active.active = true;
-            active.time = res.clockInTime || active.time || '';
-            active.dateYmd = res.clockInDateYmd || active.dateYmd || '';
-            localStorage.setItem('passionMapClockIn', JSON.stringify(active));
-            const todayState = {
-              time: active.time,
-              dateYmd: active.dateYmd,
-              date: active.dateYmd
-            };
-            localStorage.setItem('passionMapClockInToday', JSON.stringify(todayState));
-          } catch (e) {}
-        }
+        applyOpenClockInFromServer(res);
         return null;
       }
 
@@ -472,13 +519,23 @@
     } catch (e) {}
     if (!polys || !user) return intervals;
 
+    const normUser = String(user || '').replace(/\s+/g, '');
     const targetKey = normalizeDateKey(workDateYmd);
     for (const id in polys) {
       const p = polys[id];
       if (!p || !p.photos) continue;
       p.photos.forEach((ph) => {
-        if (ph.type !== 'work') return;
-        if (ph.author && ph.author !== user) return;
+        if (ph.type !== 'work' && !(ph.data && ph.data.workName)) return;
+        const phAuthor = String(ph.author || '').replace(/\s+/g, '');
+        const isAuthorMatch =
+          !normUser ||
+          !phAuthor ||
+          phAuthor === normUser ||
+          normUser.includes(phAuthor) ||
+          phAuthor.includes(normUser) ||
+          normUser === 'システム';
+        if (!isAuthorMatch) return;
+
         const data = ph.data || {};
         const key = normalizeDateKey(data.workDate || ph.date);
         if (!key || key !== targetKey) return;
@@ -789,6 +846,7 @@
       html += `<button disabled style="background:#a5d6a7; color:white; width:100%; padding:14px; border-radius:4px; border:none; font-weight:bold; opacity:0.7;">退勤を確定する（時間一致後に有効）</button>`;
       html += `<button onclick="showReconcileUI()" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer;">🔄 再集計する</button>`;
     }
+    html += `<button onclick="backToClockOutSettings()" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer; font-size:13px;">◀ 戻る（退勤時刻・休憩を修正）</button>`;
     html += `<button onclick="cancelPendingClockOut()" style="background:#eee; color:#333; width:100%; padding:10px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤をやめる（出勤継続）</button>`;
     html += `</div>`;
     html += `<p style="font-size:11px; color:#888; margin:10px 0 0;">出勤〜退勤から休憩を除いた時間が、当日の作業記録（開始〜終了）の合計と一致する必要があります。</p>`;
@@ -797,6 +855,19 @@
   }
 
   window.showReconcileUI = showReconcileUI;
+
+  window.backToClockOutSettings = function () {
+    const pending = loadPending();
+    if (pending) {
+      openClockOutModal({
+        defaultTime: pending.clockOutTime,
+        forceDateYmd: pending.clockOutDate,
+        restorePending: true
+      });
+    } else {
+      openClockOutModal();
+    }
+  };
 
   window.cancelPendingClockOut = function () {
     clearPending();
@@ -1281,20 +1352,25 @@
     const isForgot = !!forgotInfo;
     const dt = defaultDateTime();
     const pref = loadBreakDefaults();
-    const clockInTime = (forgotInfo && forgotInfo.clockInTime) || getClockInTimeStr();
-    const outDate = options.forceDateYmd || (isForgot ? forgotInfo.clockInDateYmd : dt.date);
-    const workDateForLunch = isForgot ? forgotInfo.clockInDateYmd : getActiveClockInDateYmd();
+    const pending = loadPending();
+    const clockInTime = (forgotInfo && forgotInfo.clockInTime) || (pending && pending.clockInTime) || getClockInTimeStr();
+    const outDate = options.forceDateYmd || (pending && pending.clockOutDate) || (isForgot ? forgotInfo.clockInDateYmd : dt.date);
+    const workDateForLunch = isForgot ? forgotInfo.clockInDateYmd : (pending && pending.clockInDateYmd) || getActiveClockInDateYmd();
     const lunchReg = loadLunchBreak(workDateForLunch);
     const lunchLocked = !isForgot && lunchReg && lunchReg.registered === true;
-    // 退勤忘れ時は「今」ではなく、前日の作業記録の最終終了時間を初期表示（なければ出勤時間）
-    let outTime = options.defaultTime || '';
+
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      '';
+    const lastWorkEnd = getLastWorkEndTime(user, outDate) || (typeof window.getLatestEndTimeForDate === 'function' ? (window.getLatestEndTimeForDate(outDate) || '') : '');
+
+    let outTime = options.defaultTime || (pending && pending.clockOutTime) || '';
     if (!outTime) {
-      if (isForgot) {
-        const user =
-          (typeof currentUser !== 'undefined' && currentUser) ||
-          localStorage.getItem('passionMapUserName') ||
-          '';
-        outTime = getLastWorkEndTime(user, forgotInfo.clockInDateYmd) || clockInTime;
+      if (lastWorkEnd) {
+        outTime = lastWorkEnd;
+      } else if (isForgot) {
+        outTime = clockInTime;
       } else {
         outTime = dt.time;
       }
@@ -1315,12 +1391,15 @@
 
     html += `<div style="background:#f9fbe7; border:1px solid #e6ee9c; border-radius:8px; padding:12px; margin-bottom:12px;">`;
     if (lunchLocked) {
-      if (lunchReg.enabled) {
+      const lOn = (pending && pending.lunchEnabled != null) ? !!pending.lunchEnabled : !!lunchReg.enabled;
+      const lS = (pending && pending.lunchStart) || lunchReg.start || '12:00';
+      const lE = (pending && pending.lunchEnd) || lunchReg.end || '13:00';
+      if (lOn) {
         html += `<div style="font-weight:bold; color:#558b2f; margin-bottom:6px;">🍱 昼休憩（登録済）</div>`;
-        html += `<div style="font-size:14px; margin-bottom:8px;"><b>${lunchReg.start} 〜 ${lunchReg.end}</b></div>`;
+        html += `<div style="font-size:14px; margin-bottom:8px;"><b>${lS} 〜 ${lE}</b></div>`;
         html += `<input type="hidden" id="clockLunchEnabled" value="1">`;
-        html += `<input type="hidden" id="clockLunchStart" value="${String(lunchReg.start || '').replace(/"/g, '&quot;')}">`;
-        html += `<input type="hidden" id="clockLunchEnd" value="${String(lunchReg.end || '').replace(/"/g, '&quot;')}">`;
+        html += `<input type="hidden" id="clockLunchStart" value="${String(lS).replace(/"/g, '&quot;')}">`;
+        html += `<input type="hidden" id="clockLunchEnd" value="${String(lE).replace(/"/g, '&quot;')}">`;
       } else {
         html += `<div style="font-weight:bold; color:#888; margin-bottom:6px;">🍱 昼休憩：なし（登録済）</div>`;
         html += `<input type="hidden" id="clockLunchEnabled" value="">`;
@@ -1329,9 +1408,11 @@
       }
       html += `<button type="button" onclick="openLunchBreakModal()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FF9800; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:8px;">昼休憩を変更する</button>`;
     } else {
-      const lunchOn = lunchReg && lunchReg.registered ? !!lunchReg.enabled : !!pref.lunchEnabled;
-      const ls = (lunchReg && lunchReg.start) || pref.lunchStart || '12:00';
-      const le = (lunchReg && lunchReg.end) || pref.lunchEnd || '13:00';
+      const lunchOn = (pending && pending.lunchEnabled != null)
+        ? !!pending.lunchEnabled
+        : (lunchReg && lunchReg.registered ? !!lunchReg.enabled : !!pref.lunchEnabled);
+      const ls = (pending && pending.lunchStart) || (lunchReg && lunchReg.start) || pref.lunchStart || '12:00';
+      const le = (pending && pending.lunchEnd) || (lunchReg && lunchReg.end) || pref.lunchEnd || '13:00';
       html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
       html += `<input type="checkbox" id="clockLunchEnabled" ${lunchOn ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
       html += `</label>`;
@@ -1345,8 +1426,9 @@
       html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
       html += `</div>`;
     }
+    const midBreakVal = (pending && pending.midBreakMins != null) ? pending.midBreakMins : (pref.midBreakMins || 0);
     html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（分）</label>`;
-    html += `<input type="number" id="clockMidBreak" class="form-input" min="0" step="5" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin:0;" value="${pref.midBreakMins || 0}" placeholder="例: 30">`;
+    html += `<input type="number" id="clockMidBreak" class="form-input" min="0" step="5" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin:0;" value="${midBreakVal}" placeholder="例: 30">`;
     html += `<div style="font-size:11px; color:#888; margin-top:6px;">必要作業時間 ＝ 出勤〜退勤 − 昼休憩 − 作業中休憩</div>`;
     html += `</div>`;
 
@@ -1435,21 +1517,48 @@
     if (window._forgotClockOutCheckScheduled) return;
     window._forgotClockOutCheckScheduled = true;
 
-    const run = async () => {
+    const run = async (opts) => {
+      opts = opts || {};
       if (!document.getElementById('btnTracking')) return;
       // ログイン画面表示中は待たない（トラッキングボタンがあるページ向け）
       const login = document.getElementById('loginScreen');
       if (login && login.style.display !== 'none' && login.offsetParent !== null) {
-        setTimeout(run, 1500);
+        if (!opts.skipRetry) setTimeout(() => run(opts), 1500);
         return;
       }
-      const info = await resolveForgotClockOutInfo();
-      if (!info) return;
-      promptForgotClockOut({ openEvenIfCancel: true });
+      if (window._clockInStateSyncRunning) return;
+      window._clockInStateSyncRunning = true;
+      try {
+        const info = await resolveForgotClockOutInfo();
+        if (info && opts.promptForgot !== false) {
+          promptForgotClockOut({ openEvenIfCancel: true });
+        }
+      } finally {
+        window._clockInStateSyncRunning = false;
+      }
     };
 
-    // UI・ログイン復元のあとで表示
-    setTimeout(run, 1200);
+    // UI・ログイン復元のあとで表示＆端末間同期
+    setTimeout(() => run({ promptForgot: true }), 1200);
+
+    // 他端末で出退勤したあと、この端末に戻ったときにボタンを合わせる
+    if (!window._clockInStateSyncListenersBound) {
+      window._clockInStateSyncListenersBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          run({ promptForgot: false, skipRetry: true });
+        }
+      });
+      window.addEventListener('focus', () => {
+        run({ promptForgot: false, skipRetry: true });
+      });
+      // 両端末を開いたままのとき用の軽いポーリング
+      setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          run({ promptForgot: false, skipRetry: true });
+        }
+      }, 45000);
+    }
   }
 
   window.toggleTracking = async function () {

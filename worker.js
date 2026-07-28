@@ -1809,6 +1809,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+        if (typeof window.refreshProgressStatusVisibility === 'function') window.refreshProgressStatusVisibility();
       };
 
       window.getCadUneCount = (poly) => {
@@ -2076,6 +2077,56 @@ function createSignboardMarker(name, pos, icon, id) {
                   dateYmd: hints.clockInDateYmd
                 }));
               }
+              // ボタン状態も出勤中に揃える（localStorage の active が無いと他端末とズレる）
+              if (hints.open && hints.clockInDateYmd === todayStr) {
+                const activeStr = localStorage.getItem('passionMapClockIn');
+                let needActive = !activeStr;
+                if (activeStr) {
+                  try {
+                    const a = JSON.parse(activeStr);
+                    needActive = !(a && a.active !== false);
+                  } catch (e2) { needActive = true; }
+                }
+                if (needActive) {
+                  if (typeof window.applyOpenClockInFromServer === 'function') {
+                    window.applyOpenClockInFromServer({
+                      open: true,
+                      forgot: false,
+                      clockInTime: hints.clockInTime,
+                      clockInDateYmd: hints.clockInDateYmd,
+                      lunchRegistered: !!hints.lunchRegistered,
+                      lunchEnabled: !!hints.lunchEnabled,
+                      lunchStart: hints.lunchStart || '',
+                      lunchEnd: hints.lunchEnd || ''
+                    });
+                  } else {
+                    localStorage.setItem('passionMapClockIn', JSON.stringify({
+                      lat: 0,
+                      lng: 0,
+                      time: hints.clockInTime,
+                      active: true,
+                      dateYmd: hints.clockInDateYmd,
+                      dateLocale: now.toLocaleDateString(),
+                      syncedFromServer: true
+                    }));
+                    if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+                  }
+                } else if (hints.lunchRegistered && typeof window.applyOpenClockInFromServer === 'function') {
+                  // 出勤は既にあるが、他端末の昼休憩だけ未反映の場合
+                  window.applyOpenClockInFromServer({
+                    open: true,
+                    forgot: false,
+                    clockInTime: hints.clockInTime,
+                    clockInDateYmd: hints.clockInDateYmd,
+                    lunchRegistered: true,
+                    lunchEnabled: !!hints.lunchEnabled,
+                    lunchStart: hints.lunchStart || '',
+                    lunchEnd: hints.lunchEnd || ''
+                  });
+                }
+              } else if (hints.open === false && localStorage.getItem('passionMapClockIn')) {
+                // 作業ヒント上は閉じている場合は resolveForgot に任せる（ここでは消さない）
+              }
             } catch (e) {}
           }
           window._lastWorkTimeHints = hints;
@@ -2156,6 +2207,56 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
         }
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
+        if (typeof window.refreshProgressStatusVisibility === 'function') window.refreshProgressStatusVisibility();
+      };
+
+      /** 作業対象に登録済み圃場（ポリゴン）が含まれているか */
+      window.hasRegisteredWorkFieldSelected = () => {
+        const ids = (selectedPolyIds && selectedPolyIds.length > 0)
+          ? selectedPolyIds
+          : (activePolyId ? [activePolyId] : []);
+        return ids.some(id => {
+          const poly = loadedPolygons && loadedPolygons[id];
+          return !!(poly && !poly.isMarker);
+        });
+      };
+
+      /** 進捗状況フォームが表示中か */
+      window.isProgressStatusVisible = () => {
+        const section = document.getElementById('progress_status_section');
+        if (!section) return false;
+        return section.style.display !== 'none';
+      };
+
+      /**
+       * 登録済み圃場が作業対象にあるときは進捗状況を非表示にする。
+       * （畝の進捗で代替するため、記録項目としては出さない）
+       */
+      window.refreshProgressStatusVisibility = () => {
+        const section = document.getElementById('progress_status_section');
+        if (!section) return;
+        const hide = typeof window.hasRegisteredWorkFieldSelected === 'function'
+          && window.hasRegisteredWorkFieldSelected();
+        section.style.display = hide ? 'none' : 'block';
+        if (!hide && typeof window.renderProgressStatusButtons === 'function') {
+          const cur = document.getElementById('rec_progress_status');
+          window.renderProgressStatusButtons(cur ? cur.value : '');
+        }
+      };
+
+      /** 非表示時は畝進捗から進捗状況を推定（保存用） */
+      window.resolveProgressStatusForSubmit = () => {
+        const el = document.getElementById('rec_progress_status');
+        const current = el ? String(el.value || '').trim() : '';
+        if (typeof window.isProgressStatusVisible === 'function' && window.isProgressStatusVisible()) {
+          return current;
+        }
+        if (typeof window.collectRidgeProgressData === 'function') {
+          const rows = window.collectRidgeProgressData() || [];
+          if (rows.some(r => r && r.completed)) return '完了';
+          if (rows.some(r => r && String(r.workedRidges || '').trim())) return '途中';
+        }
+        return current;
       };
 
       window.getSelectedWorkCategory = () => {
@@ -2963,6 +3064,19 @@ function createSignboardMarker(name, pos, icon, id) {
       window.restoreDetailedWorksWithMinutes = (detailedWorksStr) => {
         if (!detailedWorksStr) return;
         const parsedItems = window.parseDetailedWorkWithMinutes(detailedWorksStr);
+        if (!Array.isArray(window.recordExtraDetailWorks)) window.recordExtraDetailWorks = [];
+        const currentNames = new Set(Array.from(document.querySelectorAll('input[name="detail_work_ids"]')).map(cb => String(cb.value || '').trim()));
+        let needsRerender = false;
+        parsedItems.forEach(item => {
+           if (item && item.name && !currentNames.has(item.name) && !window.recordExtraDetailWorks.includes(item.name)) {
+              window.recordExtraDetailWorks.push(item.name);
+              needsRerender = true;
+           }
+        });
+        if (needsRerender) {
+           const currentWorkName = document.getElementById('rec_work_name')?.value || '';
+           window.renderDetailWorksSection(currentWorkName);
+        }
         parsedItems.forEach(item => {
            document.querySelectorAll('input[name="detail_work_ids"]').forEach(cb => {
               if (cb.value === item.name) {
@@ -3971,6 +4085,44 @@ function createSignboardMarker(name, pos, icon, id) {
         return String(raw).split(/[,、，\n]/).map(s => s.trim()).filter(Boolean);
       };
 
+      window.recordExtraDetailWorks = [];
+
+      window.escapeDetailWorkJsArg = (value) => String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+      window.captureDetailWorkSelections = () => {
+        const map = {};
+        document.querySelectorAll('input[name="detail_work_ids"]:checked').forEach(cb => {
+          const name = String(cb.value || '').trim();
+          if (!name) return;
+          const row = cb.closest('.detail-work-item-row');
+          const minInput = row ? row.querySelector('.detail-work-min-input') : null;
+          map[name] = minInput ? String(minInput.value || '').trim() : '';
+        });
+        return map;
+      };
+
+      window.restoreDetailWorkSelections = (selectionMap) => {
+        if (!selectionMap) return;
+        Object.keys(selectionMap).forEach(name => {
+          document.querySelectorAll('input[name="detail_work_ids"]').forEach(cb => {
+            if (String(cb.value || '').trim() !== String(name || '').trim()) return;
+            cb.checked = true;
+            window.toggleDetailWorkMinutes(cb);
+            const row = cb.closest('.detail-work-item-row');
+            const minInput = row ? row.querySelector('.detail-work-min-input') : null;
+            if (minInput && selectionMap[name] !== '') minInput.value = selectionMap[name];
+          });
+        });
+      };
+
+      window.getWorkDisplayLabel = (work) => {
+        if (!work) return '';
+        const cat = String(work.category || '').trim();
+        const crop = String(work.cropName || '').trim();
+        const name = String(work.name || '').trim();
+        return [cat || '未分類', crop || '共通', name || '作業'].join(' - ');
+      };
+
       window.renderDetailWorksSection = (wName) => {
          const detailSec = document.getElementById('detailed_works_section');
          if (!detailSec) return;
@@ -3990,36 +4142,49 @@ function createSignboardMarker(name, pos, icon, id) {
            }
          }
          const details = window.parseDetailWorksList(rawDetails);
+         const extraDetails = Array.isArray(window.recordExtraDetailWorks) ? window.recordExtraDetailWorks : [];
+         const mergedDetails = [...details];
+         extraDetails.forEach(name => {
+           if (name && !mergedDetails.includes(name)) mergedDetails.push(name);
+         });
          const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
          const isAdmin = (userRole === '管理者');
 
-         if (details.length > 0 || isAdmin) {
+         if (mergedDetails.length > 0 || isAdmin || wName) {
             const safeWName = String(wName).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,"\\'");
             let dHtml = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                <div style="font-size:13px; font-weight:bold; color:#1a73e8;">✅ 詳細作業を選択（複数可・任意で分数指定）</div>
-               ${isAdmin ? `<button type="button" onclick="adminAddDetailWork('${safeWName}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px;">＋ 詳細を追加</button>` : ''}
+               <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+                 <button type="button" onclick="openDetailWorkFromMasterPicker()" style="background:#ede7f6; color:#5e35b1; border:1px solid #d1c4e9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業名から追加</button>
+                 ${isAdmin ? `<button type="button" onclick="adminAddDetailWork('${safeWName}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px;">＋ 詳細を追加</button>` : ''}
+               </div>
             </div>
             <div style="display:flex; flex-direction:column; gap:8px;">`;
 
-            if (details.length === 0 && isAdmin) {
-               dHtml += `<div style="font-size:12px; color:#888; padding:10px; text-align:center; background:#fff; border:1px dashed #90caf9; border-radius:6px;">詳細作業がまだ登録されていません。「＋ 詳細を追加」ボタンから追加できます。</div>`;
+            if (mergedDetails.length === 0) {
+               dHtml += `<div style="font-size:12px; color:#888; padding:10px; text-align:center; background:#fff; border:1px dashed #90caf9; border-radius:6px;">詳細作業がまだありません。必要なら「＋ 作業名から追加」${isAdmin ? 'または「＋ 詳細を追加」' : ''}から追加できます。</div>`;
             }
 
-            details.forEach((d, idx) => {
+            mergedDetails.forEach((d, idx) => {
                const safeVal = String(d).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+               const isExtra = extraDetails.includes(d) && !details.includes(d);
+               const masterIdx = details.indexOf(d);
+               const safeArg = window.escapeDetailWorkJsArg(d);
                dHtml += `<label class="checkbox-label detail-work-item-row" style="padding:10px 12px; background:#fff; border:1px solid #90caf9; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;">
                   <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
                      <input type="checkbox" name="detail_work_ids" value="${safeVal}" onchange="toggleDetailWorkMinutes(this)" style="width:18px; height:18px; flex-shrink:0;">
                      <span style="font-size:14px; color:#333; word-break:break-all;">${safeVal}</span>
+                     ${isExtra ? `<span style="background:#ede7f6; color:#5e35b1; font-size:10px; padding:2px 6px; border-radius:10px; flex-shrink:0;">作業名</span>` : ''}
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                      <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
                         <input type="number" name="detail_work_min_${safeVal}" class="detail-work-min-input" data-work="${safeVal}" placeholder="自動" min="0" style="width:60px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()">
                         <span style="font-size:12px; color:#666;">分</span>
                      </div>
-                     ${isAdmin ? `
-                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${idx})" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">✏️</button>
-                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${idx})" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">🗑️</button>
+                     ${isExtra ? `<button type="button" onclick="event.stopPropagation(); event.preventDefault(); removeRecordExtraDetailWork('${safeArg}')" title="この記録から外す" style="background:#fff; color:#6a1b9a; border:1px solid #d1c4e9; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">×</button>` : ''}
+                     ${isAdmin && masterIdx >= 0 ? `
+                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${masterIdx})" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">✏️</button>
+                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${masterIdx})" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">🗑️</button>
                      ` : ''}
                   </div>
                </label>`;
@@ -4031,6 +4196,76 @@ function createSignboardMarker(name, pos, icon, id) {
             detailSec.innerHTML = '';
             detailSec.style.display = 'none';
          }
+      };
+
+      window.openDetailWorkFromMasterPicker = () => {
+         const works = Array.isArray(pdlWorkMaster) ? [...pdlWorkMaster] : [];
+         works.sort((a, b) => window.getWorkDisplayLabel(a).localeCompare(window.getWorkDisplayLabel(b), 'ja'));
+         const listHtml = works.map(w => {
+           const label = window.getWorkDisplayLabel(w);
+           const safeLabel = String(label).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+           const safeArg = window.escapeDetailWorkJsArg(label);
+           return `<button type="button" onclick="addDetailWorkFromMaster('${safeArg}')" style="width:100%; text-align:left; background:#fff; border:1px solid #ddd; border-radius:6px; padding:10px; cursor:pointer; font-size:13px;">${safeLabel}</button>`;
+         }).join('');
+         document.getElementById('modalBody').innerHTML = `
+           <h3 style="color:#5e35b1; margin-top:0;">＋ 作業名から詳細作業を追加</h3>
+           <div style="font-size:12px; color:#666; margin-bottom:10px;">通常の作業マスタから選んで、この記録だけの詳細作業として追加します。</div>
+           <input type="search" id="detail_work_master_q" class="form-input" placeholder="カテゴリ・作物・作業名で検索..." oninput="filterDetailWorkMasterList()" style="margin-bottom:10px;">
+           <div id="detail_work_master_list" style="display:flex; flex-direction:column; gap:8px; max-height:55vh; overflow-y:auto;">${listHtml || '<div style="color:#888; text-align:center; padding:20px;">作業マスタがありません</div>'}</div>
+           <div style="display:flex; gap:10px; margin-top:12px;">
+             <button type="button" onclick="closeDetailWorkMasterPicker()" style="background:#ccc; color:#333; flex:1; padding:12px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">戻る</button>
+           </div>`;
+         document.getElementById('modal').style.display = 'flex';
+      };
+
+      window.filterDetailWorkMasterList = () => {
+         const q = String(document.getElementById('detail_work_master_q')?.value || '').trim().toLowerCase();
+         const listEl = document.getElementById('detail_work_master_list');
+         if (!listEl) return;
+         const works = Array.isArray(pdlWorkMaster) ? [...pdlWorkMaster] : [];
+         const filtered = q ? works.filter(w => window.getWorkDisplayLabel(w).toLowerCase().includes(q)) : works;
+         filtered.sort((a, b) => window.getWorkDisplayLabel(a).localeCompare(window.getWorkDisplayLabel(b), 'ja'));
+         listEl.innerHTML = filtered.length ? filtered.map(w => {
+           const label = window.getWorkDisplayLabel(w);
+           const safeLabel = String(label).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+           const safeArg = window.escapeDetailWorkJsArg(label);
+           return `<button type="button" onclick="addDetailWorkFromMaster('${safeArg}')" style="width:100%; text-align:left; background:#fff; border:1px solid #ddd; border-radius:6px; padding:10px; cursor:pointer; font-size:13px;">${safeLabel}</button>`;
+         }).join('') : `<div style="color:#888; text-align:center; padding:20px;">該当する作業がありません</div>`;
+      };
+
+      window.closeDetailWorkMasterPicker = () => {
+         document.getElementById('modal').style.display = 'none';
+      };
+
+      window.addDetailWorkFromMaster = (label) => {
+         const name = String(label || '').trim();
+         if (!name) return;
+         if (!Array.isArray(window.recordExtraDetailWorks)) window.recordExtraDetailWorks = [];
+         const selectionMap = window.captureDetailWorkSelections();
+         const existing = new Set([
+           ...window.parseDetailWorksList(((pdlWorkMaster || []).find(w => String(w.name || '').trim() === String(document.getElementById('rec_work_name')?.value || '').trim()) || {}).detailWorks || ''),
+           ...window.recordExtraDetailWorks
+         ]);
+         if (existing.has(name)) {
+           window.closeDetailWorkMasterPicker();
+           if (typeof customAlert === 'function') customAlert('その作業は既に詳細作業へ追加されています。');
+           return;
+         }
+         window.recordExtraDetailWorks.push(name);
+         window.closeDetailWorkMasterPicker();
+         window.renderDetailWorksSection(document.getElementById('rec_work_name')?.value || '');
+         selectionMap[name] = '';
+         window.restoreDetailWorkSelections(selectionMap);
+      };
+
+      window.removeRecordExtraDetailWork = (label) => {
+         const name = String(label || '').trim();
+         if (!name || !Array.isArray(window.recordExtraDetailWorks)) return;
+         const selectionMap = window.captureDetailWorkSelections();
+         delete selectionMap[name];
+         window.recordExtraDetailWorks = window.recordExtraDetailWorks.filter(v => String(v || '').trim() !== name);
+         window.renderDetailWorksSection(document.getElementById('rec_work_name')?.value || '');
+         window.restoreDetailWorkSelections(selectionMap);
       };
 
       window.handleWorkNameChange = (forcedName) => {
@@ -4299,6 +4534,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.renderRecordForm = () => {
         if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
         window.selectedWorkCrops = [];
+        window.recordExtraDetailWorks = [];
         const p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [], area: 0 };
         const isEdit = !!currentEditRecordId;
         selectedPolyIds = activePolyId ? [activePolyId] : []; pendingFiles = []; 
@@ -4459,9 +4695,11 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="used_items_section"></div>
                   <div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div>
                   <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
-                   <label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label>
-                   <input type="hidden" id="rec_progress_status" value="">
-                   <div id="progress_status_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
+                   <div id="progress_status_section">
+                     <label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label>
+                     <input type="hidden" id="rec_progress_status" value="">
+                     <div id="progress_status_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
+                   </div>
                    ${exPhotos}
                    ${photoUI}`;
         } else if (p.isMarker) {
@@ -4513,6 +4751,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
               if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
             }
+            if (typeof window.refreshProgressStatusVisibility === 'function') window.refreshProgressStatusVisibility();
             if (typeof window.applyPrefillWorkTime === 'function') window.applyPrefillWorkTime();
             if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar('');
         }, 50);
@@ -4875,7 +5114,17 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         }
         selectedPolyIds = targetIds;
-        if (currentRecordType === 'work') { const prog = document.getElementById('rec_progress_status').value; if (!prog) { customAlert("進捗状況は必須項目です。選択してください。"); return; } }
+        if (currentRecordType === 'work') {
+          const progressVisible = typeof window.isProgressStatusVisible === 'function'
+            ? window.isProgressStatusVisible()
+            : !!(document.getElementById('progress_status_section')
+              && document.getElementById('progress_status_section').style.display !== 'none');
+          // 登録済み圃場があるときは進捗状況を非表示・任意にする
+          if (progressVisible) {
+            const prog = document.getElementById('rec_progress_status')?.value || '';
+            if (!prog) { customAlert("進捗状況は必須項目です。選択してください。"); return; }
+          }
+        }
         const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
         if (btn) { btn.disabled = true; btn.innerText = "通信中..."; }
         
@@ -4955,7 +5204,9 @@ function createSignboardMarker(name, pos, icon, id) {
               detailedWorks: detailedWorksStr, 
               crop: (typeof window.getSelectedWorkCropsText === 'function') ? window.getSelectedWorkCropsText() : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : ""), 
               startTime: sTime, endTime: eTime, totalTime: totalTimeStr, 
-              progressStatus: document.getElementById('rec_progress_status')?.value || "",
+              progressStatus: (typeof window.resolveProgressStatusForSubmit === 'function')
+                ? window.resolveProgressStatusForSubmit()
+                : (document.getElementById('rec_progress_status')?.value || ""),
               usedTools: "", 
               usedMaterials: usedItemsText,
               workedRidges: firstRidge.workedRidges || "",
