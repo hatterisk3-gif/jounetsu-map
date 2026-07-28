@@ -160,7 +160,7 @@ window.onLocationCityChange = function(sel) {
     const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 let pendingInitData = null; // 地図準備前に届いた初期データ（地図完成後に必ず描画）
@@ -508,6 +508,8 @@ function renderInitData(data) {
     pdlStatuses = data.pdl.statuses || [];
     toukiList = data.toukiList || [];
     pdlCrops = data.pdl.crops || [];
+    pdlContainers = data.pdl.containers || [];
+    pdlContainerNames = data.pdl.containerNames || (pdlContainers || []).map(c => c.name || c);
     pdlWorkMaster = data.pdl.workMaster || [];
     pdlTools = data.pdl.tools || [];
     pdlMaterials = data.pdl.materials || [];
@@ -750,7 +752,8 @@ window.getMasterTypeInfo = (type) => {
         work: { title: '📋 作業記録マスタ', desc: '作業項目および詳細作業名リストの設定', list: pdlWorkMaster || [] },
         machine: { title: '🚜 農機マスタ', desc: '管理車両・農業機械・機番・拠点・定位置の設定', list: window.pdlMachines || [] },
         tool: { title: '🔧 道具マスタ', desc: '使用道具・備品と対応作業の設定', list: pdlTools || [] },
-        material: { title: '📦 資材マスタ', desc: '使用資材・規格・単位と対応作業の設定', list: pdlMaterials || [] }
+        material: { title: '📦 資材マスタ', desc: '使用資材・規格・単位と対応作業の設定', list: pdlMaterials || [] },
+        container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類・対応品目・内容単位・内容個数の設定', list: pdlContainers || [] }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
 };
@@ -763,7 +766,7 @@ window.renderMasterMenu = () => {
     if (titleEl) titleEl.innerHTML = '⚙️ マスタ項目設定';
 
     const masterTypes = [
-        'crop', 'sign', 'location', 'workCategory',
+        'crop', 'container', 'sign', 'location', 'workCategory',
         'machineType', 'machineGroup', 'work', 'machine', 'tool', 'material'
     ];
 
@@ -828,6 +831,25 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <label style="font-size:12px; font-weight:bold; color:#555;">標準栽植密度 (本/10a)</label>
                 <input type="number" id="add_crop_density" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 2500">
                 <button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'container') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">コンテナ種類</label>
+                <input type="text" id="add_container_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: コンテナA・オリコン大">
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1;">
+                        <label style="font-size:12px; font-weight:bold; color:#555;">内容単位</label>
+                        <input type="text" id="add_container_content_unit" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: kg・本・パック">
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:12px; font-weight:bold; color:#555;">内容個数（既定）</label>
+                        <input type="number" id="add_container_content_qty" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 10" min="0" step="any">
+                    </div>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">対応品目（複数可）</label>
+                <div style="font-size:11px; color:#666;">未選択（共通）＝全品目で利用可能</div>
+                ${buildWorkCropsCheckboxesHtml('add_container', [])}
+                <button onclick="execMaster('container', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'sign') {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
@@ -975,6 +997,13 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             let subInfo = "";
 
             if (type === 'crop') subInfo = `<span style="color:#666;">(${v.density || 0}本/10a)</span>`;
+            if (type === 'container') {
+                const cropsDisp = (v.crops && v.crops.length) ? v.crops.join(', ') : (v.cropName || '全品目（共通）');
+                const unit = String(v.contentUnit || '').trim();
+                const qty = (v.contentQty !== '' && v.contentQty != null) ? v.contentQty : '';
+                const contentDisp = (unit || qty !== '') ? `${qty !== '' ? qty : '-'}${unit || ''}` : '未設定';
+                subInfo = `<span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px; margin-left:6px;">🌱 ${cropsDisp}</span><span style="font-size:11px; background:#fff3e0; color:#e65100; padding:2px 6px; border-radius:4px; margin-left:4px;">中身: ${contentDisp}</span>`;
+            }
             if (type === 'location' && typeof v === 'object') {
                 const climates = parseLocationClimates(v.climates != null ? v.climates : v.climate);
                 const climateLabel = climates.length ? climates.join('・') : '';
@@ -1012,6 +1041,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 actionBtns = `<button onclick="openEditWorkMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'crop') {
                 actionBtns = `<button onclick="openEditCropMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'container') {
+                actionBtns = `<button onclick="openEditContainerMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'workCategory') {
                 const safeName = encodeURIComponent(String(dispName));
                 actionBtns = `<button onclick="openEditWorkCategoryMaster('${safeName}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
@@ -1160,6 +1191,42 @@ window.openEditCropMaster = (encoded) => {
     openMasterDetail('crop', editHtml);
 };
 
+window.openEditContainerMaster = (encoded) => {
+    const v = JSON.parse(decodeURIComponent(encoded || '%7B%7D'));
+    const name = String(v.name || '').replace(/"/g, '&quot;');
+    const contentUnit = String(v.contentUnit || '').replace(/"/g, '&quot;');
+    const contentQty = (v.contentQty !== '' && v.contentQty != null) ? String(v.contentQty) : '';
+    let selected = [];
+    if (Array.isArray(v.crops) && v.crops.length) selected = v.crops;
+    else if (v.cropName) selected = String(v.cropName).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const editHtml = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; color:#2e7d32; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px;">✏️ コンテナマスタの編集</h4>
+            <input type="hidden" id="edit_container_original_name" value="${name}">
+            <label class="form-label">コンテナ種類</label>
+            <input type="text" id="edit_container_name" class="form-input" value="${name}">
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
+                    <label class="form-label">内容単位</label>
+                    <input type="text" id="edit_container_content_unit" class="form-input" value="${contentUnit}" placeholder="例: kg・本・パック">
+                </div>
+                <div style="flex:1;">
+                    <label class="form-label">内容個数（既定）</label>
+                    <input type="number" id="edit_container_content_qty" class="form-input" value="${contentQty}" placeholder="例: 10" min="0" step="any">
+                </div>
+            </div>
+            <label class="form-label">対応品目（複数可）</label>
+            <div style="font-size:11px; color:#666; margin-bottom:6px;">未選択（共通）＝全品目で利用可能</div>
+            ${buildWorkCropsCheckboxesHtml('edit_container', selected)}
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('container', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('container')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    openMasterDetail('container', editHtml);
+};
+
 /** 作物名マルチ選択（チェックボックス群）のHTML生成 */
 window.buildWorkCropsCheckboxesHtml = (prefix, selectedCropsArray = []) => {
     const crops = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops)) ? pdlCrops.map(c => c.name) : [];
@@ -1192,6 +1259,12 @@ window.getSelectedWorkCrops = (prefix) => {
     const cbs = document.querySelectorAll(`.${prefix}_crop_cb:checked`);
     const list = Array.from(cbs).map(cb => cb.value).filter(Boolean);
     return list.length ? list : ['__common__'];
+};
+
+/** コンテナマスタ用：共通以外の品目名だけ返す（空＝全品目） */
+window.collectContainerLinkedCrops = (prefix) => {
+    const selected = getSelectedWorkCrops(prefix);
+    return selected.filter(c => c && c !== '__common__' && c !== '共通');
 };
 
 /** 作物選択が変更された時にタブおよび詳細作業エリアを自動更新する */
@@ -1572,6 +1645,14 @@ window.execMaster = async (type, act, val) => {
     let value = val;
     if (act === 'add') {
         if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0) }; }
+        else if (type === 'container') {
+            const name = document.getElementById('add_container_name').value.trim();
+            if (!name) { customAlert("コンテナ種類を入力してください"); return; }
+            const contentUnit = (document.getElementById('add_container_content_unit')?.value || '').trim();
+            const qtyRaw = document.getElementById('add_container_content_qty')?.value;
+            const contentQty = (qtyRaw !== '' && qtyRaw != null) ? Number(qtyRaw) || 0 : '';
+            value = { name: name, crops: collectContainerLinkedCrops('add_container'), contentUnit, contentQty };
+        }
         else if (type === 'sign') { const name = document.getElementById('add_sign_name').value.trim(); if (!name) { customAlert("看板機能名を入力してください"); return; } value = name; }
         else if (type === 'location') {
             const name = document.getElementById('add_location_name').value.trim();
@@ -1683,12 +1764,32 @@ window.execMaster = async (type, act, val) => {
                     density: parseInt(document.getElementById('edit_crop_density').value || 0, 10) || 0
                 }
             };
+        } else if (type === 'container') {
+            const originalName = document.getElementById('edit_container_original_name').value;
+            const newName = document.getElementById('edit_container_name').value.trim();
+            if (!newName) { customAlert("コンテナ種類を入力してください"); return; }
+            if (newName !== String(originalName || "").trim() && (pdlContainers || []).some(c => c.name === newName)) {
+                customAlert(`コンテナ種類「${newName}」は既に登録されています`);
+                return;
+            }
+            const contentUnit = (document.getElementById('edit_container_content_unit')?.value || '').trim();
+            const qtyRaw = document.getElementById('edit_container_content_qty')?.value;
+            const contentQty = (qtyRaw !== '' && qtyRaw != null) ? Number(qtyRaw) || 0 : '';
+            value = {
+                originalName: originalName,
+                newData: {
+                    name: newName,
+                    crops: collectContainerLinkedCrops('edit_container'),
+                    contentUnit,
+                    contentQty
+                }
+            };
         }
     } else { if (!await customConfirm(`削除しますか？`)) return; value = { id: val }; }
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
     try {
         const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
-        if (type === 'crop') pdlCrops = updatedList; else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
+        if (type === 'crop') pdlCrops = updatedList; else if (type === 'container') { pdlContainers = updatedList || []; pdlContainerNames = (pdlContainers || []).map(c => c.name || c); } else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
         if (type === 'work') { try { closeWorkMasterEditModal(); } catch(e){} }
         // カテゴリ/作物の改名時は作業マスタのローカル表示も追随
         if (act === 'edit' && type === 'workCategory' && value && value.originalName && value.newData) {

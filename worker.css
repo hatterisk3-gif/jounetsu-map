@@ -31,6 +31,54 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
 .panel-content { flex-grow: 1; padding: 15px; overflow-y: auto; }
 .panel-footer { padding: 15px; background: white; border-top: 1px solid #ddd; }
 
+/* 個人スケジュール：右側ドロワー */
+#personalScheduleBackdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 3090;
+}
+#personalScheduleBackdrop.open { display: block; }
+#personalSchedulePanel {
+  position: fixed;
+  top: 0;
+  right: -100%;
+  width: min(420px, 92vw);
+  height: 100%;
+  background: #f4f6f8;
+  box-shadow: -6px 0 18px rgba(0, 0, 0, 0.28);
+  transition: right 0.3s ease;
+  z-index: 3100;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+#personalSchedulePanel.open { right: 0; }
+.ps-panel-header {
+  background: #2E7D32;
+  color: #fff;
+  padding: 12px 15px;
+  font-size: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.ps-panel-content {
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.ps-panel-footer {
+  padding: 12px 15px;
+  background: #fff;
+  border-top: 1px solid #ddd;
+  flex-shrink: 0;
+}
+
 .form-label { display: block; font-size: 14px; color: #555; margin-bottom: 5px; font-weight: bold; }
 .form-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }

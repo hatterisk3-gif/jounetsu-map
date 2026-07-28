@@ -1,6 +1,6 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
       let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
-      let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], activeLots = [];
+      let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], activeLots = [];
       let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
       let selectedPolyIds = [], isMapSelecting = false, backupSelectedPolyIds = [];
       let pendingFiles = [];
@@ -464,7 +464,11 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
           pdlLocations=data.pdl.locations||[]; pdlCrops=data.pdl.crops||[]; pdlStages=data.pdl.stages||[];
           pdlWorkMaster=data.pdl.workMaster||[]; pdlWorkStatuses=data.pdl.workStatuses||[];
-          pdlContainerNames=data.pdl.containerNames||[]; pdlPastReports=data.pdl.pastReports||[];
+          pdlContainerNames=data.pdl.containerNames||[]; pdlContainers=data.pdl.containers||[];
+          if ((!pdlContainers || !pdlContainers.length) && pdlContainerNames.length) {
+            pdlContainers = pdlContainerNames.map(n => ({ name: n, crops: [] }));
+          }
+          pdlPastReports=data.pdl.pastReports||[];
           activeLots=data.activeLots||[];
           pdlTools=data.pdl.tools||[];
           pdlMaterials=data.pdl.materials||[];
@@ -929,7 +933,7 @@ window.openTyphoonModal = function() {
         });
 
         infoWindow = new google.maps.InfoWindow();
-        google.maps.event.addListener(map, 'click', () => { if(isMapSelecting) return; infoWindow.close(); closeRightPanel(); document.getElementById('searchSuggestions').style.display='none';});
+        google.maps.event.addListener(map, 'click', () => { if(isMapSelecting) return; infoWindow.close(); closeRightPanel(); if (typeof closePersonalSchedule === 'function') closePersonalSchedule(); document.getElementById('searchSuggestions').style.display='none';});
         map.addListener('zoom_changed', updateMarkersVisibility);
         
         fetchTyphoonInfo(); // 起動時に台風情報を取得
@@ -4215,6 +4219,7 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.renderRecordForm = () => {
+        if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
         window.selectedWorkCrops = [];
         const p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [], area: 0 };
         const isEdit = !!currentEditRecordId;
@@ -5036,20 +5041,259 @@ function createSignboardMarker(name, pos, icon, id) {
       }
 
       window.openGlobalHarvest = () => {
+         const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
          let locOpts = pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
          let cropOpts = pdlCrops.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-         let contOpts = pdlContainerNames.map(c => `<option value="${c}">${c}</option>`).join('');  
-         document.getElementById('modalBody').innerHTML = `<h3 style="color:#4CAF50; margin-top:0;">🚜 収穫記録（ロット生成）</h3><p style="font-size:12px; color:#666;">※選択した「拠点」で本日「収穫」が行われた圃場が自動で紐付きます。</p><label class="form-label">📍 拠点</label><select id="gh_location" class="form-input"><option value="">選択してください</option>${locOpts}</select><label class="form-label">🌱 収穫した作物</label><select id="gh_crop" class="form-input"><option value="">選択してください</option>${cropOpts}</select><label class="form-label">📦 コンテナ種類</label><select id="gh_container" class="form-input"><option value="">選択してください</option>${contOpts}</select><label class="form-label">🔢 総収穫数（コンテナ数）</label><input type="number" id="gh_count" class="form-input" placeholder="例: 10"><div style="display:flex; gap:10px; margin-top:15px;"><button onclick="submitGlobalHarvest()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">ロット作成</button><button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">戻る</button></div>`;
+         const adminBar = isAdmin ? `
+           <div id="gh_container_admin_bar" style="display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 12px; align-items:center;"></div>
+         ` : '';
+         document.getElementById('modalBody').innerHTML = `<h3 style="color:#4CAF50; margin-top:0;">🚜 収穫記録（ロット生成）</h3>
+           <p style="font-size:12px; color:#666;">※選択した「拠点」で本日「収穫」が行われた圃場が自動で紐付きます。</p>
+           <label class="form-label">📍 拠点</label>
+           <select id="gh_location" class="form-input"><option value="">選択してください</option>${locOpts}</select>
+           <label class="form-label">🌱 収穫した作物（品目）</label>
+           <select id="gh_crop" class="form-input" onchange="filterHarvestContainers()"><option value="">選択してください</option>${cropOpts}</select>
+           <label class="form-label">📦 コンテナ種類</label>
+           <select id="gh_container" class="form-input" onchange="applyHarvestContainerDefaults()"><option value="">選択してください</option></select>
+           ${adminBar}
+           <div style="font-size:11px; color:#888; margin:-4px 0 12px;">※作物を選ぶと、その品目に紐づくコンテナだけが表示されます（共通は常に表示）</div>
+           <div style="display:flex; gap:10px;">
+             <div style="flex:1;">
+               <label class="form-label">📏 内容単位</label>
+               <input type="text" id="gh_content_unit" class="form-input" readonly style="background:#f4f6f8; color:#555;" placeholder="コンテナ選択後に表示">
+             </div>
+             <div style="flex:1;">
+               <label class="form-label">🔢 内容個数</label>
+               <input type="text" id="gh_content_qty" class="form-input" readonly style="background:#f4f6f8; color:#555;" placeholder="コンテナ選択後に表示">
+             </div>
+           </div>
+           <div style="font-size:11px; color:#888; margin:-8px 0 12px;">※内容単位・内容個数はコンテナマスタの設定値です（変更は管理者のみ）</div>
+           <label class="form-label">📦 総収穫数（コンテナ数）</label>
+           <input type="number" id="gh_count" class="form-input" placeholder="例: 10">
+           <div style="display:flex; gap:10px; margin-top:15px;">
+             <button onclick="submitGlobalHarvest()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold;">ロット作成</button>
+             <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">戻る</button>
+           </div>`;
          document.getElementById('modal').style.display = 'flex';
+         window.filterHarvestContainers();
+         if (isAdmin) window.renderHarvestContainerAdminBar();
+      };
+
+      window.getContainerMasterList = () => {
+         if (Array.isArray(pdlContainers) && pdlContainers.length) return pdlContainers;
+         return (pdlContainerNames || []).map(n => ({ name: n, crops: [], contentUnit: '', contentQty: '' }));
+      };
+
+      window.containerMatchesCrop = (container, cropName) => {
+         const crop = String(cropName || '').trim();
+         const crops = (container && Array.isArray(container.crops)) ? container.crops : [];
+         // 紐づけなし＝共通（全品目）
+         if (!crops.length) return true;
+         if (!crop) return true;
+         return crops.some(c => String(c).trim() === crop);
+      };
+
+      window.filterHarvestContainers = (preferName) => {
+         const sel = document.getElementById('gh_container');
+         const crop = document.getElementById('gh_crop')?.value || '';
+         if (!sel) return;
+         const keep = preferName != null ? preferName : sel.value;
+         const list = window.getContainerMasterList().filter(c => window.containerMatchesCrop(c, crop));
+         let html = '<option value="">選択してください</option>';
+         list.forEach(c => {
+           const name = c.name || c;
+           const crops = (c.crops && c.crops.length) ? c.crops.join(',') : '';
+           const unit = String(c.contentUnit || '').trim();
+           const qty = (c.contentQty !== '' && c.contentQty != null) ? c.contentQty : '';
+           const contentBit = (unit || qty !== '') ? ` / ${qty !== '' ? qty : ''}${unit}` : '';
+           const label = crops ? `${name}（${crops}${contentBit}）` : `${name}（共通${contentBit}）`;
+           html += `<option value="${String(name).replace(/"/g, '&quot;')}">${label}</option>`;
+         });
+         sel.innerHTML = html;
+         if (keep && list.some(c => (c.name || c) === keep)) sel.value = keep;
+         else sel.value = '';
+         window.applyHarvestContainerDefaults();
+         if (typeof window.renderHarvestContainerAdminBar === 'function') window.renderHarvestContainerAdminBar();
+      };
+
+      window.applyHarvestContainerDefaults = () => {
+         const name = document.getElementById('gh_container')?.value || '';
+         const unitEl = document.getElementById('gh_content_unit');
+         const qtyEl = document.getElementById('gh_content_qty');
+         if (!unitEl || !qtyEl) return;
+         if (!name) {
+           unitEl.value = '';
+           qtyEl.value = '';
+           if (typeof window.renderHarvestContainerAdminBar === 'function') window.renderHarvestContainerAdminBar();
+           return;
+         }
+         const found = window.getContainerMasterList().find(c => (c.name || c) === name);
+         unitEl.value = found ? String(found.contentUnit || '') : '';
+         qtyEl.value = (found && found.contentQty !== '' && found.contentQty != null) ? String(found.contentQty) : '';
+         if (typeof window.renderHarvestContainerAdminBar === 'function') window.renderHarvestContainerAdminBar();
+      };
+
+      window.renderHarvestContainerAdminBar = () => {
+         const bar = document.getElementById('gh_container_admin_bar');
+         if (!bar) return;
+         if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+           bar.style.display = 'none';
+           bar.innerHTML = '';
+           return;
+         }
+         bar.style.display = 'flex';
+         const name = document.getElementById('gh_container')?.value || '';
+         const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+         bar.innerHTML = `
+           <button type="button" onclick="addHarvestContainerType()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ コンテナ追加</button>
+           ${name ? `<button type="button" onclick="editHarvestContainerType('${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
+           <button type="button" onclick="deleteHarvestContainerType('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>` : `<span style="font-size:11px; color:#888;">コンテナの追加・編集・削除は管理者のみ</span>`}
+         `;
+      };
+
+      window.addHarvestContainerType = async () => {
+         if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+           if (typeof customAlert === 'function') customAlert('コンテナマスタの変更は管理者のみ可能です。');
+           return;
+         }
+         const nameRaw = await customPrompt('新しいコンテナ種類名:');
+         if (!nameRaw || !String(nameRaw).trim()) return;
+         const name = String(nameRaw).trim();
+         if (window.getContainerMasterList().some(c => (c.name || c) === name)) {
+           if (typeof customAlert === 'function') customAlert(`コンテナ種類「${name}」は既に登録されています`);
+           return;
+         }
+         const unitRaw = await customPrompt('内容単位（例: kg・本・パック）:', '');
+         if (unitRaw === null) return;
+         const contentUnit = String(unitRaw || '').trim();
+         const qtyRaw = await customPrompt('内容個数（既定・任意）:', '');
+         if (qtyRaw === null) return;
+         const contentQty = (qtyRaw !== '' && String(qtyRaw).trim() !== '') ? Number(String(qtyRaw).trim()) || 0 : '';
+         const cropNow = document.getElementById('gh_crop')?.value || '';
+         let crops = [];
+         if (cropNow) {
+           const link = await customConfirm(`品目「${cropNow}」にこのコンテナを紐づけますか？\n（いいえ＝全品目で共通）`);
+           if (link) crops = [cropNow];
+         }
+         try {
+           const updated = await callGAS('manageMaster', {
+             masterType: 'container',
+             manageAction: 'add',
+             value: { name, crops, contentUnit, contentQty },
+             userName: localStorage.getItem('passionMapUserName') || currentUser
+           });
+           if (Array.isArray(updated)) {
+             pdlContainers = updated;
+             pdlContainerNames = updated.map(c => c.name || c);
+           } else if (!window.getContainerMasterList().some(c => c.name === name)) {
+             pdlContainers = [...window.getContainerMasterList(), { name, crops, contentUnit, contentQty }];
+             pdlContainerNames = pdlContainers.map(c => c.name);
+           }
+           localStorage.removeItem('passionMapInitData');
+           localStorage.removeItem('pMapAdminInitData');
+           window.filterHarvestContainers(name);
+           if (typeof customAlert === 'function') customAlert('✅ コンテナ種類を追加しました！');
+         } catch (e) {
+           if (typeof customAlert === 'function') customAlert(e.message || '追加に失敗しました');
+         }
+      };
+
+      window.editHarvestContainerType = async (containerName) => {
+         if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+           if (typeof customAlert === 'function') customAlert('コンテナマスタの変更は管理者のみ可能です。');
+           return;
+         }
+         const original = String(containerName || document.getElementById('gh_container')?.value || '').trim();
+         if (!original) return;
+         const existing = window.getContainerMasterList().find(c => (c.name || c) === original) || { name: original, crops: [], contentUnit: '', contentQty: '' };
+         const nameRaw = await customPrompt('コンテナ種類名を編集:', original);
+         if (!nameRaw || !String(nameRaw).trim()) return;
+         const newName = String(nameRaw).trim();
+         if (newName !== original && window.getContainerMasterList().some(c => (c.name || c) === newName)) {
+           if (typeof customAlert === 'function') customAlert(`コンテナ種類「${newName}」は既に登録されています`);
+           return;
+         }
+         const unitRaw = await customPrompt('内容単位（例: kg・本・パック）:', String(existing.contentUnit || ''));
+         if (unitRaw === null) return;
+         const contentUnit = String(unitRaw || '').trim();
+         const qtyDef = (existing.contentQty !== '' && existing.contentQty != null) ? String(existing.contentQty) : '';
+         const qtyRaw = await customPrompt('内容個数（既定・任意）:', qtyDef);
+         if (qtyRaw === null) return;
+         const contentQty = (qtyRaw !== '' && String(qtyRaw).trim() !== '') ? Number(String(qtyRaw).trim()) || 0 : '';
+         const crops = Array.isArray(existing.crops) ? existing.crops : [];
+         try {
+           const updated = await callGAS('manageMaster', {
+             masterType: 'container',
+             manageAction: 'edit',
+             value: { originalName: original, newData: { name: newName, crops, contentUnit, contentQty } },
+             userName: localStorage.getItem('passionMapUserName') || currentUser
+           });
+           if (Array.isArray(updated)) {
+             pdlContainers = updated;
+             pdlContainerNames = updated.map(c => c.name || c);
+           } else {
+             pdlContainers = window.getContainerMasterList().map(c => (c.name || c) === original
+               ? { ...c, name: newName, contentUnit, contentQty }
+               : c);
+             pdlContainerNames = pdlContainers.map(c => c.name);
+           }
+           localStorage.removeItem('passionMapInitData');
+           localStorage.removeItem('pMapAdminInitData');
+           window.filterHarvestContainers(newName);
+           if (typeof customAlert === 'function') customAlert('✅ コンテナ種類を更新しました！');
+         } catch (e) {
+           if (typeof customAlert === 'function') customAlert(e.message || '更新に失敗しました');
+         }
+      };
+
+      window.deleteHarvestContainerType = async (containerName) => {
+         if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+           if (typeof customAlert === 'function') customAlert('コンテナマスタの変更は管理者のみ可能です。');
+           return;
+         }
+         const name = String(containerName || document.getElementById('gh_container')?.value || '').trim();
+         if (!name) return;
+         if (!await customConfirm(`コンテナ種類「${name}」を削除しますか？`)) return;
+         try {
+           const updated = await callGAS('manageMaster', {
+             masterType: 'container',
+             manageAction: 'delete',
+             value: { name },
+             userName: localStorage.getItem('passionMapUserName') || currentUser
+           });
+           if (Array.isArray(updated)) {
+             pdlContainers = updated;
+             pdlContainerNames = updated.map(c => c.name || c);
+           } else {
+             pdlContainers = window.getContainerMasterList().filter(c => (c.name || c) !== name);
+             pdlContainerNames = pdlContainers.map(c => c.name);
+           }
+           localStorage.removeItem('passionMapInitData');
+           localStorage.removeItem('pMapAdminInitData');
+           window.filterHarvestContainers('');
+           if (typeof customAlert === 'function') customAlert('🗑️ コンテナ種類を削除しました');
+         } catch (e) {
+           if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました');
+         }
       };
 
       window.submitGlobalHarvest = async () => {
-         const location = document.getElementById('gh_location').value, crop = document.getElementById('gh_crop').value, container = document.getElementById('gh_container').value, count = document.getElementById('gh_count').value;
-         if(!location || !crop || !count) { customAlert("拠点、作物名、収穫数をすべて入力してください"); return; }
+         const location = document.getElementById('gh_location').value;
+         const crop = document.getElementById('gh_crop').value;
+         const container = document.getElementById('gh_container').value;
+         const count = document.getElementById('gh_count').value;
+         if(!location || !crop || !container || !count) { customAlert("拠点、作物名、コンテナ種類、収穫数をすべて入力してください"); return; }
+         const found = window.getContainerMasterList().find(c => (c.name || c) === container);
          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px;'>ロットを編成中...</div>";
          try {
-            const res = await callGAS('saveGlobalHarvest', { location, crop, containerType: container, count: parseInt(count), author: currentUser });
-            customAlert(`ロット【${res.lotId}】を作成しました！\n\n📍 拠点: ${location}\n🔗 自動紐付された圃場:\n${res.fields}`);
+            const res = await callGAS('saveGlobalHarvest', {
+              location, crop, containerType: container, count: parseInt(count),
+              author: currentUser
+            });
+            const contentUnit = res.contentUnit != null ? String(res.contentUnit) : (found ? String(found.contentUnit || '').trim() : '');
+            const contentQty = (res.contentQty !== '' && res.contentQty != null) ? res.contentQty : ((found && found.contentQty !== '' && found.contentQty != null) ? Number(found.contentQty) || 0 : '');
+            const contentLabel = (contentUnit || contentQty !== '') ? `\n📏 内容: ${contentQty !== '' ? contentQty : ''}${contentUnit}` : '';
+            customAlert(`ロット【${res.lotId}】を作成しました！\n\n📍 拠点: ${location}${contentLabel}\n🔗 自動紐付された圃場:\n${res.fields}`);
             document.getElementById('modal').style.display = 'none'; if(typeof loadInitData === 'function') loadInitData();
          } catch(e) { customAlert("エラーが発生しました: " + e.message); document.getElementById('modal').style.display = 'none'; }
       };
@@ -5065,7 +5309,12 @@ function createSignboardMarker(name, pos, icon, id) {
          const selectedLoc = document.getElementById('gs_location').value, container = document.getElementById('gs_lot_container');
          const filteredLots = window.activeLots.filter(l => selectedLoc === 'all' || l.location === selectedLoc);
          if (filteredLots.length === 0) { container.innerHTML = `<div style="padding:10px; color:#888; text-align:center; font-size:13px;">この拠点の出荷可能ロットはありません。</div>`; return; }
-         container.innerHTML = filteredLots.map(l => `<label style="display:flex; align-items:center; gap:10px; margin-bottom:8px; padding:10px; background:#f9f9f9; border-radius:4px; border:1px solid #ddd; cursor:pointer;"><input type="checkbox" name="gs_lots" value="${l.lotId}" style="width:20px; height:20px;"><span style="color:#333; line-height:1.3;"><b>${l.lotId}</b> <span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${l.location}</span><br><span style="font-size:12px; color:#666;">${l.containerType} (残: ${l.remain} 個)</span></span></label>`).join('');
+         container.innerHTML = filteredLots.map(l => {
+           const unit = String(l.contentUnit || '').trim();
+           const qty = (l.contentQty !== '' && l.contentQty != null) ? l.contentQty : '';
+           const contentBit = (unit || qty !== '') ? ` / 中身:${qty !== '' ? qty : ''}${unit}` : '';
+           return `<label style="display:flex; align-items:center; gap:10px; margin-bottom:8px; padding:10px; background:#f9f9f9; border-radius:4px; border:1px solid #ddd; cursor:pointer;"><input type="checkbox" name="gs_lots" value="${l.lotId}" style="width:20px; height:20px;"><span style="color:#333; line-height:1.3;"><b>${l.lotId}</b> <span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${l.location}</span><br><span style="font-size:12px; color:#666;">${l.containerType} (残: ${l.remain} 個)${contentBit}</span></span></label>`;
+         }).join('');
       };
 
       window.submitGlobalShipping = async () => {
@@ -5112,6 +5361,7 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.openScheduleList = () => {
+        if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
         document.getElementById('rightPanelTitle').innerText = `📅 作業予定一覧`;
         document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:50px;">通信中...</div>';
         document.getElementById('rightPanelFooter').innerHTML = `<button onclick="closeRightPanel()" style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">閉じる</button>`;
@@ -5150,6 +5400,7 @@ function createSignboardMarker(name, pos, icon, id) {
      function closeRightPanel() { 
           if (window.sharedLocationMarker) { window.sharedLocationMarker.setMap(null); window.sharedLocationMarker = null; }
           document.getElementById('rightPanel').classList.remove('open'); 
+          if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
       }
       window.openLightbox = (u) => { document.getElementById('lightbox-img').src = u.replace('sz=w800','sz=w1600'); document.getElementById('lightbox').style.display = 'flex'; };
       // ==========================================
@@ -7555,7 +7806,7 @@ window.openMyPage = function() {
 
         <h4 style="color:#c62828; margin-bottom:10px; margin-top:5px;">📧 Gmailアカウント</h4>
         <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:12px; margin-bottom:15px;">
-            <div style="font-size:12px; color:#666; margin-bottom:8px;">Googleカレンダー連動用。登録後、スケジュール画面から今日の予定を表示できます。</div>
+            <div style="font-size:12px; color:#666; margin-bottom:8px;">Googleカレンダー連動用。登録後、スケジュール画面で今日・明日の予定が自動表示されます。</div>
             <input type="email" id="myGmailInput" style="width:100%; padding:10px; margin-bottom:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="example@gmail.com" value="">
             <button id="saveGmailBtn" onclick="doSaveUserGmail()" style="width:100%; background:#DB4437; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">Gmailを保存</button>
             <div id="saveGmailResult" style="margin-top:8px; font-size:13px; font-weight:bold;"></div>
@@ -7999,19 +8250,49 @@ window.openPersonalSchedule = function() {
     else alert('ログイン情報がありません');
     return;
   }
-  document.getElementById('rightPanelTitle').innerText = '📅 マイ・スケジュール';
-  document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">読み込み中...</div>';
-  document.getElementById('rightPanelFooter').innerHTML = '<button onclick="closeRightPanel()" style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">閉じる</button>';
-  document.getElementById('rightPanel').classList.add('open');
+  // 作業記録などの右パネルは閉じて、専用の右側ドロワーを開く
+  const rightPanel = document.getElementById('rightPanel');
+  if (rightPanel) rightPanel.classList.remove('open');
+  const panel = document.getElementById('personalSchedulePanel');
+  const backdrop = document.getElementById('personalScheduleBackdrop');
+  const content = document.getElementById('personalScheduleContent');
+  if (!panel || !content) return;
+  content.innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">読み込み中...</div>';
+  panel.classList.add('open');
+  panel.setAttribute('aria-hidden', 'false');
+  if (backdrop) {
+    backdrop.classList.add('open');
+    backdrop.setAttribute('aria-hidden', 'false');
+  }
   window.renderPersonalSchedulePanel();
+};
+
+window.closePersonalSchedule = function() {
+  const panel = document.getElementById('personalSchedulePanel');
+  const backdrop = document.getElementById('personalScheduleBackdrop');
+  if (panel) {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+  if (backdrop) {
+    backdrop.classList.remove('open');
+    backdrop.setAttribute('aria-hidden', 'true');
+  }
 };
 
 window.renderPersonalSchedulePanel = async function() {
   const staffId = localStorage.getItem('passionMapUserId') || '';
-  const content = document.getElementById('rightPanelContent');
+  const content = document.getElementById('personalScheduleContent');
   if (!content) return;
   try {
-    const data = await callGAS('getPersonalSchedule', { userId: staffId });
+    const [data, calRes] = await Promise.all([
+      callGAS('getPersonalSchedule', { userId: staffId }),
+      callGAS('getTodayGoogleCalendarEvents', { userId: staffId, days: 2 }).catch(err => ({
+        success: false,
+        events: [],
+        message: 'カレンダー取得に失敗しました: ' + (err && err.message ? err.message : String(err))
+      }))
+    ]);
     const priority = (data && data.priority) || [];
     const notes = (data && data.notes) || [];
 
@@ -8033,8 +8314,7 @@ window.renderPersonalSchedulePanel = async function() {
     };
 
     content.innerHTML =
-      '<button type="button" id="btnTodayCalendar" onclick="showTodayGoogleCalendar()" style="width:100%;background:#DB4437;color:#fff;border:none;padding:12px;border-radius:8px;font-weight:bold;font-size:14px;cursor:pointer;margin-bottom:14px;">📅 今日のGoogleカレンダー予定</button>' +
-      '<div id="todayCalendarBox" style="display:none;margin-bottom:16px;"></div>' +
+      window.buildGoogleCalendarEventsHtml(calRes) +
       '<div style="background:#ffebee;border:1px solid #ef9a9a;border-radius:10px;padding:12px;margin-bottom:14px;">' +
         '<div style="font-weight:bold;color:#c62828;font-size:15px;margin-bottom:8px;">🔴 最優先</div>' +
         '<div style="display:flex;gap:6px;margin-bottom:10px;">' +
@@ -8055,6 +8335,45 @@ window.renderPersonalSchedulePanel = async function() {
   } catch (e) {
     content.innerHTML = '<div style="color:red;text-align:center;margin-top:30px;">読み込みエラー<br><span style="font-size:12px;">' + window._escapeHtmlPs(e.message || e) + '</span></div>';
   }
+};
+
+/** Googleカレンダー予定（今日・明日）のHTML */
+window.buildGoogleCalendarEventsHtml = function(calRes) {
+  const res = calRes || {};
+  const events = Array.isArray(res.events) ? res.events : [];
+  let html = '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:12px;margin-bottom:14px;">';
+  html += '<div style="font-weight:bold;color:#DB4437;font-size:15px;margin-bottom:4px;">📅 Googleカレンダー</div>';
+  html += '<div style="font-size:11px;color:#888;margin-bottom:10px;">今日・明日の予定' +
+    (res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + '）' : '') + '</div>';
+
+  if (events.length) {
+    let lastDate = '';
+    events.forEach(ev => {
+      const dateLabel = window._escapeHtmlPs(ev.dateLabel || ev.dateYmd || '');
+      const time = window._escapeHtmlPs(ev.time || '');
+      const title = window._escapeHtmlPs(ev.title || '');
+      if (dateLabel && dateLabel !== lastDate) {
+        lastDate = dateLabel;
+        html += '<div style="margin:10px 0 6px;font-size:12px;font-weight:bold;color:#1565c0;border-bottom:1px solid #e3f2fd;padding-bottom:3px;">' + dateLabel + '</div>';
+      }
+      html += '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #f0f0f0;">' +
+        '<div style="min-width:92px;flex-shrink:0;font-size:12px;font-weight:bold;color:#DB4437;line-height:1.35;">' + time + '</div>' +
+        '<div style="flex:1;font-size:14px;font-weight:bold;color:#222;line-height:1.35;word-break:break-word;">' + title + '</div>' +
+        '</div>';
+    });
+  } else {
+    html += '<div style="color:#666;font-size:13px;padding:8px 0;">' +
+      window._escapeHtmlPs(res.message || '今日・明日の予定はありません。') + '</div>';
+  }
+
+  if (res.calendarUrl) {
+    html += '<a href="' + window._escapeHtmlPs(res.calendarUrl) + '" target="_blank" rel="noopener" style="display:block;margin-top:10px;text-align:center;background:#4285F4;color:#fff;text-decoration:none;padding:9px;border-radius:6px;font-weight:bold;font-size:12px;">Googleカレンダーを開く</a>';
+  }
+  if (!res.success) {
+    html += '<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.4;">※カレンダーが見つからない場合は、対象カレンダーを Apps Script実行アカウントへ「予定の表示」で共有してください。</div>';
+  }
+  html += '</div>';
+  return html;
 };
 
 window.addPersonalScheduleItem = async function(category) {
@@ -8102,41 +8421,8 @@ window.deletePersonalScheduleItem = async function(id) {
 };
 
 window.showTodayGoogleCalendar = async function() {
-  const staffId = localStorage.getItem('passionMapUserId') || '';
-  const box = document.getElementById('todayCalendarBox');
-  const btn = document.getElementById('btnTodayCalendar');
-  if (!box) return;
-  box.style.display = 'block';
-  box.innerHTML = '<div style="text-align:center;padding:12px;color:#666;font-size:13px;">取得中...</div>';
-  if (btn) { btn.disabled = true; btn.innerText = '取得中...'; }
-  try {
-    const res = await callGAS('getTodayGoogleCalendarEvents', { userId: staffId });
-    const events = (res && res.events) || [];
-    let html = '<div style="background:#fafafa;border:1px solid #e0e0e0;border-radius:8px;padding:12px;">' +
-      '<div style="font-weight:bold;margin-bottom:8px;color:#333;">📅 今日の予定' + (res && res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + '）' : '') + '</div>';
-    if (events.length) {
-      html += events.map(ev => {
-        const loc = ev.location ? '<div style="font-size:11px;color:#666;">📍 ' + window._escapeHtmlPs(ev.location) + '</div>' : '';
-        return '<div style="padding:8px 0;border-bottom:1px solid #eee;">' +
-          '<div style="font-size:12px;color:#DB4437;font-weight:bold;">' + window._escapeHtmlPs(ev.time) + '</div>' +
-          '<div style="font-size:14px;font-weight:bold;color:#222;">' + window._escapeHtmlPs(ev.title) + '</div>' +
-          loc +
-          '</div>';
-      }).join('');
-    } else {
-      html += '<div style="color:#666;font-size:13px;padding:6px 0;">' + window._escapeHtmlPs((res && res.message) || '今日の予定はありません。') + '</div>';
-    }
-    if (res && res.calendarUrl) {
-      html += '<a href="' + window._escapeHtmlPs(res.calendarUrl) + '" target="_blank" rel="noopener" style="display:block;margin-top:10px;text-align:center;background:#4285F4;color:#fff;text-decoration:none;padding:10px;border-radius:6px;font-weight:bold;font-size:13px;">Googleカレンダーを開く</a>';
-    }
-    if (!res || !res.success) {
-      html += '<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.4;">※カレンダーが見つからない場合は、対象カレンダーを Apps Script実行アカウントへ「予定の表示」で共有してください。</div>';
-    }
-    html += '</div>';
-    box.innerHTML = html;
-  } catch (e) {
-    box.innerHTML = '<div style="color:red;font-size:13px;padding:8px;">エラー: ' + window._escapeHtmlPs(e.message || e) + '</div>';
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerText = '📅 今日のGoogleカレンダー予定'; }
+  // 互換用：スケジュール再描画で自動表示
+  if (typeof window.renderPersonalSchedulePanel === 'function') {
+    await window.renderPersonalSchedulePanel();
   }
 };

@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <link rel="stylesheet" href="worker.css?v=1785307000002">
+  <link rel="stylesheet" href="worker.css?v=1785307000003">
 </head>
 
 <body>
@@ -35,6 +35,9 @@
     </button>
     <button id="btnTracking" class="map-action-btn" onclick="toggleTracking()" style="color: #4CAF50;">
       🏃‍♂️
+    </button>
+    <button id="btnPersonalSchedule" class="map-action-btn" onclick="openPersonalSchedule()" title="スケジュール" style="color: #2E7D32;">
+      🗓️
     </button>
     <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
       📍
@@ -266,6 +269,20 @@
     <div class="panel-footer" id="rightPanelFooter"></div>
   </div>
 
+  <!-- 個人スケジュール専用：常に画面右側から表示 -->
+  <div id="personalSchedulePanel" aria-hidden="true">
+    <div class="ps-panel-header">
+      <span>🗓️ マイ・スケジュール</span>
+      <span style="cursor:pointer; font-size:24px; padding-left:10px;" onclick="closePersonalSchedule()" title="閉じる">×</span>
+    </div>
+    <div class="ps-panel-content" id="personalScheduleContent"></div>
+    <div class="ps-panel-footer">
+      <button type="button" onclick="closePersonalSchedule()"
+        style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">閉じる</button>
+    </div>
+  </div>
+  <div id="personalScheduleBackdrop" onclick="closePersonalSchedule()" aria-hidden="true"></div>
+
   <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src=""></div>
 
   <!-- 管理者：農業CAD（admin.html iframe） -->
@@ -283,7 +300,7 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-  <script src="worker.js?v=1785311000015"></script>
+  <script src="worker.js?v=1785311000020"></script>
   <script src="tracking.js?v=1784615000006"></script>
   <script>
     if ('serviceWorker' in navigator) {
