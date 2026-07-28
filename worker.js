@@ -7740,12 +7740,22 @@ window.renderMyWorkRecordCardHtml = function(rec) {
     const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `🕒 ${rec.time}` : '');
     const safePolyId = String(rec.polyId || '').replace(/'/g, "\\'");
     const safeRecId = String(rec.id || '').replace(/'/g, "\\'");
+    const workName = String(d.workName || '').trim();
+    const workMaster = workName && Array.isArray(pdlWorkMaster)
+        ? pdlWorkMaster.find(w => String((w && w.name) || '').trim() === workName)
+        : null;
+    const workCategory = String((d.category || (workMaster && workMaster.category) || '')).trim();
+    const fieldLabel = String(d.multiFieldNames || '').trim() || (!rec.isMarker ? String(rec.polyName || '').trim() : '');
 
     return `
         <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #4CAF50; border-radius:6px; padding:10px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
             <div style="display:flex; justify-content:flex-end; align-items:center; margin-bottom:4px;">
                 <span style="font-size:11px; color:#666;">${timeSpan}</span>
             </div>
+            ${(workCategory || fieldLabel) ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:5px;">
+                ${workCategory ? `<span style="background:#e8f0fe; color:#1565c0; font-size:11px; padding:2px 8px; border-radius:10px;">📁 ${workCategory}</span>` : ''}
+                ${fieldLabel ? `<span style="background:#e8f5e9; color:#2e7d32; font-size:11px; padding:2px 8px; border-radius:10px;">📍 ${fieldLabel}</span>` : ''}
+            </div>` : ''}
             <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:3px;">
                 🚜 ${d.workName || '作業'}
                 <span style="background:#fff3e0; color:#e65100; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:normal; margin-left:5px;">${d.progressStatus || '記録'}</span>
