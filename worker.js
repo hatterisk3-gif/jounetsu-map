@@ -1513,11 +1513,23 @@ function createSignboardMarker(name, pos, icon, id) {
          } else {
             allRecs.forEach(item => {
               h += `<div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 1px 4px rgba(0,0,0,0.1); position:relative;">`;
+              const workName = item && item.data ? String(item.data.workName || '').trim() : '';
+              const workMaster = workName && Array.isArray(pdlWorkMaster)
+                ? pdlWorkMaster.find(w => String((w && w.name) || '').trim() === workName)
+                : null;
+              const workCategory = String((workMaster && workMaster.category) || '').trim();
+              const hideMarkerTitle = !!(item.type === 'work' && item.isMarker && workCategory && workCategory !== '圃場作業');
               
-              h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid #eee;padding-bottom:5px;">
-                      <span style="font-size:13px;font-weight:bold;color:#1a73e8;cursor:pointer;" onclick="focusAndOpen('${item.polyId}')">${item.isMarker?'🪧':'🌿'} ${item.polyName}</span>
-                      <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''}</span>
-                    </div>`;
+              if (!hideMarkerTitle) {
+                h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid #eee;padding-bottom:5px;">
+                        <span style="font-size:13px;font-weight:bold;color:#1a73e8;cursor:pointer;" onclick="focusAndOpen('${item.polyId}')">${item.isMarker?'🪧':'🌿'} ${item.polyName}</span>
+                        <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''}</span>
+                      </div>`;
+              } else {
+                h += `<div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;">
+                        <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''}</span>
+                      </div>`;
+              }
               h += `<div style="font-size:11px;color:#888;margin-bottom:10px;text-align:right;">👤 ${item.author}</div>`;
 
               if (item.data && item.data.multiFieldNames && item.data.multiFieldNames.includes(',')) { 
@@ -1526,7 +1538,10 @@ function createSignboardMarker(name, pos, icon, id) {
 
               if (item.type === 'work' && item.data) {
                  const workLabel = item.isMarker ? "作業登録" : "作業記録";
-                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
+                 const categoryBadge = workCategory
+                   ? `<span style="background:#e8f0fe;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${workCategory}</span>`
+                   : '';
+                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b>${categoryBadge} <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
                  if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
                  if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
                    const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
@@ -2107,6 +2122,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!dateEl || !startEl) return;
         const selectedDate = dateEl.value;
         if (!selectedDate) return;
+        if (currentEditRecordId) return;
 
         const resolved = window.resolveDefaultStartTime(selectedDate);
         window.applyStartTimeToForm(resolved.start, {
@@ -4320,7 +4336,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const defaultStartTime = resolvedStart.start;
         // 裏読み込みが遅い場合に備え、フォーム表示と同時に軽量APIを叩く
         if (typeof window.prefetchWorkTimeHints === 'function') {
-          window.prefetchWorkTimeHints(todayStr, { applyToForm: true, onlyIfAutofill: !!resolvedStart.isFallback });
+          window.prefetchWorkTimeHints(todayStr, {
+            applyToForm: !isEdit,
+            onlyIfAutofill: !isEdit && !!resolvedStart.isFallback
+          });
         }
 
         let timeUI = `
@@ -4528,7 +4547,12 @@ function createSignboardMarker(name, pos, icon, id) {
                 const firstCrop = String(d.crop).split(',')[0].trim();
                 window.syncRecordCropFromFilter(firstCrop ? window.normalizeWorkCropKey(firstCrop) : '__common__');
             }
-            if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || '';
+            if(document.getElementById('rec_start_time')) {
+              document.getElementById('rec_start_time').value = d.startTime || '';
+              document.getElementById('rec_start_time').removeAttribute('data-autofill');
+              document.getElementById('rec_start_time').setAttribute('data-start-source', 'editRecord');
+            }
+            if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || '';
             if (d.progressStatus && typeof window.selectProgressStatus === 'function') window.selectProgressStatus(d.progressStatus); else if (document.getElementById('rec_progress_status')) document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
             if (document.getElementById('rec_work_comment')) document.getElementById('rec_work_comment').value = d.comment || d.notes || '';
             setTimeout(() => {
@@ -4621,11 +4645,23 @@ function createSignboardMarker(name, pos, icon, id) {
             }
           } else if (!p.isMarker) {
             document.getElementById('rec_crop').value = d.crop||''; document.getElementById('rec_field_status').value = d.fieldStatus||'';
-            if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || '';
+            if(document.getElementById('rec_start_time')) {
+              document.getElementById('rec_start_time').value = d.startTime || '';
+              document.getElementById('rec_start_time').removeAttribute('data-autofill');
+              document.getElementById('rec_start_time').setAttribute('data-start-source', 'editRecord');
+            }
+            if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || '';
             ['mowing','weeding','drainage','bug','disease','flower'].forEach(k => { if(document.getElementById('rec_'+k)) document.getElementById('rec_'+k).checked = !!d[k]; });
             ['harvest','survival','leaf','harvest_size','harvest_amount','ph','notes'].forEach(k => { if(document.getElementById('rec_'+k)) document.getElementById('rec_'+k).value = d[k+(k==='harvest'?'Date':(k==='survival'?'Rate':(k==='leaf'?'Length':(k==='harvest_size'?'Size':(k==='harvest_amount'?'Amount':'')))))]||d[k]||''; });
             handleCropSelection();
-          } else { if(document.getElementById('rec_start_time')) document.getElementById('rec_start_time').value = d.startTime || ''; if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || ''; }
+          } else {
+            if(document.getElementById('rec_start_time')) {
+              document.getElementById('rec_start_time').value = d.startTime || '';
+              document.getElementById('rec_start_time').removeAttribute('data-autofill');
+              document.getElementById('rec_start_time').setAttribute('data-start-source', 'editRecord');
+            }
+            if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || '';
+          }
         } else {
            if(currentRecordType === 'work') handleWorkNameChange();
         }
