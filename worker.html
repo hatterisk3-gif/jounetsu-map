@@ -148,8 +148,8 @@
           現在地で作業記録</button>
         <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openGlobalHarvest()"
-          style="background: #66BB6A; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜
-          収穫記録</button>
+          style="background: #66BB6A; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); position:relative;">🚜
+          収穫記録 <span class="harvest-pending-badge" style="display:none; position:absolute; top:6px; right:10px; background:#d32f2f; color:#fff; font-size:11px; min-width:18px; height:18px; line-height:18px; border-radius:9px; padding:0 5px;"></span></button>
         <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openLotList()"
           style="background: #43A047; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📋
@@ -301,7 +301,7 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-  <script src="worker.js?v=1785311000027"></script>
+  <script src="worker.js?v=1785311000030"></script>
   <script src="tracking.js?v=1784615000010"></script>
   <script>
     if ('serviceWorker' in navigator) {

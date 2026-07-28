@@ -510,6 +510,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
               if (typeof window.getLatestEndTimeForDate === 'function') window.getLatestEndTimeForDate(todayStr);
           } catch (e) {}
+          try {
+            if (typeof window.refreshHarvestPendingBadge === 'function') window.refreshHarvestPendingBadge();
+          } catch (e) {}
       }
           
 
@@ -2286,6 +2289,7 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
         box.style.display = 'block';
+        const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
         let html = `<label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗（圃場別）</label>`;
         selectedPolyIds.forEach((pid, idx) => {
           const poly = loadedPolygons[pid];
@@ -2301,11 +2305,19 @@ function createSignboardMarker(name, pos, icon, id) {
             });
             if (pastWorks.length > 0) lastNext = pastWorks[0].data.nextRidge || '';
           }
+          const safePid = String(pid).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const cadSetupBtn = (uneCount <= 0 && isAdmin)
+            ? `<button type="button" onclick="openAdminCadForField('${safePid}')" style="background:#FF9800; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">🚜 農業CADを設定</button>`
+            : '';
           html += `<div class="ridge-field-block" data-poly-id="${pid}" style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:10px; border:1px solid #80deea;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
               <div style="font-weight:bold; color:#00695c; font-size:13px;">📍 ${poly.name || pid}</div>
-              <div style="font-size:12px; color:#00695c;">CAD畝数: <b>${uneLabel}</b></div>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div style="font-size:12px; color:${uneCount > 0 ? '#00695c' : '#c62828'};">CAD畝数: <b>${uneLabel}</b></div>
+                ${cadSetupBtn}
+              </div>
             </div>
+            ${uneCount <= 0 && isAdmin ? `<div style="font-size:11px; color:#e65100; margin-bottom:8px;">畝数が未登録です。農業CADで畝を設定してください。</div>` : ''}
             <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#00695c; margin-bottom:8px; cursor:pointer;">
               <input type="checkbox" class="ridge-complete-check" data-poly-id="${pid}" data-une-count="${uneCount}" onchange="onRidgeCompleteToggle(this)"> 完了（全畝をセット）
             </label>
@@ -2627,6 +2639,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         setTimeout(() => {
           if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+          if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
         }, 300);
       };
 
@@ -2898,6 +2911,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const category = document.getElementById('rec_work_category')?.value || 'すべて';
         if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(category, cropKey);
         if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
+        if (typeof window.refreshWorkHarvestQtySection === 'function') window.refreshWorkHarvestQtySection();
       };
 
       window.renderCategoryButtons = (selectedCategory) => {
@@ -4272,16 +4286,190 @@ function createSignboardMarker(name, pos, icon, id) {
         const sel = document.getElementById('rec_work_name');
         const wName = String(forcedName != null ? forcedName : (sel ? sel.value : '') || '').trim();
         
-        const genSec = document.getElementById('lot_generate_section'), useSec = document.getElementById('lot_use_section');
-        if(genSec) genSec.style.display = 'none'; 
+        const useSec = document.getElementById('lot_use_section');
         if(useSec) {
            if (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')) useSec.style.display = 'block';
            else useSec.style.display = 'none';
+        }
+        if (typeof window.refreshWorkHarvestQtySection === 'function') {
+          window.refreshWorkHarvestQtySection();
         }
         
         window.renderDetailWorksSection(wName);
         window.renderUsedItems(wName);
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+      };
+
+      window.isHarvestWorkName = (name) => String(name || '').includes('収穫');
+
+      window.getWorkRecordPrimaryCrop = () => {
+        const cropsText = (typeof window.getSelectedWorkCropsText === 'function')
+          ? window.getSelectedWorkCropsText()
+          : '';
+        if (cropsText) return String(cropsText).split(',')[0].trim();
+        const filter = document.getElementById('rec_work_crop_filter')?.value || '';
+        if (filter && filter !== '__common__') return filter;
+        return '';
+      };
+
+      window.getContainersForCrop = (cropName) => {
+        const crop = String(cropName || '').trim();
+        if (!crop || typeof window.getContainerMasterList !== 'function') return [];
+        return window.getContainerMasterList().filter(c => window.containerMatchesCrop(c, crop));
+      };
+
+      window.updateWorkHarvestTotalDisplay = () => {
+        const el = document.getElementById('wh_total_display');
+        if (!el) return;
+        const count = parseFloat(document.getElementById('wh_container_count')?.value || '0') || 0;
+        const qty = parseFloat(document.getElementById('wh_content_qty')?.value || '0') || 0;
+        const unit = (document.getElementById('wh_content_unit')?.value || '').trim();
+        const unitStr = unit ? ` ${unit}` : '';
+        if (count > 0 && qty > 0) {
+          const total = count * qty;
+          const totalStr = (typeof window.formatHarvestNumber === 'function')
+            ? window.formatHarvestNumber(total)
+            : String(total);
+          el.innerHTML = `見込み総量: <b style="color:#1b5e20;">${totalStr}${unitStr}</b> <span style="font-size:11px; color:#666;">（${count} × ${qty}${unitStr}）</span>`;
+        } else if (count > 0) {
+          el.innerHTML = `コンテナ数: <b>${count}</b>${unitStr ? `（内容個数未設定）` : ''}`;
+        } else {
+          el.innerHTML = `<span style="color:#888;">総量: --</span>`;
+        }
+      };
+
+      window.applyWorkHarvestContainerDefaults = () => {
+        const crop = window.getWorkRecordPrimaryCrop();
+        const name = document.getElementById('wh_container')?.value || '';
+        const unitEl = document.getElementById('wh_content_unit');
+        const qtyEl = document.getElementById('wh_content_qty');
+        if (!unitEl || !qtyEl) return;
+        const found = (name && crop && typeof window.findHarvestContainerEntry === 'function')
+          ? window.findHarvestContainerEntry(name, crop)
+          : null;
+        unitEl.value = found ? String(found.contentUnit || '') : '';
+        qtyEl.value = (found && found.contentQty !== '' && found.contentQty != null) ? String(found.contentQty) : '';
+        window.updateWorkHarvestTotalDisplay();
+      };
+
+      window.refreshWorkHarvestQtySection = (preset) => {
+        const box = document.getElementById('work_harvest_qty_section');
+        if (!box) return;
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (!window.isHarvestWorkName(wName)) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        const crop = window.getWorkRecordPrimaryCrop();
+        const containers = window.getContainersForCrop(crop);
+        if (!crop || containers.length === 0) {
+          box.style.display = 'block';
+          box.innerHTML = `<b style="color:#2e7d32;">🥬 収穫量（参考記録）</b>
+            <div style="font-size:12px; color:#666; margin-top:6px;">${crop ? `品目「${crop}」のコンテナ種類・内容単位が未登録です。収穫記録のコンテナマスタに登録すると入力できます。` : '品目を選択すると、登録済みコンテナがあれば収穫量を入力できます。'}
+            <br><span style="color:#888;">※ここではロットは作りません。収穫記録画面に通知されます。</span></div>`;
+          return;
+        }
+
+        const p = preset || {};
+        const scope = p.scope === 'personal' ? 'personal' : 'group';
+        const preferContainer = p.containerType || '';
+        let opts = '<option value="">選択してください</option>';
+        containers.forEach(c => {
+          const name = c.name || c;
+          const unit = String(c.contentUnit || '').trim();
+          const qty = (c.contentQty !== '' && c.contentQty != null) ? c.contentQty : '';
+          const bit = (unit || qty !== '') ? `（${qty !== '' ? qty : ''}${unit}）` : '';
+          const sel = preferContainer && preferContainer === name ? ' selected' : '';
+          opts += `<option value="${String(name).replace(/"/g, '&quot;')}"${sel}>${name}${bit}</option>`;
+        });
+
+        box.style.display = 'block';
+        box.innerHTML = `
+          <b style="color:#2e7d32;">🥬 収穫量（参考記録）</b>
+          <div style="font-size:11px; color:#666; margin:4px 0 10px;">ロットには直接登録しません。収穫記録画面で通知され、そこから微調整してロット化できます。</div>
+          <label class="form-label" style="margin-bottom:6px;">登録区分</label>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+            <label style="display:flex; align-items:center; gap:4px; background:#fff; border:1px solid #c8e6c9; padding:8px 10px; border-radius:8px; font-size:13px; cursor:pointer;">
+              <input type="radio" name="wh_scope" value="group" ${scope === 'group' ? 'checked' : ''}> 全体個数
+            </label>
+            <label style="display:flex; align-items:center; gap:4px; background:#fff; border:1px solid #c8e6c9; padding:8px 10px; border-radius:8px; font-size:13px; cursor:pointer;">
+              <input type="radio" name="wh_scope" value="personal" ${scope === 'personal' ? 'checked' : ''}> 個人個数
+            </label>
+          </div>
+          <div style="font-size:11px; color:#558b2f; margin:-4px 0 10px;">全体＝集団で収穫した合計 ／ 個人＝自分が収穫した分</div>
+          <label class="form-label">📦 コンテナ種類</label>
+          <select id="wh_container" class="form-input" onchange="applyWorkHarvestContainerDefaults()">${opts}</select>
+          <div style="display:flex; gap:10px;">
+            <div style="flex:1;">
+              <label class="form-label">📏 内容単位</label>
+              <input type="text" id="wh_content_unit" class="form-input" placeholder="例: kg・本" oninput="updateWorkHarvestTotalDisplay()">
+            </div>
+            <div style="flex:1;">
+              <label class="form-label">🔢 内容個数/コンテナ</label>
+              <input type="number" id="wh_content_qty" class="form-input" min="0" step="any" placeholder="例: 10" oninput="updateWorkHarvestTotalDisplay()">
+            </div>
+          </div>
+          <label class="form-label">📦 コンテナ個数</label>
+          <input type="number" id="wh_container_count" class="form-input" min="0" step="1" placeholder="例: 5" value="${p.containerCount != null ? String(p.containerCount).replace(/"/g, '&quot;') : ''}" oninput="updateWorkHarvestTotalDisplay()">
+          <div id="wh_total_display" style="font-size:13px; margin-top:4px; color:#2e7d32;">総量: --</div>
+        `;
+
+        if (preferContainer) {
+          const sel = document.getElementById('wh_container');
+          if (sel) sel.value = preferContainer;
+        }
+        window.applyWorkHarvestContainerDefaults();
+        if (p.contentUnit != null) {
+          const u = document.getElementById('wh_content_unit');
+          if (u) u.value = p.contentUnit;
+        }
+        if (p.contentQty != null && p.contentQty !== '') {
+          const q = document.getElementById('wh_content_qty');
+          if (q) q.value = p.contentQty;
+        }
+        window.updateWorkHarvestTotalDisplay();
+      };
+
+      window.collectWorkHarvestQty = () => {
+        const box = document.getElementById('work_harvest_qty_section');
+        if (!box || box.style.display === 'none') return null;
+        const containerEl = document.getElementById('wh_container');
+        if (!containerEl) return null;
+        const containerType = (containerEl.value || '').trim();
+        const containerCount = parseFloat(document.getElementById('wh_container_count')?.value || '0') || 0;
+        const contentUnit = (document.getElementById('wh_content_unit')?.value || '').trim();
+        const contentQtyRaw = document.getElementById('wh_content_qty')?.value;
+        const contentQty = (contentQtyRaw !== '' && contentQtyRaw != null) ? Number(contentQtyRaw) : '';
+        const scopeEl = document.querySelector('input[name="wh_scope"]:checked');
+        const scope = scopeEl ? scopeEl.value : 'group';
+        // 未入力なら保存しない
+        if (!containerType && !containerCount && (contentQty === '' || contentQty == null)) return null;
+        if (!containerType || !(containerCount > 0)) return null;
+        const qtyNum = (contentQty !== '' && isFinite(contentQty)) ? Number(contentQty) : 0;
+        const contentTotal = containerCount * qtyNum;
+        const primaryCrop = window.getWorkRecordPrimaryCrop();
+        let locationHint = '';
+        try {
+          const pid = (typeof selectedPolyIds !== 'undefined' && selectedPolyIds[0]) || activePolyId;
+          if (pid && loadedPolygons[pid] && loadedPolygons[pid].location) {
+            locationHint = loadedPolygons[pid].location;
+          }
+        } catch (e) {}
+        return {
+          pendingLot: true,
+          scope: scope === 'personal' ? 'personal' : 'group',
+          crop: primaryCrop,
+          containerType,
+          containerCount,
+          contentUnit,
+          contentQty: contentQty === '' ? '' : contentQty,
+          contentTotal,
+          contentMode: 'uniform',
+          uniformQty: contentQty === '' ? '' : contentQty,
+          locationHint,
+          recordedAt: new Date().toISOString()
+        };
       };
 
       window.adminAddDetailWork = async function(wName) {
@@ -4693,7 +4881,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <label class="form-label" style="margin-top:10px;">💬 コメント</label>
                   <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="伝達事項・メモなど"></textarea>
                   <div id="used_items_section"></div>
-                  <div id="lot_generate_section" class="lot-section"><b>📦 収穫量登録（新規ロット生成）</b><br><span style="font-size:12px; color:#666;">自動ID: <span id="disp_lot_id" style="font-weight:bold; color:#2196F3;"></span></span><br><div style="display:flex; gap:5px; margin-top:5px;"><select id="rec_lot_container" class="form-input" style="flex:1; margin-bottom:0;">${cNames}</select><input type="number" id="rec_lot_gen_count" class="form-input" placeholder="数 (例: 10)" style="flex:1; margin-bottom:0;"></div></div>
+                  <div id="work_harvest_qty_section" class="lot-section" style="display:none; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
                    <div id="progress_status_section">
                      <label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label>
@@ -4829,6 +5017,12 @@ function createSignboardMarker(name, pos, icon, id) {
                 selectWorkChip(d.workName);
             } else {
                 handleWorkNameChange();
+            }
+
+            if (d.harvestQty && typeof window.refreshWorkHarvestQtySection === 'function') {
+              setTimeout(() => {
+                window.refreshWorkHarvestQtySection(d.harvestQty);
+              }, 100);
             }
             
             if (d.detailedWorks) {
@@ -5215,6 +5409,23 @@ function createSignboardMarker(name, pos, icon, id) {
               comment: document.getElementById('rec_work_comment') ? document.getElementById('rec_work_comment').value.trim() : ""
             };
 
+            const harvestQty = (typeof window.collectWorkHarvestQty === 'function')
+              ? window.collectWorkHarvestQty()
+              : null;
+            if (harvestQty) {
+              // 既にロット化済みの記録を編集した場合は未ロット化に戻さない
+              try {
+                if (currentEditRecordId && activePolyId && loadedPolygons[activePolyId] && Array.isArray(loadedPolygons[activePolyId].photos)) {
+                  const prev = loadedPolygons[activePolyId].photos.find(ph => ph && ph.id === currentEditRecordId);
+                  if (prev && prev.data && prev.data.harvestQty && prev.data.harvestQty.pendingLot === false) {
+                    harvestQty.pendingLot = false;
+                    if (prev.data.harvestQty.lotId) harvestQty.lotId = prev.data.harvestQty.lotId;
+                  }
+                }
+              } catch (e) {}
+              data.harvestQty = harvestQty;
+            }
+
             if (typeof window.isIrrigationWork === 'function' && window.isIrrigationWork(wName)) {
               const valveRows = (typeof window.collectIrrigationValveData === 'function') ? window.collectIrrigationValveData() : [];
               if (valveRows.length > 0) {
@@ -5389,23 +5600,390 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       }
 
+      window.formatHarvestNumber = (n) => {
+         if (!isFinite(n)) return '';
+         return Number.isInteger(n) ? String(n) : String(n.toFixed(2)).replace(/\.?0+$/, '');
+      };
+
+      window.getHarvestContentMode = () => {
+         const checked = document.querySelector('input[name="gh_content_mode"]:checked');
+         return checked ? checked.value : 'uniform';
+      };
+
+      window.setHarvestContentMode = (mode) => {
+         const radio = document.querySelector(`input[name="gh_content_mode"][value="${mode}"]`);
+         if (radio) radio.checked = true;
+         window.refreshHarvestContentQtyUI();
+      };
+
+      /** コンテナごとの内容個数を収集 */
+      window.collectHarvestContentQtys = () => {
+         const mode = window.getHarvestContentMode();
+         const count = Math.max(0, parseInt(document.getElementById('gh_count')?.value || '0', 10) || 0);
+         const unit = (document.getElementById('gh_content_unit')?.value || '').trim();
+         const uniformRaw = document.getElementById('gh_content_qty')?.value;
+         const uniformQty = (uniformRaw !== '' && uniformRaw != null) ? Number(uniformRaw) : NaN;
+         let qtys = [];
+         let remainderCount = 0;
+         let remainderQty = '';
+
+         if (mode === 'individual') {
+           document.querySelectorAll('.gh-per-qty').forEach(inp => {
+             const n = Number(inp.value);
+             qtys.push(isFinite(n) && n >= 0 ? n : 0);
+           });
+           while (qtys.length < count) qtys.push(isFinite(uniformQty) ? uniformQty : 0);
+           if (count > 0) qtys = qtys.slice(0, count);
+         } else if (mode === 'remainder') {
+           remainderCount = Math.max(1, Math.min(count || 1, parseInt(document.getElementById('gh_remainder_count')?.value || '1', 10) || 1));
+           const remRaw = document.getElementById('gh_remainder_qty')?.value;
+           remainderQty = (remRaw !== '' && remRaw != null) ? Number(remRaw) : NaN;
+           const common = isFinite(uniformQty) ? uniformQty : 0;
+           const rem = isFinite(remainderQty) ? remainderQty : 0;
+           const normalCount = Math.max(0, count - remainderCount);
+           for (let i = 0; i < normalCount; i++) qtys.push(common);
+           for (let i = 0; i < remainderCount; i++) qtys.push(rem);
+         } else {
+           const q = isFinite(uniformQty) ? uniformQty : 0;
+           for (let i = 0; i < count; i++) qtys.push(q);
+         }
+
+         const total = qtys.reduce((s, n) => s + (Number(n) || 0), 0);
+         const allSame = qtys.length > 0 && qtys.every(n => n === qtys[0]);
+         return {
+           mode,
+           unit,
+           count,
+           qtys,
+           total,
+           uniformQty: isFinite(uniformQty) ? uniformQty : '',
+           remainderCount,
+           remainderQty: isFinite(remainderQty) ? remainderQty : '',
+           representativeQty: allSame ? (qtys[0] || '') : (qtys.length ? Math.round((total / qtys.length) * 1000) / 1000 : '')
+         };
+      };
+
       window.updateHarvestTotalDisplay = () => {
-         const containerCount = parseFloat(document.getElementById('gh_count')?.value || '0') || 0;
-         const contentQty = parseFloat(document.getElementById('gh_content_qty')?.value || '0') || 0;
-         const contentUnit = (document.getElementById('gh_content_unit')?.value || '').trim();
          const displayEl = document.getElementById('gh_total_harvest_display');
          if (!displayEl) return;
-         if (containerCount > 0 && contentQty > 0) {
-            const total = containerCount * contentQty;
-            const totalStr = Number.isInteger(total) ? total.toString() : total.toFixed(2).replace(/\.?0+$/, '');
-            const unitStr = contentUnit ? ` ${contentUnit}` : '';
-            displayEl.innerHTML = `<span style="font-size:12px; color:#555;">総収穫数:</span> <strong style="font-size:18px; color:#1b5e20;">${totalStr}${unitStr}</strong> <span style="font-size:11px; color:#666;">（${containerCount}コンテナ × ${contentQty}${unitStr}）</span>`;
-         } else if (containerCount > 0) {
-            const unitStr = contentUnit ? ` ${contentUnit}` : '';
-            displayEl.innerHTML = `<span style="font-size:12px; color:#555;">総収穫数:</span> <strong style="font-size:16px; color:#333;">${containerCount} コンテナ</strong>${unitStr ? ` <span style="font-size:11px; color:#888;">(内容個数未設定)</span>` : ''}`;
+         const info = window.collectHarvestContentQtys();
+         const unitStr = info.unit ? ` ${info.unit}` : '';
+         if (info.count > 0 && info.total > 0) {
+            const totalStr = window.formatHarvestNumber(info.total);
+            let detail = '';
+            if (info.mode === 'uniform') {
+              detail = `（${info.count}コンテナ × ${window.formatHarvestNumber(info.qtys[0] || 0)}${unitStr}）`;
+            } else if (info.mode === 'remainder') {
+              const normal = Math.max(0, info.count - info.remainderCount);
+              detail = `（共通${normal}×${window.formatHarvestNumber(Number(info.uniformQty) || 0)} ＋ 端数${info.remainderCount}×${window.formatHarvestNumber(Number(info.remainderQty) || 0)}）`;
+            } else {
+              const preview = info.qtys.slice(0, 6).map(q => window.formatHarvestNumber(q)).join(', ');
+              const more = info.qtys.length > 6 ? '…' : '';
+              detail = `（個別: ${preview}${more}）`;
+            }
+            displayEl.innerHTML = `<span style="font-size:12px; color:#555;">総収穫数:</span> <strong style="font-size:18px; color:#1b5e20;">${totalStr}${unitStr}</strong> <span style="font-size:11px; color:#666;">${detail}</span>`;
+         } else if (info.count > 0) {
+            displayEl.innerHTML = `<span style="font-size:12px; color:#555;">総収穫数:</span> <strong style="font-size:16px; color:#333;">${info.count} コンテナ</strong>${unitStr ? ` <span style="font-size:11px; color:#888;">(内容個数未設定)</span>` : ''}`;
          } else {
             displayEl.innerHTML = `<span style="font-size:12px; color:#888;">総収穫数: --</span>`;
          }
+      };
+
+      window.refreshHarvestContentQtyUI = () => {
+         const mode = window.getHarvestContentMode();
+         const count = Math.max(0, parseInt(document.getElementById('gh_count')?.value || '0', 10) || 0);
+         const uniformPanel = document.getElementById('gh_uniform_panel');
+         const individualPanel = document.getElementById('gh_individual_panel');
+         const remainderPanel = document.getElementById('gh_remainder_panel');
+         if (uniformPanel) uniformPanel.style.display = (mode === 'uniform' || mode === 'remainder') ? 'block' : 'none';
+         if (individualPanel) individualPanel.style.display = mode === 'individual' ? 'block' : 'none';
+         if (remainderPanel) remainderPanel.style.display = mode === 'remainder' ? 'block' : 'none';
+
+         const qtyLabel = document.getElementById('gh_content_qty_label');
+         if (qtyLabel) {
+           qtyLabel.textContent = mode === 'remainder' ? '🔢 共通個数（端数以外）' : '🔢 内容個数（1コンテナあたり）';
+         }
+
+         if (mode === 'individual') {
+           const list = document.getElementById('gh_per_container_list');
+           if (list) {
+             const prev = {};
+             list.querySelectorAll('.gh-per-qty').forEach(inp => {
+               prev[inp.getAttribute('data-idx')] = inp.value;
+             });
+             const defaultQty = document.getElementById('gh_content_qty')?.value || '';
+             if (count <= 0) {
+               list.innerHTML = `<div style="font-size:12px; color:#888; padding:6px 0;">先にコンテナ個数を入力してください</div>`;
+             } else {
+               let html = '';
+               for (let i = 0; i < count; i++) {
+                 const val = (prev[String(i)] != null && prev[String(i)] !== '')
+                   ? prev[String(i)]
+                   : defaultQty;
+                 html += `<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                   <span style="min-width:72px; font-size:12px; color:#555; font-weight:bold;">コンテナ ${i + 1}</span>
+                   <input type="number" class="form-input gh-per-qty" data-idx="${i}" min="0" step="any" value="${String(val).replace(/"/g, '&quot;')}" style="margin-bottom:0; flex:1;" oninput="updateHarvestTotalDisplay()" placeholder="内容個数">
+                 </div>`;
+               }
+               list.innerHTML = html;
+             }
+           }
+         }
+
+         if (mode === 'remainder') {
+           const remCountEl = document.getElementById('gh_remainder_count');
+           if (remCountEl && count > 0) {
+             const cur = parseInt(remCountEl.value || '1', 10) || 1;
+             remCountEl.max = String(count);
+             if (cur > count) remCountEl.value = String(count);
+             if (cur < 1) remCountEl.value = '1';
+           }
+           const hint = document.getElementById('gh_remainder_hint');
+           if (hint) {
+             const remC = Math.max(1, Math.min(count || 1, parseInt(document.getElementById('gh_remainder_count')?.value || '1', 10) || 1));
+             const normal = Math.max(0, count - remC);
+             hint.textContent = count > 0
+               ? `例: ${normal}コンテナは共通個数、末尾${remC}コンテナは端数個数`
+               : 'コンテナ個数を入力すると内訳が表示されます';
+           }
+         }
+
+         window.updateHarvestTotalDisplay();
+      };
+
+      window.applyHarvestBulkQtyToAll = () => {
+         const bulk = document.getElementById('gh_bulk_qty')?.value;
+         if (bulk === '' || bulk == null) {
+           if (typeof customAlert === 'function') customAlert('一括入力する内容個数を入れてください');
+           return;
+         }
+         document.querySelectorAll('.gh-per-qty').forEach(inp => { inp.value = bulk; });
+         const qtyEl = document.getElementById('gh_content_qty');
+         if (qtyEl && !qtyEl.value) qtyEl.value = bulk;
+         window.updateHarvestTotalDisplay();
+      };
+
+      window.collectPendingHarvestLotItems = () => {
+        const items = [];
+        const seen = new Set();
+        Object.keys(loadedPolygons || {}).forEach(pid => {
+          const poly = loadedPolygons[pid];
+          if (!poly || !Array.isArray(poly.photos)) return;
+          poly.photos.forEach(ph => {
+            if (!ph || ph.type !== 'work' || !ph.data) return;
+            const hq = ph.data.harvestQty;
+            if (!hq || hq.pendingLot !== true) return;
+            if (!(Number(hq.containerCount) > 0)) return;
+            const rid = ph.id || '';
+            const key = `${pid}::${rid}`;
+            if (rid && seen.has(key)) return;
+            if (rid) seen.add(key);
+            const crop = String(hq.crop || (ph.data.crop || '').split(',')[0] || '').trim();
+            items.push({
+              polyId: pid,
+              polyName: poly.name || pid,
+              location: hq.locationHint || poly.location || '',
+              recordId: rid,
+              author: ph.author || '',
+              workDate: ph.data.workDate || ph.date || '',
+              workName: ph.data.workName || '',
+              crop,
+              harvestQty: hq,
+              scope: hq.scope === 'personal' ? 'personal' : 'group'
+            });
+          });
+        });
+        items.sort((a, b) => String(b.workDate).localeCompare(String(a.workDate), 'ja'));
+        return items;
+      };
+
+      window.refreshHarvestPendingBadge = () => {
+        const count = (typeof window.collectPendingHarvestLotItems === 'function')
+          ? window.collectPendingHarvestLotItems().length
+          : 0;
+        document.querySelectorAll('.harvest-pending-badge').forEach(el => {
+          if (count > 0) {
+            el.style.display = 'inline-block';
+            el.textContent = String(count);
+          } else {
+            el.style.display = 'none';
+            el.textContent = '';
+          }
+        });
+        return count;
+      };
+
+      window.renderPendingHarvestLotPanel = () => {
+        const box = document.getElementById('gh_pending_panel');
+        if (!box) return;
+        const items = window.collectPendingHarvestLotItems();
+        window._ghPendingItems = items;
+        if (!items.length) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        box.style.display = 'block';
+        const rows = items.map((it, idx) => {
+          const hq = it.harvestQty || {};
+          const scopeLabel = it.scope === 'personal' ? '個人' : '全体';
+          const unit = hq.contentUnit || '';
+          const qty = (hq.contentQty !== '' && hq.contentQty != null) ? hq.contentQty : '';
+          const total = hq.contentTotal != null ? hq.contentTotal : '';
+          const totalBit = total !== '' ? `／合計 ${total}${unit}` : '';
+          return `<label style="display:flex; gap:8px; align-items:flex-start; padding:8px; margin-bottom:6px; background:#fff; border:1px solid #ffe082; border-radius:8px; cursor:pointer;">
+            <input type="checkbox" class="gh-pending-check" data-idx="${idx}" style="width:18px; height:18px; margin-top:2px;" onchange="updatePendingHarvestSelectionSummary()">
+            <span style="flex:1; font-size:12px; color:#333; line-height:1.4;">
+              <b style="color:#ef6c00;">[${scopeLabel}]</b> ${it.workDate || '-'} ／ ${it.crop || '-'}<br>
+              📍 ${it.location || '拠点未設定'} ／ 🌾 ${it.polyName || '-'}<br>
+              📦 ${hq.containerType || '-'} × ${hq.containerCount || 0}
+              ${qty !== '' ? `（${qty}${unit}/コンテナ${totalBit}）` : ''}
+              <span style="color:#888;">／ 👤 ${it.author || '-'}</span>
+            </span>
+          </label>`;
+        }).join('');
+        box.innerHTML = `
+          <div style="background:#fff8e1; border:1px solid #ffcc80; border-radius:8px; padding:10px; margin-bottom:12px;">
+            <div style="font-weight:bold; color:#e65100; margin-bottom:4px;">🔔 作業記録からの未ロット化 ${items.length}件</div>
+            <div style="font-size:11px; color:#666; margin-bottom:8px;">チェックして「選択を反映」すると下の入力欄に入ります。数値は微調整してからロット作成できます。</div>
+            <div style="max-height:180px; overflow-y:auto;">${rows}</div>
+            <div id="gh_pending_summary" style="font-size:12px; color:#ef6c00; margin:6px 0;"></div>
+            <div style="display:flex; gap:8px;">
+              <button type="button" onclick="applyPendingHarvestSelectionToForm()" style="flex:1; background:#EF6C00; color:#fff; border:none; border-radius:6px; padding:10px; font-weight:bold; cursor:pointer;">選択を反映</button>
+              <button type="button" onclick="clearPendingHarvestSelection()" style="background:#eee; color:#333; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; cursor:pointer;">解除</button>
+            </div>
+          </div>`;
+      };
+
+      window.getSelectedPendingHarvestItems = () => {
+        const items = window._ghPendingItems || [];
+        return Array.from(document.querySelectorAll('.gh-pending-check:checked'))
+          .map(cb => items[parseInt(cb.getAttribute('data-idx'), 10)])
+          .filter(Boolean);
+      };
+
+      window.updatePendingHarvestSelectionSummary = () => {
+        const el = document.getElementById('gh_pending_summary');
+        if (!el) return;
+        const selected = window.getSelectedPendingHarvestItems();
+        if (!selected.length) {
+          el.textContent = '';
+          return;
+        }
+        const totalContainers = selected.reduce((s, it) => s + (Number(it.harvestQty?.containerCount) || 0), 0);
+        const totalContent = selected.reduce((s, it) => s + (Number(it.harvestQty?.contentTotal) || 0), 0);
+        const unit = selected[0]?.harvestQty?.contentUnit || '';
+        el.textContent = `選択中 ${selected.length}件 ／ コンテナ計 ${totalContainers}` +
+          (totalContent > 0 ? ` ／ 内容合計 ${totalContent}${unit}` : '');
+      };
+
+      window.clearPendingHarvestSelection = () => {
+        document.querySelectorAll('.gh-pending-check').forEach(cb => { cb.checked = false; });
+        window._ghSelectedSources = [];
+        window.updatePendingHarvestSelectionSummary();
+      };
+
+      window.applyPendingHarvestSelectionToForm = () => {
+        const selected = window.getSelectedPendingHarvestItems();
+        if (!selected.length) {
+          if (typeof customAlert === 'function') customAlert('取り込む作業記録を選択してください');
+          return;
+        }
+        // 品目・コンテナが混在していないか確認
+        const crops = [...new Set(selected.map(it => it.crop).filter(Boolean))];
+        const containers = [...new Set(selected.map(it => it.harvestQty?.containerType).filter(Boolean))];
+        if (crops.length > 1) {
+          if (typeof customAlert === 'function') customAlert('異なる品目が混在しています。同じ品目だけを選んでください。');
+          return;
+        }
+        if (containers.length > 1) {
+          if (typeof customAlert === 'function') customAlert('異なるコンテナ種類が混在しています。同じ種類だけを選んでください。');
+          return;
+        }
+
+        const first = selected[0];
+        const hq = first.harvestQty || {};
+        const dateEl = document.getElementById('gh_date');
+        if (dateEl && first.workDate) {
+          const ymd = (typeof window.normalizeDateStr === 'function')
+            ? window.normalizeDateStr(first.workDate)
+            : String(first.workDate).replace(/\//g, '-').slice(0, 10);
+          if (ymd) dateEl.value = ymd;
+        }
+        const locEl = document.getElementById('gh_location');
+        if (locEl) {
+          const loc = selected.map(it => it.location).find(Boolean) || hq.locationHint || '';
+          if (loc) locEl.value = loc;
+        }
+        const cropEl = document.getElementById('gh_crop');
+        if (cropEl && first.crop) cropEl.value = first.crop;
+
+         // 反映後にマスタ上書きを避けるため、コンテナ選択後に作業記録の値を再セット
+         window.filterHarvestContainers(hq.containerType || containers[0] || '');
+         const countSum = selected.reduce((s, it) => s + (Number(it.harvestQty?.containerCount) || 0), 0);
+         const countEl = document.getElementById('gh_count');
+         if (countEl) countEl.value = String(countSum || '');
+
+         const qtys = selected
+           .map(it => it.harvestQty?.contentQty)
+           .filter(v => v !== '' && v != null)
+           .map(Number)
+           .filter(n => isFinite(n));
+         let contentQty = hq.contentQty;
+         if (qtys.length > 1) {
+           const allSame = qtys.every(n => n === qtys[0]);
+           contentQty = allSame ? qtys[0] : Math.round((qtys.reduce((a, b) => a + b, 0) / qtys.length) * 1000) / 1000;
+         }
+         const unitEl = document.getElementById('gh_content_unit');
+         const qtyEl = document.getElementById('gh_content_qty');
+         if (unitEl) unitEl.value = hq.contentUnit || unitEl.value || '';
+         if (qtyEl && contentQty !== '' && contentQty != null) qtyEl.value = contentQty;
+
+         if (typeof window.setHarvestContentMode === 'function') {
+           window.setHarvestContentMode('uniform');
+         }
+         // setHarvestContentMode内のrefreshでマスタ再適用される場合があるため再セット
+         if (unitEl) unitEl.value = hq.contentUnit || unitEl.value || '';
+         if (qtyEl && contentQty !== '' && contentQty != null) qtyEl.value = contentQty;
+         if (countEl) countEl.value = String(countSum || '');
+         if (typeof window.refreshHarvestContentQtyUI === 'function') window.refreshHarvestContentQtyUI();
+         else if (typeof window.updateHarvestTotalDisplay === 'function') window.updateHarvestTotalDisplay();
+
+        window._ghSelectedSources = selected.map(it => ({
+          polyId: it.polyId,
+          recordId: it.recordId
+        }));
+        window.updatePendingHarvestSelectionSummary();
+        if (typeof customAlert === 'function') {
+          customAlert(`${selected.length}件の作業記録を反映しました。\n必要なら数値を微調整してロット作成してください。`);
+        }
+      };
+
+      window.markPendingHarvestLotsResolved = async (lotId) => {
+        const sources = window._ghSelectedSources || [];
+        if (!sources.length) return;
+        try {
+          await callGAS('markHarvestQtyLotResolved', {
+            items: sources,
+            lotId: lotId || '',
+            userName: currentUser
+          });
+          // ローカルも更新
+          sources.forEach(src => {
+            const poly = loadedPolygons[src.polyId];
+            if (!poly || !Array.isArray(poly.photos)) return;
+            poly.photos.forEach(ph => {
+              if (ph && ph.id === src.recordId && ph.data && ph.data.harvestQty) {
+                ph.data.harvestQty.pendingLot = false;
+                ph.data.harvestQty.lotId = lotId || ph.data.harvestQty.lotId || '';
+              }
+            });
+          });
+        } catch (e) {
+          console.warn('未ロット化フラグ解除に失敗:', e);
+        }
+        window._ghSelectedSources = [];
+        if (typeof window.refreshHarvestPendingBadge === 'function') window.refreshHarvestPendingBadge();
       };
 
       window.openGlobalHarvest = () => {
@@ -5417,8 +5995,15 @@ function createSignboardMarker(name, pos, icon, id) {
          ` : '';
          const n = new Date();
          const todayDate = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+         const pendingCount = (typeof window.collectPendingHarvestLotItems === 'function')
+           ? window.collectPendingHarvestLotItems().length
+           : 0;
          document.getElementById('modalBody').innerHTML = `<h3 style="color:#4CAF50; margin-top:0;">🚜 収穫記録（ロット生成）</h3>
            <p style="font-size:12px; color:#666;">※選択した「拠点」で指定日に「収穫」が行われた圃場が自動で紐付きます。</p>
+           <div id="gh_pending_panel" style="display:none;"></div>
+           ${pendingCount ? `<div style="font-size:12px; color:#e65100; margin-bottom:8px;">未ロット化の作業記録が ${pendingCount} 件あります（上のリストから取り込みできます）</div>` : ''}
+           <label class="form-label">📅 収穫日付</label>
+           <input type="date" id="gh_date" class="form-input" value="${todayDate}">
            <label class="form-label">📍 拠点</label>
            <select id="gh_location" class="form-input"><option value="">選択してください</option>${locOpts}</select>
            <label class="form-label">🌱 収穫した作物（品目）</label>
@@ -5426,22 +6011,51 @@ function createSignboardMarker(name, pos, icon, id) {
            <label class="form-label">📦 コンテナ種類</label>
            <select id="gh_container" class="form-input" onchange="applyHarvestContainerDefaults()"><option value="">選択してください</option></select>
            ${adminBar}
-           <div style="font-size:11px; color:#888; margin:-4px 0 12px;">※作物を選ぶと、その品目に登録されたコンテナだけが表示されます</div>
+           <div style="font-size:11px; color:#888; margin:-4px 0 12px;">※作物を選ぶと、その品目に登録されたコンテナだけが表示されます。内容単位・個数はここで変更できます（マスタ更新は管理者の編集ボタン）。</div>
            <label class="form-label">📦 コンテナ個数</label>
-           <input type="number" id="gh_count" class="form-input" placeholder="例: 10" oninput="updateHarvestTotalDisplay()" min="0">
-           <div style="display:flex; gap:10px;">
-             <div style="flex:1;">
-               <label class="form-label">📏 内容単位</label>
-               <input type="text" id="gh_content_unit" class="form-input" readonly style="background:#f4f6f8; color:#555;" placeholder="コンテナ選択後に表示">
-             </div>
-             <div style="flex:1;">
-               <label class="form-label">🔢 内容個数</label>
-               <input type="text" id="gh_content_qty" class="form-input" readonly style="background:#f4f6f8; color:#555;" placeholder="コンテナ選択後に表示">
-             </div>
+           <input type="number" id="gh_count" class="form-input" placeholder="例: 10" oninput="refreshHarvestContentQtyUI()" min="0">
+           <label class="form-label">📏 内容単位</label>
+           <input type="text" id="gh_content_unit" class="form-input" placeholder="例: kg・本・パック" oninput="updateHarvestTotalDisplay()">
+           <label class="form-label" style="margin-top:8px;">🔢 内容個数の設定方法</label>
+           <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+             <label style="display:flex; align-items:center; gap:4px; background:#f4f6f8; padding:8px 10px; border-radius:8px; font-size:13px; cursor:pointer; border:1px solid #ddd;">
+               <input type="radio" name="gh_content_mode" value="uniform" checked onchange="refreshHarvestContentQtyUI()"> 一律
+             </label>
+             <label style="display:flex; align-items:center; gap:4px; background:#f4f6f8; padding:8px 10px; border-radius:8px; font-size:13px; cursor:pointer; border:1px solid #ddd;">
+               <input type="radio" name="gh_content_mode" value="individual" onchange="refreshHarvestContentQtyUI()"> 個別
+             </label>
+             <label style="display:flex; align-items:center; gap:4px; background:#fff8e1; padding:8px 10px; border-radius:8px; font-size:13px; cursor:pointer; border:1px solid #ffe082;">
+               <input type="radio" name="gh_content_mode" value="remainder" onchange="refreshHarvestContentQtyUI()"> 一律＋端数
+             </label>
            </div>
-           <div style="font-size:11px; color:#888; margin:-8px 0 12px;">※内容単位・内容個数は品目ごとのマスタ設定です（変更は管理者のみ）</div>
-           <label class="form-label">📅 収穫日付</label>
-           <input type="date" id="gh_date" class="form-input" value="${todayDate}">
+           <div id="gh_uniform_panel">
+             <label class="form-label" id="gh_content_qty_label">🔢 内容個数（1コンテナあたり）</label>
+             <input type="number" id="gh_content_qty" class="form-input" placeholder="例: 10" min="0" step="any" oninput="updateHarvestTotalDisplay()">
+           </div>
+           <div id="gh_remainder_panel" style="display:none; background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:10px; margin-bottom:12px;">
+             <div style="display:flex; gap:10px; flex-wrap:wrap;">
+               <div style="flex:1; min-width:120px;">
+                 <label class="form-label">末尾の端数コンテナ数</label>
+                 <input type="number" id="gh_remainder_count" class="form-input" value="1" min="1" step="1" oninput="refreshHarvestContentQtyUI()">
+               </div>
+               <div style="flex:1; min-width:120px;">
+                 <label class="form-label">端数個数</label>
+                 <input type="number" id="gh_remainder_qty" class="form-input" placeholder="例: 3" min="0" step="any" oninput="updateHarvestTotalDisplay()">
+               </div>
+             </div>
+             <div id="gh_remainder_hint" style="font-size:11px; color:#ef6c00; margin-top:4px;">例: 9コンテナは共通個数、末尾1コンテナは端数個数</div>
+           </div>
+           <div id="gh_individual_panel" style="display:none; background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:10px; margin-bottom:12px;">
+             <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:8px;">
+               <div style="flex:1;">
+                 <label class="form-label" style="margin-bottom:4px;">一括入力</label>
+                 <input type="number" id="gh_bulk_qty" class="form-input" placeholder="全コンテナに入れる個数" min="0" step="any" style="margin-bottom:0;">
+               </div>
+               <button type="button" onclick="applyHarvestBulkQtyToAll()" style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">全コンテナに適用</button>
+             </div>
+             <div style="font-size:11px; color:#555; margin-bottom:6px;">コンテナごとに内容個数を設定できます</div>
+             <div id="gh_per_container_list" style="max-height:220px; overflow-y:auto;"></div>
+           </div>
            <div id="gh_total_harvest_box" style="margin:14px 0; padding:12px 14px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px;">
              <div id="gh_total_harvest_display" style="font-size:14px; font-weight:bold; color:#2e7d32;">総収穫数: --</div>
            </div>
@@ -5451,9 +6065,11 @@ function createSignboardMarker(name, pos, icon, id) {
              <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; color:#333;">戻る</button>
            </div>`;
          document.getElementById('modal').style.display = 'flex';
+         window._ghSelectedSources = [];
          window.filterHarvestContainers();
          if (isAdmin) window.renderHarvestContainerAdminBar();
-         window.updateHarvestTotalDisplay();
+         window.refreshHarvestContentQtyUI();
+         window.renderPendingHarvestLotPanel();
       };
 
       window.getContainerMasterList = () => {
@@ -5510,10 +6126,16 @@ function createSignboardMarker(name, pos, icon, id) {
          const qtyEl = document.getElementById('gh_content_qty');
          if (!unitEl || !qtyEl) return;
          const found = name && crop ? window.findHarvestContainerEntry(name, crop) : null;
+         // マスタ値を初期表示（ユーザーがこの場で変更可能）
          unitEl.value = found ? String(found.contentUnit || '') : '';
          qtyEl.value = (found && found.contentQty !== '' && found.contentQty != null) ? String(found.contentQty) : '';
+         const remQty = document.getElementById('gh_remainder_qty');
+         if (remQty && !remQty.value) remQty.value = '';
+         const bulk = document.getElementById('gh_bulk_qty');
+         if (bulk && qtyEl.value) bulk.value = qtyEl.value;
          if (typeof window.renderHarvestContainerAdminBar === 'function') window.renderHarvestContainerAdminBar();
-         window.updateHarvestTotalDisplay();
+         if (typeof window.refreshHarvestContentQtyUI === 'function') window.refreshHarvestContentQtyUI();
+         else window.updateHarvestTotalDisplay();
       };
 
       window.renderHarvestContainerAdminBar = () => {
@@ -5529,8 +6151,8 @@ function createSignboardMarker(name, pos, icon, id) {
          const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
          bar.innerHTML = `
            <button type="button" onclick="openHarvestContainerEditModal('add')" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ コンテナ追加</button>
-           ${name ? `<button type="button" onclick="openHarvestContainerEditModal('edit', '${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
-           <button type="button" onclick="deleteHarvestContainerType('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>` : `<span style="font-size:11px; color:#888;">コンテナの追加・編集・削除は管理者のみ</span>`}
+           ${name ? `<button type="button" onclick="openHarvestContainerEditModal('edit', '${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ マスタを編集</button>
+           <button type="button" onclick="deleteHarvestContainerType('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>` : `<span style="font-size:11px; color:#888;">コンテナマスタの追加・編集・削除は管理者のみ</span>`}
          `;
       };
 
@@ -5697,23 +6319,54 @@ function createSignboardMarker(name, pos, icon, id) {
          const count = document.getElementById('gh_count').value;
          const harvestDate = document.getElementById('gh_date')?.value || '';
          if(!location || !crop || !container || !count) { customAlert("拠点、作物名、コンテナ種類、コンテナ個数をすべて入力してください"); return; }
-         const found = window.findHarvestContainerEntry(container, crop);
+         const contentInfo = window.collectHarvestContentQtys();
+         if (contentInfo.count > 0 && contentInfo.qtys.some(q => !isFinite(q) || q < 0)) {
+           customAlert('内容個数は0以上の数値で入力してください');
+           return;
+         }
+         if (contentInfo.mode === 'remainder' && contentInfo.remainderCount >= contentInfo.count && contentInfo.count > 1) {
+           // 全部端数でも可（実質個別）。警告はしない
+         }
          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px;'>ロットを編成中...</div>";
          try {
             const res = await callGAS('saveGlobalHarvest', {
-              location, crop, containerType: container, count: parseInt(count),
+              location, crop, containerType: container, count: parseInt(count, 10),
               date: harvestDate,
-              author: currentUser
+              author: currentUser,
+              contentUnit: contentInfo.unit,
+              contentQty: contentInfo.representativeQty,
+              contentQtys: contentInfo.qtys,
+              contentMode: contentInfo.mode,
+              uniformQty: contentInfo.uniformQty,
+              remainderCount: contentInfo.remainderCount,
+              remainderQty: contentInfo.remainderQty
             });
-            const contentUnit = res.contentUnit != null ? String(res.contentUnit) : (found ? String(found.contentUnit || '').trim() : '');
-            const contentQty = (res.contentQty !== '' && res.contentQty != null) ? res.contentQty : ((found && found.contentQty !== '' && found.contentQty != null) ? Number(found.contentQty) || 0 : '');
-            const totalHarvest = (parseInt(count) || 0) * (parseFloat(contentQty) || 0);
-            const totalFormatted = (totalHarvest > 0) ? (Number.isInteger(totalHarvest) ? totalHarvest.toString() : totalHarvest.toFixed(2).replace(/\.?0+$/, '')) : '';
+            const contentUnit = res.contentUnit != null ? String(res.contentUnit) : contentInfo.unit;
+            const totalHarvest = (res.contentTotal != null && res.contentTotal !== '')
+              ? Number(res.contentTotal)
+              : contentInfo.total;
+            const totalFormatted = (totalHarvest > 0) ? window.formatHarvestNumber(totalHarvest) : '';
             const totalLabel = totalFormatted ? `\n📊 総収穫数: ${totalFormatted} ${contentUnit}` : '';
-            const contentLabel = (contentUnit || contentQty !== '') ? `\n📏 中身: ${contentQty !== '' ? contentQty : ''}${contentUnit}` : '';
+            let contentLabel = '';
+            if (contentInfo.mode === 'uniform') {
+              contentLabel = (contentUnit || contentInfo.representativeQty !== '')
+                ? `\n📏 中身: ${contentInfo.representativeQty !== '' ? contentInfo.representativeQty : ''}${contentUnit} / コンテナ`
+                : '';
+            } else if (contentInfo.mode === 'remainder') {
+              contentLabel = `\n📏 中身: 共通${contentInfo.uniformQty}${contentUnit} ＋ 端数${contentInfo.remainderCount}×${contentInfo.remainderQty}${contentUnit}`;
+            } else {
+              contentLabel = `\n📏 中身: 個別設定（合計 ${totalFormatted}${contentUnit}）`;
+            }
             const dateLabel = harvestDate ? `\n📅 日付: ${harvestDate}` : '';
+            if (typeof window.markPendingHarvestLotsResolved === 'function') {
+              await window.markPendingHarvestLotsResolved(res.lotId);
+            }
             customAlert(`ロット【${res.lotId}】を作成しました！\n\n📍 拠点: ${location}${dateLabel}${contentLabel}${totalLabel}\n🔗 自動紐付された圃場:\n${res.fields}`);
-            document.getElementById('modal').style.display = 'none'; if(typeof loadInitData === 'function') loadInitData();
+            document.getElementById('modal').style.display = 'none';
+            if (typeof loadInitData === 'function') {
+              await loadInitData();
+              if (typeof window.refreshHarvestPendingBadge === 'function') window.refreshHarvestPendingBadge();
+            }
          } catch(e) { customAlert("エラーが発生しました: " + e.message); document.getElementById('modal').style.display = 'none'; }
       };
 
@@ -5813,9 +6466,18 @@ function createSignboardMarker(name, pos, icon, id) {
            return '#2e7d32';
          };
          body.innerHTML = list.map(l => {
-           const contentBit = (l.contentUnit || l.contentQty !== '')
-             ? `中身: ${l.contentQty !== '' && l.contentQty != null ? l.contentQty : ''}${l.contentUnit || ''}`
-             : '';
+           const unit = l.contentUnit || '';
+           let contentBit = '';
+           if (l.contentTotal != null && l.contentTotal !== '' && Array.isArray(l.contentQtys) && l.contentQtys.length > 1) {
+             const allSame = l.contentQtys.every(q => q === l.contentQtys[0]);
+             if (allSame) {
+               contentBit = `中身: ${l.contentQtys[0]}${unit}/コンテナ（合計 ${l.contentTotal}${unit}）`;
+             } else {
+               contentBit = `中身: 混在（合計 ${l.contentTotal}${unit}）`;
+             }
+           } else if (unit || (l.contentQty !== '' && l.contentQty != null)) {
+             contentBit = `中身: ${l.contentQty !== '' && l.contentQty != null ? l.contentQty : ''}${unit}`;
+           }
           return `<div style="padding:12px; border-bottom:1px solid #eee; background:#fff;">
              <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
                <div style="font-weight:bold; color:#1565c0; font-size:15px;">${l.lotId}</div>
@@ -9057,9 +9719,9 @@ window.buildGoogleCalendarEventsHtml = function(calRes) {
   const res = calRes || {};
   const events = Array.isArray(res.events) ? res.events : [];
   let html = '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:12px;margin-bottom:14px;">';
-  html += '<div style="font-weight:bold;color:#DB4437;font-size:15px;margin-bottom:4px;">📅 Googleカレンダー</div>';
+  html += '<div style="font-weight:bold;color:#DB4437;font-size:15px;margin-bottom:4px;">📅 Googleカレンダー予定</div>';
   html += '<div style="font-size:11px;color:#888;margin-bottom:10px;">今日・明日の予定' +
-    (res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + '）' : '') + '</div>';
+    (res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + ' および共有カレンダー）' : '') + '</div>';
 
   if (events.length) {
     let lastDate = '';
@@ -9067,13 +9729,15 @@ window.buildGoogleCalendarEventsHtml = function(calRes) {
       const dateLabel = window._escapeHtmlPs(ev.dateLabel || ev.dateYmd || '');
       const time = window._escapeHtmlPs(ev.time || '');
       const title = window._escapeHtmlPs(ev.title || '');
+      const calName = window._escapeHtmlPs(ev.calendarName || '');
+      const calBadge = calName ? '<span style="font-size:10px;background:#e8f0fe;color:#1a73e8;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:normal;">' + calName + '</span>' : '';
       if (dateLabel && dateLabel !== lastDate) {
         lastDate = dateLabel;
         html += '<div style="margin:10px 0 6px;font-size:12px;font-weight:bold;color:#1565c0;border-bottom:1px solid #e3f2fd;padding-bottom:3px;">' + dateLabel + '</div>';
       }
       html += '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #f0f0f0;">' +
         '<div style="min-width:92px;flex-shrink:0;font-size:12px;font-weight:bold;color:#DB4437;line-height:1.35;">' + time + '</div>' +
-        '<div style="flex:1;font-size:14px;font-weight:bold;color:#222;line-height:1.35;word-break:break-word;">' + title + '</div>' +
+        '<div style="flex:1;font-size:14px;font-weight:bold;color:#222;line-height:1.35;word-break:break-word;">' + title + calBadge + '</div>' +
         '</div>';
     });
   } else {
@@ -9085,7 +9749,7 @@ window.buildGoogleCalendarEventsHtml = function(calRes) {
     html += '<a href="' + window._escapeHtmlPs(res.calendarUrl) + '" target="_blank" rel="noopener" style="display:block;margin-top:10px;text-align:center;background:#4285F4;color:#fff;text-decoration:none;padding:9px;border-radius:6px;font-weight:bold;font-size:12px;">Googleカレンダーを開く</a>';
   }
   if (!res.success) {
-    html += '<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.4;">※カレンダーが見つからない場合は、対象カレンダーを Apps Script実行アカウントへ「予定の表示」で共有してください。</div>';
+    html += '<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.4;">※他の共有カレンダーを表示するには、Googleカレンダー側で対象カレンダーを許可・追加してください。</div>';
   }
   html += '</div>';
   return html;

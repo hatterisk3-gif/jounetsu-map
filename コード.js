@@ -33,6 +33,7 @@ function doPost(e) {
     else if (action === "getToukiDetails") result = getToukiDetails(params.toukiIds);
     else if (action === "manageMaster") result = manageMasterData(params.masterType, params.manageAction, params.value, params.userName);
     else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
+    else if (action === "markHarvestQtyLotResolved") result = markHarvestQtyLotResolved(params);
     else if (action === "saveGlobalShipping") result = saveGlobalShipping(params);
     else if (action === "updateInventory") result = updateInventory(params); // ★これを追加
     else if (action === "addMaterialToSign") result = addMaterialToSign(params); // ★これを追加
@@ -1561,12 +1562,12 @@ function readContainerMasterList_(legacyNames) {
   return list;
 }
 
-/** ロット記録シートに内容単位・内容個数ヘッダーを確保 */
+/** ロット記録シートに内容単位・内容個数・内容内訳ヘッダーを確保 */
 function ensureLotRecordContentHeaders_(lotSheet) {
   if (!lotSheet) return;
-  const lastCol = Math.max(lotSheet.getLastColumn(), 12);
+  const lastCol = Math.max(lotSheet.getLastColumn(), 13);
   const headers = lotSheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
-  // A〜J既存。K:内容単位 L:内容個数
+  // A〜J既存。K:内容単位 L:内容個数 M:内容内訳
   if (headers.length < 10 || headers[9] !== '拠点') {
     lotSheet.getRange(1, 10).setValue('拠点').setFontWeight('bold').setBackground('#e0e0e0');
   }
@@ -1575,6 +1576,9 @@ function ensureLotRecordContentHeaders_(lotSheet) {
   }
   if (!headers[11] || headers[11] !== '内容個数') {
     lotSheet.getRange(1, 12).setValue('内容個数').setFontWeight('bold').setBackground('#e0e0e0');
+  }
+  if (!headers[12] || headers[12] !== '内容内訳') {
+    lotSheet.getRange(1, 13).setValue('内容内訳').setFontWeight('bold').setBackground('#e0e0e0');
   }
 }
 
@@ -2271,7 +2275,7 @@ function getOrCreateRecordSheet(sheetName) {
     sheet = ss.insertSheet(sheetName);
     if (sheetName === '看板記録') { sheet.appendRow(["日時", "圃場名", "登録者", "写真URL", "システムID"]); } 
     else if (sheetName === '作業記録') { sheet.appendRow(["記録時間", "圃場名", "記録者", "作業日", "作業名", "作物名", "開始時間", "終了時間", "人数", "合計時間", "進捗状況", "写真URL", "システムID", "今回作業畝", "次回開始畝"]); }
-    else if (sheetName === 'ロット記録') { sheet.appendRow(["ロットID", "生成日時", "生成者", "作物名", "圃場名", "コンテナ種類", "初期コンテナ数", "残コンテナ数", "ステータス", "拠点", "内容単位", "内容個数"]); }
+    else if (sheetName === 'ロット記録') { sheet.appendRow(["ロットID", "生成日時", "生成者", "作物名", "圃場名", "コンテナ種類", "初期コンテナ数", "残コンテナ数", "ステータス", "拠点", "内容単位", "内容個数", "内容内訳"]); }
     else { sheet.appendRow(["日時", "圃場名", "登録者", "作物名", "開始時間", "終了時間", "草刈り", "草抜き", "排水", "虫食い", "病気", "収穫見込み日", "残存率(%)", "葉長(cm)", "収穫サイズ(cm)", "収穫可能量(個/本)", "栽培ステージ", "土壌PH", "花芽", "気づいたこと", "写真URL", "システムID"]); }
     sheet.getRange("A1:V1").setFontWeight("bold").setBackground("#e0e0e0");
   } return sheet;
@@ -2637,25 +2641,56 @@ function saveGlobalHarvest(params) {
   // 重複排除してカンマ区切りに
   const fieldNamesStr = [...new Set(harvestedFields)].join(' , ') || "圃場指定なし（単独ロット）";
   
-  // ③ ロット記録に保存（内容単位・内容個数はコンテナマスタから取得＝クライアント改ざん不可）
+  // ③ ロット記録に保存（内容単位・内容個数はクライアント入力を優先、なければマスタ）
   const lotSheet = getOrCreateRecordSheet('ロット記録');
   ensureLotRecordContentHeaders_(lotSheet);
 
   const lotId = "L-" + Utilities.formatDate(new Date(), "JST", "MMddHHmm") + Math.floor(Math.random()*10);
   const containerType = String(params.containerType || '').trim();
   const cropName = String(params.crop || '').trim();
-  let contentUnit = '';
+  let contentUnit = String(params.contentUnit || '').trim();
   let contentQty = '';
+  let contentDetail = '';
+
   const masterList = readContainerMasterList_();
   const masterHit = masterList.find(c =>
     String(c.name || '').trim() === containerType && String(c.crop || '').trim() === cropName
   );
-  if (masterHit) {
+  if (!contentUnit && masterHit) {
     contentUnit = String(masterHit.contentUnit || '').trim();
-    contentQty = (masterHit.contentQty !== '' && masterHit.contentQty != null) ? Number(masterHit.contentQty) || 0 : '';
   }
-  
-  // A:ID, B:日時, C:生成者, D:作物名, E:圃場名, F:コンテナ種類, G:初期数, H:残数, I:ステータス, J:拠点, K:内容単位, L:内容個数
+
+  // コンテナごとの内容個数配列（あれば合計・代表値を算出）
+  let qtyList = [];
+  if (Array.isArray(params.contentQtys) && params.contentQtys.length > 0) {
+    qtyList = params.contentQtys.map(function (v) {
+      const n = Number(v);
+      return (isFinite(n) && n >= 0) ? n : 0;
+    });
+  }
+  const mode = String(params.contentMode || (qtyList.length ? 'individual' : 'uniform')).trim() || 'uniform';
+
+  if (qtyList.length > 0) {
+    const total = qtyList.reduce(function (s, n) { return s + n; }, 0);
+    const allSame = qtyList.every(function (n) { return n === qtyList[0]; });
+    contentQty = allSame ? qtyList[0] : (Math.round((total / qtyList.length) * 1000) / 1000);
+    contentDetail = JSON.stringify({
+      mode: mode,
+      unit: contentUnit,
+      qtys: qtyList,
+      total: total,
+      uniformQty: params.uniformQty != null ? Number(params.uniformQty) : (allSame ? qtyList[0] : ''),
+      remainderCount: params.remainderCount != null ? Number(params.remainderCount) : 0,
+      remainderQty: params.remainderQty != null ? Number(params.remainderQty) : ''
+    });
+  } else if (params.contentQty !== '' && params.contentQty != null) {
+    const parsed = Number(params.contentQty);
+    if (isFinite(parsed) && parsed >= 0) contentQty = parsed;
+  } else if (masterHit && masterHit.contentQty !== '' && masterHit.contentQty != null) {
+    contentQty = Number(masterHit.contentQty) || 0;
+  }
+
+  // A:ID, B:日時, C:生成者, D:作物名, E:圃場名, F:コンテナ種類, G:初期数, H:残数, I:ステータス, J:拠点, K:内容単位, L:内容個数, M:内容内訳
   lotSheet.appendRow([
     lotId,
     targetDateStr + " " + time,
@@ -2668,11 +2703,65 @@ function saveGlobalHarvest(params) {
     "使用中",
     params.location,
     contentUnit,
-    contentQty === '' ? '' : contentQty
+    contentQty === '' ? '' : contentQty,
+    contentDetail
   ]);
-  
-  writeLog(params.author, "一括ロット生成", lotId, `拠点: ${params.location}, 日付: ${targetDateStr}, 作物: ${params.crop}, 内容: ${contentQty}${contentUnit}, 自動紐付: ${fieldNamesStr}`);
-  return { lotId: lotId, fields: fieldNamesStr, contentUnit: contentUnit, contentQty: contentQty };
+
+  const totalForLog = qtyList.length
+    ? qtyList.reduce(function (s, n) { return s + n; }, 0)
+    : ((Number(params.count) || 0) * (Number(contentQty) || 0));
+  writeLog(params.author, "一括ロット生成", lotId, `拠点: ${params.location}, 日付: ${targetDateStr}, 作物: ${params.crop}, 内容: ${contentQty}${contentUnit}, 合計: ${totalForLog}, 自動紐付: ${fieldNamesStr}`);
+  return {
+    lotId: lotId,
+    fields: fieldNamesStr,
+    contentUnit: contentUnit,
+    contentQty: contentQty,
+    contentTotal: totalForLog,
+    contentMode: mode,
+    contentQtys: qtyList
+  };
+}
+
+/** 作業記録の収穫量（harvestQty.pendingLot）をロット化済みにする */
+function markHarvestQtyLotResolved(params) {
+  params = params || {};
+  const items = Array.isArray(params.items) ? params.items : [];
+  const lotId = String(params.lotId || '').trim();
+  const userName = String(params.userName || '').trim() || 'システム';
+  let updated = 0;
+
+  items.forEach(function (item) {
+    if (!item) return;
+    const polyId = String(item.polyId || '').trim();
+    const recordId = String(item.recordId || '').trim();
+    if (!polyId || !recordId) return;
+    const found = findSheetAndRowById(polyId);
+    if (!found) return;
+    const pc = 10;
+    let ex = [];
+    if (found.rowData[pc - 1]) {
+      try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {}
+    }
+    if (ex.length === 0 && found.rowData[6]) {
+      try { ex = JSON.parse(found.rowData[6]); } catch (e) {}
+    }
+    const tgt = ex.find(function (row) {
+      return row && (row.id === recordId || row.url === recordId);
+    });
+    if (!tgt || !tgt.data) return;
+    if (!tgt.data.harvestQty || typeof tgt.data.harvestQty !== 'object') {
+      tgt.data.harvestQty = {};
+    }
+    tgt.data.harvestQty.pendingLot = false;
+    if (lotId) tgt.data.harvestQty.lotId = lotId;
+    found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
+    updated++;
+  });
+
+  if (updated > 0) {
+    writeLog(userName, '収穫量ロット化', lotId || '-', `作業記録 ${updated} 件を未ロット化解除`);
+  }
+  return { success: true, updated: updated, lotId: lotId };
 }
 
 /**
@@ -2706,7 +2795,8 @@ function getLotList(params) {
     status: 8,
     location: head.indexOf('拠点') >= 0 ? head.indexOf('拠点') : 9,
     contentUnit: head.indexOf('内容単位') >= 0 ? head.indexOf('内容単位') : 10,
-    contentQty: head.indexOf('内容個数') >= 0 ? head.indexOf('内容個数') : 11
+    contentQty: head.indexOf('内容個数') >= 0 ? head.indexOf('内容個数') : 11,
+    contentDetail: head.indexOf('内容内訳') >= 0 ? head.indexOf('内容内訳') : 12
   };
 
   const lots = [];
@@ -2731,6 +2821,21 @@ function getLotList(params) {
       createdAt = String(createdAt || '').trim();
     }
 
+    let contentDetail = '';
+    let contentTotal = '';
+    let contentQtys = [];
+    try {
+      const rawDetail = idx.contentDetail >= 0 ? row[idx.contentDetail] : '';
+      if (rawDetail) {
+        const parsed = (typeof rawDetail === 'string') ? JSON.parse(rawDetail) : rawDetail;
+        if (parsed && typeof parsed === 'object') {
+          contentDetail = parsed;
+          if (Array.isArray(parsed.qtys)) contentQtys = parsed.qtys;
+          if (parsed.total != null && parsed.total !== '') contentTotal = parsed.total;
+        }
+      }
+    } catch (e) {}
+
     lots.push({
       rowIndex: i + 1,
       lotId: lotId,
@@ -2744,7 +2849,10 @@ function getLotList(params) {
       status: status,
       location: location,
       contentUnit: String(row[idx.contentUnit] || '').trim(),
-      contentQty: row[idx.contentQty] != null && row[idx.contentQty] !== '' ? row[idx.contentQty] : ''
+      contentQty: row[idx.contentQty] != null && row[idx.contentQty] !== '' ? row[idx.contentQty] : '',
+      contentDetail: contentDetail,
+      contentQtys: contentQtys,
+      contentTotal: contentTotal
     });
   }
 
@@ -6216,26 +6324,20 @@ function getTodayGoogleCalendarEvents(params) {
   const week = ['日', '月', '火', '水', '木', '金', '土'];
 
   try {
-    let cal = null;
+    let calendars = [];
     try {
-      cal = CalendarApp.getCalendarById(gmail);
+      calendars = CalendarApp.getAllCalendars();
     } catch (e1) {
-      cal = null;
+      calendars = [];
     }
-    if (!cal) {
+    if (!calendars || !calendars.length) {
       try {
-        const all = CalendarApp.getAllCalendars();
-        for (let i = 0; i < all.length; i++) {
-          if (String(all[i].getId()).toLowerCase() === gmail.toLowerCase()) {
-            cal = all[i];
-            break;
-          }
-        }
-      } catch (e2) {
-        cal = null;
-      }
+        const primary = CalendarApp.getCalendarById(gmail);
+        if (primary) calendars = [primary];
+      } catch (e2) {}
     }
-    if (!cal) {
+
+    if (!calendars || !calendars.length) {
       return {
         success: false,
         gmail: gmail,
@@ -6245,26 +6347,41 @@ function getTodayGoogleCalendarEvents(params) {
       };
     }
 
-    const events = cal.getEvents(start, endExclusive);
-    const list = events.map(function(ev) {
-      const st = ev.getStartTime();
-      const allDay = ev.isAllDayEvent();
-      let timeLabel = '終日';
-      if (!allDay) {
-        timeLabel = Utilities.formatDate(st, tz, 'HH:mm') + '〜' + Utilities.formatDate(ev.getEndTime(), tz, 'HH:mm');
-      }
-      const dateYmd = Utilities.formatDate(st, tz, 'yyyy-MM-dd');
-      const dateLabel = Utilities.formatDate(st, tz, 'M/d') + '(' + week[st.getDay()] + ')';
-      return {
-        title: ev.getTitle() || '(タイトルなし)',
-        time: timeLabel,
-        dateYmd: dateYmd,
-        dateLabel: dateLabel,
-        startMs: st.getTime(),
-        location: ev.getLocation() || '',
-        description: String(ev.getDescription() || '').substring(0, 200)
-      };
-    }).sort(function(a, b) {
+    const allEvents = [];
+    const seenMap = {};
+    calendars.forEach(function(cal) {
+      try {
+        if (cal.isHidden && cal.isHidden()) return;
+        const calName = cal.getName() || 'カレンダー';
+        const evs = cal.getEvents(start, endExclusive);
+        evs.forEach(function(ev) {
+          const idKey = (ev.getId ? ev.getId() : '') || (ev.getTitle() + '_' + ev.getStartTime().getTime());
+          if (seenMap[idKey]) return;
+          seenMap[idKey] = true;
+
+          const st = ev.getStartTime();
+          const allDay = ev.isAllDayEvent();
+          let timeLabel = '終日';
+          if (!allDay) {
+            timeLabel = Utilities.formatDate(st, tz, 'HH:mm') + '〜' + Utilities.formatDate(ev.getEndTime(), tz, 'HH:mm');
+          }
+          const dateYmd = Utilities.formatDate(st, tz, 'yyyy-MM-dd');
+          const dateLabel = Utilities.formatDate(st, tz, 'M/d') + '(' + week[st.getDay()] + ')';
+          allEvents.push({
+            title: ev.getTitle() || '(タイトルなし)',
+            calendarName: calName,
+            time: timeLabel,
+            dateYmd: dateYmd,
+            dateLabel: dateLabel,
+            startMs: st.getTime(),
+            location: ev.getLocation() || '',
+            description: String(ev.getDescription() || '').substring(0, 200)
+          });
+        });
+      } catch (eEv) {}
+    });
+
+    allEvents.sort(function(a, b) {
       return (a.startMs || 0) - (b.startMs || 0);
     });
 
@@ -6272,8 +6389,8 @@ function getTodayGoogleCalendarEvents(params) {
       success: true,
       gmail: gmail,
       days: days,
-      events: list,
-      message: list.length ? '' : '今日・明日の予定はありません。',
+      events: allEvents,
+      message: allEvents.length ? '' : '今日・明日の予定はありません。',
       calendarUrl: calendarUrl
     };
   } catch (err) {
