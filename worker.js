@@ -1941,7 +1941,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       /**
        * 開始時間の決定（同期・即時）。
-       * 優先: 当日の最遅終了 → 出勤時刻 → 午前08:00/午後13:00
+       * 優先: 当日の最遅終了（昼休憩終了以降） → 昼休憩終了 → 出勤時刻 → 午前08:00/午後13:00
        */
       window.resolveDefaultStartTime = (dateYmd) => {
         const now = new Date();
@@ -1954,6 +1954,38 @@ function createSignboardMarker(name, pos, icon, id) {
           latestEnd = window.getLatestEndTimeForDate(ymd) || '';
         }
         if (!latestEnd) latestEnd = window.getCachedLatestWorkEnd(ymd) || '';
+
+        let lunchEnd = '';
+        try {
+          if (typeof window.loadLunchBreak === 'function') {
+            const lunch = window.loadLunchBreak(ymd);
+            if (lunch && lunch.registered && lunch.enabled && lunch.end) lunchEnd = String(lunch.end).trim();
+          } else {
+            const raw = localStorage.getItem('passionMapLunchBreak');
+            if (raw) {
+              const lunch = JSON.parse(raw);
+              if (lunch && lunch.dateYmd === ymd && lunch.registered && lunch.enabled && lunch.end) {
+                lunchEnd = String(lunch.end).trim();
+              }
+            }
+          }
+        } catch (e) {}
+
+        const toMins = (hm) => {
+          if (!hm || !String(hm).includes(':')) return null;
+          const [h, m] = String(hm).split(':').map(Number);
+          if (isNaN(h) || isNaN(m)) return null;
+          return h * 60 + m;
+        };
+
+        if (lunchEnd) {
+          const le = toMins(lunchEnd);
+          const latestM = toMins(latestEnd);
+          if (latestM != null && le != null && latestM >= le) {
+            return { start: latestEnd, source: 'latestEnd', syncClockIn: false, isFallback: false };
+          }
+          return { start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false };
+        }
 
         if (latestEnd) {
           return { start: latestEnd, source: 'latestEnd', syncClockIn: false, isFallback: false };
@@ -8078,7 +8110,9 @@ window.syncTrackingUI = function() {
     }
 
     if (isCurrentlyClockedIn) {
-        if (btn) {
+        if (typeof window.refreshTrackingModeUI === 'function') {
+            window.refreshTrackingModeUI();
+        } else if (btn) {
             btn.style.backgroundColor = '#4CAF50';
             btn.style.color = 'white';
             btn.innerHTML = '\uD83C\uDFC3\u200D\u2642\uFE0F<br><span style="font-size:10px; line-height:1;">\u51FA\u52E4\u4E2D</span>';
@@ -8104,7 +8138,9 @@ window.syncTrackingUI = function() {
             }, (err) => {}, { enableHighAccuracy: true });
         }
     } else {
-        if (btn) {
+        if (typeof window.refreshTrackingModeUI === 'function') {
+            window.refreshTrackingModeUI();
+        } else if (btn) {
             btn.style.backgroundColor = 'white';
             btn.style.color = '#4CAF50';
             btn.innerHTML = '\uD83C\uDFC3\u200D\u2642\uFE0F';
