@@ -448,6 +448,68 @@
     timeEl.value = endTime;
   };
 
+  /** 昼休憩チェックをONにして入力欄を有効化 */
+  function ensureLunchFieldsEnabled() {
+    const en = document.getElementById('clockLunchEnabled');
+    if (en && !en.checked) {
+      en.checked = true;
+      if (typeof window._toggleClockLunchFields === 'function') window._toggleClockLunchFields();
+    }
+  }
+
+  function getClockOutWorkDateYmd() {
+    const dateEl = document.getElementById('clockOutDate');
+    if (dateEl && dateEl.value) return dateEl.value;
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  }
+
+  /** 昼休憩の終了時刻を現在時刻に合わせる */
+  window.setLunchEndToNow = function () {
+    const endEl = document.getElementById('clockLunchEnd');
+    if (!endEl) return;
+    ensureLunchFieldsEnabled();
+    endEl.value = defaultDateTime().time;
+    const startEl = document.getElementById('clockLunchStart');
+    if (startEl && startEl.value) {
+      const s = timeToMins(startEl.value);
+      const e = timeToMins(endEl.value);
+      if (s != null && e != null && e <= s) {
+        alertMsg('終了時刻が開始時刻以前になっています。開始時刻も確認してください。');
+      }
+    }
+  };
+
+  /** 昼休憩の開始時刻を、退勤日の最後の作業記録の終了時刻に合わせる */
+  window.setLunchStartToLastWorkEnd = function () {
+    const startEl = document.getElementById('clockLunchStart');
+    if (!startEl) return;
+    const workDateYmd = getClockOutWorkDateYmd();
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      '';
+
+    let endTime = getLastWorkEndTime(user, workDateYmd);
+    if (!endTime && typeof window.getLatestEndTimeForDate === 'function') {
+      endTime = window.getLatestEndTimeForDate(workDateYmd) || '';
+    }
+    if (!endTime) {
+      alertMsg(`${workDateYmd} の作業記録に終了時間がありません。`);
+      return;
+    }
+    ensureLunchFieldsEnabled();
+    startEl.value = endTime;
+    const endEl = document.getElementById('clockLunchEnd');
+    if (endEl && endEl.value) {
+      const s = timeToMins(startEl.value);
+      const e = timeToMins(endEl.value);
+      if (s != null && e != null && e <= s) {
+        alertMsg('開始時刻が終了時刻以降になっています。終了時刻も確認してください。');
+      }
+    }
+  };
+
   function analyzeClockOut(pending) {
     const inM = timeToMins(pending.clockInTime);
     let outM = timeToMins(pending.clockOutTime);
@@ -1045,6 +1107,10 @@
     html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${pref.lunchStart || '12:00'}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
     html += `<span style="color:#666;">〜</span>`;
     html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${pref.lunchEnd || '13:00'}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
+    html += `</div>`;
+    html += `<div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">`;
+    html += `<button type="button" onclick="setLunchStartToLastWorkEnd()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 開始を最後の作業記録の終了時間に合わせる</button>`;
+    html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
     html += `</div>`;
     html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（分）</label>`;
     html += `<input type="number" id="clockMidBreak" class="form-input" min="0" step="5" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin:0;" value="${pref.midBreakMins || 0}" placeholder="例: 30">`;
