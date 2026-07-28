@@ -107,6 +107,7 @@ function doPost(e) {
     else if (action === "saveUserGmail") result = saveUserGmail(params);
     else if (action === "getUserGmail") result = getUserGmail(params);
     else if (action === "getTodayGoogleCalendarEvents") result = getTodayGoogleCalendarEvents(params);
+    else if (action === "getScriptAuthorizationInfo") result = getScriptAuthorizationInfo(params);
 
 
 
@@ -506,7 +507,7 @@ function getInitData() {
   if (pdl.workStatuses.length === 0) pdl.workStatuses = ['未着手', '途中', '完了'];
   // コンテナマスタを正とし、旧・作業マスタのコンテナ名は移行用に渡す
   pdl.containers = readContainerMasterList_(containerNames);
-  pdl.containerNames = pdl.containers.map(c => c.name);
+  pdl.containerNames = [...new Set(pdl.containers.map(c => c.name))];
   pdl.maintenanceContents = [...new Set(maintenanceContents)].filter(String); 
 
   pdl.crops = readMergedCropMasterList_();
@@ -941,16 +942,19 @@ function manageMasterData(masterType, manageAction, value, userName) {
     } else if (masterType === 'container') {
       const cont = (typeof value === 'object' && value) ? value : { name: value };
       const name = String(cont.name || '').trim();
+      const crop = String(cont.crop || (Array.isArray(cont.crops) && cont.crops[0]) || cont.cropName || '').trim();
       if (!name) throw new Error('コンテナ種類を入力してください');
-      const existing = readContainerMasterList_();
-      if (existing.some(c => c.name === name)) {
-        throw new Error(`コンテナ種類「${name}」は既に登録されています`);
+      if (!crop || crop === '共通' || crop === '__common__') {
+        throw new Error('品目を選択してください（共通設定はできません）');
       }
-      const cropsStr = formatContainerCrops_(cont.crops != null ? cont.crops : cont.cropNames);
+      const existing = readContainerMasterList_();
+      if (existing.some(c => c.name === name && c.crop === crop)) {
+        throw new Error(`「${name}」×「${crop}」は既に登録されています`);
+      }
       const contentUnit = String(cont.contentUnit || '').trim();
       const contentQty = (cont.contentQty != null && cont.contentQty !== '') ? Number(cont.contentQty) || 0 : '';
-      sheet.appendRow([name, cropsStr, contentUnit, contentQty === '' ? '' : contentQty]);
-      writeLog(userName, "マスタ追加", name, `対象: ${sheetName}`);
+      sheet.appendRow([name, crop, contentUnit, contentQty === '' ? '' : contentQty]);
+      writeLog(userName, "マスタ追加", name, `対象: ${sheetName} / 品目: ${crop}`);
     } else {
       // ★看板マスタなど、1列だけのシンプルなマスタ用
       sheet.appendRow([value]);
@@ -1093,38 +1097,44 @@ function manageMasterData(masterType, manageAction, value, userName) {
       writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
     } else if (masterType === 'container') {
       const originalName = String(value.originalName || '').trim();
+      const originalCrop = String(value.originalCrop || '').trim();
       const newData = value.newData || value || {};
       const newName = String(newData.name || '').trim();
+      const newCrop = String(newData.crop || (Array.isArray(newData.crops) && newData.crops[0]) || newData.cropName || '').trim();
       if (!originalName) throw new Error('変更前のコンテナ種類がありません');
+      if (!originalCrop) throw new Error('変更前の品目がありません');
       if (!newName) throw new Error('コンテナ種類を入力してください');
-      if (newName !== originalName) {
+      if (!newCrop || newCrop === '共通' || newCrop === '__common__') {
+        throw new Error('品目を選択してください（共通設定はできません）');
+      }
+      if (newName !== originalName || newCrop !== originalCrop) {
         for (let i = 1; i < data.length; i++) {
-          if (String(data[i][0] || '').trim() === newName) {
-            throw new Error(`コンテナ種類「${newName}」は既に登録されています`);
+          if (String(data[i][0] || '').trim() === newName && String(data[i][1] || '').trim() === newCrop) {
+            throw new Error(`「${newName}」×「${newCrop}」は既に登録されています`);
           }
         }
       }
-      const cropsStr = formatContainerCrops_(newData.crops != null ? newData.crops : newData.cropNames);
       const contentUnit = String(newData.contentUnit != null ? newData.contentUnit : '').trim();
       const contentQty = (newData.contentQty != null && newData.contentQty !== '') ? Number(newData.contentQty) || 0 : '';
       let found = false;
       for (let i = 1; i < data.length; i++) {
-        if (String(data[i][0] || '').trim() === originalName) {
+        if (String(data[i][0] || '').trim() === originalName && String(data[i][1] || '').trim() === originalCrop) {
           sheet.getRange(i + 1, 1).setValue(newName);
-          sheet.getRange(i + 1, 2).setValue(cropsStr);
+          sheet.getRange(i + 1, 2).setValue(newCrop);
           sheet.getRange(i + 1, 3).setValue(contentUnit);
           sheet.getRange(i + 1, 4).setValue(contentQty === '' ? '' : contentQty);
           found = true;
           break;
         }
       }
-      if (!found) throw new Error(`コンテナ種類「${originalName}」が見つかりません`);
-      writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
+      if (!found) throw new Error(`コンテナ「${originalName}」×品目「${originalCrop}」が見つかりません`);
+      writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName}/${originalCrop} → ${newName}/${newCrop})`);
     }
   } 
   else if (manageAction === 'delete') {
     const data = sheet.getDataRange().getValues();
     const targetVal = value.id || value.name || value;
+    const targetCrop = (typeof value === 'object' && value) ? String(value.crop || '').trim() : '';
     
     const keyIdx = masterType === 'work' ? headers.indexOf('作業名') : 0;
     let deleted = false;
@@ -1133,7 +1143,11 @@ function manageMasterData(masterType, manageAction, value, userName) {
       let match = false;
       if (masterType === 'work') {
           if (keyIdx >= 0 && data[i][keyIdx] === targetVal) match = true;
-      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'machineType' || masterType === 'machineGroup' || masterType === 'container') {
+      } else if (masterType === 'container') {
+          const rowName = String(data[i][0] || '').trim();
+          const rowCrop = String(data[i][1] || '').trim();
+          if (rowName === String(targetVal || '').trim() && (!targetCrop || rowCrop === targetCrop)) match = true;
+      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'machineType' || masterType === 'machineGroup') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'crop') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
@@ -1144,7 +1158,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       if (match) {
         sheet.deleteRow(i + 1);
         deleted = true;
-        writeLog(userName, "マスタ削除", targetVal, `対象: ${sheetName}`);
+        writeLog(userName, "マスタ削除", targetCrop ? `${targetVal}/${targetCrop}` : targetVal, `対象: ${sheetName}`);
         break;
       }
     }
@@ -1426,23 +1440,70 @@ function readMergedCropMasterList_() {
   return Object.keys(map).sort((a, b) => a.localeCompare(b, 'ja')).map(k => map[k]);
 }
 
-/** コンテナマスタシート確保 */
+/** コンテナマスタシート確保（1行＝コンテナ種類×品目） */
 function ensureContainerMasterSheet_() {
   const ss = TENANT_SS;
   let sheet = ss.getSheetByName('コンテナマスタ');
   if (!sheet) {
     sheet = ss.insertSheet('コンテナマスタ');
-    sheet.appendRow(['コンテナ種類', '対応品目', '内容単位', '内容個数']);
+    sheet.appendRow(['コンテナ種類', '品目', '内容単位', '内容個数']);
     sheet.getRange(1, 1, 1, 4).setFontWeight('bold');
   } else {
     const needCols = Math.max(sheet.getLastColumn(), 4);
     const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h).trim());
     if (!headers[0]) sheet.getRange(1, 1).setValue('コンテナ種類');
-    if (!headers[1]) sheet.getRange(1, 2).setValue('対応品目');
+    // 旧「対応品目」→「品目」
+    if (!headers[1] || headers[1] === '対応品目') sheet.getRange(1, 2).setValue('品目');
     if (!headers[2]) sheet.getRange(1, 3).setValue('内容単位');
     if (!headers[3]) sheet.getRange(1, 4).setValue('内容個数');
+    migrateContainerMasterToPerCrop_(sheet);
   }
   return sheet;
+}
+
+/**
+ * 旧形式（対応品目をカンマ複数／空＝共通）を
+ * 「コンテナ種類×品目」1行形式へ展開。共通（品目空）は削除。
+ */
+function migrateContainerMasterToPerCrop_(sheet) {
+  if (!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+  let needsRewrite = false;
+  const newRows = [];
+  const seenPair = {};
+  for (let i = 1; i < data.length; i++) {
+    const name = String(data[i][0] || '').trim();
+    if (!name) continue;
+    const rawCrop = String(data[i][1] || '').trim();
+    const crops = parseContainerCrops_(rawCrop);
+    const contentUnit = String(data[i][2] || '').trim();
+    const contentQtyRaw = data[i][3];
+    const contentQty = (contentQtyRaw !== '' && contentQtyRaw != null) ? Number(contentQtyRaw) || 0 : '';
+    if (!crops.length) {
+      // 旧・共通行は使わない
+      needsRewrite = true;
+      continue;
+    }
+    if (crops.length > 1 || /[,、，]/.test(rawCrop)) needsRewrite = true;
+    crops.forEach(crop => {
+      const key = name + '\t' + crop;
+      if (seenPair[key]) {
+        needsRewrite = true;
+        return;
+      }
+      seenPair[key] = true;
+      newRows.push([name, crop, contentUnit, contentQty === '' ? '' : contentQty]);
+    });
+  }
+  if (!needsRewrite) return;
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow, 4).clearContent();
+  }
+  if (newRows.length) {
+    sheet.getRange(2, 1, 1 + newRows.length, 4).setValues(newRows);
+  }
 }
 
 function parseContainerCrops_(raw) {
@@ -1462,44 +1523,39 @@ function formatContainerCrops_(crops) {
 }
 
 /**
- * コンテナマスタ一覧。
- * legacyNames: 作業マスタから拾った旧コンテナ名（空マスタ時に移行）
+ * コンテナマスタ一覧（1要素＝種類×品目）。
+ * legacyNames: 作業マスタから拾った旧コンテナ名（空マスタ時に移行しない／品目必須のためスキップ）
  */
 function readContainerMasterList_(legacyNames) {
   const sheet = ensureContainerMasterSheet_();
   const data = sheet.getDataRange().getValues();
   const list = [];
-  const seen = {};
+  const seenPair = {};
   for (let i = 1; i < data.length; i++) {
     const name = String(data[i][0] || '').trim();
-    if (!name || seen[name]) continue;
-    seen[name] = true;
-    const crops = parseContainerCrops_(data[i][1]);
+    const crop = String(data[i][1] || '').trim();
+    if (!name || !crop) continue;
+    if (crop === '共通' || crop === '__common__') continue;
+    const key = name + '\t' + crop;
+    if (seenPair[key]) continue;
+    seenPair[key] = true;
     const contentUnit = String(data[i][2] || '').trim();
     const contentQtyRaw = data[i][3];
     const contentQty = (contentQtyRaw !== '' && contentQtyRaw != null) ? Number(contentQtyRaw) || 0 : '';
     list.push({
       name: name,
-      crops: crops,
-      cropName: crops.join(','),
+      crop: crop,
+      crops: [crop],
+      cropName: crop,
       contentUnit: contentUnit,
       contentQty: contentQty
     });
   }
-  // 旧データ移行（マスタが空で作業マスタにコンテナ名がある場合）
-  const legacy = Array.isArray(legacyNames) ? legacyNames : [];
-  if (list.length === 0 && legacy.length) {
-    const uniq = [];
-    legacy.forEach(n => {
-      const name = String(n || '').trim();
-      if (name && uniq.indexOf(name) < 0) uniq.push(name);
-    });
-    uniq.forEach(name => {
-      sheet.appendRow([name, '', '', '']);
-      list.push({ name: name, crops: [], cropName: '', contentUnit: '', contentQty: '' });
-    });
-  }
-  list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'));
+  // 旧データ移行用レガシー名は品目不明のため自動登録しない
+  list.sort((a, b) => {
+    const n = String(a.name).localeCompare(String(b.name), 'ja');
+    return n !== 0 ? n : String(a.crop).localeCompare(String(b.crop), 'ja');
+  });
   return list;
 }
 
@@ -2583,10 +2639,13 @@ function saveGlobalHarvest(params) {
 
   const lotId = "L-" + Utilities.formatDate(new Date(), "JST", "MMddHHmm") + Math.floor(Math.random()*10);
   const containerType = String(params.containerType || '').trim();
+  const cropName = String(params.crop || '').trim();
   let contentUnit = '';
   let contentQty = '';
   const masterList = readContainerMasterList_();
-  const masterHit = masterList.find(c => String(c.name || '').trim() === containerType);
+  const masterHit = masterList.find(c =>
+    String(c.name || '').trim() === containerType && String(c.crop || '').trim() === cropName
+  );
   if (masterHit) {
     contentUnit = String(masterHit.contentUnit || '').trim();
     contentQty = (masterHit.contentQty !== '' && masterHit.contentQty != null) ? Number(masterHit.contentQty) || 0 : '';
@@ -5863,6 +5922,55 @@ function getUserGmail(params) {
     }
   }
   return { gmail: '' };
+}
+
+/**
+ * HTML側から権限許可リンクを出すための認可情報。
+ * ※Webアプリが「自分として実行」(USER_DEPLOYING) の場合、
+ *   許可が必要なのはデプロイしたGoogleアカウント側です。
+ */
+function getScriptAuthorizationInfo(params) {
+  const calendarScopes = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/calendar.readonly'
+  ];
+  try {
+    let authInfo;
+    try {
+      authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL, calendarScopes);
+    } catch (eScopes) {
+      authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+    }
+    const status = authInfo.getAuthorizationStatus();
+    const statusStr = String(status);
+    const url = authInfo.getAuthorizationUrl() || '';
+    // 注意: 「NOT_REQUIRED」にも「REQUIRED」が含まれるため、単純な indexOf は使わない
+    const needsAuth = (status === ScriptApp.AuthorizationStatus.REQUIRED)
+      || (statusStr.indexOf('NOT_REQUIRED') < 0 && !!url);
+    let effectiveUser = '';
+    try { effectiveUser = Session.getEffectiveUser().getEmail() || ''; } catch (e1) {}
+    return {
+      success: true,
+      status: statusStr,
+      authorized: !needsAuth,
+      needsAuth: needsAuth,
+      url: needsAuth ? url : '',
+      effectiveUser: effectiveUser,
+      message: needsAuth
+        ? 'Googleの権限許可が必要です。下のボタンから許可してください。'
+        : '必要な権限は許可済みです。'
+    };
+  } catch (e) {
+    return {
+      success: false,
+      authorized: false,
+      needsAuth: false,
+      url: '',
+      effectiveUser: '',
+      status: 'ERROR',
+      message: String(e.message || e)
+    };
+  }
 }
 
 function saveUserGmail(params) {

@@ -5056,7 +5056,7 @@ function createSignboardMarker(name, pos, icon, id) {
            <label class="form-label">📦 コンテナ種類</label>
            <select id="gh_container" class="form-input" onchange="applyHarvestContainerDefaults()"><option value="">選択してください</option></select>
            ${adminBar}
-           <div style="font-size:11px; color:#888; margin:-4px 0 12px;">※作物を選ぶと、その品目に紐づくコンテナだけが表示されます（共通は常に表示）</div>
+           <div style="font-size:11px; color:#888; margin:-4px 0 12px;">※作物を選ぶと、その品目に登録されたコンテナだけが表示されます</div>
            <div style="display:flex; gap:10px;">
              <div style="flex:1;">
                <label class="form-label">📏 内容単位</label>
@@ -5067,7 +5067,7 @@ function createSignboardMarker(name, pos, icon, id) {
                <input type="text" id="gh_content_qty" class="form-input" readonly style="background:#f4f6f8; color:#555;" placeholder="コンテナ選択後に表示">
              </div>
            </div>
-           <div style="font-size:11px; color:#888; margin:-8px 0 12px;">※内容単位・内容個数はコンテナマスタの設定値です（変更は管理者のみ）</div>
+           <div style="font-size:11px; color:#888; margin:-8px 0 12px;">※内容単位・内容個数は品目ごとのマスタ設定です（変更は管理者のみ）</div>
            <label class="form-label">📦 総収穫数（コンテナ数）</label>
            <input type="number" id="gh_count" class="form-input" placeholder="例: 10">
            <div style="display:flex; gap:10px; margin-top:15px;">
@@ -5081,16 +5081,22 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.getContainerMasterList = () => {
          if (Array.isArray(pdlContainers) && pdlContainers.length) return pdlContainers;
-         return (pdlContainerNames || []).map(n => ({ name: n, crops: [], contentUnit: '', contentQty: '' }));
+         return [];
       };
 
       window.containerMatchesCrop = (container, cropName) => {
          const crop = String(cropName || '').trim();
-         const crops = (container && Array.isArray(container.crops)) ? container.crops : [];
-         // 紐づけなし＝共通（全品目）
-         if (!crops.length) return true;
-         if (!crop) return true;
-         return crops.some(c => String(c).trim() === crop);
+         if (!crop) return false;
+         const cCrop = String(container.crop || (Array.isArray(container.crops) && container.crops[0]) || '').trim();
+         return !!cCrop && cCrop === crop;
+      };
+
+      window.findHarvestContainerEntry = (name, cropName) => {
+         const n = String(name || '').trim();
+         const crop = String(cropName || document.getElementById('gh_crop')?.value || '').trim();
+         return window.getContainerMasterList().find(c =>
+           (c.name || c) === n && window.containerMatchesCrop(c, crop)
+         ) || null;
       };
 
       window.filterHarvestContainers = (preferName) => {
@@ -5098,17 +5104,21 @@ function createSignboardMarker(name, pos, icon, id) {
          const crop = document.getElementById('gh_crop')?.value || '';
          if (!sel) return;
          const keep = preferName != null ? preferName : sel.value;
-         const list = window.getContainerMasterList().filter(c => window.containerMatchesCrop(c, crop));
+         const list = crop
+           ? window.getContainerMasterList().filter(c => window.containerMatchesCrop(c, crop))
+           : [];
          let html = '<option value="">選択してください</option>';
-         list.forEach(c => {
-           const name = c.name || c;
-           const crops = (c.crops && c.crops.length) ? c.crops.join(',') : '';
-           const unit = String(c.contentUnit || '').trim();
-           const qty = (c.contentQty !== '' && c.contentQty != null) ? c.contentQty : '';
-           const contentBit = (unit || qty !== '') ? ` / ${qty !== '' ? qty : ''}${unit}` : '';
-           const label = crops ? `${name}（${crops}${contentBit}）` : `${name}（共通${contentBit}）`;
-           html += `<option value="${String(name).replace(/"/g, '&quot;')}">${label}</option>`;
-         });
+         if (!crop) {
+           html = '<option value="">先に品目を選択してください</option>';
+         } else {
+           list.forEach(c => {
+             const name = c.name || c;
+             const unit = String(c.contentUnit || '').trim();
+             const qty = (c.contentQty !== '' && c.contentQty != null) ? c.contentQty : '';
+             const contentBit = (unit || qty !== '') ? `（${qty !== '' ? qty : ''}${unit}）` : '';
+             html += `<option value="${String(name).replace(/"/g, '&quot;')}">${name}${contentBit}</option>`;
+           });
+         }
          sel.innerHTML = html;
          if (keep && list.some(c => (c.name || c) === keep)) sel.value = keep;
          else sel.value = '';
@@ -5118,16 +5128,11 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.applyHarvestContainerDefaults = () => {
          const name = document.getElementById('gh_container')?.value || '';
+         const crop = document.getElementById('gh_crop')?.value || '';
          const unitEl = document.getElementById('gh_content_unit');
          const qtyEl = document.getElementById('gh_content_qty');
          if (!unitEl || !qtyEl) return;
-         if (!name) {
-           unitEl.value = '';
-           qtyEl.value = '';
-           if (typeof window.renderHarvestContainerAdminBar === 'function') window.renderHarvestContainerAdminBar();
-           return;
-         }
-         const found = window.getContainerMasterList().find(c => (c.name || c) === name);
+         const found = name && crop ? window.findHarvestContainerEntry(name, crop) : null;
          unitEl.value = found ? String(found.contentUnit || '') : '';
          qtyEl.value = (found && found.contentQty !== '' && found.contentQty != null) ? String(found.contentQty) : '';
          if (typeof window.renderHarvestContainerAdminBar === 'function') window.renderHarvestContainerAdminBar();
@@ -5145,104 +5150,130 @@ function createSignboardMarker(name, pos, icon, id) {
          const name = document.getElementById('gh_container')?.value || '';
          const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
          bar.innerHTML = `
-           <button type="button" onclick="addHarvestContainerType()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ コンテナ追加</button>
-           ${name ? `<button type="button" onclick="editHarvestContainerType('${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
+           <button type="button" onclick="openHarvestContainerEditModal('add')" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ コンテナ追加</button>
+           ${name ? `<button type="button" onclick="openHarvestContainerEditModal('edit', '${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
            <button type="button" onclick="deleteHarvestContainerType('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>` : `<span style="font-size:11px; color:#888;">コンテナの追加・編集・削除は管理者のみ</span>`}
          `;
       };
 
-      window.addHarvestContainerType = async () => {
-         if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
-           if (typeof customAlert === 'function') customAlert('コンテナマスタの変更は管理者のみ可能です。');
-           return;
-         }
-         const nameRaw = await customPrompt('新しいコンテナ種類名:');
-         if (!nameRaw || !String(nameRaw).trim()) return;
-         const name = String(nameRaw).trim();
-         if (window.getContainerMasterList().some(c => (c.name || c) === name)) {
-           if (typeof customAlert === 'function') customAlert(`コンテナ種類「${name}」は既に登録されています`);
-           return;
-         }
-         const unitRaw = await customPrompt('内容単位（例: kg・本・パック）:', '');
-         if (unitRaw === null) return;
-         const contentUnit = String(unitRaw || '').trim();
-         const qtyRaw = await customPrompt('内容個数（既定・任意）:', '');
-         if (qtyRaw === null) return;
-         const contentQty = (qtyRaw !== '' && String(qtyRaw).trim() !== '') ? Number(String(qtyRaw).trim()) || 0 : '';
-         const cropNow = document.getElementById('gh_crop')?.value || '';
-         let crops = [];
-         if (cropNow) {
-           const link = await customConfirm(`品目「${cropNow}」にこのコンテナを紐づけますか？\n（いいえ＝全品目で共通）`);
-           if (link) crops = [cropNow];
-         }
-         try {
-           const updated = await callGAS('manageMaster', {
-             masterType: 'container',
-             manageAction: 'add',
-             value: { name, crops, contentUnit, contentQty },
-             userName: localStorage.getItem('passionMapUserName') || currentUser
-           });
-           if (Array.isArray(updated)) {
-             pdlContainers = updated;
-             pdlContainerNames = updated.map(c => c.name || c);
-           } else if (!window.getContainerMasterList().some(c => c.name === name)) {
-             pdlContainers = [...window.getContainerMasterList(), { name, crops, contentUnit, contentQty }];
-             pdlContainerNames = pdlContainers.map(c => c.name);
-           }
-           localStorage.removeItem('passionMapInitData');
-           localStorage.removeItem('pMapAdminInitData');
-           window.filterHarvestContainers(name);
-           if (typeof customAlert === 'function') customAlert('✅ コンテナ種類を追加しました！');
-         } catch (e) {
-           if (typeof customAlert === 'function') customAlert(e.message || '追加に失敗しました');
-         }
+      window.closeHarvestContainerEditModal = () => {
+         const m = document.getElementById('harvestContainerEditModal');
+         if (m) m.remove();
       };
 
-      window.editHarvestContainerType = async (containerName) => {
+      window.openHarvestContainerEditModal = (mode, containerName) => {
          if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
            if (typeof customAlert === 'function') customAlert('コンテナマスタの変更は管理者のみ可能です。');
            return;
          }
-         const original = String(containerName || document.getElementById('gh_container')?.value || '').trim();
-         if (!original) return;
-         const existing = window.getContainerMasterList().find(c => (c.name || c) === original) || { name: original, crops: [], contentUnit: '', contentQty: '' };
-         const nameRaw = await customPrompt('コンテナ種類名を編集:', original);
-         if (!nameRaw || !String(nameRaw).trim()) return;
-         const newName = String(nameRaw).trim();
-         if (newName !== original && window.getContainerMasterList().some(c => (c.name || c) === newName)) {
-           if (typeof customAlert === 'function') customAlert(`コンテナ種類「${newName}」は既に登録されています`);
+         window.closeHarvestContainerEditModal();
+         const isEdit = mode === 'edit';
+         const cropNow = document.getElementById('gh_crop')?.value || '';
+         const originalName = isEdit ? String(containerName || document.getElementById('gh_container')?.value || '').trim() : '';
+         const existing = isEdit ? window.findHarvestContainerEntry(originalName, cropNow) : null;
+         if (isEdit && !existing) {
+           if (typeof customAlert === 'function') customAlert('編集対象のコンテナが見つかりません。品目を確認してください。');
            return;
          }
-         const unitRaw = await customPrompt('内容単位（例: kg・本・パック）:', String(existing.contentUnit || ''));
-         if (unitRaw === null) return;
-         const contentUnit = String(unitRaw || '').trim();
-         const qtyDef = (existing.contentQty !== '' && existing.contentQty != null) ? String(existing.contentQty) : '';
-         const qtyRaw = await customPrompt('内容個数（既定・任意）:', qtyDef);
-         if (qtyRaw === null) return;
-         const contentQty = (qtyRaw !== '' && String(qtyRaw).trim() !== '') ? Number(String(qtyRaw).trim()) || 0 : '';
-         const crops = Array.isArray(existing.crops) ? existing.crops : [];
+         const nameVal = isEdit ? String(existing.name || '').replace(/"/g, '&quot;') : '';
+         const cropVal = isEdit ? String(existing.crop || cropNow || '') : cropNow;
+         const unitVal = isEdit ? String(existing.contentUnit || '').replace(/"/g, '&quot;') : '';
+         const qtyVal = (isEdit && existing.contentQty !== '' && existing.contentQty != null) ? String(existing.contentQty) : '';
+         const cropOpts = (pdlCrops || []).map(c => {
+           const n = c.name || c;
+           const sel = String(n) === String(cropVal) ? ' selected' : '';
+           return `<option value="${String(n).replace(/"/g, '&quot;')}"${sel}>${n}</option>`;
+         }).join('');
+         const modal = document.createElement('div');
+         modal.id = 'harvestContainerEditModal';
+         modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12050; display:flex; justify-content:center; align-items:flex-end; padding:0; box-sizing:border-box;';
+         modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:520px; max-height:90vh; overflow-y:auto; border-radius:14px 14px 0 0; box-shadow:0 -8px 28px rgba(0,0,0,0.25); box-sizing:border-box;">
+           <div style="padding:14px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:8px; position:sticky; top:0; background:#fff; z-index:1;">
+             <div>
+               <div style="font-size:16px; font-weight:bold; color:#2e7d32;">${isEdit ? '✏️ コンテナ編集' : '＋ コンテナ追加'}</div>
+               <div style="font-size:11px; color:#888; margin-top:2px;">品目ごとに内容単位・内容個数を設定（共通なし）</div>
+             </div>
+             <button type="button" onclick="closeHarvestContainerEditModal()" style="background:#eee; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer;">閉じる</button>
+           </div>
+           <div style="padding:16px;">
+             <input type="hidden" id="hc_edit_mode" value="${isEdit ? 'edit' : 'add'}">
+             <input type="hidden" id="hc_original_name" value="${nameVal}">
+             <input type="hidden" id="hc_original_crop" value="${String(cropVal || '').replace(/"/g, '&quot;')}">
+             <label class="form-label">📦 コンテナ種類</label>
+             <input type="text" id="hc_name" class="form-input" value="${nameVal}" placeholder="例: オリコン大・コンテナA">
+             <label class="form-label">🌱 品目（必須）</label>
+             <select id="hc_crop" class="form-input"><option value="">選択してください</option>${cropOpts}</select>
+             <div style="display:flex; gap:10px;">
+               <div style="flex:1;">
+                 <label class="form-label">📏 内容単位</label>
+                 <input type="text" id="hc_content_unit" class="form-input" value="${unitVal}" placeholder="例: kg・本・パック">
+               </div>
+               <div style="flex:1;">
+                 <label class="form-label">🔢 内容個数</label>
+                 <input type="number" id="hc_content_qty" class="form-input" value="${qtyVal}" placeholder="例: 10" min="0" step="any">
+               </div>
+             </div>
+             <div style="font-size:11px; color:#888; margin:-6px 0 12px;">※同じコンテナ種類でも、品目ごとに別登録できます</div>
+             <div style="display:flex; gap:10px; margin-top:8px;">
+               <button type="button" onclick="saveHarvestContainerFromModal()" style="flex:1; background:${isEdit ? '#FF9800' : '#4CAF50'}; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">${isEdit ? '更新する' : '追加する'}</button>
+               <button type="button" onclick="closeHarvestContainerEditModal()" style="flex:1; background:#ccc; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
+             </div>
+           </div>
+         </div>`;
+         document.body.appendChild(modal);
+         setTimeout(() => { try { document.getElementById('hc_name')?.focus(); } catch (e) {} }, 50);
+      };
+
+      window.saveHarvestContainerFromModal = async () => {
+         if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
+           if (typeof customAlert === 'function') customAlert('コンテナマスタの変更は管理者のみ可能です。');
+           return;
+         }
+         const mode = document.getElementById('hc_edit_mode')?.value || 'add';
+         const name = (document.getElementById('hc_name')?.value || '').trim();
+         const crop = (document.getElementById('hc_crop')?.value || '').trim();
+         const contentUnit = (document.getElementById('hc_content_unit')?.value || '').trim();
+         const qtyRaw = document.getElementById('hc_content_qty')?.value;
+         const contentQty = (qtyRaw !== '' && qtyRaw != null) ? Number(qtyRaw) || 0 : '';
+         if (!name) { customAlert('コンテナ種類を入力してください'); return; }
+         if (!crop) { customAlert('品目を選択してください'); return; }
+         const userName = localStorage.getItem('passionMapUserName') || currentUser;
          try {
-           const updated = await callGAS('manageMaster', {
-             masterType: 'container',
-             manageAction: 'edit',
-             value: { originalName: original, newData: { name: newName, crops, contentUnit, contentQty } },
-             userName: localStorage.getItem('passionMapUserName') || currentUser
-           });
+           let updated;
+           if (mode === 'edit') {
+             const originalName = (document.getElementById('hc_original_name')?.value || '').trim();
+             const originalCrop = (document.getElementById('hc_original_crop')?.value || '').trim();
+             updated = await callGAS('manageMaster', {
+               masterType: 'container',
+               manageAction: 'edit',
+               value: {
+                 originalName,
+                 originalCrop,
+                 newData: { name, crop, contentUnit, contentQty }
+               },
+               userName
+             });
+           } else {
+             updated = await callGAS('manageMaster', {
+               masterType: 'container',
+               manageAction: 'add',
+               value: { name, crop, contentUnit, contentQty },
+               userName
+             });
+           }
            if (Array.isArray(updated)) {
              pdlContainers = updated;
-             pdlContainerNames = updated.map(c => c.name || c);
-           } else {
-             pdlContainers = window.getContainerMasterList().map(c => (c.name || c) === original
-               ? { ...c, name: newName, contentUnit, contentQty }
-               : c);
-             pdlContainerNames = pdlContainers.map(c => c.name);
+             pdlContainerNames = [...new Set(updated.map(c => c.name || c))];
            }
            localStorage.removeItem('passionMapInitData');
            localStorage.removeItem('pMapAdminInitData');
-           window.filterHarvestContainers(newName);
-           if (typeof customAlert === 'function') customAlert('✅ コンテナ種類を更新しました！');
+           const ghCrop = document.getElementById('gh_crop');
+           if (ghCrop && crop) ghCrop.value = crop;
+           window.closeHarvestContainerEditModal();
+           window.filterHarvestContainers(name);
+           if (typeof customAlert === 'function') customAlert(mode === 'edit' ? '✅ コンテナを更新しました！' : '✅ コンテナを追加しました！');
          } catch (e) {
-           if (typeof customAlert === 'function') customAlert(e.message || '更新に失敗しました');
+           if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました');
          }
       };
 
@@ -5252,26 +5283,30 @@ function createSignboardMarker(name, pos, icon, id) {
            return;
          }
          const name = String(containerName || document.getElementById('gh_container')?.value || '').trim();
-         if (!name) return;
-         if (!await customConfirm(`コンテナ種類「${name}」を削除しますか？`)) return;
+         const crop = document.getElementById('gh_crop')?.value || '';
+         if (!name || !crop) {
+           if (typeof customAlert === 'function') customAlert('削除するコンテナと品目を選択してください');
+           return;
+         }
+         if (!await customConfirm(`コンテナ「${name}」×品目「${crop}」を削除しますか？`)) return;
          try {
            const updated = await callGAS('manageMaster', {
              masterType: 'container',
              manageAction: 'delete',
-             value: { name },
+             value: { name, crop },
              userName: localStorage.getItem('passionMapUserName') || currentUser
            });
            if (Array.isArray(updated)) {
              pdlContainers = updated;
-             pdlContainerNames = updated.map(c => c.name || c);
+             pdlContainerNames = [...new Set(updated.map(c => c.name || c))];
            } else {
-             pdlContainers = window.getContainerMasterList().filter(c => (c.name || c) !== name);
-             pdlContainerNames = pdlContainers.map(c => c.name);
+             pdlContainers = window.getContainerMasterList().filter(c => !(c.name === name && c.crop === crop));
+             pdlContainerNames = [...new Set(pdlContainers.map(c => c.name))];
            }
            localStorage.removeItem('passionMapInitData');
            localStorage.removeItem('pMapAdminInitData');
            window.filterHarvestContainers('');
-           if (typeof customAlert === 'function') customAlert('🗑️ コンテナ種類を削除しました');
+           if (typeof customAlert === 'function') customAlert('🗑️ コンテナを削除しました');
          } catch (e) {
            if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました');
          }
@@ -5283,7 +5318,7 @@ function createSignboardMarker(name, pos, icon, id) {
          const container = document.getElementById('gh_container').value;
          const count = document.getElementById('gh_count').value;
          if(!location || !crop || !container || !count) { customAlert("拠点、作物名、コンテナ種類、収穫数をすべて入力してください"); return; }
-         const found = window.getContainerMasterList().find(c => (c.name || c) === container);
+         const found = window.findHarvestContainerEntry(container, crop);
          document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px;'>ロットを編成中...</div>";
          try {
             const res = await callGAS('saveGlobalHarvest', {
@@ -7812,6 +7847,22 @@ window.openMyPage = function() {
             <div id="saveGmailResult" style="margin-top:8px; font-size:13px; font-weight:bold;"></div>
         </div>
 
+        <h4 style="color:#1565c0; margin-bottom:10px; margin-top:5px;">🔐 Google権限（カレンダー等）</h4>
+        <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px; margin-bottom:15px;">
+            <div style="font-size:12px; color:#555; margin-bottom:8px; line-height:1.5;">カレンダー取得に必要なApps Script権限を許可します。ボタンを押すとGoogleの許可画面が開きます。</div>
+            <div id="myAuthStatus" style="font-size:13px; font-weight:bold; margin-bottom:8px; color:#666;">確認中...</div>
+            <div id="myAuthUser" style="font-size:11px; color:#888; margin-bottom:8px;"></div>
+            <button type="button" id="myAuthOpenBtn" onclick="openScriptAuthorizationUrl()" style="display:none; width:100%; background:#1a73e8; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer; margin-bottom:8px;">🔐 権限を許可する（新しいタブ）</button>
+            <button type="button" onclick="loadMyAuthorizationStatus()" style="width:100%; background:#fff; color:#1565c0; border:1px solid #90caf9; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">🔄 許可状態を再確認</button>
+            <div id="myAuthHint" style="margin-top:8px; font-size:11px; color:#666; line-height:1.5;"></div>
+        </div>
+
+        <h4 style="color:#2e7d32; margin-bottom:10px; margin-top:5px;">🗓️ マイ・スケジュール</h4>
+        <div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px; margin-bottom:15px;">
+            <div style="font-size:12px; color:#555; margin-bottom:8px;">個人予定とGoogleカレンダー（今日・明日）を表示します。</div>
+            <button type="button" onclick="closeAppModal(); openPersonalSchedule();" style="width:100%; background:#2e7d32; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">スケジュールを開く</button>
+        </div>
+
         <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
         <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">現在のパスワード</label>
         <input type="password" id="myCurrentPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="現在のパスワード">
@@ -7836,8 +7887,75 @@ window.openMyPage = function() {
     document.getElementById('modal').style.display = 'flex';
     loadMyAttendance();
     loadMyGmailIntoMyPage();
+    loadMyAuthorizationStatus();
 };
 
+window._myAuthUrl = '';
+
+window.loadMyAuthorizationStatus = async function() {
+    const statusEl = document.getElementById('myAuthStatus');
+    const userEl = document.getElementById('myAuthUser');
+    const hintEl = document.getElementById('myAuthHint');
+    const openBtn = document.getElementById('myAuthOpenBtn');
+    if (statusEl) { statusEl.innerText = '確認中...'; statusEl.style.color = '#666'; }
+    if (openBtn) openBtn.style.display = 'none';
+    window._myAuthUrl = '';
+    try {
+        const res = await callGAS('getScriptAuthorizationInfo', {});
+        if (!res || res.success === false) {
+            if (statusEl) {
+                statusEl.innerText = '❌ 状態を取得できませんでした';
+                statusEl.style.color = '#c62828';
+            }
+            if (hintEl) hintEl.innerText = (res && res.message) || '';
+            return;
+        }
+        window._myAuthUrl = res.url || '';
+        if (userEl) {
+            userEl.innerText = res.effectiveUser
+                ? `実行アカウント: ${res.effectiveUser}`
+                : '実行アカウント: （取得できませんでした）';
+        }
+        if (res.needsAuth && res.url) {
+            if (statusEl) {
+                statusEl.innerText = '⚠ 権限の許可が必要です';
+                statusEl.style.color = '#e65100';
+            }
+            if (openBtn) openBtn.style.display = 'block';
+            if (hintEl) {
+                hintEl.innerText = '許可画面で「許可」したあと、この画面に戻り「許可状態を再確認」を押してください。\n※Webアプリが「自分として実行」の場合、許可が必要なのはデプロイしたGoogleアカウントです。';
+            }
+        } else {
+            if (statusEl) {
+                statusEl.innerText = '✅ 必要な権限は許可済みです';
+                statusEl.style.color = '#2e7d32';
+            }
+            if (openBtn) openBtn.style.display = 'none';
+            if (hintEl) {
+                hintEl.innerText = res.message || 'カレンダー等の権限は利用可能です。';
+            }
+        }
+    } catch (e) {
+        if (statusEl) {
+            statusEl.innerText = '❌ ' + (e.message || '通信エラー');
+            statusEl.style.color = '#c62828';
+        }
+        if (hintEl) hintEl.innerText = '';
+    }
+};
+
+window.openScriptAuthorizationUrl = function() {
+    const url = window._myAuthUrl || '';
+    if (!url) {
+        if (typeof customAlert === 'function') customAlert('許可用URLがありません。先に「許可状態を再確認」を押してください。');
+        return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+    const hintEl = document.getElementById('myAuthHint');
+    if (hintEl) {
+        hintEl.innerText = '新しいタブで許可画面を開きました。許可が終わったらこの画面に戻り、「許可状態を再確認」を押してください。';
+    }
+};
 
 window.loadMyGmailIntoMyPage = async function() {
     const input = document.getElementById('myGmailInput');

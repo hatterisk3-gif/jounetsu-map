@@ -36,9 +36,6 @@
     <button id="btnTracking" class="map-action-btn" onclick="toggleTracking()" style="color: #4CAF50;">
       🏃‍♂️
     </button>
-    <button id="btnPersonalSchedule" class="map-action-btn" onclick="openPersonalSchedule()" title="スケジュール" style="color: #2E7D32;">
-      🗓️
-    </button>
     <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
       📍
     </button>
@@ -241,9 +238,6 @@
       <button onclick="openScheduleList()"
         style="background:#FFF9C4; color:#F57F17; border:1px solid #F57F17; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📅
         予定一覧</button>
-      <button onclick="openPersonalSchedule()"
-        style="background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🗓️
-        スケジュール</button>
       <button onclick="openAllHistory()"
         style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📋
         履歴</button>
@@ -300,7 +294,7 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-  <script src="worker.js?v=1785311000020"></script>
+  <script src="worker.js?v=1785311000022"></script>
   <script src="tracking.js?v=1784615000006"></script>
   <script>
     if ('serviceWorker' in navigator) {
