@@ -109,6 +109,7 @@ function doPost(e) {
     else if (action === "getTodayGoogleCalendarEvents") result = getTodayGoogleCalendarEvents(params);
     else if (action === "getScriptAuthorizationInfo") result = getScriptAuthorizationInfo(params);
     else if (action === "getLotList") result = getLotList(params);
+    else if (action === "updateLotRecord") result = updateLotRecord(params);
 
 
 
@@ -2731,6 +2732,7 @@ function getLotList(params) {
     }
 
     lots.push({
+      rowIndex: i + 1,
       lotId: lotId,
       createdAt: createdAt,
       author: String(row[idx.author] || '').trim(),
@@ -2750,6 +2752,88 @@ function getLotList(params) {
   lots.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt), 'ja'));
   const total = lots.length;
   return { lots: lots.slice(0, limit), total: total };
+}
+
+function updateLotRecord(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim();
+  if (!userName) throw new Error('ユーザー名が必要です');
+
+  const lotId = String(params.lotId || '').trim();
+  if (!lotId) throw new Error('ロットIDが必要です');
+
+  const lotSheet = ssGetLotSheet_();
+  if (!lotSheet) throw new Error('ロット記録シートが見つかりません');
+
+  ensureLotRecordContentHeaders_(lotSheet);
+  const data = lotSheet.getDataRange().getValues();
+  if (data.length <= 1) throw new Error('更新対象のロットがありません');
+
+  const head = data[0].map(h => String(h).trim());
+  const idx = {
+    lotId: 0,
+    crop: 3,
+    fields: 4,
+    containerType: 5,
+    initialCount: 6,
+    remain: 7,
+    status: 8,
+    location: head.indexOf('拠点') >= 0 ? head.indexOf('拠点') : 9,
+    contentUnit: head.indexOf('内容単位') >= 0 ? head.indexOf('内容単位') : 10,
+    contentQty: head.indexOf('内容個数') >= 0 ? head.indexOf('内容個数') : 11
+  };
+
+  const rowIndex = parseInt(params.rowIndex, 10) || 0;
+  let targetRow = 0;
+  if (rowIndex >= 2 && rowIndex <= data.length && String(data[rowIndex - 1][idx.lotId] || '').trim() === lotId) {
+    targetRow = rowIndex;
+  } else {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idx.lotId] || '').trim() === lotId) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+  }
+  if (!targetRow) throw new Error('更新対象のロットが見つかりません');
+
+  const crop = String(params.crop || '').trim();
+  const fields = String(params.fields || '').trim();
+  const containerType = String(params.containerType || '').trim();
+  const location = String(params.location || '').trim();
+  const contentUnit = String(params.contentUnit || '').trim();
+  const status = String(params.status || '').trim() || '使用中';
+
+  if (!crop) throw new Error('作物名を入力してください');
+  if (!containerType) throw new Error('コンテナ種類を入力してください');
+  if (!location) throw new Error('拠点を入力してください');
+
+  const initialCount = Number(params.initialCount);
+  const remain = Number(params.remain);
+  if (!isFinite(initialCount) || initialCount < 0) throw new Error('初期コンテナ数は0以上の数値で入力してください');
+  if (!isFinite(remain) || remain < 0) throw new Error('残コンテナ数は0以上の数値で入力してください');
+  if (remain > initialCount) throw new Error('残コンテナ数は初期コンテナ数以下にしてください');
+
+  let contentQty = '';
+  if (params.contentQty !== '' && params.contentQty != null) {
+    const parsedQty = Number(params.contentQty);
+    if (!isFinite(parsedQty) || parsedQty < 0) throw new Error('内容個数は0以上の数値で入力してください');
+    contentQty = parsedQty;
+  }
+
+  lotSheet.getRange(targetRow, idx.crop + 1).setValue(crop);
+  lotSheet.getRange(targetRow, idx.fields + 1).setValue(fields);
+  lotSheet.getRange(targetRow, idx.containerType + 1).setValue(containerType);
+  lotSheet.getRange(targetRow, idx.initialCount + 1).setValue(initialCount);
+  lotSheet.getRange(targetRow, idx.remain + 1).setValue(remain);
+  lotSheet.getRange(targetRow, idx.status + 1).setValue(status);
+  lotSheet.getRange(targetRow, idx.location + 1).setValue(location);
+  lotSheet.getRange(targetRow, idx.contentUnit + 1).setValue(contentUnit);
+  lotSheet.getRange(targetRow, idx.contentQty + 1).setValue(contentQty);
+
+  writeLog(userName, 'ロット編集', lotId, `作物:${crop}, 種類:${containerType}, 初期:${initialCount}, 残:${remain}, 状態:${status}, 拠点:${location}`);
+
+  return { success: true, lotId: lotId, rowIndex: targetRow };
 }
 
 function ssGetLotSheet_() {

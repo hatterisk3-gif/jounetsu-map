@@ -5474,9 +5474,12 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window._lotListCache = [];
+      window._lotListState = { status: 'all', location: 'all', q: '' };
       window.openLotList = async (opts = {}) => {
          const status = opts.status || 'all';
          const location = opts.location || 'all';
+         const searchQ = opts.q || '';
+         window._lotListState = { status, location, q: searchQ };
          let locOpts = (pdlLocations || []).map(l =>
            `<option value="${String(l).replace(/"/g, '&quot;')}" ${location === l ? 'selected' : ''}>${l}</option>`
          ).join('');
@@ -5495,7 +5498,7 @@ function createSignboardMarker(name, pos, icon, id) {
                ${locOpts}
              </select>
            </div>
-           <input type="search" id="lot_list_q" class="form-input" placeholder="ロットID・作物・コンテナで検索..." style="margin-bottom:10px;" oninput="renderLotListRows()">
+           <input type="search" id="lot_list_q" class="form-input" placeholder="ロットID・作物・コンテナで検索..." style="margin-bottom:10px;" value="${String(searchQ).replace(/"/g, '&quot;')}" oninput="window._lotListState.q=this.value; renderLotListRows()">
            <div id="lot_list_meta" style="font-size:12px; color:#666; margin-bottom:8px;">読み込み中...</div>
            <div id="lot_list_body" style="max-height:55vh; overflow-y:auto; border:1px solid #e0e0e0; border-radius:8px; background:#fafafa;"></div>
            <div style="display:flex; gap:10px; margin-top:12px;">
@@ -5509,9 +5512,15 @@ function createSignboardMarker(name, pos, icon, id) {
       window.refreshLotList = async () => {
          const statusEl = document.getElementById('lot_list_status');
          const locEl = document.getElementById('lot_list_location');
+         const qEl = document.getElementById('lot_list_q');
          const body = document.getElementById('lot_list_body');
          const meta = document.getElementById('lot_list_meta');
          if (!body) return;
+         window._lotListState = {
+           status: statusEl ? statusEl.value : 'all',
+           location: locEl ? locEl.value : 'all',
+           q: qEl ? qEl.value : ''
+         };
          body.innerHTML = `<div style="padding:20px; text-align:center; color:#888;">読み込み中...</div>`;
          if (meta) meta.innerText = '読み込み中...';
          try {
@@ -5534,6 +5543,7 @@ function createSignboardMarker(name, pos, icon, id) {
          const body = document.getElementById('lot_list_body');
          if (!body) return;
          const q = String(document.getElementById('lot_list_q')?.value || '').trim().toLowerCase();
+         window._lotListState.q = document.getElementById('lot_list_q')?.value || '';
          let list = window._lotListCache || [];
          if (q) {
            list = list.filter(l => {
@@ -5555,7 +5565,7 @@ function createSignboardMarker(name, pos, icon, id) {
            const contentBit = (l.contentUnit || l.contentQty !== '')
              ? `中身: ${l.contentQty !== '' && l.contentQty != null ? l.contentQty : ''}${l.contentUnit || ''}`
              : '';
-           return `<div style="padding:12px; border-bottom:1px solid #eee; background:#fff;">
+          return `<div style="padding:12px; border-bottom:1px solid #eee; background:#fff;">
              <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
                <div style="font-weight:bold; color:#1565c0; font-size:15px;">${l.lotId}</div>
                <span style="font-size:11px; font-weight:bold; color:#fff; background:${statusColor(l.status)}; padding:2px 8px; border-radius:10px; white-space:nowrap;">${l.status || '使用中'}</span>
@@ -5564,8 +5574,102 @@ function createSignboardMarker(name, pos, icon, id) {
              <div style="font-size:12px; color:#666; margin-top:2px;">📍 ${l.location || '未設定'}${contentBit ? ` ／ ${contentBit}` : ''}</div>
              <div style="font-size:11px; color:#888; margin-top:2px;">🕒 ${l.createdAt || '-'} ／ 👤 ${l.author || '-'}</div>
              ${l.fields ? `<div style="font-size:11px; color:#888; margin-top:2px;">圃場: ${l.fields}</div>` : ''}
+            <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+              <button type="button" onclick="openLotEditModal('${String(l.lotId).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="background:#FFF3E0; color:#EF6C00; border:1px solid #FFCC80; border-radius:6px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 編集</button>
+            </div>
            </div>`;
          }).join('');
+      };
+
+      window.openLotEditModal = (lotId) => {
+         const lot = (window._lotListCache || []).find(l => String(l.lotId || '') === String(lotId || ''));
+         if (!lot) {
+           customAlert('編集対象のロットが見つかりません');
+           return;
+         }
+         const locOpts = (pdlLocations || []).map(l => {
+           const val = String(l || '');
+           const selected = val === String(lot.location || '') ? 'selected' : '';
+           return `<option value="${val.replace(/"/g, '&quot;')}" ${selected}>${val}</option>`;
+         }).join('');
+         const statusOptions = ['使用中', '完了', '出荷済'].map(s => (
+           `<option value="${s}" ${String(lot.status || '使用中') === s ? 'selected' : ''}>${s}</option>`
+         )).join('');
+         document.getElementById('modalBody').innerHTML = `
+           <h3 style="color:#ef6c00; margin-top:0;">✏️ ロット編集</h3>
+           <div style="font-size:12px; color:#666; margin-bottom:10px;">ロットID: <b>${lot.lotId}</b></div>
+           <input type="hidden" id="lot_edit_row_index" value="${lot.rowIndex || ''}">
+           <input type="hidden" id="lot_edit_id" value="${String(lot.lotId || '').replace(/"/g, '&quot;')}">
+           <label class="form-label">🌱 作物名</label>
+           <input type="text" id="lot_edit_crop" class="form-input" value="${String(lot.crop || '').replace(/"/g, '&quot;')}">
+           <label class="form-label">📦 コンテナ種類</label>
+           <input type="text" id="lot_edit_container" class="form-input" value="${String(lot.containerType || '').replace(/"/g, '&quot;')}">
+           <div class="form-grid" style="margin-top:4px;">
+             <div>
+               <label class="form-label">初期コンテナ数</label>
+               <input type="number" id="lot_edit_initial" class="form-input" min="0" step="1" value="${lot.initialCount ?? ''}">
+             </div>
+             <div>
+               <label class="form-label">残コンテナ数</label>
+               <input type="number" id="lot_edit_remain" class="form-input" min="0" step="1" value="${lot.remain ?? ''}">
+             </div>
+           </div>
+           <label class="form-label">📍 拠点</label>
+           <select id="lot_edit_location" class="form-input">
+             <option value="">選択してください</option>
+             ${locOpts}
+           </select>
+           <label class="form-label">状態</label>
+           <select id="lot_edit_status" class="form-input">${statusOptions}</select>
+           <label class="form-label">📏 内容単位</label>
+           <input type="text" id="lot_edit_content_unit" class="form-input" value="${String(lot.contentUnit || '').replace(/"/g, '&quot;')}">
+           <label class="form-label">🔢 内容個数</label>
+           <input type="number" id="lot_edit_content_qty" class="form-input" min="0" step="0.01" value="${lot.contentQty ?? ''}">
+           <label class="form-label">圃場</label>
+           <textarea id="lot_edit_fields" class="form-input" rows="2">${String(lot.fields || '').replace(/</g, '&lt;')}</textarea>
+           <div style="display:flex; gap:10px; margin-top:14px;">
+             <button type="button" onclick="saveLotEdit()" style="background:#ef6c00; color:#fff; flex:1; padding:12px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">更新する</button>
+             <button type="button" onclick="openLotList(window._lotListState || {})" style="background:#ccc; color:#333; flex:1; padding:12px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">戻る</button>
+           </div>`;
+         document.getElementById('modal').style.display = 'flex';
+      };
+
+      window.saveLotEdit = async () => {
+         const lotId = document.getElementById('lot_edit_id')?.value || '';
+         const rowIndex = document.getElementById('lot_edit_row_index')?.value || '';
+         const crop = document.getElementById('lot_edit_crop')?.value || '';
+         const containerType = document.getElementById('lot_edit_container')?.value || '';
+         const initialCount = document.getElementById('lot_edit_initial')?.value || '';
+         const remain = document.getElementById('lot_edit_remain')?.value || '';
+         const location = document.getElementById('lot_edit_location')?.value || '';
+         const status = document.getElementById('lot_edit_status')?.value || '';
+         const contentUnit = document.getElementById('lot_edit_content_unit')?.value || '';
+         const contentQty = document.getElementById('lot_edit_content_qty')?.value || '';
+         const fields = document.getElementById('lot_edit_fields')?.value || '';
+         if (!lotId) { customAlert('ロットIDが見つかりません'); return; }
+         document.getElementById('modalBody').innerHTML = `<div style="padding:20px; text-align:center; color:#666;">更新中...</div>`;
+         try {
+           await callGAS('updateLotRecord', {
+             rowIndex,
+             lotId,
+             crop,
+             containerType,
+             initialCount,
+             remain,
+             location,
+             status,
+             contentUnit,
+             contentQty,
+             fields,
+             userName: currentUser
+           });
+           await (typeof loadInitData === 'function' ? loadInitData() : Promise.resolve());
+           customAlert(`ロット【${lotId}】を更新しました`);
+           await window.openLotList(window._lotListState || {});
+         } catch (e) {
+           customAlert(`ロット更新に失敗しました: ${(e && e.message) || e}`);
+           window.openLotEditModal(lotId);
+         }
       };
 
       window.filterShippingLots = () => {
