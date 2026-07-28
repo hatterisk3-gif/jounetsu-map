@@ -402,6 +402,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   // 最新データを取りに行く
                   loadInitData(); 
                   startLocationWatch();
+                  // 作業開始時間ヒントを先行取得（getInitData完了を待たない）
+                  if (typeof window.prefetchWorkTimeHints === 'function') {
+                      const now = new Date();
+                      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                      window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
+                  }
               } else {
                   // もし自動ログインに失敗したら、隠していたログイン画面を再表示する
                   document.getElementById('loginScreen').style.display = 'flex';
@@ -494,6 +500,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               });
               updateWorkerLegend();
           }
+          // 地図データ反映後、今日の最遅終了を端末キャッシュへ温める
+          try {
+              const now = new Date();
+              const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+              if (typeof window.getLatestEndTimeForDate === 'function') window.getLatestEndTimeForDate(todayStr);
+          } catch (e) {}
       }
           
 
@@ -1664,14 +1676,25 @@ function createSignboardMarker(name, pos, icon, id) {
         if(!n) return; 
         if(pdlCrops.some(c=>c.name===n.trim())){customAlert("登録済み"); return;} 
         try { 
-          await callGAS('addCrop',{cropData:{name:n.trim(), density:0}}); 
-          pdlCrops.push({name:n.trim(), density:0}); 
+          const updated = await callGAS('manageMaster', {
+            masterType: 'crop',
+            manageAction: 'add',
+            value: { name: n.trim(), density: 0 },
+            userName: localStorage.getItem('passionMapUserName') || currentUser
+          });
+          if (Array.isArray(updated)) pdlCrops = updated;
+          else pdlCrops.push({name:n.trim(), density:0});
+          localStorage.removeItem('passionMapInitData');
+          localStorage.removeItem('pMapAdminInitData');
           if (!window.selectedWorkCrops.includes(n.trim())) {
             window.selectedWorkCrops.push(n.trim());
           }
           if(document.getElementById('rec_crop')) {document.getElementById('rec_crop').value=n.trim(); if(typeof handleCropSelection==='function') handleCropSelection();}
           if (typeof window.renderCropChips === 'function') window.renderCropChips();
-        } catch(e) { customAlert("失敗"); } 
+          if (typeof window.renderCropFilterButtons === 'function') {
+            window.renderCropFilterButtons(document.getElementById('rec_work_crop_filter')?.value || '');
+          }
+        } catch(e) { customAlert(e.message || "失敗"); } 
       };
 
       window.addPhotoFromInput = (input) => {
@@ -1828,42 +1851,207 @@ function createSignboardMarker(name, pos, icon, id) {
         if (latestEnd === '12:00' || latestEnd === '12:00:00' || latestEnd === '12時') {
           latestEnd = '13:00';
         }
+        // 見つかったら端末キャッシュへ保存（次回の即時表示用）
+        if (latestEnd) window.saveCachedLatestWorkEnd(normTarget, latestEnd);
         return latestEnd;
+      };
+
+      /** 日付ごとの最遅終了時間を端末に保持（裏読み込み前でも開始時間を合わせる） */
+      window.getWorkTimeHintsCacheKey = () => {
+        const user = (localStorage.getItem('passionMapUserName') || currentUser || '').replace(/\s+/g, '');
+        return 'passionMapWorkTimeHints:' + (user || 'anon');
+      };
+
+      window.loadCachedWorkTimeHints = () => {
+        try {
+          return JSON.parse(localStorage.getItem(window.getWorkTimeHintsCacheKey()) || '{}') || {};
+        } catch (e) { return {}; }
+      };
+
+      window.saveCachedLatestWorkEnd = (dateYmd, endTime) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        const t = String(endTime || '').trim();
+        if (!ymd || !t) return;
+        const cache = window.loadCachedWorkTimeHints();
+        if (!cache.ends) cache.ends = {};
+        if (!cache.ends[ymd] || t > cache.ends[ymd]) {
+          cache.ends[ymd] = t;
+          cache.updatedAt = Date.now();
+          try { localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache)); } catch (e) {}
+        }
+      };
+
+      window.saveCachedClockInHint = (dateYmd, time) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        const t = String(time || '').trim();
+        if (!ymd || !t) return;
+        const cache = window.loadCachedWorkTimeHints();
+        cache.clockIn = { dateYmd: ymd, time: t };
+        cache.updatedAt = Date.now();
+        try { localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache)); } catch (e) {}
+      };
+
+      window.getCachedLatestWorkEnd = (dateYmd) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        const cache = window.loadCachedWorkTimeHints();
+        return (cache.ends && cache.ends[ymd]) ? cache.ends[ymd] : '';
+      };
+
+      /** 端末の出勤情報から今日の出勤時刻を取る（date / dateYmd 両対応） */
+      window.getLocalClockInTimeForDate = (dateYmd) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        if (!ymd) return '';
+        const tryParse = (raw) => {
+          if (!raw) return '';
+          try {
+            const d = JSON.parse(raw);
+            if (!d || !d.time) return '';
+            let dYmd = window.normalizeDateStr(d.dateYmd || '');
+            if (!dYmd && d.date) {
+              // toLocaleDateString 形式も吸収
+              try {
+                const parsed = new Date(d.date);
+                if (!isNaN(parsed.getTime())) {
+                  dYmd = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+                } else {
+                  dYmd = window.normalizeDateStr(String(d.date).replace(/\./g, '-'));
+                }
+              } catch (e) {
+                dYmd = window.normalizeDateStr(String(d.date));
+              }
+            }
+            if (dYmd && dYmd === ymd) return String(d.time).trim();
+            // active 出勤で日付不明なら今日扱いで返す
+            if (!dYmd && d.active) return String(d.time).trim();
+            return '';
+          } catch (e) { return ''; }
+        };
+        return tryParse(localStorage.getItem('passionMapClockInToday'))
+          || tryParse(localStorage.getItem('passionMapClockIn'))
+          || (() => {
+              const cache = window.loadCachedWorkTimeHints();
+              if (cache.clockIn && cache.clockIn.dateYmd === ymd) return cache.clockIn.time || '';
+              return '';
+            })();
+      };
+
+      /**
+       * 開始時間の決定（同期・即時）。
+       * 優先: 当日の最遅終了 → 出勤時刻 → 午前08:00/午後13:00
+       */
+      window.resolveDefaultStartTime = (dateYmd) => {
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const ymd = window.normalizeDateStr(dateYmd) || todayStr;
+        const fallback = (now.getHours() < 13) ? '08:00' : '13:00';
+
+        let latestEnd = '';
+        if (typeof window.getLatestEndTimeForDate === 'function') {
+          latestEnd = window.getLatestEndTimeForDate(ymd) || '';
+        }
+        if (!latestEnd) latestEnd = window.getCachedLatestWorkEnd(ymd) || '';
+
+        if (latestEnd) {
+          return { start: latestEnd, source: 'latestEnd', syncClockIn: false, isFallback: false };
+        }
+
+        const clockIn = window.getLocalClockInTimeForDate(ymd);
+        if (clockIn) {
+          return { start: clockIn, source: 'clockIn', syncClockIn: true, isFallback: false };
+        }
+
+        return { start: fallback, source: 'fallback', syncClockIn: true, isFallback: true };
+      };
+
+      window.applyStartTimeToForm = (start, opts = {}) => {
+        const el = document.getElementById('rec_start_time');
+        if (!el || !start) return;
+        const onlyIfAutofill = !!opts.onlyIfAutofill;
+        if (onlyIfAutofill && el.getAttribute('data-autofill') !== '1') return;
+        el.value = start;
+        if (opts.markAutofill) el.setAttribute('data-autofill', '1');
+        else if (opts.clearAutofill) el.removeAttribute('data-autofill');
+        const syncEl = document.getElementById('sync_clockin');
+        if (syncEl && opts.syncClockIn != null) syncEl.checked = !!opts.syncClockIn;
+        if (typeof calcTotalTime === 'function') calcTotalTime();
+      };
+
+      /** サーバーから軽量ヒントを取得してキャッシュ＆フォーム反映 */
+      window.prefetchWorkTimeHints = (dateYmd, opts = {}) => {
+        const user = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+        if (!user || typeof callGAS !== 'function') return Promise.resolve(null);
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const ymd = window.normalizeDateStr(dateYmd) || todayStr;
+        const reqId = (window._workTimeHintsReqId = (window._workTimeHintsReqId || 0) + 1);
+
+        return callGAS('getWorkRecordTimeHints', { userName: user, dateYmd: ymd }).then(hints => {
+          if (reqId !== window._workTimeHintsReqId) return hints;
+          if (!hints) return null;
+          if (hints.latestEndTime) window.saveCachedLatestWorkEnd(ymd, hints.latestEndTime);
+          if (hints.clockInTime && hints.clockInDateYmd) {
+            window.saveCachedClockInHint(hints.clockInDateYmd, hints.clockInTime);
+            // 端末の出勤キャッシュが空なら補完（別端末出勤対策）
+            try {
+              const hasToday = localStorage.getItem('passionMapClockInToday');
+              if (!hasToday && hints.open && hints.clockInDateYmd === todayStr) {
+                localStorage.setItem('passionMapClockInToday', JSON.stringify({
+                  time: hints.clockInTime,
+                  date: now.toLocaleDateString(),
+                  dateYmd: hints.clockInDateYmd
+                }));
+              }
+            } catch (e) {}
+          }
+          window._lastWorkTimeHints = hints;
+
+          if (opts.applyToForm !== false) {
+            const dateEl = document.getElementById('rec_work_date');
+            const formYmd = dateEl ? window.normalizeDateStr(dateEl.value) : '';
+            if (formYmd && formYmd !== ymd) return hints;
+
+            const el = document.getElementById('rec_start_time');
+            if (el) {
+              const autofill = el.getAttribute('data-autofill') === '1';
+              const cur = String(el.value || '').trim();
+              if (hints.latestEndTime) {
+                const canRaise = !cur || hints.latestEndTime > cur;
+                if (autofill || opts.onlyIfAutofill === false || canRaise) {
+                  window.applyStartTimeToForm(hints.latestEndTime, {
+                    syncClockIn: false,
+                    clearAutofill: true
+                  });
+                }
+              } else if (hints.clockInTime && hints.clockInDateYmd === ymd && (autofill || !cur)) {
+                window.applyStartTimeToForm(hints.clockInTime, {
+                  syncClockIn: true,
+                  clearAutofill: true
+                });
+              }
+            }
+          }
+          return hints;
+        }).catch(e => {
+          console.warn('prefetchWorkTimeHints', e);
+          return null;
+        });
       };
 
       window.handleWorkDateChange = () => {
         const dateEl = document.getElementById('rec_work_date');
         const startEl = document.getElementById('rec_start_time');
-        const syncEl = document.getElementById('sync_clockin');
         if (!dateEl || !startEl) return;
         const selectedDate = dateEl.value;
         if (!selectedDate) return;
 
-        const latestEnd = window.getLatestEndTimeForDate(selectedDate);
-        if (latestEnd) {
-          startEl.value = latestEnd;
-          if (syncEl) syncEl.checked = false;
-        } else {
-          const now = new Date();
-          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-          if (selectedDate === todayStr) {
-            let clockInTime = "";
-            try {
-              const clockInJson = localStorage.getItem('passionMapClockInToday');
-              if (clockInJson) {
-                const clockInData = JSON.parse(clockInJson);
-                if (clockInData.date === now.toLocaleDateString() && clockInData.time) {
-                  clockInTime = clockInData.time;
-                }
-              }
-            } catch(e) {}
-            if (clockInTime) {
-              startEl.value = clockInTime;
-              if (syncEl) syncEl.checked = true;
-            }
-          }
-        }
-        if (typeof calcTotalTime === 'function') calcTotalTime();
+        const resolved = window.resolveDefaultStartTime(selectedDate);
+        window.applyStartTimeToForm(resolved.start, {
+          markAutofill: resolved.isFallback,
+          clearAutofill: !resolved.isFallback,
+          syncClockIn: resolved.syncClockIn
+        });
+        // 裏でサーバー確認（フォールバック時やキャッシュ不足時）
+        window.prefetchWorkTimeHints(selectedDate, { applyToForm: true, onlyIfAutofill: resolved.isFallback });
       };
 
       window.refreshFieldTargetUI = () => {
@@ -2448,6 +2636,11 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         const keys = new Set();
         works.forEach(w => keys.add(window.normalizeWorkCropKey(w && w.cropName)));
+        // 作物マスタにだけある作物も選択できるようにする
+        (pdlCrops || []).forEach(c => {
+          const n = String((c && c.name) || '').trim();
+          if (n) keys.add(window.normalizeWorkCropKey(n));
+        });
         const labels = Array.from(keys).map(k => ({
           key: k,
           label: window.getWorkCropLabel(k === '__common__' ? '' : k)
@@ -2486,6 +2679,9 @@ function createSignboardMarker(name, pos, icon, id) {
 
         if (!options.length) {
           wrapper.innerHTML = `<span style="color:#888; font-size:12px;">このカテゴリに登録された作物がありません</span>`;
+          if (typeof window.renderCropAdminBar === 'function') {
+            window.renderCropAdminBar(currentKey);
+          }
           return;
         }
 
@@ -2501,6 +2697,9 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const hiddenInput = document.getElementById('rec_work_crop_filter');
         if (hiddenInput) hiddenInput.value = currentKey;
+        if (typeof window.renderCropAdminBar === 'function') {
+          window.renderCropAdminBar(currentKey);
+        }
       };
 
       window.selectWorkCropFilter = (cropKey) => {
@@ -2537,6 +2736,9 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const hiddenInput = document.getElementById('rec_work_category');
         if (hiddenInput) hiddenInput.value = currentCat;
+        if (typeof window.renderCategoryAdminBar === 'function') {
+          window.renderCategoryAdminBar(currentCat);
+        }
       };
 
       window.getFieldLatestProgressStatus = (polyId) => {
@@ -2952,6 +3154,400 @@ function createSignboardMarker(name, pos, icon, id) {
           `;
       };
 
+      window.renderCategoryAdminBar = (catName) => {
+          const bar = document.getElementById('work_category_admin_bar');
+          if (!bar) return;
+          if (!window.isWorkerAdmin()) {
+              bar.style.display = 'none';
+              bar.innerHTML = '';
+              return;
+          }
+          bar.style.display = 'flex';
+          const cat = String(catName || document.getElementById('rec_work_category')?.value || '').trim();
+          const canEditSelected = cat && cat !== 'すべて';
+          const safe = cat.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          bar.innerHTML = `
+            <button type="button" onclick="openCategoryMasterManager()" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📂 カテゴリマスタ</button>
+            <button type="button" onclick="adminAddWorkCategory()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ カテゴリ追加</button>
+            ${canEditSelected ? `<button type="button" onclick="adminEditWorkCategory('${safe}')" style="background:#fff8e1; color:#f57c00; border:1px solid #ffcc80; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
+            <button type="button" onclick="adminDeleteWorkCategory('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>` : `<span style="font-size:11px; color:#888;">カテゴリを選択すると編集・削除できます</span>`}
+          `;
+      };
+
+      window.renderCropAdminBar = (cropKey) => {
+          const bar = document.getElementById('work_crop_admin_bar');
+          if (!bar) return;
+          if (!window.isWorkerAdmin()) {
+              bar.style.display = 'none';
+              bar.innerHTML = '';
+              return;
+          }
+          bar.style.display = 'flex';
+          const key = String(cropKey || document.getElementById('rec_work_crop_filter')?.value || '').trim();
+          const canEditSelected = key && key !== '__common__';
+          const safe = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          bar.innerHTML = `
+            <button type="button" onclick="openCropMasterManager()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🌱 作物マスタ</button>
+            <button type="button" onclick="adminAddCropMaster()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作物追加</button>
+            ${canEditSelected ? `<button type="button" onclick="adminEditCropMaster('${safe}')" style="background:#fff8e1; color:#f57c00; border:1px solid #ffcc80; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
+            <button type="button" onclick="adminDeleteCropMaster('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>` : `<span style="font-size:11px; color:#888;">作物を選択すると編集・削除できます</span>`}
+          `;
+      };
+
+      window.refreshCategoryAndCropUiAfterMasterChange = (preferCategory, preferCropKey) => {
+          const cat = preferCategory != null
+            ? preferCategory
+            : (document.getElementById('rec_work_category')?.value || 'すべて');
+          const crop = preferCropKey != null
+            ? preferCropKey
+            : (document.getElementById('rec_work_crop_filter')?.value || '');
+          if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons(cat);
+          if (typeof window.renderCropFilterButtons === 'function') window.renderCropFilterButtons(crop);
+          if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(cat, crop);
+          if (document.getElementById('categoryMasterManagerModal')) window.renderCategoryMasterManagerList();
+          if (document.getElementById('cropMasterManagerModal')) window.renderCropMasterManagerList();
+          if (document.getElementById('workMasterManagerModal')) window.renderWorkMasterManagerList();
+      };
+
+      window.closeCategoryMasterManager = () => {
+          const m = document.getElementById('categoryMasterManagerModal');
+          if (m) m.remove();
+      };
+
+      window.openCategoryMasterManager = () => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          window.closeCategoryMasterManager();
+          const modal = document.createElement('div');
+          modal.id = 'categoryMasterManagerModal';
+          modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:11900; display:flex; justify-content:center; align-items:flex-end; padding:0; box-sizing:border-box;';
+          modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:520px; max-height:88vh; border-radius:14px 14px 0 0; box-shadow:0 -8px 28px rgba(0,0,0,0.25); display:flex; flex-direction:column;">
+              <div style="padding:14px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <div>
+                  <div style="font-size:16px; font-weight:bold; color:#1976D2;">📂 カテゴリマスタ</div>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">追加・編集・削除（管理者のみ）</div>
+                </div>
+                <button type="button" onclick="closeCategoryMasterManager()" style="background:#eee; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer;">閉じる</button>
+              </div>
+              <div style="padding:10px 16px; border-bottom:1px solid #f0f0f0;">
+                <button type="button" onclick="adminAddWorkCategory()" style="background:#4CAF50; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer;">＋ カテゴリを追加</button>
+              </div>
+              <div id="cat_mgr_list" style="flex:1; overflow-y:auto; padding:8px 12px 20px;"></div>
+            </div>`;
+          document.body.appendChild(modal);
+          window.renderCategoryMasterManagerList();
+      };
+
+      window.renderCategoryMasterManagerList = () => {
+          const list = document.getElementById('cat_mgr_list');
+          if (!list) return;
+          const cats = Array.isArray(pdlWorkCategories) ? [...pdlWorkCategories] : [];
+          cats.sort((a, b) => String(a).localeCompare(String(b), 'ja'));
+          if (!cats.length) {
+              list.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">カテゴリがありません</div>`;
+              return;
+          }
+          list.innerHTML = cats.map(c => {
+              const name = String(c || '');
+              const safe = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              return `<div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; margin-bottom:8px; background:#fafafa; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <div style="font-weight:bold; font-size:14px; word-break:break-all;">${name.replace(/</g, '&lt;')}</div>
+                <div style="display:flex; gap:4px; flex-shrink:0;">
+                  <button type="button" onclick="adminEditWorkCategory('${safe}')" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">✏️</button>
+                  <button type="button" onclick="adminDeleteWorkCategory('${safe}')" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">🗑️</button>
+                </div>
+              </div>`;
+          }).join('');
+      };
+
+      window.adminAddWorkCategory = async () => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const n = await customPrompt('新しいカテゴリ名:');
+          if (!n || !String(n).trim()) return;
+          const name = String(n).trim();
+          if ((pdlWorkCategories || []).includes(name)) {
+              if (typeof customAlert === 'function') customAlert(`カテゴリ「${name}」は既に登録されています。`);
+              return;
+          }
+          try {
+              const updated = await callGAS('manageMaster', {
+                  masterType: 'workCategory',
+                  manageAction: 'add',
+                  value: name,
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+              if (Array.isArray(updated)) pdlWorkCategories = updated;
+              else if (!(pdlWorkCategories || []).includes(name)) pdlWorkCategories.push(name);
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+              window.refreshCategoryAndCropUiAfterMasterChange(name, null);
+              if (typeof customAlert === 'function') customAlert('✅ カテゴリを追加しました！');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(e.message || '追加に失敗しました。');
+          }
+      };
+
+      window.adminEditWorkCategory = async (catName) => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const original = String(catName || '').trim();
+          if (!original || original === 'すべて') return;
+          const n = await customPrompt('カテゴリ名を編集:', original);
+          if (!n || !String(n).trim()) return;
+          const name = String(n).trim();
+          if (name === original) return;
+          if ((pdlWorkCategories || []).includes(name)) {
+              if (typeof customAlert === 'function') customAlert(`カテゴリ「${name}」は既に登録されています。`);
+              return;
+          }
+          try {
+              const updated = await callGAS('manageMaster', {
+                  masterType: 'workCategory',
+                  manageAction: 'edit',
+                  value: { originalName: original, newData: { name } },
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+              if (Array.isArray(updated)) pdlWorkCategories = updated;
+              else {
+                  pdlWorkCategories = (pdlWorkCategories || []).map(c => c === original ? name : c);
+              }
+              // 作業マスタのローカルキャッシュも更新
+              if (Array.isArray(pdlWorkMaster)) {
+                  pdlWorkMaster.forEach(w => {
+                      if ((w.category || '') === original) w.category = name;
+                  });
+              }
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+              const cur = document.getElementById('rec_work_category')?.value || '';
+              window.refreshCategoryAndCropUiAfterMasterChange(cur === original ? name : cur, null);
+              if (typeof customAlert === 'function') customAlert('✅ カテゴリを更新しました！');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(e.message || '更新に失敗しました。');
+          }
+      };
+
+      window.adminDeleteWorkCategory = async (catName) => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const name = String(catName || '').trim();
+          if (!name || name === 'すべて') return;
+          const usedCount = (pdlWorkMaster || []).filter(w => (w.category || '圃場作業') === name).length;
+          const warn = usedCount > 0
+            ? `カテゴリ「${name}」を削除しますか？\n（このカテゴリの作業マスタが ${usedCount} 件あります。作業自体は残ります）`
+            : `カテゴリ「${name}」を削除しますか？`;
+          if (!await customConfirm(warn)) return;
+          try {
+              const updated = await callGAS('manageMaster', {
+                  masterType: 'workCategory',
+                  manageAction: 'delete',
+                  value: name,
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+              if (Array.isArray(updated)) pdlWorkCategories = updated;
+              else pdlWorkCategories = (pdlWorkCategories || []).filter(c => c !== name);
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+              const cur = document.getElementById('rec_work_category')?.value || '';
+              window.refreshCategoryAndCropUiAfterMasterChange(cur === name ? 'すべて' : cur, null);
+              if (typeof customAlert === 'function') customAlert('✅ カテゴリを削除しました！');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました。');
+          }
+      };
+
+      window.closeCropMasterManager = () => {
+          const m = document.getElementById('cropMasterManagerModal');
+          if (m) m.remove();
+      };
+
+      window.openCropMasterManager = () => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          window.closeCropMasterManager();
+          const modal = document.createElement('div');
+          modal.id = 'cropMasterManagerModal';
+          modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:11900; display:flex; justify-content:center; align-items:flex-end; padding:0; box-sizing:border-box;';
+          modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:520px; max-height:88vh; border-radius:14px 14px 0 0; box-shadow:0 -8px 28px rgba(0,0,0,0.25); display:flex; flex-direction:column;">
+              <div style="padding:14px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <div>
+                  <div style="font-size:16px; font-weight:bold; color:#2e7d32;">🌱 作物マスタ</div>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">追加・編集・削除（管理者のみ）</div>
+                </div>
+                <button type="button" onclick="closeCropMasterManager()" style="background:#eee; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer;">閉じる</button>
+              </div>
+              <div style="padding:10px 16px; border-bottom:1px solid #f0f0f0; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <input type="search" id="crop_mgr_filter" placeholder="作物名で検索..." oninput="renderCropMasterManagerList()" style="flex:1; min-width:140px; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box;">
+                <button type="button" onclick="adminAddCropMaster()" style="background:#4CAF50; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer;">＋ 追加</button>
+              </div>
+              <div id="crop_mgr_list" style="flex:1; overflow-y:auto; padding:8px 12px 20px;"></div>
+            </div>`;
+          document.body.appendChild(modal);
+          window.renderCropMasterManagerList();
+      };
+
+      window.renderCropMasterManagerList = () => {
+          const list = document.getElementById('crop_mgr_list');
+          if (!list) return;
+          const q = String(document.getElementById('crop_mgr_filter')?.value || '').trim().toLowerCase();
+          let crops = Array.isArray(pdlCrops) ? [...pdlCrops] : [];
+          crops.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+          if (q) crops = crops.filter(c => String(c.name || '').toLowerCase().includes(q));
+          if (!crops.length) {
+              list.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">作物がありません</div>`;
+              return;
+          }
+          list.innerHTML = crops.map(c => {
+              const name = String(c.name || '');
+              const density = c.density != null ? c.density : 0;
+              const safe = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              return `<div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; margin-bottom:8px; background:#fafafa; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <div style="min-width:0; flex:1;">
+                  <div style="font-weight:bold; font-size:14px; word-break:break-all;">${name.replace(/</g, '&lt;')}</div>
+                  <div style="font-size:11px; color:#666; margin-top:2px;">栽植密度: ${density} 本/10a</div>
+                </div>
+                <div style="display:flex; gap:4px; flex-shrink:0;">
+                  <button type="button" onclick="adminEditCropMaster('${safe}')" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">✏️</button>
+                  <button type="button" onclick="adminDeleteCropMaster('${safe}')" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:6px; width:36px; height:36px; cursor:pointer; font-size:14px;">🗑️</button>
+                </div>
+              </div>`;
+          }).join('');
+      };
+
+      window.adminAddCropMaster = async () => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const n = await customPrompt('新しい作物名:');
+          if (!n || !String(n).trim()) return;
+          const name = String(n).trim();
+          if ((pdlCrops || []).some(c => c.name === name)) {
+              if (typeof customAlert === 'function') customAlert(`作物名「${name}」は既に登録されています。`);
+              return;
+          }
+          const densStr = await customPrompt('栽植密度（本/10a・任意）:', '0');
+          const density = parseInt(String(densStr || '0').trim(), 10) || 0;
+          try {
+              const updated = await callGAS('manageMaster', {
+                  masterType: 'crop',
+                  manageAction: 'add',
+                  value: { name, density },
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+              if (Array.isArray(updated)) pdlCrops = updated;
+              else pdlCrops.push({ name, density });
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+              window.refreshCategoryAndCropUiAfterMasterChange(null, name);
+              if (typeof customAlert === 'function') customAlert('✅ 作物を追加しました！');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(e.message || '追加に失敗しました。');
+          }
+      };
+
+      window.adminEditCropMaster = async (cropName) => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const original = String(cropName || '').trim();
+          if (!original || original === '__common__') return;
+          const existing = (pdlCrops || []).find(c => c.name === original) || { name: original, density: 0 };
+          const n = await customPrompt('作物名を編集:', original);
+          if (!n || !String(n).trim()) return;
+          const name = String(n).trim();
+          if (name !== original && (pdlCrops || []).some(c => c.name === name)) {
+              if (typeof customAlert === 'function') customAlert(`作物名「${name}」は既に登録されています。`);
+              return;
+          }
+          const densStr = await customPrompt('栽植密度（本/10a）:', String(existing.density || 0));
+          const density = parseInt(String(densStr != null ? densStr : '0').trim(), 10) || 0;
+          try {
+              const updated = await callGAS('manageMaster', {
+                  masterType: 'crop',
+                  manageAction: 'edit',
+                  value: { originalName: original, newData: { name, density } },
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+              if (Array.isArray(updated)) pdlCrops = updated;
+              else {
+                  pdlCrops = (pdlCrops || []).map(c => c.name === original ? { name, density } : c);
+              }
+              if (Array.isArray(pdlWorkMaster) && name !== original) {
+                  pdlWorkMaster.forEach(w => {
+                      if (!w) return;
+                      if (w.cropName === original) w.cropName = name;
+                      else if (w.cropName && String(w.cropName).includes(original)) {
+                          w.cropName = String(w.cropName).split(/[,、]/).map(s => s.trim() === original ? name : s.trim()).filter(Boolean).join(',');
+                      }
+                      if (Array.isArray(w.crops)) {
+                          w.crops = w.crops.map(c => c === original ? name : c);
+                      }
+                      if (w.cropDetails && typeof w.cropDetails === 'object' && w.cropDetails[original] != null) {
+                          w.cropDetails[name] = w.cropDetails[original];
+                          delete w.cropDetails[original];
+                      }
+                  });
+              }
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+              const cur = document.getElementById('rec_work_crop_filter')?.value || '';
+              window.refreshCategoryAndCropUiAfterMasterChange(null, cur === original ? name : cur);
+              if (typeof customAlert === 'function') customAlert('✅ 作物を更新しました！');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(e.message || '更新に失敗しました。');
+          }
+      };
+
+      window.adminDeleteCropMaster = async (cropName) => {
+          if (!window.isWorkerAdmin()) {
+              if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+              return;
+          }
+          const name = String(cropName || '').trim();
+          if (!name || name === '__common__') return;
+          const usedCount = (pdlWorkMaster || []).filter(w => {
+              if (!w) return false;
+              if (w.cropName === name) return true;
+              if (w.cropName && String(w.cropName).split(/[,、]/).map(s => s.trim()).includes(name)) return true;
+              if (Array.isArray(w.crops) && w.crops.includes(name)) return true;
+              return false;
+          }).length;
+          const warn = usedCount > 0
+            ? `作物「${name}」を削除しますか？\n（この作物に紐づく作業マスタが ${usedCount} 件あります。作業自体は残ります）`
+            : `作物「${name}」を削除しますか？`;
+          if (!await customConfirm(warn)) return;
+          try {
+              const updated = await callGAS('manageMaster', {
+                  masterType: 'crop',
+                  manageAction: 'delete',
+                  value: { name },
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+              if (Array.isArray(updated)) pdlCrops = updated;
+              else pdlCrops = (pdlCrops || []).filter(c => c.name !== name);
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+              const cur = document.getElementById('rec_work_crop_filter')?.value || '';
+              window.refreshCategoryAndCropUiAfterMasterChange(null, cur === name ? '' : cur);
+              if (typeof customAlert === 'function') customAlert('✅ 作物を削除しました！');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました。');
+          }
+      };
+
       window.collectWorkerDetailWorks = (containerId) => {
           const box = document.getElementById(containerId);
           if (!box) return '';
@@ -3149,8 +3745,16 @@ function createSignboardMarker(name, pos, icon, id) {
               return;
           }
           try {
-              await callGAS('addCrop', { cropData: { name: name, density: 0 } });
-              pdlCrops.push({ name: name, density: 0 });
+              const updated = await callGAS('manageMaster', {
+                  masterType: 'crop',
+                  manageAction: 'add',
+                  value: { name: name, density: 0 },
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              });
+              if (Array.isArray(updated)) pdlCrops = updated;
+              else pdlCrops.push({ name: name, density: 0 });
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
               const sel = document.getElementById('wn_edit_crop');
               if (sel) {
                   const opt = document.createElement('option');
@@ -3159,8 +3763,11 @@ function createSignboardMarker(name, pos, icon, id) {
                   sel.appendChild(opt);
                   sel.value = name;
               }
+              if (typeof window.renderCropFilterButtons === 'function') {
+                  window.renderCropFilterButtons(document.getElementById('rec_work_crop_filter')?.value || '');
+              }
           } catch (e) {
-              if (typeof customAlert === 'function') customAlert('作物の追加に失敗しました');
+              if (typeof customAlert === 'function') customAlert(e.message || '作物の追加に失敗しました');
           }
       };
 
@@ -3640,30 +4247,26 @@ function createSignboardMarker(name, pos, icon, id) {
         
         const now = new Date(); const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        let defaultStartTime = (now.getHours() < 13) ? "08:00" : "13:00";
-        try {
-            const clockInJson = localStorage.getItem('passionMapClockInToday');
-            if (clockInJson) {
-                const clockInData = JSON.parse(clockInJson);
-                if (clockInData.date === now.toLocaleDateString() && clockInData.time) {
-                    defaultStartTime = clockInData.time;
-                }
-            }
-        } catch(e) {}
-        const latestEndTime = window.getLatestEndTimeForDate(todayStr);
-        if (latestEndTime) defaultStartTime = latestEndTime;
+        const resolvedStart = (typeof window.resolveDefaultStartTime === 'function')
+          ? window.resolveDefaultStartTime(todayStr)
+          : { start: (now.getHours() < 13) ? '08:00' : '13:00', syncClockIn: true, isFallback: true };
+        const defaultStartTime = resolvedStart.start;
+        // 裏読み込みが遅い場合に備え、フォーム表示と同時に軽量APIを叩く
+        if (typeof window.prefetchWorkTimeHints === 'function') {
+          window.prefetchWorkTimeHints(todayStr, { applyToForm: true, onlyIfAutofill: !!resolvedStart.isFallback });
+        }
 
         let timeUI = `
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
             <label class="form-label" style="margin:0;">⏰ 時間</label>
-            <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア(記録しない)</button>
+            <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア(記録しない)</button>
           </div>
           <div class="form-grid" style="margin-bottom:15px;">
             <div>
               <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
-              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" onclick="openAppTimePicker('rec_start_time', '開始時間')" onchange="calcTotalTime()">
+              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${(!isEdit && resolvedStart.isFallback) ? 'data-autofill="1"' : ''} onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()">
               <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
-                <input type="checkbox" id="sync_clockin" ${!latestEndTime ? 'checked' : ''}>出勤時間と同期
+                <input type="checkbox" id="sync_clockin" ${resolvedStart.syncClockIn ? 'checked' : ''}>出勤時間と同期
               </label>
             </div>
             <div>
@@ -3747,9 +4350,11 @@ function createSignboardMarker(name, pos, icon, id) {
                   ${timeUI}
                   ${workTimeUI}
                   <label class="form-label" style="margin-top:15px;">📁 カテゴリ</label>
+                  <div id="work_category_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_category" value="すべて">
                   <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
                   <label class="form-label" style="margin-top:10px;">🌱 作物名</label>
+                  <div id="work_crop_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_crop_filter" value="">
                   <div id="work_crop_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
                   <label class="form-label" style="margin-top:10px;">🚜 作業名</label>
@@ -3809,6 +4414,12 @@ function createSignboardMarker(name, pos, icon, id) {
             } else if (typeof window.renderCropFilterButtons === 'function') {
               window.renderCropFilterButtons('');
               if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(cat, '');
+            }
+            if (typeof window.renderCategoryAdminBar === 'function') {
+              window.renderCategoryAdminBar(document.getElementById('rec_work_category')?.value || 'すべて');
+            }
+            if (typeof window.renderCropAdminBar === 'function') {
+              window.renderCropAdminBar(document.getElementById('rec_work_crop_filter')?.value || '');
             }
             if (typeof window.renderProgressStatusButtons === 'function') window.renderProgressStatusButtons();
             if (!p.isMarker) {
@@ -4207,6 +4818,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 const clockInTodayState = { lat: exLat, lng: exLng, time: sTime, date: dateStr, dateYmd: dateYmd };
                 localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
                 localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
+                if (typeof window.saveCachedClockInHint === 'function') window.saveCachedClockInHint(dateYmd, sTime);
                 if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
 
                 if (typeof callGAS === 'function' && typeof currentUser !== 'undefined' && currentUser) {
@@ -4218,6 +4830,12 @@ function createSignboardMarker(name, pos, icon, id) {
                         time: now.getTime()
                     }).catch(e => console.warn(e));
                 }
+            }
+
+            // 次回の開始時間即時表示用に終了時間を端末へ保存
+            const workDateForCache = document.getElementById('rec_work_date')?.value || '';
+            if (eTime && workDateForCache && typeof window.saveCachedLatestWorkEnd === 'function') {
+              window.saveCachedLatestWorkEnd(workDateForCache, eTime);
             }
             
             let detailedWorksStr = (typeof window.buildDetailedWorksFormattedString === 'function')
@@ -6341,8 +6959,14 @@ window.executeAutoRecord = async () => {
               if (cachedData) {
                   try { 
                       renderInitData(JSON.parse(cachedData)); 
-                      // ★爆速化の秘訣：地図が画面に表示されてから、1.5秒後に裏でこっそりログイン＆更新通信を開始する
-                      setTimeout(() => { executeLogin(true); }, 1500);
+                      // 開始時間ヒントは getInitData より軽量なので、地図表示と同時に先行取得
+                      if (typeof window.prefetchWorkTimeHints === 'function') {
+                          const now = new Date();
+                          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                          window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
+                      }
+                      // 裏のログイン＆全体更新もすぐ開始（以前の1.5秒待ちをやめて高速化）
+                      setTimeout(() => { executeLogin(true); }, 50);
                   } catch(e) {
                       executeLogin(true);
                   }

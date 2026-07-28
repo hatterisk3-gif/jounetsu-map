@@ -82,6 +82,7 @@ function doPost(e) {
     else if (action === "saveTrackingData") result = saveTrackingData(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
     else if (action === "getOpenClockInStatus") result = getOpenClockInStatus(params);
+    else if (action === "getWorkRecordTimeHints") result = getWorkRecordTimeHints(params);
     else if (action === "resetAllManureStatus") result = resetAllManureStatus(params.userName);
     else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
     else if (action === "changePassword") result = changePassword(params.userId, params.currentPassword, params.newPassword);
@@ -506,14 +507,7 @@ function getInitData() {
   pdl.containerNames = [...new Set(containerNames)].filter(String);
   pdl.maintenanceContents = [...new Set(maintenanceContents)].filter(String); 
 
-  pdl.crops = [];
-  for (let name of ['生育記録マスタ', '作物マスタ']) {
-     const sh = ss.getSheetByName(name);
-     if (sh) {
-        const data = sh.getDataRange().getValues();
-        if (data.length > 1) { pdl.crops = data.slice(1).filter(r => r[0]).map(r => ({ name: r[0], density: r[1] || 0 })); break; }
-     }
-  }
+  pdl.crops = readMergedCropMasterList_();
 pdl.signLinks = {};
   const signSh = ss.getSheetByName('看板');
   if(signSh) {
@@ -844,6 +838,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet.appendRow(["圃場作業"]);
           sheet.appendRow(["事務作業"]);
           sheet.appendRow(["保全・整備"]);
+      } else if (masterType === 'crop') {
+          sheet = ss.insertSheet(sheetName);
+          sheet.appendRow(["作物名", "栽植密度"]);
       } else if (masterType === 'machineType') {
           sheet = ensureMachineTypeMasterSheet_();
       } else if (masterType === 'machineGroup') {
@@ -869,7 +866,17 @@ function manageMasterData(masterType, manageAction, value, userName) {
 
   if (manageAction === 'add') {
     if (masterType === 'crop') {
-      sheet.appendRow([value.name, value.density]);
+      const cropName = String((value && value.name) || '').trim();
+      if (!cropName) throw new Error('作物名を入力してください');
+      const density = Number((value && value.density) || 0) || 0;
+      const existing = sheet.getDataRange().getValues();
+      for (let i = 1; i < existing.length; i++) {
+        if (String(existing[i][0] || '').trim() === cropName) {
+          throw new Error(`作物名「${cropName}」は既に登録されています`);
+        }
+      }
+      sheet.appendRow([cropName, density]);
+      syncCropNameInSeikuMaster_('', cropName, density); // 新規を生育記録マスタにも反映
     } else if (masterType === 'tool') {
       const newId = "TOOL-" + Utilities.getUuid().substring(0,6);
       sheet.appendRow([newId, value.name, "", value.workCategory, "", "", "", "", "", "所有", userName]);
@@ -986,6 +993,66 @@ function manageMasterData(masterType, manageAction, value, userName) {
           break;
         }
       }
+    } else if (masterType === 'workCategory') {
+      const originalName = String(value.originalName || '').trim();
+      const newName = String((value.newData && value.newData.name) || value.name || '').trim();
+      if (!originalName) throw new Error('変更前のカテゴリ名がありません');
+      if (!newName) throw new Error('カテゴリ名を入力してください');
+      if (newName !== originalName) {
+        for (let i = 1; i < data.length; i++) {
+          if (String(data[i][0] || '').trim() === newName) {
+            throw new Error(`カテゴリ名「${newName}」は既に登録されています`);
+          }
+        }
+      }
+      let found = false;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === originalName) {
+          sheet.getRange(i + 1, 1).setValue(newName);
+          found = true;
+          break;
+        }
+      }
+      if (!found) throw new Error(`カテゴリ「${originalName}」が見つかりません`);
+      if (newName !== originalName) {
+        renameWorkMasterCategory_(originalName, newName);
+      }
+      writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
+    } else if (masterType === 'crop') {
+      const originalName = String(value.originalName || '').trim();
+      const newData = value.newData || value || {};
+      const newName = String(newData.name || '').trim();
+      const newDensity = (newData.density != null && newData.density !== '') ? Number(newData.density) || 0 : null;
+      if (!originalName) throw new Error('変更前の作物名がありません');
+      if (!newName) throw new Error('作物名を入力してください');
+      if (newName !== originalName) {
+        for (let i = 1; i < data.length; i++) {
+          if (String(data[i][0] || '').trim() === newName) {
+            throw new Error(`作物名「${newName}」は既に登録されています`);
+          }
+        }
+      }
+      let found = false;
+      let densityToWrite = 0;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === originalName) {
+          densityToWrite = (newDensity != null) ? newDensity : (Number(data[i][1]) || 0);
+          sheet.getRange(i + 1, 1).setValue(newName);
+          if (sheet.getLastColumn() >= 2) sheet.getRange(i + 1, 2).setValue(densityToWrite);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        // 作物マスタに無い場合は追記（生育記録マスタ側だけの旧データ向け）
+        densityToWrite = (newDensity != null) ? newDensity : 0;
+        sheet.appendRow([newName, densityToWrite]);
+      }
+      syncCropNameInSeikuMaster_(originalName, newName, densityToWrite);
+      if (newName !== originalName) {
+        renameWorkMasterCrop_(originalName, newName);
+      }
+      writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
     }
   } 
   else if (manageAction === 'delete') {
@@ -993,6 +1060,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
     const targetVal = value.id || value.name || value;
     
     const keyIdx = masterType === 'work' ? headers.indexOf('作業名') : 0;
+    let deleted = false;
 
     for (let i = 1; i < data.length; i++) {
       let match = false;
@@ -1000,15 +1068,22 @@ function manageMasterData(masterType, manageAction, value, userName) {
           if (keyIdx >= 0 && data[i][keyIdx] === targetVal) match = true;
       } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'machineType' || masterType === 'machineGroup') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+      } else if (masterType === 'crop') {
+          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else {
           if (data[i][0] === targetVal || data[i][1] === targetVal) match = true;
       }
 
       if (match) {
         sheet.deleteRow(i + 1);
+        deleted = true;
         writeLog(userName, "マスタ削除", targetVal, `対象: ${sheetName}`);
         break;
       }
+    }
+    if (masterType === 'crop') {
+      deleteCropFromSeikuMaster_(String(targetVal || '').trim());
+      if (!deleted) writeLog(userName, "マスタ削除", targetVal, `対象: 生育記録マスタ`);
     }
   }
 
@@ -1022,11 +1097,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
   if (masterType === 'machineGroup') {
     return getMachineGroupMasterList_();
   }
+  if (masterType === 'crop') {
+    return readMergedCropMasterList_();
+  }
   const newData = sheet.getDataRange().getValues();
   const returnHeaders = newData[0].map(h => String(h).trim());
-  if (masterType === 'crop') {
-    return newData.slice(1).filter(r => r[0]).map(r => ({ name: r[0], density: r[1] || 0 }));
-  } else if (masterType === 'tool') {
+  if (masterType === 'tool') {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[3] || "" }));
   } else if (masterType === 'material') {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
@@ -1246,17 +1322,131 @@ function addFieldStatusToMaster(statusName) {
 }
 
 function addCropToMaster(cropData) {
-  const sheet = TENANT_SS.getSheetByName('生育記録マスタ');
-  const data = sheet.getDataRange().getValues(); let emptyRow = 2;
-  while (emptyRow <= data.length && data[emptyRow-1][0]) emptyRow++;
-  sheet.getRange(emptyRow, 1, 1, 2).setValues([[cropData.name, cropData.density || 0]]); 
-  return cropData;
+  const name = String((cropData && cropData.name) || '').trim();
+  if (!name) throw new Error('作物名を入力してください');
+  const density = Number((cropData && cropData.density) || 0) || 0;
+  manageMasterData('crop', 'add', { name: name, density: density }, 'system');
+  return { name: name, density: density };
 }
 function deleteCropFromMaster(cropName) {
+  const name = String(cropName || '').trim();
+  if (!name) throw new Error('作物名を指定してください');
+  manageMasterData('crop', 'delete', { name: name }, 'system');
+  return name;
+}
+
+/** 生育記録マスタ + 作物マスタを統合した作物リスト */
+function readMergedCropMasterList_() {
+  const ss = TENANT_SS;
+  const map = {};
+  for (let sheetName of ['作物マスタ', '生育記録マスタ']) {
+    const sh = ss.getSheetByName(sheetName);
+    if (!sh) continue;
+    const data = sh.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const n = String(data[i][0] || '').trim();
+      if (!n) continue;
+      if (!map[n]) {
+        map[n] = { name: n, density: Number(data[i][1]) || 0 };
+      } else if (!map[n].density && data[i][1]) {
+        map[n].density = Number(data[i][1]) || 0;
+      }
+    }
+  }
+  return Object.keys(map).sort((a, b) => a.localeCompare(b, 'ja')).map(k => map[k]);
+}
+
+/**
+ * 生育記録マスタの作物名を同期。
+ * originalName が空なら新規追加。newName があれば置換/追加。
+ */
+function syncCropNameInSeikuMaster_(originalName, newName, density) {
   const sheet = TENANT_SS.getSheetByName('生育記録マスタ');
-  const data = sheet.getDataRange().getValues(); let newCrops = [];
-  for(let j=1; j<data.length; j++) { if(data[j][0] && data[j][0] !== cropName) newCrops.push([data[j][0]]); }
-  sheet.getRange("A2:A").clearContent(); if(newCrops.length > 0) sheet.getRange(2, 1, newCrops.length, 1).setValues(newCrops); return cropName;
+  if (!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  const orig = String(originalName || '').trim();
+  const name = String(newName || '').trim();
+  if (!name) return;
+  const dens = (density != null) ? Number(density) || 0 : 0;
+
+  if (orig) {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0] || '').trim() === orig) {
+        sheet.getRange(i + 1, 1).setValue(name);
+        if (sheet.getLastColumn() >= 2) sheet.getRange(i + 1, 2).setValue(dens);
+        return;
+      }
+    }
+  }
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0] || '').trim() === name) {
+      if (sheet.getLastColumn() >= 2 && dens) sheet.getRange(i + 1, 2).setValue(dens);
+      return;
+    }
+  }
+  let emptyRow = 2;
+  while (emptyRow <= data.length && data[emptyRow - 1] && data[emptyRow - 1][0]) emptyRow++;
+  sheet.getRange(emptyRow, 1, 1, 2).setValues([[name, dens]]);
+}
+
+function deleteCropFromSeikuMaster_(cropName) {
+  const sheet = TENANT_SS.getSheetByName('生育記録マスタ');
+  if (!sheet) return;
+  const name = String(cropName || '').trim();
+  if (!name) return;
+  const data = sheet.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0] || '').trim() === name) {
+      // A列のみクリア（他列の栽培ステージ等を壊さない）
+      sheet.getRange(i + 1, 1, 1, Math.min(2, sheet.getLastColumn())).clearContent();
+    }
+  }
+}
+
+/** 作業マスタのカテゴリ列をリネーム */
+function renameWorkMasterCategory_(oldName, newName) {
+  const sheet = TENANT_SS.getSheetByName('作業マスタ');
+  if (!sheet) return;
+  const orig = String(oldName || '').trim();
+  const next = String(newName || '').trim();
+  if (!orig || !next || orig === next) return;
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return;
+  const headers = data[0].map(h => String(h).trim());
+  const catIdx = findWorkCategoryColumnIndex_(headers);
+  if (catIdx < 0) return;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][catIdx] || '').trim() === orig) {
+      sheet.getRange(i + 1, catIdx + 1).setValue(next);
+    }
+  }
+}
+
+/** 作業マスタの作物名列をリネーム（カンマ区切り複数にも対応） */
+function renameWorkMasterCrop_(oldName, newName) {
+  const sheet = TENANT_SS.getSheetByName('作業マスタ');
+  if (!sheet) return;
+  const orig = String(oldName || '').trim();
+  const next = String(newName || '').trim();
+  if (!orig || !next || orig === next) return;
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return;
+  const headers = data[0].map(h => String(h).trim());
+  const cropIdx = findWorkCropColumnIndex_(headers);
+  if (cropIdx < 0) return;
+  for (let i = 1; i < data.length; i++) {
+    const raw = String(data[i][cropIdx] || '').trim();
+    if (!raw) continue;
+    const parts = raw.split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    let changed = false;
+    const updated = parts.map(p => {
+      if (p === orig) { changed = true; return next; }
+      return p;
+    });
+    if (changed) {
+      sheet.getRange(i + 1, cropIdx + 1).setValue(updated.join(','));
+    }
+  }
 }
 
 function getToukiDetails(idsStr) {
@@ -3360,6 +3550,91 @@ function getTrackingData(params) {
     return { trackingData: data, allUsers: allUsers };
   } catch(e) {
     throw new Error("トラッキング取得エラー: " + e.message);
+  }
+}
+
+// ==========================================
+// 📍 作業記録の開始時間ヒント（軽量・高速）
+// 出勤時刻＋指定日の最遅終了時刻だけを返す
+// ==========================================
+function getWorkRecordTimeHints(params) {
+  try {
+    const userName = String((params && params.userName) || '').replace(/\s+/g, '');
+    const todayYmd = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    const dateYmd = String((params && params.dateYmd) || todayYmd).trim() || todayYmd;
+    const result = {
+      dateYmd: dateYmd,
+      todayYmd: todayYmd,
+      clockInTime: '',
+      clockInDateYmd: '',
+      latestEndTime: '',
+      open: false
+    };
+    if (!userName) return result;
+
+    // 1) 開いている出勤（トラッキング）— getOpenClockInStatus と同じ軽量スキャン
+    try {
+      const openSt = getOpenClockInStatus({ userName: userName });
+      if (openSt && openSt.open) {
+        result.open = true;
+        result.clockInTime = openSt.clockInTime || '';
+        result.clockInDateYmd = openSt.clockInDateYmd || '';
+        // 対象日の出勤なら開始候補に使える
+        if (result.clockInDateYmd === dateYmd) {
+          // ok
+        } else if (result.clockInDateYmd && result.clockInDateYmd !== dateYmd) {
+          // 別日の未退勤。開始時間には使わない（forgot扱い）
+          result.clockInTime = '';
+        }
+      }
+    } catch (e) {}
+
+    // 2) 作業記録シートから指定日・本人の最遅終了時間
+    const sheet = TENANT_SS.getSheetByName('作業記録');
+    if (!sheet || sheet.getLastRow() <= 1) return result;
+
+    const lastRow = sheet.getLastRow();
+    // 直近最大3000行だけ見る（当日分は末尾付近に集中しやすい）
+    const startRow = Math.max(2, lastRow - 2999);
+    const numRows = lastRow - startRow + 1;
+    // A〜H: 記録時間,圃場名,記録者,作業日,作業名,作物名,開始,終了
+    const values = sheet.getRange(startRow, 1, numRows, 8).getValues();
+    let latestEnd = '';
+
+    const normDate = (v) => {
+      if (v instanceof Date && !isNaN(v.getTime())) {
+        return Utilities.formatDate(v, 'JST', 'yyyy-MM-dd');
+      }
+      const s = String(v || '').trim();
+      const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+      if (!m) return '';
+      return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+    };
+    const normTime = (v) => {
+      if (v instanceof Date && !isNaN(v.getTime())) {
+        return Utilities.formatDate(v, 'JST', 'HH:mm');
+      }
+      const s = String(v || '').trim();
+      const m = s.match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return '';
+      return ('0' + m[1]).slice(-2) + ':' + m[2];
+    };
+
+    for (let i = 0; i < values.length; i++) {
+      const rowUser = String(values[i][2] || '').replace(/\s+/g, '');
+      if (!rowUser) continue;
+      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
+      const rowDate = normDate(values[i][3]);
+      if (rowDate !== dateYmd) continue;
+      const endTime = normTime(values[i][7]);
+      if (endTime && endTime > latestEnd) latestEnd = endTime;
+    }
+
+    if (latestEnd === '12:00') latestEnd = '13:00';
+    result.latestEndTime = latestEnd;
+    return result;
+  } catch (e) {
+    throw new Error('作業時間ヒント取得エラー: ' + e.message);
   }
 }
 
