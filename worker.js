@@ -4979,7 +4979,7 @@ function createSignboardMarker(name, pos, icon, id) {
               <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
               <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${(!isEdit && resolvedStart.isFallback) ? 'data-autofill="1"' : ''} data-start-source="${(!isEdit && resolvedStart.source) ? String(resolvedStart.source).replace(/"/g, '') : ''}" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()">
               <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
-                <input type="checkbox" id="sync_clockin" ${resolvedStart.syncClockIn ? 'checked' : ''}>出勤時間と同期
+                <input type="checkbox" id="sync_clockin" ${(!isEdit && resolvedStart.syncClockIn) ? 'checked' : ''}>出勤時間と同期
               </label>
             </div>
             <div>
@@ -5194,6 +5194,8 @@ function createSignboardMarker(name, pos, icon, id) {
             if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || '';
             if (d.progressStatus && typeof window.selectProgressStatus === 'function') window.selectProgressStatus(d.progressStatus); else if (document.getElementById('rec_progress_status')) document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
             if (document.getElementById('rec_work_comment')) document.getElementById('rec_work_comment').value = d.comment || d.notes || '';
+            const syncClockElWork = document.getElementById('sync_clockin');
+            if (syncClockElWork) syncClockElWork.checked = false;
             setTimeout(() => {
               if (d.ridgeProgress && Array.isArray(d.ridgeProgress)) {
                 d.ridgeProgress.forEach(rp => {
@@ -5309,6 +5311,11 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         } else {
            if(currentRecordType === 'work') handleWorkNameChange();
+        }
+        // 編集時は出勤同期を必ずオフ
+        if (isEdit) {
+          const syncClockEl = document.getElementById('sync_clockin');
+          if (syncClockEl) syncClockEl.checked = false;
         }
         if (currentRecordType === 'work') calcTotalTime();
       };
@@ -5586,10 +5593,19 @@ function createSignboardMarker(name, pos, icon, id) {
             }
             
             let syncClockin = document.getElementById('sync_clockin') ? document.getElementById('sync_clockin').checked : false;
+            const workDateVal = document.getElementById('rec_work_date')?.value || '';
+            const workDateYmd = (typeof window.normalizeDateStr === 'function')
+              ? window.normalizeDateStr(workDateVal)
+              : String(workDateVal || '').slice(0, 10);
+            const nowForSync = new Date();
+            const todayYmdForSync = `${nowForSync.getFullYear()}-${String(nowForSync.getMonth() + 1).padStart(2, '0')}-${String(nowForSync.getDate()).padStart(2, '0')}`;
+            // 編集時・作業日が今日以外のときは出勤同期しない（前日編集で当日出勤が書き換わるのを防止）
+            if (currentEditRecordId) syncClockin = false;
+            if (workDateYmd && workDateYmd !== todayYmdForSync) syncClockin = false;
             if (syncClockin && sTime) {
-                const now = new Date();
+                const now = nowForSync;
                 const dateStr = now.toLocaleDateString();
-                const dateYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                const dateYmd = todayYmdForSync;
                 const [hh, mm] = sTime.split(':');
                 now.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
 
