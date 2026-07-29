@@ -993,8 +993,16 @@ async function fetchWeatherAndUpdateUI() {
               : (t.cropName || '-');
             const traysCell = t.trays || t.hours || '-';
             const tagCell = isCp ? (t.tag || t.person || '-') : (t.person || '-');
+            const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
+            const taskUsersHtml = taskUsers.length
+              ? '<div style="margin-top:4px;">' + taskUsers.map(u => {
+                  const n = String(u.userName || u.userId || '').replace(/</g, '&lt;');
+                  const st = u.done ? 'opacity:0.5;text-decoration:line-through;' : '';
+                  return '<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:999px;padding:1px 6px;font-size:10px;font-weight:bold;margin:1px 2px 0 0;' + st + '">👤' + n + '</span>';
+                }).join('') + '</div>'
+              : '';
             return `<tr ${rowClass}>
-                      <td>${t.workName}</td>
+                      <td>${t.workName}${taskUsersHtml}</td>
                       <td>${t.dept}</td>
                       <td>${cropCell}</td>
                       <td>${t.fieldName}</td>

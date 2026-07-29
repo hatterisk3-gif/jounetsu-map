@@ -105,6 +105,7 @@ function doPost(e) {
     else if (action === "addPersonalScheduleItem") result = addPersonalScheduleItem(params);
     else if (action === "updatePersonalScheduleItem") result = updatePersonalScheduleItem(params);
     else if (action === "deletePersonalScheduleItem") result = deletePersonalScheduleItem(params);
+    else if (action === "reorderPersonalScheduleItems") result = reorderPersonalScheduleItems(params);
     else if (action === "saveUserGmail") result = saveUserGmail(params);
     else if (action === "getUserGmail") result = getUserGmail(params);
     else if (action === "getTodayGoogleCalendarEvents") result = getTodayGoogleCalendarEvents(params);
@@ -2489,6 +2490,7 @@ function getScheduleData() {
   // 3. 作業予定の照合と自動部署判定
   const schedSheet = ss.getSheetByName('作業予定');
   let activeSchedules = [];
+  const taskUsersMap = collectScheduleTaskUsersMap_();
   if (schedSheet) {
     const sData = schedSheet.getDataRange().getValues();
     let scheduleUpdates = [];
@@ -2528,6 +2530,7 @@ function getScheduleData() {
           dlDate.setHours(0,0,0,0);
           if (dlDate < today) isOverdue = true;
         }
+        const scheduleKey = buildWorkScheduleKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw);
         activeSchedules.push({
           workName,
           dept,
@@ -2540,7 +2543,9 @@ function getScheduleData() {
           isOverdue,
           isCultivation: String(sData[i][10] || '').indexOf('cp:') === 0,
           trays: hours,
-          tag: person
+          tag: person,
+          scheduleKey: scheduleKey,
+          taskUsers: taskUsersMap[scheduleKey] || []
         });
       }
     }
@@ -6126,50 +6131,139 @@ function clearTempWorkRecord(params) {
 }
 
 // ========== 個人スケジュール / Gmail / 今日のGoogleカレンダー ==========
+/** カテゴリ正規化: タスク（旧「最優先」互換） / 留意事項 */
+function normalizePersonalScheduleCategory_(category) {
+  const c = String(category || '').trim();
+  if (c === '留意事項') return '留意事項';
+  return 'タスク';
+}
+
+function isPersonalTaskCategory_(category) {
+  const c = String(category || '').trim();
+  return c === 'タスク' || c === '最優先' || (c && c !== '留意事項');
+}
+
+function formatPersonalScheduleDateYmd_(val) {
+  if (val === null || val === undefined || val === '') return '';
+  try {
+    if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+      return Utilities.formatDate(val, 'Asia/Tokyo', 'yyyy-MM-dd');
+    }
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  } catch (e) {}
+  return '';
+}
+
+function buildWorkScheduleKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw) {
+  return [
+    String(workName || '').trim(),
+    String(fieldName || '').trim(),
+    String(cropName || '').trim(),
+    formatPersonalScheduleDateYmd_(schedDateRaw),
+    formatPersonalScheduleDateYmd_(deadlineRaw)
+  ].join('||');
+}
+
 function ensurePersonalScheduleSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('個人スケジュール');
+  const headers = ['ID', 'ユーザーID', 'カテゴリ', '内容', '完了', '作成日時', '更新日時', '並び順', '期限', '開始日', '予定キー', 'ユーザー名'];
   if (!sheet) {
     sheet = ss.insertSheet('個人スケジュール');
-    sheet.appendRow(['ID', 'ユーザーID', 'カテゴリ', '内容', '完了', '作成日時', '更新日時']);
-    sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    return sheet;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h || '').trim(); });
+  for (let i = 0; i < headers.length; i++) {
+    if (existing[i] !== headers[i]) {
+      sheet.getRange(1, i + 1).setValue(headers[i]);
+    }
   }
   return sheet;
 }
 
 function getPersonalSchedule(params) {
   const userId = String((params && params.userId) || '').trim();
-  if (!userId) return { priority: [], notes: [] };
+  if (!userId) return { priority: [], notes: [], tasks: [] };
   const sheet = ensurePersonalScheduleSheet_();
   const data = sheet.getDataRange().getValues();
   const priority = [];
   const notes = [];
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][1]) !== userId) continue;
+    const rawCat = String(data[i][2] || '');
     const item = {
       id: String(data[i][0]),
-      category: String(data[i][2] || ''),
+      category: isPersonalTaskCategory_(rawCat) ? 'タスク' : '留意事項',
       text: String(data[i][3] || ''),
       done: String(data[i][4]) === 'TRUE' || data[i][4] === true,
-      createdAt: data[i][5] ? Utilities.formatDate(new Date(data[i][5]), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm') : ''
+      createdAt: data[i][5] ? Utilities.formatDate(new Date(data[i][5]), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm') : '',
+      sortOrder: (data[i][7] !== '' && data[i][7] != null) ? Number(data[i][7]) : i,
+      deadline: formatPersonalScheduleDateYmd_(data[i][8]),
+      startDate: formatPersonalScheduleDateYmd_(data[i][9]),
+      scheduleKey: String(data[i][10] || ''),
+      userName: String(data[i][11] || '')
     };
     if (item.category === '留意事項') notes.push(item);
     else priority.push(item);
   }
-  return { priority: priority, notes: notes };
+  const byOrder = function(a, b) {
+    const ao = Number(a.sortOrder);
+    const bo = Number(b.sortOrder);
+    if (ao !== bo) return ao - bo;
+    return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+  };
+  priority.sort(byOrder);
+  notes.sort(byOrder);
+  return { priority: priority, notes: notes, tasks: priority };
+}
+
+function nextPersonalScheduleSortOrder_(sheet, userId, category) {
+  const data = sheet.getDataRange().getValues();
+  let max = 0;
+  const wantTask = isPersonalTaskCategory_(category);
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1]) !== userId) continue;
+    const isTask = isPersonalTaskCategory_(data[i][2]);
+    if (wantTask !== isTask) continue;
+    const n = Number(data[i][7]);
+    if (!isNaN(n) && n > max) max = n;
+  }
+  return max + 1;
 }
 
 function addPersonalScheduleItem(params) {
   const userId = String((params && params.userId) || '').trim();
-  const category = String((params && params.category) || '最優先');
+  const userName = String((params && params.userName) || '').trim();
+  const category = String((params && params.category) || 'タスク');
   const text = String((params && params.text) || '').trim();
+  const scheduleKey = String((params && params.scheduleKey) || '').trim();
+  const deadline = formatPersonalScheduleDateYmd_(params && params.deadline);
+  const startDate = formatPersonalScheduleDateYmd_(params && params.startDate);
   if (!userId) throw new Error('ユーザーIDがありません');
   if (!text) throw new Error('内容を入力してください');
-  const cat = (category === '留意事項') ? '留意事項' : '最優先';
+  const cat = normalizePersonalScheduleCategory_(category);
   const sheet = ensurePersonalScheduleSheet_();
+
+  // 同じ予定キーを二重登録しない
+  if (scheduleKey) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][1]) === userId && String(data[i][10] || '') === scheduleKey) {
+        return { success: true, id: String(data[i][0]), already: true };
+      }
+    }
+  }
+
   const id = Utilities.getUuid();
   const now = new Date();
-  sheet.appendRow([id, userId, cat, text, false, now, now]);
+  const sortOrder = nextPersonalScheduleSortOrder_(sheet, userId, cat);
+  sheet.appendRow([id, userId, cat, text, false, now, now, sortOrder, deadline || '', startDate || '', scheduleKey || '', userName || '']);
   return { success: true, id: id };
 }
 
@@ -6183,13 +6277,42 @@ function updatePersonalScheduleItem(params) {
     if (params.text !== undefined) sheet.getRange(i + 1, 4).setValue(String(params.text));
     if (params.done !== undefined) sheet.getRange(i + 1, 5).setValue(!!params.done);
     if (params.category !== undefined) {
-      const cat = String(params.category) === '留意事項' ? '留意事項' : '最優先';
-      sheet.getRange(i + 1, 3).setValue(cat);
+      sheet.getRange(i + 1, 3).setValue(normalizePersonalScheduleCategory_(params.category));
     }
+    if (params.sortOrder !== undefined) sheet.getRange(i + 1, 8).setValue(Number(params.sortOrder) || 0);
+    if (params.deadline !== undefined) sheet.getRange(i + 1, 9).setValue(formatPersonalScheduleDateYmd_(params.deadline) || '');
+    if (params.startDate !== undefined) sheet.getRange(i + 1, 10).setValue(formatPersonalScheduleDateYmd_(params.startDate) || '');
+    if (params.scheduleKey !== undefined) sheet.getRange(i + 1, 11).setValue(String(params.scheduleKey || ''));
     sheet.getRange(i + 1, 7).setValue(new Date());
     return { success: true };
   }
   throw new Error('対象の予定が見つかりません');
+}
+
+function reorderPersonalScheduleItems(params) {
+  const userId = String((params && params.userId) || '').trim();
+  const category = normalizePersonalScheduleCategory_(params && params.category);
+  const orderedIds = (params && params.orderedIds) || [];
+  if (!userId) throw new Error('ユーザーIDがありません');
+  if (!Array.isArray(orderedIds) || !orderedIds.length) throw new Error('並び順がありません');
+  const sheet = ensurePersonalScheduleSheet_();
+  const data = sheet.getDataRange().getValues();
+  const idToRow = {};
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1]) !== userId) continue;
+    const isTask = isPersonalTaskCategory_(data[i][2]);
+    const wantTask = category === 'タスク';
+    if (isTask !== wantTask) continue;
+    idToRow[String(data[i][0])] = i + 1;
+  }
+  const now = new Date();
+  for (let i = 0; i < orderedIds.length; i++) {
+    const row = idToRow[String(orderedIds[i])];
+    if (!row) continue;
+    sheet.getRange(row, 8).setValue(i + 1);
+    sheet.getRange(row, 7).setValue(now);
+  }
+  return { success: true };
 }
 
 function deletePersonalScheduleItem(params) {
@@ -6204,6 +6327,33 @@ function deletePersonalScheduleItem(params) {
     }
   }
   return { success: true };
+}
+
+/** 予定キー → タスク登録ユーザー一覧 */
+function collectScheduleTaskUsersMap_() {
+  const map = {};
+  try {
+    const sheet = ensurePersonalScheduleSheet_();
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const key = String(data[i][10] || '').trim();
+      if (!key) continue;
+      if (!isPersonalTaskCategory_(data[i][2])) continue;
+      const userId = String(data[i][1] || '').trim();
+      const userName = String(data[i][11] || userId || '').trim();
+      if (!userName && !userId) continue;
+      if (!map[key]) map[key] = [];
+      const exists = map[key].some(function(u) { return u.userId === userId; });
+      if (!exists) {
+        map[key].push({
+          userId: userId,
+          userName: userName || userId,
+          done: String(data[i][4]) === 'TRUE' || data[i][4] === true
+        });
+      }
+    }
+  } catch (e) {}
+  return map;
 }
 
 function ensureMeiboGmailColumn_() {
