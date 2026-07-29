@@ -39,6 +39,7 @@ function doPost(e) {
     else if (action === "addMaterialToSign") result = addMaterialToSign(params); // ★これを追加
     else if (action === "getInventoryHistory") result = getInventoryHistory(params); // ★これを追加
     else if (action === "getScheduleData") result = getScheduleData();
+    else if (action === "delegateCompleteWork") result = delegateCompleteWork(params);
     else if (action === "saveReport") result = saveReportData(params.id, params.name, params.author, params.text, params.photos);
     else if (action === "deleteInventoryHistory") result = deleteInventoryHistory(params);
     else if (action === "editInventoryHistory") result = editInventoryHistory(params);
@@ -2446,6 +2447,40 @@ function deleteRecordItem(polyId, recordId, user) {
 // ==========================================
 // 作業予定と地図ステータスの取得（部署自動判定を追加）
 // ==========================================
+function isMidProgressStatus_(progress) {
+  const p = String(progress || '').trim();
+  return p === '途中' || p === '作業中';
+}
+
+function formatWorkDateMmDd_(val) {
+  if (!val) return '-';
+  try {
+    if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+      return Utilities.formatDate(val, 'JST', 'MM/dd');
+    }
+    const s = String(val).trim();
+    const m = s.match(/(\d{1,2})[\/\-](\d{1,2})/);
+    if (m) return String(parseInt(m[1], 10)) + '/' + String(parseInt(m[2], 10));
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'JST', 'MM/dd');
+  } catch (e) {}
+  return String(val);
+}
+
+function formatWorkDateYmd_(val) {
+  if (!val) return '';
+  try {
+    if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+      return Utilities.formatDate(val, 'Asia/Tokyo', 'yyyy-MM-dd');
+    }
+    const s = String(val).trim().replace(/\//g, '-');
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  } catch (e) {}
+  return '';
+}
+
 function getScheduleData() {
   const ss = TENANT_SS;
   const today = new Date(); today.setHours(0,0,0,0);
@@ -2460,32 +2495,86 @@ function getScheduleData() {
     }
   }
 
-  // 2. 作業実績から収穫中と完了日時を抽出
+  // 圃場名 → polyId
+  const fieldNameToPolyId = {};
+  try {
+    const polygons = getSavedPolygons();
+    polygons.forEach(function(p) {
+      if (p && p.name && p.id) fieldNameToPolyId[String(p.name)] = p.id;
+    });
+  } catch (e) {}
+
+  // 2. 作業実績から収穫中・完了・途中を抽出
   const workSheet = ss.getSheetByName('作業記録');
-  const completedWorks = {};
+  const completedWorks = {}; // key -> latest completion date
   const harvestingFields = {};
+  const midWorkCandidates = [];
   if (workSheet) {
     const wData = workSheet.getDataRange().getValues();
     for (let i = 1; i < wData.length; i++) {
       const fieldName = wData[i][1];
+      const author = wData[i][2];
       const workDate = wData[i][3];
       const workName = wData[i][4];
       const cropName = wData[i][5];
+      const startTime = wData[i][6];
+      const endTime = wData[i][7];
+      const totalTime = wData[i][9];
       const progress = wData[i][10];
+      const recordId = wData[i][12];
+      const workedRidges = wData[i][13];
+      const nextRidge = wData[i][14];
       const dept = workDeptMap[workName] || '未分類';
 
+      // 複数圃場は先頭をキーに（既存ロジック互換）
+      const primaryField = String(fieldName || '').split(',')[0].trim();
+      const key = `${primaryField}_${workName}_${cropName}`;
+
       if (progress === '完了') {
-        const key = `${fieldName}_${workName}_${cropName}`;
         if (!completedWorks[key] || new Date(workDate) > new Date(completedWorks[key])) {
           completedWorks[key] = workDate;
         }
       }
+      if (isMidProgressStatus_(progress) && workName && primaryField) {
+        midWorkCandidates.push({
+          key: key,
+          workName: workName,
+          dept: dept,
+          cropName: cropName || '',
+          fieldName: primaryField,
+          fieldNamesRaw: String(fieldName || ''),
+          author: String(author || ''),
+          workDate: workDate,
+          workDateYmd: formatWorkDateYmd_(workDate),
+          startTime: startTime || '',
+          endTime: endTime || '',
+          totalTime: totalTime || '',
+          progressStatus: String(progress || '途中'),
+          recordId: String(recordId || ''),
+          polyId: fieldNameToPolyId[primaryField] || '',
+          workedRidges: workedRidges || '',
+          nextRidge: nextRidge || ''
+        });
+      }
       if (workName && String(workName).includes('収穫') && progress !== '完了') {
-        if(!harvestingFields[fieldName]) harvestingFields[fieldName] = [];
-        if(!harvestingFields[fieldName].includes(dept)) harvestingFields[fieldName].push(dept);
+        if(!harvestingFields[primaryField || fieldName]) harvestingFields[primaryField || fieldName] = [];
+        const fKey = primaryField || fieldName;
+        if(!harvestingFields[fKey].includes(dept)) harvestingFields[fKey].push(dept);
       }
     }
   }
+
+  // 途中のうち、同キーで後から完了が入っていないものだけ予定へ
+  const midWorks = [];
+  midWorkCandidates.forEach(function(mw) {
+    const doneDate = completedWorks[mw.key];
+    if (doneDate) {
+      const midMs = mw.workDate ? new Date(mw.workDate).getTime() : 0;
+      const doneMs = new Date(doneDate).getTime();
+      if (!isNaN(doneMs) && (isNaN(midMs) || doneMs >= midMs)) return; // 完了済み扱い
+    }
+    midWorks.push(mw);
+  });
 
   // 3. 作業予定の照合と自動部署判定
   const schedSheet = ss.getSheetByName('作業予定');
@@ -2545,7 +2634,8 @@ function getScheduleData() {
           trays: hours,
           tag: person,
           scheduleKey: scheduleKey,
-          taskUsers: taskUsersMap[scheduleKey] || []
+          taskUsers: taskUsersMap[scheduleKey] || [],
+          isMidWork: false
         });
       }
     }
@@ -2555,13 +2645,94 @@ function getScheduleData() {
     }
   }
 
+  // 途中作業を予定一覧へ追加
+  midWorks.forEach(function(mw) {
+    activeSchedules.push({
+      workName: mw.workName,
+      dept: mw.dept,
+      cropName: mw.cropName,
+      fieldName: mw.fieldName,
+      schedDate: formatWorkDateMmDd_(mw.workDate),
+      deadline: '-',
+      hours: mw.totalTime || '',
+      person: mw.author,
+      isOverdue: false,
+      isCultivation: false,
+      trays: '',
+      tag: mw.author,
+      scheduleKey: '',
+      taskUsers: [],
+      isMidWork: true,
+      progressStatus: mw.progressStatus,
+      author: mw.author,
+      workDate: formatWorkDateMmDd_(mw.workDate),
+      workDateYmd: mw.workDateYmd,
+      startTime: mw.startTime,
+      endTime: mw.endTime,
+      totalTime: mw.totalTime,
+      recordId: mw.recordId,
+      polyId: mw.polyId,
+      workedRidges: mw.workedRidges,
+      nextRidge: mw.nextRidge
+    });
+  });
+
   // 4. ポリゴン情報の収集（ステータスはフロントエンドで計算させるために付加情報を乗せる）
   const polygons = getSavedPolygons();
   polygons.forEach(p => {
     p.harvestingDepts = harvestingFields[p.name] || []; 
   });
 
-  return { polygons, activeSchedules };
+  return { polygons, activeSchedules, midWorks: midWorks };
+}
+
+/**
+ * 途中作業を委任完了にする（進捗を完了に更新）
+ * params: { id|polyId, recordId, userName }
+ */
+function delegateCompleteWork(params) {
+  const polyId = String((params && (params.id || params.polyId)) || '').trim();
+  const recordId = String((params && params.recordId) || '').trim();
+  const userName = String((params && params.userName) || '').trim() || 'システム';
+  if (!polyId) throw new Error('圃場IDがありません');
+  if (!recordId) throw new Error('記録IDがありません');
+
+  const found = findSheetAndRowById(polyId);
+  if (!found) throw new Error('対象の圃場が見つかりません');
+  const pc = 10;
+  let ex = [];
+  if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {} }
+  if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) {} }
+  const tgt = ex.find(function(item) { return item && (item.id === recordId || item.url === recordId); });
+  if (!tgt) throw new Error('対象の作業記録が見つかりません');
+  if (!tgt.data || typeof tgt.data !== 'object') tgt.data = {};
+
+  const prevStatus = String(tgt.data.progressStatus || '');
+  tgt.data.progressStatus = '完了';
+  tgt.data.delegatedBy = userName;
+  tgt.data.delegatedAt = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
+  if (!tgt.data.comment) tgt.data.comment = '';
+  const note = '【委任完了】' + userName + ' が途中→完了に変更';
+  if (String(tgt.data.comment).indexOf('【委任完了】') < 0) {
+    tgt.data.comment = (tgt.data.comment ? String(tgt.data.comment) + '\n' : '') + note;
+  }
+
+  found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
+
+  // 作業記録シート同期
+  const rs = TENANT_SS.getSheetByName('作業記録');
+  if (rs) {
+    const d = rs.getDataRange().getValues();
+    for (let i = 1; i < d.length; i++) {
+      if (String(d[i][12]) === recordId) {
+        rs.getRange(i + 1, 11).setValue('完了');
+        break;
+      }
+    }
+  }
+
+  writeLog(userName, '委任完了', found.rowData[1] || polyId, '記録ID: ' + recordId + ' / 旧進捗: ' + prevStatus);
+  return { success: true, photos: ex, recordId: recordId, progressStatus: '完了' };
 }
 
 // ==========================================
@@ -4161,7 +4332,7 @@ function getWorkRecordTimeHints(params) {
       const rowDate = normDate(values[i][3]);
       if (rowDate !== dateYmd) continue;
       const endTime = normTime(values[i][7]);
-      if (endTime && endTime > latestEnd) latestEnd = endTime;
+      if (endTime && (!latestEnd || endTime > latestEnd)) latestEnd = endTime;
     }
 
     if (latestEnd === '12:00') latestEnd = '13:00';
@@ -6032,13 +6203,20 @@ function checkAdminRole(userName) {
 // 作業記録の一時保存（全端末同期）
 // ==========================================
 function ensureTempWorkRecordSheet_() {
-  const ss = TENANT_SS;
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('データベースに接続できません');
   let sheet = ss.getSheetByName('作業一時保存');
   if (!sheet) {
     sheet = ss.insertSheet('作業一時保存');
-    sheet.appendRow(['スタッフID', 'ユーザー名', '記録種別', '圃場ID', '圃場名', 'フォームJSON', '作業チップ', '選択圃場IDs', '保存日時']);
-    sheet.getRange(1, 1, 1, 9).setFontWeight('bold').setBackground('#e0e0e0');
+    sheet.appendRow(['スタッフID', 'ユーザー名', '記録種別', '圃場ID', '圃場名', 'フォームJSON', '作業チップ', '選択圃場IDs', '保存日時', '保存時刻ms']);
+    sheet.getRange(1, 1, 1, 10).setFontWeight('bold').setBackground('#e0e0e0');
+  } else {
+    // 既存シートに保存時刻ms列が無ければ追加
+    const lastCol = Math.max(sheet.getLastColumn(), 1);
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    if (headers.length < 10 || String(headers[9] || '').indexOf('保存時刻') < 0) {
+      sheet.getRange(1, 10).setValue('保存時刻ms').setFontWeight('bold').setBackground('#e0e0e0');
+    }
   }
   return sheet;
 }
@@ -6050,6 +6228,7 @@ function saveTempWorkRecord(params) {
   if (!userId) throw new Error('ユーザーIDが必要です');
 
   const savedAt = params.savedAt || Utilities.formatDate(new Date(), 'JST', 'M/d HH:mm');
+  const savedAtMs = Number(params.savedAtMs) || Date.now();
   const formJson = (typeof params.data === 'string') ? params.data : JSON.stringify(params.data || []);
   const polyIdsJson = (typeof params.selectedPolyIds === 'string')
     ? params.selectedPolyIds
@@ -6064,7 +6243,8 @@ function saveTempWorkRecord(params) {
     formJson,
     params.selectedChipName || '',
     polyIdsJson,
-    savedAt
+    savedAt,
+    savedAtMs
   ];
 
   const data = sheet.getDataRange().getValues();
@@ -6081,7 +6261,7 @@ function saveTempWorkRecord(params) {
   } else {
     sheet.appendRow(rowVals);
   }
-  return { success: true, savedAt: savedAt };
+  return { success: true, savedAt: savedAt, savedAtMs: savedAtMs };
 }
 
 function getTempWorkRecord(params) {
@@ -6107,6 +6287,7 @@ function getTempWorkRecord(params) {
           selectedChipName: data[i][6] || '',
           selectedPolyIds: selectedPolyIds,
           savedAt: data[i][8] || '',
+          savedAtMs: Number(data[i][9]) || 0,
           userName: data[i][1] || ''
         }
       };

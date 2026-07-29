@@ -1595,7 +1595,10 @@ function createSignboardMarker(name, pos, icon, id) {
 
               if (item.type === 'work' && item.data) {
                  const workLabel = p.isMarker ? "作業登録" : "作業記録";
-                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
+                 const progressBadge = (typeof window.renderProgressStatusBadgeHtml === 'function')
+                   ? window.renderProgressStatusBadgeHtml({ ...item, polyId: activePolyId }, { showDelegate: true })
+                   : `<span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span>`;
+                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b> ${progressBadge}</div>`;
                  if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
                  if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
                    const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
@@ -1699,7 +1702,10 @@ function createSignboardMarker(name, pos, icon, id) {
                  const categoryBadge = workCategory
                    ? `<span style="background:#e8f0fe;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${workCategory}</span>`
                    : '';
-                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b>${categoryBadge} <span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span></div>`;
+                 const progressBadge = (typeof window.renderProgressStatusBadgeHtml === 'function')
+                   ? window.renderProgressStatusBadgeHtml(item, { showDelegate: true })
+                   : `<span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus||'-'}</span>`;
+                 h += `<div style="font-size:14px; margin-bottom:5px;"><b>🚜 ${workLabel}: ${item.data.workName||'-'}</b>${categoryBadge} ${progressBadge}</div>`;
                  if (item.data.workedRidges || item.data.nextRidge) h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝進捗: 作業=${item.data.workedRidges||'未設定'} / 次回=${item.data.nextRidge||'未設定'}</div>`;
                  if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
                    const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
@@ -1994,6 +2000,31 @@ function createSignboardMarker(name, pos, icon, id) {
         return s;
       };
 
+      window.normalizeTimeHm = (t) => {
+        const s = String(t || '').trim();
+        if (!s) return '';
+        const m = s.match(/^(\d{1,2}):(\d{2})/);
+        if (!m) return s;
+        return String(parseInt(m[1], 10)).padStart(2, '0') + ':' + m[2];
+      };
+
+      window.timeHmToMinutes = (t) => {
+        const hm = window.normalizeTimeHm(t);
+        if (!hm || !hm.includes(':')) return null;
+        const [h, m] = hm.split(':').map(Number);
+        if (isNaN(h) || isNaN(m)) return null;
+        return h * 60 + m;
+      };
+
+      /** a が b より遅い時刻か（HH:mm）。文字列比較は使わない */
+      window.isTimeHmLater = (a, b) => {
+        const am = window.timeHmToMinutes(a);
+        const bm = window.timeHmToMinutes(b);
+        if (am == null) return false;
+        if (bm == null) return true;
+        return am > bm;
+      };
+
       window.getLatestEndTimeForDate = (targetDateStr) => {
         const normTarget = window.normalizeDateStr(targetDateStr);
         if (!normTarget) return '';
@@ -2017,8 +2048,8 @@ function createSignboardMarker(name, pos, icon, id) {
                 const phDate = window.normalizeDateStr(ph.date);
 
                 if (phWorkDate === normTarget || phDate === normTarget) {
-                  const endTime = ph.data && ph.data.endTime;
-                  if (endTime && endTime > latestEnd) {
+                  const endTime = window.normalizeTimeHm(ph.data && ph.data.endTime);
+                  if (endTime && window.isTimeHmLater(endTime, latestEnd)) {
                     latestEnd = endTime;
                   }
                 }
@@ -2030,7 +2061,7 @@ function createSignboardMarker(name, pos, icon, id) {
           latestEnd = '13:00';
         }
         // 見つかったら端末キャッシュへ保存（次回の即時表示用）
-        if (latestEnd) window.saveCachedLatestWorkEnd(normTarget, latestEnd);
+        if (latestEnd) window.saveCachedLatestWorkEnd(normTarget, latestEnd, { force: true });
         return latestEnd;
       };
 
@@ -2046,17 +2077,34 @@ function createSignboardMarker(name, pos, icon, id) {
         } catch (e) { return {}; }
       };
 
-      window.saveCachedLatestWorkEnd = (dateYmd, endTime) => {
+      window.saveCachedLatestWorkEnd = (dateYmd, endTime, opts = {}) => {
         const ymd = window.normalizeDateStr(dateYmd);
-        const t = String(endTime || '').trim();
+        const t = window.normalizeTimeHm(endTime);
         if (!ymd || !t) return;
         const cache = window.loadCachedWorkTimeHints();
         if (!cache.ends) cache.ends = {};
-        if (!cache.ends[ymd] || t > cache.ends[ymd]) {
+        const prev = cache.ends[ymd] || '';
+        // 強制、または数値比較でより遅いときだけ更新（"9:30">"14:00" のような文字列比較バグを防ぐ）
+        if (opts.force || !prev || window.isTimeHmLater(t, prev)) {
           cache.ends[ymd] = t;
           cache.updatedAt = Date.now();
           try { localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache)); } catch (e) {}
         }
+      };
+
+      /** その日の最遅終了をレコード全体から再計算してキャッシュし直す */
+      window.recomputeCachedLatestWorkEnd = (dateYmd) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        if (!ymd) return '';
+        try {
+          const cache = window.loadCachedWorkTimeHints();
+          if (cache.ends) delete cache.ends[ymd];
+          cache.updatedAt = Date.now();
+          localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache));
+        } catch (e) {}
+        return (typeof window.getLatestEndTimeForDate === 'function')
+          ? window.getLatestEndTimeForDate(ymd)
+          : '';
       };
 
       window.saveCachedClockInHint = (dateYmd, time) => {
@@ -2153,8 +2201,8 @@ function createSignboardMarker(name, pos, icon, id) {
         };
 
         if (lunchEnd) {
-          const le = toMins(lunchEnd);
-          const latestM = toMins(latestEnd);
+          const le = window.timeHmToMinutes ? window.timeHmToMinutes(lunchEnd) : null;
+          const latestM = window.timeHmToMinutes ? window.timeHmToMinutes(latestEnd) : null;
           if (latestM != null && le != null && latestM >= le) {
             return { start: latestEnd, source: 'latestEnd', syncClockIn: false, isFallback: false };
           }
@@ -2201,8 +2249,8 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!cur) return true;
         if (opts.force) return true;
         const autofill = !!opts.autofill;
-        const c = window._timeToMinsSafe(cur);
-        const n = window._timeToMinsSafe(next);
+        const c = window.timeHmToMinutes ? window.timeHmToMinutes(cur) : window._timeToMinsSafe(cur);
+        const n = window.timeHmToMinutes ? window.timeHmToMinutes(next) : window._timeToMinsSafe(next);
         if (c == null || n == null) return autofill;
         // 既に入っている開始時刻より早い値では上書きしない（昼休憩終了→午前の作業終了への巻き戻し防止）
         if (n < c) return false;
@@ -4455,7 +4503,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
       };
 
-      window.isHarvestWorkName = (name) => String(name || '').includes('収穫');
+      window.isHarvestWorkName = (name) => String(name || '').trim() === '収穫';
 
       window.getWorkRecordPrimaryCrop = () => {
         const cropsText = (typeof window.getSelectedWorkCropsText === 'function')
@@ -5069,6 +5117,15 @@ function createSignboardMarker(name, pos, icon, id) {
         document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
         // 他端末で保存した一時保存があればクラウドから取得して復元ボタンを更新
         setTimeout(() => { refreshTempRecordButtonFromCloud_(); }, 50);
+        // 画面復帰時にも再取得（端末間同期）
+        if (!window._tempWorkSyncFocusBound) {
+          window._tempWorkSyncFocusBound = true;
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible') return;
+            if (!document.getElementById('rec_work_name') && !document.getElementById('rec_start_time')) return;
+            if (typeof refreshTempRecordButtonFromCloud_ === 'function') refreshTempRecordButtonFromCloud_();
+          });
+        }
         
         if (currentRecordType === 'work') setTimeout(() => {
             if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons();
@@ -5293,25 +5350,43 @@ function createSignboardMarker(name, pos, icon, id) {
           btn.innerHTML = `📂 一時保存データを復元する<br><span style='font-size:11px;color:#00838F;'>保存元: ${polyName || '未選択'} (${savedAt || ''})</span>`;
       }
 
-      async function refreshTempRecordButtonFromCloud_() {
+      async function refreshTempRecordButtonFromCloud_(opts) {
+          opts = opts || {};
           const userId = getTempWorkRecordUserId_();
-          if (!userId || typeof callGAS !== 'function') return;
+          if (!userId || typeof callGAS !== 'function') return null;
           try {
-              const res = await callGAS('getTempWorkRecord', { userId: userId, type: currentRecordType });
+              const res = await callGAS('getTempWorkRecord', { userId: userId, type: currentRecordType || 'work' });
               const draft = res && res.draft ? res.draft : null;
-              if (!draft) return;
-              setLocalTempWorkRecord_(draft);
-              const polyName = draft.polyName
-                || (draft.polyId && loadedPolygons[draft.polyId] ? loadedPolygons[draft.polyId].name : '未選択');
-              upsertTempLoadButton_(polyName, draft.savedAt || '');
+              if (!draft) return null;
+              const local = getLocalTempWorkRecord_(currentRecordType);
+              const cloudMs = Number(draft.savedAtMs) || 0;
+              const localMs = local ? (Number(local.savedAtMs) || 0) : 0;
+              // クラウドが新しい／同等、またはローカル無しならクラウドを採用
+              if (!local || cloudMs >= localMs || !localMs) {
+                setLocalTempWorkRecord_(draft);
+                const polyName = draft.polyName
+                  || (draft.polyId && loadedPolygons[draft.polyId] ? loadedPolygons[draft.polyId].name : '未選択');
+                upsertTempLoadButton_(polyName, draft.savedAt || '');
+                return draft;
+              }
+              const polyName = local.polyName
+                || (local.polyId && loadedPolygons[local.polyId] ? loadedPolygons[local.polyId].name : '未選択');
+              upsertTempLoadButton_(polyName, local.savedAt || '');
+              return local;
           } catch (e) {
               console.warn('一時保存クラウド取得スキップ:', e);
+              return null;
           }
       }
 
       window.saveTempRecord = async () => {
           const container = document.getElementById('rightPanelContent');
           if (!container) return;
+          if (currentEditRecordId) {
+            if (typeof customAlert !== 'undefined') customAlert('編集中の記録は一時保存できません。更新するか、新規登録画面で一時保存してください。');
+            else alert('編集中の記録は一時保存できません。');
+            return;
+          }
           const inputs = container.querySelectorAll('input, select, textarea');
           let tempData = [];
           // 選択中の作業チップ名も保存する
@@ -5330,6 +5405,7 @@ function createSignboardMarker(name, pos, icon, id) {
           });
           const now = new Date();
           const savedAt = `${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+          const savedAtMs = Date.now();
           const polyName = activePolyId && loadedPolygons[activePolyId] ? loadedPolygons[activePolyId].name : '未選択';
           const payload = {
               type: currentRecordType,
@@ -5339,12 +5415,14 @@ function createSignboardMarker(name, pos, icon, id) {
               selectedChipName: selectedChipName,
               selectedPolyIds: Array.isArray(selectedPolyIds) ? [...selectedPolyIds] : [],
               savedAt: savedAt,
+              savedAtMs: savedAtMs,
               userName: currentUser || localStorage.getItem('passionMapUserName') || ''
           };
           setLocalTempWorkRecord_(payload);
 
           const userId = getTempWorkRecordUserId_();
           let synced = false;
+          let syncError = '';
           if (userId && typeof callGAS === 'function') {
               try {
                   await callGAS('saveTempWorkRecord', {
@@ -5356,18 +5434,22 @@ function createSignboardMarker(name, pos, icon, id) {
                       data: payload.data,
                       selectedChipName: payload.selectedChipName || '',
                       selectedPolyIds: payload.selectedPolyIds || [],
-                      savedAt: payload.savedAt
+                      savedAt: payload.savedAt,
+                      savedAtMs: payload.savedAtMs
                   });
                   synced = true;
               } catch (e) {
+                  syncError = (e && e.message) ? e.message : String(e);
                   console.warn('一時保存クラウド同期失敗:', e);
               }
+          } else {
+              syncError = userId ? '通信機能がありません' : 'ユーザーIDがありません（再ログインしてください）';
           }
 
           if (typeof customAlert !== 'undefined') {
               customAlert(synced
                 ? "✅ 入力内容を一時保存しました！（全端末で同期）"
-                : "✅ この端末に一時保存しました。\n（通信エラーのため他端末への同期は未完了）");
+                : "✅ この端末に一時保存しました。\n（他端末への同期は未完了）\n" + syncError);
           } else {
               alert(synced ? "✅ 入力内容を一時保存しました！（全端末で同期）" : "✅ この端末に一時保存しました。");
           }
@@ -5375,7 +5457,13 @@ function createSignboardMarker(name, pos, icon, id) {
           upsertTempLoadButton_(polyName, savedAt);
       };
 
-      window.loadTempRecord = () => {
+      window.loadTempRecord = async () => {
+          // 復元前にクラウドの最新を取りにいく（他端末の一時保存を優先）
+          try {
+            if (typeof refreshTempRecordButtonFromCloud_ === 'function') {
+              await refreshTempRecordButtonFromCloud_();
+            }
+          } catch (e) {}
           const parsed = getLocalTempWorkRecord_(currentRecordType);
           if (!parsed) {
               if (typeof customAlert !== 'undefined') customAlert("一時保存データがありません。");
@@ -5533,9 +5621,14 @@ function createSignboardMarker(name, pos, icon, id) {
                 }
             }
 
-            // 次回の開始時間即時表示用に終了時間を端末へ保存
+            // 次回の開始時間用：この記録の終了をそのままキャッシュせず、当日の最遅終了を再計算
             const workDateForCache = document.getElementById('rec_work_date')?.value || '';
-            if (eTime && workDateForCache && typeof window.saveCachedLatestWorkEnd === 'function') {
+            if (workDateForCache && typeof window.recomputeCachedLatestWorkEnd === 'function') {
+              // photos 更新前なので、いったんこの終了も候補に入れてから後で再計算する
+              if (eTime && typeof window.saveCachedLatestWorkEnd === 'function') {
+                window.saveCachedLatestWorkEnd(workDateForCache, eTime);
+              }
+            } else if (eTime && workDateForCache && typeof window.saveCachedLatestWorkEnd === 'function') {
               window.saveCachedLatestWorkEnd(workDateForCache, eTime);
             }
             
@@ -5734,6 +5827,12 @@ function createSignboardMarker(name, pos, icon, id) {
                   callGAS('clearTempWorkRecord', { userId: uid, type: currentRecordType }).catch(() => {});
               }
           } catch (e) {}
+          // 編集モード解除＋開始時間キャッシュを当日最遅終了で再計算
+          const workDateAfterSave = (typeof data === 'object' && data && data.workDate) ? data.workDate : '';
+          currentEditRecordId = null;
+          if (workDateAfterSave && typeof window.recomputeCachedLatestWorkEnd === 'function') {
+            window.recomputeCachedLatestWorkEnd(workDateAfterSave);
+          }
           localStorage.removeItem('passionMapInitData');
           closeRightPanel();
           const resumeClock = typeof window.resumeClockOutAfterWorkSave === 'function' && sessionStorage.getItem('passionMapPendingClockOut');
@@ -6806,19 +6905,55 @@ function createSignboardMarker(name, pos, icon, id) {
           const schedules = data.activeSchedules || [];
           window._psCachedSchedules = schedules;
           if (schedules.length === 0) { document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:50px;color:#666;">現在必要な作業・問題報告はありません</div>'; return; }
-          let sorted = [...schedules].sort((a, b) => { if(a.deadline === '-') return 1; if(b.deadline === '-') return -1; return new Date(a.deadline) - new Date(b.deadline); });
+          let sorted = [...schedules].sort((a, b) => {
+            // 途中作業を優先表示
+            if (!!a.isMidWork !== !!b.isMidWork) return a.isMidWork ? -1 : 1;
+            if (a.isMidWork && b.isMidWork) {
+              return String(b.workDateYmd || '').localeCompare(String(a.workDateYmd || ''));
+            }
+            if (a.deadline === '-') return 1;
+            if (b.deadline === '-') return -1;
+            return new Date(a.deadline) - new Date(b.deadline);
+          });
           let html = sorted.map(t => {
-            let isProblem = String(t.workName).includes('⚠️'), bgColor = isProblem ? '#ffebee' : (t.isOverdue ? '#fff3e0' : 'white'), borderColor = isProblem ? '#f44336' : (t.isOverdue ? '#ff9800' : '#ddd'), titleColor = isProblem ? '#d32f2f' : '#333';
-            let h = `<div style="background:${bgColor}; padding:15px; margin-bottom:12px; border-radius:8px; border:1px solid ${borderColor}; box-shadow:0 1px 3px rgba(0,0,0,0.1);"><div style="font-size:12px; color:#666; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center;"><span>📍 ${t.fieldName} ${t.cropName ? `(${t.cropName})` : ''}</span><span style="color:#2196F3; cursor:pointer; font-weight:bold; border:1px solid #2196F3; padding:2px 6px; border-radius:4px; font-size:11px;" onclick="focusAndOpenByName('${t.fieldName}')">場所へ</span></div><div style="font-size:15px; font-weight:bold; color:${titleColor}; margin-bottom:8px;">${t.workName}</div><div style="font-size:12px; color:#555; display:flex; justify-content:space-between;"><span>📅 予定: ${t.schedDate}</span><span style="${t.isOverdue || isProblem ? 'color:#d32f2f; font-weight:bold;' : ''}">期限: ${t.deadline}</span></div>`;
-            if(t.person || t.hours) { h += `<div style="font-size:12px; color:#555; margin-top:8px; border-top:1px solid ${borderColor}; padding-top:8px;">担当: ${t.person || '-'} / 時間: ${t.hours ? t.hours+'h' : '-'}</div>`; }
-            const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
-            if (taskUsers.length) {
-              const badges = taskUsers.map(u => {
-                const name = String(u.userName || u.userId || '').replace(/</g, '&lt;');
-                const doneStyle = u.done ? 'opacity:0.55;text-decoration:line-through;' : '';
-                return `<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:bold;margin:2px 4px 0 0;${doneStyle}">👤 ${name}</span>`;
-              }).join('');
-              h += `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed ${borderColor};"><div style="font-size:11px;color:#2e7d32;font-weight:bold;margin-bottom:4px;">タスク登録者</div><div>${badges}</div></div>`;
+            const isMid = !!t.isMidWork;
+            let isProblem = String(t.workName).includes('⚠️');
+            let bgColor = isMid ? '#fff8e1' : (isProblem ? '#ffebee' : (t.isOverdue ? '#fff3e0' : 'white'));
+            let borderColor = isMid ? '#ff9800' : (isProblem ? '#f44336' : (t.isOverdue ? '#ff9800' : '#ddd'));
+            let titleColor = isMid ? '#e65100' : (isProblem ? '#d32f2f' : '#333');
+            const safeField = String(t.fieldName || '').replace(/'/g, "\\'");
+            let h = `<div style="background:${bgColor}; padding:15px; margin-bottom:12px; border-radius:8px; border:1px solid ${borderColor}; box-shadow:0 1px 3px rgba(0,0,0,0.1);">`;
+            h += `<div style="font-size:12px; color:#666; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center;"><span>📍 ${t.fieldName || '-'} ${t.cropName ? `(${t.cropName})` : ''}</span>`;
+            if (t.fieldName) h += `<span style="color:#2196F3; cursor:pointer; font-weight:bold; border:1px solid #2196F3; padding:2px 6px; border-radius:4px; font-size:11px;" onclick="focusAndOpenByName('${safeField}')">場所へ</span>`;
+            h += `</div>`;
+            if (isMid) {
+              h += `<div style="margin-bottom:6px;"><span style="background:#ef6c00;color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:10px;">⏳ 途中作業</span></div>`;
+            }
+            h += `<div style="font-size:15px; font-weight:bold; color:${titleColor}; margin-bottom:8px;">${t.workName || '-'}</div>`;
+            if (isMid) {
+              h += `<div style="font-size:12px; color:#555; line-height:1.6;">`;
+              h += `<div>👤 作業者: <b>${t.author || t.person || '-'}</b></div>`;
+              h += `<div>📅 作業日: ${t.workDate || t.schedDate || '-'}</div>`;
+              if (t.startTime || t.endTime) h += `<div>⏰ 時間: ${t.startTime || '--:--'} 〜 ${t.endTime || '--:--'}${t.totalTime ? `（計 ${t.totalTime}）` : ''}</div>`;
+              if (t.workedRidges || t.nextRidge) h += `<div>🛤️ 畝: 作業=${t.workedRidges || '-'} / 次回=${t.nextRidge || '-'}</div>`;
+              h += `</div>`;
+              if (t.polyId && t.recordId) {
+                const safePoly = String(t.polyId).replace(/'/g, "\\'");
+                const safeRec = String(t.recordId).replace(/'/g, "\\'");
+                h += `<div style="margin-top:10px;"><button type="button" onclick="delegateCompleteWorkRecord('${safePoly}','${safeRec}')" style="background:#7B1FA2;color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">🤝 委任（完了にする）</button></div>`;
+              }
+            } else {
+              h += `<div style="font-size:12px; color:#555; display:flex; justify-content:space-between;"><span>📅 予定: ${t.schedDate}</span><span style="${t.isOverdue || isProblem ? 'color:#d32f2f; font-weight:bold;' : ''}">期限: ${t.deadline}</span></div>`;
+              if (t.person || t.hours) { h += `<div style="font-size:12px; color:#555; margin-top:8px; border-top:1px solid ${borderColor}; padding-top:8px;">担当: ${t.person || '-'} / 時間: ${t.hours ? t.hours+'h' : '-'}</div>`; }
+              const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
+              if (taskUsers.length) {
+                const badges = taskUsers.map(u => {
+                  const name = String(u.userName || u.userId || '').replace(/</g, '&lt;');
+                  const doneStyle = u.done ? 'opacity:0.55;text-decoration:line-through;' : '';
+                  return `<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:bold;margin:2px 4px 0 0;${doneStyle}">👤 ${name}</span>`;
+                }).join('');
+                h += `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed ${borderColor};"><div style="font-size:11px;color:#2e7d32;font-weight:bold;margin-bottom:4px;">タスク登録者</div><div>${badges}</div></div>`;
+              }
             }
             h += `</div>`; return h;
           }).join('');
@@ -8813,6 +8948,116 @@ window.collectMyWorkRecords = function(allowedYmds) {
     return list;
 };
 
+/** 途中・作業中かどうか */
+window.isMidProgressStatus = function(status) {
+  const t = String(status || '').trim();
+  return t === '途中' || t === '作業中';
+};
+
+/** 途中記録のあとに、同じ作業名＋作物で完了があるか */
+window.hasLaterCompletedWork = function(rec) {
+  if (!rec || !rec.data) return false;
+  const workName = String(rec.data.workName || '').trim();
+  const crop = String(rec.data.crop || '').trim();
+  if (!workName) return false;
+  const midYmd = rec.recordYmd
+    || (typeof window.normalizeDateStr === 'function' ? window.normalizeDateStr(rec.data.workDate) : '')
+    || (typeof window.normalizeDateStr === 'function' ? window.normalizeDateStr(rec.date) : '')
+    || '';
+  const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : {};
+  for (const pid in polys) {
+    const p = polys[pid];
+    if (!p || !Array.isArray(p.photos)) continue;
+    for (let i = 0; i < p.photos.length; i++) {
+      const ph = p.photos[i];
+      if (!ph || (ph.type !== 'work' && !(ph.data && ph.data.workName))) continue;
+      if (!ph.data) continue;
+      if (String(ph.data.workName || '').trim() !== workName) continue;
+      if (String(ph.data.crop || '').trim() !== crop) continue;
+      if (String(ph.data.progressStatus || '').trim() !== '完了') continue;
+      if (ph.id && rec.id && String(ph.id) === String(rec.id)) continue;
+      const ymd = (typeof window.normalizeDateStr === 'function')
+        ? (window.normalizeDateStr(ph.data.workDate) || window.normalizeDateStr(ph.date) || '')
+        : '';
+      if (!midYmd || !ymd || ymd >= midYmd) return true;
+    }
+  }
+  return false;
+};
+
+/** 途中バッジを出すか（後続完了があれば非表示） */
+window.shouldShowMidProgressBadge = function(rec) {
+  if (!rec || !rec.data) return false;
+  if (!window.isMidProgressStatus(rec.data.progressStatus)) return false;
+  return !window.hasLaterCompletedWork(rec);
+};
+
+/** 進捗バッジ＋委任ボタン HTML */
+window.renderProgressStatusBadgeHtml = function(rec, opts) {
+  opts = opts || {};
+  const status = String((rec && rec.data && rec.data.progressStatus) || '').trim();
+  if (!status) return '';
+  if (window.isMidProgressStatus(status)) {
+    if (!window.shouldShowMidProgressBadge(rec)) return '';
+    const safePolyId = String(rec.polyId || '').replace(/'/g, "\\'");
+    const safeRecId = String(rec.id || '').replace(/'/g, "\\'");
+    const canDelegate = opts.showDelegate !== false && safePolyId && safeRecId;
+    const badge = `<span style="background:#fff3e0;color:#e65100;font-size:11px;padding:2px 6px;border-radius:10px;font-weight:normal;margin-left:5px;">途中</span>`;
+    const btn = canDelegate
+      ? `<button type="button" onclick="event.stopPropagation(); delegateCompleteWorkRecord('${safePolyId}','${safeRecId}')" style="margin-left:6px;background:#7B1FA2;color:#fff;border:none;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:bold;cursor:pointer;vertical-align:middle;">委任</button>`
+      : '';
+    return badge + btn;
+  }
+  const color = status === '完了' ? '#2e7d32' : '#e65100';
+  const bg = status === '完了' ? '#e8f5e9' : '#fff3e0';
+  return `<span style="background:${bg};color:${color};font-size:11px;padding:2px 6px;border-radius:10px;font-weight:normal;margin-left:5px;">${status}</span>`;
+};
+
+/** 途中→完了（委任） */
+window.delegateCompleteWorkRecord = async function(polyId, recordId) {
+  const ok = (typeof customConfirm === 'function')
+    ? await customConfirm('この途中作業を「完了」に変更しますか？（委任完了）')
+    : confirm('この途中作業を「完了」に変更しますか？（委任完了）');
+  if (!ok) return;
+  try {
+    const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+    const res = await callGAS('delegateCompleteWork', {
+      id: polyId,
+      recordId: recordId,
+      userName: userName
+    });
+    if (typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId] && res && res.photos) {
+      loadedPolygons[polyId].photos = res.photos;
+    } else if (typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId] && Array.isArray(loadedPolygons[polyId].photos)) {
+      const ph = loadedPolygons[polyId].photos.find(p => p && p.id === recordId);
+      if (ph && ph.data) {
+        ph.data.progressStatus = '完了';
+        ph.data.delegatedBy = userName;
+      }
+    }
+    if (typeof customAlert === 'function') customAlert('委任完了しました。途中→完了に更新しました。');
+    else alert('委任完了しました。');
+    // 表示中の画面を更新
+    if (document.getElementById('myWorkHistoryModal') && document.getElementById('myWorkHistoryModal').style.display === 'flex') {
+      if (typeof window.openMyWorkHistoryDetail === 'function') window.openMyWorkHistoryDetail();
+    }
+    if (typeof window.openMyPage === 'function' && document.getElementById('modal') && document.getElementById('modal').style.display !== 'none') {
+      // マイページ再描画は重いので、履歴モーダル優先
+    }
+    if (document.getElementById('rightPanel') && document.getElementById('rightPanel').classList.contains('open')) {
+      const title = document.getElementById('rightPanelTitle')?.innerText || '';
+      if (title.indexOf('作業予定') >= 0 && typeof window.openScheduleList === 'function') {
+        window.openScheduleList();
+      } else if (typeof window.renderHistoryList === 'function' && typeof activePolyId !== 'undefined' && activePolyId) {
+        try { window.renderHistoryList(); } catch (e) {}
+      }
+    }
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert('委任に失敗しました: ' + (e.message || e));
+    else alert('委任に失敗しました');
+  }
+};
+
 window.renderMyWorkRecordCardHtml = function(rec) {
     const d = rec.data || {};
     const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `🕒 ${rec.time}` : '');
@@ -8824,10 +9069,13 @@ window.renderMyWorkRecordCardHtml = function(rec) {
         : null;
     const workCategory = String((d.category || (workMaster && workMaster.category) || '')).trim();
     const fieldLabel = String(d.multiFieldNames || '').trim() || (!rec.isMarker ? String(rec.polyName || '').trim() : '');
+    const progressBadge = (typeof window.renderProgressStatusBadgeHtml === 'function')
+      ? window.renderProgressStatusBadgeHtml(rec, { showDelegate: true })
+      : `<span style="background:#fff3e0; color:#e65100; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:normal; margin-left:5px;">${d.progressStatus || '記録'}</span>`;
 
     return `
         <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid #4CAF50; border-radius:6px; padding:10px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:flex-end; align-items:center; margin-bottom:4px;">
+            <div style="display:flex; justify-content:flex-start; align-items:center; margin-bottom:4px;">
                 <span style="font-size:11px; color:#666;">${timeSpan}</span>
             </div>
             ${(workCategory || fieldLabel) ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:5px;">
@@ -8836,7 +9084,7 @@ window.renderMyWorkRecordCardHtml = function(rec) {
             </div>` : ''}
             <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:3px;">
                 🚜 ${d.workName || '作業'}
-                <span style="background:#fff3e0; color:#e65100; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:normal; margin-left:5px;">${d.progressStatus || '記録'}</span>
+                ${progressBadge}
             </div>
             ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">✅ 詳細: ${d.detailedWorks}</div>` : ''}
             ${d.crop ? `<div style="font-size:11px; color:#555;">🌱 作物: ${d.crop}</div>` : ''}

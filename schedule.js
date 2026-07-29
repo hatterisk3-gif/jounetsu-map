@@ -1117,21 +1117,33 @@ async function fetchWeatherAndUpdateUI() {
           tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">現在必要な作業はありません</td></tr>';
         } else {
           let sorted = [...filteredSchedules].sort((a, b) => {
+             if (!!a.isMidWork !== !!b.isMidWork) return a.isMidWork ? -1 : 1;
+             if (a.isMidWork && b.isMidWork) {
+               return String(b.workDateYmd || '').localeCompare(String(a.workDateYmd || ''));
+             }
              if(a.deadline === '-') return 1;
              if(b.deadline === '-') return -1;
              return new Date(a.deadline) - new Date(b.deadline);
           });
 
           tbody.innerHTML = sorted.map(t => {
-            const rowClass = String(t.workName).includes('⚠️') ? 'style="background-color:#ffebee; color:#d32f2f; font-weight:bold;"' : (t.isOverdue ? 'class="overdue-row"' : '');
+            const isMid = !!t.isMidWork;
+            const rowClass = isMid
+              ? 'style="background-color:#fff8e1; color:#e65100;"'
+              : (String(t.workName).includes('⚠️') ? 'style="background-color:#ffebee; color:#d32f2f; font-weight:bold;"' : (t.isOverdue ? 'class="overdue-row"' : ''));
             const isCp = t.isCultivation || String(t.workName || '').indexOf('播種') === 0;
             const cropCell = isCp
               ? `${t.cropName || '-'}${t.tag ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.tag + '</span>' : (t.person ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.person + '</span>' : '')}`
               : (t.cropName || '-');
-            const traysCell = t.trays || t.hours || '-';
-            const tagCell = isCp ? (t.tag || t.person || '-') : (t.person || '-');
+            const traysCell = isMid ? (t.totalTime || '-') : (t.trays || t.hours || '-');
+            const tagCell = isMid
+              ? (`👤${t.author || t.person || '-'}` + (t.startTime ? `<br><span style="font-size:11px;">${t.startTime}〜${t.endTime || ''}</span>` : ''))
+              : (isCp ? (t.tag || t.person || '-') : (t.person || '-'));
+            const workLabel = isMid
+              ? `${t.workName}<br><span style="background:#ef6c00;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:bold;">途中</span>`
+              : t.workName;
             const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
-            const taskUsersHtml = taskUsers.length
+            const taskUsersHtml = (!isMid && taskUsers.length)
               ? '<div style="margin-top:4px;">' + taskUsers.map(u => {
                   const n = String(u.userName || u.userId || '').replace(/</g, '&lt;');
                   const st = u.done ? 'opacity:0.5;text-decoration:line-through;' : '';
@@ -1139,12 +1151,12 @@ async function fetchWeatherAndUpdateUI() {
                 }).join('') + '</div>'
               : '';
             return `<tr ${rowClass}>
-                      <td>${t.workName}${taskUsersHtml}</td>
-                      <td>${t.dept}</td>
+                      <td>${workLabel}${taskUsersHtml}</td>
+                      <td>${t.dept || '-'}</td>
                       <td>${cropCell}</td>
                       <td>${t.fieldName}</td>
-                      <td>${t.schedDate}</td>
-                      <td>${t.deadline}</td>
+                      <td>${isMid ? (t.workDate || t.schedDate) : t.schedDate}</td>
+                      <td>${isMid ? '-' : t.deadline}</td>
                       <td>${traysCell}</td>
                       <td>${tagCell}</td>
                     </tr>`;
