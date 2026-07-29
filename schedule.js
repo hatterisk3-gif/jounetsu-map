@@ -90,18 +90,58 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
 function renderSunshineDiffBadge(thisYearH, lastYearH) {
   let ty = parseFloat(thisYearH);
   let ly = parseFloat(lastYearH);
-  if (isNaN(ty) || isNaN(ly) || ly === 0) {
+  if (isNaN(ty) || isNaN(ly)) {
     return `<span style="font-size:11px; color:#666;">-</span>`;
   }
   let diff = Math.round((ty - ly) * 10) / 10;
-  let ratio = Math.round((ty / ly) * 100);
+  let ratio = (!isNaN(ly) && ly !== 0) ? Math.round((ty / ly) * 100) : '-';
   if (diff > 0) {
-    return `<span style="background:#ffebee; color:#c62828; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #ffcdd2;">+${diff.toFixed(1)}h 多 (${ratio}%)</span>`;
+    return `<span style="background:#ffebee; color:#c62828; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #ffcdd2; white-space:nowrap;">+${diff.toFixed(1)}h 多い${ratio !== '-' ? ' (' + ratio + '%)' : ''}</span>`;
   } else if (diff < 0) {
-    return `<span style="background:#e3f2fd; color:#1565c0; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #bbdefb;">${diff.toFixed(1)}h 少 (${ratio}%)</span>`;
+    return `<span style="background:#e3f2fd; color:#1565c0; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #bbdefb; white-space:nowrap;">${Math.abs(diff).toFixed(1)}h 少ない${ratio !== '-' ? ' (' + ratio + '%)' : ''}</span>`;
   } else {
-    return `<span style="background:#f5f5f5; color:#616161; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #e0e0e0;">±0.0h (100%)</span>`;
+    return `<span style="background:#f5f5f5; color:#616161; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #e0e0e0; white-space:nowrap;">±0.0h</span>`;
   }
+}
+
+function renderTempDiffBadge(thisYearC, lastYearC) {
+  let ty = parseFloat(thisYearC);
+  let ly = parseFloat(lastYearC);
+  if (isNaN(ty) || isNaN(ly)) {
+    return `<span style="font-size:11px; color:#666;">-</span>`;
+  }
+  let diff = Math.round((ty - ly) * 10) / 10;
+  if (diff > 0) {
+    return `<span style="background:#ffebee; color:#c62828; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #ffcdd2; white-space:nowrap;">+${diff.toFixed(1)}℃ 高い</span>`;
+  } else if (diff < 0) {
+    return `<span style="background:#e3f2fd; color:#1565c0; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #bbdefb; white-space:nowrap;">${Math.abs(diff).toFixed(1)}℃ 低い</span>`;
+  } else {
+    return `<span style="background:#f5f5f5; color:#616161; padding:3px 7px; border-radius:12px; font-weight:bold; font-size:11px; border:1px solid #e0e0e0; white-space:nowrap;">±0.0℃</span>`;
+  }
+}
+
+function avgDailyMeanTemp(daily, startIdx, endIdx) {
+  if (!daily || startIdx >= endIdx) return null;
+  let sum = 0, n = 0;
+  for (let i = startIdx; i < endIdx; i++) {
+    let mean = null;
+    if (daily.temperature_2m_mean && daily.temperature_2m_mean[i] != null && !isNaN(daily.temperature_2m_mean[i])) {
+      mean = Number(daily.temperature_2m_mean[i]);
+    } else if (daily.temperature_2m_max && daily.temperature_2m_min && daily.temperature_2m_max[i] != null && daily.temperature_2m_min[i] != null) {
+      mean = (Number(daily.temperature_2m_max[i]) + Number(daily.temperature_2m_min[i])) / 2;
+    }
+    if (mean != null) { sum += mean; n++; }
+  }
+  return n ? Math.round((sum / n) * 10) / 10 : null;
+}
+
+function sumSunshineHours(daily, startIdx, endIdx) {
+  if (!daily || !daily.sunshine_duration || startIdx >= endIdx) return null;
+  let sec = 0, n = 0;
+  for (let i = startIdx; i < endIdx; i++) {
+    if (daily.sunshine_duration[i] != null && !isNaN(daily.sunshine_duration[i])) { sec += Number(daily.sunshine_duration[i]); n++; }
+  }
+  return n ? Math.round((sec / 3600) * 10) / 10 : null;
 }
 
 window.switchWeatherTab = function(tabName) {
@@ -109,24 +149,122 @@ window.switchWeatherTab = function(tabName) {
   let tH = document.getElementById('tabHistory');
   let cF = document.getElementById('contentForecast');
   let cH = document.getElementById('contentHistory');
-  
   if (!tF || !tH || !cF || !cH) return;
-
   if (tabName === 'forecast') {
-    tF.style.borderBottom = '3px solid #2196F3';
-    tF.style.color = '#2196F3';
-    tH.style.borderBottom = '3px solid transparent';
-    tH.style.color = '#999';
-    cF.style.display = 'block';
-    cH.style.display = 'none';
+    tF.style.borderBottom = '3px solid #2196F3'; tF.style.color = '#2196F3';
+    tH.style.borderBottom = '3px solid transparent'; tH.style.color = '#999';
+    cF.style.display = 'block'; cH.style.display = 'none';
   } else {
-    tH.style.borderBottom = '3px solid #2196F3';
-    tH.style.color = '#2196F3';
-    tF.style.borderBottom = '3px solid transparent';
-    tF.style.color = '#999';
-    cH.style.display = 'block';
-    cF.style.display = 'none';
+    tH.style.borderBottom = '3px solid #2196F3'; tH.style.color = '#2196F3';
+    tF.style.borderBottom = '3px solid transparent'; tF.style.color = '#999';
+    cH.style.display = 'block'; cF.style.display = 'none';
   }
+};
+
+window.weatherSunshineState = window.weatherSunshineState || { data: null, historyData: null, todayStr: '', lastYearTodayStr: '', activeDays: 7 };
+
+window.calculateClimateDiff = (days) => {
+  const st = window.weatherSunshineState;
+  if (!st.data || !st.data.daily || !st.data.daily.time) return null;
+  const todayIndex = st.data.daily.time.indexOf(st.todayStr);
+  if (todayIndex === -1) return null;
+  const pastStartIdx = Math.max(0, todayIndex - days);
+  const pastThisYearH = sumSunshineHours(st.data.daily, pastStartIdx, todayIndex);
+  const pastThisYearC = avgDailyMeanTemp(st.data.daily, pastStartIdx, todayIndex);
+  let pastLastYearH = null, pastLastYearC = null, nextLastYearH = null, nextLastYearC = null;
+  const lyTodayIdx = (st.historyData && st.historyData.daily && st.historyData.daily.time) ? st.historyData.daily.time.indexOf(st.lastYearTodayStr) : -1;
+  if (lyTodayIdx !== -1) {
+    const lyPastStartIdx = Math.max(0, lyTodayIdx - days);
+    pastLastYearH = sumSunshineHours(st.historyData.daily, lyPastStartIdx, lyTodayIdx);
+    pastLastYearC = avgDailyMeanTemp(st.historyData.daily, lyPastStartIdx, lyTodayIdx);
+  }
+  const nextEndIdx = Math.min(st.data.daily.time.length, todayIndex + days);
+  const actualNextDays = nextEndIdx - todayIndex;
+  const nextThisYearH = sumSunshineHours(st.data.daily, todayIndex, nextEndIdx);
+  const nextThisYearC = avgDailyMeanTemp(st.data.daily, todayIndex, nextEndIdx);
+  if (lyTodayIdx !== -1) {
+    const lyNextEndIdx = Math.min(st.historyData.daily.time.length, lyTodayIdx + actualNextDays);
+    nextLastYearH = sumSunshineHours(st.historyData.daily, lyTodayIdx, lyNextEndIdx);
+    nextLastYearC = avgDailyMeanTemp(st.historyData.daily, lyTodayIdx, lyNextEndIdx);
+  }
+  const fmtH = (v) => (v == null ? '-' : v.toFixed(1));
+  const fmtC = (v) => (v == null ? '-' : v.toFixed(1));
+  return {
+    days, actualNextDays,
+    pastThisYearH: fmtH(pastThisYearH), pastLastYearH: fmtH(pastLastYearH),
+    nextThisYearH: fmtH(nextThisYearH), nextLastYearH: fmtH(nextLastYearH),
+    pastThisYearC: fmtC(pastThisYearC), pastLastYearC: fmtC(pastLastYearC),
+    nextThisYearC: fmtC(nextThisYearC), nextLastYearC: fmtC(nextLastYearC),
+    pastSunBadge: renderSunshineDiffBadge(pastThisYearH, pastLastYearH),
+    nextSunBadge: renderSunshineDiffBadge(nextThisYearH, nextLastYearH),
+    pastTempBadge: renderTempDiffBadge(pastThisYearC, pastLastYearC),
+    nextTempBadge: renderTempDiffBadge(nextThisYearC, nextLastYearC),
+    pastBadge: renderSunshineDiffBadge(pastThisYearH, pastLastYearH),
+    nextBadge: renderSunshineDiffBadge(nextThisYearH, nextLastYearH)
+  };
+};
+window.calculateSunshineDiff = (days) => window.calculateClimateDiff(days);
+
+window.renderSunshineContentHtml = (diff) => {
+  if (!diff) return '<div style="color:#888; text-align:center; padding:10px;">比較データなし</div>';
+  const pastLabel = diff.days === 7 ? '7日間' : (diff.days === 14 ? '2週間' : '1ヶ月');
+  const nextLabel = diff.actualNextDays === 7 ? '7日間' : (diff.actualNextDays === 14 ? '2週間' : `${diff.actualNextDays}日間`);
+  return `
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <div style="background:#ffffff; padding:8px 10px; border-radius:6px; border:1px solid #ffe0b2;">
+        <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:12px;">直近${pastLabel}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:5px; flex-wrap:wrap;">
+          <span style="font-size:12px;">🌡 平均気温 <b>${diff.pastThisYearC}℃</b> <span style="color:#888;">/ 昨年 ${diff.pastLastYearC}℃</span></span>
+          <div>${diff.pastTempBadge}</div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-size:12px;">☀️ 日照時間 <b>${diff.pastThisYearH}h</b> <span style="color:#888;">/ 昨年 ${diff.pastLastYearH}h</span></span>
+          <div>${diff.pastSunBadge || diff.pastBadge}</div>
+        </div>
+      </div>
+      <div style="background:#ffffff; padding:8px 10px; border-radius:6px; border:1px solid #ffe0b2;">
+        <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:12px;">今後${nextLabel}（予報 vs 昨年実績）</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:5px; flex-wrap:wrap;">
+          <span style="font-size:12px;">🌡 平均気温 <b>${diff.nextThisYearC}℃</b> <span style="color:#888;">/ 昨年 ${diff.nextLastYearC}℃</span></span>
+          <div>${diff.nextTempBadge}</div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-size:12px;">☀️ 日照時間 <b>${diff.nextThisYearH}h</b> <span style="color:#888;">/ 昨年 ${diff.nextLastYearH}h</span></span>
+          <div>${diff.nextSunBadge || diff.nextBadge}</div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+window.switchSunshinePeriod = (days) => {
+  window.weatherSunshineState.activeDays = days;
+  [{ el: document.getElementById('btnSun7'), d: 7 }, { el: document.getElementById('btnSun14'), d: 14 }, { el: document.getElementById('btnSun30'), d: 30 }].forEach(item => {
+    if (!item.el) return;
+    if (item.d === days) { item.el.style.background = '#e65100'; item.el.style.color = '#ffffff'; }
+    else { item.el.style.background = 'transparent'; item.el.style.color = '#e65100'; }
+  });
+  const container = document.getElementById('sunshineComparisonContent');
+  if (container) container.innerHTML = window.renderSunshineContentHtml(window.calculateClimateDiff(days));
+};
+
+window.renderSunshinePanelHtml = () => {
+  const activeDays = (window.weatherSunshineState && window.weatherSunshineState.activeDays) || 7;
+  const diff = window.calculateClimateDiff(activeDays);
+  return `
+    <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+        <span style="font-weight:bold; color:#e65100;">📊 昨年との気温・日照比較</span>
+        <div style="display:flex; gap:3px; background:#ffe0b2; padding:2px; border-radius:6px;">
+          <button type="button" onclick="switchSunshinePeriod(7)" id="btnSun7" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===7?'#e65100':'transparent'}; color:${activeDays===7?'#fff':'#e65100'};">7日間</button>
+          <button type="button" onclick="switchSunshinePeriod(14)" id="btnSun14" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===14?'#e65100':'transparent'}; color:${activeDays===14?'#fff':'#e65100'};">2週間</button>
+          <button type="button" onclick="switchSunshinePeriod(30)" id="btnSun30" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===30?'#e65100':'transparent'}; color:${activeDays===30?'#fff':'#e65100'};">1ヶ月</button>
+        </div>
+      </div>
+      <div id="sunshineComparisonContent">${window.renderSunshineContentHtml(diff)}</div>
+      <div style="font-size:10px; color:#888; margin-top:6px; line-height:1.4;">※平均気温は日ごとの（最高+最低）÷2 の平均。今後は予報値と昨年実績の比較です。</div>
+    </div>
+  `;
 };
 
 async function fetchWeatherAndUpdateUI() {
@@ -176,18 +314,17 @@ async function fetchWeatherAndUpdateUI() {
       btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">明${tomorrowEmoji}</span></div>`;
     }
 
-    // --- 日照比較ステート保持 ---
-    if (typeof window.weatherSunshineState !== 'undefined') {
-      window.weatherSunshineState.data = data;
-      window.weatherSunshineState.historyData = historyData;
-      window.weatherSunshineState.todayStr = todayStr;
-      window.weatherSunshineState.lastYearTodayStr = lastYearTodayStr;
-    }
+    // --- 気温・日照比較ステート保持 ---
+    window.weatherSunshineState = window.weatherSunshineState || { data: null, historyData: null, todayStr: '', lastYearTodayStr: '', activeDays: 7 };
+    window.weatherSunshineState.data = data;
+    window.weatherSunshineState.historyData = historyData;
+    window.weatherSunshineState.todayStr = todayStr;
+    window.weatherSunshineState.lastYearTodayStr = lastYearTodayStr;
 
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
     
-    // --- ☀️ 日照時間比較パネル ---
+    // --- 📊 気温・日照 昨年比較パネル ---
     if (historyData && historyData.daily && typeof window.renderSunshinePanelHtml === 'function') {
       html += window.renderSunshinePanelHtml();
     }
