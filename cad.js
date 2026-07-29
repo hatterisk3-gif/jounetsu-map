@@ -2344,15 +2344,203 @@ window.switchCadTab = (tab) => {
     const mode1 = document.getElementById('cadMode1');
     const mode2 = document.getElementById('cadMode2');
     const mode3 = document.getElementById('cadMode3');
+    const mode4 = document.getElementById('cadMode4');
     if (mode1) mode1.style.display = tab === 1 ? 'block' : 'none';
     if (mode2) mode2.style.display = tab === 2 ? 'block' : 'none';
     if (mode3) mode3.style.display = tab === 3 ? 'block' : 'none';
+    if (mode4) mode4.style.display = tab === 4 ? 'block' : 'none';
     const tab1 = document.getElementById('cadTab1');
     const tab2 = document.getElementById('cadTab2');
     const tab3 = document.getElementById('cadTab3');
+    const tab4 = document.getElementById('cadTab4');
     if (tab1) { tab1.style.background = tab === 1 ? '#FF9800' : '#222'; tab1.style.color = tab === 1 ? '#fff' : '#aaa'; }
     if (tab2) { tab2.style.background = tab === 2 ? '#2196F3' : '#222'; tab2.style.color = tab === 2 ? '#fff' : '#aaa'; }
-    if (tab3) { tab3.style.background = tab === 3 ? '#4CAF50' : '#222'; tab3.style.color = tab === 3 ? '#fff' : '#aaa'; }
+    if (tab3) { tab3.style.background = tab === 3 ? '#7B1FA2' : '#222'; tab3.style.color = tab === 3 ? '#fff' : '#aaa'; }
+    if (tab4) { tab4.style.background = tab === 4 ? '#4CAF50' : '#222'; tab4.style.color = tab === 4 ? '#fff' : '#aaa'; }
+    if (tab === 3 && typeof window.cadPreviewRidgeNumberSplit === 'function') {
+        window.cadPreviewRidgeNumberSplit();
+    }
+};
+
+/** 生成畝の配列順をそのまま畝並びとして使う（枕畝は除外） */
+window.cadGetMainRidgesForSplit = () => {
+    return (window.cadUnePolygons || []).filter((p) => {
+        if (!p || !p.getPath) return false;
+        const g = String(p.uneGroup || '');
+        return g !== '枕';
+    });
+};
+
+/**
+ * 〇畝おき分割の計画を作る
+ * - 最初・最後の1畝は対象外（端）
+ * - 対象区間を「N畝取り → 1畝空け」で繰り返す
+ */
+window.cadBuildRidgeNumberSplitPlan = (everyN) => {
+    const n = Math.max(1, parseInt(everyN, 10) || 1);
+    const ridges = window.cadGetMainRidgesForSplit();
+    const total = ridges.length;
+    const plan = [];
+    const groups = [];
+
+    if (total < 3) {
+        return {
+            ok: false,
+            everyN: n,
+            total,
+            groups: [],
+            plan: [],
+            message: total === 0
+                ? '畝がありません。先に「生成」タブで畝を作成してください。'
+                : `畝が${total}本しかないため分割できません（最初・最後を除くと対象がありません）。`
+        };
+    }
+
+    plan.push({ poly: ridges[0], role: 'end', group: '端', label: '-', index: 0 });
+
+    const middle = ridges.slice(1, total - 1);
+    let i = 0;
+    let groupNum = 1;
+    while (i < middle.length) {
+        const take = Math.min(n, middle.length - i);
+        const groupName = '分割' + groupNum;
+        const labels = [];
+        for (let k = 0; k < take; k++) {
+            const label = String(k + 1);
+            labels.push(label);
+            plan.push({
+                poly: middle[i + k],
+                role: 'block',
+                group: groupName,
+                label,
+                index: i + k + 1
+            });
+        }
+        groups.push({ name: groupName, count: take, labels });
+        groupNum++;
+        i += take;
+        if (i < middle.length) {
+            plan.push({
+                poly: middle[i],
+                role: 'gap',
+                group: '空け',
+                label: '-',
+                index: i + 1
+            });
+            i += 1;
+        }
+    }
+
+    plan.push({
+        poly: ridges[total - 1],
+        role: 'end',
+        group: '端',
+        label: '-',
+        index: total - 1
+    });
+
+    return {
+        ok: groups.length > 0,
+        everyN: n,
+        total,
+        groups,
+        plan,
+        message: groups.length
+            ? `全${total}畝 → 端2畝を除き、${n}畝おきで ${groups.length} ブロック（間に1畝空け）`
+            : '分割ブロックを作れませんでした。'
+    };
+};
+
+window.cadPreviewRidgeNumberSplit = () => {
+    const el = document.getElementById('cadSplitPreview');
+    if (!el) return;
+    const nEl = document.getElementById('cadSplitEveryN');
+    const everyN = nEl ? nEl.value : 5;
+    const built = window.cadBuildRidgeNumberSplitPlan(everyN);
+    if (!built.ok) {
+        el.innerHTML = '<span style="color:#ef9a9a;">' + (built.message || '分割できません') + '</span>';
+        return;
+    }
+    const lines = built.groups.map((g) => {
+        return `・${g.name}: 畝番号 ${g.labels.join(', ')}（${g.count}畝）`;
+    });
+    el.innerHTML =
+        '<div style="color:#ce93d8;margin-bottom:4px;">' + built.message + '</div>' +
+        '<div>端（最初・最後）: 分割対象外</div>' +
+        '<div>空け: ブロック間の1畝</div>' +
+        lines.map((l) => '<div>' + l + '</div>').join('');
+};
+
+window.cadApplyRidgeNumberSplit = () => {
+    const nEl = document.getElementById('cadSplitEveryN');
+    const everyN = nEl ? nEl.value : 5;
+    const built = window.cadBuildRidgeNumberSplitPlan(everyN);
+    if (!built.ok) {
+        if (typeof customAlert === 'function') customAlert(built.message || '分割できません');
+        else alert(built.message || '分割できません');
+        window.cadPreviewRidgeNumberSplit();
+        return;
+    }
+
+    built.plan.forEach((item) => {
+        const poly = item.poly;
+        if (!poly) return;
+        poly.uneGroup = item.group || 'default';
+        if (item.label) poly.customLabel = String(item.label);
+        else delete poly.customLabel;
+        try {
+            if (typeof poly.setOptions === 'function') {
+                poly.setOptions({
+                    fillColor: window.cadGetGroupColor
+                        ? window.cadGetGroupColor(poly.uneGroup)
+                        : '#8BC34A'
+                });
+            }
+        } catch (e) {}
+    });
+
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    window.cadSvgNeedsRebuild = true;
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    window.cadPreviewRidgeNumberSplit();
+
+    const msg = `畝番号を分割しました。\n${built.message}\n` +
+        built.groups.map((g) => `${g.name}: ${g.labels.join(',')}`).join('\n');
+    if (typeof customAlert === 'function') customAlert(msg);
+    else alert(msg);
+};
+
+window.cadClearRidgeNumberSplit = () => {
+    const ridges = window.cadGetMainRidgesForSplit();
+    if (!ridges.length) {
+        if (typeof customAlert === 'function') customAlert('畝がありません。');
+        else alert('畝がありません。');
+        return;
+    }
+    ridges.forEach((poly) => {
+        const g = String(poly.uneGroup || '');
+        if (g === '端' || g === '空け' || /^分割\d+$/.test(g)) {
+            poly.uneGroup = 'default';
+            delete poly.customLabel;
+            try {
+                if (typeof poly.setOptions === 'function') {
+                    poly.setOptions({
+                        fillColor: window.cadGetGroupColor
+                            ? window.cadGetGroupColor('default')
+                            : '#8BC34A'
+                    });
+                }
+            } catch (e) {}
+        }
+    });
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    window.cadSvgNeedsRebuild = true;
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    window.cadPreviewRidgeNumberSplit();
+    if (typeof customAlert === 'function') customAlert('分割番号をクリアし、通常の連番に戻しました。');
+    else alert('分割番号をクリアし、通常の連番に戻しました。');
 };
 
 window.cadAlignMapHeading = () => {
@@ -3229,6 +3417,82 @@ window.cadFindBoundaryEdgeChainNearPoint = (ringCoords, centerPt, maxAngleDiffDe
     return { chain: chain, nearestDist: best.dist, startBearing: startBearing };
 };
 
+/**
+ * 折れ線の両端を指定メートルだけ延長する（バッファの丸端で角が欠ける対策）
+ */
+window.cadExtendLineStringEnds = (line, extendMeters) => {
+    try {
+        if (!line || !line.geometry || !line.geometry.coordinates) return line;
+        const coords = line.geometry.coordinates.slice();
+        if (coords.length < 2) return line;
+        const dist = Math.max(0, Number(extendMeters) || 0);
+        if (dist <= 0) return line;
+
+        const first = coords[0];
+        const second = coords[1];
+        const last = coords[coords.length - 1];
+        const prev = coords[coords.length - 2];
+
+        // 始点側・終点側それぞれ「外側」へ延長
+        const bStart = turf.bearing(turf.point(second), turf.point(first));
+        const bEnd = turf.bearing(turf.point(prev), turf.point(last));
+        const newFirst = turf.destination(turf.point(first), dist, bStart, { units: 'meters' }).geometry.coordinates;
+        const newLast = turf.destination(turf.point(last), dist, bEnd, { units: 'meters' }).geometry.coordinates;
+        return turf.lineString([newFirst].concat(coords).concat([newLast]));
+    } catch (e) {
+        console.warn('cadExtendLineStringEnds failed:', e);
+        return line;
+    }
+};
+
+/**
+ * 圃場ポリゴン内で、枕帯が左右（長手方向）に端まで届くよう補正する。
+ * タップ辺方向に長い帯を作り直し、圃場∩帯で左右端まで埋める。
+ */
+window.cadStretchMakuraToFieldSides = (makuraPoly, fieldPoly, edgeChain, widthM) => {
+    try {
+        if (!makuraPoly || !fieldPoly || !edgeChain || edgeChain.length < 2) return makuraPoly;
+        const w = Math.max(Number(widthM) || 1.5, 0.5);
+
+        // 辺の中点と方位
+        const midIdx = Math.floor((edgeChain.length - 1) / 2);
+        const a = edgeChain[Math.max(0, midIdx)];
+        const b = edgeChain[Math.min(edgeChain.length - 1, midIdx + 1)];
+        const alongBearing = turf.bearing(turf.point(a), turf.point(b));
+        const center = turf.center(makuraPoly);
+
+        // 圃場対角線より十分長い帯を長手方向に作る
+        const bbox = turf.bbox(fieldPoly);
+        const diag = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' }) + 20;
+        const p1 = turf.destination(center, diag / 2, alongBearing, { units: 'meters' });
+        const p2 = turf.destination(center, diag / 2, alongBearing + 180, { units: 'meters' });
+        const longLine = turf.lineString([
+            p2.geometry.coordinates,
+            p1.geometry.coordinates
+        ]);
+        // 端欠け防止でさらに延長してからバッファ
+        const extended = window.cadExtendLineStringEnds(longLine, Math.max(w * 4, 8));
+        const strip = turf.buffer(extended, w / 2, { units: 'meters' });
+        if (!strip) return makuraPoly;
+
+        let stretched = turf.intersect(fieldPoly, strip);
+        if (!stretched) return makuraPoly;
+
+        // 元の枕と合成（欠けた左右を補完しつつ、元の形状も維持）
+        try {
+            const united = turf.union(makuraPoly, stretched);
+            if (united) {
+                const clipped = turf.intersect(fieldPoly, united);
+                if (clipped) return clipped;
+            }
+        } catch (eUnion) {}
+        return stretched;
+    } catch (e) {
+        console.warn('cadStretchMakuraToFieldSides failed:', e);
+        return makuraPoly;
+    }
+};
+
 window.cadExecuteAddMakura = (latLng) => {
     let centerPt = turf.point([latLng.lng(), latLng.lat()]);
 
@@ -3249,13 +3513,21 @@ window.cadExecuteAddMakura = (latLng) => {
 
     // --- 外殻追随: 近い辺＋角度の近い連続辺に沿った帯 ---
     let finalPoly = null;
-    const edgeInfo = window.cadFindBoundaryEdgeChainNearPoint(coords, centerPt, 42);
+    let usedEdgeChain = null;
+    // 角まで辿りやすいよう角度許容を少し広めに
+    const edgeInfo = window.cadFindBoundaryEdgeChainNearPoint(coords, centerPt, 55);
     if (edgeInfo && edgeInfo.chain && edgeInfo.chain.length >= 2) {
         try {
-            const edgeLine = turf.lineString(edgeInfo.chain);
-            // 辺の両側にバッファ → 圃場内だけ残すと、外殻に沿った帯（斜め・折れ曲がり対応）
+            usedEdgeChain = edgeInfo.chain;
+            let edgeLine = turf.lineString(edgeInfo.chain);
+            // バッファの丸端で左右が欠けるのを防ぐため、両端を延長してから帯にする
+            edgeLine = window.cadExtendLineStringEnds(edgeLine, Math.max(actualWidthM * 4, 8));
             const strip = turf.buffer(edgeLine, actualWidthM, { units: 'meters' });
             if (strip) finalPoly = turf.intersect(tPoly, strip);
+            // 圃場の左右端まで届くよう補正
+            if (finalPoly) {
+                finalPoly = window.cadStretchMakuraToFieldSides(finalPoly, tPoly, edgeInfo.chain, actualWidthM);
+            }
         } catch (e) {
             console.warn('外殻追随枕畝の生成に失敗、直線帯にフォールバック:', e);
             finalPoly = null;
@@ -3290,7 +3562,8 @@ window.cadExecuteAddMakura = (latLng) => {
                 ring.push([ring[0][0], ring[0][1]]);
             }
             let t = turf.polygon([ring]);
-            return turf.buffer(t, 0.2 / 1000, { units: 'kilometers' });
+            // 枕の左右端まで残すため、重なり回避バッファは小さめに
+            return turf.buffer(t, 0.05 / 1000, { units: 'kilometers' });
         }
         return null;
     }).filter(Boolean);
@@ -3300,6 +3573,22 @@ window.cadExecuteAddMakura = (latLng) => {
         try {
             finalPoly = turf.difference(finalPoly, av);
         } catch (e) { console.error(e); }
+    }
+
+    // difference 後に左右が欠けた場合の再補正
+    if (finalPoly && usedEdgeChain) {
+        try {
+            const stretched = window.cadStretchMakuraToFieldSides(finalPoly, tPoly, usedEdgeChain, actualWidthM);
+            if (stretched) {
+                // 主畝との重なりは再度軽く除く
+                let repaired = stretched;
+                for (let av of avoidPolys) {
+                    if (!repaired) break;
+                    try { repaired = turf.difference(repaired, av); } catch (e2) {}
+                }
+                if (repaired) finalPoly = repaired;
+            }
+        } catch (e3) {}
     }
 
     if (!finalPoly) {
@@ -3330,7 +3619,7 @@ window.cadExecuteAddMakura = (latLng) => {
         window.saveCadStateToHistory();
         const msgEl = document.getElementById('cadPinModeMsg');
         if (msgEl) {
-            msgEl.innerText = '枕畝を外殻に沿って生成しました（主畝と重なる部分は除いています）';
+            msgEl.innerText = '枕畝を外殻に沿って、圃場の端まで生成しました（主畝と重なる部分は除いています）';
             msgEl.style.color = '#ea580c';
         }
     } else {

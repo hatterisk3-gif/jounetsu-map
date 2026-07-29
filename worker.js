@@ -9102,6 +9102,18 @@ window.openMyPage = function() {
             <div id="saveGmailResult" style="margin-top:8px; font-size:13px; font-weight:bold;"></div>
         </div>
 
+        <h4 style="color:#1565c0; margin-bottom:10px; margin-top:5px;">📅 表示するカレンダー</h4>
+        <div style="background:#e8eaf6; border:1px solid #c5cae9; border-radius:8px; padding:12px; margin-bottom:15px;">
+            <div style="font-size:12px; color:#555; margin-bottom:8px; line-height:1.5;">表示したいGoogleカレンダーにチェックを入れて保存してください。<br>未設定のときは、見えるカレンダーがすべて表示されます。</div>
+            <div id="myCalendarSelectList" style="max-height:200px; overflow-y:auto; margin-bottom:8px;"><div style="color:#888; font-size:13px;">読み込み中...</div></div>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+              <button type="button" onclick="setAllMyCalendarChecks(true)" style="flex:1; background:#fff; color:#3949ab; border:1px solid #9fa8da; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">すべて選択</button>
+              <button type="button" onclick="setAllMyCalendarChecks(false)" style="flex:1; background:#fff; color:#666; border:1px solid #ccc; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">すべて解除</button>
+            </div>
+            <button id="saveCalendarIdsBtn" onclick="doSaveUserCalendarIds()" style="width:100%; background:#3949ab; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">表示カレンダーを保存</button>
+            <div id="saveCalendarIdsResult" style="margin-top:8px; font-size:13px; font-weight:bold;"></div>
+        </div>
+
         <h4 style="color:#1565c0; margin-bottom:10px; margin-top:5px;">🔐 Google権限（カレンダー等）</h4>
         <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px; margin-bottom:15px;">
             <div style="font-size:12px; color:#555; margin-bottom:8px; line-height:1.5;">カレンダー取得に必要なApps Script権限を許可します。ボタンを押すとGoogleの許可画面が開きます。</div>
@@ -9142,6 +9154,7 @@ window.openMyPage = function() {
     document.getElementById('modal').style.display = 'flex';
     loadMyAttendance();
     loadMyGmailIntoMyPage();
+    loadMyCalendarSelectIntoMyPage();
     loadMyAuthorizationStatus();
 };
 
@@ -9221,6 +9234,128 @@ window.loadMyGmailIntoMyPage = async function() {
         const res = await callGAS('getUserGmail', { userId: staffId });
         if (res && res.gmail) input.value = res.gmail;
     } catch (e) { /* ignore */ }
+};
+
+window.renderCalendarSelectChecklist = function(containerId, calendars, selectedIds, hasPreference) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  const list = Array.isArray(calendars) ? calendars : [];
+  if (!list.length) {
+    box.innerHTML = '<div style="color:#888; font-size:13px;">表示できるカレンダーがありません。<br>実行アカウントにカレンダーを共有してください。</div>';
+    return;
+  }
+  const selected = Array.isArray(selectedIds) ? selectedIds : [];
+  const selectedSet = {};
+  selected.forEach(id => { selectedSet[String(id)] = true; });
+  // 未設定（好みなし）のときは全部チェック済み表示
+  const checkAll = !hasPreference;
+  box.innerHTML = list.map((cal, idx) => {
+    const id = String(cal.id || '');
+    const name = String(cal.name || id);
+    const checked = checkAll || !!selectedSet[id];
+    const owned = cal.isOwned ? ' <span style="font-size:10px; color:#888;">(所有)</span>' : '';
+    const safeId = id.replace(/"/g, '&quot;');
+    return `<label style="display:flex; align-items:flex-start; gap:8px; padding:8px; margin-bottom:4px; background:#fff; border:1px solid #e0e0e0; border-radius:6px; cursor:pointer;">
+      <input type="checkbox" class="cal-select-check" value="${safeId}" ${checked ? 'checked' : ''} style="width:18px; height:18px; margin-top:1px;">
+      <span style="font-size:13px; color:#333; line-height:1.35; word-break:break-word;">${window._escapeHtmlPs ? window._escapeHtmlPs(name) : name}${owned}</span>
+    </label>`;
+  }).join('');
+};
+
+window.setAllMyCalendarChecks = function(checked) {
+  const psPanel = document.getElementById('psCalendarPickerPanel');
+  const usePs = psPanel && psPanel.style.display !== 'none';
+  const root = usePs
+    ? document.getElementById('psCalendarSelectList')
+    : document.getElementById('myCalendarSelectList');
+  if (!root) return;
+  root.querySelectorAll('.cal-select-check').forEach(cb => {
+    cb.checked = !!checked;
+  });
+};
+
+window.loadMyCalendarSelectIntoMyPage = async function() {
+  const box = document.getElementById('myCalendarSelectList');
+  if (!box) return;
+  const staffId = localStorage.getItem('passionMapUserId') || '';
+  box.innerHTML = '<div style="color:#888; font-size:13px;">読み込み中...</div>';
+  try {
+    const res = await callGAS('listGoogleCalendars', { userId: staffId });
+    window.renderCalendarSelectChecklist(
+      'myCalendarSelectList',
+      res && res.calendars,
+      res && res.selectedIds,
+      res && res.hasPreference
+    );
+  } catch (e) {
+    box.innerHTML = `<div style="color:#c62828; font-size:13px;">取得に失敗しました: ${(e && e.message) || e}</div>`;
+  }
+};
+
+window.doSaveUserCalendarIds = async function() {
+  const resultDiv = document.getElementById('saveCalendarIdsResult') || document.getElementById('psSaveCalendarIdsResult');
+  const btn = document.getElementById('saveCalendarIdsBtn') || document.getElementById('psSaveCalendarIdsBtn');
+  const staffId = localStorage.getItem('passionMapUserId') || '';
+  if (!staffId) {
+    if (resultDiv) { resultDiv.innerText = '❌ ログイン情報がありません'; resultDiv.style.color = 'red'; }
+    return;
+  }
+  const psPanel = document.getElementById('psCalendarPickerPanel');
+  const usePs = psPanel && psPanel.style.display !== 'none' && document.getElementById('psCalendarSelectList');
+  const scope = usePs ? '#psCalendarSelectList' : '#myCalendarSelectList';
+  const ids = Array.from(document.querySelectorAll(scope + ' .cal-select-check:checked')).map(cb => cb.value);
+  if (!ids.length) {
+    if (!(await (typeof customConfirm === 'function'
+      ? customConfirm('1つも選ばれていません。このまま保存すると予定が表示されなくなります。よろしいですか？')
+      : Promise.resolve(confirm('1つも選ばれていません。このまま保存すると予定が表示されなくなります。よろしいですか？'))))) {
+      return;
+    }
+  }
+  if (btn) { btn.disabled = true; btn.innerText = '保存中...'; }
+  try {
+    const res = await callGAS('saveUserCalendarIds', { userId: staffId, ids: ids });
+    if (resultDiv) {
+      resultDiv.innerText = res && res.success
+        ? `✅ ${ids.length}件のカレンダーを保存しました`
+        : '❌ 保存に失敗しました';
+      resultDiv.style.color = res && res.success ? 'green' : 'red';
+    }
+    if (document.getElementById('personalScheduleContent') && typeof window.renderPersonalSchedulePanel === 'function') {
+      // スケジュール表示中なら再読込
+      setTimeout(() => window.renderPersonalSchedulePanel(), 200);
+    }
+  } catch (e) {
+    if (resultDiv) {
+      resultDiv.innerText = '❌ ' + (e.message || '通信エラー');
+      resultDiv.style.color = 'red';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = '表示カレンダーを保存'; }
+  }
+};
+
+window.togglePersonalCalendarPicker = async function() {
+  const panel = document.getElementById('psCalendarPickerPanel');
+  if (!panel) return;
+  if (panel.style.display === 'none' || !panel.style.display) {
+    panel.style.display = 'block';
+    const list = document.getElementById('psCalendarSelectList');
+    if (list) list.innerHTML = '<div style="color:#888;font-size:13px;">読み込み中...</div>';
+    try {
+      const staffId = localStorage.getItem('passionMapUserId') || '';
+      const res = await callGAS('listGoogleCalendars', { userId: staffId });
+      window.renderCalendarSelectChecklist(
+        'psCalendarSelectList',
+        res && res.calendars,
+        res && res.selectedIds,
+        res && res.hasPreference
+      );
+    } catch (e) {
+      if (list) list.innerHTML = `<div style="color:#c62828;font-size:13px;">取得失敗: ${(e && e.message) || e}</div>`;
+    }
+  } else {
+    panel.style.display = 'none';
+  }
 };
 
 window.doSaveUserGmail = async function() {
@@ -9719,9 +9854,25 @@ window.buildGoogleCalendarEventsHtml = function(calRes) {
   const res = calRes || {};
   const events = Array.isArray(res.events) ? res.events : [];
   let html = '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:12px;margin-bottom:14px;">';
-  html += '<div style="font-weight:bold;color:#DB4437;font-size:15px;margin-bottom:4px;">📅 Googleカレンダー予定</div>';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;">' +
+    '<div style="font-weight:bold;color:#DB4437;font-size:15px;">📅 Googleカレンダー予定</div>' +
+    '<button type="button" onclick="togglePersonalCalendarPicker()" style="background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da;border-radius:6px;padding:5px 8px;font-size:11px;font-weight:bold;cursor:pointer;white-space:nowrap;">表示選択</button>' +
+    '</div>';
   html += '<div style="font-size:11px;color:#888;margin-bottom:10px;">今日・明日の予定' +
-    (res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + ' および共有カレンダー）' : '') + '</div>';
+    (res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + '）' : '') +
+    (res.hasCalendarPreference ? ' ／ 選択したカレンダーのみ表示' : ' ／ すべて表示（未選択時）') +
+    '</div>';
+
+  html += '<div id="psCalendarPickerPanel" style="display:none;background:#e8eaf6;border:1px solid #c5cae9;border-radius:8px;padding:10px;margin-bottom:10px;">' +
+    '<div style="font-size:12px;color:#3949ab;font-weight:bold;margin-bottom:6px;">表示するカレンダー</div>' +
+    '<div id="psCalendarSelectList" style="max-height:180px;overflow-y:auto;margin-bottom:8px;"></div>' +
+    '<div style="display:flex;gap:6px;margin-bottom:8px;">' +
+      '<button type="button" onclick="setAllMyCalendarChecks(true)" style="flex:1;background:#fff;color:#3949ab;border:1px solid #9fa8da;padding:7px;border-radius:6px;font-size:11px;font-weight:bold;cursor:pointer;">すべて選択</button>' +
+      '<button type="button" onclick="setAllMyCalendarChecks(false)" style="flex:1;background:#fff;color:#666;border:1px solid #ccc;padding:7px;border-radius:6px;font-size:11px;font-weight:bold;cursor:pointer;">すべて解除</button>' +
+    '</div>' +
+    '<button type="button" id="psSaveCalendarIdsBtn" onclick="doSaveUserCalendarIds()" style="width:100%;background:#3949ab;color:#fff;border:none;padding:10px;border-radius:6px;font-weight:bold;cursor:pointer;">表示カレンダーを保存</button>' +
+    '<div id="psSaveCalendarIdsResult" style="margin-top:6px;font-size:12px;font-weight:bold;"></div>' +
+  '</div>';
 
   if (events.length) {
     let lastDate = '';

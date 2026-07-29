@@ -108,6 +108,9 @@ function doPost(e) {
     else if (action === "saveUserGmail") result = saveUserGmail(params);
     else if (action === "getUserGmail") result = getUserGmail(params);
     else if (action === "getTodayGoogleCalendarEvents") result = getTodayGoogleCalendarEvents(params);
+    else if (action === "listGoogleCalendars") result = listGoogleCalendars(params);
+    else if (action === "getUserCalendarIds") result = getUserCalendarIds(params);
+    else if (action === "saveUserCalendarIds") result = saveUserCalendarIds(params);
     else if (action === "getScriptAuthorizationInfo") result = getScriptAuthorizationInfo(params);
     else if (action === "getLotList") result = getLotList(params);
     else if (action === "updateLotRecord") result = updateLotRecord(params);
@@ -6134,24 +6137,6 @@ function ensurePersonalScheduleSheet_() {
   return sheet;
 }
 
-function ensureMeiboGmailColumn_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('名簿');
-  if (!sheet) throw new Error('名簿シートが見つかりません');
-  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 5)).getValues()[0];
-  let gmailCol = -1;
-  for (let c = 0; c < headers.length; c++) {
-    if (String(headers[c]).indexOf('Gmail') >= 0 || String(headers[c]).indexOf('gmail') >= 0 || String(headers[c]) === 'メール') {
-      gmailCol = c;
-      break;
-    }
-  }
-  if (gmailCol < 0) {
-    gmailCol = 4;
-    sheet.getRange(1, gmailCol + 1).setValue('Gmail');
-  }
-  return { sheet: sheet, gmailCol: gmailCol };
-}
-
 function getPersonalSchedule(params) {
   const userId = String((params && params.userId) || '').trim();
   if (!userId) return { priority: [], notes: [] };
@@ -6219,6 +6204,147 @@ function deletePersonalScheduleItem(params) {
     }
   }
   return { success: true };
+}
+
+function ensureMeiboGmailColumn_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('名簿');
+  if (!sheet) throw new Error('名簿シートが見つかりません');
+  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 5)).getValues()[0];
+  let gmailCol = -1;
+  for (let c = 0; c < headers.length; c++) {
+    if (String(headers[c]).indexOf('Gmail') >= 0 || String(headers[c]).indexOf('gmail') >= 0 || String(headers[c]) === 'メール') {
+      gmailCol = c;
+      break;
+    }
+  }
+  if (gmailCol < 0) {
+    gmailCol = 4;
+    sheet.getRange(1, gmailCol + 1).setValue('Gmail');
+  }
+  return { sheet: sheet, gmailCol: gmailCol };
+}
+
+/** 名簿に「表示カレンダー」列を確保（カンマ区切りのカレンダーID） */
+function ensureMeiboCalendarIdsColumn_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('名簿');
+  if (!sheet) throw new Error('名簿シートが見つかりません');
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let col = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').trim();
+    if (h === '表示カレンダー' || h === 'CalendarIds' || h === 'カレンダーID') {
+      col = c;
+      break;
+    }
+  }
+  if (col < 0) {
+    col = lastCol;
+    sheet.getRange(1, col + 1).setValue('表示カレンダー');
+  }
+  return { sheet: sheet, col: col };
+}
+
+function parseCalendarIdsValue_(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return [];
+  try {
+    if (s.charAt(0) === '[') {
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr)) {
+        return arr.map(function (v) { return String(v || '').trim(); }).filter(Boolean);
+      }
+    }
+  } catch (e) {}
+  return s.split(/[,，\n]/).map(function (v) { return String(v || '').trim(); }).filter(Boolean);
+}
+
+function getUserCalendarIds(params) {
+  const userId = String((params && params.userId) || '').trim();
+  if (!userId) return { ids: [], hasPreference: false };
+  const info = ensureMeiboCalendarIdsColumn_();
+  const data = info.sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === userId) {
+      const ids = parseCalendarIdsValue_(data[i][info.col]);
+      return { ids: ids, hasPreference: ids.length > 0 };
+    }
+  }
+  return { ids: [], hasPreference: false };
+}
+
+function saveUserCalendarIds(params) {
+  const userId = String((params && params.userId) || '').trim();
+  if (!userId) throw new Error('ユーザーIDがありません');
+  let ids = [];
+  if (Array.isArray(params && params.ids)) {
+    ids = params.ids.map(function (v) { return String(v || '').trim(); }).filter(Boolean);
+  } else {
+    ids = parseCalendarIdsValue_(params && params.ids);
+  }
+  // 重複除去
+  const uniq = [];
+  const seen = {};
+  ids.forEach(function (id) {
+    if (seen[id]) return;
+    seen[id] = true;
+    uniq.push(id);
+  });
+
+  const info = ensureMeiboCalendarIdsColumn_();
+  const data = info.sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === userId) {
+      info.sheet.getRange(i + 1, info.col + 1).setValue(uniq.join(','));
+      return { success: true, ids: uniq, hasPreference: uniq.length > 0 };
+    }
+  }
+  throw new Error('名簿にユーザーが見つかりません');
+}
+
+/** 実行アカウントから見えるGoogleカレンダー一覧 */
+function listGoogleCalendars(params) {
+  params = params || {};
+  const userId = String(params.userId || '').trim();
+  let calendars = [];
+  try {
+    calendars = CalendarApp.getAllCalendars() || [];
+  } catch (e) {
+    calendars = [];
+  }
+  if (!calendars.length) {
+    try {
+      const gmail = String((getUserGmail({ userId: userId }) || {}).gmail || '').trim();
+      if (gmail) {
+        const primary = CalendarApp.getCalendarById(gmail);
+        if (primary) calendars = [primary];
+      }
+    } catch (e2) {}
+  }
+
+  const list = [];
+  calendars.forEach(function (cal) {
+    try {
+      if (cal.isHidden && cal.isHidden()) return;
+      list.push({
+        id: cal.getId(),
+        name: cal.getName() || cal.getId(),
+        isOwned: !!(cal.isOwnedByMe && cal.isOwnedByMe())
+      });
+    } catch (e3) {}
+  });
+  list.sort(function (a, b) {
+    return String(a.name).localeCompare(String(b.name), 'ja');
+  });
+
+  const pref = userId ? getUserCalendarIds({ userId: userId }) : { ids: [], hasPreference: false };
+  return {
+    success: true,
+    calendars: list,
+    selectedIds: pref.ids || [],
+    hasPreference: !!pref.hasPreference,
+    message: list.length ? '' : '表示できるカレンダーがありません。実行アカウントにカレンダーを共有してください。'
+  };
 }
 
 function getUserGmail(params) {
@@ -6342,8 +6468,35 @@ function getTodayGoogleCalendarEvents(params) {
         success: false,
         gmail: gmail,
         events: [],
-        message: 'カレンダーにアクセスできません。Googleカレンダー（' + gmail + '）を、このApps Scriptの実行アカウントに「予定の表示」権限で共有してください。',
-        calendarUrl: calendarUrl
+        message: 'カレンダーにアクセスできません。Googleカレンダー（' + gmail + '）を、この Apps Scriptの実行アカウントに「予定の表示」権限で共有してください。',
+        calendarUrl: calendarUrl,
+        selectedCalendarIds: [],
+        hasCalendarPreference: false
+      };
+    }
+
+    // ユーザーが選択した表示カレンダーで絞り込み（未設定なら全部）
+    const pref = getUserCalendarIds({ userId: userId });
+    const selectedIds = (pref && pref.ids) ? pref.ids : [];
+    const hasPreference = !!(pref && pref.hasPreference && selectedIds.length);
+    if (hasPreference) {
+      const allow = {};
+      selectedIds.forEach(function (id) { allow[String(id)] = true; });
+      calendars = calendars.filter(function (cal) {
+        try { return !!allow[String(cal.getId())]; } catch (e) { return false; }
+      });
+    }
+
+    if (!calendars.length) {
+      return {
+        success: true,
+        gmail: gmail,
+        days: days,
+        events: [],
+        message: '表示するカレンダーが選択されていません。マイページまたはスケジュール画面で表示カレンダーを選んでください。',
+        calendarUrl: calendarUrl,
+        selectedCalendarIds: selectedIds,
+        hasCalendarPreference: hasPreference
       };
     }
 
@@ -6391,7 +6544,9 @@ function getTodayGoogleCalendarEvents(params) {
       days: days,
       events: allEvents,
       message: allEvents.length ? '' : '今日・明日の予定はありません。',
-      calendarUrl: calendarUrl
+      calendarUrl: calendarUrl,
+      selectedCalendarIds: selectedIds,
+      hasCalendarPreference: hasPreference
     };
   } catch (err) {
     return {

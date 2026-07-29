@@ -63,14 +63,17 @@
       style="padding: 8px 12px; max-height: 45vh; overflow-y: auto; padding-bottom: calc(15px + env(safe-area-inset-bottom));">
       <div style="display:flex; gap:0; margin-bottom:8px; border-bottom:2px solid #555;">
         <div id="cadTab1" onclick="switchCadTab(1)"
-          style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0; font-size:12px;">
+          style="flex:1; text-align:center; padding:6px 2px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0; font-size:11px;">
           ① 生成</div>
         <div id="cadTab2" onclick="switchCadTab(2)"
-          style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; font-size:12px;">
+          style="flex:1; text-align:center; padding:6px 2px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; font-size:11px;">
           ② 編集</div>
         <div id="cadTab3" onclick="switchCadTab(3)"
-          style="flex:1; text-align:center; padding:6px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:12px;">
-          ③ 保存と復元</div>
+          style="flex:1; text-align:center; padding:6px 2px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; font-size:11px;">
+          ③ 畝番号分割</div>
+        <div id="cadTab4" onclick="switchCadTab(4)"
+          style="flex:1; text-align:center; padding:6px 2px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:11px;">
+          ④ 保存と復元</div>
       </div>
 
       <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; text-align:center; margin-bottom:8px;">💡
@@ -198,6 +201,28 @@
       </div>
 
       <div id="cadMode3" style="display:none;">
+        <div style="font-size:12px; color:#ddd; margin-bottom:8px; line-height:1.45;">
+          生成畝を「〇畝おき」に分け、各ブロックで番号を振り直します。<br>
+          ・分割の間は <b>1畝空け</b>ます<br>
+          ・圃場の <b>最初と最後の1畝は対象外</b>です
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-end; margin-bottom:10px;">
+          <div style="flex:1;">
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">📦 何畝おきに分割するか</label>
+            <input type="number" id="cadSplitEveryN" value="5" min="1" step="1" oninput="cadPreviewRidgeNumberSplit()"
+              style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold;">
+          </div>
+          <button type="button" onclick="cadApplyRidgeNumberSplit()"
+            style="flex:1.4; background:#7B1FA2; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">🔢 分割して番号付け</button>
+        </div>
+        <div id="cadSplitPreview" style="background:#2a2a2a; border:1px solid #555; border-radius:6px; padding:8px; font-size:11px; color:#bbb; line-height:1.5; margin-bottom:10px; min-height:40px;">
+          畝を生成すると、ここに分割プレビューが表示されます。
+        </div>
+        <button type="button" onclick="cadClearRidgeNumberSplit()"
+          style="width:100%; background:#607D8B; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">↩ 分割番号をクリア（通常番号に戻す）</button>
+      </div>
+
+      <div id="cadMode4" style="display:none;">
         <div style="display:flex; gap:8px; width:100%; margin-top:5px; flex-wrap:wrap;">
           <button onclick="saveUneSim()"
             style="flex:2; min-width:140px; background:#2196F3; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">💾
@@ -491,7 +516,7 @@
 
   <script src="admin2.js?v=1785306000001" defer></script>
   <script src="tracking.js?v=1784615000009" defer></script>
-  <script src="cad.js?v=1785301000001" defer></script>
+  <script src="cad.js?v=1785301000004" defer></script>
   <script type="importmap">
   {
     "imports": {
