@@ -862,7 +862,7 @@ async function fetchWeatherAndUpdateUI() {
         let centerPos = (savedLat && savedLng) ? {lat: parseFloat(savedLat), lng: parseFloat(savedLng)} : {lat: 33.91, lng: 134.66};
         let zoomLevel = savedZoom ? parseInt(savedZoom) : 15;
 
-        map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true });
+        map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: false });
         
         google.maps.event.addListenerOnce(map, 'idle', () => {
             // Native scaling enabled by NOT overriding satType.maxZoom
@@ -899,6 +899,7 @@ async function fetchWeatherAndUpdateUI() {
 
       function loadData() {
         if (!checkLoginStatus()) return;
+        if (typeof beginMapDataLoad === 'function') beginMapDataLoad('スケジュールデータを読み込み中...');
         const btn = document.querySelector('.btn-primary') || document.querySelector('.btn-reload');
         const orgTxt = btn ? btn.innerText : '';
         if (btn) {
@@ -932,6 +933,7 @@ async function fetchWeatherAndUpdateUI() {
             btn.innerText = orgTxt;
             btn.disabled = false;
           }
+          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
         }).catch(e => {
           console.error('getScheduleData failed', e);
           customAlert("エラーが発生しました。");
@@ -939,6 +941,7 @@ async function fetchWeatherAndUpdateUI() {
             btn.innerText = orgTxt;
             btn.disabled = false;
           }
+          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
         });
       }
 
@@ -2233,7 +2236,7 @@ window.initFieldSatMap = function() {
       heading: 0,
       gestureHandling: 'greedy',
       disableDefaultUI: true,
-      zoomControl: true,
+      zoomControl: false,
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: false
@@ -2512,7 +2515,7 @@ window.ensureFieldSatGrowthMap = function(slot) {
       tilt: 0,
       gestureHandling: 'greedy',
       disableDefaultUI: true,
-      zoomControl: true,
+      zoomControl: false,
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: false,

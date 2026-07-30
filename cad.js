@@ -2293,11 +2293,28 @@ window.formatCadUneLengthMeters = (meters) => {
     return Math.round(meters) + 'm';
 };
 
+/** グループ名の表示用（分割1 → 分割1番） */
+window.formatCadUneGroupDisplayName = (group) => {
+    if (!group) return '';
+    const m = String(group).match(/^分割(\d+)$/);
+    if (m) return '分割' + m[1] + '番';
+    return String(group);
+};
+
 /** 畝ラベルの番号行（グループ付き） */
 window.getCadUneLabelTitle = (poly, baseIdx) => {
+    const g = poly && poly.uneGroup ? String(poly.uneGroup) : '';
+    const custom = poly && poly.customLabel != null ? String(poly.customLabel) : '';
+    // 空け・端は「1番/2番」「/1番」などを畝名としてそのまま表示
+    if ((g === '空け' || g === '端') && custom.indexOf('/') >= 0) {
+        return custom;
+    }
     let title = String(baseIdx != null ? baseIdx : '');
-    if (poly && poly.uneGroup && poly.uneGroup !== 'default') {
-        title += ' (' + poly.uneGroup + ')';
+    if (g && g !== 'default') {
+        const displayGroup = typeof window.formatCadUneGroupDisplayName === 'function'
+            ? window.formatCadUneGroupDisplayName(g)
+            : g;
+        title += ' (' + displayGroup + ')';
     }
     return title;
 };
@@ -2406,25 +2423,29 @@ window.cadBuildRidgeNumberSplitPlan = (everyN) => {
         const groupName = '分割' + groupNum;
         const labels = [];
         for (let k = 0; k < take; k++) {
-            const label = String(k + 1);
+            const ridgeIndex = i + k + 1; // cadUnePolygons 上の位置
+            // 分割ブロック内で振り直さず、元の畝番号（1始まり）を残す
+            const label = String(ridgeIndex + 1);
             labels.push(label);
             plan.push({
                 poly: middle[i + k],
                 role: 'block',
                 group: groupName,
                 label,
-                index: i + k + 1
+                index: ridgeIndex
             });
         }
         groups.push({ name: groupName, count: take, labels });
         groupNum++;
         i += take;
         if (i < middle.length) {
+            const prevNum = groupNum - 1;
+            const nextNum = groupNum;
             plan.push({
                 poly: middle[i],
                 role: 'gap',
                 group: '空け',
-                label: '-',
+                label: prevNum + '番/' + nextNum + '番',
                 index: i + 1
             });
             i += 1;
@@ -2438,6 +2459,12 @@ window.cadBuildRidgeNumberSplitPlan = (everyN) => {
         label: '-',
         index: total - 1
     });
+
+    // 端の空き: 先頭は /1番、末尾は N番/
+    if (groups.length) {
+        plan[0].label = '/1番';
+        plan[plan.length - 1].label = groups.length + '番/';
+    }
 
     return {
         ok: groups.length > 0,
@@ -2461,13 +2488,15 @@ window.cadPreviewRidgeNumberSplit = () => {
         el.innerHTML = '<span style="color:#ef9a9a;">' + (built.message || '分割できません') + '</span>';
         return;
     }
+    const fmt = window.formatCadUneGroupDisplayName || ((x) => x);
     const lines = built.groups.map((g) => {
-        return `・${g.name}: 畝番号 ${g.labels.join(', ')}（${g.count}畝）`;
+        return `・${fmt(g.name)}: 元畝番号 ${g.labels.join(', ')}（${g.count}畝）`;
     });
+    const lastN = built.groups.length;
     el.innerHTML =
         '<div style="color:#ce93d8;margin-bottom:4px;">' + built.message + '</div>' +
-        '<div>端（最初・最後）: 分割対象外</div>' +
-        '<div>空け: ブロック間の1畝</div>' +
+        '<div>端: /1番 … ' + lastN + '番/（分割対象外）</div>' +
+        '<div>空け: 隣り合う分割番号（例 1番/2番）</div>' +
         lines.map((l) => '<div>' + l + '</div>').join('');
 };
 
@@ -2505,8 +2534,9 @@ window.cadApplyRidgeNumberSplit = () => {
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
     window.cadPreviewRidgeNumberSplit();
 
+    const fmt = window.formatCadUneGroupDisplayName || ((x) => x);
     const msg = `畝番号を分割しました。\n${built.message}\n` +
-        built.groups.map((g) => `${g.name}: ${g.labels.join(',')}`).join('\n');
+        built.groups.map((g) => `${fmt(g.name)}: 元畝番号 ${g.labels.join(',')}`).join('\n');
     if (typeof customAlert === 'function') customAlert(msg);
     else alert(msg);
 };
@@ -4309,9 +4339,21 @@ window.loadCadHistoryData = (simDataStr) => {
 
 window.cadGetGroupColor = (group) => {
     if (!group) return '#8BC34A';
-    const colors = ['#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#795548', '#009688', '#3F51B5'];
+    const g = String(group);
+    // 枕畝は土色（茶色）と被らない鮮やかなアンバーオレンジ
+    if (g === '枕') return '#FF6F00';
+    // 空け・端は分割ブロックと色が被らない固定色
+    if (g === '空け') return '#78909C';
+    if (g === '端') return '#8D6E63';
+    const splitMatch = g.match(/^分割(\d+)$/);
+    if (splitMatch) {
+        const splitColors = ['#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#00897B', '#FF7043', '#1565C0'];
+        const n = parseInt(splitMatch[1], 10);
+        return splitColors[(Math.max(1, n) - 1) % splitColors.length];
+    }
+    const colors = ['#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#AB47BC', '#009688', '#3F51B5'];
     let hash = 0;
-    for (let i = 0; i < group.length; i++) hash = group.charCodeAt(i) + ((hash << 5) - hash);
+    for (let i = 0; i < g.length; i++) hash = g.charCodeAt(i) + ((hash << 5) - hash);
     return colors[Math.abs(hash) % colors.length];
 };
 

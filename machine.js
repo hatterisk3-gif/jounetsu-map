@@ -119,6 +119,7 @@ function initMap() {
 }
 
 async function loadAllData() {
+    if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場・農機データを読み込み中...');
     showToast("データ読み込み中...");
     try {
         // 圃場＋マスタデータ取得
@@ -174,8 +175,10 @@ async function loadAllData() {
         renderMachineMarkers();
         renderVehicleMarkers();
         showToast("読み込み完了");
+        if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
     } catch (e) {
         console.error("Data load error:", e);
+        if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
         alert("データの読み込みに失敗しました: " + e.message);
     }
 }

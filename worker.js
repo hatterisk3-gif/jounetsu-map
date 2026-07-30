@@ -399,7 +399,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   localStorage.setItem('passionMapUserRole', result.role || '作業員');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
                   
-                  // 最新データを取りに行く
+                  // 最新データを取りに行く（ローディングは loadInitData 内）
                   loadInitData(); 
                   startLocationWatch();
                   // 作業開始時間ヒントを先行取得（getInitData完了を待たない）
@@ -442,6 +442,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
     // 🌟 2. データの取得とキャッシュ保存（超軽量化版！） 🌟
       function loadInitData() {
+          if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
           callGAS('getInitData').then(data => {
               const newDataStr = JSON.stringify(data);
               const oldDataStr = localStorage.getItem('passionMapInitData');
@@ -449,13 +450,18 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
               if (newDataStr === oldDataStr) {
                   console.log("変更なし：再描画をスキップしました");
+                  if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
                   return; 
               }
 
               // 変更があった場合のみ保存して再描画
               localStorage.setItem('passionMapInitData', newDataStr);
-              renderInitData(data); 
-          }).catch(e => console.log("InitData Error:", e));
+              renderInitData(data);
+              if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+          }).catch(e => {
+              console.log("InitData Error:", e);
+              if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+          });
       }
 
       // 🌟 3. キャッシュからも呼ばれる描画専用処理 🌟
@@ -575,16 +581,21 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           
           google.maps.event.addListener(polygon, 'click', (e) => { 
             if (isMapSelecting) {
-               if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
-               if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ★追加
-               if (selectedPolyIds.includes(id)) {
-                  selectedPolyIds = selectedPolyIds.filter(i=>i!==id);
-               } else { selectedPolyIds.push(id); }
-               updateMapSelectVisuals(); return;
+               if (typeof window.handleWorkMapFieldTap === 'function') {
+                 window.handleWorkMapFieldTap(id);
+               } else {
+                 if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
+                 if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; }
+                 if (selectedPolyIds.includes(id)) {
+                    selectedPolyIds = selectedPolyIds.filter(i=>i!==id);
+                 } else { selectedPolyIds.push(id); }
+                 updateMapSelectVisuals();
+               }
+               return;
             }
             openMainMenu(id); infoWindow.setPosition(e.latLng); infoWindow.open(map); 
           });
-          loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false };
+          loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false, coords };
         }
       }
 
@@ -1612,7 +1623,7 @@ function createSignboardMarker(name, pos, icon, id) {
                  
                  if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
                  if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
-                 if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime||'--:--'} 〜 ${item.data.endTime||'--:--'} ➔ 計: <b>${item.data.totalTime||'--'}</b></span>`;
+                 if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime||'--:--'} 〜 ${item.data.endTime||'--:--'} ➔ 計: <b>${item.data.totalTime||'--'}</b>${(parseInt(item.data.breakMins, 10) > 0) ? ` <span style="color:#e65100;">（休憩${parseInt(item.data.breakMins, 10)}分）</span>` : ''}</span>`;
                  if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
                  if (item.data.usedMaterials) h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
                  if (item.data.maintenanceTool) {
@@ -1719,7 +1730,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
                  if (item.data.crop) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作物: ${item.data.crop}</div>`;
                  if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
-                 if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime||'--:--'} 〜 ${item.data.endTime||'--:--'} ➔ 計: <b>${item.data.totalTime||'--'}</b></span>`;
+                 if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime||'--:--'} 〜 ${item.data.endTime||'--:--'} ➔ 計: <b>${item.data.totalTime||'--'}</b>${(parseInt(item.data.breakMins, 10) > 0) ? ` <span style="color:#e65100;">（休憩${parseInt(item.data.breakMins, 10)}分）</span>` : ''}</span>`;
                  if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
                  if (item.data.usedMaterials) h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
                  if (item.data.maintenanceTool) {
@@ -1903,13 +1914,48 @@ function createSignboardMarker(name, pos, icon, id) {
       
       window.removePendingPhoto = (idx) => { pendingFiles.splice(idx, 1); renderPendingPhotos(); };
 
-      window.openMapSelect = () => { backupSelectedPolyIds = [...selectedPolyIds]; isMapSelecting = true; infoWindow.close(); document.getElementById('rightPanel').style.display = 'none'; document.getElementById('mapSelectUI').style.display = 'flex'; updateMapSelectVisuals(); };
-      window.applyMapSelect = () => { isMapSelecting = false; document.getElementById('rightPanel').style.display = 'flex'; document.getElementById('mapSelectUI').style.display = 'none'; updateMapSelectVisuals(); updateSelectedPolysDisplay(); if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI(); };
-      window.cancelMapSelect = () => { selectedPolyIds = [...backupSelectedPolyIds]; isMapSelecting = false; document.getElementById('rightPanel').style.display = 'flex'; document.getElementById('mapSelectUI').style.display = 'none'; updateMapSelectVisuals(); };
+      window.openMapSelect = () => {
+        backupSelectedPolyIds = [...selectedPolyIds];
+        window._backupWorkMapRidgeSelections = JSON.parse(JSON.stringify(window.workMapRidgeSelections || {}));
+        isMapSelecting = true;
+        window.workMapSelectingRidgesForFieldId = null;
+        window.clearWorkDrawnRidges();
+        infoWindow.close();
+        document.getElementById('rightPanel').style.display = 'none';
+        const selectUI = document.getElementById('mapSelectUI');
+        if (selectUI && typeof window.getDefaultMapSelectUIHtml === 'function') {
+          selectUI.innerHTML = window.getDefaultMapSelectUIHtml();
+        }
+        selectUI.style.display = 'flex';
+        updateMapSelectVisuals();
+        if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
+      };
+      window.applyMapSelect = () => {
+        if (typeof window.applyWorkMapRidgeSelectionsToPending === 'function') {
+          window.applyWorkMapRidgeSelectionsToPending();
+        }
+        window.exitWorkRidgeSelectionView(true);
+        isMapSelecting = false;
+        document.getElementById('rightPanel').style.display = 'flex';
+        document.getElementById('mapSelectUI').style.display = 'none';
+        updateMapSelectVisuals();
+        updateSelectedPolysDisplay();
+        if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+      };
+      window.cancelMapSelect = () => {
+        selectedPolyIds = [...backupSelectedPolyIds];
+        window.workMapRidgeSelections = window._backupWorkMapRidgeSelections
+          ? JSON.parse(JSON.stringify(window._backupWorkMapRidgeSelections))
+          : {};
+        window.exitWorkRidgeSelectionView(true);
+        isMapSelecting = false;
+        document.getElementById('rightPanel').style.display = 'flex';
+        document.getElementById('mapSelectUI').style.display = 'none';
+        updateMapSelectVisuals();
+      };
       
       window.updateMapSelectVisuals = () => {
-        const countUI = document.getElementById('mapSelectCount');
-        if(countUI) countUI.innerText = `🗺️ 記録する対象 (${selectedPolyIds.length}箇所選択中)`;
+        if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
         
         // ★追加: 給油する農機を探すモードの見た目
         if (window.selectingSignForRefuel) {
@@ -1926,13 +1972,19 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         // 通常のマップ選択見た目処理
+        const focusId = window.workMapSelectingRidgesForFieldId ? String(window.workMapSelectingRidgesForFieldId) : '';
         for(let id in loadedPolygons) {
           const p = loadedPolygons[id];
           if(!p.isMarker && p.polygon) {
             const isU = (p.status === '未使用（返却）' || p.status === '未使用'), baseColor = isU ? '#999999' : p.color;
             if (isMapSelecting) {
-              if (selectedPolyIds.includes(id)) { p.polygon.setOptions({fillColor: '#FFEB3B', strokeColor: '#F57F17', fillOpacity: 0.8, strokeWeight: 4}); }
-              else { p.polygon.setOptions({fillColor: baseColor, strokeColor: baseColor, fillOpacity: 0.2, strokeWeight: 1}); }
+              if (focusId && String(id) === focusId) {
+                p.polygon.setOptions({fillColor: baseColor, strokeColor: '#FFEB3B', fillOpacity: 0.12, strokeWeight: 4});
+              } else if (selectedPolyIds.includes(id)) {
+                p.polygon.setOptions({fillColor: '#FFEB3B', strokeColor: '#F57F17', fillOpacity: 0.8, strokeWeight: 4});
+              } else {
+                p.polygon.setOptions({fillColor: baseColor, strokeColor: baseColor, fillOpacity: 0.2, strokeWeight: 1});
+              }
             } else { p.polygon.setOptions({fillColor: baseColor, strokeColor: baseColor, fillOpacity: isU ? 0.5 : 0.3, strokeWeight: 3}); }
           }
         }
@@ -1940,6 +1992,8 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.removeSelectedPoly = (id) => {
         selectedPolyIds = selectedPolyIds.filter(i => i !== id);
+        if (window.workMapRidgeSelections) delete window.workMapRidgeSelections[String(id)];
+        if (window.workPendingWorkedByField) delete window.workPendingWorkedByField[String(id)];
         updateSelectedPolysDisplay();
         if (typeof window.updateMapSelectVisuals === 'function') window.updateMapSelectVisuals();
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
@@ -1982,6 +2036,531 @@ function createSignboardMarker(name, pos, icon, id) {
           const savedCad = JSON.parse(poly.uneSimData);
           return parseInt(savedCad.uneCount, 10) || 0;
         } catch (e) { return 0; }
+      };
+
+      // ===== 農業CAD分割データ（作業記録連携） =====
+      window.workDrawnRidges = [];
+      window.workMapSelectingRidgesForFieldId = null;
+      /** @type {Object.<string, {wholeField:boolean, indices:number[]}>} */
+      window.workMapRidgeSelections = {};
+      /** apply後に畝進捗へ流し込む一時値 */
+      window.workPendingWorkedByField = window.workPendingWorkedByField || {};
+
+      window.parseWorkCadUneSimData = (uneSimData) => {
+        if (!uneSimData || String(uneSimData).trim() === '' || String(uneSimData).trim() === '[]') return null;
+        let data;
+        try {
+          data = (typeof uneSimData === 'string') ? JSON.parse(uneSimData) : uneSimData;
+        } catch (e) { return null; }
+        if (!data) return null;
+        if (!Array.isArray(data) && Array.isArray(data.unePolygons)) return data;
+        if (Array.isArray(data)) {
+          return {
+            unePolygons: data.map(item => {
+              if (!item) return { coords: [] };
+              if (item.coords) return item;
+              if (item.polygon) return { coords: item.polygon, group: item.group || '', customLabel: item.customLabel || '' };
+              if (Array.isArray(item)) return { coords: item };
+              return { coords: [] };
+            })
+          };
+        }
+        return null;
+      };
+
+      window.getWorkCadRidgeCoords = (une) => {
+        if (!une) return null;
+        if (Array.isArray(une.coords)) return une.coords;
+        if (Array.isArray(une.polygon)) return une.polygon;
+        if (Array.isArray(une)) return une;
+        return null;
+      };
+
+      window.getWorkCadRidgeShapes = (p) => {
+        if (!p) return [];
+        const data = window.parseWorkCadUneSimData(p.uneSimData);
+        if (!data || !Array.isArray(data.unePolygons)) return [];
+        return data.unePolygons.map((u, index) => ({
+          une: u,
+          index,
+          coords: window.getWorkCadRidgeCoords(u)
+        })).filter(e => e.coords && e.coords.length >= 3);
+      };
+
+      window.formatWorkCadGroupDisplay = (group) => {
+        if (!group) return '';
+        const m = String(group).match(/^分割(\d+)$/);
+        if (m) return '分割' + m[1] + '番';
+        return String(group);
+      };
+
+      window.getWorkCadGroupColor = (group) => {
+        if (typeof window.cadGetGroupColor === 'function') return window.cadGetGroupColor(group);
+        const g = String(group || '');
+        if (g === '空け') return '#78909C';
+        if (g === '端') return '#A1887F';
+        const splitMatch = g.match(/^分割(\d+)$/);
+        if (splitMatch) {
+          const splitColors = ['#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#00897B', '#5D4037', '#1565C0'];
+          const n = parseInt(splitMatch[1], 10);
+          return splitColors[(Math.max(1, n) - 1) % splitColors.length];
+        }
+        return '#8BC34A';
+      };
+
+      window.getWorkCadRidgeLabel = (une, index) => {
+        const g = une && une.group ? String(une.group) : '';
+        const custom = une && une.customLabel != null ? String(une.customLabel) : '';
+        if ((g === '空け' || g === '端') && custom.indexOf('/') >= 0) return custom;
+        if (/^分割\d+$/.test(g)) {
+          const num = custom || String((index != null ? index : 0) + 1);
+          return num + ' (' + window.formatWorkCadGroupDisplay(g) + ')';
+        }
+        if (custom) return custom;
+        if (g && g !== 'default') return window.formatWorkCadGroupDisplay(g) + '-' + ((index != null ? index : 0) + 1);
+        return '畝' + ((index != null ? index : 0) + 1);
+      };
+
+      /** 分割ブロック・空き・端のチップ用サマリ */
+      window.summarizeWorkCadSplit = (poly) => {
+        const data = window.parseWorkCadUneSimData(poly && poly.uneSimData);
+        const list = (data && data.unePolygons) ? data.unePolygons : [];
+        const blocks = {};
+        const gaps = [];
+        const ends = [];
+        const hasSplit = list.some(u => u && /^分割\d+$/.test(String(u.group || '')));
+        list.forEach((u, index) => {
+          if (!u) return;
+          const g = String(u.group || '');
+          const custom = u.customLabel != null ? String(u.customLabel) : '';
+          if (/^分割(\d+)$/.test(g)) {
+            const key = g;
+            if (!blocks[key]) {
+              blocks[key] = {
+                group: key,
+                displayName: window.formatWorkCadGroupDisplay(key),
+                value: window.formatWorkCadGroupDisplay(key),
+                numbers: [],
+                indices: []
+              };
+            }
+            if (custom && custom.indexOf('/') < 0) blocks[key].numbers.push(custom);
+            blocks[key].indices.push(index);
+          } else if (g === '空け') {
+            const value = (custom.indexOf('/') >= 0) ? custom : (custom || '空け');
+            gaps.push({ displayName: value, value, index, group: g });
+          } else if (g === '端') {
+            const value = (custom.indexOf('/') >= 0) ? custom : (custom || '端');
+            ends.push({ displayName: value, value, index, group: g });
+          }
+        });
+        const blockList = Object.keys(blocks).sort((a, b) => {
+          const na = parseInt((a.match(/\d+/) || [0])[0], 10);
+          const nb = parseInt((b.match(/\d+/) || [0])[0], 10);
+          return na - nb;
+        }).map(k => {
+          const b = blocks[k];
+          const nums = b.numbers;
+          let rangeHint = '';
+          if (nums.length) {
+            const n = nums.map(x => parseInt(x, 10)).filter(x => !isNaN(x));
+            if (n.length) {
+              rangeHint = (Math.min(...n) === Math.max(...n))
+                ? String(Math.min(...n))
+                : (Math.min(...n) + '-' + Math.max(...n));
+            }
+          }
+          b.rangeHint = rangeHint;
+          b.chipTitle = rangeHint ? (b.displayName + ' (' + rangeHint + ')') : b.displayName;
+          return b;
+        });
+        return { hasSplit, blocks: blockList, gaps, ends, ridgeCount: list.length };
+      };
+
+      window.parseWorkedRidgeTokens = (str) => {
+        return String(str || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+      };
+
+      window.toggleWorkedRidgeToken = (inputEl, value) => {
+        if (!inputEl || !value) return;
+        const tokens = window.parseWorkedRidgeTokens(inputEl.value);
+        const idx = tokens.indexOf(value);
+        if (idx >= 0) tokens.splice(idx, 1);
+        else tokens.push(value);
+        inputEl.value = tokens.join(', ');
+      };
+
+      window.onWorkRidgeChipClick = (pid, value, btnEl) => {
+        const worked = document.querySelector('.ridge-worked[data-poly-id="' + pid + '"]');
+        if (!worked) return;
+        window.toggleWorkedRidgeToken(worked, value);
+        const active = window.parseWorkedRidgeTokens(worked.value).includes(value);
+        if (btnEl) {
+          btnEl.style.outline = active ? '2px solid #004d40' : 'none';
+          btnEl.style.opacity = active ? '1' : '0.85';
+          btnEl.setAttribute('data-active', active ? '1' : '0');
+        }
+      };
+
+      window.getDefaultMapSelectUIHtml = () => {
+        return '' +
+          '<div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:4px;" id="mapSelectCount">🗺️ 記録する対象をタップしてください</div>' +
+          '<div style="width:100%; text-align:center; font-size:11px; color:#b2dfdb; margin-bottom:6px;" id="mapSelectHint">CAD畝がある圃場は畝・分割単位で選べます</div>' +
+          '<div id="mapSelectSplitButtons" style="display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;"></div>' +
+          '<div id="mapSelectRidgeActions" style="display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;">' +
+          '<button type="button" onclick="selectWholeFieldInWorkMap()" style="flex:1; min-width:120px; background:#FF9800; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">圃場全体を選択</button>' +
+          '<button type="button" onclick="exitWorkRidgeSelectionView()" style="flex:1; min-width:120px; background:#607D8B; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">畝選択を閉じる</button>' +
+          '</div>' +
+          '<button onclick="applyMapSelect()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定する</button>' +
+          '<button onclick="cancelMapSelect()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">キャンセル</button>';
+      };
+
+      window.clearWorkDrawnRidges = () => {
+        (window.workDrawnRidges || []).forEach(item => {
+          try { if (item.polygon) item.polygon.setMap(null); } catch (e) {}
+          try { if (item.label) item.label.setMap(null); } catch (e) {}
+        });
+        window.workDrawnRidges = [];
+      };
+
+      window.getWorkMapRidgeSel = (fieldId) => {
+        const fid = String(fieldId);
+        if (!window.workMapRidgeSelections[fid]) {
+          window.workMapRidgeSelections[fid] = { wholeField: true, indices: [] };
+        }
+        return window.workMapRidgeSelections[fid];
+      };
+
+      window.getWorkSplitGroupIndices = (fieldId, groupName) => {
+        const g = String(groupName || '');
+        const fromDrawn = (window.workDrawnRidges || [])
+          .filter(item => String(item.group || '') === g)
+          .map(item => item.uneIndex);
+        if (fromDrawn.length) return fromDrawn;
+        const poly = loadedPolygons[fieldId];
+        const split = (typeof window.summarizeWorkCadSplit === 'function' && poly)
+          ? window.summarizeWorkCadSplit(poly)
+          : null;
+        const block = (split && split.blocks || []).find(b => b.group === g);
+        return block ? (block.indices || []).slice() : [];
+      };
+
+      window.refreshWorkDrawnRidgeHighlights = (fieldId) => {
+        const sel = window.getWorkMapRidgeSel(fieldId);
+        (window.workDrawnRidges || []).forEach(item => {
+          if (!item.polygon) return;
+          const nowSelected = !sel.wholeField && sel.indices.indexOf(item.uneIndex) >= 0;
+          item.polygon.setOptions({
+            fillColor: nowSelected ? '#FFEB3B' : (item.baseColor || '#8BC34A'),
+            fillOpacity: nowSelected ? 0.9 : 0.65,
+            strokeColor: nowSelected ? '#F57F17' : '#33691E',
+            strokeWeight: nowSelected ? 3 : 2
+          });
+        });
+      };
+
+      /** 分割ブロックを一括選択/解除 */
+      window.toggleWorkMapSplitGroup = (fieldId, groupName) => {
+        const fid = String(fieldId);
+        if (!selectedPolyIds.includes(fid)) selectedPolyIds.push(fid);
+        const sel = window.getWorkMapRidgeSel(fid);
+        sel.wholeField = false;
+        const indices = window.getWorkSplitGroupIndices(fid, groupName);
+        if (!indices.length) return;
+        const allSelected = indices.every(i => sel.indices.indexOf(i) >= 0);
+        if (allSelected) {
+          sel.indices = sel.indices.filter(i => indices.indexOf(i) < 0);
+        } else {
+          indices.forEach(i => {
+            if (sel.indices.indexOf(i) < 0) sel.indices.push(i);
+          });
+        }
+        window.refreshWorkDrawnRidgeHighlights(fid);
+        window.updateWorkMapSelectBanner();
+      };
+
+      window.updateWorkMapSelectBanner = () => {
+        const countUI = document.getElementById('mapSelectCount');
+        const hintUI = document.getElementById('mapSelectHint');
+        const actions = document.getElementById('mapSelectRidgeActions');
+        let splitBtns = document.getElementById('mapSelectSplitButtons');
+        const n = selectedPolyIds.length;
+        if (countUI) countUI.innerText = `🗺️ 記録する対象 (${n}箇所選択中)`;
+        if (actions) {
+          actions.style.display = window.workMapSelectingRidgesForFieldId ? 'flex' : 'none';
+        }
+
+        const focusId = window.workMapSelectingRidgesForFieldId
+          ? String(window.workMapSelectingRidgesForFieldId)
+          : '';
+        if (!splitBtns) {
+          const selectUI = document.getElementById('mapSelectUI');
+          if (selectUI && focusId) {
+            splitBtns = document.createElement('div');
+            splitBtns.id = 'mapSelectSplitButtons';
+            splitBtns.style.cssText = 'display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;';
+            const actionsEl = document.getElementById('mapSelectRidgeActions');
+            if (actionsEl && actionsEl.parentNode) {
+              actionsEl.parentNode.insertBefore(splitBtns, actionsEl);
+            } else {
+              selectUI.insertBefore(splitBtns, selectUI.firstChild ? selectUI.children[2] || null : null);
+            }
+          }
+        }
+
+        if (splitBtns) {
+          if (!focusId) {
+            splitBtns.style.display = 'none';
+            splitBtns.innerHTML = '';
+          } else {
+            const fp = loadedPolygons[focusId];
+            const sel = window.getWorkMapRidgeSel(focusId);
+            const split = (typeof window.summarizeWorkCadSplit === 'function' && fp)
+              ? window.summarizeWorkCadSplit(fp)
+              : { hasSplit: false, blocks: [] };
+            if (split.hasSplit && split.blocks && split.blocks.length) {
+              splitBtns.style.display = 'flex';
+              splitBtns.innerHTML = split.blocks.map(b => {
+                const allOn = (b.indices || []).length > 0 &&
+                  (b.indices || []).every(i => sel.indices.indexOf(i) >= 0) &&
+                  !sel.wholeField;
+                const color = window.getWorkCadGroupColor(b.group);
+                const safeG = String(b.group).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const safeF = String(focusId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return '<button type="button" onclick="toggleWorkMapSplitGroup(\'' + safeF + '\',\'' + safeG + '\')" style="background:' + color + '; color:#fff; border:' + (allOn ? '2px solid #fff' : 'none') + '; padding:6px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; opacity:' + (allOn ? '1' : '0.9') + ';">' +
+                  (allOn ? '✓ ' : '') + b.chipTitle + ' 一括</button>';
+              }).join('');
+            } else {
+              splitBtns.style.display = 'none';
+              splitBtns.innerHTML = '';
+            }
+          }
+        }
+
+        if (hintUI) {
+          if (focusId) {
+            const fp = loadedPolygons[focusId];
+            const sel = window.getWorkMapRidgeSel(focusId);
+            const ridgeN = (sel.indices || []).length;
+            const split = (typeof window.summarizeWorkCadSplit === 'function' && fp)
+              ? window.summarizeWorkCadSplit(fp)
+              : { hasSplit: false };
+            if (split.hasSplit) {
+              hintUI.innerText = (fp ? fp.name : '') + '：分割は一括、空き・端は個別（' + ridgeN + '畝）';
+            } else {
+              hintUI.innerText = (fp ? fp.name : '') + ' の畝をタップ（選択中 ' + ridgeN + '畝）';
+            }
+          } else {
+            hintUI.innerText = 'CAD畝がある圃場は畝・分割単位で選べます';
+          }
+        }
+      };
+
+      window.exitWorkRidgeSelectionView = (silent) => {
+        window.workMapSelectingRidgesForFieldId = null;
+        window.clearWorkDrawnRidges();
+        if (!silent && typeof window.updateMapSelectVisuals === 'function') window.updateMapSelectVisuals();
+        window.updateWorkMapSelectBanner();
+      };
+
+      window.enterWorkRidgeSelectionView = (p) => {
+        if (!p || p.isMarker) return;
+        const ridges = window.getWorkCadRidgeShapes(p);
+        if (!ridges.length) return;
+        window.workMapSelectingRidgesForFieldId = String(p.id);
+        window.clearWorkDrawnRidges();
+
+        if (!selectedPolyIds.includes(String(p.id))) {
+          selectedPolyIds.push(String(p.id));
+        }
+        const sel = window.getWorkMapRidgeSel(p.id);
+
+        const bounds = new google.maps.LatLngBounds();
+        if (p.coords) p.coords.forEach(pt => bounds.extend(pt));
+        else if (p.polygon && p.polygon.getPath) {
+          p.polygon.getPath().forEach(pt => bounds.extend(pt));
+        }
+
+        ridges.forEach(entry => {
+          const coords = entry.coords;
+          const index = entry.index;
+          const une = entry.une;
+          if (!coords || coords.length < 3) return;
+          coords.forEach(pt => {
+            const lat = typeof pt.lat === 'function' ? pt.lat() : pt.lat;
+            const lng = typeof pt.lng === 'function' ? pt.lng() : pt.lng;
+            bounds.extend({ lat: parseFloat(lat), lng: parseFloat(lng) });
+          });
+          const isSelected = !sel.wholeField && sel.indices.indexOf(index) >= 0;
+          const group = une && une.group ? String(une.group) : 'default';
+          const baseColor = window.getWorkCadGroupColor(group);
+          const label = window.getWorkCadRidgeLabel(une, index);
+
+          const ridgePoly = new google.maps.Polygon({
+            paths: coords,
+            map: map,
+            fillColor: isSelected ? '#FFEB3B' : baseColor,
+            fillOpacity: isSelected ? 0.9 : 0.65,
+            strokeColor: isSelected ? '#F57F17' : '#33691E',
+            strokeWeight: isSelected ? 3 : 2,
+            zIndex: 120,
+            clickable: true
+          });
+
+          const centerBounds = new google.maps.LatLngBounds();
+          coords.forEach(pt => {
+            const lat = typeof pt.lat === 'function' ? pt.lat() : pt.lat;
+            const lng = typeof pt.lng === 'function' ? pt.lng() : pt.lng;
+            centerBounds.extend({ lat: parseFloat(lat), lng: parseFloat(lng) });
+          });
+          const marker = new google.maps.Marker({
+            position: centerBounds.getCenter(),
+            map: map,
+            label: { text: label, color: '#000', fontSize: '11px', fontWeight: 'bold' },
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+            zIndex: 121,
+            clickable: false
+          });
+
+          google.maps.event.addListener(ridgePoly, 'click', function(e) {
+            if (e && typeof e.stop === 'function') e.stop();
+            // 分割ブロック内の畝は一括トグル
+            if (/^分割\d+$/.test(group)) {
+              window.toggleWorkMapSplitGroup(p.id, group);
+            } else {
+              window.toggleWorkMapRidge(p.id, index, ridgePoly, baseColor);
+            }
+          });
+
+          window.workDrawnRidges.push({
+            polygon: ridgePoly,
+            label: marker,
+            uneIndex: index,
+            baseColor,
+            group
+          });
+        });
+
+        if (!bounds.isEmpty()) map.fitBounds(bounds);
+        if (typeof window.updateMapSelectVisuals === 'function') window.updateMapSelectVisuals();
+        window.updateWorkMapSelectBanner();
+      };
+
+      window.toggleWorkMapRidge = (fieldId, uneIndex, ridgePoly, baseColor) => {
+        const fid = String(fieldId);
+        if (!selectedPolyIds.includes(fid)) selectedPolyIds.push(fid);
+        const sel = window.getWorkMapRidgeSel(fid);
+        sel.wholeField = false;
+        const idx = sel.indices.indexOf(uneIndex);
+        let nowSelected;
+        if (idx >= 0) {
+          sel.indices.splice(idx, 1);
+          nowSelected = false;
+        } else {
+          sel.indices.push(uneIndex);
+          nowSelected = true;
+        }
+        if (ridgePoly) {
+          ridgePoly.setOptions({
+            fillColor: nowSelected ? '#FFEB3B' : (baseColor || '#8BC34A'),
+            fillOpacity: nowSelected ? 0.9 : 0.65,
+            strokeColor: nowSelected ? '#F57F17' : '#33691E',
+            strokeWeight: nowSelected ? 3 : 2
+          });
+        } else {
+          window.refreshWorkDrawnRidgeHighlights(fid);
+        }
+        window.updateWorkMapSelectBanner();
+      };
+
+      window.selectWholeFieldInWorkMap = () => {
+        const fieldId = window.workMapSelectingRidgesForFieldId;
+        if (!fieldId) return;
+        const fid = String(fieldId);
+        if (!selectedPolyIds.includes(fid)) selectedPolyIds.push(fid);
+        const sel = window.getWorkMapRidgeSel(fid);
+        sel.wholeField = true;
+        sel.indices = [];
+        window.refreshWorkDrawnRidgeHighlights(fid);
+        window.updateWorkMapSelectBanner();
+      };
+
+      window.handleWorkMapFieldTap = (id) => {
+        if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
+        if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; }
+        const p = loadedPolygons[id];
+        if (!p || p.isMarker) return;
+
+        const ridges = window.getWorkCadRidgeShapes(p);
+        if (ridges.length > 0) {
+          window.enterWorkRidgeSelectionView(p);
+          return;
+        }
+
+        window.exitWorkRidgeSelectionView(true);
+        if (selectedPolyIds.includes(id)) {
+          selectedPolyIds = selectedPolyIds.filter(i => i !== id);
+          delete window.workMapRidgeSelections[String(id)];
+        } else {
+          selectedPolyIds.push(id);
+          window.workMapRidgeSelections[String(id)] = { wholeField: true, indices: [] };
+        }
+        updateMapSelectVisuals();
+        window.updateWorkMapSelectBanner();
+      };
+
+      window.applyWorkMapRidgeSelectionsToPending = () => {
+        Object.keys(window.workMapRidgeSelections || {}).forEach(fid => {
+          const sel = window.workMapRidgeSelections[fid];
+          const poly = loadedPolygons[fid];
+          if (!poly || !sel || sel.wholeField || !(sel.indices && sel.indices.length)) return;
+          const data = window.parseWorkCadUneSimData(poly.uneSimData);
+          const list = (data && data.unePolygons) ? data.unePolygons : [];
+          const selectedSet = {};
+          sel.indices.forEach(i => { selectedSet[i] = true; });
+          const split = (typeof window.summarizeWorkCadSplit === 'function')
+            ? window.summarizeWorkCadSplit(poly)
+            : { blocks: [] };
+          const labels = [];
+          const used = {};
+
+          // 分割ブロックを全部選んでいれば「分割N番」にまとめる
+          (split.blocks || []).forEach(b => {
+            const idxs = b.indices || [];
+            if (!idxs.length) return;
+            const allOn = idxs.every(i => selectedSet[i]);
+            const anyOn = idxs.some(i => selectedSet[i]);
+            if (allOn) {
+              labels.push(b.value);
+              idxs.forEach(i => { used[i] = true; });
+            } else if (anyOn) {
+              idxs.filter(i => selectedSet[i]).sort((a, b) => a - b).forEach(i => {
+                labels.push(window.getWorkCadRidgeLabel(list[i], i));
+                used[i] = true;
+              });
+            }
+          });
+
+          sel.indices.slice().sort((a, b) => a - b).forEach(i => {
+            if (used[i]) return;
+            labels.push(window.getWorkCadRidgeLabel(list[i], i));
+          });
+
+          if (labels.length) {
+            window.workPendingWorkedByField[fid] = labels.join(', ');
+          }
+        });
+      };
+
+      window.openMapSelectForRidge = (fieldId) => {
+        if (fieldId && !selectedPolyIds.includes(String(fieldId))) {
+          selectedPolyIds.push(String(fieldId));
+        }
+        window.openMapSelect();
+        const p = loadedPolygons[fieldId];
+        if (p && window.getWorkCadRidgeShapes(p).length) {
+          setTimeout(() => window.enterWorkRidgeSelectionView(p), 50);
+        }
       };
 
       window.normalizeDateStr = (str) => {
@@ -2491,10 +3070,28 @@ function createSignboardMarker(name, pos, icon, id) {
           box.innerHTML = '';
           return;
         }
+
+        // 再描画前に入力値を保持
+        const keptWorked = {};
+        const keptNext = {};
+        const keptDone = {};
+        document.querySelectorAll('.ridge-worked').forEach(el => {
+          const pid = el.getAttribute('data-poly-id');
+          if (pid) keptWorked[pid] = el.value;
+        });
+        document.querySelectorAll('.ridge-next').forEach(el => {
+          const pid = el.getAttribute('data-poly-id');
+          if (pid) keptNext[pid] = el.value;
+        });
+        document.querySelectorAll('.ridge-complete-check').forEach(el => {
+          const pid = el.getAttribute('data-poly-id');
+          if (pid) keptDone[pid] = !!el.checked;
+        });
+
         box.style.display = 'block';
         const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
         let html = `<label class="form-label" style="color:#00838f; margin-bottom:8px;">🛤️ 畝の進捗（圃場別）</label>`;
-        selectedPolyIds.forEach((pid, idx) => {
+        selectedPolyIds.forEach((pid) => {
           const poly = loadedPolygons[pid];
           if (!poly || poly.isMarker) return;
           const uneCount = window.getCadUneCount(poly);
@@ -2512,25 +3109,79 @@ function createSignboardMarker(name, pos, icon, id) {
           const cadSetupBtn = (uneCount <= 0 && isAdmin)
             ? `<button type="button" onclick="openAdminCadForField('${safePid}')" style="background:#FF9800; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">🚜 農業CADを設定</button>`
             : '';
+          const mapRidgeBtn = (uneCount > 0)
+            ? `<button type="button" onclick="openMapSelectForRidge('${safePid}')" style="background:#1565C0; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">🗺️ マップで畝選択</button>`
+            : '';
+
+          const split = (typeof window.summarizeWorkCadSplit === 'function')
+            ? window.summarizeWorkCadSplit(poly)
+            : { hasSplit: false, blocks: [], gaps: [], ends: [] };
+
+          let chipHtml = '';
+          if (split.hasSplit || (split.blocks && split.blocks.length) || (split.gaps && split.gaps.length)) {
+            const chips = [];
+            (split.blocks || []).forEach(b => {
+              const color = window.getWorkCadGroupColor(b.group);
+              chips.push(`<button type="button" class="work-ridge-chip" data-value="${b.value.replace(/"/g, '&quot;')}" onclick="onWorkRidgeChipClick('${safePid}', this.getAttribute('data-value'), this)" style="background:${color}; color:#fff; border:none; padding:5px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; opacity:0.85;">${b.chipTitle}</button>`);
+            });
+            (split.gaps || []).forEach(g => {
+              const color = window.getWorkCadGroupColor('空け');
+              chips.push(`<button type="button" class="work-ridge-chip" data-value="${String(g.value).replace(/"/g, '&quot;')}" onclick="onWorkRidgeChipClick('${safePid}', this.getAttribute('data-value'), this)" style="background:${color}; color:#fff; border:none; padding:5px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; opacity:0.85;">空き ${g.displayName}</button>`);
+            });
+            (split.ends || []).forEach(g => {
+              const color = window.getWorkCadGroupColor('端');
+              chips.push(`<button type="button" class="work-ridge-chip" data-value="${String(g.value).replace(/"/g, '&quot;')}" onclick="onWorkRidgeChipClick('${safePid}', this.getAttribute('data-value'), this)" style="background:${color}; color:#fff; border:none; padding:5px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; opacity:0.85;">端 ${g.displayName}</button>`);
+            });
+            if (chips.length) {
+              chipHtml = `<div style="margin-bottom:8px;">
+                <div style="font-size:11px; color:#00695c; margin-bottom:4px;">分割・空きをタップして記録（再タップで解除）</div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">${chips.join('')}</div>
+              </div>`;
+            }
+          } else if (uneCount > 0) {
+            chipHtml = `<div style="font-size:11px; color:#666; margin-bottom:8px;">分割未設定です。マップで個別畝を選ぶか、手入力してください。</div>`;
+          }
+
+          const pendingWorked = (window.workPendingWorkedByField && window.workPendingWorkedByField[pid]) || '';
+          const workedVal = pendingWorked || (keptWorked[pid] != null ? keptWorked[pid] : '');
+          const nextVal = keptNext[pid] != null ? keptNext[pid] : lastNext;
+          if (pendingWorked) delete window.workPendingWorkedByField[pid];
+
           html += `<div class="ridge-field-block" data-poly-id="${pid}" style="background:#e0f7fa; padding:10px; border-radius:8px; margin-bottom:10px; border:1px solid #80deea;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
               <div style="font-weight:bold; color:#00695c; font-size:13px;">📍 ${poly.name || pid}</div>
               <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <div style="font-size:12px; color:${uneCount > 0 ? '#00695c' : '#c62828'};">CAD畝数: <b>${uneLabel}</b></div>
+                ${mapRidgeBtn}
                 ${cadSetupBtn}
               </div>
             </div>
             ${uneCount <= 0 && isAdmin ? `<div style="font-size:11px; color:#e65100; margin-bottom:8px;">畝数が未登録です。農業CADで畝を設定してください。</div>` : ''}
+            ${chipHtml}
             <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#00695c; margin-bottom:8px; cursor:pointer;">
-              <input type="checkbox" class="ridge-complete-check" data-poly-id="${pid}" data-une-count="${uneCount}" onchange="onRidgeCompleteToggle(this)"> 完了（全畝をセット）
+              <input type="checkbox" class="ridge-complete-check" data-poly-id="${pid}" data-une-count="${uneCount}" onchange="onRidgeCompleteToggle(this)" ${keptDone[pid] ? 'checked' : ''}> 完了（全畝をセット）
             </label>
             <div style="display:flex; gap:10px;">
-              <div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" class="form-input ridge-worked" data-poly-id="${pid}" placeholder="${uneCount > 0 ? '例: 1-' + uneCount : '例: 1-5'}" style="margin-bottom:0;"></div>
-              <div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" class="form-input ridge-next" data-poly-id="${pid}" placeholder="例: 6" value="${lastNext}" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label style="font-size:11px; color:#555;">🚜 今回作業した畝</label><input type="text" class="form-input ridge-worked" data-poly-id="${pid}" placeholder="${uneCount > 0 ? '例: 分割1番, 1番/2番' : '例: 1-5'}" value="${String(workedVal).replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
+              <div style="flex:1;"><label style="font-size:11px; color:#555;">⏭️ 次回開始する畝</label><input type="text" class="form-input ridge-next" data-poly-id="${pid}" placeholder="例: 分割2番" value="${String(nextVal).replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
             </div>
           </div>`;
         });
         box.innerHTML = html;
+
+        // チップの選択状態を入力値に合わせる
+        document.querySelectorAll('.ridge-field-block').forEach(block => {
+          const worked = block.querySelector('.ridge-worked');
+          if (!worked) return;
+          const tokens = window.parseWorkedRidgeTokens(worked.value);
+          block.querySelectorAll('.work-ridge-chip').forEach(btn => {
+            const v = btn.getAttribute('data-value');
+            const active = tokens.includes(v);
+            btn.style.outline = active ? '2px solid #004d40' : 'none';
+            btn.style.opacity = active ? '1' : '0.85';
+            btn.setAttribute('data-active', active ? '1' : '0');
+          });
+        });
       };
 
       window.onRidgeCompleteToggle = (chk) => {
@@ -2561,13 +3212,18 @@ function createSignboardMarker(name, pos, icon, id) {
           const worked = block.querySelector('.ridge-worked');
           const next = block.querySelector('.ridge-next');
           const done = block.querySelector('.ridge-complete-check');
+          const split = (typeof window.summarizeWorkCadSplit === 'function' && poly)
+            ? window.summarizeWorkCadSplit(poly)
+            : null;
           rows.push({
             polyId: pid,
             name: poly ? poly.name : pid,
             uneCount: window.getCadUneCount(poly),
             workedRidges: worked ? worked.value.trim() : '',
             nextRidge: next ? next.value.trim() : '',
-            completed: !!(done && done.checked)
+            completed: !!(done && done.checked),
+            hasSplit: !!(split && split.hasSplit),
+            splitLabels: split ? (split.blocks || []).map(b => b.displayName) : []
           });
         });
         return rows;
@@ -3243,7 +3899,10 @@ function createSignboardMarker(name, pos, icon, id) {
         if(s && e) {
            let sMins = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]), eMins = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
            let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
-           return diff;
+           const breakEl = document.getElementById('rec_break_mins');
+           let breakMins = breakEl ? Math.max(0, parseInt(breakEl.value, 10) || 0) : 0;
+           if (breakMins > diff) breakMins = diff;
+           return Math.max(0, diff - breakMins);
         }
         return 0;
       };
@@ -3261,6 +3920,75 @@ function createSignboardMarker(name, pos, icon, id) {
         }).filter(Boolean);
       };
 
+      /** 分数入力が手動指定か（自動配分の対象外） */
+      window.isDetailWorkMinutesManual = (minInput) => {
+        if (!minInput) return false;
+        return minInput.getAttribute('data-manual') === '1';
+      };
+
+      /** ユーザーが分数を手入力したとき */
+      window.onDetailWorkMinutesInput = (inputEl) => {
+        if (!inputEl) return;
+        const v = String(inputEl.value || '').trim();
+        if (v === '') {
+          inputEl.removeAttribute('data-manual');
+          inputEl.setAttribute('data-auto', '1');
+        } else {
+          inputEl.setAttribute('data-manual', '1');
+          inputEl.removeAttribute('data-auto');
+        }
+        if (typeof window.refreshDetailWorkAutoMinutes === 'function') {
+          window.refreshDetailWorkAutoMinutes();
+        }
+      };
+
+      /**
+       * チェック中の詳細作業へ、手動指定以外の分数を再計算して表示し直す
+       * （チェックを外したあと・開始終了変更時）
+       */
+      window.refreshDetailWorkAutoMinutes = () => {
+        const totalWorkMins = (typeof window.getTotalWorkMinutes === 'function') ? window.getTotalWorkMinutes() : 0;
+        const checkedCbs = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked'));
+        if (!checkedCbs.length) return;
+
+        let manualSum = 0;
+        const autoInputs = [];
+        checkedCbs.forEach(cb => {
+          const row = cb.closest('.detail-work-item-row');
+          const minInput = row ? row.querySelector('.detail-work-min-input') : null;
+          if (!minInput) return;
+          if (window.isDetailWorkMinutesManual(minInput)) {
+            const n = parseFloat(String(minInput.value || '').trim());
+            if (!isNaN(n) && n >= 0) manualSum += n;
+          } else {
+            autoInputs.push(minInput);
+          }
+        });
+
+        if (!autoInputs.length) return;
+
+        if (totalWorkMins <= 0) {
+          autoInputs.forEach(inp => {
+            inp.value = '';
+            inp.setAttribute('data-auto', '1');
+            inp.removeAttribute('data-manual');
+            inp.placeholder = '自動';
+          });
+          return;
+        }
+
+        const remainingMins = Math.max(0, totalWorkMins - manualSum);
+        const n = autoInputs.length;
+        const base = Math.floor(remainingMins / n);
+        let rem = remainingMins - base * n;
+        autoInputs.forEach((inp, i) => {
+          const mins = base + (i < rem ? 1 : 0);
+          inp.value = String(mins);
+          inp.setAttribute('data-auto', '1');
+          inp.removeAttribute('data-manual');
+        });
+      };
+
       window.toggleDetailWorkMinutes = (cb) => {
         const row = cb.closest('.detail-work-item-row');
         if (!row) return;
@@ -3270,11 +3998,25 @@ function createSignboardMarker(name, pos, icon, id) {
           if (minWrapper) minWrapper.style.display = 'inline-flex';
           row.style.background = '#e3f2fd';
           row.style.borderColor = '#2196f3';
+          if (minInput) {
+            // 新規チェックは自動配分対象
+            minInput.removeAttribute('data-manual');
+            minInput.setAttribute('data-auto', '1');
+            if (!String(minInput.value || '').trim()) minInput.value = '';
+          }
         } else {
           if (minWrapper) minWrapper.style.display = 'none';
-          if (minInput) minInput.value = '';
+          if (minInput) {
+            minInput.value = '';
+            minInput.removeAttribute('data-manual');
+            minInput.removeAttribute('data-auto');
+          }
           row.style.background = '#fff';
           row.style.borderColor = '#90caf9';
+        }
+        // 残ったチェック項目へ分数を再計算（復元中はスキップ）
+        if (!window._skipDetailWorkAutoRefresh && typeof window.refreshDetailWorkAutoMinutes === 'function') {
+          window.refreshDetailWorkAutoMinutes();
         }
       };
 
@@ -3294,21 +4036,31 @@ function createSignboardMarker(name, pos, icon, id) {
            const currentWorkName = document.getElementById('rec_work_name')?.value || '';
            window.renderDetailWorksSection(currentWorkName);
         }
-        parsedItems.forEach(item => {
-           document.querySelectorAll('input[name="detail_work_ids"]').forEach(cb => {
-              if (cb.value === item.name) {
-                 cb.checked = true;
-                 window.toggleDetailWorkMinutes(cb);
-                 if (item.minutes !== '' && item.minutes !== null && item.minutes !== undefined) {
-                    const row = cb.closest('.detail-work-item-row');
-                    if (row) {
-                       const minInput = row.querySelector('.detail-work-min-input');
-                       if (minInput) minInput.value = item.minutes;
-                    }
-                 }
-              }
-           });
-        });
+        window._skipDetailWorkAutoRefresh = true;
+        try {
+          parsedItems.forEach(item => {
+             document.querySelectorAll('input[name="detail_work_ids"]').forEach(cb => {
+                if (cb.value === item.name) {
+                   cb.checked = true;
+                   window.toggleDetailWorkMinutes(cb);
+                   if (item.minutes !== '' && item.minutes !== null && item.minutes !== undefined) {
+                      const row = cb.closest('.detail-work-item-row');
+                      if (row) {
+                         const minInput = row.querySelector('.detail-work-min-input');
+                         if (minInput) {
+                            minInput.value = item.minutes;
+                            // 復元値は自動配分扱い → チェック外しで残りを再計算対象
+                            minInput.setAttribute('data-auto', '1');
+                            minInput.removeAttribute('data-manual');
+                         }
+                      }
+                   }
+                }
+             });
+          });
+        } finally {
+          window._skipDetailWorkAutoRefresh = false;
+        }
       };
 
       window.buildDetailedWorksFormattedString = () => {
@@ -3322,34 +4074,48 @@ function createSignboardMarker(name, pos, icon, id) {
            const name = cb.value;
            const row = cb.closest('.detail-work-item-row');
            let userVal = '';
+           let isManual = false;
            if (row) {
               const minInput = row.querySelector('.detail-work-min-input');
-              if (minInput) userVal = minInput.value.trim();
+              if (minInput) {
+                userVal = minInput.value.trim();
+                isManual = window.isDetailWorkMinutesManual(minInput);
+                // 自動表示の数値も保存時に分数として出す
+                if (!isManual && userVal !== '') {
+                  const minNum = parseFloat(userVal);
+                  if (!isNaN(minNum) && minNum >= 0) {
+                    return { name, isManual: false, minNum: minNum, hasAutoValue: true };
+                  }
+                }
+              }
            }
            const minNum = parseFloat(userVal);
-           const isManual = !isNaN(minNum) && minNum >= 0 && userVal !== '';
-           if (isManual) {
+           if (isManual && !isNaN(minNum) && minNum >= 0 && userVal !== '') {
               manualSum += minNum;
+              return { name, isManual: true, minNum };
            }
-           return { name, isManual, minNum: isManual ? minNum : 0 };
+           return { name, isManual: false, minNum: 0, hasAutoValue: false };
         });
 
-        const unenteredItems = items.filter(item => !item.isManual);
+        const unenteredItems = items.filter(item => !item.isManual && !item.hasAutoValue);
+        const autoValued = items.filter(item => !item.isManual && item.hasAutoValue);
         const remainingMins = Math.max(0, totalWorkMins - manualSum);
+        const autoCount = unenteredItems.length + autoValued.length;
         const autoMinPerItem = (unenteredItems.length > 0 && totalWorkMins > 0)
-           ? Math.round(remainingMins / unenteredItems.length)
+           ? Math.round(remainingMins / Math.max(1, autoCount))
            : 0;
 
         const formattedList = items.map(item => {
            if (item.isManual) {
               return `${item.name} (${item.minNum}分)`;
-           } else {
-              if (totalWorkMins > 0 || unenteredItems.length < items.length) {
-                 return `${item.name} (${autoMinPerItem}分)`;
-              } else {
-                 return item.name;
-              }
            }
+           if (item.hasAutoValue) {
+              return `${item.name} (${item.minNum}分)`;
+           }
+           if (totalWorkMins > 0 || items.some(x => x.isManual)) {
+              return `${item.name} (${autoMinPerItem}分)`;
+           }
+           return item.name;
         });
 
         return formattedList.join(', ');
@@ -3360,8 +4126,17 @@ function createSignboardMarker(name, pos, icon, id) {
         if(s && e && disp) {
            let sMins = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]), eMins = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
            let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
-           disp.innerText = Math.floor(diff / 60) + "時間" + (diff % 60) + "分";
+           const breakEl = document.getElementById('rec_break_mins');
+           let breakMins = breakEl ? Math.max(0, parseInt(breakEl.value, 10) || 0) : 0;
+           if (breakMins > diff) breakMins = diff;
+           const workMins = Math.max(0, diff - breakMins);
+           let label = Math.floor(workMins / 60) + "時間" + (workMins % 60) + "分";
+           if (breakMins > 0) label += `（休憩${breakMins}分除く）`;
+           disp.innerText = label;
         } else if (disp) { disp.innerText = "--"; }
+        if (typeof window.refreshDetailWorkAutoMinutes === 'function') {
+          window.refreshDetailWorkAutoMinutes();
+        }
       };
 
       // スマホでネイティブ time ピッカーの「設定」が見切れる対策（独自ピッカー）
@@ -4313,23 +5088,45 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!name) return;
           const row = cb.closest('.detail-work-item-row');
           const minInput = row ? row.querySelector('.detail-work-min-input') : null;
-          map[name] = minInput ? String(minInput.value || '').trim() : '';
+          map[name] = {
+            minutes: minInput ? String(minInput.value || '').trim() : '',
+            manual: !!(minInput && minInput.getAttribute('data-manual') === '1')
+          };
         });
         return map;
       };
 
       window.restoreDetailWorkSelections = (selectionMap) => {
         if (!selectionMap) return;
-        Object.keys(selectionMap).forEach(name => {
-          document.querySelectorAll('input[name="detail_work_ids"]').forEach(cb => {
-            if (String(cb.value || '').trim() !== String(name || '').trim()) return;
-            cb.checked = true;
-            window.toggleDetailWorkMinutes(cb);
-            const row = cb.closest('.detail-work-item-row');
-            const minInput = row ? row.querySelector('.detail-work-min-input') : null;
-            if (minInput && selectionMap[name] !== '') minInput.value = selectionMap[name];
+        window._skipDetailWorkAutoRefresh = true;
+        try {
+          Object.keys(selectionMap).forEach(name => {
+            document.querySelectorAll('input[name="detail_work_ids"]').forEach(cb => {
+              if (String(cb.value || '').trim() !== String(name || '').trim()) return;
+              cb.checked = true;
+              window.toggleDetailWorkMinutes(cb);
+              const row = cb.closest('.detail-work-item-row');
+              const minInput = row ? row.querySelector('.detail-work-min-input') : null;
+              if (!minInput) return;
+              const entry = selectionMap[name];
+              const minutes = (entry && typeof entry === 'object') ? String(entry.minutes || '') : String(entry || '');
+              const isManual = (entry && typeof entry === 'object') ? !!entry.manual : false;
+              if (minutes !== '') minInput.value = minutes;
+              if (isManual) {
+                minInput.setAttribute('data-manual', '1');
+                minInput.removeAttribute('data-auto');
+              } else {
+                minInput.setAttribute('data-auto', '1');
+                minInput.removeAttribute('data-manual');
+              }
+            });
           });
-        });
+        } finally {
+          window._skipDetailWorkAutoRefresh = false;
+        }
+        if (typeof window.refreshDetailWorkAutoMinutes === 'function') {
+          window.refreshDetailWorkAutoMinutes();
+        }
       };
 
       window.getWorkDisplayLabel = (work) => {
@@ -4395,7 +5192,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                      <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
-                        <input type="number" name="detail_work_min_${safeVal}" class="detail-work-min-input" data-work="${safeVal}" placeholder="自動" min="0" style="width:60px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()">
+                        <input type="number" name="detail_work_min_${safeVal}" class="detail-work-min-input" data-work="${safeVal}" placeholder="自動" min="0" style="width:60px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()" oninput="onDetailWorkMinutesInput(this)">
                         <span style="font-size:12px; color:#666;">分</span>
                      </div>
                      ${isExtra ? `<button type="button" onclick="event.stopPropagation(); event.preventDefault(); removeRecordExtraDetailWork('${safeArg}')" title="この記録から外す" style="background:#fff; color:#6a1b9a; border:1px solid #d1c4e9; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">×</button>` : ''}
@@ -5033,6 +5830,12 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="background:#f4f6f8; padding:10px; border-radius:8px; margin-bottom:15px; text-align:center;">
               <label class="form-label">⏱️ 実作業時間</label>
               <div id="rec_total_time_display" style="padding:10px; background:#fff; border-radius:4px; font-weight:bold; color:#FF9800; border:1px solid #ccc;">--</div>
+              <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-top:10px;">
+                <label for="rec_break_mins" style="font-size:12px; color:#555; font-weight:bold; margin:0;">☕ 休憩</label>
+                <input type="number" id="rec_break_mins" class="form-input" min="0" step="5" inputmode="numeric" placeholder="0" value="" style="width:90px; margin:0; padding:8px; text-align:right; font-size:15px;" oninput="calcTotalTime()" onchange="calcTotalTime()">
+                <span style="font-size:12px; color:#666;">分</span>
+              </div>
+              <div style="font-size:11px; color:#888; margin-top:6px;">休憩は開始〜終了の中で取った時間です（退勤時に合計確認）</div>
             </div>
             <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:6px; margin-bottom:15px; border:1px solid #ffcc80;">
               <div style="font-weight:bold; color:#e65100; margin-bottom:10px; font-size:13px;">🔧 整備・修理の詳細</div>
@@ -5192,6 +5995,10 @@ function createSignboardMarker(name, pos, icon, id) {
               document.getElementById('rec_start_time').setAttribute('data-start-source', 'editRecord');
             }
             if(document.getElementById('rec_end_time')) document.getElementById('rec_end_time').value = d.endTime || '';
+            if (document.getElementById('rec_break_mins')) {
+              const bm = (d.breakMins != null && d.breakMins !== '') ? parseInt(d.breakMins, 10) : 0;
+              document.getElementById('rec_break_mins').value = (!isNaN(bm) && bm > 0) ? String(bm) : '';
+            }
             if (d.progressStatus && typeof window.selectProgressStatus === 'function') window.selectProgressStatus(d.progressStatus); else if (document.getElementById('rec_progress_status')) document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
             if (document.getElementById('rec_work_comment')) document.getElementById('rec_work_comment').value = d.comment || d.notes || '';
             const syncClockElWork = document.getElementById('sync_clockin');
@@ -5585,11 +6392,16 @@ function createSignboardMarker(name, pos, icon, id) {
             let totalTimeStr = "";
             let sTime = document.getElementById('rec_start_time')?.value || "";
             let eTime = document.getElementById('rec_end_time')?.value || "";
+            let breakMinsVal = 0;
+            const breakEl = document.getElementById('rec_break_mins');
+            if (breakEl) breakMinsVal = Math.max(0, parseInt(breakEl.value, 10) || 0);
             if(sTime && eTime) {
                let sMins = parseInt(sTime.split(':')[0]) * 60 + parseInt(sTime.split(':')[1]);
                let eMins = parseInt(eTime.split(':')[0]) * 60 + parseInt(eTime.split(':')[1]);
                let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
-               totalTimeStr = Math.floor(diff / 60) + "時間" + (diff % 60) + "分";
+               if (breakMinsVal > diff) breakMinsVal = diff;
+               const workMins = Math.max(0, diff - breakMinsVal);
+               totalTimeStr = Math.floor(workMins / 60) + "時間" + (workMins % 60) + "分";
             }
             
             let syncClockin = document.getElementById('sync_clockin') ? document.getElementById('sync_clockin').checked : false;
@@ -5661,7 +6473,8 @@ function createSignboardMarker(name, pos, icon, id) {
               workName: wName, 
               detailedWorks: detailedWorksStr, 
               crop: (typeof window.getSelectedWorkCropsText === 'function') ? window.getSelectedWorkCropsText() : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : ""), 
-              startTime: sTime, endTime: eTime, totalTime: totalTimeStr, 
+              startTime: sTime, endTime: eTime, totalTime: totalTimeStr,
+              breakMins: breakMinsVal > 0 ? breakMinsVal : 0, 
               progressStatus: (typeof window.resolveProgressStatusForSubmit === 'function')
                 ? window.resolveProgressStatusForSubmit()
                 : (document.getElementById('rec_progress_status')?.value || ""),
@@ -6910,6 +7723,138 @@ function createSignboardMarker(name, pos, icon, id) {
         } catch(e) { customAlert("エラーが発生しました: " + e.message); btn.disabled = false; btn.innerText = "報告を送信"; }
       };
 
+      window.buildAddWorkSchedulePanelHtml = function() {
+        return `
+          <div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:10px 12px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-weight:bold; color:#2e7d32; font-size:14px;">➕ 作業予定を手動追加</div>
+              <button type="button" onclick="toggleAddWorkScheduleForm()" style="background:#2e7d32; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">フォームを開く</button>
+            </div>
+            <div id="addWorkScheduleFormPanel" style="display:none; margin-top:10px; border-top:1px dashed #a5d6a7; padding-top:10px;">
+              <div style="margin-bottom:8px;">
+                <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">📍 圃場名</label>
+                <select id="addSchedFieldName" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
+                  <option value="">圃場を選択 (任意)</option>
+                </select>
+              </div>
+              <div style="margin-bottom:8px;">
+                <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">🚜 作業名 <span style="color:red;">*</span></label>
+                <input type="text" id="addSchedWorkName" placeholder="例: 播種、防除、除草、定植" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
+              </div>
+              <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <div style="flex:1;">
+                  <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">🌱 作物名</label>
+                  <input type="text" id="addSchedCropName" placeholder="例: キャベツ" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
+                </div>
+                <div style="flex:1;">
+                  <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">👤 担当者</label>
+                  <input type="text" id="addSchedPerson" placeholder="担当者名" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
+                </div>
+              </div>
+              <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <div style="flex:1;">
+                  <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">📅 予定日</label>
+                  <input type="date" id="addSchedDate" style="width:100%; padding:7px; border:1px solid #ccc; border-radius:6px; font-size:12px; box-sizing:border-box;">
+                </div>
+                <div style="flex:1;">
+                  <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">⏳ 期限日</label>
+                  <input type="date" id="addSchedDeadline" style="width:100%; padding:7px; border:1px solid #ccc; border-radius:6px; font-size:12px; box-sizing:border-box;">
+                </div>
+              </div>
+              <div style="margin-bottom:10px;">
+                <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">📝 時間・枚数 / 備考</label>
+                <input type="text" id="addSchedHours" placeholder="例: 2h, 10枚" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
+              </div>
+              <button type="button" id="submitAddWorkSchedBtn" onclick="submitAddWorkSchedule()" style="width:100%; background:#2e7d32; color:#fff; border:none; padding:11px; border-radius:6px; font-size:14px; font-weight:bold; cursor:pointer;">作業予定を追加登録</button>
+              <div id="addWorkSchedResult" style="margin-top:6px; font-size:12px; font-weight:bold;"></div>
+            </div>
+          </div>
+        `;
+      };
+
+      window.toggleAddWorkScheduleForm = function() {
+        const panel = document.getElementById('addWorkScheduleFormPanel');
+        if (!panel) return;
+        const isHidden = panel.style.display === 'none' || !panel.style.display;
+        panel.style.display = isHidden ? 'block' : 'none';
+        if (isHidden) {
+          const sel = document.getElementById('addSchedFieldName');
+          if (sel && sel.options.length <= 1) {
+            const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : {};
+            const fields = Object.values(polys)
+              .filter(p => p && !p.isMarker && p.name)
+              .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'));
+            fields.forEach(f => {
+              const opt = document.createElement('option');
+              opt.value = f.name;
+              opt.dataset.polyId = f.id || '';
+              opt.textContent = f.name;
+              sel.appendChild(opt);
+            });
+          }
+          const todayYmd = new Date().toISOString().slice(0, 10);
+          const dateEl = document.getElementById('addSchedDate');
+          if (dateEl && !dateEl.value) dateEl.value = todayYmd;
+          const personEl = document.getElementById('addSchedPerson');
+          if (personEl && !personEl.value) {
+            personEl.value = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+          }
+        }
+      };
+
+      window.submitAddWorkSchedule = async function() {
+        const btn = document.getElementById('submitAddWorkSchedBtn');
+        const resDiv = document.getElementById('addWorkSchedResult');
+        const workName = (document.getElementById('addSchedWorkName')?.value || '').trim();
+        if (!workName) {
+          if (resDiv) { resDiv.innerText = '❌ 作業名を入力してください'; resDiv.style.color = '#c62828'; }
+          return;
+        }
+        const selEl = document.getElementById('addSchedFieldName');
+        const fieldName = (selEl?.value || '').trim();
+        const selectedOpt = selEl ? selEl.options[selEl.selectedIndex] : null;
+        const polyId = selectedOpt ? (selectedOpt.dataset.polyId || '') : '';
+
+        const cropName = (document.getElementById('addSchedCropName')?.value || '').trim();
+        const person = (document.getElementById('addSchedPerson')?.value || '').trim();
+        const schedDate = document.getElementById('addSchedDate')?.value || '';
+        const deadline = document.getElementById('addSchedDeadline')?.value || '';
+        const hours = (document.getElementById('addSchedHours')?.value || '').trim();
+        const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+
+        if (btn) { btn.disabled = true; btn.innerText = '送信中...'; }
+        if (resDiv) { resDiv.innerText = '登録中...'; resDiv.style.color = '#666'; }
+
+        try {
+          const res = await callGAS('addWorkSchedule', {
+            workName: workName,
+            fieldName: fieldName,
+            cropName: cropName,
+            person: person,
+            schedDate: schedDate,
+            deadline: deadline,
+            hours: hours,
+            polyId: polyId,
+            userName: userName
+          });
+          if (resDiv) {
+            resDiv.innerText = '✅ 作業予定を追加しました！';
+            resDiv.style.color = '#2e7d32';
+          }
+          window._psCachedSchedules = null;
+          setTimeout(() => {
+            if (typeof window.openScheduleList === 'function') window.openScheduleList();
+          }, 600);
+        } catch (e) {
+          if (resDiv) {
+            resDiv.innerText = '❌ 追加に失敗しました: ' + (e.message || e);
+            resDiv.style.color = '#c62828';
+          }
+        } finally {
+          if (btn) { btn.disabled = false; btn.innerText = '作業予定を追加登録'; }
+        }
+      };
+
       window.openScheduleList = () => {
         if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
         document.getElementById('rightPanelTitle').innerText = `📅 作業予定一覧`;
@@ -6920,7 +7865,13 @@ function createSignboardMarker(name, pos, icon, id) {
         callGAS('getScheduleData').then(data => {
           const schedules = data.activeSchedules || [];
           window._psCachedSchedules = schedules;
-          if (schedules.length === 0) { document.getElementById('rightPanelContent').innerHTML = '<div style="text-align:center;margin-top:50px;color:#666;">現在必要な作業・問題報告はありません</div>'; return; }
+
+          const formHtml = window.buildAddWorkSchedulePanelHtml();
+
+          if (schedules.length === 0) {
+            document.getElementById('rightPanelContent').innerHTML = formHtml + '<div style="text-align:center;margin-top:30px;color:#666;">現在必要な作業・問題報告はありません</div>';
+            return;
+          }
           let sorted = [...schedules].sort((a, b) => {
             // 途中作業を優先表示
             if (!!a.isMidWork !== !!b.isMidWork) return a.isMidWork ? -1 : 1;
@@ -6973,7 +7924,7 @@ function createSignboardMarker(name, pos, icon, id) {
             }
             h += `</div>`; return h;
           }).join('');
-          document.getElementById('rightPanelContent').innerHTML = html;
+          document.getElementById('rightPanelContent').innerHTML = formHtml + html;
         }).catch(e => { document.getElementById('rightPanelContent').innerHTML = `<div style="color:red; text-align:center; margin-top:20px;">エラーが発生しました</div>`; });
       };
 
@@ -7038,7 +7989,9 @@ function createSignboardMarker(name, pos, icon, id) {
           document.getElementById('rightPanel').style.display = 'flex';
           
           // 次のために元のUI構造に戻しておく
-          document.getElementById('mapSelectUI').innerHTML = `
+          document.getElementById('mapSelectUI').innerHTML = (typeof window.getDefaultMapSelectUIHtml === 'function')
+            ? window.getDefaultMapSelectUIHtml()
+            : `
             <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;" id="mapSelectCount">🗺️ 記録する対象をタップしてください</div>
             <button onclick="applyMapSelect()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定する</button>
             <button onclick="cancelMapSelect()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">キャンセル</button>
@@ -8804,8 +9757,10 @@ window.executeAutoRecord = async () => {
               // キャッシュがあれば先に0.1秒で地図を描画する！
               const cachedData = localStorage.getItem('passionMapInitData');
               if (cachedData) {
-                  try { 
-                      renderInitData(JSON.parse(cachedData)); 
+                  try {
+                      if (typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
+                      renderInitData(JSON.parse(cachedData));
+                      if (typeof endMapDataLoad === 'function') endMapDataLoad();
                       // 開始時間ヒントは getInitData より軽量なので、地図表示と同時に先行取得
                       if (typeof window.prefetchWorkTimeHints === 'function') {
                           const now = new Date();
@@ -8815,10 +9770,12 @@ window.executeAutoRecord = async () => {
                       // 裏のログイン＆全体更新もすぐ開始（以前の1.5秒待ちをやめて高速化）
                       setTimeout(() => { executeLogin(true); }, 50);
                   } catch(e) {
+                      if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
                       executeLogin(true);
                   }
               } else {
-                  // キャッシュがない初回はすぐに通信する
+                  // キャッシュがない初回はすぐに通信する（ログイン完了まで操作不可）
+                  if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
                   executeLogin(true);
               }
           }
@@ -9076,7 +10033,8 @@ window.delegateCompleteWorkRecord = async function(polyId, recordId) {
 
 window.renderMyWorkRecordCardHtml = function(rec) {
     const d = rec.data || {};
-    const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'})` : (rec.time ? `🕒 ${rec.time}` : '');
+    const breakHint = (parseInt(d.breakMins, 10) > 0) ? ` 休憩${parseInt(d.breakMins, 10)}分` : '';
+    const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'}${breakHint})` : (rec.time ? `🕒 ${rec.time}` : '');
     const safePolyId = String(rec.polyId || '').replace(/'/g, "\\'");
     const safeRecId = String(rec.id || '').replace(/'/g, "\\'");
     const workName = String(d.workName || '').trim();

@@ -173,8 +173,19 @@
 
   <div id="mapSelectUI"
     style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); color:white; padding:15px; border-radius:12px; z-index:5000; align-items:center; gap:10px; width: 90%; max-width: 350px; box-shadow:0 4px 15px rgba(0,0,0,0.3); flex-wrap: wrap; justify-content: center;">
-    <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;"
+    <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:4px;"
       id="mapSelectCount">🗺️ 記録する対象をタップしてください</div>
+    <div style="width:100%; text-align:center; font-size:11px; color:#b2dfdb; margin-bottom:6px;"
+      id="mapSelectHint">CAD畝がある圃場は畝・分割単位で選べます</div>
+    <div id="mapSelectSplitButtons"
+      style="display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;"></div>
+    <div id="mapSelectRidgeActions"
+      style="display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;">
+      <button type="button" onclick="selectWholeFieldInWorkMap()"
+        style="flex:1; min-width:120px; background:#FF9800; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">圃場全体を選択</button>
+      <button type="button" onclick="exitWorkRidgeSelectionView()"
+        style="flex:1; min-width:120px; background:#607D8B; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">畝選択を閉じる</button>
+    </div>
     <button onclick="applyMapSelect()"
       style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定する</button>
     <button onclick="cancelMapSelect()"
@@ -256,8 +267,9 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-  <script src="worker.js?v=1785311000038"></script>
-  <script src="tracking.js?v=1784615000009"></script>
+  <script src="map-loading.js?v=1785312000001"></script>
+  <script src="worker.js?v=1785311000040"></script>
+  <script src="tracking.js?v=1784615000013"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js?v=worker2', { scope: '/worker2.html' });

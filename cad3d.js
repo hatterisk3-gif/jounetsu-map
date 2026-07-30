@@ -79,8 +79,11 @@ function collectRidgeData() {
         if (!path || path.length < 3) return;
         const coords = path.map((pt) => ({ lat: pt.lat(), lng: pt.lng() }));
         const baseIdx = p._displayLabel || p.customLabel || String(i + 1);
-        let title = String(baseIdx);
-        if (p.uneGroup && p.uneGroup !== 'default') title += ' (' + p.uneGroup + ')';
+        const title = typeof window.getCadUneLabelTitle === 'function'
+            ? window.getCadUneLabelTitle(p, baseIdx)
+            : (p.uneGroup && p.uneGroup !== 'default'
+                ? String(baseIdx) + ' (' + p.uneGroup + ')'
+                : String(baseIdx));
         const lengthM = typeof window.estimateCadUneLengthMeters === 'function'
             ? window.estimateCadUneLengthMeters(p)
             : 0;
@@ -209,7 +212,7 @@ function buildSceneContent() {
     }
 
     // 畝
-    ridges.forEach((r) => {
+    ridges.forEach((r, ridgeIndex) => {
         const pts = ringFromCoords(r.coords, origin.lat, origin.lng);
         const geo = makeShapeGeometry(pts, visualH);
         if (!geo) return;
@@ -230,13 +233,36 @@ function buildSceneContent() {
         cx /= pts.length;
         cz /= pts.length;
 
+        // 畝の長手方向ベクトル（最も離れた2頂点間）を計算してラベル位置を分散
+        let maxD2 = 0;
+        let pFarthestA = pts[0];
+        let pFarthestB = pts[0];
+        for (let i = 0; i < pts.length; i++) {
+            for (let j = i + 1; j < pts.length; j++) {
+                const d2 = (pts[i].x - pts[j].x) ** 2 + (pts[i].z - pts[j].z) ** 2;
+                if (d2 > maxD2) {
+                    maxD2 = d2;
+                    pFarthestA = pts[i];
+                    pFarthestB = pts[j];
+                }
+            }
+        }
+
+        const dirX = (pFarthestB.x - pFarthestA.x) * 0.5;
+        const dirZ = (pFarthestB.z - pFarthestA.z) * 0.5;
+        const staggerPattern = [-0.32, 0.32, 0];
+        const shift = maxD2 > 1 ? staggerPattern[ridgeIndex % staggerPattern.length] : 0;
+
+        const lx = cx + dirX * shift;
+        const lz = cz + dirZ * shift;
+
         const div = document.createElement('div');
         div.className = 'cad3d-label';
         div.innerHTML = r.lengthStr
             ? `<div class="cad3d-label-num">${r.title}</div><div class="cad3d-label-len">${r.lengthStr}</div>`
             : `<div class="cad3d-label-num">${r.title}</div>`;
         const label = new CSS2DObject(div);
-        label.position.set(cx, visualH + 0.15, cz);
+        label.position.set(lx, visualH + 0.35, lz);
         ridgeGroup.add(label);
     });
 

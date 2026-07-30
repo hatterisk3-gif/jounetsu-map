@@ -84,6 +84,7 @@ function doPost(e) {
     else if (action === "saveTrackingData") result = saveTrackingData(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
     else if (action === "getOpenClockInStatus") result = getOpenClockInStatus(params);
+    else if (action === "updateOpenClockInTime") result = updateOpenClockInTime(params);
     else if (action === "getWorkRecordTimeHints") result = getWorkRecordTimeHints(params);
     else if (action === "resetAllManureStatus") result = resetAllManureStatus(params.userName);
     else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
@@ -2735,6 +2736,45 @@ function delegateCompleteWork(params) {
   return { success: true, photos: ex, recordId: recordId, progressStatus: '完了' };
 }
 
+/**
+ * 作業予定を手動で追加登録する
+ * params: { workName, fieldName, cropName, dept, schedDate, deadline, hours, person, notes, polyId, userName }
+ */
+function addWorkSchedule(params) {
+  params = params || {};
+  const workName = String(params.workName || '').trim();
+  if (!workName) throw new Error('作業名を入力してください');
+  const fieldName = String(params.fieldName || '').trim();
+  const cropName = String(params.cropName || '').trim();
+  const dept = String(params.dept || '').trim();
+  let schedDateStr = '';
+  if (params.schedDate) {
+    try { schedDateStr = Utilities.formatDate(new Date(params.schedDate), "Asia/Tokyo", "yyyy/MM/dd"); } catch(e) { schedDateStr = String(params.schedDate); }
+  }
+  let deadlineStr = '';
+  if (params.deadline) {
+    try { deadlineStr = Utilities.formatDate(new Date(params.deadline), "Asia/Tokyo", "yyyy/MM/dd"); } catch(e) { deadlineStr = String(params.deadline); }
+  }
+  const hours = String(params.hours || '').trim();
+  const person = String(params.person || params.userName || '').trim();
+  const notes = String(params.notes || '').trim();
+  const polyId = String(params.polyId || '').trim();
+
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  let schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) {
+    schedSheet = ss.insertSheet('作業予定');
+    schedSheet.appendRow(['作業名', '担当部署', '作物名', '圃場名', '作業予定日', '期限日', '枚数・時間', '適合者', '完了日', '写真URL', '場所ID']);
+    schedSheet.getRange(1, 1, 1, 11).setFontWeight('bold').setBackground('#e0e0e0');
+  }
+
+  schedSheet.appendRow([workName, dept, cropName, fieldName, schedDateStr, deadlineStr, hours, person, '', notes, polyId]);
+
+  const author = String(params.userName || person || 'ユーザー').trim();
+  writeLog(author, '作業予定追加', fieldName || workName, `作業名: ${workName}, 予定日: ${schedDateStr || '未指定'}`);
+  return { success: true, workName: workName, fieldName: fieldName };
+}
+
 // ==========================================
 // ★新規追加：作物ごとのカラーを管理する関数
 // （コードの一番下に追加してください）
@@ -4208,7 +4248,7 @@ function getTrackingData(params) {
     
     function isAttendanceType(type) {
       const t = String(type || '');
-      return t === '出勤' || t === 'アプリ起動' || t === '出勤取消' || t === '退勤' || t.indexOf('退勤(') === 0;
+      return t === '出勤' || t === 'アプリ起動' || t === '出勤取消' || t === '退勤取消' || t === '退勤' || t.indexOf('退勤(') === 0;
     }
     
     const data = [];
@@ -4344,18 +4384,114 @@ function getWorkRecordTimeHints(params) {
 }
 
 // ==========================================
+// 📍 開いている出勤の時刻を更新（昼休憩登録後も出勤時間を直せる）
+// ==========================================
+function updateOpenClockInTime(params) {
+  try {
+    const userName = String((params && params.userName) || '').replace(/\s+/g, '');
+    const clockInTime = String((params && params.clockInTime) || '').trim();
+    if (!userName) return { success: false, error: 'ユーザー名がありません' };
+    const hm = clockInTime.match(/^(\d{1,2}):(\d{2})$/);
+    if (!hm) return { success: false, error: '出勤時間が不正です' };
+    const padHm = ('0' + hm[1]).slice(-2) + ':' + hm[2];
+
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('トラッキング');
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return { success: false, error: '出勤中の記録がありません' };
+    }
+
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - 4999);
+    const numRows = lastRow - startRow + 1;
+    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
+
+    let openRow = -1;
+    let openMs = null;
+    let lastClosedRow = -1;
+    let lastClosedMs = null;
+    for (let i = 0; i < values.length; i++) {
+      const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
+      if (!rowUser) continue;
+      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
+
+      const type = String(values[i][4] || '');
+      const tObj = new Date(values[i][0]);
+      if (isNaN(tObj.getTime())) continue;
+
+      const isIn = (type === '出勤' || type === 'アプリ起動');
+      const isOut = (type === '退勤' || type.indexOf('退勤(') === 0);
+      const isClockInCancel = (type === '出勤取消');
+      const isClockOutCancel = (type === '退勤取消');
+
+      if (isIn) {
+        openRow = startRow + i;
+        openMs = tObj.getTime();
+        lastClosedRow = -1;
+        lastClosedMs = null;
+      } else if (isOut) {
+        lastClosedRow = openRow;
+        lastClosedMs = openMs;
+        openRow = -1;
+        openMs = null;
+      } else if (isClockOutCancel) {
+        if (lastClosedRow >= 0 && lastClosedMs != null) {
+          openRow = lastClosedRow;
+          openMs = lastClosedMs;
+          lastClosedRow = -1;
+          lastClosedMs = null;
+        }
+      } else if (isClockInCancel) {
+        openRow = -1;
+        openMs = null;
+        lastClosedRow = -1;
+        lastClosedMs = null;
+      }
+    }
+
+    if (openRow < 0 || openMs == null) {
+      return { success: false, error: '出勤中の記録がありません' };
+    }
+
+    let dateYmd = String((params && params.clockInDateYmd) || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
+      dateYmd = Utilities.formatDate(new Date(openMs), 'JST', 'yyyy-MM-dd');
+    }
+
+    let timeMs = params && params.time ? Number(params.time) : NaN;
+    if (isNaN(timeMs) || timeMs <= 0) {
+      const y = Number(dateYmd.slice(0, 4));
+      const mo = Number(dateYmd.slice(5, 7));
+      const d = Number(dateYmd.slice(8, 10));
+      const hh = Number(hm[1]);
+      const mm = Number(hm[2]);
+      // スクリプトのタイムゾーン（通常 JST）で壁時計時刻を作る
+      timeMs = new Date(y, mo - 1, d, hh, mm, 0, 0).getTime();
+    }
+
+    sheet.getRange(openRow, 1).setValue(new Date(timeMs).toISOString());
+    return {
+      success: true,
+      clockInTime: padHm,
+      clockInDateYmd: dateYmd
+    };
+  } catch (e) {
+    throw new Error('出勤時間更新エラー: ' + e.message);
+  }
+}
+
 // 📍 未退勤（開いている出勤）の有無をサーバーで判定
 // ==========================================
 function getOpenClockInStatus(params) {
   try {
     const userName = String((params && params.userName) || '').replace(/\s+/g, '');
-    if (!userName) return { open: false, forgot: false, lunchRegistered: false };
+    if (!userName) return { open: false, forgot: false, lunchRegistered: false, cancelableClockOut: false };
 
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('トラッキング');
     const todayYmd = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
     if (!sheet || sheet.getLastRow() <= 1) {
-      return { open: false, forgot: false, lunchRegistered: false, todayYmd: todayYmd };
+      return { open: false, forgot: false, lunchRegistered: false, cancelableClockOut: false, todayYmd: todayYmd };
     }
 
     const lastRow = sheet.getLastRow();
@@ -4371,6 +4507,8 @@ function getOpenClockInStatus(params) {
 
     let openIn = null;
     let lunch = null;
+    let lastClosed = null; // { openIn, lunch, outMs }
+
     for (let i = 0; i < values.length; i++) {
       const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
       if (!rowUser) continue;
@@ -4382,14 +4520,27 @@ function getOpenClockInStatus(params) {
 
       const isIn = (type === '出勤' || type === 'アプリ起動');
       const isOut = (type === '退勤' || type.indexOf('退勤(') === 0);
-      const isCancel = (type === '出勤取消');
+      const isClockInCancel = (type === '出勤取消');
+      const isClockOutCancel = (type === '退勤取消');
 
       if (isIn) {
         openIn = { ms: tObj.getTime() };
         lunch = null;
-      } else if (isOut || isCancel) {
+        lastClosed = null;
+      } else if (isOut) {
+        lastClosed = { openIn: openIn, lunch: lunch, outMs: tObj.getTime() };
         openIn = null;
         lunch = null;
+      } else if (isClockOutCancel) {
+        if (lastClosed && lastClosed.openIn) {
+          openIn = lastClosed.openIn;
+          lunch = lastClosed.lunch;
+          lastClosed = null;
+        }
+      } else if (isClockInCancel) {
+        openIn = null;
+        lunch = null;
+        lastClosed = null;
       } else if (openIn) {
         if (type === '昼休憩なし') {
           lunch = { registered: true, enabled: false, start: '', end: '' };
@@ -4404,23 +4555,46 @@ function getOpenClockInStatus(params) {
       }
     }
 
-    if (!openIn) {
-      return { open: false, forgot: false, lunchRegistered: false, todayYmd: todayYmd };
+    if (openIn) {
+      const clockInDateYmd = Utilities.formatDate(new Date(openIn.ms), 'JST', 'yyyy-MM-dd');
+      const clockInTime = Utilities.formatDate(new Date(openIn.ms), 'JST', 'HH:mm');
+      return {
+        open: true,
+        forgot: clockInDateYmd < todayYmd,
+        clockInDateYmd: clockInDateYmd,
+        clockInTime: clockInTime,
+        todayYmd: todayYmd,
+        cancelableClockOut: false,
+        lunchRegistered: !!(lunch && lunch.registered),
+        lunchEnabled: !!(lunch && lunch.enabled),
+        lunchStart: (lunch && lunch.start) || '',
+        lunchEnd: (lunch && lunch.end) || ''
+      };
     }
 
-    const clockInDateYmd = Utilities.formatDate(new Date(openIn.ms), 'JST', 'yyyy-MM-dd');
-    const clockInTime = Utilities.formatDate(new Date(openIn.ms), 'JST', 'HH:mm');
-    return {
-      open: true,
-      forgot: clockInDateYmd < todayYmd,
-      clockInDateYmd: clockInDateYmd,
-      clockInTime: clockInTime,
-      todayYmd: todayYmd,
-      lunchRegistered: !!(lunch && lunch.registered),
-      lunchEnabled: !!(lunch && lunch.enabled),
-      lunchStart: (lunch && lunch.start) || '',
-      lunchEnd: (lunch && lunch.end) || ''
-    };
+    // 本日退勤済みなら、同日中は取り消し可能として返す
+    if (lastClosed && lastClosed.openIn && lastClosed.outMs) {
+      const outDateYmd = Utilities.formatDate(new Date(lastClosed.outMs), 'JST', 'yyyy-MM-dd');
+      if (outDateYmd === todayYmd) {
+        const inLunch = lastClosed.lunch;
+        return {
+          open: false,
+          forgot: false,
+          cancelableClockOut: true,
+          clockInDateYmd: Utilities.formatDate(new Date(lastClosed.openIn.ms), 'JST', 'yyyy-MM-dd'),
+          clockInTime: Utilities.formatDate(new Date(lastClosed.openIn.ms), 'JST', 'HH:mm'),
+          clockOutTime: Utilities.formatDate(new Date(lastClosed.outMs), 'JST', 'HH:mm'),
+          clockOutDateYmd: outDateYmd,
+          todayYmd: todayYmd,
+          lunchRegistered: !!(inLunch && inLunch.registered),
+          lunchEnabled: !!(inLunch && inLunch.enabled),
+          lunchStart: (inLunch && inLunch.start) || '',
+          lunchEnd: (inLunch && inLunch.end) || ''
+        };
+      }
+    }
+
+    return { open: false, forgot: false, lunchRegistered: false, cancelableClockOut: false, todayYmd: todayYmd };
   } catch (e) {
     throw new Error('出退勤状態取得エラー: ' + e.message);
   }

@@ -420,9 +420,10 @@ function startLocationWatch() {
 
 function loadInitData() {
     initDataLoadStarted = true;
+    if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
     const cached = localStorage.getItem('pMapAdminInitData');
     if (cached) {
-        try { renderInitData(JSON.parse(cached)); } catch(e){}
+        try { renderInitData(JSON.parse(cached), { interim: true }); } catch(e){}
     }
     callGAS('getInitData').then(data => {
         // サーバーが空（0件）を返した場合、圃場入りのキャッシュを空で上書きしない
@@ -444,7 +445,7 @@ function loadInitData() {
             console.warn('取得データの圃場が0件のため、キャッシュを保持します');
         }
         // キャッシュと同一でも、地図準備後の再描画漏れを防ぐため必ず描画する
-        renderInitData(data);
+        renderInitData(data, { interim: false });
         const mm = document.getElementById('masterModal');
         if (mm && mm.style.display === 'flex' && typeof renderMasterSection === 'function') {
             renderMasterSection();
@@ -453,7 +454,11 @@ function loadInitData() {
         console.log("InitData Error:", e);
         // ネット取得失敗時でもキャッシュが未描画なら再試行
         if (cached && Object.keys(loadedPolygons || {}).length === 0) {
-            try { renderInitData(JSON.parse(cached)); } catch (err) {}
+            try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {
+                if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+            }
+        } else if (typeof hideMapDataLoading === 'function') {
+            hideMapDataLoading();
         }
     });
 }
@@ -462,8 +467,10 @@ function flushPendingInitData() {
     if (!map) return;
     if (pendingInitData) {
         const data = pendingInitData;
+        const interim = !!window.pendingInitDataInterim;
         pendingInitData = null;
-        renderInitData(data);
+        window.pendingInitDataInterim = false;
+        renderInitData(data, { interim: interim });
         return;
     }
     if (Object.keys(loadedPolygons || {}).length > 0) return;
@@ -474,9 +481,11 @@ function flushPendingInitData() {
     }
 }
 
-function renderInitData(data) {
+function renderInitData(data, opts) {
     if (!data) return;
+    const interim = !!(opts && opts.interim);
     pendingInitData = data;
+    window.pendingInitDataInterim = interim;
     if (!map) {
         // mapInitPromise が「地図なし」で解決済みでも描画できるよう、地図が出るまで再試行する
         let attempts = 0;
@@ -487,6 +496,7 @@ function renderInitData(data) {
             }
             if (++attempts > 300) { // 最大30秒待つ
                 console.warn('地図初期化前のため圃場データの描画をスキップします');
+                if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
                 return;
             }
             setTimeout(tryRender, 100);
@@ -494,7 +504,10 @@ function renderInitData(data) {
         tryRender();
         return;
     }
-    if (!data.pdl) return;
+    if (!data.pdl) {
+        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        return;
+    }
     pendingInitData = null;
 
     window.pdlMachines = data.pdl.machines || [];
@@ -538,6 +551,7 @@ function renderInitData(data) {
     const incomingPolys = Array.isArray(data.polygons) ? data.polygons : [];
     if (incomingPolys.length === 0 && Object.keys(loadedPolygons).length > 0) {
         console.warn('取得データの圃場が0件のため、表示中の圃場・看板を保持します（マスタのみ更新）');
+        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
         return;
     }
     console.log('圃場・看板の描画開始:', incomingPolys.length + '件');
@@ -553,8 +567,10 @@ function renderInitData(data) {
     if (data.polygons) {
         const chunkSize = 50; // 1回に描画する数
         let currentIndex = 0;
+        const drawId = (window._adminMapDrawId = (window._adminMapDrawId || 0) + 1);
 
         function renderChunk() {
+            if (drawId !== window._adminMapDrawId) return;
             let end = Math.min(currentIndex + chunkSize, data.polygons.length);
             for (; currentIndex < end; currentIndex++) {
                 let f = data.polygons[currentIndex];
@@ -573,11 +589,13 @@ function renderInitData(data) {
                 // 全部の描画が終わったら検索機能をセット
                 updateAdminLegend();
                 if (typeof setupSearch === 'function') setupSearch();
+                if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
             }
         }
         renderChunk(); // 最初の50個を描き始める
     } else {
         if (typeof setupSearch === 'function') setupSearch();
+        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
     }
 }
 

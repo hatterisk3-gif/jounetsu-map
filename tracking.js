@@ -10,6 +10,7 @@
   const PENDING_KEY = 'passionMapPendingClockOut';
   const PREFILL_KEY = 'passionMapPrefillWorkTime';
   const LUNCH_KEY = 'passionMapLunchBreak';
+  const LAST_CLOCKOUT_KEY = 'passionMapLastClockOut';
 
   function ensureClockModal() {
     let modal = document.getElementById('modal');
@@ -192,6 +193,177 @@
     } catch (e) {}
   }
 
+  function saveLastClockOutSnapshot(pending) {
+    if (!pending) return;
+    try {
+      const snap = {
+        savedDateYmd: todayYmd(),
+        workDateYmd: pending.workDateYmd || pending.clockInDateYmd || todayYmd(),
+        clockInTime: pending.clockInTime || '',
+        clockInDateYmd: pending.clockInDateYmd || pending.workDateYmd || todayYmd(),
+        clockOutDate: pending.clockOutDate || todayYmd(),
+        clockOutTime: pending.clockOutTime || '',
+        lunchEnabled: !!pending.lunchEnabled,
+        lunchStart: pending.lunchStart || '',
+        lunchEnd: pending.lunchEnd || '',
+        lunchRegistered: true,
+        midBreakMins: pending.midBreakMins || 0,
+        savedAt: Date.now()
+      };
+      localStorage.setItem(LAST_CLOCKOUT_KEY, JSON.stringify(snap));
+    } catch (e) {}
+  }
+
+  function loadLastClockOutSnapshot() {
+    try {
+      const raw = localStorage.getItem(LAST_CLOCKOUT_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearLastClockOutSnapshot() {
+    try {
+      localStorage.removeItem(LAST_CLOCKOUT_KEY);
+    } catch (e) {}
+  }
+
+  /** 同日中なら退勤取り消し可能なスナップショットを返す */
+  function getCancelableClockOutLocal() {
+    const snap = loadLastClockOutSnapshot();
+    if (!snap) return null;
+    const today = todayYmd();
+    const outDate = normalizeDateKey(snap.clockOutDate) || snap.savedDateYmd;
+    if (snap.savedDateYmd !== today) return null;
+    if (outDate !== today) return null;
+    if (!snap.clockInTime) return null;
+    return snap;
+  }
+
+  function openCancelClockOutModal(snap) {
+    if (!snap) return;
+    const inT = snap.clockInTime || '--:--';
+    const outT = snap.clockOutTime || '--:--';
+    let html = `<h3 style="margin-top:0; color:#e65100;">↩️ 退勤の取り消し</h3>`;
+    html += `<div style="background:#fff3e0; border:1px solid #ffe0b2; border-radius:8px; padding:12px; margin-bottom:12px; font-size:13px; line-height:1.6; color:#e65100;">`;
+    html += `<b>本日はすでに退勤済みです</b><br>間違えて退勤した場合は、取り消して出勤中に戻せます。`;
+    html += `</div>`;
+    html += `<div style="font-size:14px; color:#333; margin-bottom:14px; line-height:1.7;">`;
+    html += `出勤 <b>${inT}</b> 〜 退勤 <b>${outT}</b>`;
+    html += `</div>`;
+    html += `<div style="display:flex; flex-direction:column; gap:10px;">`;
+    html += `  <button onclick="confirmCancelTodaysClockOut()" style="background:#FF9800; color:white; width:100%; padding:14px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:15px;">退勤を取り消す（出勤中に戻す）</button>`;
+    html += `  <button onclick="openFreshClockInFromCancelModal()" style="background:#fff; color:#2e7d32; width:100%; padding:12px; border-radius:4px; border:1px solid #4CAF50; font-weight:bold; cursor:pointer;">新しく出勤する</button>`;
+    html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#eee; color:#333; width:100%; padding:10px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">閉じる</button>`;
+    html += `</div>`;
+    showClockModal(html);
+  }
+  window.openCancelClockOutModal = openCancelClockOutModal;
+
+  window.openFreshClockInFromCancelModal = function () {
+    const dt = defaultDateTime();
+    let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>`;
+    html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
+    html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
+    html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
+    html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+    html += `<div style="display:flex; gap:10px;">`;
+    html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
+    html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
+    html += `</div>`;
+    showClockModal(html);
+  };
+
+  window.confirmCancelTodaysClockOut = function () {
+    const snap = getCancelableClockOutLocal() || window._cancelableClockOutFromServer;
+    if (!snap) {
+      alertMsg('取り消せる本日の退勤がありません。');
+      hideClockModal();
+      return;
+    }
+    const today = todayYmd();
+    const outDate = normalizeDateKey(snap.clockOutDate || snap.clockOutDateYmd) || snap.savedDateYmd;
+    if (outDate && outDate !== today) {
+      alertMsg('退勤の取り消しは、退勤した当日のみ可能です。');
+      return;
+    }
+
+    const dateYmd = normalizeDateKey(snap.clockInDateYmd) || today;
+    const timeStr = snap.clockInTime || '08:00';
+    const dateLocale = new Date().toLocaleDateString();
+
+    const clockInState = {
+      lat: '',
+      lng: '',
+      time: timeStr,
+      active: true,
+      dateYmd: dateYmd,
+      dateLocale: dateLocale
+    };
+    const clockInTodayState = {
+      lat: '',
+      lng: '',
+      time: timeStr,
+      date: dateLocale,
+      dateYmd: dateYmd
+    };
+    try {
+      const prev = JSON.parse(localStorage.getItem('passionMapClockInToday') || 'null');
+      if (prev) {
+        if (prev.lat != null) {
+          clockInState.lat = prev.lat;
+          clockInTodayState.lat = prev.lat;
+        }
+        if (prev.lng != null) {
+          clockInState.lng = prev.lng;
+          clockInTodayState.lng = prev.lng;
+        }
+      }
+    } catch (e) {}
+
+    localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+    localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
+
+    // 昼休憩状態も退勤前に戻す
+    if (snap.lunchRegistered || snap.lunchEnabled != null || snap.lunchStart || snap.lunchEnd) {
+      saveLunchBreak({
+        registered: snap.lunchRegistered !== false,
+        enabled: !!snap.lunchEnabled,
+        dateYmd: dateYmd,
+        start: snap.lunchEnabled ? (snap.lunchStart || '') : '',
+        end: snap.lunchEnabled ? (snap.lunchEnd || '') : ''
+      });
+    }
+
+    clearLastClockOutSnapshot();
+    window._cancelableClockOutFromServer = null;
+    window._clockOutUndoUntil = Date.now() + 90000;
+    clearPending();
+
+    hideClockModal();
+    if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+    else refreshTrackingModeUI();
+
+    const user = getCurrentUserName();
+    if (user && typeof callGAS === 'function') {
+      callGAS('saveTrackingData', {
+        userName: user,
+        lat: 0,
+        lng: 0,
+        type: '退勤取消',
+        time: Date.now()
+      })
+        .then(() => {
+          window._clockOutUndoUntil = Date.now() + 15000;
+        })
+        .catch((e) => console.warn('退勤取消の送信エラー', e));
+    }
+
+    alertMsg('退勤を取り消しました。出勤中に戻ります。');
+  };
+
   /**
    * 出退勤ボタンのモード
    * clockIn: 未出勤 / lunch: 出勤中で昼休憩未登録 / clockOut: 昼休憩登録済（orなし確定）
@@ -247,7 +419,14 @@
       } catch (e) {}
 
       const dateYmd = res.clockInDateYmd || todayYmd();
-      const time = res.clockInTime || getClockInTimeStr() || '';
+      // 直前に端末で出勤時間を直した場合は、サーバー反映待ち中に古い値で上書きしない
+      let time = res.clockInTime || getClockInTimeStr() || '';
+      try {
+        if (window._clockInTimeLocalUntil && Date.now() < window._clockInTimeLocalUntil) {
+          const localT = getClockInTimeStr();
+          if (localT) time = localT;
+        }
+      } catch (e) {}
       const clockInState = {
         lat: lat,
         lng: lng,
@@ -304,6 +483,34 @@
 
       // サーバー上は出勤が閉じている（退勤済み／取消済み／未出勤）
       if (!res.open) {
+        // 直前に退勤取り消しした場合は、反映待ち中にローカル出勤を消さない
+        if (window._clockOutUndoUntil && Date.now() < window._clockOutUndoUntil) {
+          return null;
+        }
+        // 本日の退勤取り消し候補を端末に保持（別端末退勤にも対応）
+        if (res.cancelableClockOut) {
+          window._cancelableClockOutFromServer = {
+            savedDateYmd: res.todayYmd || todayYmd(),
+            workDateYmd: res.clockInDateYmd || todayYmd(),
+            clockInTime: res.clockInTime || '',
+            clockInDateYmd: res.clockInDateYmd || todayYmd(),
+            clockOutDate: res.clockOutDateYmd || res.todayYmd || todayYmd(),
+            clockOutTime: res.clockOutTime || '',
+            lunchEnabled: !!res.lunchEnabled,
+            lunchStart: res.lunchStart || '',
+            lunchEnd: res.lunchEnd || '',
+            lunchRegistered: !!res.lunchRegistered,
+            fromServer: true
+          };
+          // ローカルにスナップショットが無ければ補完
+          if (!getCancelableClockOutLocal()) {
+            try {
+              localStorage.setItem(LAST_CLOCKOUT_KEY, JSON.stringify(window._cancelableClockOutFromServer));
+            } catch (e) {}
+          }
+        } else {
+          window._cancelableClockOutFromServer = null;
+        }
         if (localInfo || localStorage.getItem('passionMapClockIn') || loadPending()) {
           clearStaleLocalClockInState();
         } else if (typeof window.refreshTrackingModeUI === 'function') {
@@ -416,6 +623,134 @@
       if (today && today.time) return today.time;
     } catch (e) {}
     return '08:00';
+  }
+
+  /** 端末の出勤時刻を更新（マーカー表示用キャッシュ含む） */
+  function setLocalClockInTime(timeStr, dateYmd) {
+    const pad = String(timeStr || '').trim();
+    const ymd = normalizeDateKey(dateYmd) || getActiveClockInDateYmd() || todayYmd();
+    try {
+      const active = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null') || {};
+      active.time = pad;
+      active.active = true;
+      if (ymd) {
+        active.dateYmd = ymd;
+        if (!active.dateLocale) active.dateLocale = new Date().toLocaleDateString();
+      }
+      localStorage.setItem('passionMapClockIn', JSON.stringify(active));
+    } catch (e) {
+      localStorage.setItem(
+        'passionMapClockIn',
+        JSON.stringify({ time: pad, active: true, dateYmd: ymd, dateLocale: new Date().toLocaleDateString() })
+      );
+    }
+    try {
+      const today = JSON.parse(localStorage.getItem('passionMapClockInToday') || 'null') || {};
+      today.time = pad;
+      if (ymd) today.dateYmd = ymd;
+      if (!today.date) today.date = new Date().toLocaleDateString();
+      localStorage.setItem('passionMapClockInToday', JSON.stringify(today));
+    } catch (e) {
+      localStorage.setItem(
+        'passionMapClockInToday',
+        JSON.stringify({ time: pad, dateYmd: ymd, date: new Date().toLocaleDateString() })
+      );
+    }
+
+    // 退勤途中の一時データも揃える
+    try {
+      const pending = loadPending();
+      if (pending) {
+        pending.clockInTime = pad;
+        if (ymd) pending.clockInDateYmd = ymd;
+        persistPending(pending);
+      }
+    } catch (e) {}
+
+    // 地図上の出勤マーカー表示を更新
+    try {
+      if (typeof window.plotClockInMarker === 'function') {
+        const st = JSON.parse(localStorage.getItem('passionMapClockInToday') || 'null');
+        if (st && st.lat != null && st.lng != null) window.plotClockInMarker(st, false);
+      }
+    } catch (e) {}
+  }
+
+  function buildClockInEditHtml(clockInTime, workDateYmd) {
+    const t = String(clockInTime || '08:00').replace(/"/g, '&quot;');
+    const d = String(workDateYmd || '').replace(/"/g, '&quot;');
+    let html = `<div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:10px; margin-bottom:12px;">`;
+    html += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin-bottom:6px;">出勤時間（変更可）</div>`;
+    html += `<input type="hidden" id="editClockInDateYmd" value="${d}">`;
+    html += `<div style="display:flex; gap:8px; align-items:center;">`;
+    html += `<input type="text" id="editClockInTime" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:10px; font-size:16px; background:#fff; cursor:pointer;" value="${t}" onclick="if(window.openAppTimePicker) openAppTimePicker('editClockInTime', '出勤時間')">`;
+    html += `<button type="button" onclick="applyClockInTimeChange()" style="flex-shrink:0; background:#2E7D32; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:13px; cursor:pointer;">変更</button>`;
+    html += `</div>`;
+    html += `<div style="font-size:11px; color:#555; margin-top:6px;">勤務日: <b>${d || '—'}</b>　※間違えた出勤時間をここで直せます</div>`;
+    html += `</div>`;
+    return html;
+  }
+
+  /**
+   * 昼休憩／退勤モーダルから出勤時間を更新する
+   * @param {{ silent?: boolean, force?: boolean }} options
+   * @returns {boolean}
+   */
+  window.applyClockInTimeChange = function (options) {
+    options = options || {};
+    const timeEl = document.getElementById('editClockInTime');
+    const dateEl = document.getElementById('editClockInDateYmd');
+    const newTimeRaw = timeEl ? String(timeEl.value || '').trim() : '';
+    const mins = timeToMins(newTimeRaw);
+    if (mins == null) {
+      if (!options.silent) alertMsg('出勤時間を正しく入力してください');
+      return false;
+    }
+    const hh = String(Math.floor(mins / 60)).padStart(2, '0');
+    const mm = String(mins % 60).padStart(2, '0');
+    const newTime = hh + ':' + mm;
+    if (timeEl) timeEl.value = newTime;
+
+    const dateYmd =
+      (dateEl && normalizeDateKey(dateEl.value)) ||
+      getActiveClockInDateYmd() ||
+      todayYmd();
+    const oldTime = getClockInTimeStr();
+    if (!options.force && oldTime === newTime) {
+      if (!options.silent) alertMsg('出勤時間は変更されていません');
+      return true;
+    }
+
+    setLocalClockInTime(newTime, dateYmd);
+    window._clockInTimeLocalUntil = Date.now() + 90000;
+
+    const user = getCurrentUserName();
+    if (user && typeof callGAS === 'function') {
+      const clockAt = parseClockDateTime(dateYmd, newTime);
+      callGAS('updateOpenClockInTime', {
+        userName: user,
+        clockInTime: newTime,
+        clockInDateYmd: dateYmd,
+        time: clockAt.getTime()
+      }).then(() => {
+        window._clockInTimeLocalUntil = Date.now() + 15000;
+      }).catch((e) => console.warn('出勤時間のサーバー更新エラー', e));
+    }
+
+    if (!options.silent) {
+      alertMsg(`出勤時間を ${newTime} に変更しました`);
+    }
+    return true;
+  };
+
+  /** モーダル内の出勤時間欄が現在値と違う場合は先に反映 */
+  function syncClockInTimeFromModalIfChanged() {
+    const timeEl = document.getElementById('editClockInTime');
+    if (!timeEl) return true;
+    const newTime = String(timeEl.value || '').trim();
+    if (!newTime || timeToMins(newTime) == null) return true;
+    if (newTime === getClockInTimeStr()) return true;
+    return window.applyClockInTimeChange({ silent: true, force: true });
   }
 
   function clearWatchers() {
@@ -550,7 +885,8 @@
           polyName: p.name || id,
           polyId: id,
           multiFieldNames: (data.multiFieldNames || '').trim(),
-          totalTime: data.totalTime || ''
+          totalTime: data.totalTime || '',
+          breakMins: Math.max(0, parseInt(data.breakMins, 10) || 0)
         });
       });
     }
@@ -568,6 +904,39 @@
     if (maxEnd < 0) return '';
     return minsToHm(maxEnd);
   }
+
+  /** 指定日の作業記録に入力された休憩時間（分）の合計 */
+  function sumWorkRecordBreakMins(user, workDateYmd) {
+    const intervals = collectUserWorkIntervals(user, workDateYmd);
+    return intervals.reduce((sum, iv) => sum + Math.max(0, parseInt(iv.breakMins, 10) || 0), 0);
+  }
+  window.sumWorkRecordBreakMins = sumWorkRecordBreakMins;
+
+  /** 退勤モーダル上の合計休憩表示を更新 */
+  window.refreshClockOutBreakSummary = function () {
+    const el = document.getElementById('clockMidBreakSummary');
+    const hidden = document.getElementById('clockMidBreak');
+    if (!el && !hidden) return;
+
+    const dateEl = document.getElementById('clockOutDate');
+    const workDateYmd =
+      (dateEl && dateEl.value) ||
+      getActiveClockInDateYmd() ||
+      todayYmd();
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      '';
+    const total = sumWorkRecordBreakMins(user, workDateYmd);
+    if (hidden) hidden.value = String(total);
+    if (el) {
+      if (total > 0) {
+        el.innerHTML = `<b style="color:#e65100; font-size:16px;">${formatDuration(total)}</b><div style="font-size:11px; color:#888; margin-top:4px;">作業記録に入力された休憩の合計です（ここでは変更できません）</div>`;
+      } else {
+        el.innerHTML = `<b style="color:#888; font-size:16px;">0分</b><div style="font-size:11px; color:#888; margin-top:4px;">作業記録の「休憩」欄に入力するとここに合計されます</div>`;
+      }
+    }
+  };
 
   /** 退勤モーダル：退勤日の最後の作業終了時間を退勤時間欄へ反映 */
   window.setClockOutToLastWorkEnd = function () {
@@ -693,14 +1062,19 @@
         }
       }
     }
-    const midBreak = Math.max(0, parseInt(pending.midBreakMins, 10) || 0);
+    const midBreakFromRecords = sumWorkRecordBreakMins(pending.user, pending.workDateYmd);
+    // 作業記録の休憩合計を正とする（退勤画面では入力不可）
+    const midBreak = Math.max(
+      0,
+      midBreakFromRecords > 0
+        ? midBreakFromRecords
+        : (parseInt(pending.midBreakMins, 10) || 0)
+    );
+    // pending も揃えておく
+    pending.midBreakMins = midBreak;
     const required = Math.max(0, span - lunchMins - midBreak);
 
     const raw = collectUserWorkIntervals(pending.user, pending.workDateYmd);
-    const clipped = raw
-      .map((iv) => clipInterval(iv, inM, outM))
-      .filter(Boolean)
-      .map((iv, idx) => Object.assign({}, raw[idx], iv));
     // re-map properly
     const clippedList = [];
     raw.forEach((iv) => {
@@ -708,7 +1082,9 @@
       if (c) clippedList.push(Object.assign({}, iv, c));
     });
     const merged = mergeIntervals(clippedList.map((iv) => ({ start: iv.start, end: iv.end })));
-    const recorded = merged.reduce((sum, iv) => sum + (iv.end - iv.start), 0);
+    const rawRecorded = merged.reduce((sum, iv) => sum + (iv.end - iv.start), 0);
+    // 開始〜終了に含まれる休憩は実作業から除く
+    const recorded = Math.max(0, rawRecorded - midBreak);
     const gaps = findGaps(inM, outM, merged, lunchStart, lunchEnd);
     // 作業中休憩分はギャップから許容
     let gapTotal = gaps.reduce((s, g) => s + (g.end - g.start), 0);
@@ -721,6 +1097,7 @@
       midBreak: midBreak,
       required: required,
       recorded: recorded,
+      rawRecorded: rawRecorded,
       diff: diff,
       gaps: gaps,
       gapTotal: gapTotal,
@@ -784,9 +1161,9 @@
     } else {
       html += `<div>昼休憩 <b>なし</b></div>`;
     }
-    html += `<div>作業中休憩 <b>${formatDuration(a.midBreak)}</b></div>`;
+    html += `<div>作業中休憩 <b>${formatDuration(a.midBreak)}</b>（作業記録の合計）</div>`;
     html += `<div style="margin-top:6px; border-top:1px solid #ddd; padding-top:6px;">必要作業時間 <b style="color:#1565c0;">${formatDuration(a.required)}</b></div>`;
-    html += `<div>記録済み作業時間 <b style="color:${a.matched ? '#2e7d32' : '#c62828'};">${formatDuration(a.recorded)}</b></div>`;
+    html += `<div>記録済み実作業時間 <b style="color:${a.matched ? '#2e7d32' : '#c62828'};">${formatDuration(a.recorded)}</b></div>`;
     if (!a.matched) {
       if (a.diff > 0) html += `<div style="color:#c62828; font-weight:bold;">不足 ${formatDuration(a.diff)}</div>`;
       else html += `<div style="color:#e65100; font-weight:bold;">超過 ${formatDuration(-a.diff)}</div>`;
@@ -801,6 +1178,7 @@
       a.records.forEach((r) => {
         html += `<div style="padding:8px 10px; border-bottom:1px solid #f0f0f0; font-size:12px;">`;
         html += `<b>${minsToHm(r.start)}〜${minsToHm(r.end)}</b> ${r.name}`;
+        if (r.breakMins > 0) html += ` <span style="color:#e65100;">（休憩${r.breakMins}分）</span>`;
         if (r.multiFieldNames && r.multiFieldNames.includes(',')) {
           html += ` <span style="color:#1565c0;">（${r.multiFieldNames}）</span>`;
         }
@@ -846,10 +1224,10 @@
       html += `<button disabled style="background:#a5d6a7; color:white; width:100%; padding:14px; border-radius:4px; border:none; font-weight:bold; opacity:0.7;">退勤を確定する（時間一致後に有効）</button>`;
       html += `<button onclick="showReconcileUI()" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer;">🔄 再集計する</button>`;
     }
-    html += `<button onclick="backToClockOutSettings()" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer; font-size:13px;">◀ 戻る（退勤時刻・休憩を修正）</button>`;
+    html += `<button onclick="backToClockOutSettings()" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer; font-size:13px;">◀ 戻る（退勤時刻を修正）</button>`;
     html += `<button onclick="cancelPendingClockOut()" style="background:#eee; color:#333; width:100%; padding:10px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤をやめる（出勤継続）</button>`;
     html += `</div>`;
-    html += `<p style="font-size:11px; color:#888; margin:10px 0 0;">出勤〜退勤から休憩を除いた時間が、当日の作業記録（開始〜終了）の合計と一致する必要があります。</p>`;
+    html += `<p style="font-size:11px; color:#888; margin:10px 0 0;">出勤〜退勤から昼休憩・作業中休憩を除いた時間が、作業記録の実作業時間（開始〜終了 − 休憩）の合計と一致する必要があります。休憩の修正は各作業記録の編集から行ってください。</p>`;
 
     showClockModal(html);
   }
@@ -964,6 +1342,9 @@
       return;
     }
 
+    // 同日の退勤取り消し用にスナップショットを残す
+    saveLastClockOutSnapshot(pending);
+
     hideClockModal();
     clearWatchers();
     localStorage.removeItem('passionMapClockIn');
@@ -986,7 +1367,10 @@
     clearPending();
     window._forgotClockOutPromptedOnce = false;
 
-    if (!user || typeof callGAS !== 'function') return;
+    if (!user || typeof callGAS !== 'function') {
+      alertMsg('退勤を記録しました。\n※同じ日のうちなら、もう一度ボタンを押して退勤を取り消せます。');
+      return;
+    }
 
     getPositionRobust()
       .then((p) => {
@@ -1008,11 +1392,12 @@
         }).catch((e) => console.warn('退勤送信エラー', e));
       });
 
-    alertMsg('退勤を記録しました。');
+    alertMsg('退勤を記録しました。\n※同じ日のうちなら、もう一度ボタンを押して退勤を取り消せます。');
   };
 
   /** 退勤する → まず整合確認（すぐ退勤確定しない） */
   window.confirmClockOut = function () {
+    syncClockInTimeFromModalIfChanged();
     const dateInput = document.getElementById('clockOutDate') ? document.getElementById('clockOutDate').value : '';
     const timeInput = document.getElementById('clockOutTime') ? document.getElementById('clockOutTime').value : '';
     if (!dateInput || !timeInput) {
@@ -1026,7 +1411,6 @@
       : false;
     const lunchStart = document.getElementById('clockLunchStart') ? document.getElementById('clockLunchStart').value : '12:00';
     const lunchEnd = document.getElementById('clockLunchEnd') ? document.getElementById('clockLunchEnd').value : '13:00';
-    const midBreakMins = document.getElementById('clockMidBreak') ? document.getElementById('clockMidBreak').value : '0';
 
     if (lunchEnabled) {
       const ls = timeToMins(lunchStart);
@@ -1052,18 +1436,21 @@
       });
     } catch (e) {}
 
-    saveBreakDefaults({
-      lunchEnabled: lunchEnabled,
-      lunchStart: lunchStart || '12:00',
-      lunchEnd: lunchEnd || '13:00',
-      midBreakMins: parseInt(midBreakMins, 10) || 0
-    });
-
     const user = typeof currentUser !== 'undefined' ? currentUser : '';
     const forgotInfo = getForgotClockOutInfo();
     const workDateYmd =
       (forgotInfo && forgotInfo.clockInDateYmd) ||
       ymdFromDateInput(dateInput);
+    // 休憩は作業記録の合計のみ（退勤画面では入力しない）
+    const midBreakMins = sumWorkRecordBreakMins(user, workDateYmd);
+
+    saveBreakDefaults({
+      lunchEnabled: lunchEnabled,
+      lunchStart: lunchStart || '12:00',
+      lunchEnd: lunchEnd || '13:00',
+      midBreakMins: midBreakMins
+    });
+
     const pending = {
       user: user,
       clockInTime: getClockInTimeStr(),
@@ -1074,7 +1461,7 @@
       lunchEnabled: lunchEnabled,
       lunchStart: lunchStart || '12:00',
       lunchEnd: lunchEnd || '13:00',
-      midBreakMins: parseInt(midBreakMins, 10) || 0
+      midBreakMins: midBreakMins
     };
 
     const inM = timeToMins(pending.clockInTime);
@@ -1203,6 +1590,8 @@
     const dateYmd = normalizeDateKey(dateInput) || toYmd(clockAt);
 
     clearLunchBreak();
+    clearLastClockOutSnapshot();
+    window._cancelableClockOutFromServer = null;
     const clockInState = { lat: '', lng: '', time: timeStr, active: true, dateYmd: dateYmd, dateLocale: dateStr };
     const clockInTodayState = { lat: '', lng: '', time: timeStr, date: dateStr, dateYmd: dateYmd };
     localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
@@ -1265,7 +1654,7 @@
     const endVal = (existing && existing.enabled && existing.end) || pref.lunchEnd || '13:00';
 
     let html = `<h3 style="margin-top:0; color:#E65100;">🍱 昼休憩登録</h3>`;
-    html += `<div style="font-size:12px; color:#555; margin-bottom:10px;">出勤時刻: <b>${clockInTime}</b> ／ 勤務日: <b>${workDate}</b></div>`;
+    html += buildClockInEditHtml(clockInTime, workDate);
     html += `<div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:12px; margin-bottom:12px;">`;
     html += `<div style="font-size:12px; color:#666; margin-bottom:8px;">登録後、次の作業開始時間は昼休憩の終了時刻に合わせます。</div>`;
     html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center;">`;
@@ -1316,6 +1705,7 @@
   }
 
   window.confirmLunchBreak = function () {
+    syncClockInTimeFromModalIfChanged();
     const start = document.getElementById('clockLunchStart') ? document.getElementById('clockLunchStart').value : '';
     const end = document.getElementById('clockLunchEnd') ? document.getElementById('clockLunchEnd').value : '';
     const ls = timeToMins(start);
@@ -1335,6 +1725,7 @@
   };
 
   window.skipLunchBreak = function () {
+    syncClockInTimeFromModalIfChanged();
     finishLunchRegistration({
       registered: true,
       enabled: false,
@@ -1382,9 +1773,9 @@
       html += `<b>前日の退勤が未登録です</b><br>出勤日（${forgotInfo.clockInDateYmd}）の退勤時刻を登録してください。`;
       html += `</div>`;
     }
-    html += `<div style="font-size:12px; color:#555; margin-bottom:10px;">出勤時刻: <b>${clockInTime}</b></div>`;
+    html += buildClockInEditHtml(clockInTime, workDateForLunch || outDate);
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
-    html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${outDate}">`;
+    html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${outDate}" onchange="if(window.refreshClockOutBreakSummary) refreshClockOutBreakSummary()">`;
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
     html += `<input type="text" id="clockOutTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:8px;" value="${outTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockOutTime', '退勤時間')">`;
     html += `<button type="button" onclick="setClockOutToLastWorkEnd()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; margin-bottom:12px;">⏱️ 最後の作業記録の終了時間に合わせる</button>`;
@@ -1426,10 +1817,14 @@
       html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
       html += `</div>`;
     }
-    const midBreakVal = (pending && pending.midBreakMins != null) ? pending.midBreakMins : (pref.midBreakMins || 0);
-    html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（分）</label>`;
-    html += `<input type="number" id="clockMidBreak" class="form-input" min="0" step="5" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin:0;" value="${midBreakVal}" placeholder="例: 30">`;
-    html += `<div style="font-size:11px; color:#888; margin-top:6px;">必要作業時間 ＝ 出勤〜退勤 − 昼休憩 − 作業中休憩</div>`;
+    const breakTotal = sumWorkRecordBreakMins(
+      (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '',
+      workDateForLunch || outDate
+    );
+    html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（作業記録の合計）</label>`;
+    html += `<input type="hidden" id="clockMidBreak" value="${breakTotal}">`;
+    html += `<div id="clockMidBreakSummary" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:10px 12px;"></div>`;
+    html += `<div style="font-size:11px; color:#888; margin-top:6px;">必要作業時間 ＝ 出勤〜退勤 − 昼休憩 − 作業中休憩<br>休憩の入力・修正は各圃場作業記録から行います。</div>`;
     html += `</div>`;
 
     html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">`;
@@ -1448,6 +1843,9 @@
     }
     html += `</div>`;
     showClockModal(html);
+    if (typeof window.refreshClockOutBreakSummary === 'function') {
+      window.refreshClockOutBreakSummary();
+    }
 
     // 退勤忘れ時: 地図データ未読込だと最終終了時間が取れないため、読み込み後に再セット
     if (isForgot && !options.defaultTime) {
@@ -1577,6 +1975,61 @@
     }
 
     if (!isLocallyClockedIn()) {
+      // 本日退勤済みなら、取り消し UI を優先
+      const cancelable = getCancelableClockOutLocal() || window._cancelableClockOutFromServer;
+      if (cancelable) {
+        openCancelClockOutModal(cancelable);
+        return;
+      }
+      // サーバーにも本日退勤があるか確認してから出勤へ
+      const user = getCurrentUserName();
+      if (user && typeof callGAS === 'function') {
+        try {
+          const res = await callGAS('getOpenClockInStatus', { userName: user });
+          if (res && res.cancelableClockOut) {
+            const snap = {
+              savedDateYmd: res.todayYmd || todayYmd(),
+              workDateYmd: res.clockInDateYmd || todayYmd(),
+              clockInTime: res.clockInTime || '',
+              clockInDateYmd: res.clockInDateYmd || todayYmd(),
+              clockOutDate: res.clockOutDateYmd || res.todayYmd || todayYmd(),
+              clockOutTime: res.clockOutTime || '',
+              lunchEnabled: !!res.lunchEnabled,
+              lunchStart: res.lunchStart || '',
+              lunchEnd: res.lunchEnd || '',
+              lunchRegistered: !!res.lunchRegistered,
+              fromServer: true
+            };
+            window._cancelableClockOutFromServer = snap;
+            try {
+              localStorage.setItem(LAST_CLOCKOUT_KEY, JSON.stringify(snap));
+            } catch (e) {}
+            openCancelClockOutModal(snap);
+            return;
+          }
+          if (res && res.open && !res.forgot && typeof applyOpenClockInFromServer === 'function') {
+            applyOpenClockInFromServer(res);
+            // 出勤中に戻ったので、このまま通常フローへ
+            if (isLocallyClockedIn()) {
+              const pending2 = loadPending();
+              if (pending2) {
+                showReconcileUI();
+                return;
+              }
+              const mode2 = getTrackingMode();
+              if (mode2 === 'lunch') {
+                openLunchBreakModal();
+                return;
+              }
+              openClockOutModal();
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('退勤取消候補の確認に失敗:', e);
+        }
+      }
+
       if (!navigator.geolocation) {
         alertMsg('お使いの端末ではGPSがサポートされていません。');
         return;

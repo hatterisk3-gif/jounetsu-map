@@ -60,6 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id && pw) {
         document.getElementById('loginScreen').style.display = 'none';
         initMap();
+        if (!localStorage.getItem('manureMapData') && typeof beginMapDataLoad === 'function') {
+            beginMapDataLoad('圃場データを読み込み中...');
+        }
         executeLogin(true);
     }
 });
@@ -97,7 +100,9 @@ async function executeLogin(isAuto = false) {
             // キャッシュで即座に地図描画
             const cached = localStorage.getItem('manureMapData');
             if (cached) {
+                if (typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
                 try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
+                if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
             }
 
             loadInitData();
@@ -246,6 +251,7 @@ function initMap() {
 
 // ====== データ読み込み (worker.jsと同じgetInitData使用) ======
 async function loadInitData() {
+    if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
     try {
         const data = await callGAS('getInitData');
         if (data && data.polygons) {
@@ -253,12 +259,14 @@ async function loadInitData() {
             const oldDataStr = localStorage.getItem('manureMapData');
             if (newDataStr === oldDataStr) {
                 console.log("変更なし：再描画をスキップしました");
+                if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
                 return;
             }
             // キャッシュに保存
             localStorage.setItem('manureMapData', newDataStr);
             drawPolygons(data.polygons);
         }
+        if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
     } catch (e) {
         console.error("InitData Error:", e);
         // キャッシュから読む
@@ -266,6 +274,7 @@ async function loadInitData() {
         if (cached) {
             try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
         }
+        if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
     }
 }
 
