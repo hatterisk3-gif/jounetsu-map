@@ -564,9 +564,43 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           const isUnused = (p.status === '未使用（返却）' || p.status === '未使用');
           let currentCrop = getCurrentCrop(p.photos);
           let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
-          p.polygon.setOptions({ fillColor: dispColor, strokeColor: dispColor });
+          // マップ選択時の黄ハイライト(opacity/stroke)も必ず通常表示に戻す
+          p.polygon.setOptions({
+            fillColor: dispColor,
+            strokeColor: dispColor,
+            fillOpacity: isUnused ? 0.5 : 0.5,
+            strokeOpacity: 1,
+            strokeWeight: 3
+          });
           updateWorkerLegend();
       }
+
+      /** 作業記録のマップ選択モード／黄ハイライトを解除して通常色に戻す */
+      window.resetWorkMapSelectionVisuals = (opts) => {
+        opts = opts || {};
+        try {
+          isMapSelecting = false;
+          window.workMapSelectingRidgesForFieldId = null;
+          if (typeof window.clearWorkDrawnRidges === 'function') window.clearWorkDrawnRidges();
+          const selectUI = document.getElementById('mapSelectUI');
+          if (selectUI) selectUI.style.display = 'none';
+          const rightPanel = document.getElementById('rightPanel');
+          if (rightPanel && rightPanel.style.display === 'none') {
+            rightPanel.style.display = 'flex';
+          }
+          if (opts.clearSelection) {
+            selectedPolyIds = [];
+            window.workMapRidgeSelections = {};
+            window.workPendingWorkedByField = {};
+          }
+          // 作物色ベースで通常表示に戻す（選択黄・太い枠線・高opacityを除去）
+          for (let id in loadedPolygons) {
+            if (typeof updatePolygonColor === 'function') updatePolygonColor(id);
+          }
+        } catch (e) {
+          console.warn('resetWorkMapSelectionVisuals:', e);
+        }
+      };
 
     function createPolygonObject(id, name, coords, color, photos, author, loc, cond, area, status, signFunc, linkedSigns) { 
         if (coords.length === 1) {
@@ -1931,10 +1965,16 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
       };
       window.applyMapSelect = () => {
-        if (typeof window.applyWorkMapRidgeSelectionsToPending === 'function') {
-          window.applyWorkMapRidgeSelectionsToPending();
+        try {
+          if (typeof window.applyWorkMapRidgeSelectionsToPending === 'function') {
+            window.applyWorkMapRidgeSelectionsToPending();
+          }
+        } catch (e) {
+          console.warn('applyWorkMapRidgeSelectionsToPending:', e);
         }
-        window.exitWorkRidgeSelectionView(true);
+        try {
+          window.exitWorkRidgeSelectionView(true);
+        } catch (e) {}
         isMapSelecting = false;
         document.getElementById('rightPanel').style.display = 'flex';
         document.getElementById('mapSelectUI').style.display = 'none';
@@ -1947,7 +1987,9 @@ function createSignboardMarker(name, pos, icon, id) {
         window.workMapRidgeSelections = window._backupWorkMapRidgeSelections
           ? JSON.parse(JSON.stringify(window._backupWorkMapRidgeSelections))
           : {};
-        window.exitWorkRidgeSelectionView(true);
+        try {
+          window.exitWorkRidgeSelectionView(true);
+        } catch (e) {}
         isMapSelecting = false;
         document.getElementById('rightPanel').style.display = 'flex';
         document.getElementById('mapSelectUI').style.display = 'none';
@@ -1973,6 +2015,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
         // 通常のマップ選択見た目処理
         const focusId = window.workMapSelectingRidgesForFieldId ? String(window.workMapSelectingRidgesForFieldId) : '';
+        const selectedSet = new Set((selectedPolyIds || []).map(String));
         for(let id in loadedPolygons) {
           const p = loadedPolygons[id];
           if(!p.isMarker && p.polygon) {
@@ -1980,7 +2023,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (isMapSelecting) {
               if (focusId && String(id) === focusId) {
                 p.polygon.setOptions({fillColor: baseColor, strokeColor: '#FFEB3B', fillOpacity: 0.12, strokeWeight: 4});
-              } else if (selectedPolyIds.includes(id)) {
+              } else if (selectedSet.has(String(id))) {
                 p.polygon.setOptions({fillColor: '#FFEB3B', strokeColor: '#F57F17', fillOpacity: 0.8, strokeWeight: 4});
               } else {
                 p.polygon.setOptions({fillColor: baseColor, strokeColor: baseColor, fillOpacity: 0.2, strokeWeight: 1});
@@ -2490,6 +2533,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; }
         const p = loadedPolygons[id];
         if (!p || p.isMarker) return;
+        const sid = String(id);
 
         const ridges = window.getWorkCadRidgeShapes(p);
         if (ridges.length > 0) {
@@ -2498,12 +2542,13 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         window.exitWorkRidgeSelectionView(true);
-        if (selectedPolyIds.includes(id)) {
-          selectedPolyIds = selectedPolyIds.filter(i => i !== id);
-          delete window.workMapRidgeSelections[String(id)];
+        selectedPolyIds = (selectedPolyIds || []).map(String);
+        if (selectedPolyIds.includes(sid)) {
+          selectedPolyIds = selectedPolyIds.filter(i => i !== sid);
+          delete window.workMapRidgeSelections[sid];
         } else {
-          selectedPolyIds.push(id);
-          window.workMapRidgeSelections[String(id)] = { wholeField: true, indices: [] };
+          selectedPolyIds.push(sid);
+          window.workMapRidgeSelections[sid] = { wholeField: true, indices: [] };
         }
         updateMapSelectVisuals();
         window.updateWorkMapSelectBanner();
@@ -6429,10 +6474,14 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           const inputs = container.querySelectorAll('input, select, textarea');
           let tempData = [];
-          // 選択中の作業チップ名も保存する
+          // 作業名は select / チップのどちらからでも確実に取る（色指定セレクタはブラウザでrgb化され不一致になる）
           let selectedChipName = '';
-          const selectedChip = container.querySelector('.work-chip[style*="#1976d2"]');
-          if (selectedChip) selectedChipName = selectedChip.dataset.wname || '';
+          const workNameEl = document.getElementById('rec_work_name');
+          if (workNameEl && workNameEl.value) selectedChipName = workNameEl.value;
+          if (!selectedChipName) {
+              const boldChip = Array.from(container.querySelectorAll('.work-chip')).find(el => el.style.fontWeight === 'bold');
+              if (boldChip) selectedChipName = boldChip.dataset.wname || '';
+          }
           inputs.forEach(el => {
               if (el.type === 'file') return;
               tempData.push({
@@ -6453,55 +6502,53 @@ function createSignboardMarker(name, pos, icon, id) {
               polyName: polyName,
               data: tempData,
               selectedChipName: selectedChipName,
-              selectedPolyIds: Array.isArray(selectedPolyIds) ? [...selectedPolyIds] : [],
+              selectedPolyIds: Array.isArray(selectedPolyIds) ? selectedPolyIds.map(String) : [],
               savedAt: savedAt,
               savedAtMs: savedAtMs,
               userName: currentUser || localStorage.getItem('passionMapUserName') || ''
           };
-          setLocalTempWorkRecord_(payload);
+          // まず端末に保存して即座に完了表示（クラウド待ちでボタンが無反応に見えないようにする）
+          try {
+              setLocalTempWorkRecord_(payload);
+          } catch (e) {
+              if (typeof customAlert !== 'undefined') customAlert('一時保存に失敗しました: ' + (e.message || e));
+              else alert('一時保存に失敗しました: ' + (e.message || e));
+              return;
+          }
+          upsertTempLoadButton_(polyName, savedAt);
+          if (typeof customAlert !== 'undefined') {
+              customAlert("✅ 入力内容を一時保存しました！\n（他端末への同期をバックグラウンドで実行中）");
+          } else {
+              alert("✅ 入力内容を一時保存しました！");
+          }
 
           const userId = getTempWorkRecordUserId_();
-          let synced = false;
-          let syncError = '';
           if (userId && typeof callGAS === 'function') {
-              try {
-                  await callGAS('saveTempWorkRecord', {
-                      userId: userId,
-                      userName: payload.userName,
-                      type: payload.type,
-                      polyId: payload.polyId || '',
-                      polyName: payload.polyName || '',
-                      data: payload.data,
-                      selectedChipName: payload.selectedChipName || '',
-                      selectedPolyIds: payload.selectedPolyIds || [],
-                      savedAt: payload.savedAt,
-                      savedAtMs: payload.savedAtMs
-                  });
-                  synced = true;
-              } catch (e) {
-                  syncError = (e && e.message) ? e.message : String(e);
+              callGAS('saveTempWorkRecord', {
+                  userId: userId,
+                  userName: payload.userName,
+                  type: payload.type,
+                  polyId: payload.polyId || '',
+                  polyName: payload.polyName || '',
+                  data: payload.data,
+                  selectedChipName: payload.selectedChipName || '',
+                  selectedPolyIds: payload.selectedPolyIds || [],
+                  savedAt: payload.savedAt,
+                  savedAtMs: payload.savedAtMs
+              }).catch(e => {
                   console.warn('一時保存クラウド同期失敗:', e);
-              }
-          } else {
-              syncError = userId ? '通信機能がありません' : 'ユーザーIDがありません（再ログインしてください）';
+              });
           }
-
-          if (typeof customAlert !== 'undefined') {
-              customAlert(synced
-                ? "✅ 入力内容を一時保存しました！（全端末で同期）"
-                : "✅ この端末に一時保存しました。\n（他端末への同期は未完了）\n" + syncError);
-          } else {
-              alert(synced ? "✅ 入力内容を一時保存しました！（全端末で同期）" : "✅ この端末に一時保存しました。");
-          }
-
-          upsertTempLoadButton_(polyName, savedAt);
       };
 
       window.loadTempRecord = async () => {
-          // 復元前にクラウドの最新を取りにいく（他端末の一時保存を優先）
+          // クラウド取得は最大3秒で打ち切り（遅いとボタン無反応に見える）
           try {
             if (typeof refreshTempRecordButtonFromCloud_ === 'function') {
-              await refreshTempRecordButtonFromCloud_();
+              await Promise.race([
+                refreshTempRecordButtonFromCloud_(),
+                new Promise(resolve => setTimeout(resolve, 3000))
+              ]);
             }
           } catch (e) {}
           const parsed = getLocalTempWorkRecord_(currentRecordType);
@@ -6514,17 +6561,14 @@ function createSignboardMarker(name, pos, icon, id) {
           const container = document.getElementById('rightPanelContent');
           if(!container) return;
 
-          // 選択圃場も復元
+          // 選択圃場も復元（IDは文字列で統一）
           if (Array.isArray(parsed.selectedPolyIds) && parsed.selectedPolyIds.length > 0) {
-              selectedPolyIds = parsed.selectedPolyIds.filter(id => id && loadedPolygons[id]);
-              if (typeof renderSelectedPolys === 'function') {
-                  try { renderSelectedPolys(); } catch (e) {}
-              }
-          } else if (parsed.polyId && loadedPolygons[parsed.polyId] && (!selectedPolyIds || selectedPolyIds.length === 0)) {
-              selectedPolyIds = [parsed.polyId];
-              if (typeof renderSelectedPolys === 'function') {
-                  try { renderSelectedPolys(); } catch (e) {}
-              }
+              selectedPolyIds = parsed.selectedPolyIds.map(String).filter(id => id && loadedPolygons[id]);
+          } else if (parsed.polyId && loadedPolygons[parsed.polyId]) {
+              selectedPolyIds = [String(parsed.polyId)];
+          }
+          if (typeof window.updateSelectedPolysDisplay === 'function') {
+              try { window.updateSelectedPolysDisplay(); } catch (e) {}
           }
           
           (parsed.data || []).forEach(savedEl => {
@@ -6543,23 +6587,27 @@ function createSignboardMarker(name, pos, icon, id) {
               
               if (el) {
                   if (el.type === 'checkbox' || el.type === 'radio') {
-                      el.checked = savedEl.checked;
+                      el.checked = !!savedEl.checked;
                   } else {
                       el.value = savedEl.value;
                   }
                   // イベント発火して関連UIを更新
-                  el.dispatchEvent(new Event('change'));
+                  try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
               }
           });
           
-          // 特定のUI更新処理を手動呼び出し
-          if (typeof handleWorkNameChange === 'function' && document.getElementById('rec_work_name')) handleWorkNameChange();
-          if (typeof calcTotalTime === 'function') calcTotalTime();
-          
-          // 作業チップのハイライトも復元する
-          if (parsed.selectedChipName && typeof selectWorkChip === 'function') {
-              selectWorkChip(parsed.selectedChipName);
+          // 作業名・チップを優先復元（カテゴリ／作物フィルタ込み）
+          const chipName = parsed.selectedChipName
+            || (parsed.data || []).reduce((acc, row) => (row && row.id === 'rec_work_name' && row.value) ? row.value : acc, '');
+          if (chipName && typeof selectWorkChip === 'function') {
+              try { selectWorkChip(chipName); } catch (e) {}
+          } else if (typeof handleWorkNameChange === 'function' && document.getElementById('rec_work_name')) {
+              try { handleWorkNameChange(); } catch (e) {}
           }
+          if (typeof calcTotalTime === 'function') calcTotalTime();
+          if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
+          if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+          if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
           
           // 復元後、一時保存データは送信完了まで残す（安全のため）
           if(typeof customAlert !== 'undefined') customAlert("✅ 一時保存データを復元しました！");
@@ -8174,6 +8222,10 @@ function createSignboardMarker(name, pos, icon, id) {
      // 🌟右パネルを閉じた時（作業終了時や地図の余白タップ時）に検索ピンも一緒に消し去る！
      function closeRightPanel() { 
           if (window.sharedLocationMarker) { window.sharedLocationMarker.setMap(null); window.sharedLocationMarker = null; }
+          // マップ選択の黄ハイライト／畝オーバーレイが残らないよう必ず解除
+          if (typeof window.resetWorkMapSelectionVisuals === 'function') {
+            window.resetWorkMapSelectionVisuals({ clearSelection: true });
+          }
           document.getElementById('rightPanel').classList.remove('open'); 
           if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
       }

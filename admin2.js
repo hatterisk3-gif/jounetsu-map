@@ -3027,7 +3027,28 @@ document.addEventListener('DOMContentLoaded', () => {
 window.promptSplitPolygon = (axis) => {
     document.getElementById('splitPolygonPanel').style.display = 'none';
     document.getElementById('splitTargetAxis').value = axis;
-    let label = axis === 'long' ? "長辺の分割数" : "短辺の分割数";
+
+    if (axis === 'edge') {
+        if (typeof window.cadSetPinMode === 'function') {
+            window.cadSetPinMode('snap_line');
+        }
+        window.cadSplittingEdgeMode = true;
+        const msgEl = document.getElementById('cadPinModeMsg');
+        if (msgEl) {
+            msgEl.innerText = '🎯【分割の角度基準】基準にしたい圃場の直線・斜め辺をタップしてください';
+            msgEl.style.color = '#4CAF50';
+        }
+        return;
+    }
+
+    let label = "分割数";
+    if (axis === 'long') label = "長辺方向の分割数";
+    else if (axis === 'short') label = "短辺方向の分割数";
+    else if (axis === 'cad_angle') {
+        const angleVal = document.getElementById('cadAngle') ? document.getElementById('cadAngle').value : 0;
+        label = `CAD角度(${angleVal}°)方向の分割数`;
+    }
+
     document.getElementById('splitModalTitle').innerHTML = `✂️ ${label}を指定`;
     document.getElementById('splitCountModal').style.display = 'block';
 };
@@ -3054,7 +3075,7 @@ window.executeSplitPolygon = () => {
     
     if (!pathToSplit) return;
     
-    if (!isFude && pathToSplit.length === 4) {
+    if (!isFude && pathToSplit.length === 4 && (axis === 'long' || axis === 'short')) {
         let p1 = pathToSplit[0];
         let p2 = pathToSplit[1];
         let p3 = pathToSplit[2];
@@ -3129,20 +3150,25 @@ window.executeSplitPolygon = () => {
         }
         let poly = turf.polygon([coords]);
         
-        let hull = turf.convex(poly);
-        let hullCoords = hull.geometry.coordinates[0];
-        let longestDist = 0;
         let rotAngle = 0;
-        for (let i = 0; i < hullCoords.length - 1; i++) {
-            let d = turf.distance(turf.point(hullCoords[i]), turf.point(hullCoords[i+1]));
-            if (d > longestDist) {
-                longestDist = d;
-                rotAngle = turf.bearing(turf.point(hullCoords[i]), turf.point(hullCoords[i+1]));
+        if (axis === 'edge_selected' || axis === 'cad_angle') {
+            const angleEl = document.getElementById('cadAngle');
+            rotAngle = angleEl ? (parseFloat(angleEl.value) || 0) : 0;
+        } else {
+            let hull = turf.convex(poly);
+            let hullCoords = (hull && hull.geometry) ? hull.geometry.coordinates[0] : coords;
+            let longestDist = 0;
+            for (let i = 0; i < hullCoords.length - 1; i++) {
+                let d = turf.distance(turf.point(hullCoords[i]), turf.point(hullCoords[i+1]));
+                if (d > longestDist) {
+                    longestDist = d;
+                    rotAngle = turf.bearing(turf.point(hullCoords[i]), turf.point(hullCoords[i+1]));
+                }
             }
-        }
-        
-        if (axis === 'short') {
-            rotAngle = (rotAngle + 90) % 360;
+            
+            if (axis === 'short') {
+                rotAngle = (rotAngle + 90) % 360;
+            }
         }
         
         // Convert bearing to mathematical angle

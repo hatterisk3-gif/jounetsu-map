@@ -78,6 +78,15 @@
         畝を直接タップすると、十字キーで移動や変形ができます。</div>
 
       <div id="cadMode1">
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <button onclick="cadSetPinMode('snap_line')"
+            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
+            選んだ線に合わせる</button>
+          <button onclick="cadRotateMap(-5)"
+            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↩️</button>
+          <button onclick="cadRotateMap(5)"
+            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↪️</button>
+        </div>
         <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
           <div style="flex:1; display:none;">
             <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🧭 方角(度)</label>
@@ -114,14 +123,48 @@
             畝を生成</button>
         </div>
 
-        <div style="display:flex; gap:5px; margin-bottom:10px;">
-          <button onclick="cadSetPinMode('snap_line')"
-            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
-            選んだ線に合わせる</button>
-          <button onclick="cadRotateMap(-5)"
-            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↩️</button>
-          <button onclick="cadRotateMap(5)"
-            style="flex:0.5; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↪️</button>
+        <div style="border:1px solid #555; border-radius:6px; padding:8px; margin-bottom:10px; background:#2a2a2a;">
+          <div style="font-size:11px; color:#FFB74D; font-weight:bold; margin-bottom:4px;">📍 途中から畝を立てる（追加）</div>
+          <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">GPSやタップで起点を決め、左／右へ畝を並べます。終点を置くと「途中〜途中」の長さだけ立てられます。</div>
+          <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
+            <button type="button" onclick="cadBeginPartialPoint('start')"
+              style="flex:1; min-width:90px; background:#1565C0; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">起点をタップ</button>
+            <button type="button" onclick="cadBeginPartialPoint('end')"
+              style="flex:1; min-width:90px; background:#EF6C00; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">終点をタップ</button>
+          </div>
+          <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
+            <button type="button" id="cadPartialGpsStartBtn" onclick="cadStartPartialGps('start')"
+              style="flex:1; min-width:90px; background:#283593; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">📡 GPS起点</button>
+            <button type="button" id="cadPartialGpsEndBtn" onclick="cadStartPartialGps('end')"
+              style="flex:1; min-width:90px; background:#E65100; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">📡 GPS終点</button>
+          </div>
+          <div id="cadPartialGpsBar" style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
+            <div id="cadPartialGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
+            <div style="display:flex; gap:5px;">
+              <button type="button" id="cadPartialGpsConfirmBtn" onclick="cadConfirmPartialGps()" disabled
+                style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
+              <button type="button" onclick="cadCancelPartialGps()"
+                style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">取消</button>
+            </div>
+          </div>
+          <div id="cadPartialStatus" style="font-size:10px; color:#90CAF9; margin-bottom:6px; line-height:1.35;">起点未設定</div>
+          <div style="display:flex; gap:5px; margin-bottom:6px;">
+            <button type="button" id="cadPartialDirLeft" onclick="cadSetPartialDir('left')"
+              style="flex:1; background:#333; color:#fff; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">← 左へ</button>
+            <button type="button" id="cadPartialDirRight" onclick="cadSetPartialDir('right')"
+              style="flex:1; background:#4CAF50; color:#fff; border:1px solid #4CAF50; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">右へ →</button>
+            <button type="button" id="cadPartialDirBoth" onclick="cadSetPartialDir('both')"
+              style="flex:1; background:#333; color:#fff; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">両側</button>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+            <span style="font-size:11px; color:#aaa; white-space:nowrap;">追加畝数</span>
+            <input type="number" id="cadPartialCount" value="5" min="1"
+              style="width:56px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px; font-weight:bold; text-align:center;">
+            <button type="button" onclick="cadGeneratePartialLines()"
+              style="flex:1; background:#FF9800; color:#fff; border:none; padding:9px; border-radius:4px; font-weight:bold; font-size:12px;">途中から生成</button>
+          </div>
+          <button type="button" onclick="cadClearPartialPoints()"
+            style="width:100%; background:#444; color:#ccc; border:none; padding:6px; border-radius:4px; font-size:10px;">起点・終点をクリア</button>
         </div>
 
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">⬛ 自由畝の追加 (タップで配置・移動/変形可能)</div>
@@ -242,6 +285,36 @@
         <div id="cadSplitPreview" style="background:#2a2a2a; border:1px solid #555; border-radius:6px; padding:8px; font-size:11px; color:#bbb; line-height:1.5; margin-bottom:10px; min-height:40px;">
           畝を生成すると、ここに分割プレビューが表示されます。
         </div>
+
+        <div style="border:1px solid #6A1B9A; border-radius:6px; padding:8px; margin-bottom:10px; background:#2a1a33;">
+          <div style="font-size:11px; color:#CE93D8; font-weight:bold; margin-bottom:4px;">📡 GPS位置で分割 / 畝の有無で分割</div>
+          <div style="font-size:10px; color:#aaa; margin-bottom:6px; line-height:1.35;">
+            現場のGPS位置で「ここより手前／奥」を分けたり、畝がある塊と空いている間で自動分割できます。
+          </div>
+          <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
+            <button type="button" id="cadSplitGpsStartBtn" onclick="cadStartSplitGps()"
+              style="flex:1; min-width:110px; background:#6A1B9A; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">GPSで分割位置</button>
+            <button type="button" onclick="cadApplyPresenceBasedSplit()"
+              style="flex:1; min-width:110px; background:#00897B; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">畝のある塊で分割</button>
+          </div>
+          <div id="cadSplitGpsBar" style="display:none; background:#311B92; border:1px solid #7E57C2; border-radius:6px; padding:8px; margin-bottom:6px;">
+            <div id="cadSplitGpsStatus" style="font-size:11px; color:#E1BEE7; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
+            <div style="display:flex; gap:5px; flex-wrap:wrap;">
+              <button type="button" id="cadSplitGpsConfirmBtn" onclick="cadConfirmSplitGpsCut()" disabled
+                style="flex:1; min-width:90px; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに分割点</button>
+              <button type="button" onclick="cadCancelSplitGps()"
+                style="flex:0.7; min-width:70px; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">取消</button>
+            </div>
+          </div>
+          <div id="cadSplitGpsCutsStatus" style="font-size:10px; color:#ce93d8; margin-bottom:6px; line-height:1.35;">分割点: なし</div>
+          <div style="display:flex; gap:5px; flex-wrap:wrap;">
+            <button type="button" onclick="cadApplyGpsSplitCuts()"
+              style="flex:1; min-width:110px; background:#7B1FA2; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">GPS分割点で番号付け</button>
+            <button type="button" onclick="cadClearGpsSplitCuts()"
+              style="flex:0.9; min-width:90px; background:#546E7A; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">分割点クリア</button>
+          </div>
+        </div>
+
         <button type="button" onclick="cadClearRidgeNumberSplit()"
           style="width:100%; background:#607D8B; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">↩ 分割番号をクリア（通常番号に戻す）</button>
       </div>
@@ -588,12 +661,14 @@
       <button onclick="document.getElementById('cadHistoryModal').style.display='none'" style="width:100%; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
     </div>
   </div>
-  <div id="splitPolygonPanel" style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#009688; color:#fff; padding:15px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:400px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
-    ✂️ 四角形を均等分割しますか？
+  <div id="splitPolygonPanel" style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#009688; color:#fff; padding:15px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:440px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
+    ✂️ 圃場を均等分割しますか？
     <div style="margin-top:10px; display:flex; gap:5px; flex-wrap:wrap; justify-content:center;">
-      <button onclick="promptSplitPolygon('long')" style="background:#E91E63; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">長い方に分割</button>
-      <button onclick="promptSplitPolygon('short')" style="background:#FF9800; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">短い方に分割</button>
-      <button onclick="cancelSplitPolygon()" style="background:#666; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">そのまま</button>
+      <button onclick="promptSplitPolygon('edge')" style="background:#4CAF50; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:130px;">🎯 指定の辺に合わせる</button>
+      <button onclick="promptSplitPolygon('cad_angle')" style="background:#2196F3; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:130px;">🧭 CAD角度で分割</button>
+      <button onclick="promptSplitPolygon('long')" style="background:#E91E63; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">長辺方向（自動）</button>
+      <button onclick="promptSplitPolygon('short')" style="background:#FF9800; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">短辺方向（自動）</button>
+      <button onclick="cancelSplitPolygon()" style="background:#666; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:100px;">そのまま</button>
     </div>
   </div>
 

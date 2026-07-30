@@ -1451,6 +1451,19 @@ window.handleMapClick = (pageX, pageY) => {
         return;
     }
 
+    if (window.cadPinMode === 'partial_start' || window.cadPinMode === 'partial_end') {
+        const which = window.cadPinMode === 'partial_end' ? 'end' : 'start';
+        window.cadSetPartialPoint(which, latLng);
+        window.cadPinMode = null;
+        if (msgEl) {
+            msgEl.innerText = which === 'end'
+                ? '終点を設定しました。畝数と左右を選んで「途中から生成」を押してください。'
+                : '起点を設定しました。必要なら終点も置き、左右と畝数を選んで生成してください。';
+            msgEl.style.color = '#FFB74D';
+        }
+        return;
+    }
+
     if (window.cadPinMode === 'custom_rect' || window.cadPinMode === 'custom_circle') {
         const shapeType = window.cadPinMode === 'custom_circle' ? 'circle' : 'rect';
         window.cadExecuteAddCustomShape(latLng, shapeType);
@@ -1462,10 +1475,19 @@ window.handleMapClick = (pageX, pageY) => {
     if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') return;
 
     if (window.cadPinMode === 'snap_line') {
+        let targetPathCoords = null;
         const p = loadedPolygons[window.cadTargetId];
         if (p && p.coords && p.coords.length > 2) {
-            let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
-            if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([coords[0][0], coords[0][1]]);
+            targetPathCoords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
+        } else if (window.selectedFudePaths && window.selectedFudePaths.length === 1) {
+            targetPathCoords = window.selectedFudePaths[0].map(pt => [pt.lng(), (typeof pt.lat === 'function') ? pt.lat() : pt.lat]);
+        } else if (typeof customDrawingPath !== 'undefined' && customDrawingPath && customDrawingPath.length > 2) {
+            targetPathCoords = customDrawingPath.map(pt => [pt.lng(), (typeof pt.lat === 'function') ? pt.lat() : pt.lat]);
+        }
+
+        if (targetPathCoords) {
+            let coords = targetPathCoords.slice();
+            if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([...coords[0]]);
             const pt = turf.point([latLng.lng(), latLng.lat()]);
             
             let minD = Infinity;
@@ -1484,10 +1506,24 @@ window.handleMapClick = (pageX, pageY) => {
             while (angle >= 180) angle -= 180; // keep it 0-180 for standard ridge direction
             angle = Math.round(angle * 10) / 10;
             
-            document.getElementById('cadAngle').value = angle;
-            window.cadAlignMapHeading(); // 🌟 地図も垂直に合わせる
-            window.updateCadPreviewCount(); // 畝数を自動計算
-            window.saveCadStateToHistory();
+            const angleEl = document.getElementById('cadAngle');
+            if (angleEl) angleEl.value = angle;
+            if (typeof window.cadAlignMapHeading === 'function') window.cadAlignMapHeading(); // 🌟 地図も垂直に合わせる
+            if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount(); // 畝数を自動計算
+            if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+
+            if (window.cadSplittingEdgeMode) {
+                window.cadSplittingEdgeMode = false;
+                window.cadPinMode = null;
+                const axisEl = document.getElementById('splitTargetAxis');
+                if (axisEl) axisEl.value = 'edge_selected';
+                const titleEl = document.getElementById('splitModalTitle');
+                if (titleEl) titleEl.innerHTML = `✂️ 選んだ辺（角度: ${angle}°）に平行な分割数を指定`;
+                const modalEl = document.getElementById('splitCountModal');
+                if (modalEl) modalEl.style.display = 'block';
+                if (msgEl) { msgEl.innerText = `✂️ 基準辺（角度: ${angle}°）を選択しました。分割数を指定してください。`; msgEl.style.color = "#4CAF50"; }
+                return;
+            }
         }
         window.cadPinMode = null;
         if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
@@ -2785,6 +2821,333 @@ window.cadClearRidgeNumberSplit = () => {
     else alert('分割番号をクリアし、通常の連番に戻しました。');
 };
 
+/** 畝並びの投影軸（幅方向） */
+window.cadGetRidgeOrderBearing = () => {
+    const angleEl = document.getElementById('cadAngle');
+    const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+    return angle + 90;
+};
+
+window.cadGetRidgeCentroidTurf = (poly) => {
+    try {
+        const path = poly.getPath().getArray();
+        let coords = path.map(pt => [pt.lng(), pt.lat()]);
+        if (coords.length < 3) return null;
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+            coords.push([coords[0][0], coords[0][1]]);
+        }
+        return turf.centroid(turf.polygon([coords]));
+    } catch (e) {
+        return null;
+    }
+};
+
+/** 生成順の畝を投影値付きで返す（空間並び） */
+window.cadGetOrderedRidgesWithProj = () => {
+    const ridges = window.cadGetMainRidgesForSplit();
+    if (!ridges.length) return [];
+    const bearing = window.cadGetRidgeOrderBearing();
+    const origin = window.cadGetRidgeCentroidTurf(ridges[0]) || turf.point([0, 0]);
+    const items = ridges.map((poly, index) => {
+        const c = window.cadGetRidgeCentroidTurf(poly);
+        let proj = index;
+        if (c) {
+            const dist = turf.distance(origin, c, { units: 'meters' });
+            const b = turf.bearing(origin, c);
+            proj = dist * Math.cos((b - bearing) * Math.PI / 180);
+        }
+        const w = (typeof window.estimateCadUneWidthMeters === 'function')
+            ? window.estimateCadUneWidthMeters(poly) : 0;
+        return { poly, index, proj, width: w };
+    });
+    items.sort((a, b) => a.proj - b.proj);
+    return items;
+};
+
+/**
+ * 畝がある塊（空間的に連続）でクラスタ分割
+ * 隣り合う畝中心の間隔が「平均幅×閾値」を超えたら空きとみなす
+ */
+window.cadClusterRidgesByPresence = (gapFactor) => {
+    const factor = (gapFactor != null && gapFactor > 1) ? gapFactor : 1.75;
+    const items = window.cadGetOrderedRidgesWithProj();
+    if (!items.length) return [];
+    const widths = items.map(i => i.width).filter(w => w > 0.2);
+    const avgW = widths.length
+        ? (widths.reduce((a, b) => a + b, 0) / widths.length)
+        : ((typeof window.getCadReferenceRidgeWidthMeters === 'function')
+            ? window.getCadReferenceRidgeWidthMeters() : 1.5);
+    const gapThresh = Math.max(avgW * factor, avgW + 0.4);
+
+    const clusters = [];
+    let cur = [items[0]];
+    for (let i = 1; i < items.length; i++) {
+        const gap = items[i].proj - items[i - 1].proj;
+        if (gap > gapThresh) {
+            clusters.push(cur);
+            cur = [items[i]];
+        } else {
+            cur.push(items[i]);
+        }
+    }
+    clusters.push(cur);
+    return { clusters, avgW, gapThresh, items };
+};
+
+window.cadApplyGroupPlanToRidges = (planItems, successMsg) => {
+    planItems.forEach((item) => {
+        const poly = item.poly;
+        if (!poly) return;
+        poly.uneGroup = item.group || 'default';
+        if (item.label) poly.customLabel = String(item.label);
+        else delete poly.customLabel;
+        try {
+            if (typeof poly.setOptions === 'function') {
+                poly.setOptions({
+                    fillColor: window.cadGetGroupColor
+                        ? window.cadGetGroupColor(poly.uneGroup)
+                        : '#8BC34A'
+                });
+            }
+        } catch (e) {}
+    });
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    window.cadSvgNeedsRebuild = true;
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    if (typeof window.cadPreviewRidgeNumberSplit === 'function') window.cadPreviewRidgeNumberSplit();
+    if (successMsg) {
+        if (typeof customAlert === 'function') customAlert(successMsg);
+        else alert(successMsg);
+    }
+};
+
+/** 畝のある場所（塊）とない場所（隙間）で番号分割 */
+window.cadApplyPresenceBasedSplit = () => {
+    const built = window.cadClusterRidgesByPresence(1.75);
+    if (!built.clusters || !built.clusters.length) {
+        if (typeof customAlert === 'function') customAlert('畝がありません。先に畝を生成してください。');
+        else alert('畝がありません。先に畝を生成してください。');
+        return;
+    }
+    if (built.clusters.length === 1) {
+        // 1塊しかない → その塊を分割1、端はなし
+        const plan = built.clusters[0].map((it) => ({
+            poly: it.poly,
+            group: '分割1',
+            label: String(it.index + 1)
+        }));
+        window.cadApplyGroupPlanToRidges(
+            plan,
+            `畝は1つの塊です。分割1番（${plan.length}畝）にまとめました。\n（途中生成などで隙間がある場合に複数ブロックへ分かれます）`
+        );
+        return;
+    }
+
+    const plan = [];
+    const groupSummaries = [];
+    built.clusters.forEach((cluster, ci) => {
+        const groupName = '分割' + (ci + 1);
+        const labels = [];
+        cluster.forEach((it) => {
+            labels.push(String(it.index + 1));
+            plan.push({
+                poly: it.poly,
+                group: groupName,
+                label: String(it.index + 1)
+            });
+        });
+        groupSummaries.push(`${groupName}: 元畝 ${labels.join(',')}（${cluster.length}畝）`);
+    });
+
+    window.cadApplyGroupPlanToRidges(
+        plan,
+        `畝のある塊で ${built.clusters.length} ブロックに分割しました。\n` +
+        `（隙間の目安: 約${built.gapThresh.toFixed(1)}m）\n` +
+        groupSummaries.join('\n')
+    );
+};
+
+window.cadUpdateGpsSplitCutsStatus = () => {
+    const el = document.getElementById('cadSplitGpsCutsStatus');
+    if (!el) return;
+    const cuts = (window.cadGpsSplitCuts || []).slice().sort((a, b) => a - b);
+    if (!cuts.length) {
+        el.innerText = '分割点: なし';
+        return;
+    }
+    el.innerText = '分割点: 畝' + cuts.map((c) => c + '番の前').join(' / ');
+};
+
+/** GPS位置が畝並びのどこにあるか */
+window.cadLocateGpsAmongRidges = (lat, lng) => {
+    const items = window.cadGetOrderedRidgesWithProj();
+    if (!items.length) {
+        return { ok: false, message: '畝がありません' };
+    }
+    const bearing = window.cadGetRidgeOrderBearing();
+    const origin = window.cadGetRidgeCentroidTurf(items[0].poly) || turf.point([lng, lat]);
+    const gpsPt = turf.point([lng, lat]);
+    const dist = turf.distance(origin, gpsPt, { units: 'meters' });
+    const b = turf.bearing(origin, gpsPt);
+    const gpsProj = dist * Math.cos((b - bearing) * Math.PI / 180);
+
+    // 最も近い畝
+    let nearest = items[0];
+    let nearestDist = Math.abs(items[0].proj - gpsProj);
+    items.forEach((it) => {
+        const d = Math.abs(it.proj - gpsProj);
+        if (d < nearestDist) {
+            nearestDist = d;
+            nearest = it;
+        }
+    });
+
+    // GPSより奥側の最初の畝インデックス（生成順 index）= この前で切る
+    let cutBeforeIndex = items[items.length - 1].index + 1; // 末尾より後ろ
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].proj >= gpsProj) {
+            cutBeforeIndex = items[i].index;
+            break;
+        }
+    }
+    // 先頭より手前
+    if (gpsProj < items[0].proj) cutBeforeIndex = items[0].index;
+
+    const onRidge = nearestDist <= Math.max((nearest.width || 1) * 0.6, 0.6);
+    const origNum = nearest.index + 1;
+    let message;
+    if (onRidge) {
+        message = `畝${origNum}番付近（この畝の前で分割可）`;
+    } else if (cutBeforeIndex <= items[0].index) {
+        message = `先頭より手前（畝${items[0].index + 1}番の前）`;
+    } else if (cutBeforeIndex > items[items.length - 1].index) {
+        message = `最終畝より奥`;
+    } else {
+        message = `畝の隙間（畝${cutBeforeIndex}番の前で分割）`;
+    }
+
+    return {
+        ok: true,
+        gpsProj,
+        nearestIndex: nearest.index,
+        nearestDist,
+        onRidge,
+        cutBeforeIndex,
+        message
+    };
+};
+
+window.cadStartSplitGps = () => {
+    if (!window.cadGetMainRidgesForSplit().length) {
+        alert('先に畝を生成してください。');
+        return;
+    }
+    if (typeof switchCadTab === 'function') {
+        try { switchCadTab(3); } catch (e) {}
+    }
+    window.cadStartPurposeGpsWatch('split_cut', '分割位置のGPS測位中… 畝の境目に立って「ここに分割点」');
+};
+
+window.cadCancelSplitGps = () => {
+    window.cadStopGpsPinPlace({ silent: true });
+    window.cadUpdateGpsSplitCutsStatus();
+};
+
+window.cadConfirmSplitGpsCut = () => {
+    if (!window.cadGpsLastPos) {
+        alert('まだ現在地を取得できていません。少し待ってから再度お試しください。');
+        return;
+    }
+    const acc = Math.round(window.cadGpsLastPos.accuracy || 999);
+    if (acc > 15) {
+        if (!confirm(`現在の精度は ±${acc}m です。\nこのまま分割点にしますか？`)) return;
+    }
+    const loc = window.cadLocateGpsAmongRidges(window.cadGpsLastPos.lat, window.cadGpsLastPos.lng);
+    if (!loc || !loc.ok) {
+        alert((loc && loc.message) || '分割位置を特定できませんでした。');
+        return;
+    }
+    if (!Array.isArray(window.cadGpsSplitCuts)) window.cadGpsSplitCuts = [];
+    const cut = loc.cutBeforeIndex;
+    const ridges = window.cadGetMainRidgesForSplit();
+    if (cut <= 0) {
+        alert('先頭より手前です。畝と畝の間、または途中の畝付近で取ってください。');
+        return;
+    }
+    if (cut >= ridges.length) {
+        alert('最終畝より奥です。畝と畝の間、または途中の畝付近で取ってください。');
+        return;
+    }
+    if (window.cadGpsSplitCuts.indexOf(cut) < 0) {
+        window.cadGpsSplitCuts.push(cut);
+    }
+    window.cadGpsSplitCuts.sort((a, b) => a - b);
+    window.cadUpdateGpsSplitCutsStatus();
+
+    // 測位は続行（複数点を連続で取れる）。確定メッセージだけ出す
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = `分割点を追加: 畝${cut + 1}番の前（${loc.message}）`;
+        msgEl.style.color = '#CE93D8';
+    }
+    const sStatus = document.getElementById('cadSplitGpsStatus');
+    if (sStatus) {
+        sStatus.textContent = `追加済み → ${loc.message}。続けて別の位置でも取れます。終わったら「GPS分割点で番号付け」`;
+        sStatus.style.color = '#A5D6A7';
+    }
+};
+
+window.cadClearGpsSplitCuts = () => {
+    window.cadGpsSplitCuts = [];
+    window.cadUpdateGpsSplitCutsStatus();
+    if (typeof customAlert === 'function') customAlert('GPS分割点をクリアしました。');
+    else alert('GPS分割点をクリアしました。');
+};
+
+/** GPS分割点で畝番号をブロック分け */
+window.cadApplyGpsSplitCuts = () => {
+    const ridges = window.cadGetMainRidgesForSplit();
+    if (!ridges.length) {
+        alert('畝がありません。');
+        return;
+    }
+    const cuts = (window.cadGpsSplitCuts || []).slice().sort((a, b) => a - b)
+        .filter((c, i, arr) => c > 0 && c < ridges.length && arr.indexOf(c) === i);
+    if (!cuts.length) {
+        alert('分割点がありません。先に「GPSで分割位置」→「ここに分割点」で追加してください。\n（または「畝のある塊で分割」を使えます）');
+        return;
+    }
+
+    // 生成順インデックスでブロック化
+    const bounds = [0].concat(cuts).concat([ridges.length]);
+    const plan = [];
+    const summaries = [];
+    let groupNum = 1;
+    for (let b = 0; b < bounds.length - 1; b++) {
+        const from = bounds[b];
+        const to = bounds[b + 1];
+        if (to <= from) continue;
+        const groupName = '分割' + groupNum;
+        const labels = [];
+        for (let i = from; i < to; i++) {
+            labels.push(String(i + 1));
+            plan.push({
+                poly: ridges[i],
+                group: groupName,
+                label: String(i + 1)
+            });
+        }
+        summaries.push(`${groupName}: 元畝 ${labels.join(',')}（${labels.length}畝）`);
+        groupNum++;
+    }
+
+    window.cadApplyGroupPlanToRidges(
+        plan,
+        `GPS分割点で ${groupNum - 1} ブロックに番号付けしました。\n` + summaries.join('\n')
+    );
+};
+
 window.cadAlignMapHeading = () => {
     const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
     window.cadCurrentRotation = -angle;
@@ -2880,6 +3243,7 @@ window.cadClearLines = (skipHistory = false) => {
     if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
     if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
     window.cadFrontBaseline = null;
+    if (typeof window.cadClearPartialPoints === 'function') window.cadClearPartialPoints(true);
     const msgEl = document.getElementById('cadPinModeMsg'); if (msgEl) msgEl.innerText = "💡 畝を直接タップすると、十字キーで移動や変形ができます。";
 };
 
@@ -2940,6 +3304,10 @@ window.cadGpsLastPos = null;
 window.cadGpsPreviewMarker = null;
 window.cadGpsPreviewCircle = null;
 window.cadGpsPinType = null;
+/** 'equip' | 'partial_start' | 'partial_end' | 'split_cut' | null */
+window.cadGpsPurpose = null;
+/** GPS分割点: 生成順の畝配列で「このインデックスの前で切る」 */
+window.cadGpsSplitCuts = [];
 
 window.cadSetGpsBarVisible = (visible) => {
     const bar = document.getElementById('cadGpsBar');
@@ -2991,8 +3359,9 @@ window.cadUpdateGpsUi = (opts) => {
         ? Math.round(window.cadGpsLastPos.accuracy)
         : null;
     const good = acc != null && acc <= 15;
+    const purpose = window.cadGpsPurpose;
 
-    if (statusEl && opts.status != null) {
+    if (statusEl && opts.status != null && (!purpose || purpose === 'equip')) {
         statusEl.textContent = opts.status;
         statusEl.style.color = opts.statusColor || '#90CAF9';
     }
@@ -3003,16 +3372,54 @@ window.cadUpdateGpsUi = (opts) => {
         startBtn.textContent = active ? '測位中…' : 'GPSで置く';
     }
     if (confirmBtn) {
-        confirmBtn.disabled = !(active && hasFix);
-        confirmBtn.style.opacity = (active && hasFix) ? '1' : '0.6';
-        confirmBtn.style.cursor = (active && hasFix) ? 'pointer' : 'not-allowed';
+        confirmBtn.disabled = !(active && hasFix && purpose === 'equip');
+        confirmBtn.style.opacity = (active && hasFix && purpose === 'equip') ? '1' : '0.6';
+        confirmBtn.style.cursor = (active && hasFix && purpose === 'equip') ? 'pointer' : 'not-allowed';
         confirmBtn.style.background = (active && hasFix && good) ? '#2E7D32' : ((active && hasFix) ? '#F9A825' : '#455A64');
         confirmBtn.style.color = (active && hasFix && !good) ? '#212121' : '#fff';
     }
     if (cancelBtn) {
-        cancelBtn.disabled = !active;
-        cancelBtn.style.opacity = active ? '1' : '0.6';
-        cancelBtn.style.cursor = active ? 'pointer' : 'not-allowed';
+        cancelBtn.disabled = !(active && purpose === 'equip');
+        cancelBtn.style.opacity = (active && purpose === 'equip') ? '1' : '0.6';
+        cancelBtn.style.cursor = (active && purpose === 'equip') ? 'pointer' : 'not-allowed';
+    }
+
+    // 途中生成用GPSバー
+    const pBar = document.getElementById('cadPartialGpsBar');
+    const pStatus = document.getElementById('cadPartialGpsStatus');
+    const pConfirm = document.getElementById('cadPartialGpsConfirmBtn');
+    const partialActive = purpose === 'partial_start' || purpose === 'partial_end';
+    if (pBar) pBar.style.display = partialActive && active ? 'block' : 'none';
+    if (pStatus && partialActive && opts.status != null) {
+        pStatus.textContent = opts.status;
+        pStatus.style.color = opts.statusColor || '#90CAF9';
+    }
+    if (pConfirm) {
+        const ok = partialActive && active && hasFix;
+        pConfirm.disabled = !ok;
+        pConfirm.style.opacity = ok ? '1' : '0.6';
+        pConfirm.style.cursor = ok ? 'pointer' : 'not-allowed';
+        pConfirm.style.background = (ok && good) ? '#2E7D32' : (ok ? '#F9A825' : '#455A64');
+        pConfirm.style.color = (ok && !good) ? '#212121' : '#fff';
+    }
+
+    // 畝番号分割用GPSバー
+    const sBar = document.getElementById('cadSplitGpsBar');
+    const sStatus = document.getElementById('cadSplitGpsStatus');
+    const sConfirm = document.getElementById('cadSplitGpsConfirmBtn');
+    const splitActive = purpose === 'split_cut';
+    if (sBar) sBar.style.display = splitActive && active ? 'block' : 'none';
+    if (sStatus && splitActive && opts.status != null) {
+        sStatus.textContent = opts.status;
+        sStatus.style.color = opts.statusColor || '#E1BEE7';
+    }
+    if (sConfirm) {
+        const ok = splitActive && active && hasFix;
+        sConfirm.disabled = !ok;
+        sConfirm.style.opacity = ok ? '1' : '0.6';
+        sConfirm.style.cursor = ok ? 'pointer' : 'not-allowed';
+        sConfirm.style.background = (ok && good) ? '#2E7D32' : (ok ? '#F9A825' : '#455A64');
+        sConfirm.style.color = (ok && !good) ? '#212121' : '#fff';
     }
 };
 
@@ -3028,9 +3435,22 @@ window.cadUpdateGpsPreview = (lat, lng, accuracy) => {
     window.cadDrawGpsPreviewOnSvg(pos.lat, pos.lng, acc);
 
     const good = acc <= 15;
-    const label = window.cadGpsPinTypeLabel(window.cadGpsPinType || window.cadPinMode);
+    const purpose = window.cadGpsPurpose;
+    let label = '現在地';
+    if (purpose === 'partial_start') label = '起点';
+    else if (purpose === 'partial_end') label = '終点';
+    else if (purpose === 'split_cut') label = '分割位置';
+    else label = window.cadGpsPinTypeLabel(window.cadGpsPinType || window.cadPinMode);
+
+    let hint = '「ここに置く」で確定';
+    if (purpose === 'split_cut') {
+        const loc = window.cadLocateGpsAmongRidges(pos.lat, pos.lng);
+        if (loc && loc.message) hint = loc.message + ' →「ここに分割点」';
+        else hint = '「ここに分割点」で確定';
+    }
+
     window.cadUpdateGpsUi({
-        status: `${label}  精度 ±${acc}m${good ? '（良好）' : '（もう少し待つと安定）'} →「ここに置く」で確定`,
+        status: `${label}  精度 ±${acc}m${good ? '（良好）' : '（もう少し待つと安定）'} → ${hint}`,
         statusColor: good ? '#A5D6A7' : '#FFE082'
     });
 };
@@ -3120,7 +3540,9 @@ window.cadStartGpsPinPlace = () => {
 
     window.cadGpsPinType = type;
     window.cadPinMode = type;
+    window.cadGpsPurpose = 'equip';
     window.cadStopGpsPinPlace({ silent: true });
+    window.cadGpsPurpose = 'equip';
 
     window.cadUpdateGpsUi({ status: '測位中… 屋外で少し待ってください（位置情報の許可が必要な場合があります）', statusColor: '#90CAF9' });
 
@@ -3145,6 +3567,14 @@ window.cadStartGpsPinPlace = () => {
 window.cadConfirmGpsPinPlace = () => {
     if (!window.cadGpsLastPos) {
         alert('まだ現在地を取得できていません。少し待ってから再度お試しください。');
+        return;
+    }
+    if (window.cadGpsPurpose === 'partial_start' || window.cadGpsPurpose === 'partial_end') {
+        window.cadConfirmPartialGps();
+        return;
+    }
+    if (window.cadGpsPurpose === 'split_cut') {
+        window.cadConfirmSplitGpsCut();
         return;
     }
     const type = window.cadGpsPinType || window.cadPinMode;
@@ -3174,12 +3604,52 @@ window.cadStopGpsPinPlace = (opts) => {
     }
     window.cadGpsWatchId = null;
     window.cadGpsLastPos = null;
+    window.cadGpsPurpose = null;
     window.cadClearGpsPreview();
+    const pBar = document.getElementById('cadPartialGpsBar');
+    if (pBar) pBar.style.display = 'none';
+    const sBar = document.getElementById('cadSplitGpsBar');
+    if (sBar) sBar.style.display = 'none';
     if (!opts.silent && !opts.keepStatus) {
         window.cadUpdateGpsUi({ status: 'ピン種別を選んで「GPSで置く」を押してください', statusColor: '#90CAF9' });
     } else {
         window.cadUpdateGpsUi({});
     }
+};
+
+/** 汎用GPS測位開始（途中生成・分割用） */
+window.cadStartPurposeGpsWatch = (purpose, waitingMsg) => {
+    if (!navigator.geolocation) {
+        alert('この端末・ブラウザではGPS（位置情報）を使えません。');
+        return false;
+    }
+    if (!window.cadMap) {
+        alert('CAD地図がまだ準備できていません。');
+        return false;
+    }
+    window.cadStopGpsPinPlace({ silent: true });
+    window.cadGpsPurpose = purpose;
+    window.cadUpdateGpsUi({
+        status: waitingMsg || '測位中… 屋外で少し待ってください',
+        statusColor: '#90CAF9'
+    });
+    window.cadGpsWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+            window.cadUpdateGpsPreview(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        },
+        (err) => {
+            let msg = '位置情報を取得できませんでした。';
+            if (err && err.code === 1) msg = '位置情報の利用が拒否されています。端末の設定で許可してください。';
+            else if (err && err.code === 2) msg = '位置情報を取得できません（電波・GPSを確認）。';
+            else if (err && err.code === 3) msg = '測位がタイムアウトしました。屋外で再度お試しください。';
+            window.cadUpdateGpsUi({ status: msg, statusColor: '#EF9A9A' });
+            alert(msg);
+            window.cadStopGpsPinPlace({ keepStatus: true });
+        },
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
+    );
+    window.cadUpdateGpsUi({});
+    return true;
 };
 
 /** 給水・排水アイコン上の番号サイズを変更 */
@@ -4113,6 +4583,407 @@ window.cadAdjustRidgeGap = (delta) => {
     }
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+};
+
+/**
+ * 圃場の途中から畝を立てる（既存畝に追加）
+ * - 起点: タップ / GPS
+ * - 左右: 畝の長手方向を見て左(angle-90) / 右(angle+90)
+ * - 終点(任意): 長手方向の「途中〜途中」長さ制限
+ */
+window.cadPartialStart = null;
+window.cadPartialEnd = null;
+window.cadPartialDir = 'right';
+window.cadPartialStartMarker = null;
+window.cadPartialEndMarker = null;
+
+window.cadBeginPartialPoint = (which) => {
+    const mode = which === 'end' ? 'partial_end' : 'partial_start';
+    window.cadPinMode = mode;
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = which === 'end'
+            ? '【終点】畝の長さの終わり付近をタップ（途中〜途中）。不要なら置かなくてOKです。'
+            : '【起点】畝を並べ始める位置をタップ（またはGPS起点を使用）';
+        msgEl.style.color = '#FFB74D';
+    }
+};
+
+window.cadSetPartialDir = (dir) => {
+    if (dir !== 'left' && dir !== 'right' && dir !== 'both') return;
+    window.cadPartialDir = dir;
+    const styleBtn = (id, active) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (active) {
+            el.style.background = '#4CAF50';
+            el.style.border = '1px solid #4CAF50';
+            el.style.color = '#fff';
+        } else {
+            el.style.background = '#333';
+            el.style.border = '1px solid #666';
+            el.style.color = '#fff';
+        }
+    };
+    styleBtn('cadPartialDirLeft', dir === 'left');
+    styleBtn('cadPartialDirRight', dir === 'right');
+    styleBtn('cadPartialDirBoth', dir === 'both');
+    window.cadUpdatePartialStatus();
+};
+
+window.cadUpdatePartialStatus = () => {
+    const el = document.getElementById('cadPartialStatus');
+    if (!el) return;
+    const fmt = (p) => (p ? `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}` : '未設定');
+    const dirLabel = window.cadPartialDir === 'left' ? '左へ'
+        : (window.cadPartialDir === 'both' ? '両側' : '右へ');
+    const startTxt = window.cadPartialStart ? '起点OK' : '起点未設定';
+    const endTxt = window.cadPartialEnd ? '／終点あり（途中〜途中）' : '／終点なし（圃場端まで）';
+    el.innerText = `${startTxt}${endTxt} ／ 方向:${dirLabel}`;
+    el.title = `起点: ${fmt(window.cadPartialStart)} / 終点: ${fmt(window.cadPartialEnd)}`;
+};
+
+window.cadUpsertPartialMarker = (which, lat, lng) => {
+    if (!window.cadMap || typeof google === 'undefined' || !google.maps) return;
+    const isStart = which === 'start';
+    const key = isStart ? 'cadPartialStartMarker' : 'cadPartialEndMarker';
+    const color = isStart ? '#1565C0' : '#EF6C00';
+    const label = isStart ? '起' : '終';
+    const pos = new google.maps.LatLng(lat, lng);
+    if (window[key]) {
+        window[key].setPosition(pos);
+        window[key].setMap(window.cadMap);
+        return;
+    }
+    window[key] = new google.maps.Marker({
+        position: pos,
+        map: window.cadMap,
+        title: isStart ? '途中生成の起点' : '途中生成の終点',
+        label: { text: label, color: '#fff', fontWeight: 'bold', fontSize: '11px' },
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: color,
+            fillOpacity: 1,
+            strokeColor: '#fff',
+            strokeWeight: 2
+        },
+        zIndex: 999
+    });
+};
+
+window.cadSetPartialPoint = (which, latLng) => {
+    if (!latLng) return;
+    const lat = typeof latLng.lat === 'function' ? latLng.lat() : parseFloat(latLng.lat);
+    const lng = typeof latLng.lng === 'function' ? latLng.lng() : parseFloat(latLng.lng);
+    if (!isFinite(lat) || !isFinite(lng)) return;
+    const pt = { lat: lat, lng: lng };
+    if (which === 'end') {
+        window.cadPartialEnd = pt;
+        window.cadUpsertPartialMarker('end', lat, lng);
+    } else {
+        window.cadPartialStart = pt;
+        window.cadUpsertPartialMarker('start', lat, lng);
+    }
+    window.cadUpdatePartialStatus();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+};
+
+window.cadSetPartialPointFromGps = (which) => {
+    // 互換: 旧ワンショット呼び出し → 連続測位へ
+    window.cadStartPartialGps(which);
+};
+
+window.cadStartPartialGps = (which) => {
+    const target = which === 'end' ? 'end' : 'start';
+    const purpose = target === 'end' ? 'partial_end' : 'partial_start';
+    const ok = window.cadStartPurposeGpsWatch(
+        purpose,
+        `${target === 'end' ? '終点' : '起点'}のGPS測位中… 屋外で少し待ってから「ここに置く」`
+    );
+    if (!ok) return;
+    if (typeof switchCadTab === 'function') {
+        try { switchCadTab(1); } catch (e) {}
+    }
+};
+
+window.cadConfirmPartialGps = () => {
+    if (!window.cadGpsLastPos) {
+        alert('まだ現在地を取得できていません。少し待ってから再度お試しください。');
+        return;
+    }
+    const purpose = window.cadGpsPurpose;
+    if (purpose !== 'partial_start' && purpose !== 'partial_end') {
+        alert('起点または終点のGPS測位を開始してください。');
+        return;
+    }
+    const acc = Math.round(window.cadGpsLastPos.accuracy || 999);
+    if (acc > 15) {
+        if (!confirm(`現在の精度は ±${acc}m です。\nこのまま置きますか？`)) return;
+    }
+    const which = purpose === 'partial_end' ? 'end' : 'start';
+    const latLng = new google.maps.LatLng(window.cadGpsLastPos.lat, window.cadGpsLastPos.lng);
+    window.cadSetPartialPoint(which, latLng);
+    window.cadStopGpsPinPlace({ silent: true });
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = `${which === 'end' ? '終点' : '起点'}をGPSで設定しました（精度 約${acc}m）`;
+        msgEl.style.color = '#FFB74D';
+    }
+};
+
+window.cadCancelPartialGps = () => {
+    window.cadStopGpsPinPlace({ silent: true });
+    window.cadUpdatePartialStatus();
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = 'GPS測位を取り消しました。';
+        msgEl.style.color = '#FFB74D';
+    }
+};
+
+window.cadClearPartialPoints = (silent) => {
+    window.cadPartialStart = null;
+    window.cadPartialEnd = null;
+    if (window.cadPartialStartMarker) {
+        window.cadPartialStartMarker.setMap(null);
+        window.cadPartialStartMarker = null;
+    }
+    if (window.cadPartialEndMarker) {
+        window.cadPartialEndMarker.setMap(null);
+        window.cadPartialEndMarker = null;
+    }
+    if (window.cadPinMode === 'partial_start' || window.cadPinMode === 'partial_end') {
+        window.cadPinMode = null;
+    }
+    window.cadUpdatePartialStatus();
+    if (!silent) {
+        const msgEl = document.getElementById('cadPinModeMsg');
+        if (msgEl) {
+            msgEl.innerText = '起点・終点をクリアしました。';
+            msgEl.style.color = '#FFB74D';
+        }
+    }
+};
+
+/** スキャン線上の距離パラメータ d に投影 */
+window.cadProjectOntoScanLine = (ptTurf, pt1Turf, angle) => {
+    const dist = turf.distance(pt1Turf, ptTurf, { units: 'meters' });
+    const bearing = turf.bearing(pt1Turf, ptTurf);
+    const angleDiff = (bearing - (angle + 180)) * Math.PI / 180;
+    return dist * Math.cos(angleDiff);
+};
+
+/**
+ * 起点から指定方向へ、基準畝幅で畝を追加生成する
+ */
+window.cadGeneratePartialLines = () => {
+    try {
+        if (!window.cadTargetId) return;
+
+        if (typeof window.getCadWidthCm === 'function' && !window.getCadWidthCm()) {
+            alert('⚠️ 基準の畝幅を選択してください（栽培プリセットの畝間から選べます）');
+            return;
+        }
+        if (!window.cadPartialStart) {
+            alert('先に起点をタップするか「GPS起点」で位置を設定してください。');
+            return;
+        }
+
+        const angleEl = document.getElementById('cadAngle');
+        const countEl = document.getElementById('cadPartialCount');
+        const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+        let uneCount = countEl && countEl.value ? parseInt(countEl.value, 10) : 0;
+        if (isNaN(uneCount) || uneCount <= 0) {
+            alert('⚠️ 追加畝数を1以上にしてください。');
+            return;
+        }
+
+        const widthCm = window.getCadWidthCm();
+        const actualWidthM = widthCm / 100;
+        if (!(actualWidthM > 0)) {
+            alert('⚠️ 基準の畝幅が不正です。');
+            return;
+        }
+
+        const p = loadedPolygons[window.cadTargetId];
+        if (!p || !p.coords || p.coords.length < 3) return;
+
+        let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+            coords.push([coords[0][0], coords[0][1]]);
+        }
+        const tPoly = turf.polygon([coords]);
+        const baseOrigin = turf.point([window.cadPartialStart.lng, window.cadPartialStart.lat]);
+
+        // 畝の長手方向を見て右=angle+90、左=angle-90
+        const dir = window.cadPartialDir || 'right';
+        const growDirs = [];
+        if (dir === 'left' || dir === 'both') growDirs.push(angle - 90);
+        if (dir === 'right' || dir === 'both') growDirs.push(angle + 90);
+        if (!growDirs.length) growDirs.push(angle + 90);
+
+        const marginEndEl = document.getElementById('cadMarginEnd');
+        const endMarginMeters = marginEndEl && marginEndEl.value ? parseFloat(marginEndEl.value) / 100 : 0;
+
+        const bbox = turf.bbox(tPoly);
+        const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' });
+
+        let nakamichiPolys = (window.cadNakamichiLines || []).map(line => {
+            let p1lng = typeof line[0].lng === 'function' ? line[0].lng() : parseFloat(line[0].lng);
+            let p1lat = typeof line[0].lat === 'function' ? line[0].lat() : parseFloat(line[0].lat);
+            let p2lng = typeof line[1].lng === 'function' ? line[1].lng() : parseFloat(line[1].lng);
+            let p2lat = typeof line[1].lat === 'function' ? line[1].lat() : parseFloat(line[1].lat);
+            const centerLine = turf.lineString([[p1lng, p1lat], [p2lng, p2lat]]);
+            return turf.buffer(centerLine, 0.5 / 1000, { units: 'kilometers' });
+        });
+        let drainagePolys = (window.cadDrainageLines || []).map(line => {
+            let p1lng = typeof line[0].lng === 'function' ? line[0].lng() : parseFloat(line[0].lng);
+            let p1lat = typeof line[0].lat === 'function' ? line[0].lat() : parseFloat(line[0].lat);
+            let p2lng = typeof line[1].lng === 'function' ? line[1].lng() : parseFloat(line[1].lng);
+            let p2lat = typeof line[1].lat === 'function' ? line[1].lat() : parseFloat(line[1].lat);
+            const centerLine = turf.lineString([[p1lng, p1lat], [p2lng, p2lat]]);
+            return turf.buffer(centerLine, 0.5 / 1000, { units: 'kilometers' });
+        });
+        let avoidPolys = [...nakamichiPolys, ...drainagePolys];
+
+        const lineLen = diagDist + 40;
+        const ratio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
+        const w = actualWidthM * ratio;
+        let rects = [];
+
+        // 終点がある場合の長手クリップ範囲（各畝のスキャン線ごとに計算）
+        const endPtTurf = window.cadPartialEnd
+            ? turf.point([window.cadPartialEnd.lng, window.cadPartialEnd.lat])
+            : null;
+
+        growDirs.forEach((growDirection) => {
+            for (let i = 0; i < uneCount; i++) {
+                // 起点を畝の端とし、中心は半畝幅ずつ外側へ
+                const offset = actualWidthM * (i + 0.5);
+                const oPt = turf.destination(baseOrigin, offset, growDirection, { units: 'meters' });
+                const pt1 = turf.destination(oPt, lineLen / 2, angle, { units: 'meters' });
+
+                let clipMin = null;
+                let clipMax = null;
+                if (endPtTurf) {
+                    const dStart = window.cadProjectOntoScanLine(baseOrigin, pt1, angle);
+                    const dEnd = window.cadProjectOntoScanLine(endPtTurf, pt1, angle);
+                    clipMin = Math.min(dStart, dEnd);
+                    clipMax = Math.max(dStart, dEnd);
+                    // 極端に短い場合は無視
+                    if (clipMax - clipMin < 1.0) {
+                        clipMin = null;
+                        clipMax = null;
+                    }
+                }
+
+                const checkValid = (dist) => {
+                    if (clipMin != null && (dist < clipMin || dist > clipMax)) return false;
+                    let c = turf.destination(pt1, dist, angle + 180, { units: 'meters' });
+                    // 終点指定時は端面余白を弱め、指定区間を優先
+                    const useEndMargin = (clipMin != null) ? Math.min(endMarginMeters, 0.3) : endMarginMeters;
+                    let c_fwd = turf.destination(c, useEndMargin, angle + 180, { units: 'meters' });
+                    let c_bwd = turf.destination(c, useEndMargin, angle, { units: 'meters' });
+                    let p_fwd_L = turf.destination(c_fwd, w / 2, angle + 90, { units: 'meters' });
+                    let p_fwd_R = turf.destination(c_fwd, w / 2, angle - 90, { units: 'meters' });
+                    let p_bwd_L = turf.destination(c_bwd, w / 2, angle + 90, { units: 'meters' });
+                    let p_bwd_R = turf.destination(c_bwd, w / 2, angle - 90, { units: 'meters' });
+                    let c_L = turf.destination(c, w / 2, angle + 90, { units: 'meters' });
+                    let c_R = turf.destination(c, w / 2, angle - 90, { units: 'meters' });
+                    let ptsToCheck = [p_fwd_L, p_fwd_R, p_bwd_L, p_bwd_R, c_L, c_R];
+                    for (let pt of ptsToCheck) {
+                        if (!turf.booleanPointInPolygon(pt, tPoly)) return false;
+                    }
+                    if (avoidPolys.length > 0) {
+                        for (let av of avoidPolys) {
+                            for (let pt of ptsToCheck) {
+                                if (turf.booleanPointInPolygon(pt, av)) return false;
+                            }
+                        }
+                    }
+                    return true;
+                };
+
+                const stepMeters = 0.5;
+                let validSegments = [];
+                let currentSegment = null;
+                const d0 = clipMin != null ? Math.max(0, clipMin - 1) : 0;
+                const d1 = clipMax != null ? Math.min(lineLen, clipMax + 1) : lineLen;
+
+                for (let d = d0; d <= d1; d += stepMeters) {
+                    let isValid = checkValid(d);
+                    if (isValid) {
+                        if (!currentSegment) {
+                            let fine_d = d;
+                            while (fine_d - 0.1 >= d - stepMeters && checkValid(fine_d - 0.1)) fine_d -= 0.1;
+                            currentSegment = { start: fine_d, end: d };
+                        } else {
+                            currentSegment.end = d;
+                        }
+                    } else if (currentSegment) {
+                        let fine_d = currentSegment.end;
+                        while (fine_d + 0.1 <= d && checkValid(fine_d + 0.1)) fine_d += 0.1;
+                        currentSegment.end = fine_d;
+                        if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
+                        currentSegment = null;
+                    }
+                }
+                if (currentSegment) {
+                    let fine_d = currentSegment.end;
+                    while (fine_d + 0.1 <= d1 && checkValid(fine_d + 0.1)) fine_d += 0.1;
+                    currentSegment.end = fine_d;
+                    if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
+                }
+
+                // 終点あり: 区間内にクリップ
+                if (clipMin != null) {
+                    validSegments = validSegments.map(seg => ({
+                        start: Math.max(seg.start, clipMin),
+                        end: Math.min(seg.end, clipMax)
+                    })).filter(seg => seg.end - seg.start >= 1.0);
+                }
+
+                validSegments.forEach(seg => {
+                    let sPt = turf.destination(pt1, seg.start, angle + 180, { units: 'meters' });
+                    let ePt = turf.destination(pt1, seg.end, angle + 180, { units: 'meters' });
+                    let p1c = turf.destination(sPt, w / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
+                    let p2c = turf.destination(sPt, w / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
+                    let p3c = turf.destination(ePt, w / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
+                    let p4c = turf.destination(ePt, w / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
+                    rects.push(turf.polygon([[p1c, p2c, p3c, p4c, p1c]]));
+                });
+            }
+        });
+
+        let successCount = 0;
+        let polyIndex = (window.cadUnePolygons ? window.cadUnePolygons.length : 0) + 1;
+        rects.forEach(rect => {
+            addUnePolygon(rect.geometry.coordinates[0], polyIndex++);
+            successCount++;
+        });
+
+        if (typeof window.reassignLabels === 'function') window.reassignLabels();
+        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+        window.cadSvgNeedsRebuild = true;
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+
+        if (successCount === 0) {
+            alert('⚠️ この位置・方向では畝を生成できませんでした。起点・左右・畝幅を確認してください。');
+        } else {
+            const msgEl = document.getElementById('cadPinModeMsg');
+            if (msgEl) {
+                msgEl.innerText = `途中から ${successCount} 本の畝を追加しました（既存畝は残しています）`;
+                msgEl.style.color = '#FFB74D';
+            }
+            const mode1El = document.getElementById('cadMode1');
+            if (mode1El && mode1El.style.display === 'block' && typeof switchCadTab === 'function') {
+                switchCadTab(2);
+            }
+        }
+    } catch (globalError) {
+        alert('❌ 途中生成中にエラーが発生しました:\n' + globalError.message);
+    }
 };
 
 window.cadGenerateLines = () => {
