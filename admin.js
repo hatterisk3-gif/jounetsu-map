@@ -5008,85 +5008,9 @@ window.syncTrackingUI = function() {
     }
 };
 
-window.toggleTracking = () => {
-    if (window.passionWatchId !== null || localStorage.getItem('passionMapClockIn')) {
-        localStorage.removeItem('passionMapClockIn');
-        window.syncTrackingUI();
-        if (typeof currentUser !== 'undefined' && currentUser) {
-            if(typeof callGAS === 'function') {
-                callGAS('saveTrackingData', {
-                    userName: currentUser,
-                    lat: '',
-                    lng: '',
-                    type: '退勤'
-                }).catch(e => console.warn(e));
-            }
-            navigator.geolocation.getCurrentPosition((p) => {
-                if(typeof callGAS === 'function') {
-                    callGAS('saveTrackingData', {
-                        userName: currentUser,
-                        lat: p.coords.latitude,
-                        lng: p.coords.longitude,
-                        type: '退勤'
-                    }).catch(e => console.warn(e));
-                }
-            }, (err) => { console.warn(err); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-        }
-    } else {
-        if (!navigator.geolocation) {
-            return;
-        }
-        
-        const btn = document.getElementById('btnTracking');
-        const now = new Date();
-        const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-        const dateStr = now.toLocaleDateString();
-        
-        const clockInState = { lat: '', lng: '', time: timeStr, active: true };
-        const clockInTodayState = { lat: '', lng: '', time: timeStr, date: dateStr };
-        localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
-        localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
-        window.syncTrackingUI();
 
-        navigator.geolocation.getCurrentPosition((p) => {
-            const lat = p.coords.latitude;
-            const lng = p.coords.longitude;
-            clockInState.lat = lat;
-            clockInState.lng = lng;
-            clockInTodayState.lat = lat;
-            clockInTodayState.lng = lng;
-            localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
-            localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
-            window.syncTrackingUI();
+// toggleTracking は tracking.js の共通モーダル処理を使用します
 
-            if (typeof currentUser !== 'undefined' && currentUser) {
-                if(typeof callGAS === 'function') {
-                    callGAS('saveTrackingData', {
-                        userName: currentUser,
-                        lat: lat,
-                        lng: lng,
-                        type: '出勤'
-                    }).catch(e => console.warn(e));
-                }
-            }
-        }, (err) => {
-            console.warn('GPSエラー', err);
-            if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') {
-                customAlert('GPSの取得に失敗しましたが、出勤時間は記録しました。');
-            }
-            if (typeof currentUser !== 'undefined' && currentUser) {
-                if(typeof callGAS === 'function') {
-                    callGAS('saveTrackingData', {
-                        userName: currentUser,
-                        lat: '',
-                        lng: '',
-                        type: '出勤'
-                    }).catch(e => console.warn(e));
-                }
-            }
-        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-    }
-};
 
 window.addEventListener('storage', (e) => {
     if (e.key === 'passionMapClockIn' || e.key === 'passionMapClockInToday') {
