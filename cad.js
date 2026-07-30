@@ -380,8 +380,83 @@ window.updateCadSvgOverlay = (opts) => {
             });
         }
         if (window.cadNakamichiMapPolygons) {
-            window.cadNakamichiMapPolygons.forEach(p => {
+            window.cadNakamichiMapPolygons.forEach((p, lineIdx) => {
                 p._svgPathNode = createPathNode('none', '#E91E63', true);
+                p._svgPathNode.setAttribute('stroke-width', '8');
+                p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: move;');
+
+                let isDraggingLine = false;
+                let startClientX = 0, startClientY = 0;
+                let startCoords = [];
+
+                const onLineMove = (ev) => {
+                    if (ev.cancelable) ev.preventDefault();
+                    if (!isDraggingLine) return;
+                    let clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+                    let clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                    let startLatLng = window.screenPixelToLatLng(startClientX, startClientY);
+                    let curLatLng = window.screenPixelToLatLng(clientX, clientY);
+                    if (startLatLng && curLatLng && startCoords.length >= 2) {
+                        let dLat = curLatLng.lat() - startLatLng.lat();
+                        let dLng = curLatLng.lng() - startLatLng.lng();
+                        let path = p.getPath ? p.getPath() : null;
+                        for (let i = 0; i < startCoords.length; i++) {
+                            let newLat = startCoords[i].lat + dLat;
+                            let newLng = startCoords[i].lng + dLng;
+                            let newPt = new google.maps.LatLng(newLat, newLng);
+                            if (path) path.setAt(i, newPt);
+                            if (window.cadNakamichiLines && window.cadNakamichiLines[lineIdx]) {
+                                window.cadNakamichiLines[lineIdx][i] = { lat: newLat, lng: newLng };
+                            }
+                        }
+                        if (typeof window.cadReapplyAllNakamichiSplits === 'function') {
+                            window.cadReapplyAllNakamichiSplits();
+                        }
+                        window.updateCadSvgOverlay({ light: true });
+                    }
+                };
+
+                const onLineEnd = () => {
+                    if (!isDraggingLine) return;
+                    isDraggingLine = false;
+                    window.removeEventListener('mousemove', onLineMove);
+                    window.removeEventListener('mouseup', onLineEnd);
+                    window.removeEventListener('touchmove', onLineMove);
+                    window.removeEventListener('touchend', onLineEnd);
+                    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                    window.updateCadSvgOverlay();
+                };
+
+                p._svgPathNode.addEventListener('mousedown', (e) => {
+                    isDraggingLine = true; e.stopPropagation();
+                    startClientX = e.clientX; startClientY = e.clientY;
+                    const path = p.getPath ? p.getPath() : null;
+                    startCoords = [];
+                    if (path) {
+                        for (let i = 0; i < path.getLength(); i++) {
+                            let pt = path.getAt(i);
+                            startCoords.push({ lat: pt.lat(), lng: pt.lng() });
+                        }
+                    }
+                    window.addEventListener('mousemove', onLineMove);
+                    window.addEventListener('mouseup', onLineEnd);
+                });
+
+                p._svgPathNode.addEventListener('touchstart', (e) => {
+                    isDraggingLine = true; e.stopPropagation();
+                    startClientX = e.touches[0].clientX; startClientY = e.touches[0].clientY;
+                    const path = p.getPath ? p.getPath() : null;
+                    startCoords = [];
+                    if (path) {
+                        for (let i = 0; i < path.getLength(); i++) {
+                            let pt = path.getAt(i);
+                            startCoords.push({ lat: pt.lat(), lng: pt.lng() });
+                        }
+                    }
+                    window.addEventListener('touchmove', onLineMove, {passive: false});
+                    window.addEventListener('touchend', onLineEnd);
+                }, {passive: false});
+
                 pathsGroup.appendChild(p._svgPathNode);
             });
         }
@@ -486,11 +561,76 @@ window.updateCadSvgOverlay = (opts) => {
             }
         };
 
+        const createHandlesForNakamichiLines = () => {
+            if (!window.cadNakamichiMapPolygons || !window.cadNakamichiMapPolygons.length) return;
+            window.cadNakamichiMapPolygons.forEach((polyLine, lineIdx) => {
+                let path = polyLine.getPath ? polyLine.getPath() : null;
+                if (!path || path.getLength() < 2) return;
+                polyLine._svgHandlesNodes = [];
+
+                for (let i = 0; i < path.getLength(); i++) {
+                    let circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('r', '9');
+                    circle.setAttribute('fill', '#E91E63');
+                    circle.setAttribute('stroke', '#FFFFFF');
+                    circle.setAttribute('stroke-width', '2.5');
+                    circle.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
+
+                    let isDraggingHandle = false;
+
+                    const onMove = (ev) => {
+                        if (ev.cancelable) ev.preventDefault();
+                        if (!isDraggingHandle) return;
+                        let clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+                        let clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                        let newLatLng = window.screenPixelToLatLng(clientX, clientY);
+                        if (newLatLng) {
+                            path.setAt(i, newLatLng);
+                            if (window.cadNakamichiLines && window.cadNakamichiLines[lineIdx]) {
+                                window.cadNakamichiLines[lineIdx][i] = { lat: newLatLng.lat(), lng: newLatLng.lng() };
+                            }
+                            if (typeof window.cadReapplyAllNakamichiSplits === 'function') {
+                                window.cadReapplyAllNakamichiSplits();
+                            }
+                            window.updateCadSvgOverlay({ light: true });
+                        }
+                    };
+
+                    const onEnd = () => {
+                        if (!isDraggingHandle) return;
+                        isDraggingHandle = false;
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onEnd);
+                        window.removeEventListener('touchmove', onMove);
+                        window.removeEventListener('touchend', onEnd);
+                        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                        window.updateCadSvgOverlay();
+                    };
+
+                    circle.addEventListener('mousedown', (e) => {
+                        isDraggingHandle = true; e.stopPropagation();
+                        window.addEventListener('mousemove', onMove);
+                        window.addEventListener('mouseup', onEnd);
+                    });
+
+                    circle.addEventListener('touchstart', (e) => {
+                        isDraggingHandle = true; e.stopPropagation();
+                        window.addEventListener('touchmove', onMove, {passive: false});
+                        window.addEventListener('touchend', onEnd);
+                    }, {passive: false});
+
+                    handlesGroup.appendChild(circle);
+                    polyLine._svgHandlesNodes.push(circle);
+                }
+            });
+        };
+
         if (editingId) {
             const allForHandle = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
             const ep = allForHandle.find(p => p && p.uneIndex === editingId);
             if (ep) createHandlesForPoly(ep);
         }
+        createHandlesForNakamichiLines();
     }
     
     const updatePathD = (poly, isLine = false) => {
@@ -601,6 +741,9 @@ window.updateCadSvgOverlay = (opts) => {
         const allForHandlePos = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
         const ep = allForHandlePos.find(p => p && p.uneIndex === editingId);
         if (ep) updateHandlesPosition(ep);
+    }
+    if (window.cadNakamichiMapPolygons) {
+        window.cadNakamichiMapPolygons.forEach(p => updateHandlesPosition(p));
     }
 
     let pinsStateId = '';
@@ -1373,7 +1516,15 @@ window.cadPlaceEquipmentPin = (latLng, pinType) => {
     if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
     window.cadPinMode = null;
     if (typeof window.cadSetGpsBarVisible === 'function') window.cadSetGpsBarVisible(false);
-    if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+    if (msgEl) {
+        if (mk.cadPinType === 'water_out') {
+            msgEl.innerText = '🕳️ 排水ピンを設置し、枕を切断しました！（ピンクの切断ラインや端のハンドルをドラッグして動かせます）';
+            msgEl.style.color = '#E91E63';
+        } else {
+            msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`;
+            msgEl.style.color = '#FF9800';
+        }
+    }
     window.saveCadStateToHistory();
     return true;
 };
@@ -3079,10 +3230,14 @@ window.drawNakamichiVisual = (path) => {
             window.cadNakamichiLines[idx] = newPath;
         }
 
-        try {
-            window.cadSplitMakuraByNakamichi(newPath);
-        } catch (e) {
-            console.warn('枕畝の分割に失敗:', e);
+        if (typeof window.cadReapplyAllNakamichiSplits === 'function') {
+            window.cadReapplyAllNakamichiSplits();
+        } else {
+            try {
+                window.cadSplitMakuraByNakamichi(newPath);
+            } catch (e) {
+                console.warn('枕畝の分割に失敗:', e);
+            }
         }
 
         if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
@@ -3287,6 +3442,57 @@ window.cadSplitMakuraByNakamichi = (path) => {
 
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
     window.cadSvgNeedsRebuild = true;
+};
+
+/** 全ての中道・排水切断ラインを最新位置で基底枕形状に順次適用し再分割 */
+window.cadReapplyAllNakamichiSplits = () => {
+    if (!window.cadNakamichiLines || !window.cadNakamichiLines.length) return;
+
+    // 初回・または未切断の基底枕データが未登録の場合は現在の枕グループを保存
+    if (!window.cadBaseMakuraShapesData || !window.cadBaseMakuraShapesData.length) {
+        window.cadBaseMakuraShapesData = [];
+        if (window.cadCustomShapes) {
+            window.cadCustomShapes.forEach(poly => {
+                if (poly && poly.uneGroup === '枕') {
+                    const arr = poly.getPath().getArray();
+                    const ring = arr.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
+                    window.cadBaseMakuraShapesData.push(ring);
+                }
+            });
+        }
+    }
+
+    if (!window.cadBaseMakuraShapesData || !window.cadBaseMakuraShapesData.length) return;
+
+    // 既存の枕ポリゴンを地図・配列から削除
+    const nonMakura = (window.cadCustomShapes || []).filter(p => p && p.uneGroup !== '枕');
+    const oldMakura = (window.cadCustomShapes || []).filter(p => p && p.uneGroup === '枕');
+    oldMakura.forEach(p => { try { p.setMap(null); } catch (e) {} });
+
+    // 基底枕ポリゴンを復元して再配置
+    const restoredMakura = [];
+    window.cadBaseMakuraShapesData.forEach((ring, idx) => {
+        const gPoly = window.cadCreateRidgePolygon([ring], {
+            fillColor: window.cadGetGroupColor ? window.cadGetGroupColor('枕') : '#8BC34A'
+        });
+        gPoly.uneIndex = 'custom_makura_base_' + Date.now() + '_' + idx + '_' + Math.floor(Math.random() * 1000);
+        gPoly.uneGroup = '枕';
+        if (typeof window.bindShapeHistoryEvents === 'function') window.bindShapeHistoryEvents(gPoly);
+        restoredMakura.push(gPoly);
+    });
+
+    window.cadCustomShapes = [...nonMakura, ...restoredMakura];
+
+    // 保存されているすべての中道/排水ラインで順次分割処理を実行
+    window.cadNakamichiLines.forEach(linePath => {
+        if (linePath && linePath.length >= 2) {
+            try {
+                window.cadSplitMakuraByNakamichi(linePath);
+            } catch (e) {
+                console.warn('枕分割の再適用失敗:', e);
+            }
+        }
+    });
 };
 
 /** 全ての排水口ピンから枕分割用の中道を一括自動生成 */
@@ -3580,6 +3786,50 @@ window.cadExtendLineStringEnds = (line, extendMeters) => {
 };
 
 /**
+ * 枕畝候補から「外殻に沿った1本」を選ぶ。
+ * difference で複数に割れた場合は、辺に近い最大面積の1つを返す。
+ */
+window.cadPickBestMakuraFeature = (flattened, centerPt, edgeChain, maxEdgeDistM) => {
+    try {
+        if (!flattened || !flattened.features || !flattened.features.length) return null;
+        const maxDist = (maxEdgeDistM != null && maxEdgeDistM > 0) ? maxEdgeDistM : 3;
+        let edgeLine = null;
+        if (edgeChain && edgeChain.length >= 2) {
+            try { edgeLine = turf.lineString(edgeChain); } catch (e) { edgeLine = null; }
+        }
+        let best = null;
+        let bestScore = -Infinity;
+        flattened.features.forEach((feature) => {
+            if (!feature || !feature.geometry) return;
+            const gType = feature.geometry.type;
+            if (gType !== 'Polygon' && gType !== 'MultiPolygon') return;
+            let area = 0;
+            try { area = turf.area(feature); } catch (eA) { area = 0; }
+            if (!(area > 0.05)) return; // 極小片は無視
+            let center;
+            try { center = turf.center(feature); } catch (eC) { return; }
+            let edgeDist = 0;
+            if (edgeLine) {
+                try { edgeDist = turf.pointToLineDistance(center, edgeLine, { units: 'meters' }); } catch (eD) { edgeDist = 999; }
+            } else if (centerPt) {
+                try { edgeDist = turf.distance(center, centerPt, { units: 'meters' }); } catch (eD2) { edgeDist = 999; }
+            }
+            if (edgeDist > maxDist) return;
+            // 面積を優先しつつ、辺に近いものを選ぶ
+            const score = area - edgeDist * 2;
+            if (score > bestScore) {
+                bestScore = score;
+                best = feature;
+            }
+        });
+        return best;
+    } catch (e) {
+        console.warn('cadPickBestMakuraFeature failed:', e);
+        return flattened && flattened.features && flattened.features[0] ? flattened.features[0] : null;
+    }
+};
+
+/**
  * 圃場ポリゴン内で、枕帯が左右（長手方向）に端まで届くよう補正する。
  * タップ辺方向に長い帯を作り直し、圃場∩帯で左右端まで埋める。
  */
@@ -3646,6 +3896,8 @@ window.cadExecuteAddMakura = (latLng) => {
     const tPoly = turf.polygon([coords]);
 
     // --- 外殻追随: 近い辺＋角度の近い連続辺に沿った帯 ---
+    // 外殻線中心のバッファは外側にも広がるため、半径=畝幅で圃場内に約1畝幅の帯になる
+    let continuousStrip = null;
     let finalPoly = null;
     let usedEdgeChain = null;
     // 角まで辿りやすいよう角度許容を少し広めに
@@ -3657,14 +3909,16 @@ window.cadExecuteAddMakura = (latLng) => {
             // バッファの丸端で左右が欠けるのを防ぐため、両端を延長してから帯にする
             edgeLine = window.cadExtendLineStringEnds(edgeLine, Math.max(actualWidthM * 4, 8));
             const strip = turf.buffer(edgeLine, actualWidthM, { units: 'meters' });
-            if (strip) finalPoly = turf.intersect(tPoly, strip);
+            if (strip) continuousStrip = turf.intersect(tPoly, strip);
             // 圃場の左右端まで届くよう補正
-            if (finalPoly) {
-                finalPoly = window.cadStretchMakuraToFieldSides(finalPoly, tPoly, edgeInfo.chain, actualWidthM);
+            if (continuousStrip) {
+                continuousStrip = window.cadStretchMakuraToFieldSides(continuousStrip, tPoly, edgeInfo.chain, actualWidthM);
             }
+            finalPoly = continuousStrip;
         } catch (e) {
             console.warn('外殻追随枕畝の生成に失敗、直線帯にフォールバック:', e);
             finalPoly = null;
+            continuousStrip = null;
         }
     }
 
@@ -3680,6 +3934,7 @@ window.cadExecuteAddMakura = (latLng) => {
         let makuraRect = turf.polygon([[c1, c2, c3, c4, c1]]);
         try {
             finalPoly = turf.intersect(tPoly, makuraRect);
+            continuousStrip = finalPoly;
         } catch (e) { console.error(e); }
     }
 
@@ -3702,62 +3957,94 @@ window.cadExecuteAddMakura = (latLng) => {
         return null;
     }).filter(Boolean);
 
+    // 主畝との差を取る（先端が食い込むと複数片に割れることがある）
+    let differenced = finalPoly;
     for (let av of avoidPolys) {
-        if (!finalPoly) break;
+        if (!differenced) break;
         try {
-            finalPoly = turf.difference(finalPoly, av);
+            differenced = turf.difference(differenced, av);
         } catch (e) { console.error(e); }
     }
 
     // difference 後に左右が欠けた場合の再補正
-    if (finalPoly && usedEdgeChain) {
+    if (differenced && usedEdgeChain) {
         try {
-            const stretched = window.cadStretchMakuraToFieldSides(finalPoly, tPoly, usedEdgeChain, actualWidthM);
+            const stretched = window.cadStretchMakuraToFieldSides(differenced, tPoly, usedEdgeChain, actualWidthM);
             if (stretched) {
-                // 主畝との重なりは再度軽く除く
                 let repaired = stretched;
                 for (let av of avoidPolys) {
                     if (!repaired) break;
                     try { repaired = turf.difference(repaired, av); } catch (e2) {}
                 }
-                if (repaired) finalPoly = repaired;
+                if (repaired) differenced = repaired;
             }
         } catch (e3) {}
     }
 
-    if (!finalPoly) {
+    // 外殻に沿った連続1本を優先。差分解で2本以上に割れたら連続帯にフォールバック
+    const pickMaxDist = Math.max(actualWidthM * 1.35, 2.5);
+    let chosenFeature = null;
+    if (differenced) {
+        const flatDiff = turf.flatten(differenced);
+        const nearCount = (flatDiff.features || []).filter((f) => {
+            try {
+                if (!f || !f.geometry) return false;
+                const c = turf.center(f);
+                if (usedEdgeChain && usedEdgeChain.length >= 2) {
+                    return turf.pointToLineDistance(c, turf.lineString(usedEdgeChain), { units: 'meters' }) <= pickMaxDist;
+                }
+                return turf.distance(c, centerPt, { units: 'meters' }) <= pickMaxDist;
+            } catch (e) { return false; }
+        }).length;
+
+        if (nearCount <= 1) {
+            chosenFeature = window.cadPickBestMakuraFeature(flatDiff, centerPt, usedEdgeChain, pickMaxDist);
+        }
+    }
+    // 割れ・消失時は外枠〜畝の間を埋める連続帯をそのまま使う（1本のみ）
+    if (!chosenFeature && continuousStrip) {
+        const flatCont = turf.flatten(continuousStrip);
+        chosenFeature = window.cadPickBestMakuraFeature(flatCont, centerPt, usedEdgeChain, pickMaxDist)
+            || (flatCont.features && flatCont.features[0]) || null;
+    }
+
+    if (!chosenFeature) {
         alert("既存の畝と完全に重なっているため、枕畝を生成するスペースがありません。");
         return;
     }
 
-    let flattened = turf.flatten(finalPoly);
-
-    let addedCount = 0;
-    flattened.features.forEach((feature, idx) => {
-        let coordinates = feature.geometry.coordinates;
-        if (!coordinates || coordinates.length === 0) return;
-        // Polygon / 穴あきに対応
-        let paths = coordinates.map(ring => ring.map(c => ({ lat: c[1], lng: c[0] })));
-
-        let gPoly = window.cadCreateRidgePolygon(paths, { fillColor: '#8BC34A' });
-        gPoly.uneIndex = 'custom_' + Date.now() + '_' + idx + '_' + Math.floor(Math.random() * 1000);
-        gPoly.uneGroup = '枕';
-        gPoly.cadMakuraFollowEdge = true;
-        window.bindShapeHistoryEvents(gPoly);
-        window.cadCustomShapes.push(gPoly);
-        addedCount++;
-    });
-
-    if (addedCount > 0) {
-        window.reassignLabels();
-        window.saveCadStateToHistory();
-        const msgEl = document.getElementById('cadPinModeMsg');
-        if (msgEl) {
-            msgEl.innerText = '枕畝を外殻に沿って、圃場の端まで生成しました（主畝と重なる部分は除いています）';
-            msgEl.style.color = '#ea580c';
-        }
-    } else {
+    let coordinates = chosenFeature.geometry.coordinates;
+    if (!coordinates || coordinates.length === 0) {
         alert("枕畝を生成できるスペースがありませんでした。");
+        return;
+    }
+    // Polygon / 穴あきに対応（MultiPolygon の場合は最大面積の1面だけ）
+    if (chosenFeature.geometry.type === 'MultiPolygon') {
+        let bestRingSet = null;
+        let bestArea = -1;
+        coordinates.forEach((polyCoords) => {
+            try {
+                const a = turf.area(turf.polygon(polyCoords));
+                if (a > bestArea) { bestArea = a; bestRingSet = polyCoords; }
+            } catch (e) {}
+        });
+        coordinates = bestRingSet || coordinates[0];
+    }
+    let paths = coordinates.map(ring => ring.map(c => ({ lat: c[1], lng: c[0] })));
+
+    let gPoly = window.cadCreateRidgePolygon(paths, { fillColor: '#8BC34A' });
+    gPoly.uneIndex = 'custom_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    gPoly.uneGroup = '枕';
+    gPoly.cadMakuraFollowEdge = true;
+    window.bindShapeHistoryEvents(gPoly);
+    window.cadCustomShapes.push(gPoly);
+
+    window.reassignLabels();
+    window.saveCadStateToHistory();
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = '枕畝を外殻に沿って1本生成しました（外枠と畝の間を埋めています）';
+        msgEl.style.color = '#ea580c';
     }
 };
 
@@ -3941,7 +4228,9 @@ window.cadGenerateLines = () => {
             
             let checkValid = (dist) => {
                 let c = turf.destination(pt1, dist, angle + 180, {units: 'meters'});
-                let wCheck = w + 2 * sideMarginMeters;
+                // 側面余白は配置オフセット側で既に確保済み。
+                // ここへ足すと畝端が過剰に短くなり、外枠〜畝の間が空きすぎるため畝幅のみで判定する。
+                let wCheck = w;
                 let c_fwd = turf.destination(c, endMarginMeters, angle + 180, {units: 'meters'});
                 let c_bwd = turf.destination(c, endMarginMeters, angle, {units: 'meters'});
                 
