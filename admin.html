@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [管理者用] v2.00</title>
+  <title>情熱MAP [管理者用] v2.01</title>
   <link rel="apple-touch-icon" href="icon_admin.png">
   <link rel="icon" href="icon_admin.png">
   <link rel="manifest" href="manifest_admin.json">
@@ -19,7 +19,7 @@
 <body>
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v2.00)</h2>
+      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v2.01)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div>
       <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
       <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -86,7 +86,7 @@
           </div>
           <div style="flex:1;">
             <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚫 側面の余白(cm)</label>
-            <input type="number" id="cadMarginSide" value="50" oninput="updateCadPreviewCount()"
+            <input type="number" id="cadMarginSide" value="150" oninput="updateCadPreviewCount()"
               style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
           </div>
           <div style="flex:1;">
@@ -200,9 +200,35 @@
 
       <div id="cadMode3" style="display:none;">
         <div style="font-size:12px; color:#ddd; margin-bottom:8px; line-height:1.45;">
-          生成畝を「〇畝おき」に分け、各ブロックで番号を振り直します。<br>
+          生成畝を「〇畝おき」に分けます。<br>
           ・分割の間は <b>1畝空け</b>ます<br>
-          ・圃場の <b>最初と最後の1畝は対象外</b>です
+          ・条件の悪い端は <b>空き畝（端）</b>としてまとめて残せます<br>
+          ・番号の開始向きで、どちら側から分割1番を付けるか選べます
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:11px; color:#aaa; margin-bottom:4px; display:block;">🧭 番号の開始向き</label>
+          <div style="display:flex; gap:6px;">
+            <label style="flex:1; display:flex; align-items:center; justify-content:center; gap:4px; background:#333; border:1px solid #666; border-radius:4px; padding:8px 4px; font-size:11px; color:#eee; cursor:pointer;">
+              <input type="radio" name="cadSplitDirection" value="normal" checked onchange="cadPreviewRidgeNumberSplit()"> 生成順（1番側から）
+            </label>
+            <label style="flex:1; display:flex; align-items:center; justify-content:center; gap:4px; background:#333; border:1px solid #666; border-radius:4px; padding:8px 4px; font-size:11px; color:#eee; cursor:pointer;">
+              <input type="radio" name="cadSplitDirection" value="reverse" onchange="cadPreviewRidgeNumberSplit()"> 逆向き（最終畝側から）
+            </label>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <div style="flex:1;">
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚧 開始側の空き畝（本）</label>
+            <input type="number" id="cadSplitEndStart" value="1" min="0" step="1" oninput="cadPreviewRidgeNumberSplit()"
+              style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box; font-size:15px; font-weight:bold;"
+              title="番号開始側で植えない畝の本数">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚧 終了側の空き畝（本）</label>
+            <input type="number" id="cadSplitEndFinish" value="1" min="0" step="1" oninput="cadPreviewRidgeNumberSplit()"
+              style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box; font-size:15px; font-weight:bold;"
+              title="反対側で植えない畝の本数">
+          </div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-end; margin-bottom:10px;">
           <div style="flex:1;">

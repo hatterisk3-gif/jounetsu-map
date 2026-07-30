@@ -2616,6 +2616,10 @@ function createSignboardMarker(name, pos, icon, id) {
           if (p && p.photos && Array.isArray(p.photos)) {
             p.photos.forEach(ph => {
               if (!ph) return;
+              // 作業記録のみ対象（生育記録の時間は混ぜない）
+              const isWork = (ph.type === 'work') || (ph.data && ph.data.workName);
+              if (!isWork) return;
+
               const recId = ph.id || (ph.data && ph.data.recordId);
               if (recId && seenIds.has(recId)) return;
               if (recId) seenIds.add(recId);
@@ -2636,6 +2640,7 @@ function createSignboardMarker(name, pos, icon, id) {
             });
           }
         }
+        // ちょうど昼休み開始で終わっている場合は、再開を13:00扱いにする
         if (latestEnd === '12:00' || latestEnd === '12:00:00' || latestEnd === '12時') {
           latestEnd = '13:00';
         }
@@ -2742,13 +2747,19 @@ function createSignboardMarker(name, pos, icon, id) {
 
       /**
        * 開始時間の決定（同期・即時）。
-       * 優先: 当日の最遅終了（昼休憩終了以降） → 昼休憩終了 → 出勤時刻 → 午前08:00/午後13:00
+       * 優先:
+       *  1) 当日の前作業の最遅終了（あれば基本はこれ）
+       *     ※ただし昼休憩登録済みで「前作業が昼前・いまは昼後」なら昼休憩終了を使う
+       *  2) 昼休憩終了
+       *  3) 出勤時刻
+       *  4) 午前08:00 / 午後13:00
        */
       window.resolveDefaultStartTime = (dateYmd) => {
         const now = new Date();
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const ymd = window.normalizeDateStr(dateYmd) || todayStr;
         const fallback = (now.getHours() < 13) ? '08:00' : '13:00';
+        const nowMins = now.getHours() * 60 + now.getMinutes();
 
         let latestEnd = '';
         if (typeof window.getLatestEndTimeForDate === 'function') {
@@ -2756,40 +2767,43 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (!latestEnd) latestEnd = window.getCachedLatestWorkEnd(ymd) || '';
 
+        let lunchStart = '';
         let lunchEnd = '';
         try {
           if (typeof window.loadLunchBreak === 'function') {
             const lunch = window.loadLunchBreak(ymd);
-            if (lunch && lunch.registered && lunch.enabled && lunch.end) lunchEnd = String(lunch.end).trim();
+            if (lunch && lunch.registered && lunch.enabled) {
+              lunchStart = String(lunch.start || '').trim();
+              lunchEnd = String(lunch.end || '').trim();
+            }
           } else {
             const raw = localStorage.getItem('passionMapLunchBreak');
             if (raw) {
               const lunch = JSON.parse(raw);
-              if (lunch && lunch.dateYmd === ymd && lunch.registered && lunch.enabled && lunch.end) {
-                lunchEnd = String(lunch.end).trim();
+              if (lunch && lunch.dateYmd === ymd && lunch.registered && lunch.enabled) {
+                lunchStart = String(lunch.start || '').trim();
+                lunchEnd = String(lunch.end || '').trim();
               }
             }
           }
         } catch (e) {}
 
-        const toMins = (hm) => {
-          if (!hm || !String(hm).includes(':')) return null;
-          const [h, m] = String(hm).split(':').map(Number);
-          if (isNaN(h) || isNaN(m)) return null;
-          return h * 60 + m;
-        };
+        const toM = (hm) => (window.timeHmToMinutes ? window.timeHmToMinutes(hm) : null);
+        const latestM = toM(latestEnd);
+        const lunchStartM = toM(lunchStart);
+        const lunchEndM = toM(lunchEnd);
 
-        if (lunchEnd) {
-          const le = window.timeHmToMinutes ? window.timeHmToMinutes(lunchEnd) : null;
-          const latestM = window.timeHmToMinutes ? window.timeHmToMinutes(latestEnd) : null;
-          if (latestM != null && le != null && latestM >= le) {
-            return { start: latestEnd, source: 'latestEnd', syncClockIn: false, isFallback: false };
+        // 前の作業終了がある場合を最優先（午前中の連続作業を潰さない）
+        if (latestEnd && latestM != null) {
+          // 今日だけ: 前作業が昼前で終わっていて、いま昼休憩終了以降 → 昼休憩終了から再開
+          if (ymd === todayStr && lunchEndM != null && latestM < lunchEndM && nowMins >= lunchEndM) {
+            return { start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false };
           }
-          return { start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false };
+          return { start: latestEnd, source: 'latestEnd', syncClockIn: false, isFallback: false };
         }
 
-        if (latestEnd) {
-          return { start: latestEnd, source: 'latestEnd', syncClockIn: false, isFallback: false };
+        if (lunchEnd) {
+          return { start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false };
         }
 
         const clockIn = window.getLocalClockInTimeForDate(ymd);
@@ -2798,6 +2812,92 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         return { start: fallback, source: 'fallback', syncClockIn: true, isFallback: true };
+      };
+
+      window.getStartTimeSourceLabel = (source, start) => {
+        const t = start ? String(start) : '';
+        if (source === 'latestEnd') return t ? `前の作業終了（${t}）に合わせました` : '前の作業終了に合わせました';
+        if (source === 'lunchEnd') return t ? `昼休憩終了（${t}）に合わせました` : '昼休憩終了に合わせました';
+        if (source === 'clockIn') return t ? `出勤時刻（${t}）に合わせました` : '出勤時刻に合わせました';
+        if (source === 'fallback') return '初期値です。必要なら変更してください';
+        return '';
+      };
+
+      window.updateStartTimeHintUI = () => {
+        const hintEl = document.getElementById('rec_start_time_hint');
+        const startEl = document.getElementById('rec_start_time');
+        const btnEl = document.getElementById('btn_match_prev_end');
+        if (!hintEl && !btnEl) return;
+        const source = startEl ? (startEl.getAttribute('data-start-source') || '') : '';
+        const start = startEl ? String(startEl.value || '').trim() : '';
+        if (hintEl) {
+          const label = window.getStartTimeSourceLabel(source, start);
+          hintEl.textContent = label;
+          hintEl.style.display = label ? 'block' : 'none';
+          if (source === 'latestEnd') hintEl.style.color = '#2e7d32';
+          else if (source === 'lunchEnd') hintEl.style.color = '#ef6c00';
+          else hintEl.style.color = '#666';
+        }
+        if (btnEl) {
+          const dateEl = document.getElementById('rec_work_date');
+          const ymd = dateEl ? window.normalizeDateStr(dateEl.value) : '';
+          let latest = '';
+          if (ymd) {
+            latest = (typeof window.getLatestEndTimeForDate === 'function')
+              ? (window.getLatestEndTimeForDate(ymd) || '')
+              : '';
+            if (!latest) latest = window.getCachedLatestWorkEnd(ymd) || '';
+          }
+          btnEl.style.display = latest ? 'inline-block' : 'none';
+          btnEl.setAttribute('data-prev-end', latest || '');
+          btnEl.textContent = latest ? `◀️ 前の終了(${latest})に合わせる` : '◀️ 前の終了に合わせる';
+        }
+      };
+
+      /** 開始時間を当日の前作業終了に合わせる（手動） */
+      window.matchStartTimeToPreviousEnd = () => {
+        if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) {
+          if (typeof customAlert === 'function') customAlert('編集中は開始時間の自動合わせを行いません。');
+          return;
+        }
+        const dateEl = document.getElementById('rec_work_date');
+        const ymd = dateEl ? window.normalizeDateStr(dateEl.value) : '';
+        if (!ymd) {
+          if (typeof customAlert === 'function') customAlert('作業日を先に選択してください。');
+          return;
+        }
+        let latest = (typeof window.getLatestEndTimeForDate === 'function')
+          ? (window.getLatestEndTimeForDate(ymd) || '')
+          : '';
+        if (!latest) latest = window.getCachedLatestWorkEnd(ymd) || '';
+        if (!latest) {
+          // サーバーから再取得して合わせる
+          if (typeof window.prefetchWorkTimeHints === 'function') {
+            window.prefetchWorkTimeHints(ymd, { applyToForm: false }).then(hints => {
+              const t = (hints && hints.latestEndTime) || window.getCachedLatestWorkEnd(ymd) || '';
+              if (!t) {
+                if (typeof customAlert === 'function') customAlert('この日の前の作業終了時間が見つかりません。');
+                window.updateStartTimeHintUI();
+                return;
+              }
+              window.applyStartTimeToForm(t, {
+                clearAutofill: true,
+                syncClockIn: false,
+                source: 'latestEnd'
+              });
+              window.updateStartTimeHintUI();
+            });
+          } else if (typeof customAlert === 'function') {
+            customAlert('この日の前の作業終了時間が見つかりません。');
+          }
+          return;
+        }
+        window.applyStartTimeToForm(latest, {
+          clearAutofill: true,
+          syncClockIn: false,
+          source: 'latestEnd'
+        });
+        window.updateStartTimeHintUI();
       };
 
       window.applyStartTimeToForm = (start, opts = {}) => {
@@ -2812,6 +2912,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const syncEl = document.getElementById('sync_clockin');
         if (syncEl && opts.syncClockIn != null) syncEl.checked = !!opts.syncClockIn;
         if (typeof calcTotalTime === 'function') calcTotalTime();
+        if (typeof window.updateStartTimeHintUI === 'function') window.updateStartTimeHintUI();
       };
 
       window._timeToMinsSafe = (hhmm) => {
@@ -2937,12 +3038,13 @@ function createSignboardMarker(name, pos, icon, id) {
                 } else {
                   window.applyStartTimeToForm(next, {
                     syncClockIn: !!resolved.syncClockIn,
-                    clearAutofill: !resolved.isFallback,
                     markAutofill: !!resolved.isFallback,
-                    source: resolved.source || ''
+                    clearAutofill: !resolved.isFallback,
+                    source: resolved.source || 'hint'
                   });
                 }
               }
+              if (typeof window.updateStartTimeHintUI === 'function') window.updateStartTimeHintUI();
             }
           }
           return hints;
@@ -2967,6 +3069,7 @@ function createSignboardMarker(name, pos, icon, id) {
           syncClockIn: resolved.syncClockIn,
           source: resolved.source || ''
         });
+        if (typeof window.updateStartTimeHintUI === 'function') window.updateStartTimeHintUI();
         // 裏でサーバー確認（フォールバック時やキャッシュ不足時）
         // onlyIfAutofill: フォールバック中のみ積極更新。それ以外は「より遅い時刻」だけ反映
         window.prefetchWorkTimeHints(selectedDate, { applyToForm: true, onlyIfAutofill: !!resolved.isFallback });
@@ -5767,14 +5870,17 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         let timeUI = `
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; gap:6px; flex-wrap:wrap;">
             <label class="form-label" style="margin:0;">⏰ 時間</label>
-            <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア(記録しない)</button>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+              <button type="button" id="btn_match_prev_end" onclick="matchStartTimeToPreviousEnd()" style="display:none; background:#E8F5E9; color:#2e7d32; border:1px solid #A5D6A7; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">◀️ 前の終了に合わせる</button>
+              <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); document.getElementById('rec_start_time').removeAttribute('data-start-source'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア(記録しない)</button>
+            </div>
           </div>
-          <div class="form-grid" style="margin-bottom:15px;">
+          <div class="form-grid" style="margin-bottom:6px;">
             <div>
               <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
-              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${(!isEdit && resolvedStart.isFallback) ? 'data-autofill="1"' : ''} data-start-source="${(!isEdit && resolvedStart.source) ? String(resolvedStart.source).replace(/"/g, '') : ''}" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()">
+              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${(!isEdit && resolvedStart.isFallback) ? 'data-autofill="1"' : ''} data-start-source="${(!isEdit && resolvedStart.source) ? String(resolvedStart.source).replace(/"/g, '') : ''}" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime()">
               <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
                 <input type="checkbox" id="sync_clockin" ${(!isEdit && resolvedStart.syncClockIn) ? 'checked' : ''}>出勤時間と同期
               </label>
@@ -5784,6 +5890,7 @@ function createSignboardMarker(name, pos, icon, id) {
               <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:0;" value="${isEdit ? '' : currentTimeStr}" onclick="openAppTimePicker('rec_end_time', '終了時間')" onchange="calcTotalTime()">
             </div>
           </div>
+          <div id="rec_start_time_hint" style="display:none; font-size:11px; margin-bottom:12px; font-weight:bold;"></div>
         `;
 
         let html = '';
@@ -5918,6 +6025,10 @@ function createSignboardMarker(name, pos, icon, id) {
         document.getElementById('rightPanelContent').innerHTML = `<div style="background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.05);">${tempLoadBtn}${html}</div>`;
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
         document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
+        // 開始時間ヒント・「前の終了に合わせる」ボタンを反映
+        if (!isEdit && typeof window.updateStartTimeHintUI === 'function') {
+          setTimeout(() => { window.updateStartTimeHintUI(); }, 0);
+        }
         // 他端末で保存した一時保存があればクラウドから取得して復元ボタンを更新
         setTimeout(() => { refreshTempRecordButtonFromCloud_(); }, 50);
         // 画面復帰時にも再取得（端末間同期）

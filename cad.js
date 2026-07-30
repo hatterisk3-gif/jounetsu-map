@@ -1633,6 +1633,7 @@ window.initCadTouchEvents = () => {
                     } else {
                         window.cadNakamichiLines.push(path);
                         window.drawNakamichiVisual(path);
+                        try { window.cadSplitMakuraByNakamichi(path); } catch (e) {}
                     }
                     
                     window.cadPinMode = null;
@@ -1846,6 +1847,7 @@ window.initCadTouchEvents = () => {
                         } else {
                             window.cadNakamichiLines.push(path);
                             window.drawNakamichiVisual(path);
+                            try { window.cadSplitMakuraByNakamichi(path); } catch (e) {}
                         }
                         
                         window.cadPinMode = null;
@@ -1981,7 +1983,7 @@ window.openCADMode = async (id) => {
             
             const marginSideEl = document.getElementById('cadMarginSide');
             const marginEndEl = document.getElementById('cadMarginEnd');
-            if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 50;
+            if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 150;
             if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 250;
             if (typeof window.setCadPinNumFontSize === 'function') {
                 window.setCadPinNumFontSize(saved.pinNumFontSize || 20, { refresh: false });
@@ -2041,7 +2043,7 @@ window.openCADMode = async (id) => {
         
         const marginSideEl = document.getElementById('cadMarginSide');
         const marginEndEl = document.getElementById('cadMarginEnd');
-        if (marginSideEl) marginSideEl.value = 50;
+        if (marginSideEl) marginSideEl.value = 150;
         if (marginEndEl) marginEndEl.value = 250;
         
         const countEl = document.getElementById('cadUneCount');
@@ -2389,33 +2391,89 @@ window.cadGetMainRidgesForSplit = () => {
 };
 
 /**
+ * 〇畝おき分割のオプションをUIから読む
+ * @returns {{ everyN: number, direction: 'normal'|'reverse', endStart: number, endFinish: number }}
+ */
+window.cadReadRidgeNumberSplitOptions = () => {
+    const nEl = document.getElementById('cadSplitEveryN');
+    const startEl = document.getElementById('cadSplitEndStart');
+    const finishEl = document.getElementById('cadSplitEndFinish');
+    const dirEl = document.querySelector('input[name="cadSplitDirection"]:checked');
+    return {
+        everyN: Math.max(1, parseInt(nEl && nEl.value, 10) || 1),
+        direction: (dirEl && dirEl.value === 'reverse') ? 'reverse' : 'normal',
+        endStart: Math.max(0, parseInt(startEl && startEl.value, 10) || 0),
+        endFinish: Math.max(0, parseInt(finishEl && finishEl.value, 10) || 0)
+    };
+};
+
+/**
  * 〇畝おき分割の計画を作る
- * - 最初・最後の1畝は対象外（端）
+ * - 開始側／終了側の空き畝（端）は植えず対象外
+ * - 番号開始向きでどちら側から分割ブロックを付けるか決める
  * - 対象区間を「N畝取り → 1畝空け」で繰り返す
  */
-window.cadBuildRidgeNumberSplitPlan = (everyN) => {
-    const n = Math.max(1, parseInt(everyN, 10) || 1);
-    const ridges = window.cadGetMainRidgesForSplit();
-    const total = ridges.length;
+window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
+    const opts = (everyNOrOpts && typeof everyNOrOpts === 'object')
+        ? everyNOrOpts
+        : Object.assign(window.cadReadRidgeNumberSplitOptions(), {
+            everyN: Math.max(1, parseInt(everyNOrOpts, 10) || 1)
+        });
+    const n = Math.max(1, parseInt(opts.everyN, 10) || 1);
+    const reverse = opts.direction === 'reverse';
+    let endStart = Math.max(0, parseInt(opts.endStart, 10) || 0);
+    let endFinish = Math.max(0, parseInt(opts.endFinish, 10) || 0);
+
+    const ridgesOrig = window.cadGetMainRidgesForSplit();
+    const total = ridgesOrig.length;
     const plan = [];
     const groups = [];
 
-    if (total < 3) {
-        return {
-            ok: false,
-            everyN: n,
-            total,
-            groups: [],
-            plan: [],
-            message: total === 0
-                ? '畝がありません。先に「生成」タブで畝を作成してください。'
-                : `畝が${total}本しかないため分割できません（最初・最後を除くと対象がありません）。`
-        };
+    const fail = (message) => ({
+        ok: false,
+        everyN: n,
+        direction: reverse ? 'reverse' : 'normal',
+        endStart,
+        endFinish,
+        total,
+        groups: [],
+        plan: [],
+        message
+    });
+
+    if (total < 1) {
+        return fail('畝がありません。先に「生成」タブで畝を作成してください。');
     }
 
-    plan.push({ poly: ridges[0], role: 'end', group: '端', label: '-', index: 0 });
+    // 向き: reverse のときは配列を反転して「開始側」を決める
+    const ordered = reverse ? ridgesOrig.slice().reverse() : ridgesOrig.slice();
+    const origNumberOf = (poly) => {
+        const idx = ridgesOrig.indexOf(poly);
+        return idx >= 0 ? String(idx + 1) : '?';
+    };
 
-    const middle = ridges.slice(1, total - 1);
+    if (endStart + endFinish >= total) {
+        return fail(`空き畝（開始${endStart}＋終了${endFinish}）が全${total}畝以上です。少なくしてください。`);
+    }
+
+    const middleCount = total - endStart - endFinish;
+    if (middleCount < 1) {
+        return fail('分割できる畝がありません。空き畝の本数を減らしてください。');
+    }
+
+    // 開始側の端（空き）
+    for (let i = 0; i < endStart; i++) {
+        plan.push({
+            poly: ordered[i],
+            role: 'end',
+            group: '端',
+            label: '/1番',
+            index: ridgesOrig.indexOf(ordered[i]),
+            origLabel: origNumberOf(ordered[i])
+        });
+    }
+
+    const middle = ordered.slice(endStart, total - endFinish);
     let i = 0;
     let groupNum = 1;
     while (i < middle.length) {
@@ -2423,16 +2481,16 @@ window.cadBuildRidgeNumberSplitPlan = (everyN) => {
         const groupName = '分割' + groupNum;
         const labels = [];
         for (let k = 0; k < take; k++) {
-            const ridgeIndex = i + k + 1; // cadUnePolygons 上の位置
-            // 分割ブロック内で振り直さず、元の畝番号（1始まり）を残す
-            const label = String(ridgeIndex + 1);
+            const poly = middle[i + k];
+            const label = origNumberOf(poly);
             labels.push(label);
             plan.push({
-                poly: middle[i + k],
+                poly,
                 role: 'block',
                 group: groupName,
                 label,
-                index: ridgeIndex
+                index: ridgesOrig.indexOf(poly),
+                origLabel: label
             });
         }
         groups.push({ name: groupName, count: take, labels });
@@ -2441,49 +2499,52 @@ window.cadBuildRidgeNumberSplitPlan = (everyN) => {
         if (i < middle.length) {
             const prevNum = groupNum - 1;
             const nextNum = groupNum;
+            const gapPoly = middle[i];
             plan.push({
-                poly: middle[i],
+                poly: gapPoly,
                 role: 'gap',
                 group: '空け',
                 label: prevNum + '番/' + nextNum + '番',
-                index: i + 1
+                index: ridgesOrig.indexOf(gapPoly),
+                origLabel: origNumberOf(gapPoly)
             });
             i += 1;
         }
     }
 
-    plan.push({
-        poly: ridges[total - 1],
-        role: 'end',
-        group: '端',
-        label: '-',
-        index: total - 1
-    });
-
-    // 端の空き: 先頭は /1番、末尾は N番/
-    if (groups.length) {
-        plan[0].label = '/1番';
-        plan[plan.length - 1].label = groups.length + '番/';
+    // 終了側の端（空き）
+    const lastN = groups.length;
+    for (let j = total - endFinish; j < total; j++) {
+        plan.push({
+            poly: ordered[j],
+            role: 'end',
+            group: '端',
+            label: lastN > 0 ? (lastN + '番/') : '端',
+            index: ridgesOrig.indexOf(ordered[j]),
+            origLabel: origNumberOf(ordered[j])
+        });
     }
 
+    const dirLabel = reverse ? '逆向き（最終畝側から）' : '生成順（1番側から）';
     return {
         ok: groups.length > 0,
         everyN: n,
+        direction: reverse ? 'reverse' : 'normal',
+        endStart,
+        endFinish,
         total,
         groups,
         plan,
         message: groups.length
-            ? `全${total}畝 → 端2畝を除き、${n}畝おきで ${groups.length} ブロック（間に1畝空け）`
-            : '分割ブロックを作れませんでした。'
+            ? `全${total}畝 → 開始側空き${endStart}・終了側空き${endFinish}を除き、${n}畝おきで ${groups.length} ブロック（${dirLabel}）`
+            : '分割ブロックを作れませんでした。空き畝の本数や「何畝おき」を見直してください。'
     };
 };
 
 window.cadPreviewRidgeNumberSplit = () => {
     const el = document.getElementById('cadSplitPreview');
     if (!el) return;
-    const nEl = document.getElementById('cadSplitEveryN');
-    const everyN = nEl ? nEl.value : 5;
-    const built = window.cadBuildRidgeNumberSplitPlan(everyN);
+    const built = window.cadBuildRidgeNumberSplitPlan(window.cadReadRidgeNumberSplitOptions());
     if (!built.ok) {
         el.innerHTML = '<span style="color:#ef9a9a;">' + (built.message || '分割できません') + '</span>';
         return;
@@ -2493,17 +2554,17 @@ window.cadPreviewRidgeNumberSplit = () => {
         return `・${fmt(g.name)}: 元畝番号 ${g.labels.join(', ')}（${g.count}畝）`;
     });
     const lastN = built.groups.length;
+    const dirLabel = built.direction === 'reverse' ? '逆向き（最終畝側から）' : '生成順（1番側から）';
     el.innerHTML =
         '<div style="color:#ce93d8;margin-bottom:4px;">' + built.message + '</div>' +
-        '<div>端: /1番 … ' + lastN + '番/（分割対象外）</div>' +
+        '<div>向き: ' + dirLabel + '</div>' +
+        '<div>端（空き）: 開始側 ' + built.endStart + '本（/1番）… 終了側 ' + built.endFinish + '本（' + lastN + '番/）</div>' +
         '<div>空け: 隣り合う分割番号（例 1番/2番）</div>' +
         lines.map((l) => '<div>' + l + '</div>').join('');
 };
 
 window.cadApplyRidgeNumberSplit = () => {
-    const nEl = document.getElementById('cadSplitEveryN');
-    const everyN = nEl ? nEl.value : 5;
-    const built = window.cadBuildRidgeNumberSplitPlan(everyN);
+    const built = window.cadBuildRidgeNumberSplitPlan(window.cadReadRidgeNumberSplitOptions());
     if (!built.ok) {
         if (typeof customAlert === 'function') customAlert(built.message || '分割できません');
         else alert(built.message || '分割できません');
@@ -2990,7 +3051,50 @@ window.cadAdjustPinNumSize = (delta) => {
 };
 
 window.drawNakamichiVisual = (path) => {
-    let line = new google.maps.Polyline({ path: path, strokeColor: '#E91E63', strokeOpacity: 0.8, strokeWeight: Math.max(0.5, 6), map: window.cadMap, zIndex: 9 });
+    if (!window.cadNakamichiMapPolygons) window.cadNakamichiMapPolygons = [];
+    if (!path || path.length < 2) return;
+
+    let line = new google.maps.Polyline({
+        path: path,
+        strokeColor: '#E91E63',
+        strokeOpacity: 0.85,
+        strokeWeight: Math.max(0.5, 6),
+        map: window.cadMap,
+        zIndex: 10,
+        draggable: true,
+        editable: true
+    });
+
+    const updateLineCoordsAndSplit = () => {
+        const polyPath = line.getPath();
+        if (!polyPath || polyPath.getLength() < 2) return;
+        const newPath = [];
+        for (let i = 0; i < polyPath.getLength(); i++) {
+            const pt = polyPath.getAt(i);
+            newPath.push({ lat: pt.lat(), lng: pt.lng() });
+        }
+
+        const idx = window.cadNakamichiMapPolygons.indexOf(line);
+        if (idx !== -1 && window.cadNakamichiLines) {
+            window.cadNakamichiLines[idx] = newPath;
+        }
+
+        try {
+            window.cadSplitMakuraByNakamichi(newPath);
+        } catch (e) {
+            console.warn('枕畝の分割に失敗:', e);
+        }
+
+        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    };
+
+    google.maps.event.addListener(line, 'dragend', updateLineCoordsAndSplit);
+    if (line.getPath()) {
+        google.maps.event.addListener(line.getPath(), 'set_at', updateLineCoordsAndSplit);
+        google.maps.event.addListener(line.getPath(), 'insert_at', updateLineCoordsAndSplit);
+    }
+
     window.cadNakamichiMapPolygons.push(line);
 };
 

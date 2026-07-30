@@ -1685,7 +1685,15 @@
       lunchEnd: lunchData.end || pref.lunchEnd || '13:00',
       midBreakMins: pref.midBreakMins || 0
     });
-    hideClockModal();
+
+    const pending = loadPending();
+    if (pending) {
+      pending.lunchEnabled = !!lunchData.enabled;
+      pending.lunchStart = lunchData.enabled ? (lunchData.start || '12:00') : '';
+      pending.lunchEnd = lunchData.enabled ? (lunchData.end || '13:00') : '';
+      persistPending(pending);
+    }
+
     if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
     else refreshTrackingModeUI();
 
@@ -1701,6 +1709,15 @@
         type: label,
         time: Date.now()
       }).catch((e) => console.warn('昼休憩送信エラー', e));
+    }
+
+    if (window._isModifyingLunchFromClockOut) {
+      window._isModifyingLunchFromClockOut = false;
+      setTimeout(() => {
+        openClockOutModal();
+      }, 50);
+    } else {
+      hideClockModal();
     }
   }
 
@@ -1782,9 +1799,9 @@
 
     html += `<div style="background:#f9fbe7; border:1px solid #e6ee9c; border-radius:8px; padding:12px; margin-bottom:12px;">`;
     if (lunchLocked) {
-      const lOn = (pending && pending.lunchEnabled != null) ? !!pending.lunchEnabled : !!lunchReg.enabled;
-      const lS = (pending && pending.lunchStart) || lunchReg.start || '12:00';
-      const lE = (pending && pending.lunchEnd) || lunchReg.end || '13:00';
+      const lOn = (lunchReg && lunchReg.registered) ? !!lunchReg.enabled : ((pending && pending.lunchEnabled != null) ? !!pending.lunchEnabled : true);
+      const lS = (lunchReg && lunchReg.registered) ? (lunchReg.start || '12:00') : ((pending && pending.lunchStart) || pref.lunchStart || '12:00');
+      const lE = (lunchReg && lunchReg.registered) ? (lunchReg.end || '13:00') : ((pending && pending.lunchEnd) || pref.lunchEnd || '13:00');
       if (lOn) {
         html += `<div style="font-weight:bold; color:#558b2f; margin-bottom:6px;">🍱 昼休憩（登録済）</div>`;
         html += `<div style="font-size:14px; margin-bottom:8px;"><b>${lS} 〜 ${lE}</b></div>`;
@@ -1797,13 +1814,17 @@
         html += `<input type="hidden" id="clockLunchStart" value="">`;
         html += `<input type="hidden" id="clockLunchEnd" value="">`;
       }
-      html += `<button type="button" onclick="openLunchBreakModal()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FF9800; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:8px;">昼休憩を変更する</button>`;
+      html += `<button type="button" onclick="window._isModifyingLunchFromClockOut=true; openLunchBreakModal();" style="width:100%; background:#fff; color:#E65100; border:1px solid #FF9800; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:8px;">昼休憩を変更する</button>`;
     } else {
-      const lunchOn = (pending && pending.lunchEnabled != null)
-        ? !!pending.lunchEnabled
-        : (lunchReg && lunchReg.registered ? !!lunchReg.enabled : !!pref.lunchEnabled);
-      const ls = (pending && pending.lunchStart) || (lunchReg && lunchReg.start) || pref.lunchStart || '12:00';
-      const le = (pending && pending.lunchEnd) || (lunchReg && lunchReg.end) || pref.lunchEnd || '13:00';
+      const lunchOn = (lunchReg && lunchReg.registered)
+        ? !!lunchReg.enabled
+        : ((pending && pending.lunchEnabled != null) ? !!pending.lunchEnabled : !!pref.lunchEnabled);
+      const ls = (lunchReg && lunchReg.registered && lunchReg.start)
+        ? lunchReg.start
+        : ((pending && pending.lunchStart) || (lunchReg && lunchReg.start) || pref.lunchStart || '12:00');
+      const le = (lunchReg && lunchReg.registered && lunchReg.end)
+        ? lunchReg.end
+        : ((pending && pending.lunchEnd) || (lunchReg && lunchReg.end) || pref.lunchEnd || '13:00');
       html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
       html += `<input type="checkbox" id="clockLunchEnabled" ${lunchOn ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
       html += `</label>`;
