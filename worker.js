@@ -2,6 +2,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
       let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], activeLots = [];
       let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
+      let pdlNurseryLocations = [], pdlCropCultSettings = [];
       let selectedPolyIds = [], isMapSelecting = false, backupSelectedPolyIds = [];
       let pendingFiles = [];
       let latestUserPos = null;
@@ -480,6 +481,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           pdlMaterials=data.pdl.materials||[];
           pdlMachines=data.pdl.machines||[];
           pdlSymptoms=data.pdl.symptoms||[];
+          pdlNurseryLocations = data.pdl.nurseryLocations || [];
+          pdlCropCultSettings = data.pdl.cropCultSettings || [];
           window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
           pdlSignFunctions = data.pdl.signFunctionsMaster || [];
           pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
@@ -3176,14 +3179,7 @@ function createSignboardMarker(name, pos, icon, id) {
        */
       window.refreshProgressStatusVisibility = () => {
         const section = document.getElementById('progress_status_section');
-        if (!section) return;
-        const hide = typeof window.hasRegisteredWorkFieldSelected === 'function'
-          && window.hasRegisteredWorkFieldSelected();
-        section.style.display = hide ? 'none' : 'block';
-        if (!hide && typeof window.renderProgressStatusButtons === 'function') {
-          const cur = document.getElementById('rec_progress_status');
-          window.renderProgressStatusButtons(cur ? cur.value : '');
-        }
+        if (section) section.style.display = 'none';
       };
 
       /** 非表示時は畝進捗から進捗状況を推定（保存用） */
@@ -5821,10 +5817,138 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshWorkHarvestQtySection === 'function') {
           window.refreshWorkHarvestQtySection();
         }
+        if (typeof window.refreshSowingRecordSection === 'function') {
+          window.refreshSowingRecordSection();
+        }
         
         window.renderDetailWorksSection(wName);
         window.renderUsedItems(wName);
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+      };
+
+      window.isSowingWorkName = (name) => {
+        const n = String(name || '').trim();
+        return n === '播種' || n.indexOf('播種') === 0;
+      };
+
+      window.getDefaultSowingHolesForCrop_ = (cropName) => {
+        const crop = String(cropName || '').trim();
+        if (!crop) return '';
+        const hit = (pdlCropCultSettings || []).find(x => String(x.cropName || '').trim() === crop);
+        return hit && hit.sowingHoles != null && hit.sowingHoles !== '' ? hit.sowingHoles : '';
+      };
+
+      window.refreshSowingRecordSection = (preset) => {
+        const box = document.getElementById('sowing_record_section');
+        if (!box) return;
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (!window.isSowingWorkName(wName)) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+        const cropHint = (typeof window.getWorkRecordPrimaryCrop === 'function') ? window.getWorkRecordPrimaryCrop() : '';
+        const holesDefault = (preset && preset.holes != null) ? preset.holes : window.getDefaultSowingHolesForCrop_(cropHint);
+        const nurOpts = (pdlNurseryLocations || []).map(n => {
+          const label = [n.name, n.polyName, n.direction].filter(Boolean).join(' / ');
+          return `<option value="${String(n.id || '').replace(/"/g,'&quot;')}" data-name="${String(n.name||'').replace(/"/g,'&quot;')}" data-dir="${String(n.direction||'').replace(/"/g,'&quot;')}">${String(label || n.name || n.id).replace(/</g,'&lt;')}</option>`;
+        }).join('');
+        const p = preset || {};
+        box.style.display = 'block';
+        box.innerHTML = `
+          <div style="font-weight:bold; color:#6a1b9a; margin-bottom:8px; font-size:14px;">🌱 育苗・播種記録</div>
+          <label class="form-label">TAG</label>
+          <input type="text" id="sow_tag" class="form-input" value="${String(p.tag||'').replace(/"/g,'&quot;')}" placeholder="例: キャベツ1" onchange="onSowingTagChange()" onblur="onSowingTagChange()">
+          <label class="form-label">品種名（TAGから自動）</label>
+          <input type="text" id="sow_variety" class="form-input" value="${String(p.variety||'').replace(/"/g,'&quot;')}" placeholder="TAG入力で自動表示（手修正可）">
+          <input type="hidden" id="sow_plan_id" value="${String(p.planId||'').replace(/"/g,'&quot;')}">
+          <input type="hidden" id="sow_crop_name" value="${String(p.cropName||cropHint||'').replace(/"/g,'&quot;')}">
+          <label class="form-label">区画（育苗場所）</label>
+          <select id="sow_nursery" class="form-input" onchange="onSowingNurseryChange()">
+            <option value="">選択してください</option>${nurOpts}
+          </select>
+          <label class="form-label">方向</label>
+          <input type="text" id="sow_direction" class="form-input" value="${String(p.direction||'').replace(/"/g,'&quot;')}" placeholder="育苗場所から自動セット">
+          <label class="form-label">播種日</label>
+          <input type="date" id="sow_date" class="form-input" value="${String(p.sowingDate||todayStr)}">
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1;">
+              <label class="form-label">枚数</label>
+              <input type="number" id="sow_trays" class="form-input" min="0" step="1" value="${p.trays != null ? p.trays : ''}" placeholder="枚">
+            </div>
+            <div style="flex:1;">
+              <label class="form-label">穴数</label>
+              <input type="number" id="sow_holes" class="form-input" min="0" step="1" value="${holesDefault != null ? holesDefault : ''}" placeholder="作物栽培設定のデフォルト">
+            </div>
+          </div>
+          <div style="font-size:11px; color:#6a1b9a; margin-top:4px;">穴数は作物栽培設定マスタの値を初期表示します。育苗場所は管理画面の育苗場所マスタから選びます。</div>
+        `;
+        if (p.nurseryId) {
+          const sel = document.getElementById('sow_nursery');
+          if (sel) sel.value = p.nurseryId;
+        }
+        if (cropHint && !p.holes && !document.getElementById('sow_holes')?.value) {
+          const h = window.getDefaultSowingHolesForCrop_(cropHint);
+          if (h !== '' && document.getElementById('sow_holes')) document.getElementById('sow_holes').value = h;
+        }
+      };
+
+      window.onSowingNurseryChange = () => {
+        const sel = document.getElementById('sow_nursery');
+        const dirEl = document.getElementById('sow_direction');
+        if (!sel || !dirEl) return;
+        const opt = sel.options[sel.selectedIndex];
+        if (opt) dirEl.value = opt.getAttribute('data-dir') || '';
+      };
+
+      window.onSowingTagChange = async () => {
+        const tag = (document.getElementById('sow_tag')?.value || '').trim();
+        if (!tag) return;
+        try {
+          const res = await callGAS('lookupCultivationByTag', { tag });
+          const plan = res && res.plan;
+          if (!plan) return;
+          const varietyEl = document.getElementById('sow_variety');
+          const cropEl = document.getElementById('sow_crop_name');
+          const planEl = document.getElementById('sow_plan_id');
+          const traysEl = document.getElementById('sow_trays');
+          const holesEl = document.getElementById('sow_holes');
+          if (varietyEl && !varietyEl.value) varietyEl.value = plan.variety || '';
+          else if (varietyEl && plan.variety) varietyEl.value = plan.variety;
+          if (cropEl) cropEl.value = plan.crop || cropEl.value;
+          if (planEl) planEl.value = plan.id || '';
+          if (traysEl && !traysEl.value && plan.trays) traysEl.value = plan.trays;
+          if (holesEl && (holesEl.value === '' || holesEl.value == null)) {
+            const defH = window.getDefaultSowingHolesForCrop_(plan.crop);
+            holesEl.value = (defH !== '' ? defH : (plan.holes != null ? plan.holes : ''));
+          }
+        } catch (e) {
+          console.warn(e);
+        }
+      };
+
+      window.collectSowingRecordData = () => {
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (!window.isSowingWorkName(wName)) return null;
+        const box = document.getElementById('sowing_record_section');
+        if (!box || box.style.display === 'none') return null;
+        const nurSel = document.getElementById('sow_nursery');
+        const nurOpt = nurSel && nurSel.selectedIndex >= 0 ? nurSel.options[nurSel.selectedIndex] : null;
+        return {
+          tag: (document.getElementById('sow_tag')?.value || '').trim(),
+          variety: (document.getElementById('sow_variety')?.value || '').trim(),
+          cropName: (document.getElementById('sow_crop_name')?.value || '').trim() || ((typeof window.getWorkRecordPrimaryCrop === 'function') ? window.getWorkRecordPrimaryCrop() : ''),
+          nurseryId: (nurSel?.value || '').trim(),
+          nurseryName: nurOpt ? (nurOpt.getAttribute('data-name') || nurOpt.textContent || '') : '',
+          direction: (document.getElementById('sow_direction')?.value || '').trim(),
+          sowingDate: (document.getElementById('sow_date')?.value || '').trim(),
+          trays: document.getElementById('sow_trays')?.value || '',
+          holes: document.getElementById('sow_holes')?.value || '',
+          planId: (document.getElementById('sow_plan_id')?.value || '').trim(),
+          note: ''
+        };
       };
 
       window.isHarvestWorkName = (name) => String(name || '').trim() === '収穫';
@@ -5879,6 +6003,106 @@ function createSignboardMarker(name, pos, icon, id) {
         window.updateWorkHarvestTotalDisplay();
       };
 
+      window.workHarvestScaleItems = [];
+
+      window.addWorkHarvestScaleItem = (qtyVal) => {
+        const qEl = document.getElementById('wh_scale_input');
+        const val = qtyVal != null ? parseFloat(qtyVal) : parseFloat(qEl?.value || '');
+        if (isNaN(val) || val <= 0) {
+          if (typeof customAlert === 'function') customAlert('秤の計測値（重量/個数）を正しく入力してください');
+          return;
+        }
+        window.workHarvestScaleItems.push(val);
+        if (qEl) qEl.value = '';
+        window.syncWorkHarvestScaleItemsUI();
+      };
+
+      window.removeWorkHarvestScaleItem = (index) => {
+        if (index >= 0 && index < window.workHarvestScaleItems.length) {
+          window.workHarvestScaleItems.splice(index, 1);
+          window.syncWorkHarvestScaleItemsUI();
+        }
+      };
+
+      window.clearWorkHarvestScaleItems = () => {
+        window.workHarvestScaleItems = [];
+        window.syncWorkHarvestScaleItemsUI();
+      };
+
+      window.changeWorkHarvestContentQty = (delta) => {
+        const input = document.getElementById('wh_content_qty');
+        if (!input) return;
+        let val = parseFloat(input.value || '0');
+        if (isNaN(val)) val = 0;
+        val = Math.max(0, Math.round((val + delta) * 100) / 100);
+        input.value = val > 0 ? val : '';
+        if (typeof window.updateWorkHarvestTotalDisplay === 'function') {
+          window.updateWorkHarvestTotalDisplay();
+        }
+      };
+
+      window.setWorkHarvestContentQty = (val) => {
+        const input = document.getElementById('wh_content_qty');
+        if (input) input.value = val;
+        if (typeof window.updateWorkHarvestTotalDisplay === 'function') {
+          window.updateWorkHarvestTotalDisplay();
+        }
+      };
+
+      window.syncWorkHarvestScaleItemsUI = () => {
+        const listEl = document.getElementById('wh_scale_items_list');
+        const cntInput = document.getElementById('wh_container_count');
+        const qtyInput = document.getElementById('wh_content_qty');
+        
+        if (window.workHarvestScaleItems.length > 0) {
+          const total = window.workHarvestScaleItems.reduce((sum, v) => sum + v, 0);
+          const count = window.workHarvestScaleItems.length;
+          const avg = Math.round((total / count) * 100) / 100;
+          
+          if (cntInput) cntInput.value = count;
+          if (qtyInput) qtyInput.value = avg;
+          
+          if (listEl) {
+            let html = `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin-bottom:4px;">⚖️ 秤計測の内訳（計 ${count}箱 / 合計 ${total.toFixed(1)}）：</div>`;
+            html += `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:120px; overflow-y:auto; background:#fff; padding:6px; border:1px solid #a5d6a7; border-radius:6px;">`;
+            window.workHarvestScaleItems.forEach((v, idx) => {
+              html += `<span style="background:#e8f5e9; color:#1b5e20; border:1px solid #c8e6c9; border-radius:4px; padding:3px 8px; font-size:12px; display:inline-flex; align-items:center; gap:4px;">
+                <b>${idx + 1}箱目:</b> ${v}
+                <button type="button" onclick="removeWorkHarvestScaleItem(${idx})" style="background:none; border:none; color:#c62828; font-weight:bold; cursor:pointer; padding:0 2px; line-height:1;">×</button>
+              </span>`;
+            });
+            html += `<button type="button" onclick="clearWorkHarvestScaleItems()" style="background:#fff3e0; color:#e65100; border:1px solid #ffe0b2; border-radius:4px; padding:3px 8px; font-size:11px; cursor:pointer;">全リセット</button>`;
+            html += `</div>`;
+            listEl.innerHTML = html;
+          }
+        } else {
+          if (listEl) listEl.innerHTML = '';
+        }
+        if (typeof window.updateWorkHarvestTotalDisplay === 'function') {
+          window.updateWorkHarvestTotalDisplay();
+        }
+      };
+
+      window.changeWorkHarvestContainerCount = (delta) => {
+        const input = document.getElementById('wh_container_count');
+        if (!input) return;
+        let val = parseInt(input.value || '0', 10);
+        if (isNaN(val)) val = 0;
+        val = Math.max(0, val + delta);
+        input.value = val > 0 ? val : '';
+        if (typeof window.updateWorkHarvestTotalDisplay === 'function') {
+          window.updateWorkHarvestTotalDisplay();
+        }
+      };
+
+      window.clearWorkHarvestContainerCount = () => {
+        const input = document.getElementById('wh_container_count');
+        if (input) input.value = '';
+        if (typeof window.updateWorkHarvestTotalDisplay === 'function') {
+          window.updateWorkHarvestTotalDisplay();
+        }
+      };
+
       window.refreshWorkHarvestQtySection = (preset) => {
         const box = document.getElementById('work_harvest_qty_section');
         if (!box) return;
@@ -5911,6 +6135,8 @@ function createSignboardMarker(name, pos, icon, id) {
           opts += `<option value="${String(name).replace(/"/g, '&quot;')}"${sel}>${name}${bit}</option>`;
         });
 
+        window.workHarvestScaleItems = [];
+
         box.style.display = 'block';
         box.innerHTML = `
           <b style="color:#2e7d32;">🥬 収穫量（参考記録）</b>
@@ -5933,12 +6159,44 @@ function createSignboardMarker(name, pos, icon, id) {
               <input type="text" id="wh_content_unit" class="form-input" placeholder="例: kg・本" oninput="updateWorkHarvestTotalDisplay()">
             </div>
             <div style="flex:1;">
-              <label class="form-label">🔢 内容個数/コンテナ</label>
+              <label class="form-label">🔢 1箱の重量/内容量</label>
               <input type="number" id="wh_content_qty" class="form-input" min="0" step="any" placeholder="例: 10" oninput="updateWorkHarvestTotalDisplay()">
             </div>
           </div>
+          <!-- 重量クイック調整ボタン -->
+          <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px;">
+            <button type="button" onclick="changeWorkHarvestContentQty(-0.5)" style="background:#fff; color:#333; border:1px solid #ccc; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">-0.5</button>
+            <button type="button" onclick="changeWorkHarvestContentQty(0.5)" style="background:#fff; color:#333; border:1px solid #ccc; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">+0.5</button>
+            <button type="button" onclick="changeWorkHarvestContentQty(1.0)" style="background:#fff; color:#333; border:1px solid #ccc; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">+1.0</button>
+            <button type="button" onclick="setWorkHarvestContentQty(5)" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">5kg</button>
+            <button type="button" onclick="setWorkHarvestContentQty(10)" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">10kg</button>
+            <button type="button" onclick="setWorkHarvestContentQty(12)" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">12kg</button>
+            <button type="button" onclick="setWorkHarvestContentQty(15)" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">15kg</button>
+          </div>
+
+          <!-- ⚖️ 秤（はかり）個別に連続追加するフォーム -->
+          <div style="background:#fff; border:1px solid #a5d6a7; border-radius:8px; padding:10px; margin-bottom:10px;">
+            <label class="form-label" style="color:#2e7d32; font-weight:bold; margin-bottom:4px;">⚖️ 秤（はかり）連続計測モード</label>
+            <div style="font-size:11px; color:#666; margin-bottom:6px;">コンテナを秤に乗せて測定した数値をいれると、1箱ずつポンポン自動積算されます。</div>
+            <div style="display:flex; gap:6px; margin-bottom:6px;">
+              <input type="number" id="wh_scale_input" class="form-input" min="0" step="any" placeholder="秤の数値 (例: 12.5)" style="flex:1; margin-bottom:0; font-size:15px;" onkeypress="if(event.key==='Enter'){event.preventDefault();addWorkHarvestScaleItem();}">
+              <button type="button" onclick="addWorkHarvestScaleItem()" style="background:#2e7d32; color:white; border:none; border-radius:6px; padding:0 16px; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">＋1箱追加</button>
+            </div>
+            <div id="wh_scale_items_list"></div>
+          </div>
+
           <label class="form-label">📦 コンテナ個数</label>
-          <input type="number" id="wh_container_count" class="form-input" min="0" step="1" placeholder="例: 5" value="${p.containerCount != null ? String(p.containerCount).replace(/"/g, '&quot;') : ''}" oninput="updateWorkHarvestTotalDisplay()">
+          <div style="display:flex; gap:6px; margin-bottom:6px;">
+            <input type="number" id="wh_container_count" class="form-input" min="0" step="1" placeholder="例: 5" value="${p.containerCount != null ? String(p.containerCount).replace(/"/g, '&quot;') : ''}" oninput="updateWorkHarvestTotalDisplay()" style="flex:1; margin-bottom:0; font-size:16px; font-weight:bold; color:#2e7d32;">
+            <button type="button" onclick="changeWorkHarvestContainerCount(-1)" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:0 14px; font-weight:bold; font-size:16px; cursor:pointer;">-1</button>
+            <button type="button" onclick="changeWorkHarvestContainerCount(1)" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:6px; padding:0 14px; font-weight:bold; font-size:16px; cursor:pointer;">+1</button>
+          </div>
+          <div style="display:flex; gap:6px; margin-bottom:10px;">
+            <button type="button" onclick="changeWorkHarvestContainerCount(1)" style="flex:1; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:6px; padding:8px 0; font-weight:bold; font-size:13px; cursor:pointer;">＋1箱</button>
+            <button type="button" onclick="changeWorkHarvestContainerCount(5)" style="flex:1; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:6px; padding:8px 0; font-weight:bold; font-size:13px; cursor:pointer;">＋5箱</button>
+            <button type="button" onclick="changeWorkHarvestContainerCount(10)" style="flex:1; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:6px; padding:8px 0; font-weight:bold; font-size:13px; cursor:pointer;">＋10箱</button>
+            <button type="button" onclick="clearWorkHarvestContainerCount()" style="background:#f5f5f5; color:#666; border:1px solid #ccc; border-radius:6px; padding:8px 10px; font-size:12px; cursor:pointer;">クリア</button>
+          </div>
           <div id="wh_total_display" style="font-size:13px; margin-top:4px; color:#2e7d32;">総量: --</div>
         `;
 
@@ -6313,7 +6571,7 @@ function createSignboardMarker(name, pos, icon, id) {
                      <input type="checkbox" class="used-mat-check" value="${m.name}" data-unit="${unitStr}" onchange="document.getElementById('mat_num_${m.id}').disabled = !this.checked; if(this.checked) document.getElementById('mat_num_${m.id}').focus();" style="transform:scale(1.2);">
                      <b>${m.name}</b>
                    </label>
-                   <div style="display:flex; align-items:center; gap:5px; width:100px;">
+                    <div id="progress_status_section" style="display:none;"></div>
                      <input type="number" id="mat_num_${m.id}" class="used-mat-num" placeholder="0" disabled style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; text-align:right;">
                      <span style="font-size:12px; color:#666; width:20px;">${unitStr}</span>
                    </div>
@@ -6525,11 +6783,11 @@ function createSignboardMarker(name, pos, icon, id) {
                   <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="伝達事項・メモなど"></textarea>
                   <div id="used_items_section"></div>
                   <div id="work_harvest_qty_section" class="lot-section" style="display:none; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
+                  <div id="sowing_record_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
-                   <div id="progress_status_section">
-                     <label class="form-label" style="margin-top:15px;">✅ 進捗状況 <span style="color:red;">*</span></label>
+                   <div id="progress_status_section" style="display:none;">
                      <input type="hidden" id="rec_progress_status" value="">
-                     <div id="progress_status_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
+                     <div id="progress_status_buttons_wrapper" style="display:none;"></div>
                    </div>
                    ${exPhotos}
                    ${photoUI}`;
@@ -6704,6 +6962,11 @@ function createSignboardMarker(name, pos, icon, id) {
               setTimeout(() => {
                 window.refreshWorkHarvestQtySection(d.harvestQty);
               }, 100);
+            }
+            if (d.sowingRecord && typeof window.refreshSowingRecordSection === 'function') {
+              setTimeout(() => {
+                window.refreshSowingRecordSection(d.sowingRecord);
+              }, 120);
             }
             
             if (d.detailedWorks) {
@@ -7033,17 +7296,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         }
         selectedPolyIds = targetIds;
-        if (currentRecordType === 'work') {
-          const progressVisible = typeof window.isProgressStatusVisible === 'function'
-            ? window.isProgressStatusVisible()
-            : !!(document.getElementById('progress_status_section')
-              && document.getElementById('progress_status_section').style.display !== 'none');
-          // 登録済み圃場があるときは進捗状況を非表示・任意にする
-          if (progressVisible) {
-            const prog = document.getElementById('rec_progress_status')?.value || '';
-            if (!prog) { customAlert("進捗状況は必須項目です。選択してください。"); return; }
-          }
-        }
+        // 進捗状況は画面から撤去されたため必須チェックを行わない
         const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
         if (btn) { btn.disabled = true; btn.innerText = "通信中..."; }
         
@@ -7170,6 +7423,9 @@ function createSignboardMarker(name, pos, icon, id) {
               } catch (e) {}
               data.harvestQty = harvestQty;
             }
+
+            const sowingRec = (typeof window.collectSowingRecordData === 'function') ? window.collectSowingRecordData() : null;
+            if (sowingRec) data.sowingRecord = sowingRec;
 
             if (typeof window.isWaterValveWork === 'function' && window.isWaterValveWork(wName)) {
               const valveRows = (typeof window.collectIrrigationValveData === 'function') ? window.collectIrrigationValveData() : [];

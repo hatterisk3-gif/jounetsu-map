@@ -53,6 +53,47 @@ let vehicleMarkers = {};
 let currentMachineId = null;
 let currentVehicleId = null;
 let isPickingLocation = false;
+
+/** Google Drive の画像共有URLを <img> タグ用直リンク画像URLに変換 */
+function getDriveDirectImageUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    url = url.trim();
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+    
+    let fileId = null;
+    const m1 = url.match(/\/file\/d\/([^\/\?]+)/);
+    if (m1 && m1[1]) {
+        fileId = m1[1];
+    } else {
+        const m2 = url.match(/[?&]id=([^&]+)/);
+        if (m2 && m2[1]) {
+            fileId = m2[1];
+        }
+    }
+    if (fileId) {
+        return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+    }
+    return url;
+}
+
+async function previewMachinePhoto(input) {
+    pendingMachinePhotoBase64 = "";
+    const preview = document.getElementById('photoPreview');
+    if (!preview) return;
+    if (!input || !input.files || !input.files[0]) {
+        preview.innerHTML = '';
+        return;
+    }
+    try {
+        preview.innerHTML = '<div style="font-size:12px; color:#666;">画像を最適化中...</div>';
+        pendingMachinePhotoBase64 = await resizeVehicleImg(input.files[0]);
+        preview.innerHTML = `<img src="${pendingMachinePhotoBase64}" style="max-width:100%; max-height:140px; border-radius:4px;">`;
+    } catch (e) {
+        alert("画像の読み込みに失敗しました: " + e.message);
+        preview.innerHTML = '';
+    }
+}
 let pickingTargetType = 'machine'; // 'machine' | 'vehicle'
 let pendingLocation = null;
 let pendingBadgeAction = null; // 'maintenance' | 'fuel' | 'location'
@@ -421,9 +462,45 @@ function onBadgeSelected(targetId, kind) {
 // ======================
 // 機械登録
 // ======================
+/** 指定された機械カテゴリ内の登録台数 + 1 の機械番号を算出 */
+function getNextMachineNumberForType(targetType, excludeId = null) {
+    if (!targetType) return '1';
+    const list = Object.values(machines || {});
+    const count = list.filter(m => {
+        if (!m) return false;
+        if (excludeId && String(m.id) === String(excludeId)) return false;
+        const t = String(m.type || m.category || '').trim();
+        return t === String(targetType).trim();
+    }).length;
+    return String(count + 1);
+}
+
+/** 機械カテゴリに応じて機械番号を自動入力 */
+function autoSetNextMachineNumber(force = false) {
+    const typeSel = document.getElementById('regMachineType');
+    const numInput = document.getElementById('regMachineNumber');
+    const editIdEl = document.getElementById('regMachineEditId');
+    if (!typeSel || !numInput) return;
+    
+    const selectedType = typeSel.value || '';
+    const editingId = editIdEl ? editIdEl.value : '';
+    
+    if (force || !editingId || !numInput.value.trim()) {
+        numInput.value = getNextMachineNumberForType(selectedType, editingId);
+    }
+}
+
 function openMachineRegisterModal(editId) {
     updateSelectOptions('regMachineGroup', machineGroups);
     updateSelectOptions('regMachineType', machineTypes);
+    
+    // 機械カテゴリ変更時の自動ナンバリングイベント
+    const typeSel = document.getElementById('regMachineType');
+    if (typeSel) {
+        typeSel.onchange = function() {
+            autoSetNextMachineNumber(true);
+        };
+    }
     
     // 拠点プルダウン設定
     let locSel = document.getElementById('regLocation');
@@ -450,14 +527,7 @@ function openMachineRegisterModal(editId) {
     if (photoInput) {
         photoInput.value = '';
         photoInput.onchange = function () {
-            const file = this.files && this.files[0];
-            if (!file) { pendingMachinePhotoBase64 = ''; document.getElementById('photoPreview').innerHTML = ''; return; }
-            const reader = new FileReader();
-            reader.onload = e => {
-                pendingMachinePhotoBase64 = e.target.result;
-                document.getElementById('photoPreview').innerHTML = `<img src="${pendingMachinePhotoBase64}" style="max-width:100%; max-height:140px;">`;
-            };
-            reader.readAsDataURL(file);
+            previewMachinePhoto(this);
         };
     }
 
@@ -474,13 +544,13 @@ function openMachineRegisterModal(editId) {
         document.getElementById('regPurchaseDate').value = formatDateInputValue(existing.purchaseDate);
         document.getElementById('regModel').value = existing.model || existing.modelType || '';
         document.getElementById('regFuel').value = existing.fuel || existing.fuelType || '';
-        document.getElementById('photoPreview').innerHTML = existing.photo
-            ? `<img src="${existing.photo}" style="max-width:100%; max-height:140px;">`
+        const photoUrl = getDriveDirectImageUrl(existing.photo);
+        document.getElementById('photoPreview').innerHTML = photoUrl
+            ? `<img src="${photoUrl}" style="max-width:100%; max-height:140px; border-radius:4px;">`
             : '';
     } else {
         if (title) title.textContent = '⚙️ 機械登録';
         document.getElementById('regMachineName').value = '';
-        document.getElementById('regMachineNumber').value = '';
         document.getElementById('regLocation').value = '';
         document.getElementById('regSign').value = '';
         renderRegWorkCategoryRows(['']);
@@ -488,6 +558,8 @@ function openMachineRegisterModal(editId) {
         document.getElementById('regModel').value = '';
         document.getElementById('regFuel').value = '';
         document.getElementById('photoPreview').innerHTML = '';
+        // 新規登録時は選択された機械カテゴリの（既存台数 + 1）を自動補完
+        autoSetNextMachineNumber(true);
     }
     
     document.getElementById('modalMachineRegister').style.display = "flex";
@@ -692,7 +764,8 @@ async function saveMachineRegistration() {
         lng: existing ? (existing.lng || null) : null,
         maintenanceSettings: existing ? (existing.maintenanceSettings || []) : [],
         photo: existing ? (existing.photo || '') : '',
-        photoBase64: pendingMachinePhotoBase64 || ""
+        photoBase64: pendingMachinePhotoBase64 || "",
+        photoFilename: (document.getElementById('regMachineName').value.trim() || 'machine').replace(/\s+/g, '_') + '.jpg'
     };
 
     if (!m.name) { alert("機械名を入力してください"); return; }
@@ -702,6 +775,7 @@ async function saveMachineRegistration() {
         const res = await callGAS('machine_saveMachine', m);
         const saved = (res && res.machine) ? res.machine : m;
         if (saved.id) machines[saved.id] = Object.assign({}, existing || {}, saved);
+        pendingMachinePhotoBase64 = "";
         closeModal('modalMachineRegister');
         showToast(existing ? "機械を更新しました" : "機械を登録しました");
         if (saved.id) currentMachineId = saved.id;
@@ -883,9 +957,10 @@ function renderVehicleList() {
             const v = vehicles[id];
             const statusIcon = v.status === '修理中' ? '🔴' : '🟢';
             const pin = (v.lat && v.lng) ? '📍' : '・';
+            const photoUrl = getDriveDirectImageUrl(v.photo);
             html += `<div onclick="selectVehicleFromList('${id}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
                 <div style="width:48px; height:48px; border-radius:6px; overflow:hidden; background:#eee; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
-                    ${v.photo ? `<img src="${v.photo}" style="width:100%; height:100%; object-fit:cover;">` : '🛻'}
+                    ${photoUrl ? `<img src="${photoUrl}" style="width:100%; height:100%; object-fit:cover;">` : '🛻'}
                 </div>
                 <div style="flex:1; min-width:0;">
                     <div style="font-weight:bold; color:#333;">${statusIcon} ${v.plateNumber || '(ナンバー未設定)'}</div>
@@ -910,8 +985,9 @@ function loadVehicleSettings() {
         const v = vehicles[currentVehicleId];
         document.getElementById('selectedVehicleTitle').innerText = v.plateNumber || currentVehicleId;
         const dateStr = formatDateInputValue(v.registrationDate) || '-';
-        const photoHtml = v.photo
-            ? `<div style="margin-bottom:8px;"><img src="${v.photo}" style="max-width:100%; max-height:120px; border-radius:6px;"></div>`
+        const photoUrl = getDriveDirectImageUrl(v.photo);
+        const photoHtml = photoUrl
+            ? `<div style="margin-bottom:8px;"><img src="${photoUrl}" style="max-width:100%; max-height:120px; border-radius:6px;"></div>`
             : '';
         document.getElementById('selectedVehicleDetail').innerHTML =
             photoHtml +
@@ -1013,9 +1089,10 @@ function renderMachineList() {
             const home = m.signName || m.location || '定位置未設定';
             const cur = m.currentLocName || m.signName || '-';
             const selected = String(currentMachineId) === String(id);
+            const photoUrl = getDriveDirectImageUrl(m.photo);
             html += `<div onclick="selectMachineFromList('${safeId}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; background:${selected ? '#e3f2fd' : 'transparent'};">
                 <div style="width:48px; height:48px; border-radius:6px; overflow:hidden; background:#eee; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
-                    ${m.photo ? `<img src="${m.photo}" style="width:100%; height:100%; object-fit:cover;">` : '🚜'}
+                    ${photoUrl ? `<img src="${photoUrl}" style="width:100%; height:100%; object-fit:cover;">` : '🚜'}
                 </div>
                 <div style="flex:1; min-width:0;">
                     <div style="font-weight:bold; color:#333;">${statusIcon} ${m.name || '(名称未設定)'}</div>
@@ -1086,8 +1163,9 @@ function loadMachineSettings() {
         document.getElementById('selectedMachineTitle').innerText = m.name || currentMachineId;
         const detailEl = document.getElementById('selectedMachineDetail');
         if (detailEl) {
-            const photoHtml = m.photo
-                ? `<div style="margin-bottom:8px;"><img src="${m.photo}" style="max-width:100%; max-height:120px; border-radius:6px;"></div>`
+            const photoUrl = getDriveDirectImageUrl(m.photo);
+            const photoHtml = photoUrl
+                ? `<div style="margin-bottom:8px;"><img src="${photoUrl}" style="max-width:100%; max-height:120px; border-radius:6px;"></div>`
                 : '';
             const homeLabel = m.signName || m.location || '-';
             detailEl.innerHTML =

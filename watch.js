@@ -238,14 +238,22 @@ async function watch() {
             } catch (e) { }
 
             const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...(以下省略)' : aiOutput;
+            const didModify = !!(fileChangesText && fileChangesText.trim());
 
-            if (isSuccess) {
-              summaryForLine = `【修正完了（デプロイなし）】\nAIによるコード修正が完了しました。${fileChangesText}\n⚠️ デプロイは行っていません。手動で clasp push / git push / clasp deploy を実行してください。\n\n【AIの修正報告】:\n${shortAiOutput}`;
-              fullSummaryForEmail = `【修正完了（デプロイなし）】\nAIによるコード修正が完了しました。${fileChangesText}\n⚠️ デプロイは行っていません。\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
-              console.log('✅ コード修正が完了しました！（デプロイは行っていません）');
+            if (isSuccess || didModify) {
+              // 修正した時は「エラー・処理失敗」ではなく「修正報告」として返す
+              const note = isSuccess
+                ? 'AIによるコード修正が完了しました。'
+                : '修正は行いましたが構文エラー等が残っている可能性があります。';
+              const deployNote = '\n⚠️ デプロイは行っていません。手動で clasp push / git push / clasp deploy を実行してください。';
+              summaryForLine = `【修正報告】\n${note}${fileChangesText}${deployNote}\n\n【AIの修正報告】:\n${shortAiOutput}`;
+              fullSummaryForEmail = `【修正報告】\n${note}${fileChangesText}\n⚠️ デプロイは行っていません。\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
+              console.log(isSuccess
+                ? '✅ コード修正が完了しました！（デプロイは行っていません）'
+                : '⚠️ 修正はしましたが問題が残っている可能性があります（修正報告として通知）');
             } else {
-              summaryForLine = `【修正に問題あり】\n修正は行いましたが構文エラー等が残っている可能性があります。${fileChangesText}\n\n【AIのコメント】:\n${shortAiOutput}`;
-              fullSummaryForEmail = `【修正に問題あり】\n${fileChangesText}\n\n【AIのコメント(全文)】:\n${aiOutput}`;
+              summaryForLine = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因】:\n${shortAiOutput}`;
+              fullSummaryForEmail = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因(全文)】:\n${aiOutput}`;
             }
           }
         }

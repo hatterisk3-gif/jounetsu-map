@@ -44,6 +44,8 @@ function doPost(e) {
     else if (action === "saveCropChemPlan") result = saveCropChemPlan(params);
     else if (action === "listCropChemPlans") result = listCropChemPlans(params);
     else if (action === "deleteCropChemPlan") result = deleteCropChemPlan(params);
+    else if (action === "getSowingProgress") result = getSowingProgress(params);
+    else if (action === "lookupCultivationByTag") result = lookupCultivationByTag(params);
     else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
     else if (action === "markHarvestQtyLotResolved") result = markHarvestQtyLotResolved(params);
     else if (action === "saveGlobalShipping") result = saveGlobalShipping(params);
@@ -623,6 +625,16 @@ pdl.materials = [];
   } catch (ccpErr) {
     pdl.cropChemPlans = [];
   }
+  try {
+    pdl.nurseryLocations = readNurseryLocationList_();
+  } catch (nlErr) {
+    pdl.nurseryLocations = [];
+  }
+  try {
+    pdl.cropCultSettings = readCropCultSettingList_();
+  } catch (ccsErr) {
+    pdl.cropCultSettings = [];
+  }
   // 🌟ここまで🌟
   let pastReports = {};
   const schedSheet = ss.getSheetByName('作業予定');
@@ -891,6 +903,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'container') sheetName = 'コンテナマスタ';
   else if (masterType === 'pesticide') sheetName = '農薬マスタ';
   else if (masterType === 'fertilizer') sheetName = '肥料マスタ';
+  else if (masterType === 'nurseryLocation') sheetName = '育苗場所マスタ';
+  else if (masterType === 'cropCultSetting') sheetName = '作物栽培設定マスタ';
   
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -915,6 +929,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet = ensurePesticideMasterSheet_();
       } else if (masterType === 'fertilizer') {
           sheet = ensureFertilizerMasterSheet_();
+      } else if (masterType === 'nurseryLocation') {
+          sheet = ensureNurseryLocationSheet_();
+      } else if (masterType === 'cropCultSetting') {
+          sheet = ensureCropCultSettingSheet_();
       } else {
           throw new Error(`${sheetName}が見つかりません`);
       }
@@ -937,6 +955,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'fertilizer') {
     sheet = ensureFertilizerMasterSheet_();
+  }
+  if (masterType === 'nurseryLocation') {
+    sheet = ensureNurseryLocationSheet_();
+  }
+  if (masterType === 'cropCultSetting') {
+    sheet = ensureCropCultSettingSheet_();
   }
 
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
@@ -1016,11 +1040,25 @@ function manageMasterData(masterType, manageAction, value, userName) {
       if (!rowObj.name) throw new Error('肥料名を入力してください');
       appendFertilizerMasterRow_(sheet, rowObj);
       writeLog(userName, "マスタ追加", rowObj.name, `対象: ${sheetName}`);
+    } else if (masterType === 'nurseryLocation') {
+      const loc = (typeof value === 'object' && value) ? value : { name: value };
+      const name = String(loc.name || '').trim();
+      if (!name) throw new Error('育苗場所名を入力してください');
+      const newId = 'NUR-' + Utilities.getUuid().substring(0, 8);
+      sheet.appendRow([newId, name, String(loc.polyId || '').trim(), String(loc.polyName || '').trim(), String(loc.direction || '').trim(), String(loc.note || '').trim()]);
+      writeLog(userName, "マスタ追加", name, `対象: ${sheetName}`);
+    } else if (masterType === 'cropCultSetting') {
+      const row = (typeof value === 'object' && value) ? value : { cropName: value };
+      const cropName = String(row.cropName || row.name || '').trim();
+      if (!cropName) throw new Error('作物名を入力してください');
+      const existing = readCropCultSettingList_();
+      if (existing.some(x => x.cropName === cropName)) throw new Error('作物「' + cropName + '」の栽培設定は既にあります');
+      sheet.appendRow([cropName, (row.sowingHoles === '' || row.sowingHoles == null) ? '' : row.sowingHoles, String(row.note || '').trim()]);
+      writeLog(userName, "マスタ追加", cropName, `対象: ${sheetName}`);
     } else {
-      // ★看板マスタなど、1列だけのシンプルなマスタ用
       sheet.appendRow([value]);
     }
-    if (masterType !== 'location' && masterType !== 'container' && masterType !== 'pesticide' && masterType !== 'fertilizer') {
+    if (masterType !== 'location' && masterType !== 'container' && masterType !== 'pesticide' && masterType !== 'fertilizer' && masterType !== 'nurseryLocation' && masterType !== 'cropCultSetting') {
       writeLog(userName, "マスタ追加", (value && value.name) || value, `対象: ${sheetName}`);
     }
   } 
@@ -1266,6 +1304,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'fertilizer') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+      } else if (masterType === 'nurseryLocation') {
+          if (String(data[i][0] || '').trim() === String(targetVal || '').trim() || String(data[i][1] || '').trim() === String(targetVal || '').trim()) match = true;
+      } else if (masterType === 'cropCultSetting') {
+          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'machineType' || masterType === 'machineGroup') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'crop') {
@@ -1308,6 +1350,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'fertilizer') {
     return readFertilizerMasterList_();
+  }
+  if (masterType === 'nurseryLocation') {
+    return readNurseryLocationList_();
+  }
+  if (masterType === 'cropCultSetting') {
+    return readCropCultSettingList_();
   }
   const newData = sheet.getDataRange().getValues();
   const returnHeaders = newData[0].map(h => String(h).trim());
@@ -3319,9 +3367,11 @@ function formatWorkDateYmd_(val) {
   return '';
 }
 
+var globalCpPlanLookup_ = null;
 function getScheduleData() {
   const ss = TENANT_SS;
   const today = new Date(); today.setHours(0,0,0,0);
+  globalCpPlanLookup_ = null;
 
   // 1. 作業記録マスタから「作業名 -> 担当部署」の辞書を作成
   const workDeptMap = {};
@@ -3329,7 +3379,11 @@ function getScheduleData() {
   if (workMasterSheet) {
     const wData = workMasterSheet.getDataRange().getValues();
     for(let i=1; i<wData.length; i++) {
-      if(wData[i][0]) workDeptMap[wData[i][0]] = wData[i][1] || '未分類';
+      if(wData[i][0]) {
+        workDeptMap[wData[i][0]] = wData[i][1] || '未分類';
+        // 前方一致用（栽培計画の旧「播種 100枚 […]」行にも対応）
+        if (String(wData[i][0]).trim() === '播種') workDeptMap.__SOWING__ = wData[i][1] || '未分類';
+      }
     }
   }
 
@@ -3437,7 +3491,12 @@ function getScheduleData() {
       // 自動部署判定 (空欄の場合)
       if (!dept) {
         if (String(workName).includes('⚠️')) dept = '運営';
-        else dept = workDeptMap[workName] || '未設定';
+        else {
+          dept = workDeptMap[workName] || '未設定';
+          if ((!dept || dept === '未設定') && String(workName).indexOf('播種') === 0 && workDeptMap.__SOWING__) {
+            dept = workDeptMap.__SOWING__;
+          }
+        }
         // 判定した部署をシート(B列=2)に書き込むよう予約
         scheduleUpdates.push({row: i + 1, col: 2, val: dept});
       }
@@ -3458,19 +3517,41 @@ function getScheduleData() {
           if (dlDate < today) isOverdue = true;
         }
         const scheduleKey = buildWorkScheduleKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw);
+        const placeIdRaw = String(sData[i][10] || '');
+        const isCultivation = placeIdRaw.indexOf('cp:') === 0;
+        let varietyName = '';
+        let periodLabel = '';
+        let displayCrop = cropName;
+        let displayTag = person;
+        let displayTrays = hours;
+        if (isCultivation) {
+          if (!globalCpPlanLookup_) globalCpPlanLookup_ = buildCultivationPlanLookupById_();
+          const planId = placeIdRaw.split('|')[0].replace(/^cp:/, '');
+          const plan = globalCpPlanLookup_[planId];
+          if (plan) {
+            displayCrop = plan.crop || displayCrop;
+            varietyName = plan.variety || '';
+            displayTag = plan.tag || displayTag;
+            const unit = (Number(plan.holes) === 1) ? '粒' : '枚';
+            if (plan.trays != null && plan.trays !== '') displayTrays = plan.trays + unit;
+            try { periodLabel = formatCpPeriodLabel(plan.year, (plan.tasks && plan.tasks.sowing) || []); } catch (e2) {}
+          }
+        }
         activeSchedules.push({
           workName,
           dept,
-          cropName,
+          cropName: displayCrop,
+          variety: varietyName,
           fieldName,
           schedDate: schedDateStr,
           deadline: deadlineStr,
           hours,
           person,
           isOverdue,
-          isCultivation: String(sData[i][10] || '').indexOf('cp:') === 0,
-          trays: hours,
-          tag: person,
+          isCultivation: isCultivation,
+          trays: displayTrays,
+          tag: displayTag,
+          periodLabel: periodLabel,
           scheduleKey: scheduleKey,
           taskUsers: taskUsersMap[scheduleKey] || [],
           isMidWork: false
@@ -5873,6 +5954,257 @@ function resolveCpFieldDisplayName_(fieldId) {
  * 定植の最も早い半旬順に、作物ごとへタグを割り当て（例: キャベツ1）
  * plans 配列内のオブジェクトを直接更新する
  */
+
+// ===== 育苗場所マスタ / 作物栽培設定 / 播種記録 =====
+const NURSERY_LOCATION_HEADERS_ = ['ID', '場所名', '圃場ID', '圃場名', '方向', '備考'];
+const CROP_CULT_SETTING_HEADERS_ = ['作物名', '播種穴数', '備考'];
+const SOWING_RECORD_HEADERS_ = ['記録時間', '記録者', 'TAG', '作物名', '品種名', '区画', '方向', '播種日', '枚数', '穴数', '計画ID', 'システムID', '備考'];
+
+function ensureNurseryLocationSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('育苗場所マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('育苗場所マスタ');
+    sheet.appendRow(NURSERY_LOCATION_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, NURSERY_LOCATION_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), NURSERY_LOCATION_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    NURSERY_LOCATION_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function ensureCropCultSettingSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('作物栽培設定マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('作物栽培設定マスタ');
+    sheet.appendRow(CROP_CULT_SETTING_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, CROP_CULT_SETTING_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), CROP_CULT_SETTING_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    CROP_CULT_SETTING_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function ensureSowingRecordSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('播種記録');
+  if (!sheet) {
+    sheet = ss.insertSheet('播種記録');
+    sheet.appendRow(SOWING_RECORD_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, SOWING_RECORD_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), SOWING_RECORD_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    SOWING_RECORD_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function readNurseryLocationList_() {
+  const sheet = ensureNurseryLocationSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, 1, last - 1, 6).getValues();
+  return values.map(r => ({
+    id: String(r[0] || '').trim(),
+    name: String(r[1] || '').trim(),
+    polyId: String(r[2] || '').trim(),
+    polyName: String(r[3] || '').trim(),
+    direction: String(r[4] || '').trim(),
+    note: String(r[5] || '').trim()
+  })).filter(x => x.id || x.name);
+}
+
+function readCropCultSettingList_() {
+  const sheet = ensureCropCultSettingSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, 1, last - 1, 3).getValues();
+  return values.map(r => ({
+    cropName: String(r[0] || '').trim(),
+    sowingHoles: (r[1] === '' || r[1] == null) ? '' : r[1],
+    note: String(r[2] || '').trim()
+  })).filter(x => x.cropName);
+}
+
+function readSowingRecordList_() {
+  const sheet = ensureSowingRecordSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, 1, last - 1, SOWING_RECORD_HEADERS_.length).getValues();
+  return values.map(r => ({
+    recordedAt: String(r[0] || '').trim(),
+    author: String(r[1] || '').trim(),
+    tag: String(r[2] || '').trim(),
+    cropName: String(r[3] || '').trim(),
+    variety: String(r[4] || '').trim(),
+    nurseryName: String(r[5] || '').trim(),
+    direction: String(r[6] || '').trim(),
+    sowingDate: r[7] instanceof Date ? Utilities.formatDate(r[7], 'Asia/Tokyo', 'yyyy-MM-dd') : String(r[7] || '').trim(),
+    trays: Number(r[8]) || 0,
+    holes: (r[9] === '' || r[9] == null) ? '' : r[9],
+    planId: String(r[10] || '').trim(),
+    recordId: String(r[11] || '').trim(),
+    note: String(r[12] || '').trim()
+  })).filter(x => x.tag || x.cropName || x.trays);
+}
+
+function appendSowingRecordFromWork_(recordData, author, recordId) {
+  if (!recordData || !recordData.sowingRecord) return;
+  const s = recordData.sowingRecord;
+  const sheet = ensureSowingRecordSheet_();
+  const now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+  sheet.appendRow([
+    now,
+    author || '',
+    String(s.tag || '').trim(),
+    String(s.cropName || recordData.crop || '').trim(),
+    String(s.variety || '').trim(),
+    String(s.nurseryName || '').trim(),
+    String(s.direction || '').trim(),
+    String(s.sowingDate || recordData.workDate || '').trim(),
+    Number(s.trays) || 0,
+    (s.holes === '' || s.holes == null) ? '' : s.holes,
+    String(s.planId || '').trim(),
+    recordId || '',
+    String(s.note || '').trim()
+  ]);
+}
+
+function buildCultivationPlanLookupById_() {
+  const map = {};
+  const sheet = TENANT_SS.getSheetByName('栽培計画');
+  if (!sheet || sheet.getLastRow() < 2) return map;
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+  data.forEach(r => {
+    try {
+      const plan = JSON.parse(String(r[5] || '{}'));
+      if (plan && plan.id) map[String(plan.id)] = plan;
+    } catch (e) {}
+  });
+  return map;
+}
+
+function lookupCultivationByTag(params) {
+  const tag = String((params && params.tag) || '').trim();
+  if (!tag) return { success: true, plan: null };
+  const sheet = TENANT_SS.getSheetByName('栽培計画');
+  if (!sheet || sheet.getLastRow() < 2) return { success: true, plan: null };
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+  let found = null;
+  for (let i = 0; i < data.length; i++) {
+    try {
+      const plan = JSON.parse(String(data[i][5] || '{}'));
+      if (plan && String(plan.tag || '').trim() === tag) {
+        found = {
+          id: plan.id || '',
+          year: plan.year || data[i][1],
+          crop: plan.crop || String(data[i][3] || ''),
+          variety: plan.variety || String(data[i][4] || ''),
+          tag: plan.tag || tag,
+          trays: plan.trays || 0,
+          holes: plan.holes,
+          status: plan.status || ''
+        };
+        if (plan.status === 'executed') break;
+      }
+    } catch (e) {}
+  }
+  return { success: true, plan: found };
+}
+
+function getSowingProgress(params) {
+  const yearFilter = (params && params.year) ? String(params.year) : '';
+  const planLookup = buildCultivationPlanLookupById_();
+  const plans = Object.keys(planLookup).map(k => planLookup[k]).filter(p => {
+    if (!p || p.status !== 'executed') return false;
+    if (yearFilter && String(p.year) !== yearFilter) return false;
+    const sowing = (p.tasks && p.tasks.sowing) ? p.tasks.sowing : [];
+    return sowing.length > 0;
+  });
+  const records = readSowingRecordList_();
+  const byTag = {};
+  records.forEach(r => {
+    const key = r.tag || (r.cropName + '|' + r.variety);
+    if (!byTag[key]) byTag[key] = { tag: r.tag, cropName: r.cropName, variety: r.variety, trays: 0, records: [] };
+    byTag[key].trays += Number(r.trays) || 0;
+    byTag[key].records.push(r);
+  });
+  const rows = plans.map(p => {
+    const plannedTrays = Number(p.trays) || 0;
+    const hit = byTag[p.tag] || { trays: 0, records: [] };
+    const doneTrays = Number(hit.trays) || 0;
+    const pct = plannedTrays > 0 ? Math.min(100, Math.round(doneTrays / plannedTrays * 100)) : (doneTrays > 0 ? 100 : 0);
+    let periodLabel = '';
+    try {
+      periodLabel = formatCpPeriodLabel(p.year, (p.tasks && p.tasks.sowing) || []);
+    } catch (e) { periodLabel = ''; }
+    return {
+      planId: p.id,
+      year: p.year,
+      crop: p.crop || '',
+      variety: p.variety || '',
+      tag: p.tag || '',
+      plannedTrays: plannedTrays,
+      doneTrays: doneTrays,
+      remainTrays: Math.max(0, plannedTrays - doneTrays),
+      progressPct: pct,
+      periodLabel: periodLabel,
+      recordCount: (hit.records || []).length
+    };
+  });
+  // 計画なしの実績も残す
+  Object.keys(byTag).forEach(k => {
+    const b = byTag[k];
+    if (b.tag && rows.some(r => r.tag === b.tag)) return;
+    if (!b.tag && rows.some(r => r.crop === b.cropName && r.variety === b.variety)) return;
+    rows.push({
+      planId: '',
+      year: '',
+      crop: b.cropName || '',
+      variety: b.variety || '',
+      tag: b.tag || '',
+      plannedTrays: 0,
+      doneTrays: b.trays || 0,
+      remainTrays: 0,
+      progressPct: 100,
+      periodLabel: '',
+      recordCount: (b.records || []).length,
+      unplanned: true
+    });
+  });
+  const byCrop = {};
+  rows.forEach(r => {
+    const c = r.crop || '(不明)';
+    if (!byCrop[c]) byCrop[c] = { crop: c, plannedTrays: 0, doneTrays: 0, planCount: 0 };
+    byCrop[c].plannedTrays += Number(r.plannedTrays) || 0;
+    byCrop[c].doneTrays += Number(r.doneTrays) || 0;
+    byCrop[c].planCount += 1;
+  });
+  const cropSummary = Object.keys(byCrop).map(k => {
+    const c = byCrop[k];
+    c.progressPct = c.plannedTrays > 0 ? Math.min(100, Math.round(c.doneTrays / c.plannedTrays * 100)) : (c.doneTrays > 0 ? 100 : 0);
+    return c;
+  }).sort((a, b) => String(a.crop).localeCompare(String(b.crop), 'ja'));
+  return {
+    success: true,
+    rows: rows.sort((a, b) => String(a.crop).localeCompare(String(b.crop), 'ja') || String(a.tag).localeCompare(String(b.tag), 'ja')),
+    cropSummary: cropSummary,
+    records: records
+  };
+}
+
 function assignCultivationPlanTags_(plans) {
   if (!plans || plans.length === 0) return;
   const groups = {};
@@ -5975,11 +6307,11 @@ function executeCultivationPlans(params) {
 
       // A作業名 B部署 C作物(品種) D圃場 E予定 F期限 G枚数 Hタグ I完了 J写真 K場所ID
       // 作業名に期間を含め、一覧で品種・タグ・枚数・期間が分かるようにする
-      const workName = '播種 ' + traysLabel + ' [' + periodLabel + ']';
+      const workName = '播種';
       schedSheet.appendRow([
         workName,
         '',
-        plan.variety || plan.crop || '',
+        plan.crop || '',
         fieldNames,
         startDate,
         endDate,
@@ -7001,7 +7333,9 @@ function machine_saveMachine(p) {
       const blob = Utilities.newBlob(byteString, type, p.photoFilename || "machine.jpg");
       const folders = DriveApp.getFoldersByName("情熱MAP_農機写真");
       const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("情熱MAP_農機写真");
-      merged.photo = folder.createFile(blob).getUrl();
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      merged.photo = "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w1000";
     } catch (e) {}
   }
 

@@ -160,7 +160,7 @@ window.onLocationCityChange = function(sel) {
     const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 let pendingInitData = null; // 地図準備前に届いた初期データ（地図完成後に必ず描画）
@@ -529,6 +529,8 @@ function renderInitData(data, opts) {
     pdlPesticides = data.pdl.pesticides || [];
     pdlFertilizers = data.pdl.fertilizers || [];
     pdlCropChemPlans = data.pdl.cropChemPlans || [];
+    pdlNurseryLocations = data.pdl.nurseryLocations || [];
+    pdlCropCultSettings = data.pdl.cropCultSettings || [];
     pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
     pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
     pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
@@ -777,6 +779,8 @@ window.getMasterTypeInfo = (type) => {
         pesticide: { title: '🧪 農薬マスタ', desc: '自社で使う農薬。公式カタログから検索して登録', list: pdlPesticides || [] },
         fertilizer: { title: '🌿 肥料マスタ', desc: '自社で使う肥料。公式カタログから検索して登録', list: pdlFertilizers || [] },
         cropChemPlan: { title: '🗓️ 品目別農薬設定', desc: '品目ごとに半旬（1上前〜12下後）の農薬・肥料を設定', list: pdlCropChemPlans || [] },
+        nurseryLocation: { title: '🪴 育苗場所マスタ', desc: '育苗区画（圃場）と方向の登録', list: pdlNurseryLocations || [] },
+        cropCultSetting: { title: '📐 作物栽培設定マスタ', desc: '品目ごとの播種穴数など栽培デフォルト', list: pdlCropCultSettings || [] },
         container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
@@ -790,7 +794,7 @@ window.renderMasterMenu = () => {
     if (titleEl) titleEl.innerHTML = '⚙️ マスタ項目設定';
 
     const masterTypes = [
-        'crop', 'cropChemPlan', 'container', 'sign', 'location', 'workCategory',
+        'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'container', 'sign', 'location', 'workCategory',
         'machineType', 'machineGroup', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
@@ -861,6 +865,35 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <label style="font-size:12px; font-weight:bold; color:#555;">標準栽植密度 (本/10a)</label>
                 <input type="number" id="add_crop_density" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 2500">
                 <button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'cropCultSetting') {
+            const cropOpts = (pdlCrops || []).map(c => `<option value="${String(c.name || '').replace(/"/g, '&quot;')}">${c.name}</option>`).join('');
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">作物名</label>
+                <select id="add_ccs_crop" class="form-input" style="margin-bottom:0; padding:8px;"><option value="">選択してください</option>${cropOpts}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">播種穴数（デフォルト）</label>
+                <input type="number" id="add_ccs_holes" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 128" min="1">
+                <label style="font-size:12px; font-weight:bold; color:#555;">備考</label>
+                <input type="text" id="add_ccs_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="任意">
+                <button onclick="execMaster('cropCultSetting', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'nurseryLocation') {
+            const polyOpts = Object.keys(loadedPolygons || {}).map(id => {
+                const p = loadedPolygons[id];
+                if (!p || p.isMarker) return '';
+                const n = String(p.name || id);
+                return `<option value="${String(id).replace(/"/g, '&quot;')}" data-name="${n.replace(/"/g, '&quot;')}">${n}</option>`;
+            }).filter(Boolean).join('');
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">育苗場所名</label>
+                <input type="text" id="add_nur_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 育苗ハウスA-東">
+                <label style="font-size:12px; font-weight:bold; color:#555;">圃場（区画）</label>
+                <select id="add_nur_poly" class="form-input" style="margin-bottom:0; padding:8px;"><option value="">選択してください</option>${polyOpts}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">方向</label>
+                <input type="text" id="add_nur_dir" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 東・南向き・北側">
+                <label style="font-size:12px; font-weight:bold; color:#555;">備考</label>
+                <input type="text" id="add_nur_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="任意">
+                <button onclick="execMaster('nurseryLocation', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'container') {
             const cropOpts = (pdlCrops || []).map(c => `<option value="${String(c.name || '').replace(/"/g, '&quot;')}">${c.name}</option>`).join('');
@@ -1124,10 +1157,18 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         listHtml += `<tr><td colspan="2" style="padding:20px; text-align:center; color:#888;">登録されたデータはありません</td></tr>`;
     } else {
         list.forEach(v => {
-            const dispName = v.name || v, deleteVal = v.id || v.name || v;
+            const dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.name || v);
+            const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.id || v.name || v);
             let subInfo = "";
 
             if (type === 'crop') subInfo = `<span style="color:#666;">(${v.density || 0}本/10a)</span>`;
+            if (type === 'cropCultSetting') subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">穴数: ${v.sowingHoles != null && v.sowingHoles !== '' ? v.sowingHoles : '-'}</span>`;
+            if (type === 'nurseryLocation') {
+                const bits = [];
+                if (v.polyName) bits.push('圃場:' + v.polyName);
+                if (v.direction) bits.push('方向:' + v.direction);
+                if (bits.length) subInfo = `<div style="font-size:11px; color:#6a1b9a; margin-top:3px;">${bits.join(' ／ ')}</div>`;
+            }
             if (type === 'container') {
                 const cropDisp = v.crop || (v.crops && v.crops[0]) || v.cropName || '（品目未設定）';
                 const unit = String(v.contentUnit || '').trim();
@@ -3186,6 +3227,32 @@ window.execMaster = async (type, act, val) => {
     let value = val;
     if (act === 'add') {
         if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0) }; }
+        else if (type === 'cropCultSetting') {
+            const cropName = (document.getElementById('add_ccs_crop')?.value || '').trim();
+            if (!cropName) { customAlert('作物名を選択してください'); return; }
+            const holesRaw = document.getElementById('add_ccs_holes')?.value;
+            value = {
+                cropName,
+                sowingHoles: (holesRaw !== '' && holesRaw != null) ? holesRaw : '',
+                note: (document.getElementById('add_ccs_note')?.value || '').trim()
+            };
+        }
+        else if (type === 'nurseryLocation') {
+            const name = (document.getElementById('add_nur_name')?.value || '').trim();
+            if (!name) { customAlert('育苗場所名を入力してください'); return; }
+            const polySel = document.getElementById('add_nur_poly');
+            const polyId = (polySel?.value || '').trim();
+            const polyName = polySel && polySel.selectedIndex >= 0
+                ? (polySel.options[polySel.selectedIndex].getAttribute('data-name') || polySel.options[polySel.selectedIndex].text || '')
+                : '';
+            value = {
+                name,
+                polyId,
+                polyName,
+                direction: (document.getElementById('add_nur_dir')?.value || '').trim(),
+                note: (document.getElementById('add_nur_note')?.value || '').trim()
+            };
+        }
         else if (type === 'container') {
             const name = document.getElementById('add_container_name').value.trim();
             if (!name) { customAlert("コンテナ種類を入力してください"); return; }
@@ -3425,7 +3492,7 @@ window.execMaster = async (type, act, val) => {
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
     try {
         const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
-        if (type === 'crop') pdlCrops = updatedList; else if (type === 'container') { pdlContainers = updatedList || []; pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))]; } else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'pesticide') pdlPesticides = updatedList || []; else if (type === 'fertilizer') pdlFertilizers = updatedList || []; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
+        if (type === 'crop') pdlCrops = updatedList; else if (type === 'cropCultSetting') pdlCropCultSettings = updatedList || []; else if (type === 'nurseryLocation') pdlNurseryLocations = updatedList || []; else if (type === 'container') { pdlContainers = updatedList || []; pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))]; } else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'pesticide') pdlPesticides = updatedList || []; else if (type === 'fertilizer') pdlFertilizers = updatedList || []; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
         if (type === 'work') { try { closeWorkMasterEditModal(); } catch(e){} }
         // カテゴリ/作物の改名時は作業マスタのローカル表示も追随
         if (act === 'edit' && type === 'workCategory' && value && value.originalName && value.newData) {

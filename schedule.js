@@ -1136,9 +1136,13 @@ async function fetchWeatherAndUpdateUI() {
               : (String(t.workName).includes('⚠️') ? 'style="background-color:#ffebee; color:#d32f2f; font-weight:bold;"' : (t.isOverdue ? 'class="overdue-row"' : ''));
             const isCp = t.isCultivation || String(t.workName || '').indexOf('播種') === 0;
             const cropCell = isCp
-              ? `${t.cropName || '-'}${t.tag ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.tag + '</span>' : (t.person ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.person + '</span>' : '')}`
+              ? `${t.cropName || '-'}${t.variety ? '<br><span style="color:#1565c0;font-size:11px;">品種: ' + t.variety + '</span>' : ''}${t.tag ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">TAG: ' + t.tag + '</span>' : (t.person ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.person + '</span>' : '')}`
               : (t.cropName || '-');
-            const traysCell = isMid ? (t.totalTime || '-') : (t.trays || t.hours || '-');
+            const traysCell = isMid
+              ? (t.totalTime || '-')
+              : (isCp
+                  ? `${t.trays || t.hours || '-'}${t.periodLabel ? '<br><span style="font-size:10px;color:#666;">' + t.periodLabel + '</span>' : ''}`
+                  : (t.trays || t.hours || '-'));
             const tagCell = isMid
               ? (`👤${t.author || t.person || '-'}` + (t.startTime ? `<br><span style="font-size:11px;">${t.startTime}〜${t.endTime || ''}</span>` : ''))
               : (isCp ? (t.tag || t.person || '-') : (t.person || '-'));
@@ -1166,6 +1170,74 @@ async function fetchWeatherAndUpdateUI() {
           }).join('');
         }
         document.getElementById('scheduleModal').style.display = 'flex';
+      };
+
+      window.openSowingProgressModal = async () => {
+        const modal = document.getElementById('sowingProgressModal');
+        const body = document.getElementById('sowingProgressBody');
+        if (!modal || !body) return;
+        modal.style.display = 'flex';
+        body.innerHTML = '<div style="color:#666; padding:12px;">読み込み中...</div>';
+        try {
+          const year = String(new Date().getFullYear());
+          const res = await callGAS('getSowingProgress', { year });
+          const cropSummary = (res && res.cropSummary) || [];
+          const rows = (res && res.rows) || [];
+          let html = '';
+          html += `<div style="margin-bottom:14px; font-size:12px; color:#555;">年度 ${year} の実行済み栽培計画に対する播種実績です。</div>`;
+          html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">作物別サマリー</div>`;
+          if (!cropSummary.length) {
+            html += `<div style="color:#888; margin-bottom:14px;">データがありません。栽培計画を実行し、作業記録で「播種」を記録してください。</div>`;
+          } else {
+            html += `<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; margin-bottom:16px;">`;
+            cropSummary.forEach(c => {
+              const pct = c.progressPct || 0;
+              html += `<div style="border:1px solid #e1bee7; border-radius:8px; padding:10px; background:#faf5fc;">
+                <div style="font-weight:bold; color:#4a148c;">${String(c.crop||'').replace(/</g,'&lt;')}</div>
+                <div style="font-size:12px; color:#555; margin:4px 0;">計画 ${c.plannedTrays||0} / 実績 ${c.doneTrays||0}</div>
+                <div style="background:#eee; border-radius:6px; height:10px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:#8e24aa;"></div></div>
+                <div style="font-size:11px; color:#6a1b9a; margin-top:4px;">${pct}%</div>
+              </div>`;
+            });
+            html += `</div>`;
+          }
+          html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">TAG別進捗</div>`;
+          html += `<div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead><tr style="background:#f3e5f5; text-align:left;">
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">作物</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">品種</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">TAG</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">播種期間</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">計画枚数</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">実績</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">残</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">進捗</th>
+            </tr></thead><tbody>`;
+          if (!rows.length) {
+            html += `<tr><td colspan="8" style="padding:16px; text-align:center; color:#888;">該当なし</td></tr>`;
+          } else {
+            rows.forEach(r => {
+              const pct = r.progressPct || 0;
+              html += `<tr>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${String(r.crop||'-').replace(/</g,'&lt;')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${String(r.variety||'-').replace(/</g,'&lt;')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee; color:#e91e63; font-weight:bold;">${String(r.tag||'-').replace(/</g,'&lt;')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${String(r.periodLabel||'-').replace(/</g,'&lt;')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${r.plannedTrays||0}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${r.doneTrays||0}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${r.remainTrays||0}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">
+                  <div style="background:#eee; border-radius:6px; height:8px; overflow:hidden; min-width:60px;"><div style="width:${pct}%; height:100%; background:${pct>=100?'#43a047':'#8e24aa'};"></div></div>
+                  <span style="font-size:11px;">${pct}%</span>
+                </td>
+              </tr>`;
+            });
+          }
+          html += `</tbody></table></div>`;
+          body.innerHTML = html;
+        } catch (e) {
+          body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g,'&lt;')}</div>`;
+        }
       };
 
       window.getScheduleCropNames = () => {
