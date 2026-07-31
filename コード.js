@@ -34,6 +34,12 @@ function doPost(e) {
     else if (action === "manageMaster") result = manageMasterData(params.masterType, params.manageAction, params.value, params.userName);
     else if (action === "importPesticideMasterRows") result = importPesticideMasterRows(params);
     else if (action === "importFertilizerMasterRows") result = importFertilizerMasterRows(params);
+    else if (action === "importFertilizerCatalogChunk") result = importFertilizerCatalogChunk(params);
+    else if (action === "searchFertilizerCatalog") result = searchFertilizerCatalog(params);
+    else if (action === "getFertilizerCatalogStats") result = getFertilizerCatalogStats(params);
+    else if (action === "importPesticideCatalogChunk") result = importPesticideCatalogChunk(params);
+    else if (action === "searchPesticideCatalog") result = searchPesticideCatalog(params);
+    else if (action === "getPesticideCatalogStats") result = getPesticideCatalogStats(params);
     else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
     else if (action === "markHarvestQtyLotResolved") result = markHarvestQtyLotResolved(params);
     else if (action === "saveGlobalShipping") result = saveGlobalShipping(params);
@@ -1959,6 +1965,243 @@ function fertilizerDedupKey_(e) {
   const maker = String(e.manufacturer || '').trim();
   if (name) return 'N:' + name + '\t' + maker;
   return '';
+}
+
+// ========== 肥料カタログ（公式CSVの保管庫 → 検索してマスタへ） ==========
+const FERTILIZER_CATALOG_HEADERS_ = [
+  '肥料名', '肥料種類', '窒素', 'りん酸', '加里',
+  '保証成分', '製造メーカー', '登録番号'
+];
+
+function ensureFertilizerCatalogSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('肥料カタログ');
+  if (!sheet) {
+    sheet = ss.insertSheet('肥料カタログ');
+    sheet.appendRow(FERTILIZER_CATALOG_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, FERTILIZER_CATALOG_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), FERTILIZER_CATALOG_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    FERTILIZER_CATALOG_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function fertilizerCatalogRowValues_(item) {
+  return [
+    item.name || '',
+    item.fertilizerType || '',
+    item.nitrogen || '',
+    item.phosphate || '',
+    item.potash || '',
+    item.components || '',
+    item.manufacturer || '',
+    item.regNumber || ''
+  ];
+}
+
+function readFertilizerCatalogRow_(r) {
+  return {
+    name: String(r[0] || '').trim(),
+    fertilizerType: String(r[1] || '').trim(),
+    nitrogen: String(r[2] || '').trim(),
+    phosphate: String(r[3] || '').trim(),
+    potash: String(r[4] || '').trim(),
+    components: String(r[5] || '').trim(),
+    manufacturer: String(r[6] || '').trim(),
+    regNumber: String(r[7] || '').trim(),
+    volume: '',
+    note: ''
+  };
+}
+
+/** カタログへチャンク取込。clearFirst=true で先頭チャンク時に全置換 */
+function importFertilizerCatalogChunk(params) {
+  const rows = (params && params.rows) || [];
+  if (!Array.isArray(rows) || !rows.length) {
+    throw new Error('取り込む行がありません');
+  }
+  if (rows.length > 400) {
+    throw new Error('1回あたり400件までにしてください');
+  }
+  const sheet = ensureFertilizerCatalogSheet_();
+  if (params && params.clearFirst) {
+    const last = sheet.getLastRow();
+    if (last > 1) sheet.getRange(2, 1, last, FERTILIZER_CATALOG_HEADERS_.length).clearContent();
+  }
+  const values = [];
+  rows.forEach(raw => {
+    const item = normalizeFertilizerMasterItem_(raw);
+    if (!item.name) return;
+    values.push(fertilizerCatalogRowValues_(item));
+  });
+  if (values.length) {
+    const start = sheet.getLastRow() + 1;
+    sheet.getRange(start, 1, start + values.length - 1, FERTILIZER_CATALOG_HEADERS_.length).setValues(values);
+  }
+  SpreadsheetApp.flush();
+  return getFertilizerCatalogStats(params);
+}
+
+function getFertilizerCatalogStats(params) {
+  const sheet = ensureFertilizerCatalogSheet_();
+  const last = sheet.getLastRow();
+  const count = Math.max(0, last - 1);
+  return { success: true, count: count };
+}
+
+function searchFertilizerCatalog(params) {
+  const q = String((params && params.q) || '').trim().toLowerCase();
+  const maker = String((params && params.maker) || '').trim().toLowerCase();
+  const limit = Math.min(100, Math.max(1, parseInt((params && params.limit) || 50, 10) || 50));
+  if (!q && !maker) {
+    throw new Error('肥料名またはメーカーのキーワードを入力してください');
+  }
+  const sheet = ensureFertilizerCatalogSheet_();
+  const last = sheet.getLastRow();
+  if (last <= 1) {
+    return { success: true, count: 0, totalCatalog: 0, items: [] };
+  }
+  const data = sheet.getRange(2, 1, last, FERTILIZER_CATALOG_HEADERS_.length).getValues();
+  const items = [];
+  for (let i = 0; i < data.length; i++) {
+    const item = readFertilizerCatalogRow_(data[i]);
+    if (!item.name) continue;
+    if (q && String(item.name).toLowerCase().indexOf(q) < 0
+        && String(item.fertilizerType).toLowerCase().indexOf(q) < 0
+        && String(item.regNumber).toLowerCase().indexOf(q) < 0) continue;
+    if (maker && String(item.manufacturer).toLowerCase().indexOf(maker) < 0) continue;
+    items.push(item);
+    if (items.length >= limit) break;
+  }
+  return {
+    success: true,
+    count: items.length,
+    totalCatalog: Math.max(0, last - 1),
+    items: items,
+    truncated: items.length >= limit
+  };
+}
+
+// ========== 農薬カタログ ==========
+const PESTICIDE_CATALOG_HEADERS_ = [
+  '農薬名', '有効成分', '製造メーカー', '作物名',
+  '希釈倍率', '散布後日数', '使用時期原文', '登録番号'
+];
+
+function ensurePesticideCatalogSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('農薬カタログ');
+  if (!sheet) {
+    sheet = ss.insertSheet('農薬カタログ');
+    sheet.appendRow(PESTICIDE_CATALOG_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, PESTICIDE_CATALOG_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), PESTICIDE_CATALOG_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    PESTICIDE_CATALOG_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function pesticideCatalogRowValues_(item) {
+  return [
+    item.name || '',
+    item.activeIngredient || '',
+    item.manufacturer || '',
+    item.cropName || '',
+    item.dilution || '',
+    item.phiDays === '' || item.phiDays == null ? '' : item.phiDays,
+    item.useTimingText || '',
+    item.regNumber || ''
+  ];
+}
+
+function readPesticideCatalogRow_(r) {
+  return {
+    name: String(r[0] || '').trim(),
+    activeIngredient: String(r[1] || '').trim(),
+    manufacturer: String(r[2] || '').trim(),
+    cropName: String(r[3] || '').trim(),
+    dilution: String(r[4] || '').trim(),
+    phiDays: (r[5] === '' || r[5] == null) ? '' : r[5],
+    useTimingText: String(r[6] || '').trim(),
+    regNumber: String(r[7] || '').trim(),
+    volume: '',
+    note: ''
+  };
+}
+
+function importPesticideCatalogChunk(params) {
+  const rows = (params && params.rows) || [];
+  if (!Array.isArray(rows) || !rows.length) {
+    throw new Error('取り込む行がありません');
+  }
+  if (rows.length > 400) {
+    throw new Error('1回あたり400件までにしてください');
+  }
+  const sheet = ensurePesticideCatalogSheet_();
+  if (params && params.clearFirst) {
+    const last = sheet.getLastRow();
+    if (last > 1) sheet.getRange(2, 1, last, PESTICIDE_CATALOG_HEADERS_.length).clearContent();
+  }
+  const values = [];
+  rows.forEach(raw => {
+    const item = normalizePesticideMasterItem_(raw);
+    if (!item.name) return;
+    values.push(pesticideCatalogRowValues_(item));
+  });
+  if (values.length) {
+    const start = sheet.getLastRow() + 1;
+    sheet.getRange(start, 1, start + values.length - 1, PESTICIDE_CATALOG_HEADERS_.length).setValues(values);
+  }
+  SpreadsheetApp.flush();
+  return getPesticideCatalogStats(params);
+}
+
+function getPesticideCatalogStats(params) {
+  const sheet = ensurePesticideCatalogSheet_();
+  const last = sheet.getLastRow();
+  return { success: true, count: Math.max(0, last - 1) };
+}
+
+function searchPesticideCatalog(params) {
+  const q = String((params && params.q) || '').trim().toLowerCase();
+  const crop = String((params && params.crop) || '').trim().toLowerCase();
+  const limit = Math.min(100, Math.max(1, parseInt((params && params.limit) || 50, 10) || 50));
+  if (!q && !crop) {
+    throw new Error('農薬名または作物名のキーワードを入力してください');
+  }
+  const sheet = ensurePesticideCatalogSheet_();
+  const last = sheet.getLastRow();
+  if (last <= 1) {
+    return { success: true, count: 0, totalCatalog: 0, items: [] };
+  }
+  const data = sheet.getRange(2, 1, last, PESTICIDE_CATALOG_HEADERS_.length).getValues();
+  const items = [];
+  for (let i = 0; i < data.length; i++) {
+    const item = readPesticideCatalogRow_(data[i]);
+    if (!item.name) continue;
+    if (q && String(item.name).toLowerCase().indexOf(q) < 0
+        && String(item.activeIngredient).toLowerCase().indexOf(q) < 0
+        && String(item.regNumber).toLowerCase().indexOf(q) < 0
+        && String(item.manufacturer).toLowerCase().indexOf(q) < 0) continue;
+    if (crop && String(item.cropName).toLowerCase().indexOf(crop) < 0) continue;
+    items.push(item);
+    if (items.length >= limit) break;
+  }
+  return {
+    success: true,
+    count: items.length,
+    totalCatalog: Math.max(0, last - 1),
+    items: items,
+    truncated: items.length >= limit
+  };
 }
 
 /** ロット記録シートに内容単位・内容個数・内容内訳ヘッダーを確保 */
