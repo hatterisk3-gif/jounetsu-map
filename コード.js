@@ -2028,9 +2028,11 @@ function importFertilizerCatalogChunk(params) {
     throw new Error('1回あたり400件までにしてください');
   }
   const sheet = ensureFertilizerCatalogSheet_();
+  const cols = FERTILIZER_CATALOG_HEADERS_.length;
   if (params && params.clearFirst) {
     const last = sheet.getLastRow();
-    if (last > 1) sheet.getRange(2, 1, last, FERTILIZER_CATALOG_HEADERS_.length).clearContent();
+    // getRange(row, column, numRows, numColumns) ※第3引数は行数
+    if (last > 1) sheet.deleteRows(2, last - 1);
   }
   const values = [];
   rows.forEach(raw => {
@@ -2039,8 +2041,8 @@ function importFertilizerCatalogChunk(params) {
     values.push(fertilizerCatalogRowValues_(item));
   });
   if (values.length) {
-    const start = sheet.getLastRow() + 1;
-    sheet.getRange(start, 1, start + values.length - 1, FERTILIZER_CATALOG_HEADERS_.length).setValues(values);
+    const start = Math.max(2, sheet.getLastRow() + 1);
+    sheet.getRange(start, 1, values.length, cols).setValues(values);
   }
   SpreadsheetApp.flush();
   return getFertilizerCatalogStats(params);
@@ -2065,7 +2067,7 @@ function searchFertilizerCatalog(params) {
   if (last <= 1) {
     return { success: true, count: 0, totalCatalog: 0, items: [] };
   }
-  const data = sheet.getRange(2, 1, last, FERTILIZER_CATALOG_HEADERS_.length).getValues();
+  const data = sheet.getRange(2, 1, last - 1, FERTILIZER_CATALOG_HEADERS_.length).getValues();
   const items = [];
   for (let i = 0; i < data.length; i++) {
     const item = readFertilizerCatalogRow_(data[i]);
@@ -2146,9 +2148,11 @@ function importPesticideCatalogChunk(params) {
     throw new Error('1回あたり400件までにしてください');
   }
   const sheet = ensurePesticideCatalogSheet_();
+  const cols = PESTICIDE_CATALOG_HEADERS_.length;
   if (params && params.clearFirst) {
     const last = sheet.getLastRow();
-    if (last > 1) sheet.getRange(2, 1, last, PESTICIDE_CATALOG_HEADERS_.length).clearContent();
+    // getRange(row, column, numRows, numColumns) ※第3引数は行数
+    if (last > 1) sheet.deleteRows(2, last - 1);
   }
   const values = [];
   rows.forEach(raw => {
@@ -2157,8 +2161,8 @@ function importPesticideCatalogChunk(params) {
     values.push(pesticideCatalogRowValues_(item));
   });
   if (values.length) {
-    const start = sheet.getLastRow() + 1;
-    sheet.getRange(start, 1, start + values.length - 1, PESTICIDE_CATALOG_HEADERS_.length).setValues(values);
+    const start = Math.max(2, sheet.getLastRow() + 1);
+    sheet.getRange(start, 1, values.length, cols).setValues(values);
   }
   SpreadsheetApp.flush();
   return getPesticideCatalogStats(params);
@@ -2182,7 +2186,7 @@ function searchPesticideCatalog(params) {
   if (last <= 1) {
     return { success: true, count: 0, totalCatalog: 0, items: [] };
   }
-  const data = sheet.getRange(2, 1, last, PESTICIDE_CATALOG_HEADERS_.length).getValues();
+  const data = sheet.getRange(2, 1, last - 1, PESTICIDE_CATALOG_HEADERS_.length).getValues();
   const items = [];
   for (let i = 0; i < data.length; i++) {
     const item = readPesticideCatalogRow_(data[i]);
