@@ -31,13 +31,15 @@ async function runAIAgent(promptText) {
     waitTime++;
   }
 
-  // 🚨 IDEがタイムアウトした場合（5時間制限などで止まったとき）
+  // 🚨 IDEがタイムアウトした場合（処理中 or 制限がかかっている可能性）
   if (!fs.existsSync(doneFile)) {
-    console.log('⚠️ IDEでの処理がタイムアウトしました。制限がかかっている可能性があります。');
-    console.log('💻 自動的にCLIモード（agy）に切り替えて処理を続行します...');
+    console.log('⚠️ IDEでの処理がタイムアウトしました（15分以内に .ai_task_done.txt が作成されませんでした）。');
+    console.log('💡 IDEが処理中の可能性があります。手動で確認してください。');
 
-    // CLIモードの関数を実行して結果を返す
-    return await runCLIAgent(promptText);
+    // タスクファイルを削除（重複実行防止）
+    try { fs.unlinkSync(taskFile); } catch (e) { }
+
+    return '【タイムアウト】IDEでの処理が15分以内に完了しませんでした。IDEが処理中の可能性があります。手動で確認してください。';
   }
 
   console.log('✅ IDEでのAI処理が完了しました！');
