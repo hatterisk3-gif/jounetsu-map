@@ -970,6 +970,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <div style="font-weight:bold; color:#1565c0; margin-bottom:6px; font-size:14px;">① 公式CSVをカタログへ取込</div>
                 <div style="font-size:11px; color:#555; line-height:1.45; margin-bottom:8px;">
                   一度カタログに入れておけば、あとは情熱MAP内で検索してマスタ登録できます。<br>
+                  更新は裏で進みます。肥料カタログと同時に開始できます。<br>
                   <a href="https://www.acis.famic.go.jp/ddata/index2.htm" target="_blank" rel="noopener">FAMIC 農薬登録情報CSV</a>
                   （登録基本部＋登録適用部）
                 </div>
@@ -978,7 +979,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="file" id="famicBaseCsv" accept=".csv,text/csv" style="width:100%; margin-bottom:8px; font-size:12px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">登録適用部 CSV（複数可）</label>
                 <input type="file" id="famicApplyCsv" accept=".csv,text/csv" multiple style="width:100%; margin-bottom:8px; font-size:12px;">
-                <button type="button" onclick="uploadPesticideCatalogFromCsv()" style="width:100%; background:#1565c0; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:6px;">カタログを更新（全置換）</button>
+                <button type="button" id="pestCatalogUploadBtn" onclick="uploadPesticideCatalogFromCsv()" style="width:100%; background:#1565c0; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:6px;">カタログを更新（全置換・裏で実行）</button>
                 <div id="pestCatalogUploadStatus" style="font-size:11px; color:#666;"></div>
             </div>
             <div style="margin-top:12px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px;">
@@ -1021,13 +1022,14 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <div style="font-weight:bold; color:#1565c0; margin-bottom:6px; font-size:14px;">① 公式CSVをカタログへ取込</div>
                 <div style="font-size:11px; color:#555; line-height:1.45; margin-bottom:8px;">
                   一度カタログに入れておけば、あとは情熱MAP内で検索してマスタ登録できます。<br>
+                  更新は裏で進みます。農薬カタログと同時に開始できます。<br>
                   <a href="https://fertilizer-search.maff.go.jp/FertilizerRegistrationSearch" target="_blank" rel="noopener">肥料登録銘柄検索</a>
                   からCSVをダウンロード
                 </div>
                 <div id="fertCatalogStats" style="font-size:12px; color:#1565c0; font-weight:bold; margin-bottom:8px;">カタログ件数: 読込中...</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">登録銘柄 CSV</label>
                 <input type="file" id="fertCsvFile" accept=".csv,text/csv" style="width:100%; margin-bottom:8px; font-size:12px;">
-                <button type="button" onclick="uploadFertilizerCatalogFromCsv()" style="width:100%; background:#1565c0; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:6px;">カタログを更新（全置換）</button>
+                <button type="button" id="fertCatalogUploadBtn" onclick="uploadFertilizerCatalogFromCsv()" style="width:100%; background:#1565c0; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:6px;">カタログを更新（全置換・裏で実行）</button>
                 <div id="fertCatalogUploadStatus" style="font-size:11px; color:#666;"></div>
             </div>
             <div style="margin-top:12px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px;">
@@ -1229,9 +1231,17 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     document.getElementById('masterSections').innerHTML = containerHtml;
     if (type === 'fertilizer' && !customEditHtml) {
         refreshFertilizerCatalogStats();
+        window.syncCatalogUploadButtons_();
+        const j = window._catalogJobs.fertilizer;
+        const statusEl = document.getElementById('fertCatalogUploadStatus');
+        if (statusEl && j && j.text) statusEl.textContent = j.text;
     }
     if (type === 'pesticide' && !customEditHtml) {
         refreshPesticideCatalogStats();
+        window.syncCatalogUploadButtons_();
+        const j = window._catalogJobs.pesticide;
+        const statusEl = document.getElementById('pestCatalogUploadStatus');
+        if (statusEl && j && j.text) statusEl.textContent = j.text;
     }
 };
 
@@ -1530,19 +1540,136 @@ window.refreshPesticideCatalogStats = async function() {
     }
 };
 
-window.uploadCatalogChunks_ = async function(actionName, rows, statusEl) {
+/** 農薬・肥料カタログ更新を独立に裏で走らせるためのジョブ状態 */
+window._catalogJobs = {
+    pesticide: { running: false, state: 'idle', text: '' },
+    fertilizer: { running: false, state: 'idle', text: '' }
+};
+
+window.yieldToUi_ = function() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+};
+
+window.ensureCatalogJobDock_ = function() {
+    let dock = document.getElementById('catalogJobDock');
+    if (!dock) {
+        dock = document.createElement('div');
+        dock.id = 'catalogJobDock';
+        dock.style.cssText = [
+            'display:none',
+            'position:fixed',
+            'right:12px',
+            'bottom:12px',
+            'z-index:12000',
+            'width:min(380px,92vw)',
+            'background:#fff',
+            'border:1px solid #90caf9',
+            'border-radius:10px',
+            'box-shadow:0 8px 28px rgba(0,0,0,.18)',
+            'padding:12px 14px',
+            'font-size:12px',
+            'color:#333',
+            'line-height:1.45'
+        ].join(';');
+        document.body.appendChild(dock);
+    }
+    window.renderCatalogJobDock_();
+    return dock;
+};
+
+window.renderCatalogJobDock_ = function() {
+    const dock = document.getElementById('catalogJobDock');
+    if (!dock) return;
+    const jobs = window._catalogJobs;
+    const labels = { pesticide: '農薬カタログ', fertilizer: '肥料カタログ' };
+    const kinds = ['pesticide', 'fertilizer'];
+    const visible = kinds.some(k => {
+        const j = jobs[k];
+        return j && (j.running || j.state === 'done' || j.state === 'error');
+    });
+    if (!visible) {
+        dock.style.display = 'none';
+        dock.innerHTML = '';
+        return;
+    }
+    const rows = kinds.map(k => {
+        const j = jobs[k];
+        if (!j || (j.state === 'idle' && !j.running)) return '';
+        const color = j.state === 'error' ? '#c62828' : (j.state === 'done' ? '#2e7d32' : '#1565c0');
+        const mark = j.state === 'error' ? '✗' : (j.state === 'done' ? '✓' : '…');
+        return `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e3f2fd;">
+          <div style="font-weight:bold;color:${color};">${mark} ${labels[k]}</div>
+          <div style="color:#555;margin-top:2px;">${String(j.text || '').replace(/</g, '&lt;')}</div>
+        </div>`;
+    }).join('');
+    const canDismiss = kinds.every(k => {
+        const j = jobs[k];
+        return !j.running && (j.state === 'idle' || j.state === 'done' || j.state === 'error');
+    });
+    dock.style.display = 'block';
+    dock.innerHTML =
+        `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-weight:bold;color:#0d47a1;font-size:13px;">カタログ更新（裏で実行中）</div>
+          ${canDismiss ? '<button type="button" onclick="dismissCatalogJobDock_()" style="border:none;background:#eee;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:11px;">閉じる</button>' : '<span style="font-size:11px;color:#888;">他の操作OK</span>'}
+        </div>` + rows +
+        `<div style="font-size:11px;color:#666;">農薬と肥料は同時に更新できます。画面を閉じず他の作業を続けてください。</div>`;
+};
+
+window.dismissCatalogJobDock_ = function() {
+    ['pesticide', 'fertilizer'].forEach(k => {
+        const j = window._catalogJobs[k];
+        if (j && !j.running) {
+            j.state = 'idle';
+            j.text = '';
+        }
+    });
+    window.renderCatalogJobDock_();
+};
+
+window.setCatalogJobProgress_ = function(kind, text, state) {
+    const job = window._catalogJobs[kind];
+    if (!job) return;
+    job.text = text || '';
+    job.state = state || (job.running ? 'running' : job.state);
+    job.running = state === 'running';
+    window.ensureCatalogJobDock_();
+    const statusId = kind === 'pesticide' ? 'pestCatalogUploadStatus' : 'fertCatalogUploadStatus';
+    const statusEl = document.getElementById(statusId);
+    if (statusEl) statusEl.textContent = text || '';
+    window.syncCatalogUploadButtons_();
+};
+
+window.syncCatalogUploadButtons_ = function() {
+    const pestBtn = document.getElementById('pestCatalogUploadBtn');
+    if (pestBtn) {
+        const run = !!(window._catalogJobs.pesticide && window._catalogJobs.pesticide.running);
+        pestBtn.disabled = run;
+        pestBtn.style.opacity = run ? '0.65' : '1';
+        pestBtn.textContent = run ? '農薬カタログ更新中（裏で実行）...' : 'カタログを更新（全置換・裏で実行）';
+    }
+    const fertBtn = document.getElementById('fertCatalogUploadBtn');
+    if (fertBtn) {
+        const run = !!(window._catalogJobs.fertilizer && window._catalogJobs.fertilizer.running);
+        fertBtn.disabled = run;
+        fertBtn.style.opacity = run ? '0.65' : '1';
+        fertBtn.textContent = run ? '肥料カタログ更新中（裏で実行）...' : 'カタログを更新（全置換・裏で実行）';
+    }
+};
+
+window.uploadCatalogChunks_ = async function(actionName, rows, onProgress) {
     const CHUNK = 250;
     let lastRes = null;
     for (let i = 0; i < rows.length; i += CHUNK) {
         const chunk = rows.slice(i, i + CHUNK);
-        if (statusEl) {
-            statusEl.textContent = 'アップロード中... ' + Math.min(i + chunk.length, rows.length).toLocaleString() + ' / ' + rows.length.toLocaleString();
-        }
+        const msg = 'アップロード中... ' + Math.min(i + chunk.length, rows.length).toLocaleString() + ' / ' + rows.length.toLocaleString();
+        if (typeof onProgress === 'function') onProgress(msg);
+        else if (onProgress && onProgress.textContent !== undefined) onProgress.textContent = msg;
         lastRes = await callGAS(actionName, {
             rows: chunk,
             clearFirst: i === 0,
             userName: currentUser
         });
+        await window.yieldToUi_();
     }
     return lastRes;
 };
@@ -1577,31 +1704,42 @@ window.buildFertilizerItemsFromCsvRows_ = function(csvRows) {
 };
 
 window.uploadFertilizerCatalogFromCsv = async function() {
+    if (window._catalogJobs.fertilizer && window._catalogJobs.fertilizer.running) {
+        customAlert('肥料カタログの更新が既に進行中です。右下の進捗を確認してください。');
+        return;
+    }
     const fileInput = document.getElementById('fertCsvFile');
-    const statusEl = document.getElementById('fertCatalogUploadStatus');
     if (!fileInput || !fileInput.files || !fileInput.files[0]) {
         customAlert('肥料登録銘柄CSVを選択してください');
         return;
     }
-    if (!await customConfirm('カタログをこのCSVで全置換しますか？\n（肥料マスタ本体は消えません）')) return;
-    if (statusEl) statusEl.textContent = 'CSV読込中...';
-    try {
-        const text = await window.readFileAsTextSmart_(fileInput.files[0]);
-        const csvRows = window.parseCsvTextFlexible_(text);
-        const items = window.buildFertilizerItemsFromCsvRows_(csvRows);
-        if (!items.length) {
-            customAlert('有効な行がありません。CSVの列名を確認してください。');
-            if (statusEl) statusEl.textContent = '';
-            return;
+    if (!await customConfirm('カタログをこのCSVで全置換しますか？\n（肥料マスタ本体は消えません）\n裏で実行するので、開始後は他の操作ができます。')) return;
+    const file = fileInput.files[0];
+    window.setCatalogJobProgress_('fertilizer', 'CSV読込中...', 'running');
+    // 裏で実行（awaitしない）ので、農薬アップロードや他操作と並行できる
+    (async () => {
+        try {
+            await window.yieldToUi_();
+            const text = await window.readFileAsTextSmart_(file);
+            await window.yieldToUi_();
+            const csvRows = window.parseCsvTextFlexible_(text);
+            window.setCatalogJobProgress_('fertilizer', '変換中... ' + csvRows.length.toLocaleString() + ' 行', 'running');
+            await window.yieldToUi_();
+            const items = window.buildFertilizerItemsFromCsvRows_(csvRows);
+            if (!items.length) {
+                window.setCatalogJobProgress_('fertilizer', '有効な行がありません', 'error');
+                return;
+            }
+            const res = await window.uploadCatalogChunks_('importFertilizerCatalogChunk', items, (msg) => {
+                window.setCatalogJobProgress_('fertilizer', msg, 'running');
+            });
+            const count = ((res && res.count) || items.length).toLocaleString();
+            window.setCatalogJobProgress_('fertilizer', '完了: ' + count + ' 件', 'done');
+            await refreshFertilizerCatalogStats();
+        } catch (e) {
+            window.setCatalogJobProgress_('fertilizer', '失敗: ' + (e.message || e), 'error');
         }
-        const res = await window.uploadCatalogChunks_('importFertilizerCatalogChunk', items, statusEl);
-        if (statusEl) statusEl.textContent = '完了: ' + ((res && res.count) || items.length).toLocaleString() + ' 件';
-        await refreshFertilizerCatalogStats();
-        customAlert('肥料カタログを更新しました（' + ((res && res.count) || items.length).toLocaleString() + ' 件）');
-    } catch (e) {
-        if (statusEl) statusEl.textContent = '';
-        customAlert('カタログ更新に失敗しました: ' + (e.message || e));
-    }
+    })();
 };
 
 window._fertCatalogHits = [];
@@ -1669,32 +1807,48 @@ window.addSelectedFertilizerFromCatalog = async function() {
     }
 };
 
-window.buildPesticideItemsFromFamicFiles_ = async function(baseFile, applyFiles) {
+window.buildPesticideItemsFromFamicFiles_ = async function(baseFile, applyFiles, onProgress) {
+    const report = (msg) => { if (typeof onProgress === 'function') onProgress(msg); };
+    report('基本部CSV読込中...');
+    await window.yieldToUi_();
     const baseText = await window.readFileAsTextSmart_(baseFile);
+    await window.yieldToUi_();
+    report('基本部解析中...');
     const baseRows = window.parseCsvTextFlexible_(baseText);
     const baseMap = {};
-    baseRows.forEach(r => {
+    for (let i = 0; i < baseRows.length; i++) {
+        const r = baseRows[i];
         const reg = window.findCsvCol_(r, ['登録番号', '農薬登録番号']);
-        if (!reg) return;
+        if (!reg) continue;
         baseMap[reg] = {
             regNumber: reg,
             name: window.findCsvCol_(r, ['農薬の名称', '農薬名', '名称']),
             activeIngredient: window.findCsvCol_(r, ['有効成分']),
             manufacturer: window.findCsvCol_(r, ['登録を有する者の名称', '登録を有する者', '製造メーカー', '会社名'])
         };
-    });
+        if (i > 0 && i % 3000 === 0) {
+            report('基本部突合準備... ' + i.toLocaleString() + ' / ' + baseRows.length.toLocaleString());
+            await window.yieldToUi_();
+        }
+    }
     let applyRows = [];
     for (let i = 0; i < applyFiles.length; i++) {
+        report('適用部CSV読込中... (' + (i + 1) + '/' + applyFiles.length + ')');
+        await window.yieldToUi_();
         const t = await window.readFileAsTextSmart_(applyFiles[i]);
+        await window.yieldToUi_();
         applyRows = applyRows.concat(window.parseCsvTextFlexible_(t));
+        await window.yieldToUi_();
     }
+    report('適用部突合中... ' + applyRows.length.toLocaleString() + ' 行');
     const seen = {};
     const joined = [];
-    applyRows.forEach(r => {
+    for (let i = 0; i < applyRows.length; i++) {
+        const r = applyRows[i];
         const reg = window.findCsvCol_(r, ['登録番号', '農薬登録番号']);
         const base = baseMap[reg] || {};
         const name = base.name || window.findCsvCol_(r, ['農薬の名称', '農薬名']);
-        if (!name) return;
+        if (!name) continue;
         const useTimingText = window.findCsvCol_(r, ['使用時期']);
         const item = {
             name: name,
@@ -1709,17 +1863,24 @@ window.buildPesticideItemsFromFamicFiles_ = async function(baseFile, applyFiles)
             note: ''
         };
         const key = (item.regNumber || item.name) + '\t' + item.cropName + '\t' + item.dilution;
-        if (seen[key]) return;
+        if (seen[key]) continue;
         seen[key] = true;
         joined.push(item);
-    });
+        if (i > 0 && i % 3000 === 0) {
+            report('適用部突合中... ' + i.toLocaleString() + ' / ' + applyRows.length.toLocaleString());
+            await window.yieldToUi_();
+        }
+    }
     return joined;
 };
 
 window.uploadPesticideCatalogFromCsv = async function() {
+    if (window._catalogJobs.pesticide && window._catalogJobs.pesticide.running) {
+        customAlert('農薬カタログの更新が既に進行中です。右下の進捗を確認してください。');
+        return;
+    }
     const baseInput = document.getElementById('famicBaseCsv');
     const applyInput = document.getElementById('famicApplyCsv');
-    const statusEl = document.getElementById('pestCatalogUploadStatus');
     if (!baseInput || !baseInput.files || !baseInput.files[0]) {
         customAlert('登録基本部CSVを選択してください');
         return;
@@ -1728,23 +1889,29 @@ window.uploadPesticideCatalogFromCsv = async function() {
         customAlert('登録適用部CSVを1つ以上選択してください');
         return;
     }
-    if (!await customConfirm('農薬カタログをこのCSVで全置換しますか？\n（農薬マスタ本体は消えません）\n件数が多い場合は数分かかることがあります。')) return;
-    if (statusEl) statusEl.textContent = 'CSV読込・突合中...';
-    try {
-        const items = await window.buildPesticideItemsFromFamicFiles_(baseInput.files[0], applyInput.files);
-        if (!items.length) {
-            customAlert('有効な行がありません');
-            if (statusEl) statusEl.textContent = '';
-            return;
+    if (!await customConfirm('農薬カタログをこのCSVで全置換しますか？\n（農薬マスタ本体は消えません）\n裏で実行するので、開始後は肥料カタログ更新や他の操作ができます。')) return;
+    const baseFile = baseInput.files[0];
+    const applyFiles = Array.from(applyInput.files);
+    window.setCatalogJobProgress_('pesticide', 'CSV読込・突合中...', 'running');
+    (async () => {
+        try {
+            const items = await window.buildPesticideItemsFromFamicFiles_(baseFile, applyFiles, (msg) => {
+                window.setCatalogJobProgress_('pesticide', msg, 'running');
+            });
+            if (!items.length) {
+                window.setCatalogJobProgress_('pesticide', '有効な行がありません', 'error');
+                return;
+            }
+            const res = await window.uploadCatalogChunks_('importPesticideCatalogChunk', items, (msg) => {
+                window.setCatalogJobProgress_('pesticide', msg, 'running');
+            });
+            const count = ((res && res.count) || items.length).toLocaleString();
+            window.setCatalogJobProgress_('pesticide', '完了: ' + count + ' 件', 'done');
+            await refreshPesticideCatalogStats();
+        } catch (e) {
+            window.setCatalogJobProgress_('pesticide', '失敗: ' + (e.message || e), 'error');
         }
-        const res = await window.uploadCatalogChunks_('importPesticideCatalogChunk', items, statusEl);
-        if (statusEl) statusEl.textContent = '完了: ' + ((res && res.count) || items.length).toLocaleString() + ' 件';
-        await refreshPesticideCatalogStats();
-        customAlert('農薬カタログを更新しました（' + ((res && res.count) || items.length).toLocaleString() + ' 件）');
-    } catch (e) {
-        if (statusEl) statusEl.textContent = '';
-        customAlert('カタログ更新に失敗しました: ' + (e.message || e));
-    }
+    })();
 };
 
 window._pestCatalogHits = [];
