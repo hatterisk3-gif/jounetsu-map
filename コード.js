@@ -40,6 +40,10 @@ function doPost(e) {
     else if (action === "importPesticideCatalogChunk") result = importPesticideCatalogChunk(params);
     else if (action === "searchPesticideCatalog") result = searchPesticideCatalog(params);
     else if (action === "getPesticideCatalogStats") result = getPesticideCatalogStats(params);
+    else if (action === "getCropChemPlan") result = getCropChemPlan(params);
+    else if (action === "saveCropChemPlan") result = saveCropChemPlan(params);
+    else if (action === "listCropChemPlans") result = listCropChemPlans(params);
+    else if (action === "deleteCropChemPlan") result = deleteCropChemPlan(params);
     else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
     else if (action === "markHarvestQtyLotResolved") result = markHarvestQtyLotResolved(params);
     else if (action === "saveGlobalShipping") result = saveGlobalShipping(params);
@@ -613,6 +617,11 @@ pdl.materials = [];
     pdl.fertilizers = readFertilizerMasterList_();
   } catch (feErr) {
     pdl.fertilizers = [];
+  }
+  try {
+    pdl.cropChemPlans = listCropChemPlansBrief_();
+  } catch (ccpErr) {
+    pdl.cropChemPlans = [];
   }
   // 🌟ここまで🌟
   let pastReports = {};
@@ -2172,6 +2181,183 @@ function getPesticideCatalogStats(params) {
   const sheet = ensurePesticideCatalogSheet_();
   const last = sheet.getLastRow();
   return { success: true, count: Math.max(0, last - 1) };
+}
+
+// ===== 品目別農薬・肥料設定（半旬） =====
+const CROP_CHEM_PLAN_HEADERS_ = ['品目名', '設定JSON', '更新者', '更新日時'];
+const CCP_PERIODS_ = ['上前', '上後', '中前', '中後', '下前', '下後'];
+
+function ensureCropChemPlanSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('品目別農薬設定');
+  if (!sheet) {
+    sheet = ss.insertSheet('品目別農薬設定');
+    sheet.appendRow(CROP_CHEM_PLAN_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, CROP_CHEM_PLAN_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), CROP_CHEM_PLAN_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    CROP_CHEM_PLAN_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function normalizeCropChemPlanPayload_(cropName, entries, userName) {
+  const name = String(cropName || '').trim();
+  if (!name) throw new Error('品目名を指定してください');
+  const list = Array.isArray(entries) ? entries : [];
+  const normalized = [];
+  list.forEach(raw => {
+    if (!raw) return;
+    const kind = String(raw.kind || '').trim() === 'fertilizer' ? 'fertilizer' : 'pesticide';
+    const productId = String(raw.productId || '').trim();
+    const productName = String(raw.productName || '').trim();
+    if (!productId && !productName) return;
+    let flats = [];
+    if (Array.isArray(raw.flats)) {
+      flats = raw.flats.map(n => parseInt(n, 10)).filter(n => !isNaN(n) && n >= 0 && n < 72);
+    } else if (Array.isArray(raw.periods)) {
+      raw.periods.forEach(p => {
+        const mi = parseInt(p.monthIndex != null ? p.monthIndex : ((p.month || 1) - 1), 10);
+        const pi = parseInt(p.periodIndex != null ? p.periodIndex : 0, 10);
+        if (!isNaN(mi) && mi >= 0 && mi < 12 && !isNaN(pi) && pi >= 0 && pi < 6) {
+          flats.push(mi * 6 + pi);
+        }
+      });
+    }
+    flats = Array.from(new Set(flats)).sort((a, b) => a - b);
+    if (!flats.length) return;
+    normalized.push({
+      id: String(raw.id || ('CCP-' + Utilities.getUuid().substring(0, 8))),
+      kind: kind,
+      productId: productId,
+      productName: productName,
+      dilution: String(raw.dilution || '').trim(),
+      amount: String(raw.amount || '').trim(),
+      note: String(raw.note || '').trim(),
+      flats: flats
+    });
+  });
+  return {
+    cropName: name,
+    entries: normalized,
+    updatedBy: String(userName || '').trim(),
+    updatedAt: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss')
+  };
+}
+
+function listCropChemPlansBrief_() {
+  const sheet = ensureCropChemPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, 1, last - 1, 4).getValues();
+  return values.map(r => {
+    const cropName = String(r[0] || '').trim();
+    let entryCount = 0;
+    try {
+      const parsed = JSON.parse(String(r[1] || '{}'));
+      entryCount = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
+    } catch (e) { entryCount = 0; }
+    return {
+      cropName: cropName,
+      entryCount: entryCount,
+      updatedBy: String(r[2] || '').trim(),
+      updatedAt: String(r[3] || '').trim()
+    };
+  }).filter(x => x.cropName);
+}
+
+function listCropChemPlans(params) {
+  return { success: true, plans: listCropChemPlansBrief_() };
+}
+
+function getCropChemPlan(params) {
+  const cropName = String((params && params.cropName) || '').trim();
+  if (!cropName) throw new Error('品目名を指定してください');
+  const sheet = ensureCropChemPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) {
+    return { success: true, plan: { cropName: cropName, entries: [] } };
+  }
+  const values = sheet.getRange(2, 1, last - 1, 4).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === cropName) {
+      let plan = { cropName: cropName, entries: [] };
+      try {
+        const parsed = JSON.parse(String(values[i][1] || '{}'));
+        plan = normalizeCropChemPlanPayload_(cropName, parsed.entries || [], values[i][2]);
+        plan.updatedAt = String(values[i][3] || '').trim();
+      } catch (e) {
+        plan = { cropName: cropName, entries: [] };
+      }
+      return { success: true, plan: plan };
+    }
+  }
+  return { success: true, plan: { cropName: cropName, entries: [] } };
+}
+
+function saveCropChemPlan(params) {
+  const uname = String((params && params.userName) || '').trim();
+  if (uname !== 'system' && !checkAdminRole(uname)) {
+    throw new Error('品目別農薬設定の変更は管理者のみ可能です');
+  }
+  const plan = normalizeCropChemPlanPayload_(
+    params && params.cropName,
+    params && params.entries,
+    uname
+  );
+  const sheet = ensureCropChemPlanSheet_();
+  const last = sheet.getLastRow();
+  const json = JSON.stringify({ cropName: plan.cropName, entries: plan.entries });
+  let foundRow = -1;
+  if (last >= 2) {
+    const names = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = 0; i < names.length; i++) {
+      if (String(names[i][0] || '').trim() === plan.cropName) {
+        foundRow = i + 2;
+        break;
+      }
+    }
+  }
+  if (foundRow > 0) {
+    if (!plan.entries.length) {
+      sheet.deleteRow(foundRow);
+    } else {
+      sheet.getRange(foundRow, 1, 1, 4).setValues([[plan.cropName, json, plan.updatedBy, plan.updatedAt]]);
+    }
+  } else if (plan.entries.length) {
+    sheet.appendRow([plan.cropName, json, plan.updatedBy, plan.updatedAt]);
+  }
+  SpreadsheetApp.flush();
+  return {
+    success: true,
+    plan: plan,
+    plans: listCropChemPlansBrief_()
+  };
+}
+
+function deleteCropChemPlan(params) {
+  const uname = String((params && params.userName) || '').trim();
+  if (uname !== 'system' && !checkAdminRole(uname)) {
+    throw new Error('品目別農薬設定の変更は管理者のみ可能です');
+  }
+  const cropName = String((params && params.cropName) || '').trim();
+  if (!cropName) throw new Error('品目名を指定してください');
+  const sheet = ensureCropChemPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last >= 2) {
+    const names = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = 0; i < names.length; i++) {
+      if (String(names[i][0] || '').trim() === cropName) {
+        sheet.deleteRow(i + 2);
+        break;
+      }
+    }
+  }
+  SpreadsheetApp.flush();
+  return { success: true, plans: listCropChemPlansBrief_() };
 }
 
 function searchPesticideCatalog(params) {

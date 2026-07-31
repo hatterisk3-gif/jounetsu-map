@@ -160,7 +160,7 @@ window.onLocationCityChange = function(sel) {
     const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 let pendingInitData = null; // 地図準備前に届いた初期データ（地図完成後に必ず描画）
@@ -528,6 +528,7 @@ function renderInitData(data, opts) {
     pdlMaterials = data.pdl.materials || [];
     pdlPesticides = data.pdl.pesticides || [];
     pdlFertilizers = data.pdl.fertilizers || [];
+    pdlCropChemPlans = data.pdl.cropChemPlans || [];
     pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
     pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
     pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
@@ -775,6 +776,7 @@ window.getMasterTypeInfo = (type) => {
         material: { title: '📦 資材マスタ', desc: '使用資材・規格・単位と対応作業の設定', list: pdlMaterials || [] },
         pesticide: { title: '🧪 農薬マスタ', desc: '自社で使う農薬。公式カタログから検索して登録', list: pdlPesticides || [] },
         fertilizer: { title: '🌿 肥料マスタ', desc: '自社で使う肥料。公式カタログから検索して登録', list: pdlFertilizers || [] },
+        cropChemPlan: { title: '🗓️ 品目別農薬設定', desc: '品目ごとに半旬（1上前〜12下後）の農薬・肥料を設定', list: pdlCropChemPlans || [] },
         container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
@@ -788,7 +790,7 @@ window.renderMasterMenu = () => {
     if (titleEl) titleEl.innerHTML = '⚙️ マスタ項目設定';
 
     const masterTypes = [
-        'crop', 'container', 'sign', 'location', 'workCategory',
+        'crop', 'cropChemPlan', 'container', 'sign', 'location', 'workCategory',
         'machineType', 'machineGroup', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
@@ -831,6 +833,12 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     const info = getMasterTypeInfo(type);
     const titleEl = document.getElementById('masterModalTitle');
     if (titleEl) titleEl.innerHTML = `${info.title} の設定`;
+
+    if (type === 'cropChemPlan' && !customEditHtml) {
+        document.getElementById('masterSections').innerHTML = window.buildCropChemPlanUiHtml_();
+        window.initCropChemPlanUi_();
+        return;
+    }
 
     const pdlMachines = window.pdlMachines || [];
     let list = info.list;
@@ -1504,6 +1512,691 @@ window.extractPhiDaysFromTiming_ = function(text) {
     const m = s.match(/(\d+)\s*日\s*前/);
     if (m) return parseInt(m[1], 10);
     return '';
+};
+
+// ===== 品目別農薬設定（半旬グリッド） =====
+window.CCP_PERIODS = ['上前', '上後', '中前', '中後', '下前', '下後'];
+window._ccpState = {
+    cropName: '',
+    entries: [],
+    dirty: false,
+    selectedFlat: null,
+    paintEntryId: null
+};
+
+window.ccpFlatLabel_ = function(flat) {
+    const f = parseInt(flat, 10) || 0;
+    const m = Math.floor(f / 6) + 1;
+    return m + window.CCP_PERIODS[f % 6];
+};
+
+window.ccpEscape_ = function(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
+};
+
+window.buildCropChemPlanUiHtml_ = function() {
+    const cropOpts = (pdlCrops || []).map(c => {
+        const n = String(c.name || '');
+        return `<option value="${window.ccpEscape_(n)}">${window.ccpEscape_(n)}</option>`;
+    }).join('');
+    const pestOpts = (pdlPesticides || []).map(p => {
+        const label = [p.name, p.cropName, p.dilution].filter(Boolean).join(' / ');
+        return `<option value="${window.ccpEscape_(p.id)}">${window.ccpEscape_(label || p.id)}</option>`;
+    }).join('');
+    const fertOpts = (pdlFertilizers || []).map(f => {
+        const label = [f.name, f.manufacturer].filter(Boolean).join(' / ');
+        return `<option value="${window.ccpEscape_(f.id)}">${window.ccpEscape_(label || f.id)}</option>`;
+    }).join('');
+
+    let gridHeadMonths = '';
+    let gridHeadPeriods = '';
+    for (let m = 1; m <= 12; m++) {
+        gridHeadMonths += `<th colspan="6" style="border:1px solid #ddd;background:#e3f2fd;padding:4px;font-size:12px;">${m}月</th>`;
+        window.CCP_PERIODS.forEach(p => {
+            gridHeadPeriods += `<th style="border:1px solid #ddd;padding:2px;font-size:9px;background:#fafafa;writing-mode:vertical-rl;text-orientation:upright;min-width:22px;">${p}</th>`;
+        });
+    }
+
+    return `
+    <div style="display:flex;flex-direction:column;gap:12px;height:100%;min-height:0;">
+      <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:10px;font-size:12px;line-height:1.45;color:#555;">
+        品目を選び、半旬マスをクリックして農薬・肥料を割り当てます。同じ半旬に複数登録できます。<br>
+        マスタ未登録の剤は、下の「カタログから登録」でデータベース（公式カタログ）から農薬マスタ／肥料マスタへ追加できます。
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+        <div style="flex:1;min-width:180px;">
+          <label style="font-size:12px;font-weight:bold;color:#555;">品目</label>
+          <select id="ccpCropSelect" class="form-input" style="margin:0;padding:8px;" onchange="ccpOnCropChange()">
+            <option value="">選択してください</option>${cropOpts}
+          </select>
+        </div>
+        <button type="button" onclick="ccpSavePlan()" id="ccpSaveBtn" style="background:#1565c0;color:#fff;border:none;border-radius:4px;padding:10px 16px;font-weight:bold;cursor:pointer;">保存</button>
+        <button type="button" onclick="ccpDeletePlan()" style="background:#c62828;color:#fff;border:none;border-radius:4px;padding:10px 16px;font-weight:bold;cursor:pointer;">この品目の設定を削除</button>
+        <span id="ccpStatus" style="font-size:12px;color:#666;"></span>
+      </div>
+      <div style="display:flex;gap:12px;flex:1;min-height:0;flex-wrap:wrap;">
+        <div style="flex:1.6;min-width:320px;overflow:auto;border:1px solid #ddd;border-radius:8px;background:#fff;">
+          <table id="ccpGridTable" style="border-collapse:collapse;font-size:11px;min-width:900px;">
+            <thead>
+              <tr>${gridHeadMonths}</tr>
+              <tr>${gridHeadPeriods}</tr>
+            </thead>
+            <tbody><tr id="ccpGridRow"></tr></tbody>
+          </table>
+        </div>
+        <div style="flex:1;min-width:280px;max-width:420px;display:flex;flex-direction:column;gap:10px;">
+          <div id="ccpCellPanel" style="background:#fff;border:1px solid #90caf9;border-radius:8px;padding:12px;">
+            <div style="font-weight:bold;color:#1565c0;margin-bottom:8px;">半旬の詳細</div>
+            <div style="font-size:12px;color:#888;">マスをクリックしてください</div>
+          </div>
+          <div style="background:#fff;border:1px solid #a5d6a7;border-radius:8px;padding:12px;">
+            <div style="font-weight:bold;color:#2e7d32;margin-bottom:8px;">剤を追加（マスタから）</div>
+            <label style="font-size:12px;font-weight:bold;color:#555;">種類</label>
+            <select id="ccpAddKind" class="form-input" style="margin:0 0 8px;padding:8px;" onchange="ccpSyncAddProductOptions()">
+              <option value="pesticide">農薬</option>
+              <option value="fertilizer">肥料</option>
+            </select>
+            <label style="font-size:12px;font-weight:bold;color:#555;">マスタから選択</label>
+            <select id="ccpAddProduct" class="form-input" style="margin:0 0 8px;padding:8px;">
+              <option value="">選択...</option>${pestOpts}
+            </select>
+            <label style="font-size:12px;font-weight:bold;color:#555;">希釈・量（任意）</label>
+            <input type="text" id="ccpAddDilution" class="form-input" style="margin:0 0 8px;padding:8px;" placeholder="例: 1000倍 / 20kg/10a">
+            <label style="font-size:12px;font-weight:bold;color:#555;">備考</label>
+            <input type="text" id="ccpAddNote" class="form-input" style="margin:0 0 8px;padding:8px;" placeholder="任意">
+            <div style="font-size:11px;color:#666;margin-bottom:8px;">選択中の半旬に追加。未選択なら新規エントリを作り、後からマスをクリックして割当できます。</div>
+            <button type="button" onclick="ccpAddProductToSelection()" style="width:100%;background:#2e7d32;color:#fff;border:none;border-radius:4px;padding:10px;font-weight:bold;cursor:pointer;">半旬設定へ追加</button>
+          </div>
+          <div style="background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:12px;">
+            <div style="font-weight:bold;color:#1565c0;margin-bottom:6px;">カタログからマスタへ登録</div>
+            <div style="font-size:11px;color:#555;margin-bottom:8px;line-height:1.4;">公式カタログ（データベース）を検索し、農薬マスタ／肥料マスタへ登録できます。登録後はそのまま半旬にも追加できます。</div>
+            <div style="display:flex;gap:6px;margin-bottom:6px;">
+              <button type="button" id="ccpCatTabPest" onclick="ccpSetCatalogTab('pesticide')" style="flex:1;border:none;border-radius:4px;padding:7px;font-weight:bold;cursor:pointer;background:#1565c0;color:#fff;">農薬</button>
+              <button type="button" id="ccpCatTabFert" onclick="ccpSetCatalogTab('fertilizer')" style="flex:1;border:1px solid #90caf9;border-radius:4px;padding:7px;font-weight:bold;cursor:pointer;background:#fff;color:#1565c0;">肥料</button>
+            </div>
+            <div id="ccpCatPestBox">
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+                <input type="text" id="ccpCatPestQ" class="form-input" style="flex:1;min-width:100px;margin:0;padding:7px;" placeholder="農薬名・成分・登録番号">
+                <input type="text" id="ccpCatPestCrop" class="form-input" style="flex:1;min-width:80px;margin:0;padding:7px;" placeholder="作物名">
+              </div>
+              <button type="button" onclick="ccpSearchPestCatalog()" style="width:100%;background:#1565c0;color:#fff;border:none;border-radius:4px;padding:8px;font-weight:bold;cursor:pointer;margin-bottom:6px;">カタログ検索</button>
+            </div>
+            <div id="ccpCatFertBox" style="display:none;">
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+                <input type="text" id="ccpCatFertQ" class="form-input" style="flex:1;min-width:100px;margin:0;padding:7px;" placeholder="肥料名・種類・登録番号">
+                <input type="text" id="ccpCatFertMaker" class="form-input" style="flex:1;min-width:80px;margin:0;padding:7px;" placeholder="メーカー">
+              </div>
+              <button type="button" onclick="ccpSearchFertCatalog()" style="width:100%;background:#1565c0;color:#fff;border:none;border-radius:4px;padding:8px;font-weight:bold;cursor:pointer;margin-bottom:6px;">カタログ検索</button>
+            </div>
+            <div id="ccpCatalogSearchResult" style="font-size:12px;color:#666;max-height:220px;overflow:auto;"></div>
+          </div>
+          <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;max-height:220px;overflow:auto;">
+            <div style="font-weight:bold;color:#444;margin-bottom:6px;">登録済みエントリ</div>
+            <div id="ccpEntryList" style="font-size:12px;color:#666;">品目を選択すると表示されます</div>
+          </div>
+          <div id="ccpConfiguredList" style="background:#f5f5f5;border-radius:8px;padding:10px;font-size:12px;color:#555;"></div>
+        </div>
+      </div>
+      <select id="ccpPestOptionsCache" style="display:none;">${pestOpts}</select>
+      <select id="ccpFertOptionsCache" style="display:none;">${fertOpts}</select>
+    </div>`;
+};
+
+window.initCropChemPlanUi_ = function() {
+    window._ccpState = { cropName: '', entries: [], dirty: false, selectedFlat: null, paintEntryId: null };
+    window._ccpPestCatalogHits = [];
+    window._ccpFertCatalogHits = [];
+    window.ccpSyncAddProductOptions();
+    window.ccpRenderGrid_();
+    window.ccpRenderConfiguredList_();
+    window.ccpRenderEntryList_();
+    // 選択中品目を作物名検索の初期値に
+    const cropSel = document.getElementById('ccpCropSelect');
+    if (cropSel && cropSel.value) {
+        const cropInput = document.getElementById('ccpCatPestCrop');
+        if (cropInput && !cropInput.value) cropInput.value = cropSel.value;
+    }
+};
+
+window.ccpRebuildProductOptionCaches_ = function() {
+    const pestCache = document.getElementById('ccpPestOptionsCache');
+    const fertCache = document.getElementById('ccpFertOptionsCache');
+    if (pestCache) {
+        pestCache.innerHTML = (pdlPesticides || []).map(p => {
+            const label = [p.name, p.cropName, p.dilution].filter(Boolean).join(' / ');
+            return `<option value="${window.ccpEscape_(p.id)}">${window.ccpEscape_(label || p.id)}</option>`;
+        }).join('');
+    }
+    if (fertCache) {
+        fertCache.innerHTML = (pdlFertilizers || []).map(f => {
+            const label = [f.name, f.manufacturer].filter(Boolean).join(' / ');
+            return `<option value="${window.ccpEscape_(f.id)}">${window.ccpEscape_(label || f.id)}</option>`;
+        }).join('');
+    }
+    window.ccpSyncAddProductOptions();
+};
+
+window.ccpSetCatalogTab = function(kind) {
+    const pestBox = document.getElementById('ccpCatPestBox');
+    const fertBox = document.getElementById('ccpCatFertBox');
+    const tabP = document.getElementById('ccpCatTabPest');
+    const tabF = document.getElementById('ccpCatTabFert');
+    const isPest = kind !== 'fertilizer';
+    if (pestBox) pestBox.style.display = isPest ? 'block' : 'none';
+    if (fertBox) fertBox.style.display = isPest ? 'none' : 'block';
+    if (tabP) {
+        tabP.style.background = isPest ? '#1565c0' : '#fff';
+        tabP.style.color = isPest ? '#fff' : '#1565c0';
+        tabP.style.border = isPest ? 'none' : '1px solid #90caf9';
+    }
+    if (tabF) {
+        tabF.style.background = isPest ? '#fff' : '#1565c0';
+        tabF.style.color = isPest ? '#1565c0' : '#fff';
+        tabF.style.border = isPest ? '1px solid #90caf9' : 'none';
+    }
+    const area = document.getElementById('ccpCatalogSearchResult');
+    if (area) area.innerHTML = '';
+};
+
+window.ccpSearchPestCatalog = async function() {
+    const area = document.getElementById('ccpCatalogSearchResult');
+    if (!area) return;
+    let q = (document.getElementById('ccpCatPestQ')?.value || '').trim();
+    let crop = (document.getElementById('ccpCatPestCrop')?.value || '').trim();
+    if (!crop && window._ccpState.cropName) {
+        crop = window._ccpState.cropName;
+        const cropInput = document.getElementById('ccpCatPestCrop');
+        if (cropInput) cropInput.value = crop;
+    }
+    if (!q && !crop) {
+        customAlert('農薬名または作物名を入力してください');
+        return;
+    }
+    area.innerHTML = '<div style="padding:6px;color:#1565c0;">検索中...</div>';
+    try {
+        const res = await callGAS('searchPesticideCatalog', { q, crop, limit: 50 });
+        window._ccpPestCatalogHits = (res && res.items) || [];
+        if (!window._ccpPestCatalogHits.length) {
+            area.innerHTML = '<div style="color:#888;">該当なし。カタログ未取込か、キーワードを変えてください。</div>';
+            return;
+        }
+        const note = (res.truncated ? '（上位のみ）' : '') +
+            ' ／ カタログ ' + ((res.totalCatalog || 0).toLocaleString()) + ' 件';
+        const rowsHtml = window._ccpPestCatalogHits.map((it, idx) => {
+            const label = `${it.name} ／ ${it.cropName || '-'} ／ ${it.dilution || '-'} ／ ${it.phiDays !== '' && it.phiDays != null ? it.phiDays + '日前' : '-'}`;
+            return `<label style="display:flex;gap:6px;align-items:flex-start;padding:4px 0;border-bottom:1px solid #bbdefb;cursor:pointer;">
+              <input type="checkbox" class="ccpPestCatHit" data-idx="${idx}" style="margin-top:3px;">
+              <span style="line-height:1.35;">${window.ccpEscape_(label)}</span>
+            </label>`;
+        }).join('');
+        area.innerHTML =
+            `<div style="font-weight:bold;color:#0d47a1;margin-bottom:6px;">${window._ccpPestCatalogHits.length} 件 ${note}</div>` +
+            `<div style="background:#fff;border:1px solid #90caf9;border-radius:6px;padding:8px;margin-bottom:8px;">${rowsHtml}</div>` +
+            `<button type="button" onclick="ccpRegisterSelectedPestFromCatalog(false)" style="width:100%;background:#c62828;color:#fff;border:none;border-radius:4px;padding:9px;font-weight:bold;cursor:pointer;margin-bottom:6px;">選択を農薬マスタへ登録</button>` +
+            `<button type="button" onclick="ccpRegisterSelectedPestFromCatalog(true)" style="width:100%;background:#2e7d32;color:#fff;border:none;border-radius:4px;padding:9px;font-weight:bold;cursor:pointer;">登録して半旬設定にも追加</button>`;
+    } catch (e) {
+        area.innerHTML = '';
+        customAlert(e.message || e);
+    }
+};
+
+window.ccpSearchFertCatalog = async function() {
+    const area = document.getElementById('ccpCatalogSearchResult');
+    if (!area) return;
+    const q = (document.getElementById('ccpCatFertQ')?.value || '').trim();
+    const maker = (document.getElementById('ccpCatFertMaker')?.value || '').trim();
+    if (!q && !maker) {
+        customAlert('肥料名またはメーカーを入力してください');
+        return;
+    }
+    area.innerHTML = '<div style="padding:6px;color:#1565c0;">検索中...</div>';
+    try {
+        const res = await callGAS('searchFertilizerCatalog', { q, maker, limit: 50 });
+        window._ccpFertCatalogHits = (res && res.items) || [];
+        if (!window._ccpFertCatalogHits.length) {
+            area.innerHTML = '<div style="color:#888;">該当なし。カタログ未取込か、キーワードを変えてください。</div>';
+            return;
+        }
+        const note = (res.truncated ? '（上位のみ）' : '') +
+            ' ／ カタログ ' + ((res.totalCatalog || 0).toLocaleString()) + ' 件';
+        const rowsHtml = window._ccpFertCatalogHits.map((it, idx) => {
+            const npk = [it.nitrogen, it.phosphate, it.potash].filter(Boolean).join('-') || '-';
+            const label = `${it.name} ／ ${it.manufacturer || '-'} ／ ${it.fertilizerType || '-'} ／ NPK ${npk}`;
+            return `<label style="display:flex;gap:6px;align-items:flex-start;padding:4px 0;border-bottom:1px solid #bbdefb;cursor:pointer;">
+              <input type="checkbox" class="ccpFertCatHit" data-idx="${idx}" style="margin-top:3px;">
+              <span style="line-height:1.35;">${window.ccpEscape_(label)}</span>
+            </label>`;
+        }).join('');
+        area.innerHTML =
+            `<div style="font-weight:bold;color:#0d47a1;margin-bottom:6px;">${window._ccpFertCatalogHits.length} 件 ${note}</div>` +
+            `<div style="background:#fff;border:1px solid #90caf9;border-radius:6px;padding:8px;margin-bottom:8px;">${rowsHtml}</div>` +
+            `<button type="button" onclick="ccpRegisterSelectedFertFromCatalog(false)" style="width:100%;background:#c62828;color:#fff;border:none;border-radius:4px;padding:9px;font-weight:bold;cursor:pointer;margin-bottom:6px;">選択を肥料マスタへ登録</button>` +
+            `<button type="button" onclick="ccpRegisterSelectedFertFromCatalog(true)" style="width:100%;background:#2e7d32;color:#fff;border:none;border-radius:4px;padding:9px;font-weight:bold;cursor:pointer;">登録して半旬設定にも追加</button>`;
+    } catch (e) {
+        area.innerHTML = '';
+        customAlert(e.message || e);
+    }
+};
+
+window.ccpPushEntriesFromProducts_ = function(kind, products) {
+    if (!window._ccpState.cropName) {
+        customAlert('半旬にも追加する場合は、先に品目を選択してください');
+        return;
+    }
+    const flats = [];
+    if (window._ccpState.selectedFlat != null) flats.push(window._ccpState.selectedFlat);
+    (products || []).forEach(prod => {
+        if (!prod || !prod.id) return;
+        window._ccpState.entries.push({
+            id: 'CCP-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            kind: kind,
+            productId: String(prod.id),
+            productName: String(prod.name || ''),
+            dilution: kind === 'pesticide' ? String(prod.dilution || '') : '',
+            amount: '',
+            note: '',
+            flats: flats.slice()
+        });
+    });
+    window._ccpState.dirty = true;
+    if (!flats.length && window._ccpState.entries.length) {
+        window._ccpState.paintEntryId = window._ccpState.entries[window._ccpState.entries.length - 1].id;
+    }
+    window.ccpRenderGrid_();
+    window.ccpRenderEntryList_();
+    window.ccpRenderCellPanel_();
+};
+
+window.ccpRegisterSelectedPestFromCatalog = async function(alsoAddToPlan) {
+    const checks = Array.from(document.querySelectorAll('.ccpPestCatHit'));
+    const rows = [];
+    checks.forEach(cb => {
+        if (!cb.checked) return;
+        const idx = parseInt(cb.getAttribute('data-idx'), 10);
+        const row = window._ccpPestCatalogHits[idx];
+        if (row) rows.push(row);
+    });
+    if (!rows.length) {
+        customAlert('登録する行を選択してください');
+        return;
+    }
+    const msg = alsoAddToPlan
+        ? (rows.length + ' 件を農薬マスタへ登録し、半旬設定にも追加しますか？')
+        : (rows.length + ' 件を農薬マスタへ登録しますか？');
+    if (!await customConfirm(msg)) return;
+    try {
+        const beforeIds = new Set((pdlPesticides || []).map(p => String(p.id)));
+        const res = await callGAS('importPesticideMasterRows', { rows, userName: currentUser });
+        pdlPesticides = (res && res.pesticides) || pdlPesticides;
+        localStorage.removeItem('pMapAdminInitData');
+        localStorage.removeItem('passionMapInitData');
+        window.ccpRebuildProductOptionCaches_();
+        const kindSel = document.getElementById('ccpAddKind');
+        if (kindSel) kindSel.value = 'pesticide';
+        window.ccpSyncAddProductOptions();
+        const addedProducts = (pdlPesticides || []).filter(p => !beforeIds.has(String(p.id)));
+        customAlert(`農薬マスタ登録完了: ${res.added || 0} 件追加 / ${res.skipped || 0} 件スキップ`);
+        if (alsoAddToPlan) {
+            // 新規追加分が取れない場合は選択行の名前でフォールバック照合
+            let toAdd = addedProducts;
+            if (!toAdd.length) {
+                toAdd = rows.map(r => {
+                    return (pdlPesticides || []).find(p =>
+                        String(p.name) === String(r.name) &&
+                        String(p.cropName || '') === String(r.cropName || '') &&
+                        String(p.dilution || '') === String(r.dilution || '')
+                    );
+                }).filter(Boolean);
+            }
+            window.ccpPushEntriesFromProducts_('pesticide', toAdd);
+        }
+        const area = document.getElementById('ccpCatalogSearchResult');
+        if (area) area.innerHTML = '<div style="color:#2e7d32;">マスタへ登録しました。必要なら再度検索できます。</div>';
+    } catch (e) {
+        customAlert('登録に失敗しました: ' + (e.message || e));
+    }
+};
+
+window.ccpRegisterSelectedFertFromCatalog = async function(alsoAddToPlan) {
+    const checks = Array.from(document.querySelectorAll('.ccpFertCatHit'));
+    const rows = [];
+    checks.forEach(cb => {
+        if (!cb.checked) return;
+        const idx = parseInt(cb.getAttribute('data-idx'), 10);
+        const row = window._ccpFertCatalogHits[idx];
+        if (row) rows.push(row);
+    });
+    if (!rows.length) {
+        customAlert('登録する行を選択してください');
+        return;
+    }
+    const msg = alsoAddToPlan
+        ? (rows.length + ' 件を肥料マスタへ登録し、半旬設定にも追加しますか？')
+        : (rows.length + ' 件を肥料マスタへ登録しますか？');
+    if (!await customConfirm(msg)) return;
+    try {
+        const beforeIds = new Set((pdlFertilizers || []).map(f => String(f.id)));
+        const res = await callGAS('importFertilizerMasterRows', { rows, userName: currentUser });
+        pdlFertilizers = (res && res.fertilizers) || pdlFertilizers;
+        localStorage.removeItem('pMapAdminInitData');
+        localStorage.removeItem('passionMapInitData');
+        window.ccpRebuildProductOptionCaches_();
+        const kindSel = document.getElementById('ccpAddKind');
+        if (kindSel) kindSel.value = 'fertilizer';
+        window.ccpSyncAddProductOptions();
+        const addedProducts = (pdlFertilizers || []).filter(f => !beforeIds.has(String(f.id)));
+        customAlert(`肥料マスタ登録完了: ${res.added || 0} 件追加 / ${res.skipped || 0} 件スキップ`);
+        if (alsoAddToPlan) {
+            let toAdd = addedProducts;
+            if (!toAdd.length) {
+                toAdd = rows.map(r => {
+                    return (pdlFertilizers || []).find(f =>
+                        String(f.name) === String(r.name) &&
+                        String(f.regNumber || '') === String(r.regNumber || '')
+                    );
+                }).filter(Boolean);
+            }
+            window.ccpPushEntriesFromProducts_('fertilizer', toAdd);
+        }
+        const area = document.getElementById('ccpCatalogSearchResult');
+        if (area) area.innerHTML = '<div style="color:#2e7d32;">マスタへ登録しました。必要なら再度検索できます。</div>';
+    } catch (e) {
+        customAlert('登録に失敗しました: ' + (e.message || e));
+    }
+};
+
+window.ccpSyncAddProductOptions = function() {
+    const kind = document.getElementById('ccpAddKind')?.value || 'pesticide';
+    const dest = document.getElementById('ccpAddProduct');
+    const src = document.getElementById(kind === 'fertilizer' ? 'ccpFertOptionsCache' : 'ccpPestOptionsCache');
+    if (!dest || !src) return;
+    dest.innerHTML = '<option value="">選択...</option>' + src.innerHTML;
+};
+
+window.ccpRenderConfiguredList_ = function() {
+    const el = document.getElementById('ccpConfiguredList');
+    if (!el) return;
+    const plans = pdlCropChemPlans || [];
+    if (!plans.length) {
+        el.innerHTML = '設定済み品目: まだありません';
+        return;
+    }
+    el.innerHTML = '設定済み品目: ' + plans.map(p => {
+        const enc = encodeURIComponent(p.cropName || '');
+        return `<a href="javascript:void(0)" onclick="ccpSelectCrop(decodeURIComponent('${enc}'))" style="margin-right:8px;">${window.ccpEscape_(p.cropName)}(${p.entryCount || 0})</a>`;
+    }).join('');
+};
+
+window.ccpSelectCrop = function(name) {
+    const sel = document.getElementById('ccpCropSelect');
+    if (sel) sel.value = name;
+    window.ccpOnCropChange();
+};
+
+window.ccpOnCropChange = async function() {
+    const cropName = (document.getElementById('ccpCropSelect')?.value || '').trim();
+    const status = document.getElementById('ccpStatus');
+    if (window._ccpState.dirty && window._ccpState.cropName && window._ccpState.cropName !== cropName) {
+        if (!await customConfirm('保存していない変更があります。品目を切り替えますか？')) {
+            const sel = document.getElementById('ccpCropSelect');
+            if (sel) sel.value = window._ccpState.cropName;
+            return;
+        }
+    }
+    window._ccpState.cropName = cropName;
+    window._ccpState.entries = [];
+    window._ccpState.dirty = false;
+    window._ccpState.selectedFlat = null;
+    window._ccpState.paintEntryId = null;
+    const cropInput = document.getElementById('ccpCatPestCrop');
+    if (cropInput && cropName) cropInput.value = cropName;
+    if (!cropName) {
+        if (status) status.textContent = '';
+        window.ccpRenderGrid_();
+        window.ccpRenderEntryList_();
+        window.ccpRenderCellPanel_();
+        return;
+    }
+    if (status) status.textContent = '読込中...';
+    try {
+        const res = await callGAS('getCropChemPlan', { cropName });
+        window._ccpState.entries = (res && res.plan && res.plan.entries) || [];
+        if (status) status.textContent = (res.plan && res.plan.updatedAt) ? ('最終更新: ' + res.plan.updatedAt) : '新規';
+    } catch (e) {
+        if (status) status.textContent = '';
+        customAlert(e.message || e);
+    }
+    window.ccpRenderGrid_();
+    window.ccpRenderEntryList_();
+    window.ccpRenderCellPanel_();
+};
+
+window.ccpEntriesForFlat_ = function(flat) {
+    return (window._ccpState.entries || []).filter(en => (en.flats || []).indexOf(flat) >= 0);
+};
+
+window.ccpRenderGrid_ = function() {
+    const row = document.getElementById('ccpGridRow');
+    if (!row) return;
+    let html = '';
+    for (let flat = 0; flat < 72; flat++) {
+        const items = window.ccpEntriesForFlat_(flat);
+        const selected = window._ccpState.selectedFlat === flat;
+        const pestN = items.filter(x => x.kind !== 'fertilizer').length;
+        const fertN = items.filter(x => x.kind === 'fertilizer').length;
+        let bg = items.length ? '#e8f5e9' : '#fff';
+        if (pestN && fertN) bg = '#fff3e0';
+        else if (pestN) bg = '#e3f2fd';
+        else if (fertN) bg = '#f1f8e9';
+        if (selected) bg = '#ffe082';
+        const tip = items.map(x => (x.kind === 'fertilizer' ? '肥:' : '薬:') + (x.productName || '')).join('\n') || window.ccpFlatLabel_(flat);
+        const short = items.length
+            ? items.slice(0, 2).map(x => {
+                const mark = x.kind === 'fertilizer' ? '肥' : '薬';
+                const n = String(x.productName || '').slice(0, 3);
+                return mark + n;
+            }).join('<br>') + (items.length > 2 ? '<br>…' : '')
+            : '';
+        html += `<td onclick="ccpOnCellClick(${flat})" title="${window.ccpEscape_(tip)}"
+          style="border:1px solid #ccc;height:54px;vertical-align:top;padding:2px;cursor:pointer;background:${bg};font-size:9px;line-height:1.2;text-align:center;">
+          <div style="color:#888;font-size:8px;">${window.ccpFlatLabel_(flat)}</div>
+          <div>${short}</div>
+        </td>`;
+    }
+    row.innerHTML = html;
+};
+
+window.ccpRenderEntryList_ = function() {
+    const el = document.getElementById('ccpEntryList');
+    if (!el) return;
+    const entries = window._ccpState.entries || [];
+    if (!window._ccpState.cropName) {
+        el.innerHTML = '品目を選択すると表示されます';
+        return;
+    }
+    if (!entries.length) {
+        el.innerHTML = 'まだ登録がありません';
+        return;
+    }
+    el.innerHTML = entries.map(en => {
+        const mark = en.kind === 'fertilizer' ? '🌿肥料' : '🧪農薬';
+        const periods = (en.flats || []).map(window.ccpFlatLabel_).join(', ');
+        const active = window._ccpState.paintEntryId === en.id;
+        return `<div style="padding:6px 0;border-bottom:1px solid #eee;">
+          <div style="font-weight:bold;color:#333;">${mark} ${window.ccpEscape_(en.productName || '')}</div>
+          <div style="color:#666;font-size:11px;">${window.ccpEscape_(periods || '（半旬未割当）')}</div>
+          <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" onclick="ccpSetPaintEntry('${window.ccpEscape_(en.id)}')" style="font-size:11px;padding:3px 8px;border:1px solid #90caf9;background:${active ? '#bbdefb' : '#fff'};border-radius:4px;cursor:pointer;">${active ? '塗布中（マスをクリック）' : '半旬へ塗る'}</button>
+            <button type="button" onclick="ccpRemoveEntry('${window.ccpEscape_(en.id)}')" style="font-size:11px;padding:3px 8px;border:1px solid #ef9a9a;background:#fff;border-radius:4px;cursor:pointer;color:#c62828;">削除</button>
+          </div>
+        </div>`;
+    }).join('');
+};
+
+window.ccpRenderCellPanel_ = function() {
+    const el = document.getElementById('ccpCellPanel');
+    if (!el) return;
+    const flat = window._ccpState.selectedFlat;
+    if (flat == null) {
+        el.innerHTML = `<div style="font-weight:bold;color:#1565c0;margin-bottom:8px;">半旬の詳細</div>
+          <div style="font-size:12px;color:#888;">マスをクリックしてください</div>`;
+        return;
+    }
+    const items = window.ccpEntriesForFlat_(flat);
+    const list = items.length
+        ? items.map(en => {
+            const mark = en.kind === 'fertilizer' ? '🌿' : '🧪';
+            return `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid #e3f2fd;">
+              <span>${mark} ${window.ccpEscape_(en.productName || '')}${en.dilution ? '（' + window.ccpEscape_(en.dilution) + '）' : ''}</span>
+              <button type="button" onclick="ccpRemoveFromFlat('${window.ccpEscape_(en.id)}', ${flat})" style="border:none;background:#ffebee;color:#c62828;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;">外す</button>
+            </div>`;
+        }).join('')
+        : '<div style="font-size:12px;color:#888;">この半旬には未設定です。右の「剤を追加」から登録できます。</div>';
+    el.innerHTML = `<div style="font-weight:bold;color:#1565c0;margin-bottom:8px;">${window.ccpFlatLabel_(flat)} の設定</div>${list}`;
+};
+
+window.ccpOnCellClick = function(flat) {
+    const paintId = window._ccpState.paintEntryId;
+    if (paintId) {
+        const en = (window._ccpState.entries || []).find(x => x.id === paintId);
+        if (en) {
+            if (!en.flats) en.flats = [];
+            const idx = en.flats.indexOf(flat);
+            if (idx >= 0) en.flats.splice(idx, 1);
+            else en.flats.push(flat);
+            en.flats.sort((a, b) => a - b);
+            window._ccpState.dirty = true;
+        }
+    }
+    window._ccpState.selectedFlat = flat;
+    window.ccpRenderGrid_();
+    window.ccpRenderEntryList_();
+    window.ccpRenderCellPanel_();
+};
+
+window.ccpSetPaintEntry = function(id) {
+    window._ccpState.paintEntryId = (window._ccpState.paintEntryId === id) ? null : id;
+    window.ccpRenderEntryList_();
+};
+
+window.ccpAddProductToSelection = function() {
+    if (!window._ccpState.cropName) {
+        customAlert('先に品目を選択してください');
+        return;
+    }
+    const kind = document.getElementById('ccpAddKind')?.value || 'pesticide';
+    const productId = document.getElementById('ccpAddProduct')?.value || '';
+    if (!productId) {
+        customAlert('マスタから剤を選択してください');
+        return;
+    }
+    const list = kind === 'fertilizer' ? (pdlFertilizers || []) : (pdlPesticides || []);
+    const prod = list.find(x => String(x.id) === String(productId));
+    if (!prod) {
+        customAlert('選択した剤が見つかりません');
+        return;
+    }
+    const dilution = (document.getElementById('ccpAddDilution')?.value || '').trim()
+        || (kind === 'pesticide' ? String(prod.dilution || '') : '');
+    const note = (document.getElementById('ccpAddNote')?.value || '').trim();
+    const flats = [];
+    if (window._ccpState.selectedFlat != null) flats.push(window._ccpState.selectedFlat);
+    const entry = {
+        id: 'CCP-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        kind: kind,
+        productId: String(prod.id),
+        productName: String(prod.name || ''),
+        dilution: dilution,
+        amount: kind === 'fertilizer' ? dilution : '',
+        note: note,
+        flats: flats
+    };
+    window._ccpState.entries.push(entry);
+    window._ccpState.dirty = true;
+    if (!flats.length) window._ccpState.paintEntryId = entry.id;
+    window.ccpRenderGrid_();
+    window.ccpRenderEntryList_();
+    window.ccpRenderCellPanel_();
+};
+
+window.ccpRemoveFromFlat = function(id, flat) {
+    const en = (window._ccpState.entries || []).find(x => x.id === id);
+    if (!en) return;
+    en.flats = (en.flats || []).filter(f => f !== flat);
+    if (!en.flats.length) {
+        window._ccpState.entries = window._ccpState.entries.filter(x => x.id !== id);
+    }
+    window._ccpState.dirty = true;
+    window.ccpRenderGrid_();
+    window.ccpRenderEntryList_();
+    window.ccpRenderCellPanel_();
+};
+
+window.ccpRemoveEntry = async function(id) {
+    if (!await customConfirm('このエントリを削除しますか？')) return;
+    window._ccpState.entries = (window._ccpState.entries || []).filter(x => x.id !== id);
+    if (window._ccpState.paintEntryId === id) window._ccpState.paintEntryId = null;
+    window._ccpState.dirty = true;
+    window.ccpRenderGrid_();
+    window.ccpRenderEntryList_();
+    window.ccpRenderCellPanel_();
+};
+
+window.ccpSavePlan = async function() {
+    const cropName = window._ccpState.cropName;
+    if (!cropName) {
+        customAlert('品目を選択してください');
+        return;
+    }
+    const btn = document.getElementById('ccpSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+    try {
+        const res = await callGAS('saveCropChemPlan', {
+            cropName,
+            entries: window._ccpState.entries || [],
+            userName: currentUser
+        });
+        pdlCropChemPlans = (res && res.plans) || pdlCropChemPlans;
+        window._ccpState.entries = (res && res.plan && res.plan.entries) || window._ccpState.entries;
+        window._ccpState.dirty = false;
+        const status = document.getElementById('ccpStatus');
+        if (status) status.textContent = '保存しました' + ((res.plan && res.plan.updatedAt) ? (' (' + res.plan.updatedAt + ')') : '');
+        window.ccpRenderConfiguredList_();
+        window.ccpRenderGrid_();
+        window.ccpRenderEntryList_();
+        customAlert('保存しました');
+    } catch (e) {
+        customAlert('保存に失敗しました: ' + (e.message || e));
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+    }
+};
+
+window.ccpDeletePlan = async function() {
+    const cropName = window._ccpState.cropName;
+    if (!cropName) {
+        customAlert('品目を選択してください');
+        return;
+    }
+    if (!await customConfirm(cropName + ' の品目別農薬設定をすべて削除しますか？')) return;
+    try {
+        const res = await callGAS('deleteCropChemPlan', { cropName, userName: currentUser });
+        pdlCropChemPlans = (res && res.plans) || [];
+        window._ccpState.entries = [];
+        window._ccpState.dirty = false;
+        window._ccpState.paintEntryId = null;
+        window.ccpRenderConfiguredList_();
+        window.ccpRenderGrid_();
+        window.ccpRenderEntryList_();
+        window.ccpRenderCellPanel_();
+        const status = document.getElementById('ccpStatus');
+        if (status) status.textContent = '削除しました';
+    } catch (e) {
+        customAlert(e.message || e);
+    }
 };
 
 window.scoreCsvDecodedText_ = function(text) {

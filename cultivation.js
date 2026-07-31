@@ -1368,6 +1368,113 @@ function populateDefaultCpSelects() {
 // --- NEW CULTIVATION PLAN JS ---
 let cpPlans = [];
 
+// ===== 半旬列ハイライト機能 =====
+window.cpHighlightedCols = window.cpHighlightedCols || new Set();
+
+window.toggleCpColumnHighlight = function(colIdx) {
+    if (window.cpHighlightedCols.has(colIdx)) {
+        window.cpHighlightedCols.delete(colIdx);
+    } else {
+        window.cpHighlightedCols.add(colIdx);
+    }
+    window.applyCpColumnHighlights();
+};
+
+window.toggleCpMonthHighlight = function(mIdx) {
+    const startCol = mIdx * 6;
+    const endCol = startCol + 6;
+    let allSelected = true;
+    for (let c = startCol; c < endCol; c++) {
+        if (!window.cpHighlightedCols.has(c)) {
+            allSelected = false;
+            break;
+        }
+    }
+    for (let c = startCol; c < endCol; c++) {
+        if (allSelected) {
+            window.cpHighlightedCols.delete(c);
+        } else {
+            window.cpHighlightedCols.add(c);
+        }
+    }
+    window.applyCpColumnHighlights();
+};
+
+window.clearCpColumnHighlights = function() {
+    window.cpHighlightedCols.clear();
+    window.applyCpColumnHighlights();
+};
+
+window.applyCpColumnHighlights = function() {
+    const table = document.getElementById('cpTable');
+    if (!table) return;
+
+    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
+    months.forEach((m, mIdx) => {
+        const mTh = table.querySelector(`th[data-month-idx="${mIdx}"]`);
+        if (!mTh) return;
+        const startCol = mIdx * 6;
+        let count = 0;
+        for (let c = startCol; c < startCol + 6; c++) {
+            if (window.cpHighlightedCols.has(c)) count++;
+        }
+        if (count === 6) {
+            mTh.style.background = '#ffe082';
+            mTh.style.color = '#bf360c';
+            mTh.style.fontWeight = 'bold';
+        } else if (count > 0) {
+            mTh.style.background = '#fff59d';
+            mTh.style.color = '#e65100';
+            mTh.style.fontWeight = 'bold';
+        } else {
+            mTh.style.background = mIdx < 12 ? '#f1f8e9' : '#e8eaf6';
+            mTh.style.color = '';
+            mTh.style.fontWeight = '';
+        }
+    });
+
+    const ths = table.querySelectorAll('th[data-col-idx]');
+    ths.forEach(th => {
+        const cIdx = parseInt(th.dataset.colIdx, 10);
+        if (window.cpHighlightedCols.has(cIdx)) {
+            th.style.background = '#ffd54f';
+            th.style.color = '#000';
+            th.style.fontWeight = 'bold';
+            th.style.borderBottom = '3px solid #f57f17';
+        } else {
+            th.style.background = '#fafafa';
+            th.style.color = '#555';
+            th.style.fontWeight = '';
+            th.style.borderBottom = '2px solid #ccc';
+        }
+    });
+
+    const tbody = document.getElementById('cpTableBody');
+    if (!tbody) return;
+    const trs = tbody.querySelectorAll('tr');
+    trs.forEach(tr => {
+        const tds = tr.querySelectorAll('td[data-col-idx]');
+        tds.forEach(td => {
+            const cIdx = parseInt(td.dataset.colIdx, 10);
+            const isHigh = window.cpHighlightedCols.has(cIdx);
+            const div = td.querySelector('div');
+            if (isHigh) {
+                td.style.backgroundColor = '#fffde7';
+                td.style.boxShadow = 'inset 0 0 0 1.5px #f57f17';
+                if (div && (!td.dataset.task || td.dataset.task === '')) {
+                    div.style.backgroundColor = '#fff59d';
+                }
+            } else {
+                td.style.backgroundColor = '';
+                td.style.boxShadow = '';
+                if (div && (!td.dataset.task || td.dataset.task === '')) {
+                    div.style.backgroundColor = '';
+                }
+            }
+        });
+    });
+};
+
 function renderCultivationPlanTable() {
     const table = document.getElementById('cpTable');
     if (!table) return;
@@ -1384,14 +1491,17 @@ function renderCultivationPlanTable() {
         if (idx === 0) label = '今年 ' + label;
         if (idx === 12) label = '来年 ' + label;
         let bg = idx < 12 ? '#f1f8e9' : '#e8eaf6';
-        tHTML += '<th colspan="6" style="border: 1px solid #ddd; background: ' + bg + '; padding: 4px; min-width:150px;">' + label + '</th>';
+        tHTML += `<th colspan="6" data-month-idx="${idx}" onclick="toggleCpMonthHighlight(${idx})" title="${label} 全6半旬をまとめて選択/解除" style="border: 1px solid #ddd; background: ${bg}; padding: 4px; min-width:150px; cursor:pointer; user-select:none;">${label}</th>`;
     });
     tHTML += '</tr><tr>';
     
     const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
-    months.forEach(() => {
+    let globalColIdx = 0;
+    months.forEach((m) => {
         for (let p of periods) {
-            tHTML += '<th style="border: 1px solid #ddd; padding: 4px 2px; font-size: 10px; width: 25px; border-bottom: 2px solid #ccc; background: #fafafa; color: #555; writing-mode: vertical-rl; text-orientation: upright;">' + p + '</th>';
+            const colIdx = globalColIdx;
+            tHTML += `<th data-col-idx="${colIdx}" onclick="toggleCpColumnHighlight(${colIdx})" title="${m}月 ${p} 列をハイライト" style="border: 1px solid #ddd; padding: 4px 2px; font-size: 10px; width: 25px; border-bottom: 2px solid #ccc; background: #fafafa; color: #555; writing-mode: vertical-rl; text-orientation: upright; cursor:pointer; user-select:none;">${p}</th>`;
+            globalColIdx++;
         }
     });
     tHTML += '</tr></thead><tbody id="cpTableBody"></tbody>';
@@ -1403,6 +1513,7 @@ function renderCultivationPlanTable() {
     setTimeout(() => {
         syncLeftHeaderHeight();
         applyCpTableStickyHeader();
+        applyCpColumnHighlights();
     }, 50);
 }
 
@@ -1744,6 +1855,7 @@ function renderCpPlanRow(plan) {
             let td = document.createElement('td');
             let br = (i === 5) ? '1px solid #bbb' : '1px solid #eee';
             td.style.cssText = `border: 1px solid #eee; padding: 0; cursor: pointer; border-right: ${br}; min-width: 25px;`;
+            td.dataset.colIdx = (idx * 6 + i);
             td.dataset.monthIndex = idx;
             td.dataset.month = m;
             td.dataset.period = i;
@@ -1782,6 +1894,9 @@ function renderCpPlanRow(plan) {
     });
     
     tbody.appendChild(tr);
+    
+    // ハイライト状態を反映
+    applyCpColumnHighlights();
     
     // 圃場選択表示を更新
     if (typeof updateVarietyCardFieldsDisplay === 'function') {
@@ -1941,8 +2056,10 @@ function getSemiAutoTool(step) {
 function clearCpCellPaint(td) {
     const div = td.querySelector('div');
     td.dataset.task = '';
+    const cIdx = td.dataset.colIdx != null ? parseInt(td.dataset.colIdx, 10) : null;
+    const isHigh = cIdx != null && window.cpHighlightedCols && window.cpHighlightedCols.has(cIdx);
     if (div) {
-        div.style.backgroundColor = '';
+        div.style.backgroundColor = isHigh ? '#fff59d' : '';
         div.innerHTML = '';
     }
     td.dataset.amount = '';
