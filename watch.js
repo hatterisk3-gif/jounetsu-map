@@ -149,7 +149,7 @@ async function watch() {
             pendingImages = []; // 基地のメモリをリセット
           }
 
-          // 💬 AIによる自動修正・自己修復ルート
+          // 💬 AIによる自動修正ルート（デプロイなし・修正のみ）
           {
             const modifyPrompt = `${imageContext}${cleanCommand}。
 【最後に行うことのリスト】
@@ -157,166 +157,92 @@ async function watch() {
  2.コードを修正したら、関連するhtml(箱)のページ名に記載されているバージョン情報を0.01足してください。
  3.テストや検証用にスクリプトを作成する場合は、必ず 'tmp_' から始まるファイル名（例: tmp_test.js）を使用してください。
  4.システム動作に関係のない一時ファイル・画像は削除してください。
- 5.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。`;
+ 5.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。
+ 6.【重要】clasp push、clasp deploy、git commit、git push は絶対に実行しないこと。修正のみ行ってください。`;
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
             let isSuccess = false;
 
-            // 🌟 自己修復ループの設定
-            let maxRetries = 2; // 最大2回までエラー修正を試みる
-            let currentAttempt = 0;
-            let currentPrompt = modifyPrompt;
+            console.log('🚀 AIエージェントによるコード修正を開始します（修正のみ・デプロイなし）...');
 
-            console.log('🚀 AIエージェントによるコード修正を開始します...');
-
-            while (currentAttempt <= maxRetries && !isSuccess) {
-              try {
-                // 1. AIエージェント実行（ここで自動的にエディタ -> CLI の切り替えが行われます）
-                let rawAiOutput = await runAIAgent(currentPrompt);
-                if (rawAiOutput && rawAiOutput !== "完了" && rawAiOutput !== "") {
-                  aiOutput = rawAiOutput;
-                }
-
-                // 2. Clasp で GAS へプッシュ（事前コンパイル検証）
-                console.log('☁️ ClaspでGASへ仮反映し、構文エラーがないかテスト中...');
-                try {
-                  execSync('clasp push -f', { stdio: 'pipe' });
-                  console.log('✨ Clasp Push 成功！コードに問題はありませんでした。');
-                  isSuccess = true; // 成功したのでループを抜ける
-                } catch (claspError) {
-                  // 🚨 GASで構文エラー等が起きた場合
-                  const errorLog = claspError.stderr ? claspError.stderr.toString() : claspError.message;
-                  console.warn(`⚠️ GASへのプッシュで構文エラー等を検知しました:\n${errorLog}`);
-
-                  currentAttempt++;
-                  if (currentAttempt > maxRetries) {
-                    aiOutput = `最大再試行回数(${maxRetries}回)を超えました。\n\n【最終エラー】:\n${errorLog}`;
-                    break;
-                  }
-
-                  console.log(`🔄 エラーをAIにフィードバックし、自己修復を実行します（${currentAttempt}回目のリトライ）...`);
-
-                  // 中途半端な変更をリセットしてやり直し
-                  try { execSync('git reset --hard HEAD', { stdio: 'ignore' }); } catch (e) { }
-                  try { execSync('git clean -fd', { stdio: 'ignore' }); } catch (e) { }
-                  // AIへのプロンプトを「エラー修正」に切り替え
-                  currentPrompt = `先ほどのコード修正で、GASへのデプロイ時に以下のエラーが発生しました。\n\n【エラー内容】\n\`\`\`\n${errorLog}\n\`\`\`\n\nエラーの原因を特定し、コードを修正してください。\n完了後は先ほどと同じように '.ai_task_done.txt' にレポートを出力してください。`;
-                }
-
-              } catch (agentError) {
-                console.error('\n⚠️ AIエージェントの処理中、またはタイムアウトが発生しました！', agentError);
-                break; // ループを抜けて失敗処理へ
+            try {
+              // 1. AIエージェント実行
+              let rawAiOutput = await runAIAgent(modifyPrompt);
+              if (rawAiOutput && rawAiOutput !== "完了" && rawAiOutput !== "") {
+                aiOutput = rawAiOutput;
               }
+
+              // 2. ローカルで構文チェック（node -c）のみ実行。clasp push は行わない。
+              console.log('🔍 修正ファイルの構文チェック中（ローカルのみ）...');
+              const jsFiles = fs.readdirSync(__dirname).filter(f => f.endsWith('.js') && !f.startsWith('tmp_') && f !== 'watch.js' && f !== 'node_modules');
+              let syntaxErrors = [];
+              jsFiles.forEach(f => {
+                try {
+                  execSync(`node -c "${f}"`, { cwd: __dirname, stdio: 'pipe' });
+                } catch (e) {
+                  syntaxErrors.push(`${f}: ${e.stderr ? e.stderr.toString().trim() : e.message}`);
+                }
+              });
+
+              if (syntaxErrors.length > 0) {
+                console.warn(`⚠️ 構文エラーが検出されました:\n${syntaxErrors.join('\n')}`);
+                aiOutput += `\n\n【構文エラー検出】\n${syntaxErrors.join('\n')}`;
+              } else {
+                console.log('✨ 構文チェックOK！');
+                isSuccess = true;
+              }
+            } catch (agentError) {
+              console.error('\n⚠️ AIエージェントの処理中にエラーが発生しました！', agentError);
             }
 
-            // 🌟 デプロイ・Git保存プロセス（自己修復ループ突破後）
-            if (isSuccess) {
-              // 変更があったかチェック
-              let diffText = "";
-              try { diffText = execSync('git diff HEAD', { env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim(); } catch (e) { }
-              const cleanDiffText = diffText.replace(/warning:.*LF will be replaced by CRLF.*/g, '').trim();
+            // 不要な一時ファイルのお掃除
+            console.log('🧹 一時ファイルを削除中...');
+            const files = fs.readdirSync(__dirname);
+            files.forEach(file => {
+              const lowerFile = file.toLowerCase();
+              if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_') || lowerFile.startsWith('tmp_')) {
+                try { fs.unlinkSync(path.join(__dirname, file)); } catch (e) { }
+              }
+            });
+            try {
+              const os = require('os');
+              const scratchDir = path.join(os.homedir(), '.gemini', 'antigravity-cli', 'scratch');
+              if (fs.existsSync(scratchDir)) {
+                fs.readdirSync(scratchDir).forEach(f => fs.unlinkSync(path.join(scratchDir, f)));
+              }
+            } catch (e) { }
 
-              if (cleanDiffText === "") {
-                console.log('⏭️ ファイルの変更がなかったため、デプロイプロセスはスキップします。');
-                summaryForLine = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント】:\n${aiOutput.slice(0, 2000)}`;
-                fullSummaryForEmail = `【スキップ】ファイルの変更がなかったためデプロイはスキップされました。\n\n【AIのコメント(全文)】:\n${aiOutput}`;
-              } else {
-                // 不要な一時ファイルのお掃除
-                console.log('🧹 agyが分析用に残した一時画像や迷子ファイルを削除中...');
-                const files = fs.readdirSync(__dirname);
-                files.forEach(file => {
-                  const lowerFile = file.toLowerCase();
-                  if (lowerFile.includes('error_image') || lowerFile.startsWith('reference_') || lowerFile.startsWith('downloaded_') || lowerFile.startsWith('line_image_') || lowerFile.startsWith('tmp_')) {
-                    try { fs.unlinkSync(path.join(__dirname, file)); } catch (e) { }
+            // 変更されたファイルの一覧を取得
+            let fileChangesText = "";
+            try {
+              const diffOutput = execSync('git diff --name-status', { cwd: __dirname, env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
+              if (diffOutput) {
+                let modified = [], added = [], deleted = [];
+                diffOutput.split('\n').forEach(line => {
+                  const parts = line.split(/\s+/);
+                  if (parts.length >= 2) {
+                    const status = parts[0].charAt(0);
+                    const file = parts[parts.length - 1];
+                    if (status === 'A') added.push(file);
+                    else if (status === 'D') deleted.push(file);
+                    else modified.push(file);
                   }
                 });
-                try {
-                  const os = require('os');
-                  const scratchDir = path.join(os.homedir(), '.gemini', 'antigravity-cli', 'scratch');
-                  if (fs.existsSync(scratchDir)) {
-                    fs.readdirSync(scratchDir).forEach(f => fs.unlinkSync(path.join(scratchDir, f)));
-                  }
-                } catch (e) { }
-
-                console.log('🐙 GitHubへコミット中...');
-                try {
-                  execSync('git add .');
-
-                  let gitStatusOutput = '';
-                  try { gitStatusOutput = execSync('git diff --name-status --cached').toString().trim(); } catch (e) { }
-
-                  let fileChangesText = "";
-                  let allFiles = "various files";
-                  if (gitStatusOutput) {
-                    let modified = [], added = [], deleted = [];
-                    gitStatusOutput.split('\n').forEach(line => {
-                      const parts = line.split(/\s+/);
-                      if (parts.length >= 2) {
-                        const status = parts[0].charAt(0);
-                        const file = parts[parts.length - 1];
-                        if (status === 'A') added.push(file);
-                        else if (status === 'D') deleted.push(file);
-                        else modified.push(file);
-                      }
-                    });
-                    if (modified.length > 0) fileChangesText += `\n【変更】: ${modified.join(', ')}`;
-                    if (added.length > 0) fileChangesText += `\n【追加】: ${added.join(', ')}`;
-                    if (deleted.length > 0) fileChangesText += `\n【削除】: ${deleted.join(', ')}`;
-                    allFiles = modified.concat(added).concat(deleted).join(', ');
-                  }
-
-                  const shortCommand = cleanCommand.length > 30 ? cleanCommand.substring(0, 30) + '...' : cleanCommand;
-                  const commitMessage = `Auto: ${shortCommand} [変更: ${allFiles}]`;
-                  const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...（以下省略）' : aiOutput;
-
-                  execSync(`git commit -m "${commitMessage}"`, { stdio: 'inherit' });
-
-                  // 🌟 【完全自動化】Clasp Deploy (本番公開)
-                  console.log('🚀 GASへの本番デプロイ（新バージョンの発行）を実行中...');
-                  let deployStatusText = "本番デプロイ(Deploy)完了！";
-                  try {
-                    const deployResult = execSync(`clasp deploy -i ${MAP_GAS_DEPLOY_ID} -d "Auto Update"`, { stdio: 'pipe' }).toString();
-                    console.log(`✨ 本番デプロイ完了！:\n${deployResult}`);
-                  } catch (deployError) {
-                    const dLog = deployError.stderr ? deployError.stderr.toString() : deployError.message;
-                    console.warn(`⚠️ 本番デプロイに失敗しました:\n${dLog}`);
-                    deployStatusText = "⚠️ コード保存は成功しましたが、本番公開(Deploy)に失敗しました。";
-                  }
-
-                  // 🌟 GitHub Push (リトライ付き)
-                  let pushRetries = 3;
-                  let pushSuccess = false;
-                  while (pushRetries > 0 && !pushSuccess) {
-                    try {
-                      console.log(`🐙 GitHubへプッシュ中... (残り試行回数: ${pushRetries})`);
-                      execSync('git push', { stdio: 'pipe' });
-                      pushSuccess = true;
-                    } catch (pushErr) {
-                      console.error(`⚠️ プッシュが弾かれました。3秒後に再試行します...`);
-                      pushRetries--;
-                      if (pushRetries === 0) throw new Error("3回再試行しましたが、GitHubへのプッシュに失敗しました。");
-                      await new Promise(resolve => setTimeout(resolve, 3000));
-                    }
-                  }
-
-                  summaryForLine = `【デプロイ完了】\n${deployStatusText}\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
-                  fullSummaryForEmail = `【デプロイ完了】\n${deployStatusText}\nAuto: ${shortCommand}\n${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
-                  console.log('✅ GitHubへのプッシュが完了しました！');
-
-                } catch (e) {
-                  console.error('❌ GitHubへのプッシュ中にエラーが発生しました！', e.message);
-                  summaryForLine = `【Gitエラー】\nファイルの修正は行われましたが、保存処理に失敗しました。\n\n【原因】\n${e.message}\n\n【AIのコメント】:\n${aiOutput.slice(0, 1000)}`;
-                }
+                if (modified.length > 0) fileChangesText += `\n【変更】: ${modified.join(', ')}`;
+                if (added.length > 0) fileChangesText += `\n【追加】: ${added.join(', ')}`;
+                if (deleted.length > 0) fileChangesText += `\n【削除】: ${deleted.join(', ')}`;
               }
+            } catch (e) { }
 
+            const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...(以下省略)' : aiOutput;
+
+            if (isSuccess) {
+              summaryForLine = `【修正完了（デプロイなし）】\nAIによるコード修正が完了しました。${fileChangesText}\n⚠️ デプロイは行っていません。手動で clasp push / git push / clasp deploy を実行してください。\n\n【AIの修正報告】:\n${shortAiOutput}`;
+              fullSummaryForEmail = `【修正完了（デプロイなし）】\nAIによるコード修正が完了しました。${fileChangesText}\n⚠️ デプロイは行っていません。\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
+              console.log('✅ コード修正が完了しました！（デプロイは行っていません）');
             } else {
-              // ループを抜けても失敗だった場合（ロールバック）
-              console.log('🔄 最終的に解決できなかったため、元の状態にロールバックします...');
-              try {
-                execSync('git reset --hard HEAD', { stdio: 'ignore' });
-                execSync('git clean -fd', { stdio: 'ignore' });
-              } catch (gitErr) { }
-              summaryForLine = `【処理失敗】エラーを自己修復しきれなかったため、元の状態に安全にリセットしました。\n\n【原因】:\n${aiOutput}`;
+              summaryForLine = `【修正に問題あり】\n修正は行いましたが構文エラー等が残っている可能性があります。${fileChangesText}\n\n【AIのコメント】:\n${shortAiOutput}`;
+              fullSummaryForEmail = `【修正に問題あり】\n${fileChangesText}\n\n【AIのコメント(全文)】:\n${aiOutput}`;
             }
           }
         }

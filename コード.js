@@ -1758,7 +1758,8 @@ function getSavedPolygons() {
           ridgeDir: data[i][13],
           ridgeWidth: data[i][14],
           uneSimData: data[i][15],
-          water_status: data[i][16] || 'stopped'
+          water_status: data[i][16] || 'stopped',
+          drainage_status: data[i][19] || ''
         });
         let manureData = {};
         try { if (data[i][17]) manureData = JSON.parse(data[i][17]); } catch(e){}
@@ -2041,6 +2042,7 @@ function updatePolygon(params) {
     if (params.status !== undefined) sheet.getRange(targetRow, 11).setValue(params.status); // K列: 稼働状況
     if (params.toukiId !== undefined) sheet.getRange(targetRow, 12).setValue(params.toukiId); // L列: 登記ID
     if (params.water_status !== undefined) sheet.getRange(targetRow, 17).setValue(params.water_status); // Q列: 水管理ステータス
+    if (params.drainage_status !== undefined) sheet.getRange(targetRow, 20).setValue(params.drainage_status); // T列: 排水溝ステータス
     if (params.manureData !== undefined) sheet.getRange(targetRow, 18).setValue(params.manureData); // R列: 鶏糞散布用データ
     
     if (params.ridgeDir !== undefined) sheet.getRange(targetRow, 14).setValue(params.ridgeDir); // N列(あれば)

@@ -60,9 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id && pw) {
         document.getElementById('loginScreen').style.display = 'none';
         initMap();
-        if (!localStorage.getItem('manureMapData') && typeof beginMapDataLoad === 'function') {
-            beginMapDataLoad('圃場データを読み込み中...');
-        }
         executeLogin(true);
     }
 });
@@ -102,7 +99,8 @@ async function executeLogin(isAuto = false) {
             if (cached) {
                 if (typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
                 try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
-                if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                if (typeof ensureMapGesturesEnabled === 'function') ensureMapGesturesEnabled();
+                else if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
             }
 
             loadInitData();
@@ -110,6 +108,7 @@ async function executeLogin(isAuto = false) {
             document.getElementById('loginScreen').style.display = 'flex';
             if (errObj) errObj.innerText = result.message || 'ログイン失敗';
             if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+            if (typeof ensureMapGesturesEnabled === 'function') ensureMapGesturesEnabled();
         }
     } catch (e) {
         if (isAuto) {
@@ -118,10 +117,12 @@ async function executeLogin(isAuto = false) {
             if (cached) {
                 try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
             }
+            if (typeof ensureMapGesturesEnabled === 'function') ensureMapGesturesEnabled();
         } else {
             document.getElementById('loginScreen').style.display = 'flex';
             if (errObj) errObj.innerText = '通信エラー: ' + e.message;
             if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+            if (typeof ensureMapGesturesEnabled === 'function') ensureMapGesturesEnabled();
         }
     }
 }
@@ -229,8 +230,12 @@ function initMap() {
         zoom: 15,
         mapTypeId: 'satellite',
         disableDefaultUI: true,
-        zoomControl: false,
-        gestureHandling: 'greedy'
+        zoomControl: true,
+        zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
+        gestureHandling: 'greedy',
+        scrollwheel: true,
+        draggable: true,
+        disableDoubleClickZoom: false
     });
 
     map.addListener('idle', () => {
@@ -249,6 +254,22 @@ function initMap() {
     fetchTyphoonInfo();
 }
 
+function restoreMapInteractions_() {
+    if (typeof ensureMapGesturesEnabled === 'function') {
+        ensureMapGesturesEnabled();
+        return;
+    }
+    if (map && typeof map.setOptions === 'function') {
+        map.setOptions({
+            gestureHandling: 'greedy',
+            draggable: true,
+            scrollwheel: true,
+            disableDoubleClickZoom: false
+        });
+    }
+    if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+}
+
 // ====== データ読み込み (worker.jsと同じgetInitData使用) ======
 async function loadInitData() {
     if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
@@ -259,14 +280,14 @@ async function loadInitData() {
             const oldDataStr = localStorage.getItem('manureMapData');
             if (newDataStr === oldDataStr) {
                 console.log("変更なし：再描画をスキップしました");
-                if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                restoreMapInteractions_();
                 return;
             }
             // キャッシュに保存
             localStorage.setItem('manureMapData', newDataStr);
             drawPolygons(data.polygons);
         }
-        if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        restoreMapInteractions_();
     } catch (e) {
         console.error("InitData Error:", e);
         // キャッシュから読む
@@ -274,7 +295,7 @@ async function loadInitData() {
         if (cached) {
             try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
         }
-        if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        restoreMapInteractions_();
     }
 }
 

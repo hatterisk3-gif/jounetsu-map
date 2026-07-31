@@ -768,11 +768,18 @@ window.updateCadSvgOverlay = (opts) => {
             let waterOutCount = 0;
             const numFontPx = Math.max(8, Math.min(48, parseFloat(window.cadPinNumFontSize) || 20));
             window.cadPins.forEach((mk, idx) => {
+                // foreignObject 外の要素はクリックが届かないため、削除ボタンを必ず枠内に置く
+                const foW = 120;
+                const foH = 120;
                 let fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
-                fo.setAttribute('width', '100');
-                fo.setAttribute('height', '60');
-                fo.setAttribute('style', 'overflow:visible; pointer-events:none;');
+                fo.setAttribute('width', String(foW));
+                fo.setAttribute('height', String(foH));
+                fo.setAttribute('style', 'overflow:visible; pointer-events:auto;');
                 
+                let wrap = document.createElement('div');
+                wrap.className = 'cad-equip-pin-wrap';
+                wrap.style.cssText = `position:relative; width:100%; height:100%; pointer-events:auto;`;
+
                 let div = document.createElement('div');
                 let iconStr = '';
                 let numStr = '';
@@ -806,13 +813,18 @@ window.updateCadSvgOverlay = (opts) => {
                 
                 div.className = 'cad-equip-pin';
                 div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
-                fo.appendChild(div);
+                wrap.appendChild(div);
 
-                let delBtn = document.createElement('div');
+                let delBtn = document.createElement('button');
+                delBtn.type = 'button';
                 delBtn.innerHTML = '✕';
                 delBtn.className = 'cad-pin-del-btn';
-                delBtn.style.cssText = 'position:absolute; top:-20px; right:-20px; width:40px; height:40px; background:#f44336; color:white; font-size:20px; line-height:36px; text-align:center; border-radius:50%; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5); display:none; border: 2px solid white;';
-                div.appendChild(delBtn);
+                delBtn.title = 'このピンを削除';
+                delBtn.setAttribute('aria-label', 'このピンを削除');
+                // FO枠内（右上）に配置。枠外だと SVG でクリック不能になる
+                delBtn.style.cssText = 'position:absolute; top:4px; right:4px; width:36px; height:36px; background:#f44336; color:white; font-size:18px; line-height:1; text-align:center; border-radius:50%; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5); display:none; border: 2px solid white; padding:0; z-index:5; pointer-events:auto;';
+                wrap.appendChild(delBtn);
+                fo.appendChild(wrap);
                 
                 let isDraggingPin = false;
                 let dragDistance = 0;
@@ -821,10 +833,18 @@ window.updateCadSvgOverlay = (opts) => {
 
                 const syncPinFoPosition = (latLng) => {
                     if (!mk._svgFoNode || !latLng) return;
-                    const foSize = parseFloat(mk._svgFoNode.getAttribute('width')) || 60;
+                    const w = parseFloat(mk._svgFoNode.getAttribute('width')) || foW;
+                    const h = parseFloat(mk._svgFoNode.getAttribute('height')) || foH;
                     const screenPt = window.latLngToScreenPixel(latLng.lat(), latLng.lng());
-                    mk._svgFoNode.setAttribute('x', screenPt.x - (foSize / 2));
-                    mk._svgFoNode.setAttribute('y', screenPt.y - (foSize / 2));
+                    mk._svgFoNode.setAttribute('x', screenPt.x - (w / 2));
+                    mk._svgFoNode.setAttribute('y', screenPt.y - (h / 2));
+                };
+
+                const isDeleteTarget = (target) => {
+                    if (!target) return false;
+                    if (target === delBtn) return true;
+                    if (typeof target.closest === 'function' && target.closest('.cad-pin-del-btn')) return true;
+                    return false;
                 };
 
                 const onMove = (ev) => {
@@ -866,6 +886,7 @@ window.updateCadSvgOverlay = (opts) => {
                 
                 div.addEventListener('mousedown', (e) => {
                     if (e.button != null && e.button !== 0) return;
+                    if (isDeleteTarget(e.target)) return;
                     isDraggingPin = true;
                     window.cadPinDragging = true;
                     dragDistance = 0; 
@@ -878,6 +899,7 @@ window.updateCadSvgOverlay = (opts) => {
                 });
                 
                 div.addEventListener('touchstart', (e) => {
+                    if (isDeleteTarget(e.target)) return;
                     isDraggingPin = true;
                     window.cadPinDragging = true;
                     dragDistance = 0;
@@ -889,20 +911,40 @@ window.updateCadSvgOverlay = (opts) => {
                     window.addEventListener('touchend', onEnd);
                 }, {passive: false});
 
-                const onDelete = (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    if(confirm('この設備ピンを削除しますか？')) {
-                        window.cadPins = window.cadPins.filter(p => p !== mk);
-                        if (mk.setMap) mk.setMap(null);
-                        window.cadSvgNeedsRebuild = true;
-                        window.updateCadSvgOverlay();
-                        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                const removePinNow = () => {
+                    try { if (mk.setMap) mk.setMap(null); } catch (err) {}
+                    window.cadPins = (window.cadPins || []).filter(p => p !== mk);
+                    mk._svgFoNode = null;
+                    if (svg) svg._lastPinsStateId = null;
+                    window.cadSvgNeedsRebuild = true;
+                    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+                    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                    const msgEl = document.getElementById('cadPinModeMsg');
+                    if (msgEl) {
+                        msgEl.innerText = '設備ピンを削除しました。保存を忘れずに。';
+                        msgEl.style.color = '#f44336';
                     }
                 };
 
-                delBtn.addEventListener('mousedown', onDelete);
-                delBtn.addEventListener('touchstart', onDelete, {passive: false});
+                let deleteGuardUntil = 0;
+                const onDelete = (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    // ドラッグ開始を打ち消す
+                    isDraggingPin = false;
+                    window.cadPinDragging = false;
+                    // touchend + click の二重発火防止
+                    const now = Date.now();
+                    if (now < deleteGuardUntil) return;
+                    deleteGuardUntil = now + 600;
+                    if (!confirm('この設備ピンを削除しますか？')) return;
+                    removePinNow();
+                };
+
+                delBtn.addEventListener('click', onDelete);
+                delBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
+                delBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); }, {passive: false});
+                delBtn.addEventListener('touchend', onDelete, {passive: false});
                 
                 pinsGroup.appendChild(fo);
                 mk._svgFoNode = fo;
@@ -914,7 +956,8 @@ window.updateCadSvgOverlay = (opts) => {
         let currentZoom = window.getCadZoom();
         let pinScale = Math.max(0.5, Math.pow(2, currentZoom - 20));
         let scaledFontSize = Math.round(24 * pinScale);
-        let foSize = Math.max(60, scaledFontSize + 50);
+        // 削除ボタン分を含めて FO を十分大きく保つ
+        let foSize = Math.max(120, scaledFontSize + 80);
 
         window.cadPins.forEach(mk => {
             if (mk._svgFoNode) {
@@ -926,7 +969,7 @@ window.updateCadSvgOverlay = (opts) => {
                     mk._svgFoNode.setAttribute('x', screenPt.x - (foSize / 2));
                     mk._svgFoNode.setAttribute('y', screenPt.y - (foSize / 2));
                     
-                    let div = mk._svgFoNode.querySelector('div');
+                    let div = mk._svgFoNode.querySelector('.cad-equip-pin');
                     if (div) {
                         div.style.fontSize = scaledFontSize + 'px';
                     }
@@ -1620,7 +1663,7 @@ window.initCadTouchEvents = () => {
                     return true;
                 }
                 // 設備ピン本体（SVG foreignObject 内）
-                if (currEl.className.includes('cad-equip-pin') || currEl.className.includes('cad-pin-del-btn') || currEl.className.includes('cad-pin-icon')) {
+                if (currEl.className.includes('cad-equip-pin') || currEl.className.includes('cad-equip-pin-wrap') || currEl.className.includes('cad-pin-del-btn') || currEl.className.includes('cad-pin-icon')) {
                     return true;
                 }
             }
