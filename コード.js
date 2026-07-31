@@ -81,10 +81,13 @@ function doPost(e) {
     else if (action === "deleteCultivationPreset") result = deleteCultivationPreset(params);
     else if (action === "renameCultivationPreset") result = renameCultivationPreset(params);
     else if (action === "renameCultivationVariety") result = renameCultivationVariety(params);
+    else if (action === "deleteCultivationVariety") result = deleteCultivationVariety(params);
+    else if (action === "updateVarietyMeta") result = updateVarietyMeta(params);
     else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
     else if (action === "saveCroptypeDBBatch") result = saveCroptypeDBBatch(params);
     else if (action === "saveVarietyWithFile") result = saveVarietyWithFile(params);
     else if (action === "saveCroptypeWithFile") result = saveCroptypeWithFile(params);
+    else if (action === "deleteCroptypeDB") result = deleteCroptypeDB(params);
     else if (action === "editToolInMaster") result = editToolInMaster(params);
     else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
     else if (action === "editMachineInMaster") result = editMachineInMaster(params);
@@ -238,9 +241,9 @@ function parseCropImageWithGemini(params) {
 ルール:
 - ずらし巻き・複数期間は type を分割。各 type の sowing/planting は最大1期間。
 - 月=1-12, period="上"|"中"|"下"。期間は start_*/end_*。
-- maker/crop/climate/variety があれば文字列、characteristics は短い配列。無い項目は null。
+- maker/crop/climate/variety があれば文字列、grainCountは粒数(数値文字列)、characteristics は短い配列。無い項目は null。
 JSONのみ:
-{"maker":null,"crop":null,"climate":null,"variety":null,"characteristics":[],"types":[{"sowing":[{"start_month":1,"start_period":"中","end_month":2,"end_period":"上"}],"planting":[{"start_month":3,"start_period":"上","end_month":3,"end_period":"中"}],"harvesting":[{"start_month":5,"start_period":"上","end_month":6,"end_period":"下"}]}]}`;
+{"maker":null,"crop":null,"climate":null,"variety":null,"grainCount":null,"characteristics":[],"types":[{"sowing":[{"start_month":1,"start_period":"中","end_month":2,"end_period":"上"}],"planting":[{"start_month":3,"start_period":"上","end_month":3,"end_period":"中"}],"harvesting":[{"start_month":5,"start_period":"上","end_month":6,"end_period":"下"}]}]}`;
 
   const payloadParts = [{ text: prompt }];
 
@@ -4576,7 +4579,7 @@ function saveCroptypeWithFile(params) {
     let sheet = ss.getSheetByName('作型DB');
     if (!sheet) {
       sheet = ss.insertSheet('作型DB');
-      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL', '特性', 'メーカー']);
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL', '特性', 'メーカー', '粒数']);
     }
     
     const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
@@ -4601,6 +4604,13 @@ function saveCroptypeWithFile(params) {
       sheet.getRange(1, makerColIndex).setValue('メーカー');
       headers.push('メーカー');
     }
+
+    let grainColIndex = headers.indexOf('粒数') + 1;
+    if (grainColIndex === 0) {
+      grainColIndex = headers.length + 1;
+      sheet.getRange(1, grainColIndex).setValue('粒数');
+      headers.push('粒数');
+    }
     
     let harvestSeasonColIndex = headers.indexOf('とる時期') + 1;
     if (harvestSeasonColIndex === 0) {
@@ -4621,15 +4631,16 @@ function saveCroptypeWithFile(params) {
         sheet.getRange(i + 1, 6).setValue(JSON.stringify(params.planting || []));
         sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
         if (fileUrl) {
-          // If already exists, we might want to append? 
-          // For now, overwrite or keep new ones if provided.
           sheet.getRange(i + 1, fileUrlColIndex).setValue(fileUrl);
         }
-        if (params.characteristics) {
+        if (params.characteristics !== undefined && params.characteristics !== null) {
           sheet.getRange(i + 1, charColIndex).setValue(params.characteristics);
         }
-        if (params.maker) {
+        if (params.maker !== undefined && params.maker !== null) {
           sheet.getRange(i + 1, makerColIndex).setValue(params.maker);
+        }
+        if (params.grainCount !== undefined && params.grainCount !== null) {
+          sheet.getRange(i + 1, grainColIndex).setValue(params.grainCount);
         }
         if (params.harvestSeason) {
           sheet.getRange(i + 1, harvestSeasonColIndex).setValue(params.harvestSeason);
@@ -4651,6 +4662,7 @@ function saveCroptypeWithFile(params) {
       newRow[fileUrlColIndex - 1] = fileUrl;
       newRow[charColIndex - 1] = params.characteristics || '';
       newRow[makerColIndex - 1] = params.maker || '';
+      newRow[grainColIndex - 1] = (params.grainCount !== undefined && params.grainCount !== null) ? params.grainCount : '';
       newRow[harvestSeasonColIndex - 1] = params.harvestSeason || '';
       sheet.appendRow(newRow);
     }
@@ -6438,7 +6450,7 @@ function getCultivationMaster() {
     master.croptypesDB = [];
     const croptypeSheet = ss.getSheetByName('作型DB');
     if (!croptypeSheet) {
-      ss.insertSheet('作型DB').appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL']);
+      ss.insertSheet('作型DB').appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL', '特性', 'メーカー', '粒数']);
     } else {
       const dbData = croptypeSheet.getDataRange().getValues();
       const headers = (dbData[0] || []).map(h => String(h || '').trim());
@@ -6446,6 +6458,7 @@ function getCultivationMaster() {
       let charCol = headers.indexOf('特性');
       if (charCol === -1) charCol = headers.indexOf('特性(タグ)');
       const makerCol = headers.indexOf('メーカー');
+      const grainCol = headers.indexOf('粒数');
       const harvestSeasonCol = headers.indexOf('とる時期');
       for (let i = 1; i < dbData.length; i++) {
         let r = dbData[i];
@@ -6462,6 +6475,7 @@ function getCultivationMaster() {
               fileUrl: fileUrlCol !== -1 ? String(r[fileUrlCol] || '') : '',
               characteristics: charCol !== -1 ? String(r[charCol] || '') : '',
               maker: makerCol !== -1 ? String(r[makerCol] || '') : '',
+              grainCount: grainCol !== -1 ? String(r[grainCol] || '') : '',
               harvestSeason: harvestSeasonCol !== -1 ? String(r[harvestSeasonCol] || '') : ''
             });
           } catch(e) { console.log('JSON parse error in croptypesDB', e); }
@@ -6631,9 +6645,9 @@ function saveCroptypeDB(params) {
     let sheet = ss.getSheetByName('作型DB');
     if (!sheet) {
       sheet = ss.insertSheet('作型DB');
-      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)', 'メーカー']);
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)', 'メーカー', '粒数']);
     } else {
-      // 既存シートに「特性(タグ)」「メーカー」カラムがない場合は追加
+      // 既存シートに「特性(タグ)」「メーカー」「粒数」カラムがない場合は追加
       const rawHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
       const headers = rawHeaders.map(h => h ? String(h).trim() : "");
       if (headers.indexOf('特性(タグ)') === -1) {
@@ -6644,12 +6658,17 @@ function saveCroptypeDB(params) {
         sheet.getRange(1, headers.length + 1).setValue('メーカー');
         headers.push('メーカー');
       }
+      if (headers.indexOf('粒数') === -1) {
+        sheet.getRange(1, headers.length + 1).setValue('粒数');
+        headers.push('粒数');
+      }
     }
     
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const tagsColIndex = headers.indexOf('特性(タグ)') + 1; // 1-based index
     const makerColIndex = headers.indexOf('メーカー') + 1; // 1-based index
+    const grainColIndex = headers.indexOf('粒数') + 1;
     
     let updated = false;
     for (let i = 1; i < data.length; i++) {
@@ -6664,8 +6683,11 @@ function saveCroptypeDB(params) {
         if (tagsColIndex > 0) {
           sheet.getRange(i + 1, tagsColIndex).setValue(params.characteristics || '');
         }
-        if (makerColIndex > 0) {
-          sheet.getRange(i + 1, makerColIndex).setValue(params.maker || '');
+        if (makerColIndex > 0 && params.maker !== undefined && params.maker !== null) {
+          sheet.getRange(i + 1, makerColIndex).setValue(params.maker);
+        }
+        if (grainColIndex > 0 && params.grainCount !== undefined && params.grainCount !== null) {
+          sheet.getRange(i + 1, grainColIndex).setValue(params.grainCount);
         }
         updated = true;
         break;
@@ -6691,6 +6713,9 @@ function saveCroptypeDB(params) {
       }
       if (makerColIndex > 0) {
         newRow[makerColIndex - 1] = params.maker || '';
+      }
+      if (grainColIndex > 0) {
+        newRow[grainColIndex - 1] = (params.grainCount !== undefined && params.grainCount !== null) ? params.grainCount : '';
       }
       sheet.appendRow(newRow);
     }
@@ -6875,6 +6900,169 @@ function renameCultivationVariety(params) {
       updatedMaster: updatedMaster,
       updatedCroptype: updatedCroptype,
       updatedPreset: updatedPreset
+    };
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+}
+
+/** 品種に紐づくメーカー・粒数を作型DB上で一括更新（行が無ければ作成） */
+function updateVarietyMeta(params) {
+  try {
+    const crop = String((params && params.crop) || '').trim();
+    const variety = String((params && params.variety) || '').trim();
+    if (!crop || !variety) {
+      return { success: false, message: '作物と品種は必須です' };
+    }
+    const maker = (params.maker !== undefined && params.maker !== null) ? String(params.maker).trim() : '';
+    const grainCount = (params.grainCount !== undefined && params.grainCount !== null) ? String(params.grainCount).trim() : '';
+    const climate = String((params && params.climate) || '').trim();
+    const season = String((params && params.season) || '').trim();
+
+    const ss = TENANT_SS;
+    let sheet = ss.getSheetByName('作型DB');
+    if (!sheet) {
+      sheet = ss.insertSheet('作型DB');
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL', '特性', 'メーカー', '粒数']);
+    }
+
+    let headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0]
+      .map(h => String(h || '').trim());
+    if (headers.indexOf('メーカー') === -1) {
+      sheet.getRange(1, headers.length + 1).setValue('メーカー');
+      headers.push('メーカー');
+    }
+    if (headers.indexOf('粒数') === -1) {
+      sheet.getRange(1, headers.length + 1).setValue('粒数');
+      headers.push('粒数');
+    }
+    const makerCol = headers.indexOf('メーカー') + 1;
+    const grainCol = headers.indexOf('粒数') + 1;
+    const cropCol = headers.indexOf('作物');
+    const varietyCol = headers.indexOf('品種');
+
+    const data = sheet.getDataRange().getValues();
+    let updated = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][cropCol] || '').trim() !== crop) continue;
+      if (String(data[i][varietyCol] || '').trim() !== variety) continue;
+      if (climate && String(data[i][3] || '').trim() !== climate) continue;
+      if (makerCol > 0) sheet.getRange(i + 1, makerCol).setValue(maker);
+      if (grainCol > 0) sheet.getRange(i + 1, grainCol).setValue(grainCount);
+      updated++;
+    }
+
+    // 該当行が無ければメタ情報だけの行を追加
+    if (updated === 0) {
+      const newRow = new Array(headers.length).fill('');
+      newRow[0] = crop;
+      newRow[1] = variety;
+      newRow[2] = season;
+      newRow[3] = climate;
+      newRow[4] = '[]';
+      newRow[5] = '[]';
+      newRow[6] = '[]';
+      if (makerCol > 0) newRow[makerCol - 1] = maker;
+      if (grainCol > 0) newRow[grainCol - 1] = grainCount;
+      sheet.appendRow(newRow);
+      updated = 1;
+    }
+
+    try {
+      appendCultivationMaster({
+        crop: crop,
+        variety: variety,
+        holes: '',
+        rows: '',
+        pSpace: '',
+        rSpace: '',
+        yieldPerSeedling: '',
+        itemsPerPack: ''
+      });
+    } catch (e) {}
+
+    SpreadsheetApp.flush();
+    return { success: true, message: '品種情報を保存しました', updated: updated };
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+}
+
+/** 作型DBの1行を削除（作物+品種+まき時期+産地） */
+function deleteCroptypeDB(params) {
+  try {
+    const crop = String((params && params.crop) || '').trim();
+    const variety = String((params && params.variety) || '').trim();
+    const season = String((params && params.season) || '').trim();
+    const climate = String((params && params.climate) || '').trim();
+    if (!crop || !variety) {
+      return { success: false, message: '作物と品種は必須です' };
+    }
+
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('作型DB');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, message: '削除対象がありません', deleted: 0 };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    let deleted = 0;
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][0] || '').trim() !== crop) continue;
+      if (String(data[i][1] || '').trim() !== variety) continue;
+      if (String(data[i][2] || '').trim() !== season) continue;
+      if (String(data[i][3] || '').trim() !== climate) continue;
+      sheet.deleteRow(i + 1);
+      deleted++;
+    }
+    SpreadsheetApp.flush();
+    return { success: true, message: deleted ? '作型を削除しました' : '削除対象がありません', deleted: deleted };
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+}
+
+/** 品種をマスタ・作型DBから削除 */
+function deleteCultivationVariety(params) {
+  try {
+    const crop = String((params && params.crop) || '').trim();
+    const variety = String((params && params.variety) || '').trim();
+    if (!crop || !variety) {
+      return { success: false, message: '作物と品種は必須です' };
+    }
+
+    const ss = TENANT_SS;
+    let deletedMaster = 0;
+    let deletedCroptype = 0;
+
+    const masterSheet = ss.getSheetByName('栽培計画マスタ');
+    if (masterSheet && masterSheet.getLastRow() > 1) {
+      const data = masterSheet.getRange(2, 1, masterSheet.getLastRow(), 2).getValues();
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (String(data[i][0] || '').trim() === crop && String(data[i][1] || '').trim() === variety) {
+          masterSheet.deleteRow(i + 2);
+          deletedMaster++;
+        }
+      }
+    }
+
+    const croptypeSheet = ss.getSheetByName('作型DB');
+    if (croptypeSheet && croptypeSheet.getLastRow() > 1) {
+      const data = croptypeSheet.getDataRange().getValues();
+      for (let i = data.length - 1; i >= 1; i--) {
+        if (String(data[i][0] || '').trim() === crop && String(data[i][1] || '').trim() === variety) {
+          croptypeSheet.deleteRow(i + 1);
+          deletedCroptype++;
+        }
+      }
+    }
+
+    SpreadsheetApp.flush();
+    return {
+      success: true,
+      message: '品種を削除しました',
+      deletedMaster: deletedMaster,
+      deletedCroptype: deletedCroptype
     };
   } catch (e) {
     return { success: false, message: e.message || String(e) };

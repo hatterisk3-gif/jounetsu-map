@@ -905,10 +905,14 @@
     return minsToHm(maxEnd);
   }
 
-  /** 指定日の作業記録に入力された休憩時間（分）の合計 */
+  /** 指定日の作業記録に入力された休憩時間（分）の合計（「作業名：休憩」の時間も合算） */
   function sumWorkRecordBreakMins(user, workDateYmd) {
     const intervals = collectUserWorkIntervals(user, workDateYmd);
-    return intervals.reduce((sum, iv) => sum + Math.max(0, parseInt(iv.breakMins, 10) || 0), 0);
+    return intervals.reduce((sum, iv) => {
+      const isRestWork = String(iv.name || '').includes('休憩');
+      const restWorkMins = isRestWork ? Math.max(0, iv.end - iv.start) : 0;
+      return sum + Math.max(0, parseInt(iv.breakMins, 10) || 0) + restWorkMins;
+    }, 0);
   }
   window.sumWorkRecordBreakMins = sumWorkRecordBreakMins;
 

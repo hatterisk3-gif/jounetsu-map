@@ -157,8 +157,8 @@
               <div style="width: 100%;">
                 <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">品種</label>
                 <div style="display: flex; gap: 4px; width: 100%;">
-                  <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp(); checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                  <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp(); checkCroptypeDB()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
+                  <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
+                  <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
                   <button onclick="searchCroptypeWeb()" title="作型をWEB検索" style="padding: 4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; width: 28px; display: flex; align-items: center; justify-content: center;">🌐</button>
                 </div>
               </div>
@@ -173,6 +173,27 @@
               <div style="width: 100%; display: flex; align-items: flex-end;">
                 <button type="button" onclick="loadAndAddCroptype()" style="padding: 6px 12px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">🔄 品種マスタから作型を読込</button>
               </div>
+            </div>
+
+            <!-- 品種に紐づくメーカー・粒数（追加・編集） -->
+            <div id="cpVarietyMetaPanel" style="margin-bottom: 12px; padding: 10px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px;">
+              <div style="font-size: 11px; font-weight: bold; color: #E65100; margin-bottom: 6px;">🏢 品種情報（メーカー・粒数）</div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: flex-end;">
+                <div>
+                  <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">メーカー</label>
+                  <input type="text" id="cpVarietyMaker" list="cpVarietyMakerList" placeholder="例: サカタのタネ" style="width:100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+                  <datalist id="cpVarietyMakerList"></datalist>
+                </div>
+                <div>
+                  <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">粒数</label>
+                  <input type="number" id="cpVarietyGrainCount" min="0" step="1" placeholder="例: 1000" style="width:100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+                </div>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" onclick="saveCpVarietyMeta()" style="flex:1; padding: 6px 10px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap;">💾 保存</button>
+                  <button type="button" onclick="clearCpVarietyMetaFields()" style="padding: 6px 10px; background: #fff; color: #666; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap;">クリア</button>
+                </div>
+              </div>
+              <div id="cpVarietyMetaHint" style="margin-top:6px; font-size:10px; color:#888;">品種を選ぶか手入力すると、紐づくメーカー・粒数を表示・編集できます。</div>
             </div>
             
             <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
@@ -441,13 +462,19 @@
 
         <!-- 入力エリア -->
         <div style="padding: 10px; background: #fff3e0; border-radius: 6px; border: 1px solid #ffe0b2; margin-bottom: 15px;">
-          <div style="margin-bottom: 10px;">
-            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">品種</label>
-            <input type="text" id="crVariety" placeholder="例: 初秋" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom: 10px;">
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">品種</label>
+              <input type="text" id="crVariety" placeholder="例: 初秋" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+            </div>
+            <div>
+              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">粒数 <span style="font-weight:normal; color:#888;">(任意)</span></label>
+              <input type="number" id="crGrainCount" min="0" step="1" placeholder="例: 1000" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+            </div>
           </div>
           
           <div style="margin-bottom: 10px;">
-            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">メーカー <span style="font-weight:normal; color:#888;">(共通で記憶)</span></label>
+            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">メーカー <span style="font-weight:normal; color:#888;">(共通で記憶・追加/削除可)</span></label>
             <input type="hidden" id="crMaker" value="">
             <div id="crMakerBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
             <button type="button" onclick="addNewMakerTag()" style="margin-top:6px; padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px dashed #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">＋ メーカーを新規登録</button>
