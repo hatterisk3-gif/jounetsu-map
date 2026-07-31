@@ -160,7 +160,7 @@ window.onLocationCityChange = function(sel) {
     const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 let pendingInitData = null; // 地図準備前に届いた初期データ（地図完成後に必ず描画）
@@ -526,6 +526,8 @@ function renderInitData(data, opts) {
     pdlWorkMaster = data.pdl.workMaster || [];
     pdlTools = data.pdl.tools || [];
     pdlMaterials = data.pdl.materials || [];
+    pdlPesticides = data.pdl.pesticides || [];
+    pdlFertilizers = data.pdl.fertilizers || [];
     pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
     pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
     pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
@@ -771,6 +773,8 @@ window.getMasterTypeInfo = (type) => {
         machine: { title: '🚜 農機マスタ', desc: '管理車両・農業機械・機番・拠点・定位置の設定', list: window.pdlMachines || [] },
         tool: { title: '🔧 道具マスタ', desc: '使用道具・備品と対応作業の設定', list: pdlTools || [] },
         material: { title: '📦 資材マスタ', desc: '使用資材・規格・単位と対応作業の設定', list: pdlMaterials || [] },
+        pesticide: { title: '🧪 農薬マスタ', desc: '農薬名・有効成分・希釈・散布後日数など（FAMIC取込可）', list: pdlPesticides || [] },
+        fertilizer: { title: '🌿 肥料マスタ', desc: '肥料名・種類・N-P-K・メーカーなど（登録銘柄CSV取込可）', list: pdlFertilizers || [] },
         container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
@@ -785,7 +789,7 @@ window.renderMasterMenu = () => {
 
     const masterTypes = [
         'crop', 'container', 'sign', 'location', 'workCategory',
-        'machineType', 'machineGroup', 'work', 'machine', 'tool', 'material'
+        'machineType', 'machineGroup', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
     let html = `
@@ -937,6 +941,92 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 </div>
                 <button onclick="execMaster('material', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
+        } else if (type === 'pesticide') {
+            const cropOpts = (pdlCrops || []).map(c => `<option value="${String(c.name || '').replace(/"/g, '&quot;')}">${c.name}</option>`).join('');
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="font-size:11px; color:#888; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:8px; line-height:1.4;">使用時は必ず製品ラベルの登録内容を確認してください。本マスタは作業補助用です。</div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">農薬名 *</label>
+                <input type="text" id="add_pest_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: ○○乳剤">
+                <label style="font-size:12px; font-weight:bold; color:#555;">有効成分</label>
+                <input type="text" id="add_pest_ingredient" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: ○○水和剤成分">
+                <label style="font-size:12px; font-weight:bold; color:#555;">内容量（手入力）</label>
+                <input type="text" id="add_pest_volume" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 500ml / 1kg">
+                <label style="font-size:12px; font-weight:bold; color:#555;">製造メーカー</label>
+                <input type="text" id="add_pest_maker" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: ○○農薬株式会社">
+                <label style="font-size:12px; font-weight:bold; color:#555;">作物名</label>
+                <input type="text" id="add_pest_crop" list="add_pest_crop_list" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: トマト">
+                <datalist id="add_pest_crop_list">${cropOpts}</datalist>
+                <label style="font-size:12px; font-weight:bold; color:#555;">希釈倍率</label>
+                <input type="text" id="add_pest_dilution" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 1000倍">
+                <label style="font-size:12px; font-weight:bold; color:#555;">散布後日数（日）</label>
+                <input type="number" id="add_pest_phi" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 7" min="0">
+                <label style="font-size:12px; font-weight:bold; color:#555;">登録番号（任意）</label>
+                <input type="text" id="add_pest_reg" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="FAMIC登録番号">
+                <label style="font-size:12px; font-weight:bold; color:#555;">備考</label>
+                <input type="text" id="add_pest_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="任意">
+                <button onclick="execMaster('pesticide', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>
+            <div style="margin-top:14px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px;">
+                <div style="font-weight:bold; color:#2e7d32; margin-bottom:6px; font-size:14px;">📥 FAMICから取込</div>
+                <div style="font-size:11px; color:#555; line-height:1.45; margin-bottom:8px;">
+                  <a href="https://www.acis.famic.go.jp/ddata/index2.htm" target="_blank" rel="noopener">FAMIC 農薬登録情報CSV</a>
+                  から「登録基本部」と「登録適用部」をダウンロードし、下で選択してください。<br>
+                  ※内容量は公式データに無いため取込後に手入力してください。
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">登録基本部 CSV</label>
+                <input type="file" id="famicBaseCsv" accept=".csv,text/csv" style="width:100%; margin-bottom:8px; font-size:12px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">登録適用部 CSV（複数可）</label>
+                <input type="file" id="famicApplyCsv" accept=".csv,text/csv" multiple style="width:100%; margin-bottom:8px; font-size:12px;">
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+                  <input type="text" id="famicFilterName" class="form-input" style="flex:1; min-width:120px; margin:0; padding:8px;" placeholder="農薬名キーワード">
+                  <input type="text" id="famicFilterCrop" class="form-input" style="flex:1; min-width:100px; margin:0; padding:8px;" placeholder="作物名キーワード">
+                </div>
+                <button type="button" onclick="previewFamicPesticideImport()" style="width:100%; background:#2e7d32; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:8px;">プレビューを作成</button>
+                <div id="famicImportPreview" style="font-size:12px; color:#666;"></div>
+            </div>`;
+        } else if (type === 'fertilizer') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="font-size:11px; color:#888; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:8px; line-height:1.4;">使用時は製品ラベル・保証票を確認してください。本マスタは作業補助用です。</div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">肥料名 *</label>
+                <input type="text" id="add_fert_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: ○○化成 14-14-14">
+                <label style="font-size:12px; font-weight:bold; color:#555;">肥料種類</label>
+                <input type="text" id="add_fert_type" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 化成肥料">
+                <div style="display:flex; gap:6px;">
+                  <div style="flex:1;"><label style="font-size:12px; font-weight:bold; color:#555;">窒素(N)</label>
+                  <input type="text" id="add_fert_n" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="%"></div>
+                  <div style="flex:1;"><label style="font-size:12px; font-weight:bold; color:#555;">りん酸(P)</label>
+                  <input type="text" id="add_fert_p" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="%"></div>
+                  <div style="flex:1;"><label style="font-size:12px; font-weight:bold; color:#555;">加里(K)</label>
+                  <input type="text" id="add_fert_k" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="%"></div>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">保証成分（その他）</label>
+                <input type="text" id="add_fert_components" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 苦土3・ほう素0.2">
+                <label style="font-size:12px; font-weight:bold; color:#555;">内容量（手入力）</label>
+                <input type="text" id="add_fert_volume" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 20kg">
+                <label style="font-size:12px; font-weight:bold; color:#555;">製造メーカー</label>
+                <input type="text" id="add_fert_maker" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: ○○肥料株式会社">
+                <label style="font-size:12px; font-weight:bold; color:#555;">登録番号（任意）</label>
+                <input type="text" id="add_fert_reg" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="肥料登録番号">
+                <label style="font-size:12px; font-weight:bold; color:#555;">備考</label>
+                <input type="text" id="add_fert_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="任意">
+                <button onclick="execMaster('fertilizer', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>
+            <div style="margin-top:14px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px;">
+                <div style="font-weight:bold; color:#2e7d32; margin-bottom:6px; font-size:14px;">📥 肥料登録銘柄CSVから取込</div>
+                <div style="font-size:11px; color:#555; line-height:1.45; margin-bottom:8px;">
+                  <a href="https://fertilizer-search.maff.go.jp/FertilizerRegistrationSearch" target="_blank" rel="noopener">肥料登録銘柄検索</a>
+                  からCSV（ZIP内）をダウンロードし、下で選択してください。<br>
+                  ※内容量は登録データに無いため取込後に手入力してください。
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">登録銘柄 CSV</label>
+                <input type="file" id="fertCsvFile" accept=".csv,text/csv" style="width:100%; margin-bottom:8px; font-size:12px;">
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+                  <input type="text" id="fertFilterName" class="form-input" style="flex:1; min-width:120px; margin:0; padding:8px;" placeholder="肥料名キーワード">
+                  <input type="text" id="fertFilterMaker" class="form-input" style="flex:1; min-width:100px; margin:0; padding:8px;" placeholder="メーカーキーワード">
+                </div>
+                <button type="button" onclick="previewFertilizerCsvImport()" style="width:100%; background:#2e7d32; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:8px;">プレビューを作成</button>
+                <div id="fertImportPreview" style="font-size:12px; color:#666;"></div>
+            </div>`;
         } else if (type === 'work') {
             const catOpts = pdlWorkCategories.map(c => `<option value="${c}">${c}</option>`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
@@ -1031,6 +1121,25 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             }
             if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.workCategory || '汎用'}</span>`;
             if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8; margin-left:4px;">単位:${v.unit} (容量:${v.size||'-'})</span>`;
+            if (type === 'pesticide') {
+                const bits = [];
+                if (v.cropName) bits.push('🌱 ' + v.cropName);
+                if (v.dilution) bits.push('希釈:' + v.dilution);
+                if (v.phiDays !== '' && v.phiDays != null) bits.push(v.phiDays + '日前');
+                if (v.activeIngredient) bits.push(v.activeIngredient);
+                if (v.manufacturer) bits.push(v.manufacturer);
+                if (v.volume) bits.push('内容量:' + v.volume);
+                if (bits.length) subInfo = `<div style="font-size:11px; color:#2e7d32; margin-top:3px; line-height:1.4;">${bits.join(' ／ ')}</div>`;
+            }
+            if (type === 'fertilizer') {
+                const npk = [v.nitrogen, v.phosphate, v.potash].filter(x => x !== '' && x != null).join('-');
+                const bits = [];
+                if (v.fertilizerType) bits.push(v.fertilizerType);
+                if (npk) bits.push('N-P-K ' + npk);
+                if (v.manufacturer) bits.push(v.manufacturer);
+                if (v.volume) bits.push(v.volume);
+                if (bits.length) subInfo = `<div style="font-size:11px; color:#558b2f; margin-top:3px; line-height:1.4;">${bits.join(' ／ ')}</div>`;
+            }
             if (type === 'work') {
                 const cropsDisp = (v.crops && v.crops.length) ? v.crops.join(', ') : (v.cropName || '共通');
                 subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px; margin-left:4px;">🌱 ${cropsDisp}</span>`;
@@ -1073,6 +1182,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 actionBtns = `<button onclick="openEditMachineGroupMaster('${safeName}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'machine') {
                 actionBtns = `<button onclick="openEditMachineMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'pesticide') {
+                actionBtns = `<button onclick="openEditPesticideMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'fertilizer') {
+                actionBtns = `<button onclick="openEditFertilizerMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else {
                 actionBtns = `<button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             }
@@ -1209,6 +1322,437 @@ window.openEditCropMaster = (encoded) => {
         </div>
     `;
     openMasterDetail('crop', editHtml);
+};
+
+window.openEditPesticideMaster = (encoded) => {
+    const v = JSON.parse(decodeURIComponent(encoded || '%7B%7D'));
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const cropOpts = (pdlCrops || []).map(c => `<option value="${esc(c.name)}"></option>`).join('');
+    const editHtml = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; color:#2e7d32; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px;">✏️ 農薬マスタの編集</h4>
+            <input type="hidden" id="edit_pest_id" value="${esc(v.id)}">
+            <label class="form-label">農薬名 *</label>
+            <input type="text" id="edit_pest_name" class="form-input" value="${esc(v.name)}">
+            <label class="form-label">有効成分</label>
+            <input type="text" id="edit_pest_ingredient" class="form-input" value="${esc(v.activeIngredient)}">
+            <label class="form-label">内容量</label>
+            <input type="text" id="edit_pest_volume" class="form-input" value="${esc(v.volume)}">
+            <label class="form-label">製造メーカー</label>
+            <input type="text" id="edit_pest_maker" class="form-input" value="${esc(v.manufacturer)}">
+            <label class="form-label">作物名</label>
+            <input type="text" id="edit_pest_crop" list="edit_pest_crop_list" class="form-input" value="${esc(v.cropName)}">
+            <datalist id="edit_pest_crop_list">${cropOpts}</datalist>
+            <label class="form-label">希釈倍率</label>
+            <input type="text" id="edit_pest_dilution" class="form-input" value="${esc(v.dilution)}">
+            <label class="form-label">散布後日数（日）</label>
+            <input type="number" id="edit_pest_phi" class="form-input" value="${esc(v.phiDays)}" min="0">
+            <label class="form-label">使用時期原文</label>
+            <input type="text" id="edit_pest_timing" class="form-input" value="${esc(v.useTimingText)}">
+            <label class="form-label">登録番号</label>
+            <input type="text" id="edit_pest_reg" class="form-input" value="${esc(v.regNumber)}">
+            <label class="form-label">備考</label>
+            <input type="text" id="edit_pest_note" class="form-input" value="${esc(v.note)}">
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('pesticide', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('pesticide')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    openMasterDetail('pesticide', editHtml);
+};
+
+window.openEditFertilizerMaster = (encoded) => {
+    const v = JSON.parse(decodeURIComponent(encoded || '%7B%7D'));
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const editHtml = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; color:#558b2f; font-size:15px; border-bottom:2px solid #8BC34A; padding-bottom:5px;">✏️ 肥料マスタの編集</h4>
+            <input type="hidden" id="edit_fert_id" value="${esc(v.id)}">
+            <label class="form-label">肥料名 *</label>
+            <input type="text" id="edit_fert_name" class="form-input" value="${esc(v.name)}">
+            <label class="form-label">肥料種類</label>
+            <input type="text" id="edit_fert_type" class="form-input" value="${esc(v.fertilizerType)}">
+            <div style="display:flex; gap:6px;">
+              <div style="flex:1;"><label class="form-label">窒素(N)</label><input type="text" id="edit_fert_n" class="form-input" value="${esc(v.nitrogen)}"></div>
+              <div style="flex:1;"><label class="form-label">りん酸(P)</label><input type="text" id="edit_fert_p" class="form-input" value="${esc(v.phosphate)}"></div>
+              <div style="flex:1;"><label class="form-label">加里(K)</label><input type="text" id="edit_fert_k" class="form-input" value="${esc(v.potash)}"></div>
+            </div>
+            <label class="form-label">保証成分（その他）</label>
+            <input type="text" id="edit_fert_components" class="form-input" value="${esc(v.components)}">
+            <label class="form-label">内容量</label>
+            <input type="text" id="edit_fert_volume" class="form-input" value="${esc(v.volume)}">
+            <label class="form-label">製造メーカー</label>
+            <input type="text" id="edit_fert_maker" class="form-input" value="${esc(v.manufacturer)}">
+            <label class="form-label">登録番号</label>
+            <input type="text" id="edit_fert_reg" class="form-input" value="${esc(v.regNumber)}">
+            <label class="form-label">備考</label>
+            <input type="text" id="edit_fert_note" class="form-input" value="${esc(v.note)}">
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('fertilizer', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('fertilizer')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    openMasterDetail('fertilizer', editHtml);
+};
+
+// ===== FAMIC 農薬CSV取込 =====
+window._famicPreviewRows = [];
+
+window.parseCsvTextFlexible_ = function(text) {
+    const raw = String(text || '').replace(/^\uFEFF/, '');
+    const lines = raw.split(/\r\n|\n|\r/).filter(l => l.length);
+    if (!lines.length) return [];
+    const delim = (lines[0].split('\t').length > lines[0].split(',').length) ? '\t' : ',';
+    const parseLine = (line) => {
+        const cols = [];
+        let cur = '';
+        let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+                if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+                else inQ = !inQ;
+            } else if (ch === delim && !inQ) {
+                cols.push(cur);
+                cur = '';
+            } else cur += ch;
+        }
+        cols.push(cur);
+        return cols.map(c => String(c || '').trim());
+    };
+    const headers = parseLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+        const cols = parseLine(lines[i]);
+        if (!cols.some(c => c)) continue;
+        const obj = {};
+        headers.forEach((h, idx) => { obj[h] = cols[idx] != null ? cols[idx] : ''; });
+        rows.push(obj);
+    }
+    return rows;
+};
+
+window.findCsvCol_ = function(row, aliases) {
+    if (!row) return '';
+    const keys = Object.keys(row);
+    for (let a = 0; a < aliases.length; a++) {
+        const alias = aliases[a];
+        for (let k = 0; k < keys.length; k++) {
+            const key = keys[k];
+            if (key === alias || key.indexOf(alias) >= 0) {
+                const v = String(row[key] || '').trim();
+                if (v) return v;
+            }
+        }
+    }
+    // 部分一致（空白除去）
+    const normKeys = keys.map(k => ({ k, n: k.replace(/\s/g, '') }));
+    for (let a = 0; a < aliases.length; a++) {
+        const alias = aliases[a].replace(/\s/g, '');
+        const hit = normKeys.find(x => x.n.indexOf(alias) >= 0);
+        if (hit) {
+            const v = String(row[hit.k] || '').trim();
+            if (v) return v;
+        }
+    }
+    return '';
+};
+
+window.extractPhiDaysFromTiming_ = function(text) {
+    const s = String(text || '');
+    const m = s.match(/(\d+)\s*日\s*前/);
+    if (m) return parseInt(m[1], 10);
+    return '';
+};
+
+window.readFileAsTextSmart_ = function(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('ファイル読込に失敗しました'));
+        reader.onload = () => {
+            const buf = reader.result;
+            let text = '';
+            try {
+                text = new TextDecoder('shift-jis').decode(buf);
+                // 文字化けっぽければ UTF-8 再試行
+                if ((text.match(/\uFFFD/g) || []).length > 5) {
+                    text = new TextDecoder('utf-8').decode(buf);
+                }
+            } catch (e) {
+                try { text = new TextDecoder('utf-8').decode(buf); }
+                catch (e2) { reject(e2); return; }
+            }
+            resolve(text);
+        };
+        reader.readAsArrayBuffer(file);
+    });
+};
+
+window.previewFamicPesticideImport = async function() {
+    const baseInput = document.getElementById('famicBaseCsv');
+    const applyInput = document.getElementById('famicApplyCsv');
+    const previewEl = document.getElementById('famicImportPreview');
+    if (!previewEl) return;
+    if (!baseInput || !baseInput.files || !baseInput.files[0]) {
+        customAlert('登録基本部CSVを選択してください');
+        return;
+    }
+    if (!applyInput || !applyInput.files || !applyInput.files.length) {
+        customAlert('登録適用部CSVを1つ以上選択してください');
+        return;
+    }
+    const nameKw = (document.getElementById('famicFilterName')?.value || '').trim().toLowerCase();
+    const cropKw = (document.getElementById('famicFilterCrop')?.value || '').trim().toLowerCase();
+    if (!nameKw && !cropKw) {
+        if (!await customConfirm('キーワード未指定です。件数が非常に多くなる可能性があります。続行しますか？（できれば農薬名か作物名で絞ってください）')) return;
+    }
+    previewEl.innerHTML = '<div style="padding:8px;color:#2e7d32;font-weight:bold;">読込・突合中...</div>';
+    try {
+        const baseText = await window.readFileAsTextSmart_(baseInput.files[0]);
+        const baseRows = window.parseCsvTextFlexible_(baseText);
+        const baseMap = {};
+        baseRows.forEach(r => {
+            const reg = window.findCsvCol_(r, ['登録番号', '農薬登録番号']);
+            if (!reg) return;
+            baseMap[reg] = {
+                regNumber: reg,
+                name: window.findCsvCol_(r, ['農薬の名称', '農薬名', '名称']),
+                activeIngredient: window.findCsvCol_(r, ['有効成分']),
+                manufacturer: window.findCsvCol_(r, ['登録を有する者の名称', '登録を有する者', '製造メーカー', '会社名'])
+            };
+        });
+
+        let applyRows = [];
+        for (let i = 0; i < applyInput.files.length; i++) {
+            const t = await window.readFileAsTextSmart_(applyInput.files[i]);
+            applyRows = applyRows.concat(window.parseCsvTextFlexible_(t));
+        }
+
+        const joined = [];
+        applyRows.forEach(r => {
+            const reg = window.findCsvCol_(r, ['登録番号', '農薬登録番号']);
+            const base = baseMap[reg] || {};
+            const name = base.name || window.findCsvCol_(r, ['農薬の名称', '農薬名']);
+            const cropName = window.findCsvCol_(r, ['作物名', '適用作物']);
+            const dilution = window.findCsvCol_(r, ['希釈倍数', '希釈倍率', '使用量']);
+            const useTimingText = window.findCsvCol_(r, ['使用時期']);
+            const phiDays = window.extractPhiDaysFromTiming_(useTimingText);
+            const item = {
+                name: name,
+                activeIngredient: base.activeIngredient || '',
+                volume: '',
+                manufacturer: base.manufacturer || '',
+                cropName: cropName,
+                dilution: dilution,
+                phiDays: phiDays,
+                useTimingText: useTimingText,
+                regNumber: reg || '',
+                note: ''
+            };
+            if (!item.name) return;
+            if (nameKw && String(item.name).toLowerCase().indexOf(nameKw) < 0) return;
+            if (cropKw && String(item.cropName).toLowerCase().indexOf(cropKw) < 0) return;
+            joined.push(item);
+        });
+
+        // 同一キー重複排除
+        const seen = {};
+        const unique = [];
+        joined.forEach(it => {
+            const key = (it.regNumber || it.name) + '\t' + it.cropName + '\t' + it.dilution;
+            if (seen[key]) return;
+            seen[key] = true;
+            unique.push(it);
+        });
+
+        window._famicPreviewRows = unique.slice(0, 300);
+        if (!unique.length) {
+            previewEl.innerHTML = '<div style="color:#c62828;">該当行がありません。キーワードやCSVの種類を確認してください。</div>';
+            return;
+        }
+        const more = unique.length > 300 ? `<div style="color:#e65100;margin-bottom:6px;">該当 ${unique.length} 件中、先頭300件のみ表示（絞り込んでください）</div>` : '';
+        let rowsHtml = window._famicPreviewRows.map((it, idx) => {
+            const label = `${it.name} ／ ${it.cropName || '作物未設定'} ／ ${it.dilution || '-'} ／ ${it.phiDays !== '' ? it.phiDays + '日前' : (it.useTimingText || '-')}`;
+            return `<label style="display:flex; gap:6px; align-items:flex-start; padding:4px 0; border-bottom:1px solid #c8e6c9; cursor:pointer;">
+              <input type="checkbox" class="famicRowCheck" data-idx="${idx}" checked style="margin-top:3px;">
+              <span style="line-height:1.35;">${String(label).replace(/</g, '&lt;')}</span>
+            </label>`;
+        }).join('');
+        previewEl.innerHTML = more +
+            `<div style="margin-bottom:6px;font-weight:bold;color:#1b5e20;">プレビュー ${window._famicPreviewRows.length} 件</div>` +
+            `<div style="display:flex;gap:6px;margin-bottom:8px;">
+              <button type="button" onclick="setAllFamicChecks(true)" style="flex:1;background:#fff;border:1px solid #81c784;border-radius:4px;padding:6px;font-size:11px;cursor:pointer;">全選択</button>
+              <button type="button" onclick="setAllFamicChecks(false)" style="flex:1;background:#fff;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px;cursor:pointer;">全解除</button>
+            </div>` +
+            `<div style="max-height:220px;overflow:auto;background:#fff;border:1px solid #a5d6a7;border-radius:6px;padding:8px;margin-bottom:8px;">${rowsHtml}</div>` +
+            `<button type="button" onclick="commitFamicPesticideImport()" style="width:100%;background:#c62828;color:#fff;border:none;border-radius:4px;padding:10px;font-weight:bold;cursor:pointer;">選択行をマスタへ追加</button>`;
+    } catch (e) {
+        previewEl.innerHTML = '';
+        customAlert('プレビューに失敗しました: ' + (e.message || e));
+    }
+};
+
+window.setAllFamicChecks = function(on) {
+    document.querySelectorAll('.famicRowCheck').forEach(cb => { cb.checked = !!on; });
+};
+
+window.commitFamicPesticideImport = async function() {
+    const checks = Array.from(document.querySelectorAll('.famicRowCheck'));
+    const rows = [];
+    checks.forEach(cb => {
+        if (!cb.checked) return;
+        const idx = parseInt(cb.getAttribute('data-idx'), 10);
+        const row = window._famicPreviewRows[idx];
+        if (row) rows.push(row);
+    });
+    if (!rows.length) {
+        customAlert('追加する行を選択してください');
+        return;
+    }
+    if (!await customConfirm(rows.length + ' 件を農薬マスタへ追加しますか？')) return;
+    const previewEl = document.getElementById('famicImportPreview');
+    if (previewEl) previewEl.innerHTML = '<div style="padding:8px;font-weight:bold;">取込中...</div>';
+    try {
+        const res = await callGAS('importPesticideMasterRows', {
+            rows: rows,
+            userName: currentUser
+        });
+        pdlPesticides = (res && res.pesticides) || pdlPesticides;
+        localStorage.removeItem('pMapAdminInitData');
+        localStorage.removeItem('passionMapInitData');
+        customAlert(`取込完了: ${res.added || 0} 件追加 / ${res.skipped || 0} 件スキップ（重複など）`);
+        openMasterDetail('pesticide');
+    } catch (e) {
+        customAlert('取込に失敗しました: ' + (e.message || e));
+        if (previewEl) previewEl.innerHTML = '';
+    }
+};
+
+// ===== 肥料登録銘柄CSV取込 =====
+window._fertPreviewRows = [];
+
+window.previewFertilizerCsvImport = async function() {
+    const fileInput = document.getElementById('fertCsvFile');
+    const previewEl = document.getElementById('fertImportPreview');
+    if (!previewEl) return;
+    if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+        customAlert('肥料登録銘柄CSVを選択してください');
+        return;
+    }
+    const nameKw = (document.getElementById('fertFilterName')?.value || '').trim().toLowerCase();
+    const makerKw = (document.getElementById('fertFilterMaker')?.value || '').trim().toLowerCase();
+    if (!nameKw && !makerKw) {
+        if (!await customConfirm('キーワード未指定です。件数が非常に多くなる可能性があります。続行しますか？')) return;
+    }
+    previewEl.innerHTML = '<div style="padding:8px;color:#2e7d32;font-weight:bold;">読込中...</div>';
+    try {
+        const text = await window.readFileAsTextSmart_(fileInput.files[0]);
+        const rows = window.parseCsvTextFlexible_(text);
+        const mapped = [];
+        rows.forEach(r => {
+            const name = window.findCsvCol_(r, ['肥料名称', '肥料名', '銘柄名', 'FertilizerName']);
+            const manufacturer = window.findCsvCol_(r, ['肥料業者名称', '業者名称', '会社名', '製造メーカー', 'SupplierName']);
+            const fertilizerType = window.findCsvCol_(r, ['肥料種類名称', '肥料種類', '種類', 'FertilizerTypeName']);
+            const regNumber = window.findCsvCol_(r, ['登録番号', 'RegistrationNumberForReport', 'RegistrationNumber']);
+            const nitrogen = window.findCsvCol_(r, ['窒素全量', '窒素', 'TN', '保証窒素']);
+            const phosphate = window.findCsvCol_(r, ['りん酸全量', 'リン酸全量', 'りん酸', 'リン酸', 'TP']);
+            const potash = window.findCsvCol_(r, ['加里全量', 'カリ全量', '加里', 'カリ', 'TK']);
+            const extras = [];
+            [['苦土', 'SMG'], ['石灰', 'SCa'], ['ほう素', 'CB'], ['マンガン', 'SMN'], ['けい酸', 'SSI']].forEach(pair => {
+                const val = window.findCsvCol_(r, pair);
+                if (val) extras.push(pair[0] + val);
+            });
+            const item = {
+                name: name,
+                fertilizerType: fertilizerType,
+                nitrogen: nitrogen,
+                phosphate: phosphate,
+                potash: potash,
+                components: extras.join('・'),
+                volume: '',
+                manufacturer: manufacturer,
+                regNumber: regNumber,
+                note: ''
+            };
+            if (!item.name) return;
+            if (nameKw && String(item.name).toLowerCase().indexOf(nameKw) < 0) return;
+            if (makerKw && String(item.manufacturer).toLowerCase().indexOf(makerKw) < 0) return;
+            mapped.push(item);
+        });
+
+        const seen = {};
+        const unique = [];
+        mapped.forEach(it => {
+            const key = (it.regNumber || it.name) + '\t' + (it.manufacturer || '');
+            if (seen[key]) return;
+            seen[key] = true;
+            unique.push(it);
+        });
+
+        window._fertPreviewRows = unique.slice(0, 300);
+        if (!unique.length) {
+            previewEl.innerHTML = '<div style="color:#c62828;">該当行がありません。キーワードやCSV列名を確認してください。</div>';
+            return;
+        }
+        const more = unique.length > 300 ? `<div style="color:#e65100;margin-bottom:6px;">該当 ${unique.length} 件中、先頭300件のみ表示</div>` : '';
+        const rowsHtml = window._fertPreviewRows.map((it, idx) => {
+            const npk = [it.nitrogen, it.phosphate, it.potash].filter(Boolean).join('-') || '-';
+            const label = `${it.name} ／ ${it.manufacturer || 'メーカー未設定'} ／ ${it.fertilizerType || '-'} ／ NPK ${npk}`;
+            return `<label style="display:flex; gap:6px; align-items:flex-start; padding:4px 0; border-bottom:1px solid #c8e6c9; cursor:pointer;">
+              <input type="checkbox" class="fertRowCheck" data-idx="${idx}" checked style="margin-top:3px;">
+              <span style="line-height:1.35;">${String(label).replace(/</g, '&lt;')}</span>
+            </label>`;
+        }).join('');
+        previewEl.innerHTML = more +
+            `<div style="margin-bottom:6px;font-weight:bold;color:#1b5e20;">プレビュー ${window._fertPreviewRows.length} 件</div>` +
+            `<div style="display:flex;gap:6px;margin-bottom:8px;">
+              <button type="button" onclick="setAllFertChecks(true)" style="flex:1;background:#fff;border:1px solid #81c784;border-radius:4px;padding:6px;font-size:11px;cursor:pointer;">全選択</button>
+              <button type="button" onclick="setAllFertChecks(false)" style="flex:1;background:#fff;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px;cursor:pointer;">全解除</button>
+            </div>` +
+            `<div style="max-height:220px;overflow:auto;background:#fff;border:1px solid #a5d6a7;border-radius:6px;padding:8px;margin-bottom:8px;">${rowsHtml}</div>` +
+            `<button type="button" onclick="commitFertilizerCsvImport()" style="width:100%;background:#c62828;color:#fff;border:none;border-radius:4px;padding:10px;font-weight:bold;cursor:pointer;">選択行をマスタへ追加</button>`;
+    } catch (e) {
+        previewEl.innerHTML = '';
+        customAlert('プレビューに失敗しました: ' + (e.message || e));
+    }
+};
+
+window.setAllFertChecks = function(on) {
+    document.querySelectorAll('.fertRowCheck').forEach(cb => { cb.checked = !!on; });
+};
+
+window.commitFertilizerCsvImport = async function() {
+    const checks = Array.from(document.querySelectorAll('.fertRowCheck'));
+    const rows = [];
+    checks.forEach(cb => {
+        if (!cb.checked) return;
+        const idx = parseInt(cb.getAttribute('data-idx'), 10);
+        const row = window._fertPreviewRows[idx];
+        if (row) rows.push(row);
+    });
+    if (!rows.length) {
+        customAlert('追加する行を選択してください');
+        return;
+    }
+    if (!await customConfirm(rows.length + ' 件を肥料マスタへ追加しますか？')) return;
+    const previewEl = document.getElementById('fertImportPreview');
+    if (previewEl) previewEl.innerHTML = '<div style="padding:8px;font-weight:bold;">取込中...</div>';
+    try {
+        const res = await callGAS('importFertilizerMasterRows', {
+            rows: rows,
+            userName: currentUser
+        });
+        pdlFertilizers = (res && res.fertilizers) || pdlFertilizers;
+        localStorage.removeItem('pMapAdminInitData');
+        localStorage.removeItem('passionMapInitData');
+        customAlert(`取込完了: ${res.added || 0} 件追加 / ${res.skipped || 0} 件スキップ（重複など）`);
+        openMasterDetail('fertilizer');
+    } catch (e) {
+        customAlert('取込に失敗しました: ' + (e.message || e));
+        if (previewEl) previewEl.innerHTML = '';
+    }
 };
 
 window.openEditContainerMaster = (encoded) => {
@@ -1697,6 +2241,38 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'machineGroup') { const name = document.getElementById('add_machineGroup_name').value.trim(); if (!name) { customAlert("グループ名を入力してください"); return; } if ((pdlMachineGroups || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'material') { const name = document.getElementById('add_mat_name').value.trim(); if (!name) { customAlert("資材名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_mat_cat').value.trim(), size: document.getElementById('add_mat_size').value.trim(), unit: document.getElementById('add_mat_unit').value.trim() }; }
+        else if (type === 'pesticide') {
+            const name = (document.getElementById('add_pest_name')?.value || '').trim();
+            if (!name) { customAlert("農薬名を入力してください"); return; }
+            const phiRaw = document.getElementById('add_pest_phi')?.value;
+            value = {
+                name: name,
+                activeIngredient: (document.getElementById('add_pest_ingredient')?.value || '').trim(),
+                volume: (document.getElementById('add_pest_volume')?.value || '').trim(),
+                manufacturer: (document.getElementById('add_pest_maker')?.value || '').trim(),
+                cropName: (document.getElementById('add_pest_crop')?.value || '').trim(),
+                dilution: (document.getElementById('add_pest_dilution')?.value || '').trim(),
+                phiDays: (phiRaw !== '' && phiRaw != null) ? phiRaw : '',
+                regNumber: (document.getElementById('add_pest_reg')?.value || '').trim(),
+                note: (document.getElementById('add_pest_note')?.value || '').trim()
+            };
+        }
+        else if (type === 'fertilizer') {
+            const name = (document.getElementById('add_fert_name')?.value || '').trim();
+            if (!name) { customAlert("肥料名を入力してください"); return; }
+            value = {
+                name: name,
+                fertilizerType: (document.getElementById('add_fert_type')?.value || '').trim(),
+                nitrogen: (document.getElementById('add_fert_n')?.value || '').trim(),
+                phosphate: (document.getElementById('add_fert_p')?.value || '').trim(),
+                potash: (document.getElementById('add_fert_k')?.value || '').trim(),
+                components: (document.getElementById('add_fert_components')?.value || '').trim(),
+                volume: (document.getElementById('add_fert_volume')?.value || '').trim(),
+                manufacturer: (document.getElementById('add_fert_maker')?.value || '').trim(),
+                regNumber: (document.getElementById('add_fert_reg')?.value || '').trim(),
+                note: (document.getElementById('add_fert_note')?.value || '').trim()
+            };
+        }
         else if (type === 'work') {
             const name = document.getElementById('add_work_name').value.trim();
             if (!name) { customAlert("作業名を入力してください"); return; }
@@ -1815,6 +2391,47 @@ window.execMaster = async (type, act, val) => {
                     contentQty
                 }
             };
+        } else if (type === 'pesticide') {
+            const id = document.getElementById('edit_pest_id')?.value || '';
+            const newName = (document.getElementById('edit_pest_name')?.value || '').trim();
+            if (!id) { customAlert("編集対象IDがありません"); return; }
+            if (!newName) { customAlert("農薬名を入力してください"); return; }
+            const phiRaw = document.getElementById('edit_pest_phi')?.value;
+            value = {
+                id: id,
+                newData: {
+                    name: newName,
+                    activeIngredient: (document.getElementById('edit_pest_ingredient')?.value || '').trim(),
+                    volume: (document.getElementById('edit_pest_volume')?.value || '').trim(),
+                    manufacturer: (document.getElementById('edit_pest_maker')?.value || '').trim(),
+                    cropName: (document.getElementById('edit_pest_crop')?.value || '').trim(),
+                    dilution: (document.getElementById('edit_pest_dilution')?.value || '').trim(),
+                    phiDays: (phiRaw !== '' && phiRaw != null) ? phiRaw : '',
+                    useTimingText: (document.getElementById('edit_pest_timing')?.value || '').trim(),
+                    regNumber: (document.getElementById('edit_pest_reg')?.value || '').trim(),
+                    note: (document.getElementById('edit_pest_note')?.value || '').trim()
+                }
+            };
+        } else if (type === 'fertilizer') {
+            const id = document.getElementById('edit_fert_id')?.value || '';
+            const newName = (document.getElementById('edit_fert_name')?.value || '').trim();
+            if (!id) { customAlert("編集対象IDがありません"); return; }
+            if (!newName) { customAlert("肥料名を入力してください"); return; }
+            value = {
+                id: id,
+                newData: {
+                    name: newName,
+                    fertilizerType: (document.getElementById('edit_fert_type')?.value || '').trim(),
+                    nitrogen: (document.getElementById('edit_fert_n')?.value || '').trim(),
+                    phosphate: (document.getElementById('edit_fert_p')?.value || '').trim(),
+                    potash: (document.getElementById('edit_fert_k')?.value || '').trim(),
+                    components: (document.getElementById('edit_fert_components')?.value || '').trim(),
+                    volume: (document.getElementById('edit_fert_volume')?.value || '').trim(),
+                    manufacturer: (document.getElementById('edit_fert_maker')?.value || '').trim(),
+                    regNumber: (document.getElementById('edit_fert_reg')?.value || '').trim(),
+                    note: (document.getElementById('edit_fert_note')?.value || '').trim()
+                }
+            };
         }
     } else {
         if (type === 'container') {
@@ -1835,7 +2452,7 @@ window.execMaster = async (type, act, val) => {
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
     try {
         const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
-        if (type === 'crop') pdlCrops = updatedList; else if (type === 'container') { pdlContainers = updatedList || []; pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))]; } else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
+        if (type === 'crop') pdlCrops = updatedList; else if (type === 'container') { pdlContainers = updatedList || []; pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))]; } else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'pesticide') pdlPesticides = updatedList || []; else if (type === 'fertilizer') pdlFertilizers = updatedList || []; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
         if (type === 'work') { try { closeWorkMasterEditModal(); } catch(e){} }
         // カテゴリ/作物の改名時は作業マスタのローカル表示も追随
         if (act === 'edit' && type === 'workCategory' && value && value.originalName && value.newData) {

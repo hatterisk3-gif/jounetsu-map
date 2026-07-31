@@ -23,13 +23,166 @@ const STATUS_COLORS = {
 };
 
 const STATUS_LABELS = {
-    'none': '依頼なし',
-    'request': '散布依頼中',
-    'accepted': '散布予定',
-    'inprogress': '散布途中',
-    'completed': '散布完了',
+    'none': '未着手',
+    'request': '依頼中',
+    'accepted': '予定',
+    'inprogress': '途中',
+    'completed': '完了',
     'canceled': '中止'
 };
+
+/** 生産管理MAPの作業カテゴリ（堆肥散布=既存ステータスの移行先） */
+const COMPOST_CATEGORY_ID = 'compost';
+const DEFAULT_PROD_CATEGORIES = [
+    { id: 'ridge_crush', name: '畝つぶし', order: 1 },
+    { id: 'compost', name: '堆肥散布', order: 2 },
+    { id: 'dolomite', name: '苦土石灰散布', order: 3 },
+    { id: 'forward_pull', name: '正転引き', order: 4 },
+    { id: 'fertilizer', name: '肥料散布', order: 5 },
+    { id: 'forward_pull_finish', name: '正転引き（仕上げ）', order: 6 },
+    { id: 'ridge_make', name: '畝立て', order: 7 }
+];
+let prodCategories = JSON.parse(localStorage.getItem('prodMgmtCategories') || 'null') || DEFAULT_PROD_CATEGORIES.slice();
+let activeProdCategoryId = localStorage.getItem('prodMgmtActiveCategory') || COMPOST_CATEGORY_ID;
+
+function emptyCatStatus() {
+    return {
+        status: 'none',
+        deadline: '',
+        scheduled_date: '',
+        cancel_reason: '',
+        has_pin: false,
+        route_selected: false
+    };
+}
+
+/** 旧フラット形式を catStatuses.compost に紐づけ */
+function migratePDataManure(pData) {
+    if (!pData || typeof pData !== 'object') return pData;
+    if (!pData.catStatuses || typeof pData.catStatuses !== 'object') pData.catStatuses = {};
+    if (!pData.catStatuses[COMPOST_CATEGORY_ID]) {
+        pData.catStatuses[COMPOST_CATEGORY_ID] = {
+            status: pData.manure_status || 'none',
+            deadline: pData.manure_deadline || '',
+            scheduled_date: pData.manure_scheduled_date || '',
+            cancel_reason: pData.manure_cancel_reason || '',
+            has_pin: !!pData.manure_has_pin,
+            route_selected: !!pData.manure_route_selected
+        };
+    }
+    // フラットは堆肥と同期（ルート設定・定植など既存処理互換）
+    const compost = pData.catStatuses[COMPOST_CATEGORY_ID];
+    // catStatuses 先行作成時に route_selected が欠けていても旧フラットから復元
+    if (compost.route_selected == null && pData.manure_route_selected) {
+        compost.route_selected = true;
+    }
+    compost.route_selected = !!compost.route_selected;
+    pData.manure_status = compost.status || 'none';
+    pData.manure_deadline = compost.deadline || '';
+    pData.manure_scheduled_date = compost.scheduled_date || '';
+    pData.manure_cancel_reason = compost.cancel_reason || '';
+    pData.manure_has_pin = !!compost.has_pin;
+    pData.manure_route_selected = !!compost.route_selected;
+    return pData;
+}
+
+function getCatStatus(pData, catId) {
+    migratePDataManure(pData);
+    const id = catId || activeProdCategoryId || COMPOST_CATEGORY_ID;
+    if (!pData.catStatuses[id]) pData.catStatuses[id] = emptyCatStatus();
+    return pData.catStatuses[id];
+}
+
+function getActiveCategoryStatus(pData) {
+    return getCatStatus(pData, activeProdCategoryId).status || 'none';
+}
+
+function getProdCategoryName(catId) {
+    const c = (prodCategories || []).find(x => x && x.id === catId);
+    return c ? c.name : catId;
+}
+
+function setProdCategories(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    prodCategories = list.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    localStorage.setItem('prodMgmtCategories', JSON.stringify(prodCategories));
+    if (!prodCategories.some(c => c.id === activeProdCategoryId)) {
+        activeProdCategoryId = COMPOST_CATEGORY_ID;
+        localStorage.setItem('prodMgmtActiveCategory', activeProdCategoryId);
+    }
+    renderProdCategorySelect();
+}
+
+function setActiveProdCategory(catId) {
+    if (!catId) return;
+    activeProdCategoryId = catId;
+    localStorage.setItem('prodMgmtActiveCategory', catId);
+    renderProdCategorySelect();
+    // 地図色をカテゴリ切替に追従
+    if (polygons && polygons.length) {
+        polygons.forEach(p => {
+            if (!p.pData) return;
+            const st = getActiveCategoryStatus(p.pData);
+            const color = STATUS_COLORS[st] || STATUS_COLORS.none;
+            p.setOptions({ strokeColor: color, fillColor: color });
+            p._manureStatus = st;
+        });
+        markers.forEach(m => {
+            if (!m.pData) return;
+            m._manureStatus = getActiveCategoryStatus(m.pData);
+        });
+        applyFilter();
+    }
+}
+
+function renderProdCategorySelect() {
+    const sel = document.getElementById('prodCategorySelect');
+    if (!sel) return;
+    const cur = activeProdCategoryId;
+    sel.innerHTML = (prodCategories || []).map(c =>
+        `<option value="${c.id}" ${c.id === cur ? 'selected' : ''}>${c.name}</option>`
+    ).join('');
+}
+
+/** 保存用 manureData JSON オブジェクトを組み立て */
+function buildManureDataPayload(pData) {
+    migratePDataManure(pData);
+    return {
+        catStatuses: pData.catStatuses || {},
+        manure_status: pData.manure_status || 'none',
+        manure_deadline: pData.manure_deadline || '',
+        manure_scheduled_date: pData.manure_scheduled_date || '',
+        manure_cancel_reason: pData.manure_cancel_reason || '',
+        manure_has_pin: !!pData.manure_has_pin,
+        manure_route_selected: !!pData.manure_route_selected,
+        transplant_jun: pData.transplant_jun || ''
+    };
+}
+
+/** 指定カテゴリのステータスを更新（堆肥ならフラット項目も同期） */
+function applyCategoryStatusUpdate(pData, catId, patch) {
+    migratePDataManure(pData);
+    const id = catId || activeProdCategoryId || COMPOST_CATEGORY_ID;
+    const c = getCatStatus(pData, id);
+    Object.assign(c, patch || {});
+    if (id === COMPOST_CATEGORY_ID) {
+        pData.manure_status = c.status || 'none';
+        pData.manure_deadline = c.deadline || '';
+        pData.manure_scheduled_date = c.scheduled_date || '';
+        pData.manure_cancel_reason = c.cancel_reason || '';
+        pData.manure_has_pin = !!c.has_pin;
+        pData.manure_route_selected = !!c.route_selected;
+    }
+}
+
+/** 堆肥散布カテゴリを更新し、フラット項目と同期 */
+function applyCompostStatusUpdate(pData, patch) {
+    applyCategoryStatusUpdate(pData, COMPOST_CATEGORY_ID, patch);
+}
+
+function getStatusLabel(status) {
+    return STATUS_LABELS[status] || status;
+}
 
 // ====== GAS通信 (worker.jsと同じパターン) ======
 async function callGAS(action, payload = {}) {
@@ -57,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('loginId') && id) document.getElementById('loginId').value = id;
     if (document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw;
     updateAdminOnlyButtons();
+    renderProdCategorySelect();
     if (id && pw) {
         document.getElementById('loginScreen').style.display = 'none';
         initMap();
@@ -136,15 +290,17 @@ function updateAdminOnlyButtons() {
     if (resetBtn) resetBtn.style.display = isAdmin ? 'inline-block' : 'none';
     const openAdminFieldBtn = document.getElementById('btnOpenAdminField');
     if (openAdminFieldBtn) openAdminFieldBtn.style.display = isAdmin ? 'inline-block' : 'none';
+    const catEditBtn = document.getElementById('btnEditProdCategories');
+    if (catEditBtn) catEditBtn.style.display = isAdmin ? 'inline-block' : 'none';
 }
 
-/** 鶏糞ステータス全リセット（管理者のみ） */
+/** 生産管理ステータス全リセット（管理者のみ） */
 async function resetAllManureStatus() {
     if (currentUserRole !== '管理者') {
         alert('管理者のみ実行できます');
         return;
     }
-    if (!confirm('すべての圃場の鶏糞ステータスを「未（青）」にリセットします。\nよろしいですか？')) return;
+    if (!confirm('すべての圃場・全カテゴリのステータスを「未着手（青）」にリセットします。\nよろしいですか？')) return;
 
     const btn = document.getElementById('btnResetAllManure');
     const prevLabel = btn ? btn.innerText : '';
@@ -275,6 +431,11 @@ async function loadInitData() {
     if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
     try {
         const data = await callGAS('getInitData');
+        if (data && data.prodCategories) {
+            setProdCategories(data.prodCategories);
+        } else {
+            renderProdCategorySelect();
+        }
         if (data && data.polygons) {
             const newDataStr = JSON.stringify(data.polygons);
             const oldDataStr = localStorage.getItem('manureMapData');
@@ -295,6 +456,7 @@ async function loadInitData() {
         if (cached) {
             try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
         }
+        renderProdCategorySelect();
         restoreMapInteractions_();
     }
 }
@@ -314,7 +476,8 @@ function drawPolygons(dataList) {
         if (!coords || coords.length === 0) return;
         if (coords.length === 1) return; // 看板アイコンは全て表示しない
 
-        const manureStatus = pData.manure_status || 'none';
+        migratePDataManure(pData);
+        const manureStatus = getActiveCategoryStatus(pData);
         const color = STATUS_COLORS[manureStatus] || STATUS_COLORS['none'];
 
         const poly = new google.maps.Polygon({
@@ -348,31 +511,31 @@ function drawPolygons(dataList) {
         markers.push(labelMarker);
 
         const handleFieldClick = () => {
-            if (pData.manure_has_pin) {
-                pData.manure_has_pin = false;
+            migratePDataManure(pData);
+            const catSt = getCatStatus(pData, activeProdCategoryId);
+            const hadPin = !!catSt.has_pin || (activeProdCategoryId === COMPOST_CATEGORY_ID && pData.manure_has_pin);
+            if (hadPin) {
+                catSt.has_pin = false;
+                if (activeProdCategoryId === COMPOST_CATEGORY_ID) pData.manure_has_pin = false;
                 // ピンを消す
                 const pinIdx = markers.findIndex(m => m._isPinMarker && m._fieldId === (pData.id || pData.name));
                 if (pinIdx !== -1) {
                     markers[pinIdx].setMap(null);
                     markers.splice(pinIdx, 1);
                 }
-                const manureData = {
-                    manure_status: pData.manure_status || 'none',
-                    manure_deadline: pData.manure_deadline || '',
-                    manure_scheduled_date: pData.manure_scheduled_date || '',
-                    manure_cancel_reason: pData.manure_cancel_reason || '',
-                    manure_has_pin: false,
-                    manure_route_selected: !!pData.manure_route_selected,
-                    transplant_jun: pData.transplant_jun || ''
-                };
-                callGAS('updatePolygon', { id: pData.id, manureData: JSON.stringify(manureData) }).catch(() => {});
+                callGAS('updatePolygon', {
+                    id: pData.id,
+                    manureData: JSON.stringify(buildManureDataPayload(pData))
+                }).catch(() => {});
             }
             openManureStatusModal(pData);
         };
         poly.addListener('click', handleFieldClick);
 
-        // 通知ピン
-        if (pData.manure_has_pin) {
+        // 通知ピン（表示中カテゴリ）
+        const showPin = !!getCatStatus(pData, activeProdCategoryId).has_pin
+            || (activeProdCategoryId === COMPOST_CATEGORY_ID && pData.manure_has_pin);
+        if (showPin) {
             const pinMarker = new google.maps.Marker({
                 position: center,
                 map: map,
@@ -450,15 +613,20 @@ function focusFieldFromSearch(pData) {
     setTimeout(() => openManureStatusModal(pData), 300);
 }
 
-// ====== 散布ステータスモーダル ======
+// ====== 生産管理ステータスモーダル ======
 let currentEditPoly = null;
+let currentEditCategoryId = null;
 
 function openManureStatusModal(pData) {
     currentEditPoly = pData;
-    const currentStatus = pData.manure_status || 'none';
-    const deadline = pData.manure_deadline || '';
-    const scheduled = pData.manure_scheduled_date || '';
-    const cancelReason = pData.manure_cancel_reason || '';
+    migratePDataManure(pData);
+    currentEditCategoryId = activeProdCategoryId || COMPOST_CATEGORY_ID;
+    const catSt = getCatStatus(pData, currentEditCategoryId);
+    const currentStatus = catSt.status || 'none';
+    const deadline = catSt.deadline || '';
+    const scheduled = catSt.scheduled_date || '';
+    const cancelReason = catSt.cancel_reason || '';
+    const isCompost = currentEditCategoryId === COMPOST_CATEGORY_ID;
 
     let navUrl = '';
     if (pData.coords && pData.coords.length > 0) {
@@ -481,20 +649,21 @@ function openManureStatusModal(pData) {
     let areaStr = areaA > 0 ? `${areaA.toLocaleString()} a (${Math.round(areaA * 100).toLocaleString()} ㎡)` : '未設定';
 
     if (areaA > 0) {
-        // 34袋 / 10a (1aあたり3.4袋)
         const rawBags = areaA * 3.4;
         const roundedBags = Math.round(rawBags * 10) / 10;
         const intBags = Math.round(rawBags);
         bagsStr = (roundedBags % 1 === 0) ? `${roundedBags} 袋` : `${roundedBags} 袋 (約 ${intBags} 袋)`;
-
-        // 0.5車 / 10a (1aあたり0.05車)
         const rawTrucks = areaA * 0.05;
         const roundedTrucks = Math.round(rawTrucks * 100) / 100;
         trucksStr = `${roundedTrucks} 車`;
     }
 
+    const catOptions = (prodCategories || []).map(c =>
+        `<option value="${c.id}" ${c.id === currentEditCategoryId ? 'selected' : ''}>${c.name}</option>`
+    ).join('');
+
     let html = `
-        <h3 style="color:#795548; margin-top:0;">🐓 鶏糞散布ステータス変更</h3>
+        <h3 style="color:#795548; margin-top:0;">🌾 生産管理ステータス変更</h3>
         <div style="margin-bottom:15px;">
             <div style="margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
                 <div><strong>圃場名:</strong> ${pData.name}</div>
@@ -502,16 +671,16 @@ function openManureStatusModal(pData) {
             </div>
             ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="width:100%; padding:8px; margin-bottom:10px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🚗 ナビ開始</button>` : ''}
             
-            <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:12px;">
+            <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:12px; ${isCompost ? '' : 'display:none;'}" id="compostHintBox">
                 <div style="font-weight:bold; color:#795548; margin-bottom:8px; font-size:14px; border-bottom:1px dashed #FFD54F; padding-bottom:4px; display:flex; align-items:center; gap:6px;">
-                    <span>🌾 圃場面積 & 鶏糞散布目安</span>
+                    <span>🌾 圃場面積 & 堆肥散布目安</span>
                 </div>
                 <div style="margin-bottom:6px; font-size:13px; color:#333; display:flex; justify-content:space-between;">
                     <span><strong>圃場面積:</strong></span>
                     <span style="font-weight:bold; color:#2E7D32;">${areaStr}</span>
                 </div>
                 <div style="margin-bottom:6px; font-size:13px; color:#333; display:flex; justify-content:space-between; align-items:center;">
-                    <span><strong>鶏糞目安 (34袋/10a):</strong></span>
+                    <span><strong>堆肥目安 (34袋/10a):</strong></span>
                     <span style="font-weight:bold; color:#D32F2F; font-size:15px;">${bagsStr}</span>
                 </div>
                 <div style="font-size:13px; color:#333; display:flex; justify-content:space-between; align-items:center;">
@@ -521,6 +690,11 @@ function openManureStatusModal(pData) {
             </div>
             <button type="button" onclick="openFieldMemo(currentEditPoly)" style="width:100%; margin-top:12px; padding:12px; border:none; border-radius:6px; background:#5D4037; color:white; font-weight:bold; font-size:14px; cursor:pointer; box-sizing:border-box;">📝 圃場メモ（分割・散布記録）</button>
         </div>
+
+        <label class="form-label">カテゴリ</label>
+        <select id="prodStatusCategorySelect" class="form-input" onchange="onModalCategoryChange()">
+            ${catOptions}
+        </select>
         
         <label class="form-label">ステータス</label>
         <select id="manureStatusSelect" class="form-input" onchange="toggleDateInputs()">
@@ -533,11 +707,11 @@ function openManureStatusModal(pData) {
         </select>
 
         <div id="deadlineContainer" style="display: ${currentStatus === 'request' ? 'block' : 'none'};">
-            <label class="form-label">期限日 (散布依頼時)</label>
+            <label class="form-label">期限日 (依頼時)</label>
             <input type="date" id="manureDeadline" class="form-input" value="${deadline}">
         </div>
         <div id="scheduledContainer" style="display: ${currentStatus === 'accepted' ? 'block' : 'none'};">
-            <label class="form-label">予定日 (散布予定時)</label>
+            <label class="form-label">予定日</label>
             <input type="date" id="manureScheduledDate" class="form-input" value="${scheduled}">
         </div>
         <div id="cancelContainer" style="display: ${currentStatus === 'canceled' ? 'block' : 'none'};">
@@ -555,6 +729,25 @@ function openManureStatusModal(pData) {
     document.getElementById('modal').style.display = 'flex';
 }
 
+function onModalCategoryChange() {
+    if (!currentEditPoly) return;
+    const sel = document.getElementById('prodStatusCategorySelect');
+    if (!sel) return;
+    currentEditCategoryId = sel.value;
+    const catSt = getCatStatus(currentEditPoly, currentEditCategoryId);
+    const statusSel = document.getElementById('manureStatusSelect');
+    const deadlineEl = document.getElementById('manureDeadline');
+    const scheduledEl = document.getElementById('manureScheduledDate');
+    const cancelEl = document.getElementById('manureCancelReason');
+    if (statusSel) statusSel.value = catSt.status || 'none';
+    if (deadlineEl) deadlineEl.value = catSt.deadline || '';
+    if (scheduledEl) scheduledEl.value = catSt.scheduled_date || '';
+    if (cancelEl) cancelEl.value = catSt.cancel_reason || '';
+    const hint = document.getElementById('compostHintBox');
+    if (hint) hint.style.display = (currentEditCategoryId === COMPOST_CATEGORY_ID) ? 'block' : 'none';
+    toggleDateInputs();
+}
+
 function toggleDateInputs() {
     const val = document.getElementById('manureStatusSelect').value;
     document.getElementById('deadlineContainer').style.display = (val === 'request') ? 'block' : 'none';
@@ -566,6 +759,11 @@ function toggleDateInputs() {
 async function saveManureStatus(btnElement) {
     if (!currentEditPoly) return;
 
+    const catId = (document.getElementById('prodStatusCategorySelect')
+        && document.getElementById('prodStatusCategorySelect').value)
+        || currentEditCategoryId
+        || activeProdCategoryId
+        || COMPOST_CATEGORY_ID;
     const status = document.getElementById('manureStatusSelect').value;
     const deadline = document.getElementById('manureDeadline') ? document.getElementById('manureDeadline').value : '';
     const scheduled = document.getElementById('manureScheduledDate') ? document.getElementById('manureScheduledDate').value : '';
@@ -577,30 +775,37 @@ async function saveManureStatus(btnElement) {
         btn.innerText = '保存中...';
     }
 
-    const oldStatus = currentEditPoly.manure_status || 'none';
+    migratePDataManure(currentEditPoly);
+    const catSt = getCatStatus(currentEditPoly, catId);
+    const oldStatus = catSt.status || 'none';
     if (oldStatus !== status) {
-        currentEditPoly.manure_has_pin = true;
-        // 履歴に追加
-        addHistory(currentEditPoly.name, oldStatus, status);
+        catSt.has_pin = true;
+        addHistory(currentEditPoly.name + '（' + getProdCategoryName(catId) + '）', oldStatus, status);
     }
 
-    currentEditPoly.manure_status = status;
-    currentEditPoly.manure_deadline = (status === 'request') ? deadline : '';
-    currentEditPoly.manure_scheduled_date = (status === 'accepted') ? scheduled : '';
-    currentEditPoly.manure_cancel_reason = (status === 'canceled') ? cancelReason : '';
-    currentEditPoly.manure_route_selected = !!currentEditPoly.manure_route_selected && (status === 'accepted' || status === 'completed');
+    catSt.status = status;
+    catSt.deadline = (status === 'request') ? deadline : '';
+    catSt.scheduled_date = (status === 'accepted') ? scheduled : '';
+    catSt.cancel_reason = (status === 'canceled') ? cancelReason : '';
+    catSt.route_selected = !!catSt.route_selected && (status === 'accepted' || status === 'completed');
+
+    // 堆肥カテゴリはフラット項目と同期
+    if (catId === COMPOST_CATEGORY_ID) {
+        currentEditPoly.manure_status = catSt.status;
+        currentEditPoly.manure_deadline = catSt.deadline;
+        currentEditPoly.manure_scheduled_date = catSt.scheduled_date;
+        currentEditPoly.manure_cancel_reason = catSt.cancel_reason;
+        currentEditPoly.manure_has_pin = !!catSt.has_pin;
+        currentEditPoly.manure_route_selected = !!catSt.route_selected;
+    } else {
+        migratePDataManure(currentEditPoly);
+    }
 
     try {
-        const manureData = {
-            manure_status: currentEditPoly.manure_status,
-            manure_deadline: currentEditPoly.manure_deadline,
-            manure_scheduled_date: currentEditPoly.manure_scheduled_date,
-            manure_cancel_reason: currentEditPoly.manure_cancel_reason,
-            manure_has_pin: currentEditPoly.manure_has_pin,
-            manure_route_selected: !!currentEditPoly.manure_route_selected,
-            transplant_jun: currentEditPoly.transplant_jun || ''
-        };
-        await callGAS('updatePolygon', { id: currentEditPoly.id, manureData: JSON.stringify(manureData) });
+        await callGAS('updatePolygon', {
+            id: currentEditPoly.id,
+            manureData: JSON.stringify(buildManureDataPayload(currentEditPoly))
+        });
         closeModal();
         loadInitData();
     } catch (e) {
@@ -716,17 +921,18 @@ window.openHistoryModal = function(activeTab = 'history') {
             html += `</div>`;
         }
     } else {
-        const list = polygons.filter(p => p.pData && p.pData.manure_status === activeTab);
+        const list = polygons.filter(p => p.pData && getActiveCategoryStatus(p.pData) === activeTab);
         if (list.length === 0) {
             html += `<p style="color:#999; text-align:center;">該当する圃場はありません。</p>`;
         } else {
             html += `<div style="max-height:60vh; overflow-y:auto;">`;
             list.forEach(p => {
                 const pData = p.pData;
+                const catSt = getCatStatus(pData, activeProdCategoryId);
                 let subtext = '';
-                if (activeTab === 'request' && pData.manure_deadline) subtext = `期限: ${pData.manure_deadline}`;
-                if (activeTab === 'accepted' && pData.manure_scheduled_date) subtext = `予定日: ${pData.manure_scheduled_date}`;
-                if (activeTab === 'canceled' && pData.manure_cancel_reason) subtext = `理由: ${pData.manure_cancel_reason}`;
+                if (activeTab === 'request' && catSt.deadline) subtext = `期限: ${catSt.deadline}`;
+                if (activeTab === 'accepted' && catSt.scheduled_date) subtext = `予定日: ${catSt.scheduled_date}`;
+                if (activeTab === 'canceled' && catSt.cancel_reason) subtext = `理由: ${catSt.cancel_reason}`;
 
                 html += `<div style="border-bottom:1px solid #eee; padding:10px 0; display:flex; justify-content:space-between; align-items:center;">
                     <div>
@@ -1448,39 +1654,65 @@ function toggleIdForm() {
     div.style.display = div.style.display === 'none' ? 'block' : 'none';
 }
 
-// ====== 散布ルート設定 ＆ 設定ルート表 機能 ======
+// ====== ルート設定 ＆ 設定ルート表 機能 ======
 let currentCandidateRoute = null;
 let candidateHighlightOverlays = [];
 
-// 散布容量表示の更新
+/** Google Polygon または {polygon} ラッパーから実体を取る */
+function getGmapPolygonEntity(polyObj) {
+    if (!polyObj) return null;
+    if (typeof polyObj.getPath === 'function') return polyObj;
+    if (polyObj.polygon && typeof polyObj.polygon.getPath === 'function') return polyObj.polygon;
+    return null;
+}
+
+// ルート容量表示の更新
 window.updateSprayRouteCapacityDisplay = function() {
-    const trucks = parseInt(document.getElementById('sprayTruckCount')?.value || 1, 10);
-    const capPerTruckA = parseFloat(document.getElementById('sprayCapacityPerTruck')?.value || 20);
+    const truckEl = document.getElementById('sprayTruckCount');
+    const capEl = document.getElementById('sprayCapacityPerTruck');
+    const trucks = parseInt((truckEl && truckEl.value) || 1, 10);
+    const capPerTruckA = parseFloat((capEl && capEl.value) || 20);
     const totalA = (trucks * capPerTruckA).toFixed(1);
     const totalSqm = Math.round(totalA * 100).toLocaleString();
     
     const dispA = document.getElementById('sprayMaxCapacityDisp');
     const dispSqm = document.getElementById('sprayMaxSqmDisp');
-    if (dispA) dispA.textContent = `${totalA} a`;
+    if (dispA) dispA.textContent = totalA + ' a';
     if (dispSqm) dispSqm.textContent = totalSqm;
+
+    const catLabel = document.getElementById('sprayRouteCategoryLabel');
+    if (catLabel) catLabel.textContent = getProdCategoryName(activeProdCategoryId);
 };
 
 window.openSprayRouteModal = function() {
-    clearCandidateHighlights();
-    currentCandidateRoute = null;
-    const resArea = document.getElementById('sprayRouteResultArea');
-    if (resArea) {
-        resArea.style.display = 'none';
-        resArea.innerHTML = '';
+    try {
+        clearCandidateHighlights();
+        currentCandidateRoute = null;
+        const resArea = document.getElementById('sprayRouteResultArea');
+        if (resArea) {
+            resArea.style.display = 'none';
+            resArea.innerHTML = '';
+        }
+        const modal = document.getElementById('sprayRouteModal');
+        if (!modal) {
+            alert('ルート設定画面が見つかりません。ページを再読み込みしてください。');
+            return;
+        }
+        const titleEl = document.getElementById('sprayRouteModalTitle');
+        if (titleEl) titleEl.textContent = '🚜 ルート設定（' + getProdCategoryName(activeProdCategoryId) + '）';
+        updateSprayRouteCapacityDisplay();
+        modal.style.display = 'flex';
+    } catch (e) {
+        console.error(e);
+        alert('ルート設定を開けませんでした: ' + (e.message || e));
     }
-    updateSprayRouteCapacityDisplay();
-    document.getElementById('sprayRouteModal').style.display = 'flex';
 };
 
 window.closeSprayRouteModal = function() {
     clearCandidateHighlights();
     currentCandidateRoute = null;
-    document.getElementById('sprayRouteModal').style.display = 'none';
+    const modal = document.getElementById('sprayRouteModal');
+    if (modal) modal.style.display = 'none';
 };
 
 // 圃場の面積（㎡）を取得するヘルパー
@@ -1489,19 +1721,20 @@ function getPolygonAreaSqm(polyObj) {
     const pData = polyObj.pData || {};
     let areaVal = pData.area;
     if (typeof areaVal === 'number' && areaVal > 0) {
-        return areaVal;
+        // 生産管理MAPの面積はアール(a)保存が基本 → ㎡へ
+        return areaVal * 100;
     }
     if (typeof areaVal === 'string' && areaVal.trim()) {
         const num = parseFloat(areaVal);
         if (!isNaN(num)) {
-            if (areaVal.includes('a') || areaVal.includes('アール')) return num * 100;
-            if (areaVal.includes('ha')) return num * 10000;
-            return num;
+            if (areaVal.indexOf('ha') >= 0) return num * 10000;
+            // 「a」「アール」表記、または数値のみ → アールとして扱う
+            return num * 100;
         }
     }
-    // Google Maps 幾何計算でフォールバック
-    if (polyObj.polygon && google.maps.geometry && google.maps.geometry.spherical) {
-        const path = polyObj.polygon.getPath();
+    const gPoly = getGmapPolygonEntity(polyObj);
+    if (gPoly && google.maps.geometry && google.maps.geometry.spherical) {
+        const path = gPoly.getPath();
         if (path && path.getLength() > 2) {
             return google.maps.geometry.spherical.computeArea(path);
         }
@@ -1511,14 +1744,25 @@ function getPolygonAreaSqm(polyObj) {
 
 // 圃場の中心緯度経度を取得
 function getPolygonCenterLatLng(polyObj) {
-    if (!polyObj || !polyObj.polygon) return { lat: 35.0, lng: 135.0 };
-    const path = polyObj.polygon.getPath();
-    let bounds = new google.maps.LatLngBounds();
-    for (let i = 0; i < path.getLength(); i++) {
-        bounds.extend(path.getAt(i));
+    const gPoly = getGmapPolygonEntity(polyObj);
+    if (gPoly) {
+        try {
+            const path = gPoly.getPath();
+            const bounds = new google.maps.LatLngBounds();
+            for (let i = 0; i < path.getLength(); i++) {
+                bounds.extend(path.getAt(i));
+            }
+            const center = bounds.getCenter();
+            return { lat: center.lat(), lng: center.lng() };
+        } catch (e) { /* fallthrough */ }
     }
-    const center = bounds.getCenter();
-    return { lat: center.lat(), lng: center.lng() };
+    const pData = polyObj && polyObj.pData;
+    if (pData && pData.coords && pData.coords.length) {
+        const c = getPolygonCenter(pData.coords);
+        if (c && typeof c.lat === 'function') return { lat: c.lat(), lng: c.lng() };
+        if (c && c.lat != null) return { lat: Number(c.lat), lng: Number(c.lng) };
+    }
+    return { lat: 35.0, lng: 135.0 };
 }
 
 // ハイライト表示のクリア
@@ -1529,34 +1773,36 @@ function clearCandidateHighlights() {
     candidateHighlightOverlays = [];
 }
 
-// 散布ルート（候補圃場群）の算出
-window.calculateSprayRoute = function(isRecalculate = false) {
-    const trucks = parseInt(document.getElementById('sprayTruckCount')?.value || 1, 10);
-    const capPerTruckA = parseFloat(document.getElementById('sprayCapacityPerTruck')?.value || 20);
+// ルート（候補圃場群）の算出 ※表示中カテゴリのステータスを参照
+window.calculateSprayRoute = function(isRecalculate) {
+    isRecalculate = !!isRecalculate;
+    const truckEl = document.getElementById('sprayTruckCount');
+    const capEl = document.getElementById('sprayCapacityPerTruck');
+    const trucks = parseInt((truckEl && truckEl.value) || 1, 10);
+    const capPerTruckA = parseFloat((capEl && capEl.value) || 20);
     const maxCapacitySqm = trucks * capPerTruckA * 100;
+    const catId = activeProdCategoryId || COMPOST_CATEGORY_ID;
+    const catName = getProdCategoryName(catId);
 
-    // 散布対象候補となる圃場を収集 (依頼中 'request', 未 'none', 予定 'accepted')
+    // 対象候補: 依頼中 / 未着手 / 予定
     const candidates = polygons.filter(p => {
         if (!p || !p.pData) return false;
-        const st = p.pData.manure_status || 'none';
+        const st = getCatStatus(p.pData, catId).status || 'none';
         return st === 'request' || st === 'none' || st === 'accepted';
     });
 
     if (candidates.length === 0) {
-        alert('散布対象となる圃場（依頼中・未・予定）がありません。');
+        alert('「' + catName + '」の対象圃場（依頼中・未着手・予定）がありません。\nカテゴリを切り替えてから再度お試しください。');
         return;
     }
 
-    // 距離・近接性に基づくグループ探索
-    // ランダムまたは開始点を変えてバリエーション生成
     let bestGroup = [];
     let bestTotalArea = 0;
     const seedIndex = isRecalculate ? Math.floor(Math.random() * candidates.length) : 0;
     const startPoly = candidates[seedIndex];
     const startCenter = getPolygonCenterLatLng(startPoly);
 
-    // 開始点からの距離順にソート
-    const sortedCandidates = [...candidates].sort((a, b) => {
+    const sortedCandidates = candidates.slice().sort((a, b) => {
         const cA = getPolygonCenterLatLng(a);
         const cB = getPolygonCenterLatLng(b);
         const distA = Math.pow(cA.lat - startCenter.lat, 2) + Math.pow(cA.lng - startCenter.lng, 2);
@@ -1566,58 +1812,69 @@ window.calculateSprayRoute = function(isRecalculate = false) {
 
     let currentSum = 0;
     const selected = [];
-    for (let p of sortedCandidates) {
+    for (let i = 0; i < sortedCandidates.length; i++) {
+        const p = sortedCandidates[i];
         const area = getPolygonAreaSqm(p);
         if (currentSum + area <= maxCapacitySqm) {
             selected.push(p);
             currentSum += area;
+        } else if (maxCapacitySqm - currentSum > 500) {
+            continue;
         } else {
-            // ピッタリ収まる小さい圃場が後方にないか少し探す
-            if (maxCapacitySqm - currentSum > 500) {
-                continue;
-            } else {
-                break;
-            }
+            break;
         }
     }
 
     currentCandidateRoute = {
+        categoryId: catId,
         polygons: selected,
         totalAreaSqm: currentSum,
         totalAreaA: (currentSum / 100).toFixed(1),
         maxCapacityA: (maxCapacitySqm / 100).toFixed(1),
-        fillRate: Math.round((currentSum / maxCapacitySqm) * 100)
+        fillRate: maxCapacitySqm > 0 ? Math.round((currentSum / maxCapacitySqm) * 100) : 0
     };
 
     // マップ上のハイライト描画
     clearCandidateHighlights();
     let bounds = new google.maps.LatLngBounds();
+    let hasBounds = false;
 
     selected.forEach(p => {
-        if (p.polygon) {
-            const path = p.polygon.getPath();
-            const highlightPoly = new google.maps.Polygon({
-                paths: path,
-                strokeColor: '#FF9800',
-                strokeOpacity: 1.0,
-                strokeWeight: 5,
-                fillColor: '#FFC107',
-                fillOpacity: 0.45,
-                map: map,
-                zIndex: 9999
+        const gPoly = getGmapPolygonEntity(p);
+        let path = null;
+        if (gPoly) {
+            path = gPoly.getPath();
+        } else if (p.pData && p.pData.coords && p.pData.coords.length) {
+            path = p.pData.coords.map(function(c) {
+                return new google.maps.LatLng(c.lat, c.lng);
             });
-            candidateHighlightOverlays.push(highlightPoly);
+        }
+        if (!path) return;
+        const highlightPoly = new google.maps.Polygon({
+            paths: path,
+            strokeColor: '#FF9800',
+            strokeOpacity: 1.0,
+            strokeWeight: 5,
+            fillColor: '#FFC107',
+            fillOpacity: 0.45,
+            map: map,
+            zIndex: 9999
+        });
+        candidateHighlightOverlays.push(highlightPoly);
+        if (path.getLength) {
             for (let i = 0; i < path.getLength(); i++) {
                 bounds.extend(path.getAt(i));
+                hasBounds = true;
             }
+        } else if (path.length) {
+            path.forEach(function(ll) { bounds.extend(ll); hasBounds = true; });
         }
     });
 
-    if (selected.length > 0 && map && bounds) {
+    if (selected.length > 0 && map && hasBounds) {
         map.fitBounds(bounds);
     }
 
-    // 結果表示エリアのレンダリング
     const resArea = document.getElementById('sprayRouteResultArea');
     if (!resArea) return;
     resArea.style.display = 'block';
@@ -1625,7 +1882,7 @@ window.calculateSprayRoute = function(isRecalculate = false) {
     let listRowsHtml = selected.map((p, idx) => {
         const pData = p.pData || {};
         const areaA = (getPolygonAreaSqm(p) / 100).toFixed(1);
-        const statusLabel = getStatusLabel(pData.manure_status || 'none');
+        const statusLabel = getStatusLabel(getCatStatus(pData, catId).status || 'none');
         return `
             <div style="display:flex; justify-content:space-between; align-items:center; background:#fff; padding:8px 10px; border-radius:6px; border:1px solid #e0e0e0; margin-bottom:6px; font-size:13px;">
                 <div>
@@ -1639,11 +1896,11 @@ window.calculateSprayRoute = function(isRecalculate = false) {
 
     resArea.innerHTML = `
         <div style="background:#FFF3E0; border:1px solid #FFE0B2; border-radius:8px; padding:12px; margin-bottom:12px;">
-            <div style="font-weight:bold; color:#E65100; font-size:15px; margin-bottom:6px;">✨ 算出された候補グループ</div>
+            <div style="font-weight:bold; color:#E65100; font-size:15px; margin-bottom:6px;">✨ 算出された候補（${catName}）</div>
             <div style="font-size:13px; color:#333; line-height:1.4;">
                 ・対象圃場数: <b>${selected.length} 筆</b><br>
                 ・合計面積: <b style="color:#D84315; font-size:16px;">${currentCandidateRoute.totalAreaA} a</b> / 許容 ${currentCandidateRoute.maxCapacityA} a<br>
-                ・充填率 (すっぽり感): <b style="color:#2E7D32;">${currentCandidateRoute.fillRate}%</b>
+                ・充填率: <b style="color:#2E7D32;">${currentCandidateRoute.fillRate}%</b>
             </div>
         </div>
 
@@ -1654,48 +1911,47 @@ window.calculateSprayRoute = function(isRecalculate = false) {
 
         <div style="display:flex; gap:10px;">
             <button type="button" onclick="calculateSprayRoute(true)" style="flex:1; background:#795548; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">🔄 再算出</button>
-            <button type="button" onclick="applySprayRouteCandidate()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">✅ 設定する (散布予定に切替)</button>
+            <button type="button" onclick="applySprayRouteCandidate()" style="flex:1.5; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">✅ 設定する（予定に切替）</button>
         </div>
     `;
 };
 
-// 候補圃場群を一括で「散布予定 (accepted)」に設定する
+// 候補圃場群を一括で「予定 (accepted)」に設定する（表示中カテゴリ）
 window.applySprayRouteCandidate = async function() {
     if (!currentCandidateRoute || !currentCandidateRoute.polygons || currentCandidateRoute.polygons.length === 0) {
         alert('設定する候補圃場が選択されていません。');
         return;
     }
 
+    const catId = currentCandidateRoute.categoryId || activeProdCategoryId || COMPOST_CATEGORY_ID;
+    const catName = getProdCategoryName(catId);
     const count = currentCandidateRoute.polygons.length;
-    if (!confirm(`選定された ${count} 筆の圃場のステータスを「散布予定（橙色）」に変更して設定しますか？`)) return;
+    if (!confirm('選定された ' + count + ' 筆の「' + catName + '」を「予定（橙色）」に変更して設定しますか？')) return;
 
     const resArea = document.getElementById('sprayRouteResultArea');
-    if (resArea) resArea.innerHTML = `<div style="text-align:center; padding:20px; font-weight:bold; color:#E65100;">一括保存中...</div>`;
+    if (resArea) resArea.innerHTML = '<div style="text-align:center; padding:20px; font-weight:bold; color:#E65100;">一括保存中...</div>';
 
     const todayStr = new Date().toISOString().split('T')[0];
 
     try {
-        for (let p of currentCandidateRoute.polygons) {
+        for (let i = 0; i < currentCandidateRoute.polygons.length; i++) {
+            const p = currentCandidateRoute.polygons[i];
             const pData = p.pData || {};
-            pData.manure_status = 'accepted';
-            pData.manure_scheduled_date = todayStr;
-            pData.manure_has_pin = true;
-            pData.manure_route_selected = true;
-
-            const manureData = {
-                manure_status: 'accepted',
-                manure_deadline: pData.manure_deadline || '',
-                manure_scheduled_date: todayStr,
-                manure_cancel_reason: '',
-                manure_has_pin: true,
-                manure_route_selected: true,
-                transplant_jun: pData.transplant_jun || ''
-            };
-            await callGAS('updatePolygon', { id: p.id || pData.id, manureData: JSON.stringify(manureData) });
+            applyCategoryStatusUpdate(pData, catId, {
+                status: 'accepted',
+                scheduled_date: todayStr,
+                has_pin: true,
+                route_selected: true,
+                cancel_reason: ''
+            });
+            await callGAS('updatePolygon', {
+                id: p.id || pData.id,
+                manureData: JSON.stringify(buildManureDataPayload(pData))
+            });
         }
 
         closeSprayRouteModal();
-        alert(`✅ ${count} 筆の圃場を「設定ルート表」に登録しました！`);
+        alert('✅ ' + count + ' 筆（' + catName + '）を設定ルート表に登録しました！');
         localStorage.removeItem('manureMapData');
         loadInitData();
     } catch (e) {
@@ -1707,26 +1963,32 @@ window.applySprayRouteCandidate = async function() {
 // ====== 設定ルート表 モーダル ======
 window.openTodayRouteTableModal = function() {
     renderTodayRouteTable();
-    document.getElementById('todayRouteTableModal').style.display = 'flex';
+    const modal = document.getElementById('todayRouteTableModal');
+    if (modal) modal.style.display = 'flex';
 };
 
 function renderTodayRouteTable() {
     const container = document.getElementById('todayRouteTableContent');
     if (!container) return;
 
-    // 散布ルート設定で選ばれ、かつ 散布予定/完了 の圃場のみ抽出
+    const catId = activeProdCategoryId || COMPOST_CATEGORY_ID;
+    const catName = getProdCategoryName(catId);
+    const titleEl = document.getElementById('todayRouteTableTitle');
+    if (titleEl) titleEl.textContent = '🗺️ 設定ルート表（' + catName + '）';
+
+    // ルート設定済み & 予定/完了（表示中カテゴリ）
     const routePolys = polygons.filter(p => {
         if (!p || !p.pData) return false;
-        const st = p.pData.manure_status;
-        return !!p.pData.manure_route_selected && (st === 'accepted' || st === 'completed');
+        const st = getCatStatus(p.pData, catId);
+        return !!st.route_selected && (st.status === 'accepted' || st.status === 'completed');
     });
 
     if (routePolys.length === 0) {
         container.innerHTML = `
             <div style="text-align:center; padding:30px 10px; color:#888;">
                 <div style="font-size:32px; margin-bottom:10px;">🗺️</div>
-                <div style="font-size:14px; font-weight:bold; margin-bottom:6px;">設定ルート表の対象圃場はありません</div>
-                <div style="font-size:12px;">「🚜 散布ルート設定」から対象圃場を設定してください。</div>
+                <div style="font-size:14px; font-weight:bold; margin-bottom:6px;">「${catName}」の設定ルートはありません</div>
+                <div style="font-size:12px;">カテゴリを選んだうえで「ルート設定」から登録してください。</div>
             </div>
         `;
         return;
@@ -1740,7 +2002,7 @@ function renderTodayRouteTable() {
         const areaSqm = getPolygonAreaSqm(p);
         totalSqm += areaSqm;
         const areaA = (areaSqm / 100).toFixed(1);
-        const status = pData.manure_status || 'accepted';
+        const status = getCatStatus(pData, catId).status || 'accepted';
         const isDone = status === 'completed';
         if (isDone) completedCount++;
 
@@ -1756,14 +2018,14 @@ function renderTodayRouteTable() {
                 </td>
                 <td style="padding: 10px 8px; text-align: center;">
                     <span id="routeStatusBadge_${polyId}" style="font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 12px; background: ${isDone ? '#E8F5E9' : '#FFF3E0'}; color: ${isDone ? '#2E7D32' : '#E65100'}; border: 1px solid ${isDone ? '#A5D6A7' : '#FFE082'};">
-                        ${isDone ? '✅ 散布完了' : '🍊 散布予定'}
+                        ${isDone ? '✅ 完了' : '🍊 予定'}
                     </span>
                 </td>
                 <td style="padding: 10px 8px; text-align: right; white-space: nowrap;">
                     ${isDone ? `
                         <button type="button" disabled style="background:#e0e0e0; color:#888; border:none; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:bold; margin-right:4px;">完了済</button>
                     ` : `
-                        <button type="button" onclick="markFieldSprayCompleted('${polyId}', '${safeName}')" style="background:#4CAF50; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; margin-right:4px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">✅ 散布完了</button>
+                        <button type="button" onclick="markFieldSprayCompleted('${polyId}', '${safeName}')" style="background:#4CAF50; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; margin-right:4px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">✅ 完了</button>
                     `}
                     <button type="button" onclick="hideTodayRouteRow('${polyId}')" style="background:#fff; color:#777; border:1px solid #ccc; padding:6px 10px; border-radius:4px; font-size:12px; cursor:pointer;">👁️ 非表示</button>
                 </td>
@@ -1776,7 +2038,7 @@ function renderTodayRouteTable() {
     container.innerHTML = `
         <div style="background:#E8F5E9; border:1px solid #C8E6C9; border-radius:8px; padding:10px 14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
             <div>
-                <span style="font-size:13px; color:#2E7D32; font-weight:bold;">設定ルート対象:</span>
+                <span style="font-size:13px; color:#2E7D32; font-weight:bold;">${catName} ルート対象:</span>
                 <b style="font-size:16px; color:#1B5E20; margin-left:6px;">${routePolys.length} 筆</b>
                 <span style="font-size:12px; color:#555; margin-left:8px;">(計 ${totalA} a)</span>
             </div>
@@ -1803,7 +2065,9 @@ function renderTodayRouteTable() {
 
 // 散布完了にする機能
 window.markFieldSprayCompleted = async function(polyId, polyName) {
-    if (!confirm(`「${polyName || 'この圃場'}」を散布完了にしますか？`)) return;
+    const catId = activeProdCategoryId || COMPOST_CATEGORY_ID;
+    const catName = getProdCategoryName(catId);
+    if (!confirm('「' + (polyName || 'この圃場') + '」の' + catName + 'を完了にしますか？')) return;
 
     const polyObj = polygons.find(p => String(p.id || (p.pData && p.pData.id)) === String(polyId));
     if (!polyObj) {
@@ -1812,31 +2076,25 @@ window.markFieldSprayCompleted = async function(polyId, polyName) {
     }
 
     const pData = polyObj.pData || {};
-    pData.manure_status = 'completed';
-    pData.manure_has_pin = true;
-    pData.manure_route_selected = !!pData.manure_route_selected;
+    const prev = getCatStatus(pData, catId).status || 'accepted';
+    applyCategoryStatusUpdate(pData, catId, {
+        status: 'completed',
+        has_pin: true,
+        cancel_reason: '',
+        route_selected: true
+    });
 
     try {
-        const manureData = {
-            manure_status: 'completed',
-            manure_deadline: pData.manure_deadline || '',
-            manure_scheduled_date: pData.manure_scheduled_date || '',
-            manure_cancel_reason: '',
-            manure_has_pin: true,
-            manure_route_selected: !!pData.manure_route_selected,
-            transplant_jun: pData.transplant_jun || ''
-        };
-        await callGAS('updatePolygon', { id: polyId, manureData: JSON.stringify(manureData) });
-        
-        // 履歴追加
-        addHistory(pData.name || '圃場', 'accepted', 'completed');
-
-        // 一覧表の表示を即時更新
+        await callGAS('updatePolygon', {
+            id: polyId,
+            manureData: JSON.stringify(buildManureDataPayload(pData))
+        });
+        addHistory((pData.name || '圃場') + '（' + catName + '）', prev, 'completed');
         renderTodayRouteTable();
         localStorage.removeItem('manureMapData');
         loadInitData();
     } catch (e) {
-        alert('散布完了への更新に失敗しました: ' + e.message);
+        alert('完了への更新に失敗しました: ' + e.message);
     }
 };
 
@@ -2015,6 +2273,7 @@ window.saveTransplantSettings = async function() {
 
             const pData = polyObj.pData;
             pData.transplant_jun = row.transplantJun || '';
+            migratePDataManure(pData);
 
             let manureStatus = pData.manure_status || 'none';
             let manureDeadline = pData.manure_deadline || '';
@@ -2032,23 +2291,19 @@ window.saveTransplantSettings = async function() {
                 manureRouteSelected = false;
             }
 
-            pData.manure_status = manureStatus;
-            pData.manure_deadline = manureDeadline;
-            pData.manure_scheduled_date = manureScheduledDate;
-            pData.manure_cancel_reason = manureCancelReason;
-            pData.manure_has_pin = manureHasPin;
-            pData.manure_route_selected = manureRouteSelected;
+            applyCompostStatusUpdate(pData, {
+                status: manureStatus,
+                deadline: manureDeadline,
+                scheduled_date: manureScheduledDate,
+                cancel_reason: manureCancelReason,
+                has_pin: manureHasPin,
+                route_selected: manureRouteSelected
+            });
 
-            const manureData = {
-                manure_status: manureStatus,
-                manure_deadline: manureDeadline,
-                manure_scheduled_date: manureScheduledDate,
-                manure_cancel_reason: manureCancelReason,
-                manure_has_pin: manureHasPin,
-                manure_route_selected: manureRouteSelected,
-                transplant_jun: row.transplantJun || ''
-            };
-            await callGAS('updatePolygon', { id: row.id, manureData: JSON.stringify(manureData) });
+            await callGAS('updatePolygon', {
+                id: row.id,
+                manureData: JSON.stringify(buildManureDataPayload(pData))
+            });
             updatedCount++;
         }
 
@@ -2062,4 +2317,371 @@ window.saveTransplantSettings = async function() {
         if (area) area.style.pointerEvents = '';
     }
 };
+
+// ====== 生産管理カテゴリ編集（管理者） ======
+let prodCategoryEditDraft = [];
+
+window.openProdCategoryEditModal = function() {
+    if (currentUserRole !== '管理者') {
+        alert('管理者のみ編集できます');
+        return;
+    }
+    prodCategoryEditDraft = (prodCategories || []).map((c, i) => ({
+        id: c.id,
+        name: c.name,
+        order: c.order != null ? c.order : (i + 1)
+    }));
+    renderProdCategoryEditList();
+    const modal = document.getElementById('prodCategoryEditModal');
+    if (modal) modal.style.display = 'flex';
+};
+
+window.closeProdCategoryEditModal = function() {
+    const modal = document.getElementById('prodCategoryEditModal');
+    if (modal) modal.style.display = 'none';
+};
+
+function renumberProdCategoryDraftOrders() {
+    const sorted = prodCategoryEditDraft.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    sorted.forEach((c, i) => { c.order = i + 1; });
+    prodCategoryEditDraft = sorted;
+}
+
+window.moveProdCategoryDraft = function(displayPos, delta) {
+    renumberProdCategoryDraftOrders();
+    const to = displayPos + delta;
+    if (to < 0 || to >= prodCategoryEditDraft.length) return;
+    const item = prodCategoryEditDraft.splice(displayPos, 1)[0];
+    prodCategoryEditDraft.splice(to, 0, item);
+    renumberProdCategoryDraftOrders();
+    renderProdCategoryEditList();
+};
+
+function renderProdCategoryEditList() {
+    const area = document.getElementById('prodCategoryEditList');
+    if (!area) return;
+    if (!prodCategoryEditDraft.length) {
+        area.innerHTML = '<div style="color:#888; padding:12px; text-align:center;">カテゴリがありません</div>';
+        return;
+    }
+    renumberProdCategoryDraftOrders();
+    area.innerHTML = `
+        <div style="display:flex; gap:6px; font-size:11px; color:#888; margin-bottom:6px; padding:0 4px; flex-wrap:wrap;">
+            <span style="width:40px;">移動</span>
+            <span style="width:28px;">順</span>
+            <span style="flex:1; min-width:80px;">カテゴリ名</span>
+            <span style="width:100px;">ID</span>
+            <span style="width:70px;"></span>
+        </div>
+    ` + prodCategoryEditDraft.map((c, idx) => `
+        <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px; flex-wrap:wrap; background:#fafafa; border:1px solid #e0e0e0; border-radius:6px; padding:8px;">
+            <div style="display:flex; flex-direction:column; gap:2px;">
+                <button type="button" onclick="moveProdCategoryDraft(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}
+                    style="background:#fff; border:1px solid #bbb; border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px;" title="上へ（工程を前へ）">▲</button>
+                <button type="button" onclick="moveProdCategoryDraft(${idx}, 1)" ${idx === prodCategoryEditDraft.length - 1 ? 'disabled' : ''}
+                    style="background:#fff; border:1px solid #bbb; border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px;" title="下へ（工程を後へ）">▼</button>
+            </div>
+            <span style="width:28px; text-align:center; font-weight:bold; color:#5D4037;">${idx + 1}</span>
+            <input type="text" value="${String(c.name || '').replace(/"/g, '&quot;')}"
+                oninput="prodCategoryEditDraft[${idx}].name=this.value"
+                style="flex:1; min-width:120px; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px;" placeholder="カテゴリ名">
+            <input type="text" value="${String(c.id || '').replace(/"/g, '&quot;')}"
+                oninput="prodCategoryEditDraft[${idx}].id=this.value"
+                style="width:110px; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:12px;" placeholder="ID" title="内部ID（英数字推奨）">
+            <button type="button" onclick="removeProdCategoryDraft(${idx})"
+                style="background:#f44336; color:#fff; border:none; padding:8px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">削除</button>
+        </div>
+    `).join('');
+}
+
+window.removeProdCategoryDraft = function(idx) {
+    const item = prodCategoryEditDraft[idx];
+    if (item && item.id === COMPOST_CATEGORY_ID) {
+        if (!confirm('「堆肥散布」は既存データと紐づいています。削除すると地図上の既存ステータス参照に影響します。本当に削除しますか？')) return;
+    }
+    prodCategoryEditDraft.splice(idx, 1);
+    renumberProdCategoryDraftOrders();
+    renderProdCategoryEditList();
+};
+
+window.addProdCategoryDraft = function() {
+    const maxOrder = prodCategoryEditDraft.reduce((m, c) => Math.max(m, parseInt(c.order, 10) || 0), 0);
+    const n = prodCategoryEditDraft.length + 1;
+    prodCategoryEditDraft.push({
+        id: 'cat_' + Date.now().toString(36),
+        name: '新しいカテゴリ' + n,
+        order: maxOrder + 1
+    });
+    renderProdCategoryEditList();
+};
+
+window.saveProdCategoryEdits = async function() {
+    if (currentUserRole !== '管理者') {
+        alert('管理者のみ保存できます');
+        return;
+    }
+    const cleaned = [];
+    const seen = {};
+    for (let i = 0; i < prodCategoryEditDraft.length; i++) {
+        const c = prodCategoryEditDraft[i];
+        const id = String(c.id || '').trim();
+        const name = String(c.name || '').trim();
+        if (!id || !name) {
+            alert((i + 1) + '行目: IDと名前を入力してください');
+            return;
+        }
+        if (seen[id]) {
+            alert('IDが重複しています: ' + id);
+            return;
+        }
+        seen[id] = true;
+        cleaned.push({ id, name, order: parseInt(c.order, 10) || (i + 1) });
+    }
+    if (!cleaned.length) {
+        alert('カテゴリを1つ以上残してください');
+        return;
+    }
+    cleaned.sort((a, b) => (a.order || 0) - (b.order || 0));
+    cleaned.forEach((c, i) => { c.order = i + 1; });
+    try {
+        const res = await callGAS('saveProdMgmtCategories', {
+            categories: cleaned,
+            userName: currentUserName || localStorage.getItem('passionMapUserName') || ''
+        });
+        setProdCategories((res && res.categories) ? res.categories : cleaned);
+        closeProdCategoryEditModal();
+        alert('カテゴリを保存しました');
+        if (polygons && polygons.length) setActiveProdCategory(activeProdCategoryId);
+    } catch (e) {
+        alert('カテゴリの保存に失敗しました: ' + (e.message || e));
+    }
+};
+
+window.onProdCategorySelectChange = function() {
+    const sel = document.getElementById('prodCategorySelect');
+    if (!sel) return;
+    setActiveProdCategory(sel.value);
+};
+
+// ====== 工程順ガントチャート ======
+const GANTT_BAR_COLORS = ['#8D6E63', '#66BB6A', '#42A5F5', '#FFA726', '#AB47BC', '#26A69A', '#EF5350', '#78909C'];
+const GANTT_STEP_DAYS = 2; // 日付未設定時の工程間隔（日）
+
+function parseYmdToDate(str) {
+    if (!str) return null;
+    const m = String(str).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function formatYmd(d) {
+    if (!d) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+}
+
+function addDays(d, n) {
+    const x = new Date(d.getTime());
+    x.setDate(x.getDate() + n);
+    return x;
+}
+
+/** カテゴリの代表日（予定日 → 期限日） */
+function getCategoryAnchorDate(catSt) {
+    if (!catSt) return null;
+    return parseYmdToDate(catSt.scheduled_date)
+        || parseYmdToDate(catSt.deadline)
+        || null;
+}
+
+function isCatActiveForGantt(status) {
+    return status && status !== 'none' && status !== 'canceled';
+}
+
+/**
+ * 圃場の工程タイムライン起点を決める
+ * - 実日付があるカテゴリのうち、工程順が最も早いものの日付を基準
+ * - 日付が無くても着手中のカテゴリがあれば、その工程位置を「今日」とみなす
+ * - どれも無ければ null（ガント対象外）
+ */
+function resolveFieldGanttAnchor(pData, sortedCats, today) {
+    let bestDated = null; // { idx, date }
+    let bestActive = null; // { idx }
+
+    sortedCats.forEach((cat, idx) => {
+        const st = getCatStatus(pData, cat.id);
+        const status = st.status || 'none';
+        const date = getCategoryAnchorDate(st);
+        if (date && (!bestDated || idx < bestDated.idx)) {
+            bestDated = { idx, date };
+        }
+        if (isCatActiveForGantt(status) && (bestActive === null || idx < bestActive.idx)) {
+            bestActive = { idx };
+        }
+    });
+
+    if (bestDated) {
+        // 工程0相当の日 = 基準カテゴリ日 - idx * STEP
+        return {
+            sequenceStart: addDays(bestDated.date, -bestDated.idx * GANTT_STEP_DAYS),
+            sortKey: bestDated.date
+        };
+    }
+    if (bestActive) {
+        return {
+            sequenceStart: addDays(today, -bestActive.idx * GANTT_STEP_DAYS),
+            sortKey: today
+        };
+    }
+    return null;
+}
+
+/**
+ * カテゴリ工程順に沿ってバー期間を決める
+ * - 日付があるカテゴリはその日を使用
+ * - 無い場合は sequenceStart + (工程インデックス)×2日
+ */
+function buildFieldGanttBars(pData, sortedCats, sequenceStart) {
+    const bars = [];
+    sortedCats.forEach((cat, idx) => {
+        const st = getCatStatus(pData, cat.id);
+        const status = st.status || 'none';
+        const realDate = getCategoryAnchorDate(st);
+        const start = realDate || addDays(sequenceStart, idx * GANTT_STEP_DAYS);
+        const duration = (status === 'completed') ? 1 : GANTT_STEP_DAYS;
+        const end = addDays(start, duration);
+        bars.push({
+            catId: cat.id,
+            catName: cat.name,
+            status: status,
+            start: start,
+            end: end,
+            color: GANTT_BAR_COLORS[idx % GANTT_BAR_COLORS.length],
+            estimated: !realDate
+        });
+    });
+    return bars;
+}
+
+window.openProdGanttModal = function() {
+    renderProdGanttChart();
+    const modal = document.getElementById('prodGanttModal');
+    if (modal) modal.style.display = 'flex';
+};
+
+window.closeProdGanttModal = function() {
+    const modal = document.getElementById('prodGanttModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.renderProdGanttChart = function() {
+    const area = document.getElementById('prodGanttChartArea');
+    if (!area) return;
+
+    const cats = (prodCategories || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const orderLabel = cats.map((c, i) => (i + 1) + '.' + c.name).join(' → ');
+
+    const rows = [];
+    polygons.forEach(p => {
+        if (!p || !p.pData) return;
+        migratePDataManure(p.pData);
+        const anchor = resolveFieldGanttAnchor(p.pData, cats, today);
+        if (!anchor) return;
+        const bars = buildFieldGanttBars(p.pData, cats, anchor.sequenceStart);
+        rows.push({
+            name: p.pData.name || '圃場',
+            id: p.pData.id,
+            sortKey: anchor.sortKey,
+            bars: bars
+        });
+    });
+
+    rows.sort((a, b) => a.sortKey - b.sortKey || String(a.name).localeCompare(String(b.name), 'ja'));
+
+    if (!rows.length) {
+        area.innerHTML = '<div style="text-align:center; padding:40px 12px; color:#888;">表示できる圃場がありません。<br>いずれかのカテゴリで「依頼中〜完了」または予定日／期限を入れてください。</div>';
+        return;
+    }
+
+    let minD = rows[0].bars[0].start;
+    let maxD = rows[0].bars[0].end;
+    rows.forEach(r => {
+        r.bars.forEach(b => {
+            if (b.start < minD) minD = b.start;
+            if (b.end > maxD) maxD = b.end;
+        });
+    });
+    minD = addDays(minD, -1);
+    maxD = addDays(maxD, 2);
+    const totalDays = Math.max(1, Math.round((maxD - minD) / 86400000));
+
+    const dayHeaders = [];
+    for (let i = 0; i <= totalDays; i++) {
+        const d = addDays(minD, i);
+        if (i === 0 || i === totalDays || d.getDate() === 1 || i % 3 === 0) {
+            dayHeaders.push({ i: i, label: (d.getMonth() + 1) + '/' + d.getDate() });
+        }
+    }
+
+    const chartW = Math.max(520, totalDays * 28);
+    const labelW = 120;
+    const rowH = 22;
+    const fieldGap = 8;
+    const catsCount = cats.length;
+    const fieldBlockH = catsCount * rowH + fieldGap;
+
+    let svgBars = '';
+    let y = 36;
+    rows.forEach(r => {
+        svgBars += `<text x="8" y="${y + 14}" font-size="12" font-weight="bold" fill="#333">${escapeXml(r.name)}</text>`;
+        r.bars.forEach((b, bi) => {
+            const x1 = labelW + ((b.start - minD) / 86400000) * (chartW - labelW) / totalDays;
+            const x2 = labelW + ((b.end - minD) / 86400000) * (chartW - labelW) / totalDays;
+            const w = Math.max(6, x2 - x1);
+            const yy = y + bi * rowH;
+            const opacity = b.status === 'none' ? 0.25 : (b.status === 'completed' ? 1 : 0.75);
+            const stroke = b.status === 'completed' ? '#1B5E20' : (b.estimated ? '#999' : '#555');
+            svgBars += `<rect x="${x1.toFixed(1)}" y="${yy}" width="${w.toFixed(1)}" height="${rowH - 4}" rx="3" fill="${b.color}" fill-opacity="${opacity}" stroke="${stroke}" stroke-width="1"/>`;
+            svgBars += `<text x="${(x1 + 4).toFixed(1)}" y="${yy + 13}" font-size="10" fill="#fff">${escapeXml(b.catName)}</text>`;
+        });
+        y += fieldBlockH;
+    });
+
+    const todayX = labelW + ((today - minD) / 86400000) * (chartW - labelW) / totalDays;
+    const svgH = y + 10;
+    let headerSvg = dayHeaders.map(h => {
+        const x = labelW + h.i * (chartW - labelW) / totalDays;
+        return `<text x="${x}" y="18" font-size="10" fill="#666">${h.label}</text><line x1="${x}" y1="22" x2="${x}" y2="${svgH}" stroke="#eee" stroke-width="1"/>`;
+    }).join('');
+
+    area.innerHTML = `
+        <div style="font-size:12px; color:#666; margin-bottom:8px; line-height:1.4;">
+            <b>工程順:</b> ${escapeXml(orderLabel) || '（カテゴリなし）'}<br>
+            順番は「カテゴリ編集」の ▲▼ で変更できます。日付未設定は工程順に ${GANTT_STEP_DAYS} 日おきの仮予定です。
+        </div>
+        <div style="overflow:auto; border:1px solid #e0e0e0; border-radius:8px; background:#fff; max-height:60vh;">
+            <svg width="${chartW}" height="${svgH}" style="display:block; min-width:100%;">
+                ${headerSvg}
+                <line x1="${todayX}" y1="22" x2="${todayX}" y2="${svgH}" stroke="#E53935" stroke-width="2" stroke-dasharray="4 3"/>
+                <text x="${todayX + 4}" y="14" font-size="10" fill="#E53935">今日</text>
+                ${svgBars}
+            </svg>
+        </div>
+        <div style="margin-top:8px; font-size:11px; color:#888;">対象 ${rows.length} 圃場 ／ カテゴリ ${cats.length}</div>
+    `;
+};
+
+function escapeXml(s) {
+    return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
 

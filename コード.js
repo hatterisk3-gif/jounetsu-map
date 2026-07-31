@@ -32,6 +32,8 @@ function doPost(e) {
     else if (action === "saveTouki") result = saveToukiData(params.toukiData, params.targetHojoId);
     else if (action === "getToukiDetails") result = getToukiDetails(params.toukiIds);
     else if (action === "manageMaster") result = manageMasterData(params.masterType, params.manageAction, params.value, params.userName);
+    else if (action === "importPesticideMasterRows") result = importPesticideMasterRows(params);
+    else if (action === "importFertilizerMasterRows") result = importFertilizerMasterRows(params);
     else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
     else if (action === "markHarvestQtyLotResolved") result = markHarvestQtyLotResolved(params);
     else if (action === "saveGlobalShipping") result = saveGlobalShipping(params);
@@ -87,6 +89,8 @@ function doPost(e) {
     else if (action === "updateOpenClockInTime") result = updateOpenClockInTime(params);
     else if (action === "getWorkRecordTimeHints") result = getWorkRecordTimeHints(params);
     else if (action === "resetAllManureStatus") result = resetAllManureStatus(params.userName);
+    else if (action === "getProdMgmtCategories") result = getProdMgmtCategories();
+    else if (action === "saveProdMgmtCategories") result = saveProdMgmtCategories(params.categories, params.userName);
     else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
     else if (action === "changePassword") result = changePassword(params.userId, params.currentPassword, params.newPassword);
     else if (action === "machine_loadAll") result = machine_loadAll();
@@ -572,7 +576,7 @@ pdl.materials = [];
      }
   }
 
-// 🌟ここから追加：道具マスタの読み込み🌟
+  // 🌟道具マスタの読み込み🌟
   pdl.tools = [];
   const toolSh = ss.getSheetByName('道具マスタ');
   if (toolSh) {
@@ -592,6 +596,17 @@ pdl.materials = [];
         });
       }
     }
+  }
+  // 🌟農薬マスタ
+  try {
+    pdl.pesticides = readPesticideMasterList_();
+  } catch (peErr) {
+    pdl.pesticides = [];
+  }
+  try {
+    pdl.fertilizers = readFertilizerMasterList_();
+  } catch (feErr) {
+    pdl.fertilizers = [];
   }
   // 🌟ここまで🌟
   let pastReports = {};
@@ -639,7 +654,7 @@ pdl.materials = [];
 
   // =========================================================
   // ★修正：履歴から見つけていただいた「完璧なreturn」に上書き！
-  return { pdl, polygons: getSavedPolygons(), toukiList: getCol(['登記ID'], 0), activeLots };
+  return { pdl, polygons: getSavedPolygons(), toukiList: getCol(['登記ID'], 0), activeLots, prodCategories: getProdMgmtCategories() };
   // =========================================================
 
 } // ← これが getInitData を閉じる } です
@@ -859,6 +874,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'machineType') sheetName = '機種マスタ';
   else if (masterType === 'machineGroup') sheetName = '機械グループマスタ';
   else if (masterType === 'container') sheetName = 'コンテナマスタ';
+  else if (masterType === 'pesticide') sheetName = '農薬マスタ';
+  else if (masterType === 'fertilizer') sheetName = '肥料マスタ';
   
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -879,6 +896,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet = ensureMachineGroupMasterSheet_();
       } else if (masterType === 'location') {
           sheet = ensureLocationMasterSheet_();
+      } else if (masterType === 'pesticide') {
+          sheet = ensurePesticideMasterSheet_();
+      } else if (masterType === 'fertilizer') {
+          sheet = ensureFertilizerMasterSheet_();
       } else {
           throw new Error(`${sheetName}が見つかりません`);
       }
@@ -895,6 +916,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'container') {
     sheet = ensureContainerMasterSheet_();
+  }
+  if (masterType === 'pesticide') {
+    sheet = ensurePesticideMasterSheet_();
+  }
+  if (masterType === 'fertilizer') {
+    sheet = ensureFertilizerMasterSheet_();
   }
 
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
@@ -964,11 +991,21 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const contentQty = (cont.contentQty != null && cont.contentQty !== '') ? Number(cont.contentQty) || 0 : '';
       sheet.appendRow([name, crop, contentUnit, contentQty === '' ? '' : contentQty]);
       writeLog(userName, "マスタ追加", name, `対象: ${sheetName} / 品目: ${crop}`);
+    } else if (masterType === 'pesticide') {
+      const rowObj = normalizePesticideMasterItem_(value);
+      if (!rowObj.name) throw new Error('農薬名を入力してください');
+      appendPesticideMasterRow_(sheet, rowObj);
+      writeLog(userName, "マスタ追加", rowObj.name, `対象: ${sheetName} / 作物: ${rowObj.cropName || ''}`);
+    } else if (masterType === 'fertilizer') {
+      const rowObj = normalizeFertilizerMasterItem_(value);
+      if (!rowObj.name) throw new Error('肥料名を入力してください');
+      appendFertilizerMasterRow_(sheet, rowObj);
+      writeLog(userName, "マスタ追加", rowObj.name, `対象: ${sheetName}`);
     } else {
       // ★看板マスタなど、1列だけのシンプルなマスタ用
       sheet.appendRow([value]);
     }
-    if (masterType !== 'location' && masterType !== 'container') {
+    if (masterType !== 'location' && masterType !== 'container' && masterType !== 'pesticide' && masterType !== 'fertilizer') {
       writeLog(userName, "マスタ追加", (value && value.name) || value, `対象: ${sheetName}`);
     }
   } 
@@ -1138,6 +1175,60 @@ function manageMasterData(masterType, manageAction, value, userName) {
       }
       if (!found) throw new Error(`コンテナ「${originalName}」×品目「${originalCrop}」が見つかりません`);
       writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName}/${originalCrop} → ${newName}/${newCrop})`);
+    } else if (masterType === 'pesticide') {
+      const id = String((value && value.id) || (value && value.originalId) || '').trim();
+      if (!id) throw new Error('編集対象のIDがありません');
+      const newData = normalizePesticideMasterItem_((value && value.newData) || value || {});
+      if (!newData.name) throw new Error('農薬名を入力してください');
+      const latest = sheet.getDataRange().getValues();
+      let found = false;
+      for (let i = 1; i < latest.length; i++) {
+        if (String(latest[i][0] || '').trim() !== id) continue;
+        sheet.getRange(i + 1, 1, 1, 11).setValues([[
+          id,
+          newData.name,
+          newData.activeIngredient,
+          newData.volume,
+          newData.manufacturer,
+          newData.cropName,
+          newData.dilution,
+          newData.phiDays,
+          newData.useTimingText,
+          newData.regNumber,
+          newData.note
+        ]]);
+        found = true;
+        break;
+      }
+      if (!found) throw new Error('対象の農薬マスタ行が見つかりません');
+      writeLog(userName, "マスタ編集", newData.name, `対象: ${sheetName} / id: ${id}`);
+    } else if (masterType === 'fertilizer') {
+      const id = String((value && value.id) || (value && value.originalId) || '').trim();
+      if (!id) throw new Error('編集対象のIDがありません');
+      const newData = normalizeFertilizerMasterItem_((value && value.newData) || value || {});
+      if (!newData.name) throw new Error('肥料名を入力してください');
+      const latest = sheet.getDataRange().getValues();
+      let found = false;
+      for (let i = 1; i < latest.length; i++) {
+        if (String(latest[i][0] || '').trim() !== id) continue;
+        sheet.getRange(i + 1, 1, 1, 11).setValues([[
+          id,
+          newData.name,
+          newData.fertilizerType,
+          newData.nitrogen,
+          newData.phosphate,
+          newData.potash,
+          newData.components,
+          newData.volume,
+          newData.manufacturer,
+          newData.regNumber,
+          newData.note
+        ]]);
+        found = true;
+        break;
+      }
+      if (!found) throw new Error('対象の肥料マスタ行が見つかりません');
+      writeLog(userName, "マスタ編集", newData.name, `対象: ${sheetName} / id: ${id}`);
     }
   } 
   else if (manageAction === 'delete') {
@@ -1156,6 +1247,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
           const rowName = String(data[i][0] || '').trim();
           const rowCrop = String(data[i][1] || '').trim();
           if (rowName === String(targetVal || '').trim() && (!targetCrop || rowCrop === targetCrop)) match = true;
+      } else if (masterType === 'pesticide') {
+          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+      } else if (masterType === 'fertilizer') {
+          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'machineType' || masterType === 'machineGroup') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'crop') {
@@ -1192,6 +1287,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'container') {
     return readContainerMasterList_();
+  }
+  if (masterType === 'pesticide') {
+    return readPesticideMasterList_();
+  }
+  if (masterType === 'fertilizer') {
+    return readFertilizerMasterList_();
   }
   const newData = sheet.getDataRange().getValues();
   const returnHeaders = newData[0].map(h => String(h).trim());
@@ -1568,6 +1669,298 @@ function readContainerMasterList_(legacyNames) {
   return list;
 }
 
+// ========== 農薬マスタ ==========
+const PESTICIDE_MASTER_HEADERS_ = [
+  'ID', '農薬名', '有効成分', '内容量', '製造メーカー', '作物名',
+  '希釈倍率', '散布後日数', '使用時期原文', '登録番号', '備考'
+];
+
+function ensurePesticideMasterSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('農薬マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('農薬マスタ');
+    sheet.appendRow(PESTICIDE_MASTER_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, PESTICIDE_MASTER_HEADERS_.length).setFontWeight('bold');
+    return sheet;
+  }
+  const needCols = Math.max(sheet.getLastColumn(), PESTICIDE_MASTER_HEADERS_.length);
+  const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+  PESTICIDE_MASTER_HEADERS_.forEach((h, idx) => {
+    if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+  });
+  return sheet;
+}
+
+function normalizePesticideMasterItem_(raw) {
+  const v = (raw && typeof raw === 'object') ? raw : {};
+  let phi = v.phiDays;
+  if (phi === '' || phi == null) phi = '';
+  else {
+    const n = parseInt(String(phi).replace(/[^\d\-]/g, ''), 10);
+    phi = isNaN(n) ? '' : n;
+  }
+  return {
+    name: String(v.name || v.農薬名 || '').trim(),
+    activeIngredient: String(v.activeIngredient || v.有効成分 || '').trim(),
+    volume: String(v.volume || v.内容量 || '').trim(),
+    manufacturer: String(v.manufacturer || v.製造メーカー || '').trim(),
+    cropName: String(v.cropName || v.作物名 || '').trim(),
+    dilution: String(v.dilution || v.希釈倍率 || '').trim(),
+    phiDays: phi,
+    useTimingText: String(v.useTimingText || v.使用時期原文 || '').trim(),
+    regNumber: String(v.regNumber || v.登録番号 || '').trim(),
+    note: String(v.note || v.備考 || '').trim()
+  };
+}
+
+function appendPesticideMasterRow_(sheet, rowObj) {
+  const id = 'PEST-' + Utilities.getUuid().substring(0, 8);
+  sheet.appendRow([
+    id,
+    rowObj.name || '',
+    rowObj.activeIngredient || '',
+    rowObj.volume || '',
+    rowObj.manufacturer || '',
+    rowObj.cropName || '',
+    rowObj.dilution || '',
+    rowObj.phiDays === '' || rowObj.phiDays == null ? '' : rowObj.phiDays,
+    rowObj.useTimingText || '',
+    rowObj.regNumber || '',
+    rowObj.note || ''
+  ]);
+  return id;
+}
+
+function readPesticideMasterList_() {
+  const sheet = ensurePesticideMasterSheet_();
+  const data = sheet.getDataRange().getValues();
+  const list = [];
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][0] || '').trim();
+    const name = String(data[i][1] || '').trim();
+    if (!id && !name) continue;
+    list.push({
+      id: id,
+      name: name,
+      activeIngredient: String(data[i][2] || '').trim(),
+      volume: String(data[i][3] || '').trim(),
+      manufacturer: String(data[i][4] || '').trim(),
+      cropName: String(data[i][5] || '').trim(),
+      dilution: String(data[i][6] || '').trim(),
+      phiDays: (data[i][7] === '' || data[i][7] == null) ? '' : data[i][7],
+      useTimingText: String(data[i][8] || '').trim(),
+      regNumber: String(data[i][9] || '').trim(),
+      note: String(data[i][10] || '').trim()
+    });
+  }
+  list.sort((a, b) => {
+    const n = String(a.name).localeCompare(String(b.name), 'ja');
+    return n !== 0 ? n : String(a.cropName).localeCompare(String(b.cropName), 'ja');
+  });
+  return list;
+}
+
+/**
+ * FAMIC取込（ブラウザで突合・選択した行を追記）
+ * 重複キー: 登録番号 + 作物名 + 希釈倍率（登録番号が空なら農薬名+作物名+希釈）
+ */
+function importPesticideMasterRows(params) {
+  const userName = String((params && params.userName) || '').trim();
+  const rows = (params && params.rows) || [];
+  if (!Array.isArray(rows) || !rows.length) {
+    throw new Error('取り込む行がありません');
+  }
+  if (rows.length > 500) {
+    throw new Error('一度に取り込めるのは500件までです。絞り込んでから再度お試しください。');
+  }
+  const sheet = ensurePesticideMasterSheet_();
+  const existing = readPesticideMasterList_();
+  const seen = {};
+  existing.forEach(e => {
+    const key = pesticideDedupKey_(e);
+    if (key) seen[key] = true;
+  });
+
+  let added = 0;
+  let skipped = 0;
+  rows.forEach(raw => {
+    const item = normalizePesticideMasterItem_(raw);
+    if (!item.name) {
+      skipped++;
+      return;
+    }
+    const key = pesticideDedupKey_(item);
+    if (key && seen[key]) {
+      skipped++;
+      return;
+    }
+    appendPesticideMasterRow_(sheet, item);
+    if (key) seen[key] = true;
+    added++;
+  });
+  SpreadsheetApp.flush();
+  writeLog(userName || 'system', '農薬マスタ取込', String(added) + '件追加', 'スキップ:' + skipped);
+  return {
+    success: true,
+    added: added,
+    skipped: skipped,
+    pesticides: readPesticideMasterList_()
+  };
+}
+
+function pesticideDedupKey_(e) {
+  if (!e) return '';
+  const reg = String(e.regNumber || '').trim();
+  const name = String(e.name || '').trim();
+  const crop = String(e.cropName || '').trim();
+  const dil = String(e.dilution || '').trim();
+  if (reg) return reg + '\t' + crop + '\t' + dil;
+  if (name) return name + '\t' + crop + '\t' + dil;
+  return '';
+}
+
+// ========== 肥料マスタ ==========
+const FERTILIZER_MASTER_HEADERS_ = [
+  'ID', '肥料名', '肥料種類', '窒素', 'りん酸', '加里',
+  '保証成分', '内容量', '製造メーカー', '登録番号', '備考'
+];
+
+function ensureFertilizerMasterSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('肥料マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('肥料マスタ');
+    sheet.appendRow(FERTILIZER_MASTER_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, FERTILIZER_MASTER_HEADERS_.length).setFontWeight('bold');
+    return sheet;
+  }
+  const needCols = Math.max(sheet.getLastColumn(), FERTILIZER_MASTER_HEADERS_.length);
+  const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+  FERTILIZER_MASTER_HEADERS_.forEach((h, idx) => {
+    if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+  });
+  return sheet;
+}
+
+function normalizeFertilizerMasterItem_(raw) {
+  const v = (raw && typeof raw === 'object') ? raw : {};
+  return {
+    name: String(v.name || v.肥料名 || '').trim(),
+    fertilizerType: String(v.fertilizerType || v.肥料種類 || '').trim(),
+    nitrogen: String(v.nitrogen || v.窒素 || v.N || '').trim(),
+    phosphate: String(v.phosphate || v.りん酸 || v.リン酸 || v.P || '').trim(),
+    potash: String(v.potash || v.加里 || v.カリ || v.K || '').trim(),
+    components: String(v.components || v.保証成分 || '').trim(),
+    volume: String(v.volume || v.内容量 || '').trim(),
+    manufacturer: String(v.manufacturer || v.製造メーカー || v.業者名 || '').trim(),
+    regNumber: String(v.regNumber || v.登録番号 || '').trim(),
+    note: String(v.note || v.備考 || '').trim()
+  };
+}
+
+function appendFertilizerMasterRow_(sheet, rowObj) {
+  const id = 'FERT-' + Utilities.getUuid().substring(0, 8);
+  sheet.appendRow([
+    id,
+    rowObj.name || '',
+    rowObj.fertilizerType || '',
+    rowObj.nitrogen || '',
+    rowObj.phosphate || '',
+    rowObj.potash || '',
+    rowObj.components || '',
+    rowObj.volume || '',
+    rowObj.manufacturer || '',
+    rowObj.regNumber || '',
+    rowObj.note || ''
+  ]);
+  return id;
+}
+
+function readFertilizerMasterList_() {
+  const sheet = ensureFertilizerMasterSheet_();
+  const data = sheet.getDataRange().getValues();
+  const list = [];
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][0] || '').trim();
+    const name = String(data[i][1] || '').trim();
+    if (!id && !name) continue;
+    list.push({
+      id: id,
+      name: name,
+      fertilizerType: String(data[i][2] || '').trim(),
+      nitrogen: String(data[i][3] || '').trim(),
+      phosphate: String(data[i][4] || '').trim(),
+      potash: String(data[i][5] || '').trim(),
+      components: String(data[i][6] || '').trim(),
+      volume: String(data[i][7] || '').trim(),
+      manufacturer: String(data[i][8] || '').trim(),
+      regNumber: String(data[i][9] || '').trim(),
+      note: String(data[i][10] || '').trim()
+    });
+  }
+  list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'));
+  return list;
+}
+
+/**
+ * 肥料登録銘柄CSV取込（ブラウザで選択した行を追記）
+ * 重複キー: 登録番号（なければ肥料名+メーカー）
+ */
+function importFertilizerMasterRows(params) {
+  const userName = String((params && params.userName) || '').trim();
+  const rows = (params && params.rows) || [];
+  if (!Array.isArray(rows) || !rows.length) {
+    throw new Error('取り込む行がありません');
+  }
+  if (rows.length > 500) {
+    throw new Error('一度に取り込めるのは500件までです。絞り込んでから再度お試しください。');
+  }
+  const sheet = ensureFertilizerMasterSheet_();
+  const existing = readFertilizerMasterList_();
+  const seen = {};
+  existing.forEach(e => {
+    const key = fertilizerDedupKey_(e);
+    if (key) seen[key] = true;
+  });
+
+  let added = 0;
+  let skipped = 0;
+  rows.forEach(raw => {
+    const item = normalizeFertilizerMasterItem_(raw);
+    if (!item.name) {
+      skipped++;
+      return;
+    }
+    const key = fertilizerDedupKey_(item);
+    if (key && seen[key]) {
+      skipped++;
+      return;
+    }
+    appendFertilizerMasterRow_(sheet, item);
+    if (key) seen[key] = true;
+    added++;
+  });
+  SpreadsheetApp.flush();
+  writeLog(userName || 'system', '肥料マスタ取込', String(added) + '件追加', 'スキップ:' + skipped);
+  return {
+    success: true,
+    added: added,
+    skipped: skipped,
+    fertilizers: readFertilizerMasterList_()
+  };
+}
+
+function fertilizerDedupKey_(e) {
+  if (!e) return '';
+  const reg = String(e.regNumber || '').trim();
+  if (reg) return 'R:' + reg;
+  const name = String(e.name || '').trim();
+  const maker = String(e.manufacturer || '').trim();
+  if (name) return 'N:' + name + '\t' + maker;
+  return '';
+}
+
 /** ロット記録シートに内容単位・内容個数・内容内訳ヘッダーを確保 */
 function ensureLotRecordContentHeaders_(lotSheet) {
   if (!lotSheet) return;
@@ -1763,6 +2156,7 @@ function getSavedPolygons() {
         });
         let manureData = {};
         try { if (data[i][17]) manureData = JSON.parse(data[i][17]); } catch(e){}
+        manureData = migrateManureDataObject_(manureData);
         
         result[result.length - 1].manure_status = manureData.manure_status || 'none';
         result[result.length - 1].manure_deadline = manureData.manure_deadline || '';
@@ -1771,6 +2165,7 @@ function getSavedPolygons() {
         result[result.length - 1].manure_has_pin = manureData.manure_has_pin || false;
         result[result.length - 1].manure_route_selected = manureData.manure_route_selected || false;
         result[result.length - 1].transplant_jun = manureData.transplant_jun || '';
+        result[result.length - 1].catStatuses = manureData.catStatuses || {};
 
         // S列(19): 圃場メモ（鶏糞CAD風）
         let fieldMemo = null;
@@ -2043,7 +2438,14 @@ function updatePolygon(params) {
     if (params.toukiId !== undefined) sheet.getRange(targetRow, 12).setValue(params.toukiId); // L列: 登記ID
     if (params.water_status !== undefined) sheet.getRange(targetRow, 17).setValue(params.water_status); // Q列: 水管理ステータス
     if (params.drainage_status !== undefined) sheet.getRange(targetRow, 20).setValue(params.drainage_status); // T列: 排水溝ステータス
-    if (params.manureData !== undefined) sheet.getRange(targetRow, 18).setValue(params.manureData); // R列: 鶏糞散布用データ
+    if (params.manureData !== undefined) {
+      let md = params.manureData;
+      try {
+        const obj = (typeof md === 'string') ? JSON.parse(md) : md;
+        md = JSON.stringify(migrateManureDataObject_(obj || {}));
+      } catch (e) { /* そのまま保存 */ }
+      sheet.getRange(targetRow, 18).setValue(md); // R列: 生産管理ステータス
+    }
     
     if (params.ridgeDir !== undefined) sheet.getRange(targetRow, 14).setValue(params.ridgeDir); // N列(あれば)
     if (params.ridgeWidth !== undefined) sheet.getRange(targetRow, 15).setValue(params.ridgeWidth); // O列(あれば)
@@ -6340,13 +6742,23 @@ function resetAllManureStatus(userName) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('圃場');
   if (!sheet) throw new Error("圃場シートが見つかりません");
+  const cats = getProdMgmtCategories();
   const data = sheet.getDataRange().getValues();
   let count = 0;
   for (let i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
     let existing = {};
     try { if (data[i][17]) existing = JSON.parse(data[i][17]); } catch (e) {}
+    existing = migrateManureDataObject_(existing);
+    const catStatuses = {};
+    (cats || []).forEach(function(c) {
+      if (!c || !c.id) return;
+      catStatuses[c.id] = emptyProdCatStatus_();
+    });
+    // 万一カテゴリ未取得でも堆肥は残す
+    if (!catStatuses.compost) catStatuses.compost = emptyProdCatStatus_();
     const resetManure = {
+      catStatuses: catStatuses,
       manure_status: 'none',
       manure_deadline: '',
       manure_scheduled_date: '',
@@ -6359,8 +6771,139 @@ function resetAllManureStatus(userName) {
     count++;
   }
   SpreadsheetApp.flush();
-  writeLog(userName, "鶏糞ステータス全リセット", "全圃場", count + "件リセット");
+  writeLog(userName, "生産管理ステータス全リセット", "全圃場", count + "件リセット");
   return { success: true, count: count };
+}
+
+/** 生産管理MAP：カテゴリ1件分の空ステータス */
+function emptyProdCatStatus_() {
+  return {
+    status: 'none',
+    deadline: '',
+    scheduled_date: '',
+    cancel_reason: '',
+    has_pin: false,
+    route_selected: false
+  };
+}
+
+/**
+ * 旧・鶏糞フラット形式 → catStatuses（堆肥散布=compost）へ移行
+ * 互換のため manure_* フラット項目も堆肥と同期して残す
+ */
+function migrateManureDataObject_(raw) {
+  const d = (raw && typeof raw === 'object') ? raw : {};
+  if (!d.catStatuses || typeof d.catStatuses !== 'object') d.catStatuses = {};
+
+  if (!d.catStatuses.compost) {
+    d.catStatuses.compost = {
+      status: d.manure_status || 'none',
+      deadline: d.manure_deadline || '',
+      scheduled_date: d.manure_scheduled_date || '',
+      cancel_reason: d.manure_cancel_reason || '',
+      has_pin: !!d.manure_has_pin,
+      route_selected: !!d.manure_route_selected
+    };
+  } else {
+    const c = d.catStatuses.compost;
+    if (c.status == null) c.status = d.manure_status || 'none';
+    if (c.deadline == null) c.deadline = d.manure_deadline || '';
+    if (c.scheduled_date == null) c.scheduled_date = d.manure_scheduled_date || '';
+    if (c.cancel_reason == null) c.cancel_reason = d.manure_cancel_reason || '';
+    if (c.has_pin == null) c.has_pin = !!d.manure_has_pin;
+    if (c.route_selected == null) c.route_selected = !!d.manure_route_selected;
+  }
+
+  // フラット項目は常に堆肥と同期（旧クライアント・ルート設定互換）
+  const compost = d.catStatuses.compost;
+  d.manure_status = compost.status || 'none';
+  d.manure_deadline = compost.deadline || '';
+  d.manure_scheduled_date = compost.scheduled_date || '';
+  d.manure_cancel_reason = compost.cancel_reason || '';
+  d.manure_has_pin = !!compost.has_pin;
+  d.manure_route_selected = !!compost.route_selected;
+  if (d.transplant_jun == null) d.transplant_jun = '';
+  return d;
+}
+
+function getDefaultProdMgmtCategories_() {
+  return [
+    { id: 'ridge_crush', name: '畝つぶし', order: 1 },
+    { id: 'compost', name: '堆肥散布', order: 2 },
+    { id: 'dolomite', name: '苦土石灰散布', order: 3 },
+    { id: 'forward_pull', name: '正転引き', order: 4 },
+    { id: 'fertilizer', name: '肥料散布', order: 5 },
+    { id: 'forward_pull_finish', name: '正転引き（仕上げ）', order: 6 },
+    { id: 'ridge_make', name: '畝立て', order: 7 }
+  ];
+}
+
+function ensureProdMgmtCategorySheet_() {
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('データベースに接続できません');
+  let sheet = ss.getSheetByName('生産管理カテゴリ');
+  if (!sheet) {
+    sheet = ss.insertSheet('生産管理カテゴリ');
+    sheet.appendRow(['ID', '名前', '並び順']);
+    sheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#e0e0e0');
+    const defaults = getDefaultProdMgmtCategories_();
+    defaults.forEach(function(c) {
+      sheet.appendRow([c.id, c.name, c.order]);
+    });
+  } else if (sheet.getLastRow() <= 1) {
+    const defaults = getDefaultProdMgmtCategories_();
+    defaults.forEach(function(c) {
+      sheet.appendRow([c.id, c.name, c.order]);
+    });
+  }
+  return sheet;
+}
+
+function getProdMgmtCategories() {
+  const sheet = ensureProdMgmtCategorySheet_();
+  const data = sheet.getDataRange().getValues();
+  const list = [];
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][0] || '').trim();
+    const name = String(data[i][1] || '').trim();
+    if (!id || !name) continue;
+    const order = parseInt(data[i][2], 10);
+    list.push({
+      id: id,
+      name: name,
+      order: isNaN(order) ? i : order
+    });
+  }
+  list.sort(function(a, b) { return a.order - b.order; });
+  if (!list.length) return getDefaultProdMgmtCategories_();
+  return list;
+}
+
+function saveProdMgmtCategories(categories, userName) {
+  if (!checkAdminRole(userName)) throw new Error('管理者権限が必要です');
+  if (!Array.isArray(categories) || !categories.length) {
+    throw new Error('カテゴリが空です');
+  }
+  const sheet = ensureProdMgmtCategorySheet_();
+  const rows = [['ID', '名前', '並び順']];
+  const seen = {};
+  categories.forEach(function(c, idx) {
+    if (!c) return;
+    const id = String(c.id || '').trim();
+    const name = String(c.name || '').trim();
+    if (!id || !name) return;
+    if (seen[id]) throw new Error('カテゴリIDが重複しています: ' + id);
+    seen[id] = true;
+    const order = parseInt(c.order, 10);
+    rows.push([id, name, isNaN(order) ? (idx + 1) : order]);
+  });
+  if (rows.length <= 1) throw new Error('有効なカテゴリがありません');
+  sheet.clearContents();
+  sheet.getRange(1, 1, rows.length, 3).setValues(rows);
+  sheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#e0e0e0');
+  SpreadsheetApp.flush();
+  writeLog(userName || '', '生産管理カテゴリ更新', 'カテゴリ', (rows.length - 1) + '件');
+  return { success: true, categories: getProdMgmtCategories() };
 }
 
 function checkAdminRole(userName) {
