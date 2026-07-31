@@ -1432,7 +1432,17 @@ window.parseCsvTextFlexible_ = function(text) {
     const raw = String(text || '').replace(/^\uFEFF/, '');
     const lines = raw.split(/\r\n|\n|\r/).filter(l => l.length);
     if (!lines.length) return [];
-    const delim = (lines[0].split('\t').length > lines[0].split(',').length) ? '\t' : ',';
+    const headerHints = [
+        '肥料名称', '肥料名', 'FertilizerName', '登録番号', '農薬の名称', '有効成分',
+        '肥料種類', '業者', '窒素', 'りん酸', '加里', '作物名', '希釈'
+    ];
+    let headerIdx = 0;
+    const maxScan = Math.min(lines.length, 8);
+    for (let i = 0; i < maxScan; i++) {
+        const hit = headerHints.some(h => lines[i].indexOf(h) >= 0);
+        if (hit) { headerIdx = i; break; }
+    }
+    const delim = (lines[headerIdx].split('\t').length > lines[headerIdx].split(',').length) ? '\t' : ',';
     const parseLine = (line) => {
         const cols = [];
         let cur = '';
@@ -1450,15 +1460,16 @@ window.parseCsvTextFlexible_ = function(text) {
         cols.push(cur);
         return cols.map(c => String(c || '').trim());
     };
-    const headers = parseLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+    const headers = parseLine(lines[headerIdx]).map(h => h.replace(/^"|"$/g, '').trim());
     const rows = [];
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerIdx + 1; i < lines.length; i++) {
         const cols = parseLine(lines[i]);
         if (!cols.some(c => c)) continue;
         const obj = {};
         headers.forEach((h, idx) => { obj[h] = cols[idx] != null ? cols[idx] : ''; });
         rows.push(obj);
     }
+    rows._csvHeaders = headers;
     return rows;
 };
 
@@ -1495,24 +1506,55 @@ window.extractPhiDaysFromTiming_ = function(text) {
     return '';
 };
 
+window.scoreCsvDecodedText_ = function(text) {
+    const raw = String(text || '');
+    const head = raw.slice(0, 4000);
+    const firstLine = (raw.split(/\r\n|\n|\r/)[0] || '');
+    let score = 0;
+    score -= (raw.match(/\uFFFD/g) || []).length * 3;
+    const keywords = [
+        '肥料名称', '肥料名', '肥料種類', '肥料業者', '登録番号', '窒素', 'りん酸', '加里',
+        'FertilizerName', 'SupplierName', 'FertilizerTypeName', 'RegistrationNumber',
+        '農薬の名称', '有効成分', '適用作物', '作物名', '希釈'
+    ];
+    keywords.forEach(k => {
+        if (head.indexOf(k) >= 0) score += 12;
+    });
+    const cjk = (firstLine.match(/[\u3040-\u30ff\u4e00-\u9faf]/g) || []).length;
+    score += Math.min(cjk, 25);
+    // UTF-8をSJISと誤読したときの典型的な化けを減点
+    if (/縺|繝|繧|繧/.test(head)) score -= 30;
+    return score;
+};
+
 window.readFileAsTextSmart_ = function(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onerror = () => reject(new Error('ファイル読込に失敗しました'));
         reader.onload = () => {
             const buf = reader.result;
-            let text = '';
-            try {
-                text = new TextDecoder('shift-jis').decode(buf);
-                // 文字化けっぽければ UTF-8 再試行
-                if ((text.match(/\uFFFD/g) || []).length > 5) {
-                    text = new TextDecoder('utf-8').decode(buf);
-                }
-            } catch (e) {
-                try { text = new TextDecoder('utf-8').decode(buf); }
-                catch (e2) { reject(e2); return; }
+            const bytes = new Uint8Array(buf);
+            // ZIPをそのまま選んだ場合
+            if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07)) {
+                reject(new Error('ZIPのままでは読めません。解凍して中のCSVを選んでください。'));
+                return;
             }
-            resolve(text);
+            try {
+                let utf8 = '';
+                let sjis = '';
+                try { utf8 = new TextDecoder('utf-8', { fatal: false }).decode(buf); } catch (e) { utf8 = ''; }
+                try { sjis = new TextDecoder('shift-jis', { fatal: false }).decode(buf); } catch (e) { sjis = ''; }
+                // BOM付きUTF-8は優先
+                if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+                    resolve(utf8.replace(/^\uFEFF/, ''));
+                    return;
+                }
+                const sUtf = window.scoreCsvDecodedText_(utf8);
+                const sSjis = window.scoreCsvDecodedText_(sjis);
+                resolve((sUtf >= sSjis ? utf8 : sjis).replace(/^\uFEFF/, ''));
+            } catch (e) {
+                reject(e);
+            }
         };
         reader.readAsArrayBuffer(file);
     });
@@ -1678,13 +1720,22 @@ window.buildFertilizerItemsFromCsvRows_ = function(csvRows) {
     const mapped = [];
     const seen = {};
     (csvRows || []).forEach(r => {
-        const name = window.findCsvCol_(r, ['肥料名称', '肥料名', '銘柄名', 'FertilizerName']);
-        const manufacturer = window.findCsvCol_(r, ['肥料業者名称', '業者名称', '会社名', '製造メーカー', 'SupplierName']);
-        const fertilizerType = window.findCsvCol_(r, ['肥料種類名称', '肥料種類', '種類', 'FertilizerTypeName']);
-        const regNumber = window.findCsvCol_(r, ['登録番号', 'RegistrationNumberForReport', 'RegistrationNumber']);
-        const nitrogen = window.findCsvCol_(r, ['窒素全量', '窒素', 'TN', '保証窒素']);
-        const phosphate = window.findCsvCol_(r, ['りん酸全量', 'リン酸全量', 'りん酸', 'リン酸', 'TP']);
-        const potash = window.findCsvCol_(r, ['加里全量', 'カリ全量', '加里', 'カリ', 'TK']);
+        const name = window.findCsvCol_(r, [
+            '肥料名称', '肥料名', '銘柄名', '銘柄', 'FertilizerName', '名称'
+        ]);
+        const manufacturer = window.findCsvCol_(r, [
+            '肥料業者名称', '肥料業者名', '業者名称', '業者名', '会社名', '製造メーカー', 'メーカー', 'SupplierName'
+        ]);
+        const fertilizerType = window.findCsvCol_(r, [
+            '肥料種類名称', '肥料種類名', '肥料種類', '種類名称', '種類', 'FertilizerTypeName'
+        ]);
+        const regNumber = window.findCsvCol_(r, [
+            '登録番号', 'RegistrationNumberForReport', 'RegistrationNumber', '登録No'
+        ]);
+        // 検索画面の成分略号列（TN/TP/TK）にも対応
+        const nitrogen = window.findCsvCol_(r, ['窒素全量', '窒素全量(%)', '窒素', 'TN', '保証窒素']);
+        const phosphate = window.findCsvCol_(r, ['りん酸全量', 'リン酸全量', 'りん酸全量(%)', 'りん酸', 'リン酸', 'TP']);
+        const potash = window.findCsvCol_(r, ['加里全量', 'カリ全量', '加里全量(%)', '加里', 'カリ', 'TK']);
         const extras = [];
         [['苦土', 'SMG'], ['石灰', 'SCa'], ['ほう素', 'CB'], ['マンガン', 'SMN'], ['けい酸', 'SSI']].forEach(pair => {
             const val = window.findCsvCol_(r, pair);
@@ -1727,7 +1778,13 @@ window.uploadFertilizerCatalogFromCsv = async function() {
             await window.yieldToUi_();
             const items = window.buildFertilizerItemsFromCsvRows_(csvRows);
             if (!items.length) {
-                window.setCatalogJobProgress_('fertilizer', '有効な行がありません', 'error');
+                const headers = (csvRows && csvRows._csvHeaders) ? csvRows._csvHeaders.slice(0, 12).join(' / ') : '(なし)';
+                window.setCatalogJobProgress_(
+                    'fertilizer',
+                    '有効な行がありません。列: ' + headers + '（ZIPのまま・文字化けの可能性）',
+                    'error'
+                );
+                customAlert('有効な行がありません。\n\n読み取った列名:\n' + headers + '\n\n・ZIPは解凍してCSVを選んでください\n・公式の「登録データCSV」を選んでいるか確認してください');
                 return;
             }
             const res = await window.uploadCatalogChunks_('importFertilizerCatalogChunk', items, (msg) => {
