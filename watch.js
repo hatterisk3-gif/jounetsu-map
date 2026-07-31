@@ -193,6 +193,7 @@ async function watch() {
               }
             } catch (agentError) {
               console.error('\n⚠️ AIエージェントの処理中にエラーが発生しました！', agentError);
+              aiOutput = `【AIエージェント実行エラー】\n${agentError.message || agentError}`;
             }
 
             // 不要な一時ファイルのお掃除
