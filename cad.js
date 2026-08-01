@@ -1507,10 +1507,18 @@ window.handleMapClick = (pageX, pageY) => {
         return;
     }
 
+    if (window.cadPinMode === 'quad_corner') {
+        window.cadSetQuadCorner(window.cadQuadActiveIndex, latLng);
+        return;
+    }
+
     if (window.cadPinMode === 'custom_rect' || window.cadPinMode === 'custom_circle') {
         const shapeType = window.cadPinMode === 'custom_circle' ? 'circle' : 'rect';
         window.cadExecuteAddCustomShape(latLng, shapeType);
         window.cadPinMode = null;
+        if (window.cadGpsWatchId != null && (window.cadGpsPurpose === 'custom_rect' || window.cadGpsPurpose === 'custom_circle')) {
+            window.cadStopGpsPinPlace({ silent: true });
+        }
         if (msgEl) { msgEl.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。'; msgEl.style.color = "#FF9800"; }
         return;
     }
@@ -3310,6 +3318,7 @@ window.cadClearLines = (skipHistory = false) => {
     if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
     window.cadFrontBaseline = null;
     if (typeof window.cadClearPartialPoints === 'function') window.cadClearPartialPoints(true);
+    if (typeof window.cadClearQuadCorners === 'function') window.cadClearQuadCorners(true);
     const msgEl = document.getElementById('cadPinModeMsg'); if (msgEl) msgEl.innerText = "💡 畝を直接タップすると、十字キーで移動や変形ができます。";
 };
 
@@ -3370,8 +3379,17 @@ window.cadGpsLastPos = null;
 window.cadGpsPreviewMarker = null;
 window.cadGpsPreviewCircle = null;
 window.cadGpsPinType = null;
-/** 'equip' | 'partial_start' | 'partial_end' | 'split_cut' | null */
+/** 'equip' | 'partial_start' | 'partial_end' | 'split_cut' | 'custom_rect' | 'custom_circle' | 'quad_corner' | null */
 window.cadGpsPurpose = null;
+/** GPS自由畝用: 'rect' | 'circle' */
+window.cadCustomShapeGpsType = null;
+/** 4点分割畝: 角座標 [{lat,lng}|null x4] */
+window.cadQuadCorners = [null, null, null, null];
+window.cadQuadMarkers = [null, null, null, null];
+window.cadQuadPreviewPoly = null;
+window.cadQuadActiveIndex = 0;
+/** 'ab' = 畝が辺1→2に平行 / 'ad' = 畝が辺1→4に平行 */
+window.cadQuadDir = 'ab';
 /** GPS分割点: 生成順の畝配列で「このインデックスの前で切る」 */
 window.cadGpsSplitCuts = [];
 
@@ -3487,6 +3505,44 @@ window.cadUpdateGpsUi = (opts) => {
         sConfirm.style.background = (ok && good) ? '#2E7D32' : (ok ? '#F9A825' : '#455A64');
         sConfirm.style.color = (ok && !good) ? '#212121' : '#fff';
     }
+
+    // 自由畝GPSバー
+    const cBar = document.getElementById('cadCustomGpsBar');
+    const cStatus = document.getElementById('cadCustomGpsStatus');
+    const cConfirm = document.getElementById('cadCustomGpsConfirmBtn');
+    const customActive = purpose === 'custom_rect' || purpose === 'custom_circle';
+    if (cBar) cBar.style.display = customActive && active ? 'block' : 'none';
+    if (cStatus && customActive && opts.status != null) {
+        cStatus.textContent = opts.status;
+        cStatus.style.color = opts.statusColor || '#90CAF9';
+    }
+    if (cConfirm) {
+        const ok = customActive && active && hasFix;
+        cConfirm.disabled = !ok;
+        cConfirm.style.opacity = ok ? '1' : '0.6';
+        cConfirm.style.cursor = ok ? 'pointer' : 'not-allowed';
+        cConfirm.style.background = (ok && good) ? '#2E7D32' : (ok ? '#F9A825' : '#455A64');
+        cConfirm.style.color = (ok && !good) ? '#212121' : '#fff';
+    }
+
+    // 4点分割GPSバー
+    const qBar = document.getElementById('cadQuadGpsBar');
+    const qStatus = document.getElementById('cadQuadGpsStatus');
+    const qConfirm = document.getElementById('cadQuadGpsConfirmBtn');
+    const quadActive = purpose === 'quad_corner';
+    if (qBar) qBar.style.display = quadActive && active ? 'block' : 'none';
+    if (qStatus && quadActive && opts.status != null) {
+        qStatus.textContent = opts.status;
+        qStatus.style.color = opts.statusColor || '#90CAF9';
+    }
+    if (qConfirm) {
+        const ok = quadActive && active && hasFix;
+        qConfirm.disabled = !ok;
+        qConfirm.style.opacity = ok ? '1' : '0.6';
+        qConfirm.style.cursor = ok ? 'pointer' : 'not-allowed';
+        qConfirm.style.background = (ok && good) ? '#2E7D32' : (ok ? '#F9A825' : '#455A64');
+        qConfirm.style.color = (ok && !good) ? '#212121' : '#fff';
+    }
 };
 
 window.cadUpdateGpsPreview = (lat, lng, accuracy) => {
@@ -3506,6 +3562,9 @@ window.cadUpdateGpsPreview = (lat, lng, accuracy) => {
     if (purpose === 'partial_start') label = '起点';
     else if (purpose === 'partial_end') label = '終点';
     else if (purpose === 'split_cut') label = '分割位置';
+    else if (purpose === 'custom_rect') label = '四角畝';
+    else if (purpose === 'custom_circle') label = '丸畝';
+    else if (purpose === 'quad_corner') label = '角' + ((window.cadQuadActiveIndex || 0) + 1);
     else label = window.cadGpsPinTypeLabel(window.cadGpsPinType || window.cadPinMode);
 
     let hint = '「ここに置く」で確定';
@@ -3643,6 +3702,14 @@ window.cadConfirmGpsPinPlace = () => {
         window.cadConfirmSplitGpsCut();
         return;
     }
+    if (window.cadGpsPurpose === 'custom_rect' || window.cadGpsPurpose === 'custom_circle') {
+        window.cadConfirmCustomShapeGps();
+        return;
+    }
+    if (window.cadGpsPurpose === 'quad_corner') {
+        window.cadConfirmQuadGps();
+        return;
+    }
     const type = window.cadGpsPinType || window.cadPinMode;
     if (window.CAD_GPS_PIN_TYPES.indexOf(type) < 0) {
         alert('ピン種別が不明です。吸水・排水などを選んでからやり直してください。');
@@ -3671,11 +3738,16 @@ window.cadStopGpsPinPlace = (opts) => {
     window.cadGpsWatchId = null;
     window.cadGpsLastPos = null;
     window.cadGpsPurpose = null;
+    window.cadCustomShapeGpsType = null;
     window.cadClearGpsPreview();
     const pBar = document.getElementById('cadPartialGpsBar');
     if (pBar) pBar.style.display = 'none';
     const sBar = document.getElementById('cadSplitGpsBar');
     if (sBar) sBar.style.display = 'none';
+    const cBar = document.getElementById('cadCustomGpsBar');
+    if (cBar) cBar.style.display = 'none';
+    const qBar = document.getElementById('cadQuadGpsBar');
+    if (qBar) qBar.style.display = 'none';
     if (!opts.silent && !opts.keepStatus) {
         window.cadUpdateGpsUi({ status: 'ピン種別を選んで「GPSで置く」を押してください', statusColor: '#90CAF9' });
     } else {
@@ -4099,18 +4171,69 @@ window.cadSetFrontBar = (position) => {
 
 window.cadAddCustomShape = (type) => {
     const mode = (type === 'circle') ? 'custom_circle' : 'custom_rect';
+    // GPS測位中なら止めてタップ配置へ
+    if (window.cadGpsWatchId != null) {
+        window.cadStopGpsPinPlace({ silent: true });
+    }
     window.cadPinMode = mode;
+    window.cadCustomShapeGpsType = (type === 'circle') ? 'circle' : 'rect';
     const msgEl = document.getElementById('cadPinModeMsg');
     if (msgEl) {
         msgEl.innerText = mode === 'custom_rect'
-            ? '【四角畝】配置したい場所をタップしてください（畝幅・畝方向に合わせます）'
-            : '【丸畝】配置したい場所をタップしてください（直径＝基準畝幅）';
+            ? '【四角畝】配置したい場所をタップ（または「GPSで四角畝」）'
+            : '【丸畝】配置したい場所をタップ（または「GPSで丸畝」）';
         msgEl.style.color = '#8BC34A';
     }
 };
 
-/** 四角畝・丸畝をタップ位置に生成（畝幅基準・圃場内にクリップ） */
-window.cadExecuteAddCustomShape = (latLng, type) => {
+/** GPS現在地に自由畝を置く（測位開始） */
+window.cadStartCustomShapeGps = (type) => {
+    const shape = (type === 'circle') ? 'circle' : 'rect';
+    const purpose = shape === 'circle' ? 'custom_circle' : 'custom_rect';
+    window.cadCustomShapeGpsType = shape;
+    window.cadPinMode = purpose; // 測位中も地図タップで代替配置可
+    const label = shape === 'circle' ? '丸畝' : '四角畝';
+    const ok = window.cadStartPurposeGpsWatch(
+        purpose,
+        `【${label}】GPS測位中… 置きたい場所に立って「ここに置く」`
+    );
+    if (!ok) return;
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = `【${label}・GPS】現在地プレビューを確認し「ここに置く」で確定（地図タップでも可）`;
+        msgEl.style.color = '#1565C0';
+    }
+    if (typeof switchCadTab === 'function') {
+        try { switchCadTab(1); } catch (e) {}
+    }
+};
+
+/** GPS現在地で自由畝を確定 */
+window.cadConfirmCustomShapeGps = () => {
+    if (!window.cadGpsLastPos) {
+        alert('まだ現在地を取得できていません。少し待ってから再度お試しください。');
+        return;
+    }
+    const shape = window.cadCustomShapeGpsType
+        || (window.cadGpsPurpose === 'custom_circle' ? 'circle' : 'rect');
+    const acc = Math.round(window.cadGpsLastPos.accuracy || 999);
+    if (acc > 15) {
+        if (!confirm(`現在の精度は ±${acc}m です。\nこのまま置きますか？（あとから移動・変形できます）`)) return;
+    }
+    const latLng = new google.maps.LatLng(window.cadGpsLastPos.lat, window.cadGpsLastPos.lng);
+    window.cadExecuteAddCustomShape(latLng, shape, { fromGps: true });
+    window.cadPinMode = null;
+    window.cadStopGpsPinPlace({ silent: true });
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = `【${shape === 'circle' ? '丸畝' : '四角畝'}】GPS位置に設置しました（ドラッグで微調整可）`;
+        msgEl.style.color = '#8BC34A';
+    }
+};
+
+/** 四角畝・丸畝をタップ／GPS位置に生成（畝幅基準・圃場内にクリップ） */
+window.cadExecuteAddCustomShape = (latLng, type, opts) => {
+    opts = opts || {};
     if (!window.cadTargetId || !latLng) return;
 
     const p = loadedPolygons[window.cadTargetId];
@@ -4127,10 +4250,12 @@ window.cadExecuteAddCustomShape = (latLng, type) => {
     const tPoly = turf.polygon([fieldCoords]);
     const centerPt = turf.point([latLng.lng(), latLng.lat()]);
 
-    // 圃場外タップは拒否
+    // 圃場外は拒否
     try {
         if (!turf.booleanPointInPolygon(centerPt, tPoly)) {
-            alert('圃場の内側をタップしてください。');
+            alert(opts.fromGps
+                ? '現在地が圃場の外側です。圃場内に立ってから再度「ここに置く」を押してください。'
+                : '圃場の内側をタップしてください。');
             return;
         }
     } catch (e) {}
@@ -4829,6 +4954,414 @@ window.cadClearPartialPoints = (silent) => {
             msgEl.innerText = '起点・終点をクリアしました。';
             msgEl.style.color = '#FFB74D';
         }
+    }
+};
+
+// ===== 4点囲み → N分割畝 =====
+window.cadQuadNextEmptyIndex_ = () => {
+    const arr = window.cadQuadCorners || [null, null, null, null];
+    for (let i = 0; i < 4; i++) {
+        if (!arr[i]) return i;
+    }
+    return 0;
+};
+
+window.cadBeginQuadCorner = (idx) => {
+    const i = Math.max(0, Math.min(3, parseInt(idx, 10) || 0));
+    if (window.cadGpsWatchId != null) window.cadStopGpsPinPlace({ silent: true });
+    window.cadQuadActiveIndex = i;
+    window.cadPinMode = 'quad_corner';
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = `【4点分割】角${i + 1} を地図タップ（または「GPSで次の角」）`;
+        msgEl.style.color = '#81D4FA';
+    }
+    window.cadUpdateQuadUi_();
+};
+
+window.cadSetQuadDir = (dir) => {
+    window.cadQuadDir = (dir === 'ad') ? 'ad' : 'ab';
+    window.cadUpdateQuadUi_();
+};
+
+window.cadUpdateQuadUi_ = () => {
+    const corners = window.cadQuadCorners || [null, null, null, null];
+    const filled = corners.filter(Boolean).length;
+    const status = document.getElementById('cadQuadStatus');
+    if (status) {
+        status.textContent = `角 ${filled}/4` + (filled === 4 ? ' → 分割数を決めて生成できます' : '（時計回りに打つと分かりやすい）');
+    }
+    for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById('cadQuadCornerBtn' + i);
+        if (!btn) continue;
+        const has = !!corners[i];
+        const active = window.cadQuadActiveIndex === i && window.cadPinMode === 'quad_corner';
+        if (active) {
+            btn.style.background = '#0277BD';
+            btn.style.color = '#fff';
+            btn.style.border = 'none';
+        } else if (has) {
+            btn.style.background = '#2E7D32';
+            btn.style.color = '#fff';
+            btn.style.border = 'none';
+        } else {
+            btn.style.background = '#333';
+            btn.style.color = '#ccc';
+            btn.style.border = '1px solid #666';
+        }
+        btn.textContent = has ? ('角' + (i + 1) + '✓') : ('角' + (i + 1));
+    }
+    const ab = document.getElementById('cadQuadDirAb');
+    const ad = document.getElementById('cadQuadDirAd');
+    const isAb = window.cadQuadDir !== 'ad';
+    if (ab) {
+        ab.style.background = isAb ? '#0277BD' : '#333';
+        ab.style.border = isAb ? '1px solid #0277BD' : '1px solid #666';
+        ab.style.color = isAb ? '#fff' : '#ccc';
+    }
+    if (ad) {
+        ad.style.background = !isAb ? '#0277BD' : '#333';
+        ad.style.border = !isAb ? '1px solid #0277BD' : '1px solid #666';
+        ad.style.color = !isAb ? '#fff' : '#ccc';
+    }
+};
+
+window.cadUpsertQuadMarker_ = (idx, lat, lng) => {
+    if (!window.cadMap || typeof google === 'undefined' || !google.maps) return;
+    if (!window.cadQuadMarkers) window.cadQuadMarkers = [null, null, null, null];
+    const colors = ['#0277BD', '#00838F', '#00695C', '#558B2F'];
+    const pos = new google.maps.LatLng(lat, lng);
+    if (window.cadQuadMarkers[idx]) {
+        window.cadQuadMarkers[idx].setPosition(pos);
+        window.cadQuadMarkers[idx].setMap(window.cadMap);
+        return;
+    }
+    window.cadQuadMarkers[idx] = new google.maps.Marker({
+        position: pos,
+        map: window.cadMap,
+        title: '分割範囲の角' + (idx + 1),
+        label: { text: String(idx + 1), color: '#fff', fontWeight: 'bold', fontSize: '11px' },
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: colors[idx] || '#0277BD',
+            fillOpacity: 1,
+            strokeColor: '#fff',
+            strokeWeight: 2
+        },
+        zIndex: 998
+    });
+};
+
+window.cadUpdateQuadPreview_ = () => {
+    const corners = (window.cadQuadCorners || []).filter(Boolean);
+    if (window.cadQuadPreviewPoly) {
+        window.cadQuadPreviewPoly.setMap(null);
+        window.cadQuadPreviewPoly = null;
+    }
+    if (corners.length < 2 || !window.cadMap || typeof google === 'undefined') return;
+    const path = corners.map(c => ({ lat: c.lat, lng: c.lng }));
+    if (corners.length >= 3) path.push({ lat: corners[0].lat, lng: corners[0].lng });
+    window.cadQuadPreviewPoly = new google.maps.Polyline({
+        path: path,
+        geodesic: true,
+        strokeColor: '#29B6F6',
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+        map: window.cadMap,
+        zIndex: 50,
+        clickable: false
+    });
+};
+
+window.cadSetQuadCorner = (idx, latLng, opts) => {
+    opts = opts || {};
+    if (!latLng) return;
+    const i = Math.max(0, Math.min(3, parseInt(idx, 10) || 0));
+    const lat = typeof latLng.lat === 'function' ? latLng.lat() : parseFloat(latLng.lat);
+    const lng = typeof latLng.lng === 'function' ? latLng.lng() : parseFloat(latLng.lng);
+    if (!isFinite(lat) || !isFinite(lng)) return;
+
+    // 圃場内チェック
+    if (window.cadTargetId && typeof turf !== 'undefined' && loadedPolygons[window.cadTargetId]) {
+        const p = loadedPolygons[window.cadTargetId];
+        if (p && p.coords && p.coords.length >= 3) {
+            let coords = p.coords.map(pt => [
+                typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+                typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+            ]);
+            if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+                coords.push([coords[0][0], coords[0][1]]);
+            }
+            try {
+                if (!turf.booleanPointInPolygon(turf.point([lng, lat]), turf.polygon([coords]))) {
+                    alert(opts.fromGps
+                        ? '現在地が圃場の外側です。圃場内に立ってから打ってください。'
+                        : '圃場の内側をタップしてください。');
+                    return;
+                }
+            } catch (e) {}
+        }
+    }
+
+    if (!window.cadQuadCorners) window.cadQuadCorners = [null, null, null, null];
+    window.cadQuadCorners[i] = { lat: lat, lng: lng };
+    window.cadUpsertQuadMarker_(i, lat, lng);
+    window.cadUpdateQuadPreview_();
+
+    // 次の空き角へ自動移動
+    let next = -1;
+    for (let j = 0; j < 4; j++) {
+        if (!window.cadQuadCorners[j]) { next = j; break; }
+    }
+    if (window.cadGpsWatchId != null && window.cadGpsPurpose === 'quad_corner') {
+        window.cadStopGpsPinPlace({ silent: true });
+    }
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (next >= 0) {
+        window.cadQuadActiveIndex = next;
+        window.cadPinMode = 'quad_corner'; // 連続タップで次の角を打てる
+        if (msgEl) {
+            msgEl.innerText = `角${i + 1} を設定。次は角${next + 1}（タップまたはGPS）`;
+            msgEl.style.color = '#81D4FA';
+        }
+    } else {
+        window.cadQuadActiveIndex = 0;
+        window.cadPinMode = null;
+        if (msgEl) {
+            msgEl.innerText = '4点が揃いました。分割数を決めて「分割して畝生成」を押してください。';
+            msgEl.style.color = '#81D4FA';
+        }
+    }
+    window.cadUpdateQuadUi_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+};
+
+window.cadStartQuadGps = () => {
+    const idx = window.cadQuadNextEmptyIndex_();
+    window.cadQuadActiveIndex = idx;
+    window.cadPinMode = 'quad_corner';
+    const ok = window.cadStartPurposeGpsWatch(
+        'quad_corner',
+        `【角${idx + 1}】GPS測位中… 角の位置に立って「ここに角を打つ」`
+    );
+    if (!ok) return;
+    window.cadUpdateQuadUi_();
+    if (typeof switchCadTab === 'function') {
+        try { switchCadTab(1); } catch (e) {}
+    }
+};
+
+window.cadConfirmQuadGps = () => {
+    if (!window.cadGpsLastPos) {
+        alert('まだ現在地を取得できていません。少し待ってから再度お試しください。');
+        return;
+    }
+    const acc = Math.round(window.cadGpsLastPos.accuracy || 999);
+    if (acc > 15) {
+        if (!confirm(`現在の精度は ±${acc}m です。\nこのまま角を打ちますか？`)) return;
+    }
+    const idx = window.cadQuadActiveIndex != null ? window.cadQuadActiveIndex : window.cadQuadNextEmptyIndex_();
+    const latLng = new google.maps.LatLng(window.cadGpsLastPos.lat, window.cadGpsLastPos.lng);
+    window.cadSetQuadCorner(idx, latLng, { fromGps: true });
+};
+
+window.cadClearQuadCorners = (silent) => {
+    window.cadQuadCorners = [null, null, null, null];
+    (window.cadQuadMarkers || []).forEach((m, i) => {
+        if (m) { try { m.setMap(null); } catch (e) {} }
+        if (window.cadQuadMarkers) window.cadQuadMarkers[i] = null;
+    });
+    if (window.cadQuadPreviewPoly) {
+        window.cadQuadPreviewPoly.setMap(null);
+        window.cadQuadPreviewPoly = null;
+    }
+    window.cadQuadActiveIndex = 0;
+    if (window.cadPinMode === 'quad_corner') window.cadPinMode = null;
+    if (window.cadGpsPurpose === 'quad_corner') window.cadStopGpsPinPlace({ silent: true });
+    window.cadUpdateQuadUi_();
+    if (!silent) {
+        const msgEl = document.getElementById('cadPinModeMsg');
+        if (msgEl) {
+            msgEl.innerText = '4点をクリアしました。';
+            msgEl.style.color = '#81D4FA';
+        }
+    }
+};
+
+window.cadLerpLngLat_ = (a, b, t) => {
+    return [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t
+    ];
+};
+
+/**
+ * 4点四角形をN分割して畝を追加生成
+ * 角は時計回り推奨。畝方向: ab=辺1→2に平行 / ad=辺1→4に平行
+ */
+window.cadGenerateQuadStripLines = () => {
+    try {
+        if (!window.cadTargetId) return;
+        const corners = window.cadQuadCorners || [];
+        if (corners.filter(Boolean).length < 4) {
+            alert('先に4つの角をすべて打ってください（タップまたはGPS）。');
+            return;
+        }
+        const countEl = document.getElementById('cadQuadSplitCount');
+        let n = countEl && countEl.value ? parseInt(countEl.value, 10) : 0;
+        if (isNaN(n) || n < 1) {
+            alert('分割数を1以上にしてください。');
+            return;
+        }
+        if (n > 200) {
+            alert('分割数は200以下にしてください。');
+            return;
+        }
+
+        const p = loadedPolygons[window.cadTargetId];
+        if (!p || !p.coords || p.coords.length < 3) return;
+
+        let fieldCoords = p.coords.map(pt => [
+            typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+            typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+        ]);
+        if (fieldCoords[0][0] !== fieldCoords[fieldCoords.length - 1][0]
+            || fieldCoords[0][1] !== fieldCoords[fieldCoords.length - 1][1]) {
+            fieldCoords.push([fieldCoords[0][0], fieldCoords[0][1]]);
+        }
+        const fieldPoly = turf.polygon([fieldCoords]);
+
+        // 角: 入力順 A B C D（時計回り想定）
+        const A = [corners[0].lng, corners[0].lat];
+        const B = [corners[1].lng, corners[1].lat];
+        const C = [corners[2].lng, corners[2].lat];
+        const D = [corners[3].lng, corners[3].lat];
+
+        let quadPoly = null;
+        try {
+            quadPoly = turf.polygon([[A, B, C, D, A]]);
+            const area = Math.abs(turf.area(quadPoly));
+            if (!(area > 0.5)) {
+                alert('4点の面積が小さすぎます。角を広げて打ち直してください。');
+                return;
+            }
+        } catch (e) {
+            alert('4点が四角形になりません。時計回りに打ち直してください。');
+            return;
+        }
+
+        let clipPoly = null;
+        try {
+            clipPoly = turf.intersect(fieldPoly, quadPoly);
+        } catch (e) {
+            clipPoly = quadPoly;
+        }
+        if (!clipPoly) {
+            alert('指定範囲が圃場と重なっていません。');
+            return;
+        }
+
+        const dir = window.cadQuadDir === 'ad' ? 'ad' : 'ab';
+        // ab: 畝が AB に平行 → 反対辺 AD と BC を補間
+        // ad: 畝が AD に平行 → 反対辺 AB と DC を補間
+        let e0a, e0b, e1a, e1b, ridgeBearingFrom, ridgeBearingTo;
+        if (dir === 'ad') {
+            e0a = A; e0b = B;
+            e1a = D; e1b = C;
+            ridgeBearingFrom = A;
+            ridgeBearingTo = D;
+        } else {
+            e0a = A; e0b = D;
+            e1a = B; e1b = C;
+            ridgeBearingFrom = A;
+            ridgeBearingTo = B;
+        }
+
+        // 畝角度を UI に反映
+        try {
+            const bearing = turf.bearing(turf.point(ridgeBearingFrom), turf.point(ridgeBearingTo));
+            const angleEl = document.getElementById('cadAngle');
+            if (angleEl) angleEl.value = String(Math.round(((bearing % 360) + 360) % 360));
+        } catch (e) {}
+
+        const gapRatio = typeof window.cadRidgeGapRatio !== 'undefined' ? window.cadRidgeGapRatio : 0.2;
+        const fill = Math.max(0.5, Math.min(1, 1 - gapRatio));
+
+        let startIdx = 0;
+        (window.cadUnePolygons || []).forEach(poly => {
+            if (poly && poly.uneIndex && String(poly.uneIndex).indexOf('une_') === 0) {
+                const nIdx = parseInt(String(poly.uneIndex).replace('une_', ''), 10);
+                if (!isNaN(nIdx) && nIdx >= startIdx) startIdx = nIdx + 1;
+            }
+        });
+
+        let successCount = 0;
+        for (let i = 0; i < n; i++) {
+            const t0 = i / n;
+            const t1 = (i + 1) / n;
+            const mid = (t0 + t1) / 2;
+            const half = ((t1 - t0) / 2) * fill;
+            const u0 = Math.max(0, mid - half);
+            const u1 = Math.min(1, mid + half);
+
+            const p00 = window.cadLerpLngLat_(e0a, e0b, u0);
+            const p01 = window.cadLerpLngLat_(e0a, e0b, u1);
+            const p10 = window.cadLerpLngLat_(e1a, e1b, u0);
+            const p11 = window.cadLerpLngLat_(e1a, e1b, u1);
+
+            let strip = null;
+            try {
+                strip = turf.polygon([[p00, p01, p11, p10, p00]]);
+            } catch (e) {
+                continue;
+            }
+
+            let finalPoly = null;
+            try {
+                finalPoly = turf.intersect(clipPoly, strip);
+            } catch (e) {
+                finalPoly = strip;
+            }
+            if (!finalPoly) continue;
+
+            let flattened;
+            try {
+                flattened = turf.flatten(finalPoly);
+            } catch (e) {
+                flattened = { features: [finalPoly] };
+            }
+
+            (flattened.features || []).forEach(feature => {
+                if (!feature || !feature.geometry || feature.geometry.type !== 'Polygon') return;
+                const ring = feature.geometry.coordinates[0];
+                if (!ring || ring.length < 4) return;
+                // turf coords are [lng, lat]
+                addUnePolygon(ring, startIdx + successCount);
+                successCount++;
+            });
+        }
+
+        window.reassignLabels();
+        window.saveCadStateToHistory();
+        window.cadSvgNeedsRebuild = true;
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+
+        if (successCount === 0) {
+            alert('畝が生成できませんでした。角の順序や分割数を確認してください。');
+        } else {
+            const msgEl = document.getElementById('cadPinModeMsg');
+            if (msgEl) {
+                msgEl.innerText = `4点範囲から ${successCount} 本の畝を生成しました。`;
+                msgEl.style.color = '#81D4FA';
+            }
+            const mode1El = document.getElementById('cadMode1');
+            if (mode1El && mode1El.style.display === 'block') {
+                try { switchCadTab(2); } catch (e) {}
+            }
+        }
+    } catch (err) {
+        alert('分割畝の生成中にエラー: ' + (err && err.message ? err.message : err));
     }
 };
 
