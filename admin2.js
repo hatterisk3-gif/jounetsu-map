@@ -418,14 +418,6 @@ function flushPendingInitData() {
         return;
     }
     if (Object.keys(loadedPolygons || {}).length > 0) return;
-    const cached = localStorage.getItem('pMapAdminInitData');
-    if (!cached) return;
-    try { renderInitData(JSON.parse(cached)); } catch (e) {
-        console.warn('キャッシュからの圃場描画に失敗:', e);
-    }
-}
-
-function renderInitData(data, opts) {
     if (!data) return;
     const interim = !!(opts && opts.interim);
     pendingInitData = data;
@@ -476,7 +468,10 @@ function renderInitData(data, opts) {
     const statEl = document.getElementById('fieldStatus');
     if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + html(pdlLocations);
     if (condEl) condEl.innerHTML = '<option value="">条件</option>' + html(pdlConditions);
-    if (statEl) statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses);
+    if (statEl) {
+        statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option>';
+        statEl.setAttribute('onchange', 'handleStatusSelect(this)');
+    }
 
     // 🌟防御：空（0件）のデータで、表示済みの圃場・看板を消さない
     const incomingPolys = Array.isArray(data.polygons) ? data.polygons : [];
@@ -758,7 +753,7 @@ function openAttr(id) {
              </div>
            `);
     } else {
-        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">稼働状況</label><select id="edS" class="form-input"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}</select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
+        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
 }
 
@@ -3731,3 +3726,164 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 500);
 });
+
+window.refreshAllStatusSelects = (selectedVal) => {
+    const listHtml = pdlStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
+    const optionsWithSpecial = (emptyLabel) => 
+        `<option value="">${emptyLabel}</option>` + listHtml + 
+        `<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option>` +
+        `<option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option>`;
+
+    const statEl = document.getElementById('fieldStatus');
+    if (statEl) {
+        const curVal = selectedVal !== undefined ? selectedVal : statEl.value;
+        statEl.innerHTML = optionsWithSpecial('稼働状況');
+        if (curVal && pdlStatuses.includes(curVal)) statEl.value = curVal;
+    }
+
+    const edS = document.getElementById('edS');
+    if (edS) {
+        const curVal = selectedVal !== undefined ? selectedVal : edS.value;
+        edS.innerHTML = optionsWithSpecial('未設定');
+        if (curVal && pdlStatuses.includes(curVal)) edS.value = curVal;
+    }
+};
+
+window.openFieldStatusManager = (autoFocusAdd = false) => {
+    renderStatusManagerModalUI(autoFocusAdd);
+};
+
+function renderStatusManagerModalUI(autoFocusAdd = false) {
+    const modal = document.getElementById('modal');
+    const modalBody = document.getElementById('modalBody');
+    if (!modal || !modalBody) return;
+
+    let itemsHtml = '';
+    if (pdlStatuses.length === 0) {
+        itemsHtml = '<div style="color:#888; text-align:center; padding:15px; font-size:13px;">登録されている稼働状況はありません</div>';
+    } else {
+        itemsHtml = pdlStatuses.map((st, idx) => `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #eee; background:${idx % 2 === 0 ? '#fff' : '#f9f9f9'}; border-radius:4px; margin-bottom:4px;">
+                <span style="font-weight:bold; font-size:14px; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${st}</span>
+                <div style="display:flex; gap:6px; flex-shrink:0;">
+                    <button type="button" onclick="adminEditFieldStatusItem('${st}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer; font-weight:bold;">✏️ 編集</button>
+                    <button type="button" onclick="adminDeleteFieldStatusItem('${st}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer; font-weight:bold;">🗑️ 削除</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    modalBody.innerHTML = `
+        <div style="width:340px; max-width:100%; box-sizing:border-box; text-align:left; font-family:sans-serif;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #4CAF50; padding-bottom:8px; margin-bottom:12px;">
+                <h3 style="margin:0; font-size:16px; color:#2E7D32;">🚜 稼働状況マスタの管理</h3>
+                <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; font-size:20px; color:#888; font-weight:bold;">&times;</span>
+            </div>
+            
+            <div style="margin-bottom:15px; background:#f0f4c3; padding:10px; border-radius:6px;">
+                <label style="font-size:12px; font-weight:bold; color:#33691E; display:block; margin-bottom:4px;">➕ 新規稼働状況の追加</label>
+                <div style="display:flex; gap:6px;">
+                    <input type="text" id="newStatusInput" placeholder="例: 休耕中, 作付中..." style="flex:1; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+                    <button type="button" onclick="adminAddNewFieldStatusItem()" style="background:#4CAF50; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:13px;">追加</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom:15px;">
+                <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">📋 登録中の項目一覧 (${pdlStatuses.length}件)</div>
+                <div style="max-height:220px; overflow-y:auto; border:1px solid #e0e0e0; border-radius:6px; padding:4px; background:#fafafa;">
+                    ${itemsHtml}
+                </div>
+            </div>
+
+            <div style="text-align:right;">
+                <button type="button" onclick="document.getElementById('modal').style.display='none'" style="background:#757575; color:white; border:none; padding:8px 16px; border-radius:4px; font-weight:bold; cursor:pointer;">閉じる</button>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+    if (autoFocusAdd) {
+        setTimeout(() => {
+            const input = document.getElementById('newStatusInput');
+            if (input) input.focus();
+        }, 100);
+    }
+}
+
+window.adminAddNewFieldStatusItem = async () => {
+    const input = document.getElementById('newStatusInput');
+    if (!input) return;
+    let newVal = String(input.value || '').trim();
+    if (!newVal) {
+        customAlert("稼働状況名を入力してください");
+        return;
+    }
+    if (pdlStatuses.includes(newVal)) {
+        customAlert("すでに同じ名前の稼働状況が存在します");
+        return;
+    }
+
+    pdlStatuses.push(newVal);
+    refreshAllStatusSelects(newVal);
+    renderStatusManagerModalUI();
+
+    try {
+        await callGAS('addFieldStatus', { statusName: newVal });
+    } catch(e) {
+        customAlert("稼働状況の保存に失敗しました");
+    }
+};
+
+window.adminEditFieldStatusItem = async (oldVal) => {
+    let newVal = prompt(`「${oldVal}」の新しい名称を入力してください:`, oldVal);
+    if (!newVal || newVal.trim() === '' || newVal.trim() === oldVal) return;
+    newVal = newVal.trim();
+
+    if (pdlStatuses.includes(newVal)) {
+        customAlert("すでに同名の稼働状況が存在します");
+        return;
+    }
+
+    const idx = pdlStatuses.indexOf(oldVal);
+    if (idx !== -1) pdlStatuses[idx] = newVal;
+
+    if (typeof loadedPolygons === 'object') {
+        Object.keys(loadedPolygons).forEach(id => {
+            if (loadedPolygons[id].status === oldVal) {
+                loadedPolygons[id].status = newVal;
+            }
+        });
+    }
+
+    refreshAllStatusSelects(newVal);
+    renderStatusManagerModalUI();
+
+    try {
+        await callGAS('editFieldStatus', { oldStatusName: oldVal, newStatusName: newVal });
+    } catch(e) {
+        customAlert("稼働状況の編集保存に失敗しました");
+    }
+};
+
+window.adminDeleteFieldStatusItem = async (targetVal) => {
+    if (!confirm(`「${targetVal}」を稼働状況マスタから削除しますか？\n（※既存の圃場の記録はそのまま保持されます）`)) return;
+
+    pdlStatuses = pdlStatuses.filter(s => s !== targetVal);
+    refreshAllStatusSelects();
+    renderStatusManagerModalUI();
+
+    try {
+        await callGAS('deleteFieldStatus', { statusName: targetVal });
+    } catch(e) {
+        customAlert("稼働状況の削除に失敗しました");
+    }
+};
+
+window.handleStatusSelect = async (sel) => {
+    if (sel.value === 'ADD_NEW') {
+        sel.value = '';
+        openFieldStatusManager(true);
+    } else if (sel.value === 'MANAGE_STATUS') {
+        sel.value = '';
+        openFieldStatusManager(false);
+    }
+};

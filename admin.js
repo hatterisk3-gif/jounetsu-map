@@ -160,7 +160,7 @@ window.onLocationCityChange = function(sel) {
     const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 let pendingInitData = null; // 地図準備前に届いた初期データ（地図完成後に必ず描画）
@@ -529,6 +529,9 @@ function renderInitData(data, opts) {
     pdlPesticides = data.pdl.pesticides || [];
     pdlFertilizers = data.pdl.fertilizers || [];
     pdlCropChemPlans = data.pdl.cropChemPlans || [];
+    pdlCostItems = data.pdl.costItems || [];
+    pdlCropCostPlans = data.pdl.cropCostPlans || [];
+    pdlCropWorkPlans = data.pdl.cropWorkPlans || [];
     pdlNurseryLocations = data.pdl.nurseryLocations || [];
     pdlCropCultSettings = data.pdl.cropCultSettings || [];
     pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
@@ -548,7 +551,7 @@ function renderInitData(data, opts) {
     if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + html(pdlLocations);
     if (condEl) condEl.innerHTML = '<option value="">条件</option>' + html(pdlConditions);
     if (statEl) {
-        statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:blue;">➕ 新規項目追加...</option>';
+        statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option>';
         statEl.setAttribute('onchange', 'handleStatusSelect(this)');
     }
 
@@ -779,6 +782,9 @@ window.getMasterTypeInfo = (type) => {
         pesticide: { title: '🧪 農薬マスタ', desc: '自社で使う農薬。公式カタログから検索して登録', list: pdlPesticides || [] },
         fertilizer: { title: '🌿 肥料マスタ', desc: '自社で使う肥料。公式カタログから検索して登録', list: pdlFertilizers || [] },
         cropChemPlan: { title: '🗓️ 品目別農薬設定', desc: '品目ごとに半旬（1上前〜12下後）の農薬・肥料を設定', list: pdlCropChemPlans || [] },
+        costItem: { title: '💰 原価マスタ', desc: '種・資材・機械などの規格と単価を登録', list: pdlCostItems || [] },
+        cropCostPlan: { title: '📊 品目別原価設定', desc: '作物ごとに使う原価品目と用量を組み合わせる', list: pdlCropCostPlans || [] },
+        cropWorkPlan: { title: '🛠️ 品目別作業設定', desc: '作物×作業を定植からの日数で設定（半旬暦）', list: pdlCropWorkPlans || [] },
         nurseryLocation: { title: '🪴 育苗場所マスタ', desc: '育苗区画（圃場）と方向の登録', list: pdlNurseryLocations || [] },
         cropCultSetting: { title: '📐 作物栽培設定マスタ', desc: '品目ごとの播種穴数など栽培デフォルト', list: pdlCropCultSettings || [] },
         container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] }
@@ -794,7 +800,7 @@ window.renderMasterMenu = () => {
     if (titleEl) titleEl.innerHTML = '⚙️ マスタ項目設定';
 
     const masterTypes = [
-        'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'container', 'sign', 'location', 'workCategory',
+        'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'sign', 'location', 'workCategory',
         'machineType', 'machineGroup', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
@@ -841,6 +847,16 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     if (type === 'cropChemPlan' && !customEditHtml) {
         document.getElementById('masterSections').innerHTML = window.buildCropChemPlanUiHtml_();
         window.initCropChemPlanUi_();
+        return;
+    }
+    if (type === 'cropCostPlan' && !customEditHtml) {
+        document.getElementById('masterSections').innerHTML = window.buildCropCostPlanUiHtml_();
+        window.initCropCostPlanUi_();
+        return;
+    }
+    if (type === 'cropWorkPlan' && !customEditHtml) {
+        document.getElementById('masterSections').innerHTML = window.buildCropWorkPlanUiHtml_();
+        window.initCropWorkPlanUi_();
         return;
     }
 
@@ -967,6 +983,40 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <select class="form-input" style="margin-bottom:0; padding:8px;" onchange="let tb=document.getElementById('add_tool_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select>
                 <input type="text" id="add_tool_cat" class="form-input" style="margin-bottom:0; padding:8px; font-size:12px; background:#e8f0fe;" placeholder="プルダウンから選んだ作業がここに追加されます">
                 <button onclick="execMaster('tool', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'costItem') {
+            const catOpts = ['種','資材','機械','燃料','労務','農薬','肥料','その他'].map(c => '<option value="'+c+'">'+c+'</option>').join('');
+            const baseOpts = [
+              ['fixed','固定（回数・式）'],
+              ['area_a','面積aあたり'],
+              ['tray','トレーあたり'],
+              ['plant','本あたり'],
+              ['yield_pack','出荷単位あたり']
+            ].map(x => '<option value="'+x[0]+'">'+x[1]+'</option>').join('');
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">品目名 *</label>
+                <input type="text" id="add_cost_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: コート種子A / トラクター借上">
+                <label style="font-size:12px; font-weight:bold; color:#555;">カテゴリ</label>
+                <select id="add_cost_category" class="form-input" style="margin-bottom:0; padding:8px;">${catOpts}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">規格</label>
+                <input type="text" id="add_cost_spec" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 1000粒 / 20kg / 1時間">
+                <div style="display:flex; gap:8px;">
+                  <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:bold; color:#555;">単価（円）*</label>
+                    <input type="number" id="add_cost_price" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 800" min="0" step="any">
+                  </div>
+                  <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:bold; color:#555;">単価単位</label>
+                    <input type="text" id="add_cost_price_unit" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 円/袋">
+                  </div>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">用量基準</label>
+                <select id="add_cost_base" class="form-input" style="margin-bottom:0; padding:8px;">${baseOpts}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">標準用量</label>
+                <input type="number" id="add_cost_qty" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 1.2" min="0" step="any">
+                <label style="font-size:12px; font-weight:bold; color:#555;">備考</label>
+                <input type="text" id="add_cost_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="任意">
+                <button onclick="execMaster('costItem', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'material') {
             const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
@@ -1182,6 +1232,13 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 const bits = [v.prefecture, v.city, climateLabel].filter(Boolean);
                 if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">${bits.join(' / ')}</span>`;
             }
+            if (type === 'costItem') {
+                const bits = [];
+                if (v.category) bits.push(v.category);
+                if (v.spec) bits.push(v.spec);
+                bits.push((v.unitPrice != null ? v.unitPrice : '-') + (v.priceUnit ? v.priceUnit : '円'));
+                if (bits.length) subInfo = `<div style="font-size:11px; color:#bf360c; margin-top:3px;">${bits.join(' ／ ')}</div>`;
+            }
             if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.workCategory || '汎用'}</span>`;
             if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8; margin-left:4px;">単位:${v.unit} (容量:${v.size||'-'})</span>`;
             if (type === 'pesticide') {
@@ -1249,6 +1306,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 actionBtns = `<button onclick="openEditPesticideMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'fertilizer') {
                 actionBtns = `<button onclick="openEditFertilizerMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'costItem') {
+                actionBtns = `<button onclick="openEditCostItemMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else {
                 actionBtns = `<button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             }
@@ -3280,6 +3339,20 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'machineType') { const name = document.getElementById('add_machineType_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } if ((pdlMachineTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'machineGroup') { const name = document.getElementById('add_machineGroup_name').value.trim(); if (!name) { customAlert("グループ名を入力してください"); return; } if ((pdlMachineGroups || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
+        else if (type === 'costItem') {
+            const name = (document.getElementById('add_cost_name')?.value || '').trim();
+            if (!name) { customAlert('品目名を入力してください'); return; }
+            value = {
+                name,
+                category: document.getElementById('add_cost_category')?.value || 'その他',
+                spec: document.getElementById('add_cost_spec')?.value || '',
+                unitPrice: document.getElementById('add_cost_price')?.value || 0,
+                priceUnit: document.getElementById('add_cost_price_unit')?.value || '円',
+                base: document.getElementById('add_cost_base')?.value || 'fixed',
+                defaultQty: document.getElementById('add_cost_qty')?.value,
+                note: document.getElementById('add_cost_note')?.value || ''
+            };
+        }
         else if (type === 'material') { const name = document.getElementById('add_mat_name').value.trim(); if (!name) { customAlert("資材名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_mat_cat').value.trim(), size: document.getElementById('add_mat_size').value.trim(), unit: document.getElementById('add_mat_unit').value.trim() }; }
         else if (type === 'pesticide') {
             const name = (document.getElementById('add_pest_name')?.value || '').trim();
@@ -3472,6 +3545,24 @@ window.execMaster = async (type, act, val) => {
                     note: (document.getElementById('edit_fert_note')?.value || '').trim()
                 }
             };
+        } else if (type === 'costItem') {
+            const id = document.getElementById('edit_cost_id')?.value || '';
+            const newName = (document.getElementById('edit_cost_name')?.value || '').trim();
+            if (!id) { customAlert('編集対象IDがありません'); return; }
+            if (!newName) { customAlert('品目名を入力してください'); return; }
+            value = {
+                id: id,
+                newData: {
+                    name: newName,
+                    category: document.getElementById('edit_cost_category')?.value || 'その他',
+                    spec: document.getElementById('edit_cost_spec')?.value || '',
+                    unitPrice: document.getElementById('edit_cost_price')?.value || 0,
+                    priceUnit: document.getElementById('edit_cost_price_unit')?.value || '円',
+                    base: document.getElementById('edit_cost_base')?.value || 'fixed',
+                    defaultQty: document.getElementById('edit_cost_qty')?.value,
+                    note: document.getElementById('edit_cost_note')?.value || ''
+                }
+            };
         }
     } else {
         if (type === 'container') {
@@ -3492,7 +3583,7 @@ window.execMaster = async (type, act, val) => {
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
     try {
         const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
-        if (type === 'crop') pdlCrops = updatedList; else if (type === 'cropCultSetting') pdlCropCultSettings = updatedList || []; else if (type === 'nurseryLocation') pdlNurseryLocations = updatedList || []; else if (type === 'container') { pdlContainers = updatedList || []; pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))]; } else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'pesticide') pdlPesticides = updatedList || []; else if (type === 'fertilizer') pdlFertilizers = updatedList || []; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
+        if (type === 'crop') pdlCrops = updatedList; else if (type === 'cropCultSetting') pdlCropCultSettings = updatedList || []; else if (type === 'nurseryLocation') pdlNurseryLocations = updatedList || []; else if (type === 'container') { pdlContainers = updatedList || []; pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))]; } else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'pesticide') pdlPesticides = updatedList || []; else if (type === 'fertilizer') pdlFertilizers = updatedList || []; else if (type === 'costItem') pdlCostItems = updatedList || []; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
         if (type === 'work') { try { closeWorkMasterEditModal(); } catch(e){} }
         // カテゴリ/作物の改名時は作業マスタのローカル表示も追随
         if (act === 'edit' && type === 'workCategory' && value && value.originalName && value.newData) {
@@ -3562,7 +3653,7 @@ function openAttr(id) {
              </div>
            `);
     } else {
-        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">稼働状況</label><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:blue;">➕ 新規項目追加...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
+        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
 }
 
@@ -6422,41 +6513,164 @@ window.execBatchDelete = async () => {
     }
 };
 
+window.refreshAllStatusSelects = (selectedVal) => {
+    const listHtml = pdlStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
+    const optionsWithSpecial = (emptyLabel) => 
+        `<option value="">${emptyLabel}</option>` + listHtml + 
+        `<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option>` +
+        `<option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option>`;
+
+    const statEl = document.getElementById('fieldStatus');
+    if (statEl) {
+        const curVal = selectedVal !== undefined ? selectedVal : statEl.value;
+        statEl.innerHTML = optionsWithSpecial('稼働状況');
+        if (curVal && pdlStatuses.includes(curVal)) statEl.value = curVal;
+    }
+
+    const edS = document.getElementById('edS');
+    if (edS) {
+        const curVal = selectedVal !== undefined ? selectedVal : edS.value;
+        edS.innerHTML = optionsWithSpecial('未設定');
+        if (curVal && pdlStatuses.includes(curVal)) edS.value = curVal;
+    }
+};
+
+window.openFieldStatusManager = (autoFocusAdd = false) => {
+    renderStatusManagerModalUI(autoFocusAdd);
+};
+
+function renderStatusManagerModalUI(autoFocusAdd = false) {
+    const modal = document.getElementById('modal');
+    const modalBody = document.getElementById('modalBody');
+    if (!modal || !modalBody) return;
+
+    let itemsHtml = '';
+    if (pdlStatuses.length === 0) {
+        itemsHtml = '<div style="color:#888; text-align:center; padding:15px; font-size:13px;">登録されている稼働状況はありません</div>';
+    } else {
+        itemsHtml = pdlStatuses.map((st, idx) => `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #eee; background:${idx % 2 === 0 ? '#fff' : '#f9f9f9'}; border-radius:4px; margin-bottom:4px;">
+                <span style="font-weight:bold; font-size:14px; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${st}</span>
+                <div style="display:flex; gap:6px; flex-shrink:0;">
+                    <button type="button" onclick="adminEditFieldStatusItem('${st}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer; font-weight:bold;">✏️ 編集</button>
+                    <button type="button" onclick="adminDeleteFieldStatusItem('${st}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer; font-weight:bold;">🗑️ 削除</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    modalBody.innerHTML = `
+        <div style="width:340px; max-width:100%; box-sizing:border-box; text-align:left; font-family:sans-serif;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #4CAF50; padding-bottom:8px; margin-bottom:12px;">
+                <h3 style="margin:0; font-size:16px; color:#2E7D32;">🚜 稼働状況マスタの管理</h3>
+                <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer; font-size:20px; color:#888; font-weight:bold;">&times;</span>
+            </div>
+            
+            <div style="margin-bottom:15px; background:#f0f4c3; padding:10px; border-radius:6px;">
+                <label style="font-size:12px; font-weight:bold; color:#33691E; display:block; margin-bottom:4px;">➕ 新規稼働状況の追加</label>
+                <div style="display:flex; gap:6px;">
+                    <input type="text" id="newStatusInput" placeholder="例: 休耕中, 作付中..." style="flex:1; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+                    <button type="button" onclick="adminAddNewFieldStatusItem()" style="background:#4CAF50; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:13px;">追加</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom:15px;">
+                <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">📋 登録中の項目一覧 (${pdlStatuses.length}件)</div>
+                <div style="max-height:220px; overflow-y:auto; border:1px solid #e0e0e0; border-radius:6px; padding:4px; background:#fafafa;">
+                    ${itemsHtml}
+                </div>
+            </div>
+
+            <div style="text-align:right;">
+                <button type="button" onclick="document.getElementById('modal').style.display='none'" style="background:#757575; color:white; border:none; padding:8px 16px; border-radius:4px; font-weight:bold; cursor:pointer;">閉じる</button>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+    if (autoFocusAdd) {
+        setTimeout(() => {
+            const input = document.getElementById('newStatusInput');
+            if (input) input.focus();
+        }, 100);
+    }
+}
+
+window.adminAddNewFieldStatusItem = async () => {
+    const input = document.getElementById('newStatusInput');
+    if (!input) return;
+    let newVal = String(input.value || '').trim();
+    if (!newVal) {
+        customAlert("稼働状況名を入力してください");
+        return;
+    }
+    if (pdlStatuses.includes(newVal)) {
+        customAlert("すでに同じ名前の稼働状況が存在します");
+        return;
+    }
+
+    pdlStatuses.push(newVal);
+    refreshAllStatusSelects(newVal);
+    renderStatusManagerModalUI();
+
+    try {
+        await callGAS('addFieldStatus', { statusName: newVal });
+    } catch(e) {
+        customAlert("稼働状況の保存に失敗しました");
+    }
+};
+
+window.adminEditFieldStatusItem = async (oldVal) => {
+    let newVal = prompt(`「${oldVal}」の新しい名称を入力してください:`, oldVal);
+    if (!newVal || newVal.trim() === '' || newVal.trim() === oldVal) return;
+    newVal = newVal.trim();
+
+    if (pdlStatuses.includes(newVal)) {
+        customAlert("すでに同名の稼働状況が存在します");
+        return;
+    }
+
+    const idx = pdlStatuses.indexOf(oldVal);
+    if (idx !== -1) pdlStatuses[idx] = newVal;
+
+    if (typeof loadedPolygons === 'object') {
+        Object.keys(loadedPolygons).forEach(id => {
+            if (loadedPolygons[id].status === oldVal) {
+                loadedPolygons[id].status = newVal;
+            }
+        });
+    }
+
+    refreshAllStatusSelects(newVal);
+    renderStatusManagerModalUI();
+
+    try {
+        await callGAS('editFieldStatus', { oldStatusName: oldVal, newStatusName: newVal });
+    } catch(e) {
+        customAlert("稼働状況の編集保存に失敗しました");
+    }
+};
+
+window.adminDeleteFieldStatusItem = async (targetVal) => {
+    if (!confirm(`「${targetVal}」を稼働状況マスタから削除しますか？\n（※既存の圃場の記録はそのまま保持されます）`)) return;
+
+    pdlStatuses = pdlStatuses.filter(s => s !== targetVal);
+    refreshAllStatusSelects();
+    renderStatusManagerModalUI();
+
+    try {
+        await callGAS('deleteFieldStatus', { statusName: targetVal });
+    } catch(e) {
+        customAlert("稼働状況の削除に失敗しました");
+    }
+};
+
 window.handleStatusSelect = async (sel) => {
     if (sel.value === 'ADD_NEW') {
-        let newVal = prompt("新しい稼働状況を入力してください:");
-        if (newVal && newVal.trim() !== '') {
-            newVal = newVal.trim();
-            pdlStatuses.push(newVal);
-            
-            const html = (list) => list.map(l => `<option value="${l}">${l}</option>`).join('');
-            
-            const statEl = document.getElementById('fieldStatus');
-            if (statEl) {
-                statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:blue;">➕ 新規項目追加...</option>';
-                if (sel.id === 'fieldStatus') statEl.value = newVal;
-            }
-            
-            const edS = document.getElementById('edS');
-            if (edS) {
-                edS.innerHTML = '<option value="">未設定</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:blue;">➕ 新規項目追加...</option>';
-                if (sel.id === 'edS') edS.value = newVal;
-            }
-            
-            sel.value = newVal;
-            
-            try {
-                document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px;'><div class='spinner'></div><div style='margin-top:20px;'>稼働状況を追加中...</div></div>";
-                document.getElementById('modal').style.display = 'flex';
-                await callGAS('addFieldStatus', { statusName: newVal });
-                document.getElementById('modal').style.display = 'none';
-            } catch(e) {
-                document.getElementById('modal').style.display = 'none';
-                customAlert("稼働状況の追加に失敗しました");
-            }
-        } else {
-            sel.value = '';
-        }
+        sel.value = '';
+        openFieldStatusManager(true);
+    } else if (sel.value === 'MANAGE_STATUS') {
+        sel.value = '';
+        openFieldStatusManager(false);
     }
 };
 

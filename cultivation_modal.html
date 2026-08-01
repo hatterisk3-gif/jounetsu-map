@@ -21,8 +21,8 @@
               <span class="cp-step-tab-sub">穴数・条数・株間・畝間など</span>
             </button>
             <button type="button" role="tab" id="cpStepTab3" class="cp-step-tab cp-step-tab--3" aria-selected="false" aria-controls="cpStep3" data-step="3" onclick="openCpStep(3)">
-              <span class="cp-step-tab-title">3. 品種・作型登録</span>
-              <span class="cp-step-tab-sub">品種選択・作型追加</span>
+              <span class="cp-step-tab-title">3. 品種登録</span>
+              <span class="cp-step-tab-sub">品種選択・追加</span>
             </button>
           </div>
           <div id="cpStepPanels" class="cp-step-panels has-open">
@@ -53,9 +53,10 @@
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">作物</label>
               <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList()" oninput="calcCp(); checkCroptypeDB()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
+                <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
+                <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel()" oninput="calcCp(); checkCroptypeDB()" onblur="onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
               </div>
+              <div id="cpCostProfileHint" style="font-size:10px; color:#666; margin-top:3px; line-height:1.35; min-height:14px;">作物を選ぶと原価プロファイルを読み込みます</div>
             </div>
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">産地</label>
@@ -145,55 +146,40 @@
             </div>
           </div>
           <div style="text-align: right; margin-top: 8px;">
-            <button type="button" onclick="nextCpStep(3)" style="padding: 6px 16px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (品種・作型)</button>
+            <button type="button" onclick="nextCpStep(3)" style="padding: 6px 16px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (品種登録)</button>
           </div>
                 </div>
               </div>
 
-              <!-- ステップ3: 品種・作型登録 -->
+              <!-- ステップ3: 品種登録 -->
               <div id="cpStep3" class="cp-step-panel cp-step-panel--3" role="tabpanel" aria-labelledby="cpStepTab3" hidden>
                 <div class="cp-step-body">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: flex-end; margin-bottom: 12px;">
-              <div style="width: 100%;">
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: flex-end; margin-bottom: 12px;">
+              <div style="width: 100%; min-width: 0;">
                 <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">品種</label>
-                <div style="display: flex; gap: 4px; width: 100%;">
-                  <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                  <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-                  <button onclick="searchCroptypeWeb()" title="作型をWEB検索" style="padding: 4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; width: 28px; display: flex; align-items: center; justify-content: center;">🌐</button>
+                <div style="display: flex; gap: 4px; width: 100%; flex-wrap: wrap; align-items: flex-start;">
+                  <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
+                  <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields()" style="display:none;">
+                  <button type="button" onclick="searchCroptypeWeb()" title="作型をWEB検索" style="padding: 4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; margin-left: auto;">🌐</button>
                 </div>
+                <div id="cpVarietyMetaHint" style="margin-top:6px; font-size:10px; color:#888;">バッジを選ぶか「＋ 新規追加」で品種・メーカー・粒数を登録できます。</div>
               </div>
-              <div style="width: 100%;">
-                <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">歩留</label>
-                <select id="cpYieldRate" onchange="calcCp()" style="width:100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;"></select>
-              </div>
-              <div style="width: 100%;">
-                <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">育苗成功率</label>
-                <select id="cpSeedlingSuccess" onchange="calcCp()" style="width:100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;"></select>
-              </div>
-              <div style="width: 100%; display: flex; align-items: flex-end;">
-                <button type="button" onclick="loadAndAddCroptype()" style="padding: 6px 12px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">🔄 品種マスタから作型を読込</button>
+              <div style="display: flex; align-items: flex-end;">
+                <button type="button" onclick="loadAndAddCroptype()" style="padding: 6px 12px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">🔄 品種マスタから作型を読込</button>
               </div>
             </div>
 
-            <!-- 品種に紐づくメーカー・粒数（追加・編集） -->
-            <div id="cpVarietyMetaPanel" style="margin-bottom: 12px; padding: 10px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px;">
-              <div style="font-size: 11px; font-weight: bold; color: #E65100; margin-bottom: 6px;">🏢 品種情報（メーカー・粒数）</div>
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: flex-end;">
-                <div>
-                  <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">メーカー</label>
-                  <input type="text" id="cpVarietyMaker" list="cpVarietyMakerList" placeholder="例: サカタのタネ" style="width:100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
-                  <datalist id="cpVarietyMakerList"></datalist>
-                </div>
-                <div>
-                  <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">粒数</label>
-                  <input type="number" id="cpVarietyGrainCount" min="0" step="1" placeholder="例: 1000" style="width:100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
-                </div>
-                <div style="display:flex; gap:6px;">
-                  <button type="button" onclick="saveCpVarietyMeta()" style="flex:1; padding: 6px 10px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap;">💾 保存</button>
-                  <button type="button" onclick="clearCpVarietyMetaFields()" style="padding: 6px 10px; background: #fff; color: #666; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap;">クリア</button>
-                </div>
-              </div>
-              <div id="cpVarietyMetaHint" style="margin-top:6px; font-size:10px; color:#888;">品種を選ぶか手入力すると、紐づくメーカー・粒数を表示・編集できます。</div>
+            <!-- 互換用（非表示）: 歩留・育苗成功率は計画カード詳細で設定。初期値保持用 -->
+            <div style="display:none;">
+              <select id="cpYieldRate"></select>
+              <select id="cpSeedlingSuccess"></select>
+            </div>
+
+            <!-- 互換用（非表示）: 旧メーカー・粒数欄 -->
+            <div id="cpVarietyMetaPanel" style="display:none;">
+              <input type="text" id="cpVarietyMaker" list="cpVarietyMakerList">
+              <datalist id="cpVarietyMakerList"></datalist>
+              <input type="hidden" id="cpVarietyGrainCount" value="">
             </div>
             
             <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
@@ -281,6 +267,23 @@
             .cp-step-tab { transition: none; }
           }
         </style>
+        <div id="cpCostSummaryBar" style="display:none; margin-bottom:8px; padding:8px 10px; background:#fff3e0; border:1px solid #ffcc80; border-radius:6px;">
+          <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; justify-content:space-between;">
+            <div style="font-size:12px; font-weight:bold; color:#e65100;">💰 原価・売上予測</div>
+            <label style="font-size:11px; color:#555; display:flex; align-items:center; gap:4px;">
+              出荷単価
+              <input type="number" id="cpCostSellPriceOverride" min="0" step="any" placeholder="円" oninput="onCpCostSellPriceOverride()" style="width:72px; padding:3px 6px; border:1px solid #ffb74d; border-radius:4px; font-size:12px;">
+              <span style="color:#888;">円</span>
+            </label>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:12px 18px; margin-top:6px; font-size:13px; align-items:baseline;">
+            <span>原価合計 <b id="cpCostSumCost" style="color:#e65100;">—</b></span>
+            <span>売上予測 <b id="cpCostSumRevenue" style="color:#2e7d32;">—</b></span>
+            <span>利益 <b id="cpCostSumProfit" style="color:#1565c0;">—</b></span>
+          </div>
+          <div id="cpCostSumMeta" style="font-size:10px; color:#888; margin-top:4px;"></div>
+        </div>
+
         <div style="margin-bottom: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px; border: 1px solid #ddd; display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap;">
           <span style="font-size: 12px; font-weight: bold; color:#666;">🖌 ペイントツール:</span>
           <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
@@ -304,7 +307,7 @@
         </div>
         
         <div id="cpTwoColContainer" style="flex: 1; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 100px;">
-          <div id="cpLeftPanel" style="width: 168px; min-width: 168px; overflow-y: auto; border-right: 2px solid #1976D2; background: #f5f5f5; flex-shrink: 0;">
+          <div id="cpLeftPanel" style="width: 188px; min-width: 188px; overflow-y: auto; border-right: 2px solid #1976D2; background: #f5f5f5; flex-shrink: 0;">
             <style>
               #cpLeftBody input[type=number]::-webkit-outer-spin-button,
               #cpLeftBody input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -341,6 +344,19 @@
             <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">収穫を塗るとここに表示されます</div>
           </div>
           <div id="cpHarvestChartAxis" style="overflow-x:auto; overflow-y:hidden; height:16px; margin-top:2px;"></div>
+        </div>
+
+        <!-- 定植起点の作業予定（品目別作業設定） -->
+        <div id="cpWorkSchedulePanel" style="margin-top: 10px; padding: 8px 10px; background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+            <div style="font-size:12px; font-weight:bold; color:#2e7d32;">
+              🛠️ 定植からの作業発生（半旬）
+              <span id="cpWorkScheduleCrop" style="font-weight:normal; color:#666;"></span>
+            </div>
+            <button type="button" onclick="refreshCpWorkSchedulePanel()" style="font-size:11px; padding:3px 8px; border:1px solid #81c784; background:#fff; color:#2e7d32; border-radius:4px; cursor:pointer; font-weight:bold;">更新</button>
+          </div>
+          <div id="cpWorkScheduleHint" style="font-size:11px; color:#666; margin-bottom:6px;">定植を塗ると、品目別作業設定から発生作業が半旬で表示されます</div>
+          <div id="cpWorkScheduleList" style="max-height:160px; overflow:auto; font-size:12px;"></div>
         </div>
       </div>
     </div>
@@ -384,7 +400,7 @@
       </div>
     </div>
 
-    <!-- 品種登録モーダル -->
+    <!-- 栽培設定(プリセット)登録モーダル -->
     <div id="varietyRegistrationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10010; justify-content: center; align-items: center;">
       <div style="background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -419,13 +435,13 @@
       </div>
     </div>
 
-    <!-- 品種作型登録モーダル -->
+    <!-- 品種登録モーダル -->
     <div id="croptypeRegistrationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10020; justify-content: center; align-items: center;">
       <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 98%; max-width: 900px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 95vh; display: flex; flex-direction: column;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap;">
-          <h3 style="margin: 0; color: #FF9800;">🏷️ 品種作型マスタ登録</h3>
+          <h3 style="margin: 0; color: #FF9800;">🏷️ 品種登録</h3>
           <div style="display:flex; align-items:center; gap:8px; margin-left:auto;">
-            <button type="button" onclick="showRegisteredCroptypeListModal()" style="padding:6px 12px; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; white-space:nowrap;">📋 登録中の品種作型一覧</button>
+            <button type="button" onclick="showRegisteredCroptypeListModal()" style="padding:6px 12px; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; white-space:nowrap;">📋 登録中の品種一覧</button>
             <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="closeCroptypeRegistrationModal()">×</span>
           </div>
         </div>
@@ -462,22 +478,26 @@
 
         <!-- 入力エリア -->
         <div style="padding: 10px; background: #fff3e0; border-radius: 6px; border: 1px solid #ffe0b2; margin-bottom: 15px;">
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">品種 <span style="font-weight:normal; color:#888;">(バッジ選択)</span></label>
+            <input type="hidden" id="crVariety" value="">
+            <div id="crVarietyBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
+            <button type="button" onclick="openVarietyMetaDialog({ mode:'add', target:'cr' })" style="margin-top:6px; padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px dashed #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">＋ 新規追加</button>
+            <div id="crVarietyHint" style="margin-top:4px; font-size:10px; color:#888;">「＋ 新規追加」で品種名・メーカー・粒数をまとめて登録できます。</div>
+          </div>
+
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom: 10px;">
             <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">品種</label>
-              <input type="text" id="crVariety" placeholder="例: 初秋" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">メーカー <span style="font-weight:normal; color:#888;">(共通で記憶・追加/削除可)</span></label>
+              <input type="hidden" id="crMaker" value="">
+              <div id="crMakerBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
+              <button type="button" onclick="addNewMakerTag()" style="margin-top:6px; padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px dashed #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">＋ メーカーを新規登録</button>
             </div>
             <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 2px;">粒数 <span style="font-weight:normal; color:#888;">(任意)</span></label>
-              <input type="number" id="crGrainCount" min="0" step="1" placeholder="例: 1000" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">粒数 <span style="font-weight:normal; color:#888;">(コート / 生種)</span></label>
+              <input type="hidden" id="crGrainCount" value="">
+              <div id="crGrainCountBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
             </div>
-          </div>
-          
-          <div style="margin-bottom: 10px;">
-            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">メーカー <span style="font-weight:normal; color:#888;">(共通で記憶・追加/削除可)</span></label>
-            <input type="hidden" id="crMaker" value="">
-            <div id="crMakerBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
-            <button type="button" onclick="addNewMakerTag()" style="margin-top:6px; padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px dashed #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">＋ メーカーを新規登録</button>
           </div>
           <div style="margin-bottom: 10px;">
             <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">特性タグ <span style="font-weight:normal; color:#888;">(複数選択可・作物ごとに記憶)</span></label>
@@ -540,7 +560,7 @@
     <div id="registeredCroptypeListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); z-index:10030; align-items:center; justify-content:center;">
       <div style="background:#fff; width:96%; max-width:720px; border-radius:12px; padding:16px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
-          <h3 style="margin:0; font-size:16px; color:#E65100;" id="regCtModalTitle">📋 登録中の品種作型一覧</h3>
+          <h3 style="margin:0; font-size:16px; color:#E65100;" id="regCtModalTitle">📋 登録中の品種一覧</h3>
           <span style="cursor:pointer; font-size:22px; color:#999; line-height:1;" onclick="closeRegisteredCroptypeListModal()">×</span>
         </div>
 
@@ -549,7 +569,7 @@
           <button type="button" id="regCtModeListBtn" onclick="setRegisteredCroptypeMode('list')" style="flex:1; padding:8px 10px; border:none; background:#FF9800; color:#fff; font-size:12px; font-weight:bold; cursor:pointer;">📋 一覧</button>
           <button type="button" id="regCtModeSearchBtn" onclick="setRegisteredCroptypeMode('search')" style="flex:1; padding:8px 10px; border:none; background:#fff; color:#E65100; font-size:12px; font-weight:bold; cursor:pointer;">🔍 品種検索</button>
         </div>
-        <p id="regCtModeHint" style="margin:0 0 10px 0; font-size:12px; color:#666;">すでにマスタ登録されている品種・作型の内容を確認できます。編集したい場合は「編集画面へ」を押してください。</p>
+        <p id="regCtModeHint" style="margin:0 0 10px 0; font-size:12px; color:#666;">すでにマスタ登録されている品種の内容を確認できます。編集したい場合は「編集画面へ」を押してください。</p>
 
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
           <label style="font-size:12px; font-weight:bold; color:#555;">作物
@@ -624,9 +644,9 @@
 
     <!-- 計画一覧モーダル（読込・実行・削除・収穫グラフ） -->
     <div id="historyListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11000; align-items:center; justify-content:center;">
-      <div style="background:#fff; width:92%; max-width:480px; border-radius:12px; padding:20px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column;">
+      <div style="background:#fff; width:94%; max-width:560px; border-radius:12px; padding:20px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column;">
         <h3 style="margin:0 0 8px 0; font-size:18px; color:#333; text-align:center; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">📂 計画一覧</h3>
-        <p style="font-size:12px; color:#666; margin:0 0 10px 0; text-align:center;">保存した計画の読込・実行・削除ができます</p>
+        <p style="font-size:12px; color:#666; margin:0 0 10px 0; text-align:center;">読込・実行・削除／品種ごとのメーカー・種個数（調達確認）</p>
         <div style="text-align:center; margin-bottom:10px;">
           <button type="button" onclick="openCropHarvestChartModal()" style="padding:6px 12px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;">📊 作物別・半旬収穫グラフ</button>
         </div>
@@ -669,3 +689,76 @@
         </div>
       </div>
     </div>
+
+    <!-- 品種＋メーカー＋粒数 追加/編集ダイアログ -->
+    <div id="varietyMetaDialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); z-index:10050; align-items:center; justify-content:center;">
+      <div style="background:#fff; width:92%; max-width:420px; border-radius:12px; padding:18px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 id="vmdTitle" style="margin:0; font-size:16px; color:#E65100;">＋ 品種を新規追加</h3>
+          <span style="cursor:pointer; font-size:22px; color:#999; line-height:1;" onclick="closeVarietyMetaDialog()">×</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div>
+            <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:2px;">品種名 <span style="color:#d32f2f;">*</span></label>
+            <input type="text" id="vmdVariety" placeholder="例: 初秋" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
+          </div>
+          <div>
+            <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:2px;">メーカー</label>
+            <input type="text" id="vmdMaker" list="vmdMakerList" placeholder="例: サカタのタネ" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
+            <datalist id="vmdMakerList"></datalist>
+          </div>
+          <div>
+            <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">粒数（コート / 生種）</label>
+            <input type="hidden" id="vmdGrainCount" value="">
+            <div id="vmdGrainCountBtns" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;"></div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:16px;">
+          <button type="button" onclick="closeVarietyMetaDialog()" style="flex:1; padding:10px; background:#fff; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">キャンセル</button>
+          <button type="button" id="vmdConfirmBtn" onclick="confirmVarietyMetaDialog()" style="flex:1; padding:10px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">追加する</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 原価計算 -->
+    <div id="cropCostCalcModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:10020; justify-content:center; align-items:center;">
+      <div style="background:#fff; width:96%; max-width:720px; max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.35);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#e65100; color:#fff;">
+          <h3 style="margin:0; font-size:17px;">💰 作物別 原価計算</h3>
+          <button type="button" onclick="closeCropCostCalcModal()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; font-size:20px; width:36px; height:36px; border-radius:6px; cursor:pointer;">×</button>
+        </div>
+        <div style="padding:14px 16px; overflow:auto; flex:1;">
+          <div style="font-size:12px; color:#666; background:#fff3e0; border:1px solid #ffcc80; border-radius:6px; padding:8px; margin-bottom:12px; line-height:1.4;">
+            管理画面の「原価マスタ」と「品目別原価設定」に登録した内容から、面積・トレー数などで概算原価を出します。
+          </div>
+          <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;">
+            <div>
+              <label style="font-size:12px; font-weight:bold; color:#555;">作物 *</label>
+              <select id="costCalcCrop" style="width:100%; margin:4px 0 0; padding:10px; font-size:15px; box-sizing:border-box;"></select>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">面積 (a)</label>
+                <input type="number" id="costCalcAreaA" min="0" step="any" placeholder="例: 10" style="width:100%; margin:4px 0 0; padding:10px; font-size:15px; box-sizing:border-box;">
+              </div>
+              <div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">トレー数</label>
+                <input type="number" id="costCalcTrays" min="0" step="any" placeholder="例: 50" style="width:100%; margin:4px 0 0; padding:10px; font-size:15px; box-sizing:border-box;">
+              </div>
+              <div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">本数</label>
+                <input type="number" id="costCalcPlants" min="0" step="any" placeholder="例: 2500" style="width:100%; margin:4px 0 0; padding:10px; font-size:15px; box-sizing:border-box;">
+              </div>
+              <div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">出荷単位数</label>
+                <input type="number" id="costCalcYield" min="0" step="any" placeholder="例: 100" style="width:100%; margin:4px 0 0; padding:10px; font-size:15px; box-sizing:border-box;">
+              </div>
+            </div>
+            <button type="button" onclick="runCropCostCalc()" style="background:#e65100; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; font-size:15px; cursor:pointer;">計算する</button>
+          </div>
+          <div id="costCalcStatus" style="font-size:12px; color:#888; margin-bottom:8px;"></div>
+          <div id="costCalcResult"></div>
+        </div>
+      </div>
+    </div>
+

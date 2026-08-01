@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.18</title>
+  <title>情熱MAP [予定確認用] v1.19</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -224,13 +224,16 @@
         計画一覧</button>
       <button
         onclick="openCroptypeRegistrationModal(); document.getElementById('mobileCultivationMenu').style.display='none'">🏷️
-        品種作型を登録する</button>
+        品種を登録する</button>
       <button
         onclick="showRegisteredCroptypeListModal(); document.getElementById('mobileCultivationMenu').style.display='none'">📋
-        登録中の品種作型一覧</button>
+        登録中の品種一覧</button>
       <button
         onclick="showRegisteredCroptypeListModal({ mode: 'search' }); document.getElementById('mobileCultivationMenu').style.display='none'">🔍
         品種検索</button>
+      <button
+        onclick="openCropCostCalcModal(); document.getElementById('mobileCultivationMenu').style.display='none'">💰
+        原価計算</button>
       <button class="cancel-btn"
         onclick="document.getElementById('mobileCultivationMenu').style.display='none'">キャンセル</button>
     </div>
@@ -291,6 +294,8 @@
       .then(() => appendScript('market.js?v=' + cacheBust))
       .then(() => appendScript('tracking.js?v=1784615000013'))
       .then(() => appendScript('cultivation.js?v=' + cacheBust))
+      .then(() => appendScript('cost_calc.js?v=' + cacheBust))
+      .then(() => appendScript('crop_work.js?v=' + cacheBust))
       .catch(err => console.error('スクリプト読み込み失敗', err));
   </script>
 

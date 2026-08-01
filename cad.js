@@ -1555,6 +1555,11 @@ window.handleMapClick = (pageX, pageY) => {
             if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount(); // 畝数を自動計算
             if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 
+            if (msgEl) {
+                msgEl.innerText = `🎯 角度をセットしました（${angle}°）。「🔄 180°反転」で向きを反対にできます。`;
+                msgEl.style.color = "#4CAF50";
+            }
+
             if (window.cadSplittingEdgeMode) {
                 window.cadSplittingEdgeMode = false;
                 window.cadPinMode = null;
@@ -3204,6 +3209,24 @@ window.cadRotateMap = (deg) => {
     if (displayAngle < 0) displayAngle += 360;
     document.getElementById('cadAngle').value = displayAngle;
     updateCadPreviewCount();
+};
+
+window.cadFlipDirection = () => {
+    const angleEl = document.getElementById('cadAngle');
+    if (!angleEl) return;
+    let curAngle = parseFloat(angleEl.value) || 0;
+    let newAngle = (curAngle + 180) % 360;
+    if (newAngle < 0) newAngle += 360;
+    newAngle = Math.round(newAngle * 10) / 10;
+    angleEl.value = newAngle;
+    if (typeof window.cadAlignMapHeading === 'function') window.cadAlignMapHeading();
+    if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount();
+    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = `🔄 圃場の向きを180度反転しました (${newAngle}°)`;
+        msgEl.style.color = "#FF9800";
+    }
 };
 
 window.cadToggleGrid = () => {

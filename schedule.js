@@ -1442,6 +1442,12 @@ window.updateRowCalculations = function(planId) {
     if (typeof updateVarietyCardFieldsDisplay === 'function') {
         updateVarietyCardFieldsDisplay(planId);
     }
+    if (typeof refreshCpSeedProcureDisplay === 'function') {
+        refreshCpSeedProcureDisplay(planId);
+    }
+    if (typeof refreshCpPlanEconomics === 'function') {
+        refreshCpPlanEconomics(planId);
+    }
     updateCpCellsText(planId);
 };
 

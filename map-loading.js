@@ -48,7 +48,7 @@
     el.innerHTML =
       '<div class="map-data-loading-spinner" aria-hidden="true"></div>' +
       '<div id="mapDataLoadingText">圃場データを読み込み中...</div>' +
-      '<div id="mapDataLoadingSub">読み込み完了まで操作できません</div>';
+      '<div id="mapDataLoadingSub"></div>';
     // クリックを下に通さない（表示中のみ届く）
     el.addEventListener('click', function (e) {
       e.preventDefault();

@@ -25,6 +25,8 @@ function doPost(e) {
     else if (action === "updateRecordItem") result = updateRecordItem(params.id, params.recordId, params.recordType, params.data, params.photos, params.keptUrls, params.userName);
     else if (action === "deleteRecordItem") result = deleteRecordItem(params.id, params.recordId, params.userName);
     else if (action === "addFieldStatus") result = addFieldStatusToMaster(params.statusName);
+    else if (action === "editFieldStatus") result = editFieldStatusInMaster(params.oldStatusName, params.newStatusName);
+    else if (action === "deleteFieldStatus") result = deleteFieldStatusFromMaster(params.statusName);
     else if (action === "addCrop") result = addCropToMaster(params.cropData);
     else if (action === "deleteCrop") result = deleteCropFromMaster(params.cropName);
     else if (action === "mergeFields") result = mergeFields(params.baseId, params.targetId, params.userName);
@@ -44,6 +46,16 @@ function doPost(e) {
     else if (action === "saveCropChemPlan") result = saveCropChemPlan(params);
     else if (action === "listCropChemPlans") result = listCropChemPlans(params);
     else if (action === "deleteCropChemPlan") result = deleteCropChemPlan(params);
+    else if (action === "getCropCostPlan") result = getCropCostPlan(params);
+    else if (action === "saveCropCostPlan") result = saveCropCostPlan(params);
+    else if (action === "listCropCostPlans") result = listCropCostPlans(params);
+    else if (action === "deleteCropCostPlan") result = deleteCropCostPlan(params);
+    else if (action === "calcCropCost") result = calcCropCost(params);
+    else if (action === "getCropWorkPlan") result = getCropWorkPlan(params);
+    else if (action === "saveCropWorkPlan") result = saveCropWorkPlan(params);
+    else if (action === "listCropWorkPlans") result = listCropWorkPlans(params);
+    else if (action === "deleteCropWorkPlan") result = deleteCropWorkPlan(params);
+    else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
     else if (action === "getSowingProgress") result = getSowingProgress(params);
     else if (action === "lookupCultivationByTag") result = lookupCultivationByTag(params);
     else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
@@ -241,7 +253,7 @@ function parseCropImageWithGemini(params) {
 ルール:
 - ずらし巻き・複数期間は type を分割。各 type の sowing/planting は最大1期間。
 - 月=1-12, period="上"|"中"|"下"。期間は start_*/end_*。
-- maker/crop/climate/variety があれば文字列、grainCountは粒数(数値文字列)、characteristics は短い配列。無い項目は null。
+- maker/crop/climate/variety があれば文字列、grainCountは「コート」または「生種」、characteristics は短い配列。無い項目は null。
 JSONのみ:
 {"maker":null,"crop":null,"climate":null,"variety":null,"grainCount":null,"characteristics":[],"types":[{"sowing":[{"start_month":1,"start_period":"中","end_month":2,"end_period":"上"}],"planting":[{"start_month":3,"start_period":"上","end_month":3,"end_period":"中"}],"harvesting":[{"start_month":5,"start_period":"上","end_month":6,"end_period":"下"}]}]}`;
 
@@ -629,6 +641,21 @@ pdl.materials = [];
     pdl.cropChemPlans = [];
   }
   try {
+    pdl.costItems = readCostMasterList_();
+  } catch (ciErr) {
+    pdl.costItems = [];
+  }
+  try {
+    pdl.cropCostPlans = listCropCostPlansBrief_();
+  } catch (ccp2Err) {
+    pdl.cropCostPlans = [];
+  }
+  try {
+    pdl.cropWorkPlans = listCropWorkPlansBrief_();
+  } catch (cwpErr) {
+    pdl.cropWorkPlans = [];
+  }
+  try {
     pdl.nurseryLocations = readNurseryLocationList_();
   } catch (nlErr) {
     pdl.nurseryLocations = [];
@@ -881,6 +908,9 @@ function renameMachineGroupInMachines_(oldName, newName) {
 // マスタ管理（★看板マスタの処理を追加）
 // =========================================
 function manageMasterData(masterType, manageAction, value, userName) {
+  if (masterType === 'costItem') {
+    return manageCostMaster_(manageAction, value, userName);
+  }
   const ss = TENANT_SS;
   let sheetName = "";
   // 互換: 旧 machineCategory は機械グループ、machineType は機械カテゴリ（旧機種）
@@ -1574,11 +1604,69 @@ function addFieldStatusToMaster(statusName) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('圃場設定マスタ');
   if (!sheet) return statusName;
+  const name = String(statusName || '').trim();
+  if (!name) return statusName;
   const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][2] || '').trim() === name) {
+      return name;
+    }
+  }
   let emptyRow = 2;
   while (emptyRow <= data.length && (data[emptyRow-1] && data[emptyRow-1][2])) emptyRow++;
-  sheet.getRange(emptyRow, 3).setValue(statusName);
-  return statusName;
+  sheet.getRange(emptyRow, 3).setValue(name);
+  return name;
+}
+
+function editFieldStatusInMaster(oldStatusName, newStatusName) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('圃場設定マスタ');
+  const oldName = String(oldStatusName || '').trim();
+  const newName = String(newStatusName || '').trim();
+  if (!oldName || !newName) return newName;
+
+  if (sheet) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][2] || '').trim() === oldName) {
+        sheet.getRange(i + 1, 3).setValue(newName);
+        break;
+      }
+    }
+  }
+
+  try {
+    const hojoSheet = ss.getSheetByName('圃場マスタ');
+    if (hojoSheet && hojoSheet.getLastRow() > 1) {
+      const hData = hojoSheet.getRange(2, 11, hojoSheet.getLastRow() - 1, 1).getValues();
+      for (let j = 0; j < hData.length; j++) {
+        if (String(hData[j][0] || '').trim() === oldName) {
+          hojoSheet.getRange(j + 2, 11).setValue(newName);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('圃場マスタの稼働状況更新エラー:', e);
+  }
+  return newName;
+}
+
+function deleteFieldStatusFromMaster(statusName) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('圃場設定マスタ');
+  const targetName = String(statusName || '').trim();
+  if (!targetName) return true;
+
+  if (sheet) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][2] || '').trim() === targetName) {
+        sheet.getRange(i + 1, 3).clearContent();
+        break;
+      }
+    }
+  }
+  return true;
 }
 
 function addCropToMaster(cropData) {
@@ -2409,6 +2497,645 @@ function deleteCropChemPlan(params) {
   }
   SpreadsheetApp.flush();
   return { success: true, plans: listCropChemPlansBrief_() };
+}
+
+// ===== 原価マスタ / 品目別原価設定 / 原価計算 =====
+const COST_MASTER_HEADERS_ = [
+  'ID', '品目名', 'カテゴリ', '規格', '単価', '単価単位', '用量基準', '標準用量', '備考', '更新日時'
+];
+const COST_ITEM_CATEGORIES_ = ['種', '資材', '機械', '燃料', '労務', '農薬', '肥料', 'その他'];
+const COST_BASE_UNITS_ = ['area_a', 'tray', 'plant', 'yield_pack', 'fixed'];
+const CROP_COST_PLAN_HEADERS_ = ['品目名', '設定JSON', '更新者', '更新日時'];
+
+function ensureCostMasterSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('原価マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('原価マスタ');
+    sheet.appendRow(COST_MASTER_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, COST_MASTER_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), COST_MASTER_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    COST_MASTER_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function normalizeCostMasterItem_(raw) {
+  const name = String((raw && (raw.name || raw.品目名)) || '').trim();
+  if (!name) throw new Error('品目名を入力してください');
+  let category = String((raw && (raw.category || raw.カテゴリ)) || 'その他').trim();
+  if (COST_ITEM_CATEGORIES_.indexOf(category) < 0) category = 'その他';
+  let base = String((raw && (raw.base || raw.用量基準)) || 'fixed').trim();
+  if (COST_BASE_UNITS_.indexOf(base) < 0) base = 'fixed';
+  const unitPrice = Number((raw && (raw.unitPrice != null ? raw.unitPrice : raw.単価)) || 0);
+  const defaultQty = (raw && (raw.defaultQty != null ? raw.defaultQty : raw.標準用量));
+  return {
+    id: String((raw && raw.id) || ('COST-' + Utilities.getUuid().substring(0, 8))).trim(),
+    name: name,
+    category: category,
+    spec: String((raw && (raw.spec || raw.規格)) || '').trim(),
+    unitPrice: isNaN(unitPrice) ? 0 : unitPrice,
+    priceUnit: String((raw && (raw.priceUnit || raw.単価単位)) || '円').trim() || '円',
+    base: base,
+    defaultQty: (defaultQty === '' || defaultQty == null) ? '' : Number(defaultQty),
+    note: String((raw && (raw.note || raw.備考)) || '').trim(),
+    updatedAt: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss')
+  };
+}
+
+function costMasterRowFromItem_(item) {
+  return [
+    item.id,
+    item.name,
+    item.category,
+    item.spec,
+    item.unitPrice,
+    item.priceUnit,
+    item.base,
+    item.defaultQty === '' || item.defaultQty == null ? '' : item.defaultQty,
+    item.note,
+    item.updatedAt
+  ];
+}
+
+function readCostMasterList_() {
+  const sheet = ensureCostMasterSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, 1, last - 1, COST_MASTER_HEADERS_.length).getValues();
+  return values.map(r => {
+    if (!r[0] && !r[1]) return null;
+    try {
+      return normalizeCostMasterItem_({
+        id: r[0],
+        name: r[1],
+        category: r[2],
+        spec: r[3],
+        unitPrice: r[4],
+        priceUnit: r[5],
+        base: r[6],
+        defaultQty: r[7],
+        note: r[8],
+        updatedAt: r[9]
+      });
+    } catch (e) {
+      return null;
+    }
+  }).filter(Boolean);
+}
+
+function manageCostMaster_(manageAction, value, userName) {
+  const uname = String(userName || '').trim();
+  if (uname !== 'system' && !checkAdminRole(uname)) {
+    throw new Error('原価マスタの変更は管理者のみ可能です');
+  }
+  const sheet = ensureCostMasterSheet_();
+  if (manageAction === 'add') {
+    const item = normalizeCostMasterItem_(value || {});
+    sheet.appendRow(costMasterRowFromItem_(item));
+    SpreadsheetApp.flush();
+    return readCostMasterList_();
+  }
+  if (manageAction === 'edit') {
+    const id = String((value && value.id) || '').trim();
+    if (!id) throw new Error('IDがありません');
+    const merged = Object.assign({}, (value && value.newData) || value || {}, { id: id });
+    const item = normalizeCostMasterItem_(merged);
+    item.id = id;
+    const last = sheet.getLastRow();
+    if (last < 2) throw new Error('対象が見つかりません');
+    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    let found = -1;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0] || '').trim() === id) { found = i + 2; break; }
+    }
+    if (found < 0) throw new Error('対象が見つかりません');
+    sheet.getRange(found, 1, 1, COST_MASTER_HEADERS_.length).setValues([costMasterRowFromItem_(item)]);
+    SpreadsheetApp.flush();
+    return readCostMasterList_();
+  }
+  if (manageAction === 'delete') {
+    const id = String((value && value.id) || value || '').trim();
+    if (!id) throw new Error('削除対象がありません');
+    const last = sheet.getLastRow();
+    if (last < 2) return readCostMasterList_();
+    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0] || '').trim() === id) sheet.deleteRow(i + 2);
+    }
+    SpreadsheetApp.flush();
+    return readCostMasterList_();
+  }
+  throw new Error('不明な操作です: ' + manageAction);
+}
+
+function ensureCropCostPlanSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('品目別原価設定');
+  if (!sheet) {
+    sheet = ss.insertSheet('品目別原価設定');
+    sheet.appendRow(CROP_COST_PLAN_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, CROP_COST_PLAN_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), CROP_COST_PLAN_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    CROP_COST_PLAN_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function normalizeCropCostPlanPayload_(cropName, entries, userName, extra) {
+  const name = String(cropName || '').trim();
+  if (!name) throw new Error('品目名を指定してください');
+  const list = Array.isArray(entries) ? entries : [];
+  const normalized = [];
+  list.forEach(raw => {
+    if (!raw) return;
+    const costItemId = String(raw.costItemId || '').trim();
+    const costItemName = String(raw.costItemName || raw.name || '').trim();
+    if (!costItemId && !costItemName) return;
+    let base = String(raw.base || 'fixed').trim();
+    if (COST_BASE_UNITS_.indexOf(base) < 0) base = 'fixed';
+    const qtyPerBase = Number(raw.qtyPerBase != null ? raw.qtyPerBase : (raw.defaultQty != null ? raw.defaultQty : 1));
+    const unitPrice = Number(raw.unitPrice != null ? raw.unitPrice : 0);
+    normalized.push({
+      id: String(raw.id || ('CCE-' + Utilities.getUuid().substring(0, 8))),
+      costItemId: costItemId,
+      costItemName: costItemName,
+      category: String(raw.category || '').trim(),
+      qtyPerBase: isNaN(qtyPerBase) ? 1 : qtyPerBase,
+      base: base,
+      unitPrice: isNaN(unitPrice) ? 0 : unitPrice,
+      priceUnit: String(raw.priceUnit || '円').trim() || '円',
+      note: String(raw.note || '').trim()
+    });
+  });
+  const sellRaw = extra && (extra.sellPricePerPack != null ? extra.sellPricePerPack : extra.sellPrice);
+  const sellPricePerPack = (sellRaw === '' || sellRaw == null) ? '' : Number(sellRaw);
+  return {
+    cropName: name,
+    entries: normalized,
+    sellPricePerPack: (sellPricePerPack === '' || isNaN(sellPricePerPack)) ? '' : sellPricePerPack,
+    updatedBy: String(userName || '').trim(),
+    updatedAt: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss')
+  };
+}
+
+function listCropCostPlansBrief_() {
+  const sheet = ensureCropCostPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, 1, last - 1, 4).getValues();
+  return values.map(r => {
+    const cropName = String(r[0] || '').trim();
+    let entryCount = 0;
+    let sellPricePerPack = '';
+    try {
+      const parsed = JSON.parse(String(r[1] || '{}'));
+      entryCount = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
+      const v = parsed.sellPricePerPack;
+      sellPricePerPack = (v === '' || v == null || isNaN(Number(v))) ? '' : Number(v);
+    } catch (e) { entryCount = 0; }
+    return {
+      cropName: cropName,
+      entryCount: entryCount,
+      sellPricePerPack: sellPricePerPack,
+      updatedBy: String(r[2] || '').trim(),
+      updatedAt: String(r[3] || '').trim()
+    };
+  }).filter(x => x.cropName);
+}
+
+function listCropCostPlans(params) {
+  return { success: true, plans: listCropCostPlansBrief_() };
+}
+
+function getCropCostPlan(params) {
+  const cropName = String((params && params.cropName) || '').trim();
+  if (!cropName) throw new Error('品目名を指定してください');
+  const sheet = ensureCropCostPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return { success: true, plan: { cropName: cropName, entries: [], sellPricePerPack: '' } };
+  const values = sheet.getRange(2, 1, last - 1, 4).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === cropName) {
+      let plan = { cropName: cropName, entries: [] };
+      try {
+        const parsed = JSON.parse(String(values[i][1] || '{}'));
+        plan = normalizeCropCostPlanPayload_(cropName, parsed.entries || [], values[i][2], {
+          sellPricePerPack: parsed.sellPricePerPack
+        });
+        plan.updatedAt = String(values[i][3] || '').trim();
+      } catch (e) {
+        plan = { cropName: cropName, entries: [], sellPricePerPack: '' };
+      }
+      return { success: true, plan: plan };
+    }
+  }
+  return { success: true, plan: { cropName: cropName, entries: [], sellPricePerPack: '' } };
+}
+
+function saveCropCostPlan(params) {
+  const uname = String((params && params.userName) || '').trim();
+  if (uname !== 'system' && !checkAdminRole(uname)) {
+    throw new Error('品目別原価設定の変更は管理者のみ可能です');
+  }
+  const plan = normalizeCropCostPlanPayload_(
+    params && params.cropName,
+    params && params.entries,
+    uname,
+    { sellPricePerPack: params && params.sellPricePerPack }
+  );
+  const sheet = ensureCropCostPlanSheet_();
+  const last = sheet.getLastRow();
+  const json = JSON.stringify({
+    cropName: plan.cropName,
+    entries: plan.entries,
+    sellPricePerPack: plan.sellPricePerPack
+  });
+  let foundRow = -1;
+  if (last >= 2) {
+    const names = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = 0; i < names.length; i++) {
+      if (String(names[i][0] || '').trim() === plan.cropName) {
+        foundRow = i + 2;
+        break;
+      }
+    }
+  }
+  if (foundRow > 0) {
+    if (!plan.entries.length && (plan.sellPricePerPack === '' || plan.sellPricePerPack == null)) {
+      sheet.deleteRow(foundRow);
+    } else {
+      sheet.getRange(foundRow, 1, 1, 4).setValues([[plan.cropName, json, plan.updatedBy, plan.updatedAt]]);
+    }
+  } else if (plan.entries.length || (plan.sellPricePerPack !== '' && plan.sellPricePerPack != null)) {
+    sheet.appendRow([plan.cropName, json, plan.updatedBy, plan.updatedAt]);
+  }
+  SpreadsheetApp.flush();
+  return { success: true, plan: plan, plans: listCropCostPlansBrief_() };
+}
+
+function deleteCropCostPlan(params) {
+  const uname = String((params && params.userName) || '').trim();
+  if (uname !== 'system' && !checkAdminRole(uname)) {
+    throw new Error('品目別原価設定の変更は管理者のみ可能です');
+  }
+  const cropName = String((params && params.cropName) || '').trim();
+  if (!cropName) throw new Error('品目名を指定してください');
+  const sheet = ensureCropCostPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last >= 2) {
+    const names = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = names.length - 1; i >= 0; i--) {
+      if (String(names[i][0] || '').trim() === cropName) sheet.deleteRow(i + 2);
+    }
+  }
+  SpreadsheetApp.flush();
+  return { success: true, plans: listCropCostPlansBrief_() };
+}
+
+function calcCropCost(params) {
+  const cropName = String((params && params.cropName) || '').trim();
+  if (!cropName) throw new Error('作物名を指定してください');
+  const areaA = Number((params && params.areaA) != null ? params.areaA : 0) || 0;
+  const trays = Number((params && params.trays) != null ? params.trays : 0) || 0;
+  const plants = Number((params && params.plants) != null ? params.plants : 0) || 0;
+  const yieldPack = Number((params && (params.yield != null ? params.yield : params.yieldPack)) || 0) || 0;
+
+  const planRes = getCropCostPlan({ cropName: cropName });
+  const plan = planRes.plan || { cropName: cropName, entries: [] };
+  const masterList = readCostMasterList_();
+  const masterMap = {};
+  masterList.forEach(m => { masterMap[m.id] = m; });
+
+  const scaleOf = function(base) {
+    if (base === 'area_a') return areaA;
+    if (base === 'tray') return trays;
+    if (base === 'plant') return plants;
+    if (base === 'yield_pack') return yieldPack;
+    return 1;
+  };
+  const baseLabel = function(base) {
+    if (base === 'area_a') return 'aあたり';
+    if (base === 'tray') return 'トレーあたり';
+    if (base === 'plant') return '本あたり';
+    if (base === 'yield_pack') return '出荷単位あたり';
+    return '固定';
+  };
+
+  const lines = [];
+  let total = 0;
+  (plan.entries || []).forEach(e => {
+    const m = e.costItemId ? masterMap[e.costItemId] : null;
+    const unitPrice = m ? Number(m.unitPrice || 0) : Number(e.unitPrice || 0);
+    const priceUnit = m ? m.priceUnit : (e.priceUnit || '円');
+    const category = m ? m.category : (e.category || '');
+    const name = m ? m.name : (e.costItemName || '');
+    const base = e.base || (m && m.base) || 'fixed';
+    const qtyPerBase = Number(e.qtyPerBase != null ? e.qtyPerBase : ((m && m.defaultQty !== '' && m.defaultQty != null) ? m.defaultQty : 1)) || 0;
+    const scale = scaleOf(base);
+    const qty = qtyPerBase * scale;
+    const amount = qty * unitPrice;
+    total += amount;
+    lines.push({
+      id: e.id,
+      costItemId: e.costItemId || (m && m.id) || '',
+      name: name,
+      category: category,
+      spec: m ? m.spec : '',
+      qtyPerBase: qtyPerBase,
+      base: base,
+      baseLabel: baseLabel(base),
+      scale: scale,
+      qty: Math.round(qty * 1000) / 1000,
+      unitPrice: unitPrice,
+      priceUnit: priceUnit,
+      amount: Math.round(amount),
+      note: e.note || ''
+    });
+  });
+
+  return {
+    success: true,
+    cropName: cropName,
+    inputs: { areaA: areaA, trays: trays, plants: plants, yield: yieldPack },
+    lines: lines,
+    totalCost: Math.round(total),
+    costPerA: areaA > 0 ? Math.round(total / areaA) : null,
+    costPerPack: yieldPack > 0 ? Math.round(total / yieldPack) : null,
+    entryCount: lines.length,
+    sellPricePerPack: (plan.sellPricePerPack === '' || plan.sellPricePerPack == null)
+      ? ''
+      : Number(plan.sellPricePerPack),
+    totalRevenue: (function() {
+      const sp = Number(plan.sellPricePerPack);
+      if (!yieldPack || isNaN(sp) || sp === '') return null;
+      return Math.round(yieldPack * sp);
+    })(),
+    profit: (function() {
+      const sp = Number(plan.sellPricePerPack);
+      if (!yieldPack || isNaN(sp) || plan.sellPricePerPack === '' || plan.sellPricePerPack == null) return null;
+      return Math.round(yieldPack * sp - total);
+    })()
+  };
+}
+
+
+// ===== 品目別作業設定（定植からの日数 → 半旬） =====
+const CROP_WORK_PLAN_HEADERS_ = ['品目名', '設定JSON', '更新者', '更新日時'];
+const CP_PERIOD_NAMES_ = ['上前', '上後', '中前', '中後', '下前', '下後'];
+
+function ensureCropWorkPlanSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('品目別作業設定');
+  if (!sheet) {
+    sheet = ss.insertSheet('品目別作業設定');
+    sheet.appendRow(CROP_WORK_PLAN_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, CROP_WORK_PLAN_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), CROP_WORK_PLAN_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    CROP_WORK_PLAN_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function normalizeCropWorkPlanPayload_(cropName, entries, userName) {
+  const name = String(cropName || '').trim();
+  if (!name) throw new Error('品目名を指定してください');
+  const list = Array.isArray(entries) ? entries : [];
+  const normalized = [];
+  list.forEach(raw => {
+    if (!raw) return;
+    const workName = String(raw.workName || raw.name || '').trim();
+    if (!workName) return;
+    const offsetDays = Number(raw.offsetDays != null ? raw.offsetDays : 0);
+    const durationDays = Number(raw.durationDays != null ? raw.durationDays : 1);
+    normalized.push({
+      id: String(raw.id || ('CWP-' + Utilities.getUuid().substring(0, 8))),
+      workName: workName,
+      offsetDays: isNaN(offsetDays) ? 0 : Math.round(offsetDays),
+      durationDays: (isNaN(durationDays) || durationDays < 1) ? 1 : Math.round(durationDays),
+      note: String(raw.note || '').trim()
+    });
+  });
+  normalized.sort((a, b) => a.offsetDays - b.offsetDays || a.workName.localeCompare(b.workName, 'ja'));
+  return {
+    cropName: name,
+    entries: normalized,
+    updatedBy: String(userName || '').trim(),
+    updatedAt: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss')
+  };
+}
+
+function listCropWorkPlansBrief_() {
+  const sheet = ensureCropWorkPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, 1, last - 1, 4).getValues();
+  return values.map(r => {
+    const cropName = String(r[0] || '').trim();
+    let entryCount = 0;
+    try {
+      const parsed = JSON.parse(String(r[1] || '{}'));
+      entryCount = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
+    } catch (e) { entryCount = 0; }
+    return {
+      cropName: cropName,
+      entryCount: entryCount,
+      updatedBy: String(r[2] || '').trim(),
+      updatedAt: String(r[3] || '').trim()
+    };
+  }).filter(x => x.cropName);
+}
+
+function listCropWorkPlans(params) {
+  return { success: true, plans: listCropWorkPlansBrief_() };
+}
+
+function getCropWorkPlan(params) {
+  const cropName = String((params && params.cropName) || '').trim();
+  if (!cropName) throw new Error('品目名を指定してください');
+  const sheet = ensureCropWorkPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return { success: true, plan: { cropName: cropName, entries: [] } };
+  const values = sheet.getRange(2, 1, last - 1, 4).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === cropName) {
+      let plan = { cropName: cropName, entries: [] };
+      try {
+        const parsed = JSON.parse(String(values[i][1] || '{}'));
+        plan = normalizeCropWorkPlanPayload_(cropName, parsed.entries || [], values[i][2]);
+        plan.updatedAt = String(values[i][3] || '').trim();
+      } catch (e) {
+        plan = { cropName: cropName, entries: [] };
+      }
+      return { success: true, plan: plan };
+    }
+  }
+  return { success: true, plan: { cropName: cropName, entries: [] } };
+}
+
+function saveCropWorkPlan(params) {
+  const uname = String((params && params.userName) || '').trim();
+  if (uname !== 'system' && !checkAdminRole(uname)) {
+    throw new Error('品目別作業設定の変更は管理者のみ可能です');
+  }
+  const plan = normalizeCropWorkPlanPayload_(
+    params && params.cropName,
+    params && params.entries,
+    uname
+  );
+  const sheet = ensureCropWorkPlanSheet_();
+  const last = sheet.getLastRow();
+  const json = JSON.stringify({ cropName: plan.cropName, entries: plan.entries });
+  let foundRow = -1;
+  if (last >= 2) {
+    const names = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = 0; i < names.length; i++) {
+      if (String(names[i][0] || '').trim() === plan.cropName) {
+        foundRow = i + 2;
+        break;
+      }
+    }
+  }
+  if (foundRow > 0) {
+    if (!plan.entries.length) sheet.deleteRow(foundRow);
+    else sheet.getRange(foundRow, 1, 1, 4).setValues([[plan.cropName, json, plan.updatedBy, plan.updatedAt]]);
+  } else if (plan.entries.length) {
+    sheet.appendRow([plan.cropName, json, plan.updatedBy, plan.updatedAt]);
+  }
+  SpreadsheetApp.flush();
+  return { success: true, plan: plan, plans: listCropWorkPlansBrief_() };
+}
+
+function deleteCropWorkPlan(params) {
+  const uname = String((params && params.userName) || '').trim();
+  if (uname !== 'system' && !checkAdminRole(uname)) {
+    throw new Error('品目別作業設定の変更は管理者のみ可能です');
+  }
+  const cropName = String((params && params.cropName) || '').trim();
+  if (!cropName) throw new Error('品目名を指定してください');
+  const sheet = ensureCropWorkPlanSheet_();
+  const last = sheet.getLastRow();
+  if (last >= 2) {
+    const names = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = names.length - 1; i >= 0; i--) {
+      if (String(names[i][0] || '').trim() === cropName) sheet.deleteRow(i + 2);
+    }
+  }
+  SpreadsheetApp.flush();
+  return { success: true, plans: listCropWorkPlansBrief_() };
+}
+
+/** Date → 栽培計画と同じ半旬インデックス (0〜107: 18ヶ月×6) */
+function dateToCpFlatIndex_(planYear, dateObj) {
+  const y = dateObj.getFullYear();
+  const m = dateObj.getMonth() + 1;
+  const d = dateObj.getDate();
+  let monthIndex = (m - 1);
+  if (y > Number(planYear)) monthIndex = 12 + (m - 1);
+  else if (y < Number(planYear)) monthIndex = Math.max(-12, (m - 1) - 12);
+  if (monthIndex < 0) monthIndex = 0;
+  if (monthIndex > 17) monthIndex = 17;
+  const periodIndex = Math.min(5, Math.max(0, Math.floor((d - 1) / 5)));
+  return monthIndex * 6 + periodIndex;
+}
+
+function cpFlatToLabel_(flat) {
+  const f = Math.max(0, Math.min(107, Number(flat) || 0));
+  const monthIndex = Math.floor(f / 6);
+  const periodIndex = f % 6;
+  const month = (monthIndex % 12) + 1;
+  const yearMark = monthIndex >= 12 ? '(翌)' : '';
+  return yearMark + month + '月' + (CP_PERIOD_NAMES_[periodIndex] || '');
+}
+
+function formatYmd_(d) {
+  return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+
+/**
+ * 定植セル + 品目別作業設定 → 発生作業一覧
+ * params: { cropName, year, plantingCells: [{monthIndex, month, periodIndex}] }
+ */
+function previewCropWorkSchedule(params) {
+  const cropName = String((params && params.cropName) || '').trim();
+  if (!cropName) throw new Error('作物名を指定してください');
+  const year = Number((params && params.year) || new Date().getFullYear());
+  const plantingCells = Array.isArray(params && params.plantingCells) ? params.plantingCells : [];
+  const planRes = getCropWorkPlan({ cropName: cropName });
+  const entries = (planRes.plan && planRes.plan.entries) || [];
+
+  if (!plantingCells.length) {
+    return {
+      success: true,
+      cropName: cropName,
+      year: year,
+      plantingLabel: '',
+      works: entries.map(e => ({
+        id: e.id,
+        workName: e.workName,
+        offsetDays: e.offsetDays,
+        durationDays: e.durationDays,
+        note: e.note,
+        startDate: null,
+        endDate: null,
+        periodLabel: '定植+' + e.offsetDays + '日',
+        flat: null
+      })),
+      entryCount: entries.length,
+      message: '定植半旬が未設定です（オフセットのみ表示）'
+    };
+  }
+
+  const plantParts = plantingCells.map(c => cpCellToDateParts(year, c));
+  plantParts.sort((a, b) => a.start - b.start);
+  const plantStart = plantParts[0].start;
+  const plantEnd = plantParts[plantParts.length - 1].end;
+  const plantingLabel = formatCpPeriodLabel(year, plantingCells);
+
+  const works = entries.map(e => {
+    const start = new Date(plantStart.getTime());
+    start.setDate(start.getDate() + (Number(e.offsetDays) || 0));
+    const end = new Date(start.getTime());
+    end.setDate(end.getDate() + Math.max(0, (Number(e.durationDays) || 1) - 1));
+    const flat = dateToCpFlatIndex_(year, start);
+    return {
+      id: e.id,
+      workName: e.workName,
+      offsetDays: e.offsetDays,
+      durationDays: e.durationDays,
+      note: e.note,
+      startDate: formatYmd_(start),
+      endDate: formatYmd_(end),
+      periodLabel: cpFlatToLabel_(flat),
+      flat: flat,
+      plantingStart: formatYmd_(plantStart),
+      plantingEnd: formatYmd_(plantEnd)
+    };
+  });
+  works.sort((a, b) => String(a.startDate || '').localeCompare(String(b.startDate || '')) || a.offsetDays - b.offsetDays);
+
+  return {
+    success: true,
+    cropName: cropName,
+    year: year,
+    plantingLabel: plantingLabel,
+    plantingStart: formatYmd_(plantStart),
+    plantingEnd: formatYmd_(plantEnd),
+    works: works,
+    entryCount: works.length
+  };
 }
 
 function searchPesticideCatalog(params) {
@@ -4535,7 +5262,7 @@ function getMachineLastHourMeters() {
 }
 
 // ==========================================
-// 品種作型登録 (ファイル付き)
+// 品種登録 (ファイル付き)
 // ==========================================
 function saveCroptypeWithFile(params) {
   try {
@@ -5627,22 +6354,62 @@ function getSavedCultivationPlanList() {
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('栽培計画');
     if (!sheet || sheet.getLastRow() <= 1) return [];
-    
+
+    // 品種→メーカー・粒数（コート/生種）の参照
+    const metaMap = {};
+    const croptypeSheet = ss.getSheetByName('作型DB');
+    if (croptypeSheet && croptypeSheet.getLastRow() > 1) {
+      const dbData = croptypeSheet.getDataRange().getValues();
+      const headers = (dbData[0] || []).map(h => String(h || '').trim());
+      const makerCol = headers.indexOf('メーカー');
+      const grainCol = headers.indexOf('粒数');
+      for (let i = 1; i < dbData.length; i++) {
+        const r = dbData[i];
+        const crop = String(r[0] || '').trim();
+        const variety = String(r[1] || '').trim();
+        if (!crop || !variety) continue;
+        const key = crop + '\t' + variety;
+        const maker = makerCol !== -1 ? String(r[makerCol] || '').trim() : '';
+        const grainCount = grainCol !== -1 ? String(r[grainCol] || '').trim() : '';
+        if (!metaMap[key] || maker || grainCount) {
+          if (!metaMap[key]) metaMap[key] = { maker: '', grainCount: '' };
+          if (maker) metaMap[key].maker = maker;
+          if (grainCount) metaMap[key].grainCount = grainCount;
+        }
+      }
+    }
+
     const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
     const map = {};
-    
+
     for (let i = 0; i < data.length; i++) {
        const row = data[i];
        const year = String(row[1]);
        const crop = String(row[3]);
        if (!year || !crop) continue;
-       
+
        let status = 'planned';
+       let trays = 0;
+       let holes = 0;
+       let areaA = 0;
+       let planId = String(row[2] || '');
+       let vName = String(row[4] || '').trim();
        try {
          const planData = JSON.parse(row[5]);
          if (planData && planData.status === 'executed') status = 'executed';
+         if (planData) {
+           trays = Number(planData.trays) || 0;
+           holes = Number(planData.holes) || 0;
+           areaA = Number(planData.areaA) || 0;
+           if (planData.id) planId = String(planData.id);
+           if (!vName && planData.variety) vName = String(planData.variety || '').trim();
+         }
        } catch (e) {}
-       
+       if (!vName) vName = '(品種未設定)';
+
+       const seedCount = (holes === 1) ? trays : (trays * (holes > 0 ? holes : 0));
+       const meta = metaMap[crop + '\t' + vName] || { maker: '', grainCount: '' };
+
        const key = year + "_" + crop;
        if (!map[key]) {
            map[key] = {
@@ -5651,7 +6418,10 @@ function getSavedCultivationPlanList() {
              count: 0,
              plannedCount: 0,
              executedCount: 0,
-             lastUpdated: row[0]
+             lastUpdated: row[0],
+             plans: [],
+             seedTotal: 0,
+             seedPlannedTotal: 0
            };
        }
        map[key].count++;
@@ -5660,8 +6430,21 @@ function getSavedCultivationPlanList() {
        if (new Date(row[0]) > new Date(map[key].lastUpdated)) {
            map[key].lastUpdated = row[0];
        }
+       map[key].plans.push({
+         id: planId,
+         variety: vName,
+         maker: meta.maker || '',
+         grainCount: meta.grainCount || '',
+         trays: trays,
+         holes: holes,
+         areaA: areaA,
+         seedCount: seedCount,
+         status: status
+       });
+       map[key].seedTotal += seedCount;
+       if (status !== 'executed') map[key].seedPlannedTotal += seedCount;
     }
-    
+
     return Object.values(map).sort((a, b) => b.year.localeCompare(a.year));
   } catch(e) {
     throw new Error("栽培計画リスト取得エラー: " + e.message);
