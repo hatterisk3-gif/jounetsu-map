@@ -14,6 +14,11 @@ window.cadDrainageLines = [];
 window.cadDrainageMapPolygons = [];
 window.cadCustomShapes = [];
 window.cadGridLines = [];
+window.cadSnapGridOn = false; // 自由畝セル配置グリッド
+window.cadSnapGridSizeM = null; // nullなら基準畝幅
+window.cadCellEraseMode = false; // true=消しゴム（塗ったセルを消す）
+window.cadPaintedCells = {}; // "iu,iv" -> uneIndex
+window.cadCellPainting = false; // ドラッグ塗り中
 window.nakamichiTempMarker = null;
 
 window.cadCurrentRotation = 0;
@@ -308,8 +313,9 @@ window.updateCadSvgOverlay = (opts) => {
     if (window.cadSvgNeedsRebuild || !svg.querySelector('#cadSvgPaths') || svg._lastPolysLength !== currentPolysLength) {
         svg._lastPolysLength = currentPolysLength;
         let html = '<defs><filter id="hover-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/></filter></defs>' +
-                   '<g id="cadSvgPaths"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="cadSvgPins"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
+                   '<g id="cadSvgGrid"></g><g id="cadSvgCellHover" style="pointer-events:none;"></g><g id="cadSvgPaths"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="cadSvgPins"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
         svg.innerHTML = html;
+        let gridGroup = svg.querySelector('#cadSvgGrid');
         let pathsGroup = svg.querySelector('#cadSvgPaths');
         let textsGroup = svg.querySelector('#cadSvgTexts');
         
@@ -476,12 +482,14 @@ window.updateCadSvgOverlay = (opts) => {
             pathsGroup.appendChild(tempLineNode);
         }
 
-        if (window.cadGridLines) {
+        if (window.cadGridLines && gridGroup) {
             window.cadGridLines.forEach(l => {
-                l._svgPathNode = createPathNode('none', '#999999', true);
-                l._svgPathNode.setAttribute('stroke-opacity', '0.8');
-                l._svgPathNode.setAttribute('stroke-width', '2');
-                pathsGroup.appendChild(l._svgPathNode);
+                const isMajor = !!(l && l._cadGridMajor);
+                l._svgPathNode = createPathNode('none', isMajor ? '#00E5FF' : '#80DEEA', true);
+                l._svgPathNode.setAttribute('stroke-opacity', isMajor ? '0.85' : '0.6');
+                l._svgPathNode.setAttribute('stroke-width', isMajor ? '2' : '1.2');
+                l._svgPathNode.setAttribute('style', 'pointer-events: none;');
+                gridGroup.appendChild(l._svgPathNode);
             });
         }
 
@@ -1514,11 +1522,34 @@ window.handleMapClick = (pageX, pageY) => {
 
     if (window.cadPinMode === 'custom_rect' || window.cadPinMode === 'custom_circle') {
         const shapeType = window.cadPinMode === 'custom_circle' ? 'circle' : 'rect';
+        // グリッドON: セル枠を塗る（色塗り操作）
+        if (window.cadSnapGridOn) {
+            const result = window.cadPaintGridCellAtLatLng(latLng, { type: shapeType });
+            if (window.cadGpsWatchId != null && (window.cadGpsPurpose === 'custom_rect' || window.cadGpsPurpose === 'custom_circle')) {
+                window.cadStopGpsPinPlace({ silent: true });
+            }
+            if (result === 'painted' || result === 'erased') {
+                if (typeof window.reassignLabels === 'function') window.reassignLabels();
+                if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+            } else if (result === 'outside' && !window.cadCellEraseMode) {
+                alert('圃場の内側のセルを塗ってください。');
+            }
+            if (msgEl) {
+                if (window.cadCellEraseMode) {
+                    msgEl.innerText = '【セル消しゴム】続けてタップ／ドラッグで消去できます';
+                    msgEl.style.color = '#EF5350';
+                } else {
+                    msgEl.innerText = `【セル塗り・${shapeType === 'circle' ? '丸' : '四角'}】枠をドラッグすると連続して塗れます`;
+                    msgEl.style.color = '#8BC34A';
+                }
+            }
+            return;
+        }
         window.cadExecuteAddCustomShape(latLng, shapeType);
-        window.cadPinMode = null;
         if (window.cadGpsWatchId != null && (window.cadGpsPurpose === 'custom_rect' || window.cadGpsPurpose === 'custom_circle')) {
             window.cadStopGpsPinPlace({ silent: true });
         }
+        window.cadPinMode = null;
         if (msgEl) { msgEl.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。'; msgEl.style.color = "#FF9800"; }
         return;
     }
@@ -1817,6 +1848,22 @@ window.initCadTouchEvents = () => {
             return;
         }
 
+        // セル塗りモード: 地図パンせずにドラッグで連続塗り
+        if (typeof window.cadIsCellPaintMode === 'function' && window.cadIsCellPaintMode()) {
+            ignoreDrag = true;
+            window.cadCellPainting = true;
+            window.cadCellPaintDirty = false;
+            const ll = window.getPageLatLng(startPageX, startPageY);
+            if (ll) {
+                const shapeType = window.cadPinMode === 'custom_circle' ? 'circle' : 'rect';
+                const r = window.cadPaintGridCellAtLatLng(ll, { type: shapeType, silent: true });
+                if (r === 'painted' || r === 'erased') window.cadCellPaintDirty = true;
+                window.cadUpdateCellHoverSvg(ll);
+                if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
+            }
+            return;
+        }
+
         if (!ignoreDrag) {
             e.stopPropagation();
             window.cadDragStartCenter = window.cadMap ? window.cadMap.getCenter() : null;
@@ -1828,9 +1875,29 @@ window.initCadTouchEvents = () => {
     }, { capture: true });
 
     wrapper.addEventListener('mousemove', (e) => {
-        if (document.getElementById('cadOverlay').style.display !== 'flex' || (!ignoreDrag && !isMouseDown) || lastTouchX === null || lastTouchY === null) return;
-        
+        if (document.getElementById('cadOverlay').style.display !== 'flex') return;
         const currentX = e.pageX; const currentY = e.pageY;
+
+        // セルホバー（マウス移動だけで枠をハイライト）
+        if (window.cadSnapGridOn && typeof window.cadUpdateCellHoverSvg === 'function') {
+            const hoverLl = window.getPageLatLng(currentX, currentY);
+            if (hoverLl) window.cadUpdateCellHoverSvg(hoverLl);
+        }
+
+        if (window.cadCellPainting && isMouseDown) {
+            const ll = window.getPageLatLng(currentX, currentY);
+            if (ll) {
+                const shapeType = window.cadPinMode === 'custom_circle' ? 'circle' : 'rect';
+                const r = window.cadPaintGridCellAtLatLng(ll, { type: shapeType, silent: true });
+                if (r === 'painted' || r === 'erased') {
+                    window.cadCellPaintDirty = true;
+                    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+                }
+            }
+            return;
+        }
+
+        if ((!ignoreDrag && !isMouseDown) || lastTouchX === null || lastTouchY === null) return;
 
         if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing && window.nakamichiTempPt) {
             const currentLatLng = window.getPageLatLng(currentX, currentY);
@@ -1863,6 +1930,18 @@ window.initCadTouchEvents = () => {
     }, { capture: true });
 
     wrapper.addEventListener('mouseup', (e) => {
+        if (window.cadCellPainting) {
+            // mousedown/mousemove で塗済み。クリック経路との二重実行を避ける
+            window.cadFinishCellPaintStroke_();
+            ignoreDrag = false;
+            isMouseDown = false;
+            isDragging = false;
+            startPageX = null;
+            startPageY = null;
+            lastTouchX = null;
+            lastTouchY = null;
+            return;
+        }
         if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing) {
             window.cadNakamichiIsDrawing = false;
             let distPx = Math.hypot(e.pageX - startPageX, e.pageY - startPageY);
@@ -1980,6 +2059,17 @@ window.initCadTouchEvents = () => {
                 }
                 const msgEl = document.getElementById('cadPinModeMsg');
                 if (msgEl) { msgEl.innerText = 'ドラッグして線を引いてください。離すと確定します。'; msgEl.style.color = window.cadPinMode === 'drainage' ? '#00BCD4' : "#E91E63"; }
+            } else if (typeof window.cadIsCellPaintMode === 'function' && window.cadIsCellPaintMode()) {
+                ignoreDrag = true;
+                window.cadCellPainting = true;
+                window.cadCellPaintDirty = false;
+                const ll = window.getPageLatLng(startPageX, startPageY);
+                if (ll) {
+                    const shapeType = window.cadPinMode === 'custom_circle' ? 'circle' : 'rect';
+                    const r = window.cadPaintGridCellAtLatLng(ll, { type: shapeType, silent: true });
+                    if (r === 'painted' || r === 'erased') window.cadCellPaintDirty = true;
+                    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+                }
             }
 
             if (!ignoreDrag) {
@@ -1992,6 +2082,9 @@ window.initCadTouchEvents = () => {
                 window.cadDragDy = 0;
                 window.cadDragRawDx = 0;
                 window.cadDragRawDy = 0;
+            } else if (window.cadCellPainting && e.cancelable) {
+                e.preventDefault();
+                e.stopPropagation();
             }
         }
         pendingCenter = null;
@@ -2000,6 +2093,26 @@ window.initCadTouchEvents = () => {
 
     wrapper.addEventListener('touchmove', (e) => {
         if (document.getElementById('cadOverlay').style.display !== 'flex') return;
+
+        if (window.cadCellPainting && e.touches.length === 1) {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            const currentX = e.touches[0].pageX;
+            const currentY = e.touches[0].pageY;
+            const ll = window.getPageLatLng(currentX, currentY);
+            if (ll) {
+                const shapeType = window.cadPinMode === 'custom_circle' ? 'circle' : 'rect';
+                const r = window.cadPaintGridCellAtLatLng(ll, { type: shapeType, silent: true });
+                if (r === 'painted' || r === 'erased') {
+                    window.cadCellPaintDirty = true;
+                    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+                }
+                window.cadUpdateCellHoverSvg(ll);
+            }
+            lastTouchX = currentX;
+            lastTouchY = currentY;
+            return;
+        }
 
         if (e.touches.length === 2 && initialPinchDist !== null) {
             if (e.cancelable) {
@@ -2074,7 +2187,15 @@ window.initCadTouchEvents = () => {
     const handleTouchEndOrCancel = (e) => {
         if (e.touches.length < 2) { initialPinchDist = null; initialPinchAngle = null; pinchMode = null; }
         if (e.touches.length === 0) {
-            
+            if (window.cadCellPainting) {
+                window.cadFinishCellPaintStroke_();
+                ignoreDrag = false;
+                isDragging = false;
+                startPageX = null; startPageY = null;
+                lastTouchX = null; lastTouchY = null;
+                return;
+            }
+
             if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing) {
                 window.cadNakamichiIsDrawing = false;
                 let endX = lastTouchX || startPageX;
@@ -3208,6 +3329,9 @@ window.cadAlignMapHeading = () => {
     const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
     window.cadCurrentRotation = -angle;
     window.updateCadMapTransform();
+    if (window.cadSnapGridOn && typeof window.cadRebuildSnapGrid === 'function') {
+        window.cadRebuildSnapGrid();
+    }
 };
 
 window.cadRotateMap = (deg) => {
@@ -3227,7 +3351,7 @@ window.cadFlipDirection = () => {
     if (newAngle < 0) newAngle += 360;
     newAngle = Math.round(newAngle * 10) / 10;
     angleEl.value = newAngle;
-    if (typeof window.cadAlignMapHeading === 'function') window.cadAlignMapHeading();
+    if (typeof window.cadAlignMapHeading === 'function') window.cadAlignMapHeading(); // グリッド再生成含む
     if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
     const msgEl = document.getElementById('cadPinModeMsg');
@@ -3281,37 +3405,475 @@ window.cadGetNearestEdgeAngle = (latLng) => {
     return Math.round(angle * 10) / 10;
 };
 
-window.cadToggleGrid = () => {
-    if (window.cadGridLines && window.cadGridLines.length > 0) {
-        window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; 
-        window.cadSvgNeedsRebuild = true; if(window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+/** セル配置グリッドの間隔(m)。UIのcm入力 or 基準畝幅 */
+window.cadGetSnapGridSizeM = () => {
+    const el = document.getElementById('cadSnapGridCm');
+    if (el && el.value !== '' && !isNaN(parseFloat(el.value))) {
+        const cm = parseFloat(el.value);
+        if (cm >= 20 && cm <= 2000) return cm / 100;
+    }
+    if (window.cadSnapGridSizeM && window.cadSnapGridSizeM > 0) return window.cadSnapGridSizeM;
+    const ref = typeof window.getCadReferenceRidgeWidthMeters === 'function'
+        ? window.getCadReferenceRidgeWidthMeters() : 1.5;
+    return Math.max(0.3, ref || 1.5);
+};
+
+window.cadClearSnapGridLines_ = () => {
+    if (window.cadGridLines) {
+        window.cadGridLines.forEach(l => {
+            try { l.setMap(null); } catch (e) {}
+        });
+    }
+    window.cadGridLines = [];
+};
+
+/** 圃場中心＋畝角度基準の直交グリッドを再生成（SVGに描画） */
+window.cadRebuildSnapGrid = () => {
+    window.cadClearSnapGridLines_();
+    if (!window.cadSnapGridOn || !window.cadTargetId || !window.cadMap || typeof turf === 'undefined') {
+        window.cadSvgNeedsRebuild = true;
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
         return;
     }
-    if (!window.cadTargetId) return;
     const p = loadedPolygons[window.cadTargetId];
-    let coords = p.coords.map(pt => [typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng), typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)]);
-    coords.push(coords[0]);
-    const tPoly = turf.polygon([coords]); const bbox = turf.bbox(tPoly);
-    const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
-    const centerPt = turf.center(tPoly);
-    const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' }) + 40;
+    if (!p || !p.coords || p.coords.length < 3) return;
 
-    window.cadGridLines = [];
-    for (let offset = -diagDist / 2; offset <= diagDist / 2; offset += 1) {
-        let oPt1 = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle + 90 : angle - 90, { units: 'meters' });
-        let p1_1 = turf.destination(oPt1, diagDist / 2, angle, { units: 'meters' }).geometry.coordinates;
-        let p1_2 = turf.destination(oPt1, diagDist / 2, angle + 180, { units: 'meters' }).geometry.coordinates;
-        let line1 = new google.maps.Polyline({ path: [{ lat: p1_1[1], lng: p1_1[0] }, { lat: p1_2[1], lng: p1_2[0] }], strokeColor: '#999999', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, clickable: false, zIndex: 1 });
-        window.cadGridLines.push(line1);
-
-        let oPt2 = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle : angle + 180, { units: 'meters' });
-        let p2_1 = turf.destination(oPt2, diagDist / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
-        let p2_2 = turf.destination(oPt2, diagDist / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
-        let line2 = new google.maps.Polyline({ path: [{ lat: p2_1[1], lng: p2_1[0] }, { lat: p2_2[1], lng: p2_2[0] }], strokeColor: '#999999', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 2), map: window.cadMap, clickable: false, zIndex: 1 });
-        window.cadGridLines.push(line2);
+    let coords = p.coords.map(pt => [
+        typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+        typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+    ]);
+    if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+        coords.push([coords[0][0], coords[0][1]]);
     }
-    window.cadSvgNeedsRebuild = true; 
-    if(window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+    const tPoly = turf.polygon([coords]);
+    const bbox = turf.bbox(tPoly);
+    const angleEl = document.getElementById('cadAngle');
+    const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
+    const centerPt = turf.center(tPoly);
+    window.cadSnapGridOrigin = {
+        lng: centerPt.geometry.coordinates[0],
+        lat: centerPt.geometry.coordinates[1]
+    };
+    window.cadSnapGridAngle = angle;
+
+    const cell = window.cadGetSnapGridSizeM();
+    const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' }) + cell * 2;
+    const half = diagDist / 2;
+    // 密度上限（重すぎ防止）
+    const maxLines = 90;
+    let step = cell;
+    if ((diagDist / step) > maxLines) step = diagDist / maxLines;
+
+    const makeLine = (c1, c2, major) => {
+        const line = new google.maps.Polyline({
+            path: [{ lat: c1[1], lng: c1[0] }, { lat: c2[1], lng: c2[0] }],
+            strokeColor: '#90A4AE',
+            strokeOpacity: 0.01,
+            strokeWeight: 1,
+            map: window.cadMap,
+            clickable: false,
+            zIndex: 1
+        });
+        line._cadGridMajor = !!major;
+        window.cadGridLines.push(line);
+    };
+
+    // 畝方向に平行な線（間隔は横断方向）
+    for (let offset = -half; offset <= half + 0.001; offset += step) {
+        const major = Math.abs(Math.round(offset / cell) * cell - offset) < 0.01
+            && Math.abs(Math.round(offset / cell)) % 5 === 0;
+        const oPt = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle + 90 : angle - 90, { units: 'meters' });
+        const a = turf.destination(oPt, half, angle, { units: 'meters' }).geometry.coordinates;
+        const b = turf.destination(oPt, half, angle + 180, { units: 'meters' }).geometry.coordinates;
+        makeLine(a, b, major);
+    }
+    // 畝方向に垂直な線
+    for (let offset = -half; offset <= half + 0.001; offset += step) {
+        const major = Math.abs(Math.round(offset / cell) * cell - offset) < 0.01
+            && Math.abs(Math.round(offset / cell)) % 5 === 0;
+        const oPt = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle : angle + 180, { units: 'meters' });
+        const a = turf.destination(oPt, half, angle + 90, { units: 'meters' }).geometry.coordinates;
+        const b = turf.destination(oPt, half, angle - 90, { units: 'meters' }).geometry.coordinates;
+        makeLine(a, b, major);
+    }
+
+    window.cadSvgNeedsRebuild = true;
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+};
+
+window.cadUpdateSnapGridUi_ = () => {
+    const btn = document.getElementById('cadSnapGridToggleBtn');
+    if (btn) {
+        if (window.cadSnapGridOn) {
+            btn.textContent = 'グリッド ON';
+            btn.style.background = '#0277BD';
+            btn.style.color = '#fff';
+        } else {
+            btn.textContent = 'グリッド OFF';
+            btn.style.background = '#333';
+            btn.style.color = '#ccc';
+        }
+    }
+    const paintBar = document.getElementById('cadCellPaintBar');
+    if (paintBar) paintBar.style.display = window.cadSnapGridOn ? 'flex' : 'none';
+    const paintBtn = document.getElementById('cadCellPaintBtn');
+    const eraseBtn = document.getElementById('cadCellEraseBtn');
+    if (paintBtn) {
+        const on = window.cadSnapGridOn && !window.cadCellEraseMode;
+        paintBtn.style.background = on ? '#558B2F' : '#333';
+        paintBtn.style.color = on ? '#fff' : '#ccc';
+        paintBtn.style.border = on ? 'none' : '1px solid #666';
+    }
+    if (eraseBtn) {
+        const on = window.cadSnapGridOn && !!window.cadCellEraseMode;
+        eraseBtn.style.background = on ? '#C62828' : '#333';
+        eraseBtn.style.color = on ? '#fff' : '#ccc';
+        eraseBtn.style.border = on ? 'none' : '1px solid #666';
+    }
+    const hint = document.getElementById('cadSnapGridHint');
+    if (hint) {
+        const cm = Math.round(window.cadGetSnapGridSizeM() * 100);
+        if (!window.cadSnapGridOn) {
+            hint.textContent = 'OFF時は自由配置。ONにするとセルを塗るように畝を置けます';
+        } else if (window.cadCellEraseMode) {
+            hint.textContent = `消しゴム・間隔 ${cm}cm — 塗ったセルをタップ／ドラッグで消去`;
+        } else {
+            hint.textContent = `セル塗り・間隔 ${cm}cm — 四角／丸畝を選んで枠をタップ／ドラッグで塗る`;
+        }
+    }
+};
+
+/** セル配置グリッドのON/OFF */
+window.cadToggleSnapGrid = (forceOn) => {
+    if (typeof forceOn === 'boolean') window.cadSnapGridOn = forceOn;
+    else window.cadSnapGridOn = !window.cadSnapGridOn;
+
+    if (window.cadSnapGridOn && !window.cadTargetId) {
+        window.cadSnapGridOn = false;
+        alert('先に圃場を選んでください。');
+        window.cadUpdateSnapGridUi_();
+        return;
+    }
+
+    // 間隔入力が空なら基準畝幅を埋める
+    const el = document.getElementById('cadSnapGridCm');
+    if (el && (!el.value || isNaN(parseFloat(el.value)))) {
+        const refM = typeof window.getCadReferenceRidgeWidthMeters === 'function'
+            ? window.getCadReferenceRidgeWidthMeters() : 1.5;
+        el.value = String(Math.round((refM || 1.5) * 100));
+    }
+
+    if (window.cadSnapGridOn) {
+        window.cadRebuildSnapGrid();
+        // 塗りモードへ誘導（未選択なら四角塗り）
+        if (!window.cadPinMode || (window.cadPinMode !== 'custom_rect' && window.cadPinMode !== 'custom_circle')) {
+            window.cadPinMode = 'custom_rect';
+            window.cadCellEraseMode = false;
+        }
+    } else {
+        window.cadClearSnapGridLines_();
+        window.cadCellEraseMode = false;
+        window.cadUpdateCellHoverSvg(null);
+        window.cadSvgNeedsRebuild = true;
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    }
+    window.cadUpdateSnapGridUi_();
+};
+
+/** 互換: 旧 cadToggleGrid */
+window.cadToggleGrid = () => window.cadToggleSnapGrid();
+
+window.cadOnSnapGridCmChange = () => {
+    if (window._cadSnapGridRebuildTimer) clearTimeout(window._cadSnapGridRebuildTimer);
+    window.cadUpdateSnapGridUi_();
+    window._cadSnapGridRebuildTimer = setTimeout(() => {
+        if (window.cadSnapGridOn) window.cadRebuildSnapGrid();
+    }, 250);
+};
+
+/** グリッド基準（原点・角度・セルサイズ・uv）を取得 */
+window.cadGetSnapGridFrame_ = (latLng) => {
+    if (typeof turf === 'undefined') return null;
+    let origin = window.cadSnapGridOrigin;
+    if (!origin && window.cadTargetId && loadedPolygons[window.cadTargetId]) {
+        const p = loadedPolygons[window.cadTargetId];
+        let coords = p.coords.map(pt => [
+            typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+            typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+        ]);
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+            coords.push([coords[0][0], coords[0][1]]);
+        }
+        try {
+            const c = turf.center(turf.polygon([coords]));
+            origin = { lng: c.geometry.coordinates[0], lat: c.geometry.coordinates[1] };
+        } catch (e) {
+            return null;
+        }
+    }
+    if (!origin) return null;
+    const angleEl = document.getElementById('cadAngle');
+    const angle = (window.cadSnapGridAngle != null)
+        ? window.cadSnapGridAngle
+        : (angleEl && angleEl.value ? parseFloat(angleEl.value) : 0);
+    const cell = window.cadGetSnapGridSizeM();
+    const originPt = turf.point([origin.lng, origin.lat]);
+    let u = 0, v = 0;
+    if (latLng) {
+        const lat = typeof latLng.lat === 'function' ? latLng.lat() : parseFloat(latLng.lat);
+        const lng = typeof latLng.lng === 'function' ? latLng.lng() : parseFloat(latLng.lng);
+        if (isFinite(lat) && isFinite(lng)) {
+            const pt = turf.point([lng, lat]);
+            const dist = turf.distance(originPt, pt, { units: 'meters' });
+            const bearing = turf.bearing(originPt, pt);
+            const rad = (bearing - angle) * Math.PI / 180;
+            u = dist * Math.cos(rad);
+            v = dist * Math.sin(rad);
+        }
+    }
+    return { origin, originPt, angle, cell, u, v };
+};
+
+window.cadUvToLatLng_ = (u, v, frame) => {
+    let snapped = frame.originPt;
+    if (Math.abs(u) > 1e-9) {
+        snapped = turf.destination(snapped, Math.abs(u), u >= 0 ? frame.angle : frame.angle + 180, { units: 'meters' });
+    }
+    if (Math.abs(v) > 1e-9) {
+        snapped = turf.destination(snapped, Math.abs(v), v >= 0 ? frame.angle + 90 : frame.angle - 90, { units: 'meters' });
+    }
+    const c = snapped.geometry.coordinates;
+    return { lat: c[1], lng: c[0], point: snapped };
+};
+
+/**
+ * タップ／GPS位置をグリッド交点へ吸着
+ * @returns {google.maps.LatLng}
+ */
+window.cadSnapLatLngToGrid = (latLng) => {
+    if (!window.cadSnapGridOn || !latLng) return latLng;
+    const frame = window.cadGetSnapGridFrame_(latLng);
+    if (!frame) return latLng;
+    const u = Math.round(frame.u / frame.cell) * frame.cell;
+    const v = Math.round(frame.v / frame.cell) * frame.cell;
+    const p = window.cadUvToLatLng_(u, v, frame);
+    return new google.maps.LatLng(p.lat, p.lng);
+};
+
+/** 点が属するセル番号（枠インデックス） */
+window.cadLatLngToCellIndex = (latLng) => {
+    const frame = window.cadGetSnapGridFrame_(latLng);
+    if (!frame) return null;
+    // 負の座標も正しくセル化
+    const iu = Math.floor(frame.u / frame.cell + 1e-12);
+    const iv = Math.floor(frame.v / frame.cell + 1e-12);
+    return { iu, iv, frame };
+};
+
+window.cadCellKey_ = (iu, iv) => String(iu) + ',' + String(iv);
+
+window.cadIsCellPaintMode = () => {
+    return !!(window.cadSnapGridOn && (window.cadPinMode === 'custom_rect' || window.cadPinMode === 'custom_circle'));
+};
+
+/** セル枠の四隅 [lng,lat]（閉じたリング） */
+window.cadGetGridCellRing_ = (iu, iv, frame) => {
+    const c = frame.cell;
+    const cornersUv = [
+        [iu * c, iv * c],
+        [(iu + 1) * c, iv * c],
+        [(iu + 1) * c, (iv + 1) * c],
+        [iu * c, (iv + 1) * c],
+        [iu * c, iv * c]
+    ];
+    return cornersUv.map(([u, v]) => {
+        const p = window.cadUvToLatLng_(u, v, frame);
+        return [p.lng, p.lat];
+    });
+};
+
+window.cadUpdateCellHoverSvg = (latLng) => {
+    const svg = document.getElementById('cadSvgOverlay');
+    if (!svg) return;
+    let g = svg.querySelector('#cadSvgCellHover');
+    if (!window.cadSnapGridOn || !latLng) {
+        if (g) g.innerHTML = '';
+        return;
+    }
+    const idx = window.cadLatLngToCellIndex(latLng);
+    if (!idx) {
+        if (g) g.innerHTML = '';
+        return;
+    }
+    if (!g) {
+        g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('id', 'cadSvgCellHover');
+        g.setAttribute('style', 'pointer-events:none;');
+        const gridGroup = svg.querySelector('#cadSvgGrid');
+        if (gridGroup && gridGroup.parentNode) {
+            gridGroup.parentNode.insertBefore(g, gridGroup.nextSibling);
+        } else {
+            svg.appendChild(g);
+        }
+    }
+    const ring = window.cadGetGridCellRing_(idx.iu, idx.iv, idx.frame);
+    const pts = ring.map(c => {
+        const s = window.latLngToScreenPixel(c[1], c[0]);
+        return s.x + ',' + s.y;
+    }).join(' ');
+    const filled = !!(window.cadPaintedCells && window.cadPaintedCells[window.cadCellKey_(idx.iu, idx.iv)]);
+    const erase = !!window.cadCellEraseMode;
+    let fill = erase ? 'rgba(244,67,54,0.28)' : 'rgba(139,195,74,0.35)';
+    let stroke = erase ? '#EF5350' : '#AED581';
+    if (filled && !erase) {
+        fill = 'rgba(255,235,59,0.25)';
+        stroke = '#FFEE58';
+    }
+    g.innerHTML = `<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-opacity="0.95"></polygon>`;
+};
+
+window.cadSetCellEraseMode = (on) => {
+    window.cadCellEraseMode = !!on;
+    window.cadUpdateSnapGridUi_();
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl && window.cadSnapGridOn) {
+        msgEl.innerText = window.cadCellEraseMode
+            ? '【セル消しゴム】塗ったセルをタップ／ドラッグで消します'
+            : '【セル塗り】枠をタップ／ドラッグで畝を塗ります';
+        msgEl.style.color = window.cadCellEraseMode ? '#EF5350' : '#8BC34A';
+    }
+};
+
+/**
+ * セル枠を畝として塗る／消す
+ * @returns {'painted'|'erased'|'exists'|'outside'|'fail'|null}
+ */
+window.cadPaintGridCell = (iu, iv, opts) => {
+    opts = opts || {};
+    if (!window.cadTargetId || typeof turf === 'undefined') return null;
+    if (!window.cadPaintedCells) window.cadPaintedCells = {};
+
+    const frame = opts.frame || window.cadGetSnapGridFrame_(null);
+    if (!frame) return null;
+    const key = window.cadCellKey_(iu, iv);
+    const erase = opts.erase != null ? !!opts.erase : !!window.cadCellEraseMode;
+    const type = opts.type || ((window.cadPinMode === 'custom_circle') ? 'circle' : 'rect');
+
+    // 消しゴム
+    if (erase) {
+        const uneIndex = window.cadPaintedCells[key];
+        if (!uneIndex) return null;
+        const list = window.cadCustomShapes || [];
+        const idx = list.findIndex(p => p && p.uneIndex === uneIndex);
+        if (idx >= 0) {
+            try { list[idx].setMap(null); } catch (e) {}
+            list.splice(idx, 1);
+        }
+        delete window.cadPaintedCells[key];
+        window.cadSvgNeedsRebuild = true;
+        if (!opts.silent && typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+        return 'erased';
+    }
+
+    // 既に塗済み
+    if (window.cadPaintedCells[key]) {
+        const uneIndex = window.cadPaintedCells[key];
+        if ((window.cadCustomShapes || []).some(p => p && p.uneIndex === uneIndex)) return 'exists';
+        delete window.cadPaintedCells[key];
+    }
+
+    const p = loadedPolygons[window.cadTargetId];
+    if (!p || !p.coords || p.coords.length < 3) return 'fail';
+    let fieldCoords = p.coords.map(pt => [
+        typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+        typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+    ]);
+    if (fieldCoords[0][0] !== fieldCoords[fieldCoords.length - 1][0]
+        || fieldCoords[0][1] !== fieldCoords[fieldCoords.length - 1][1]) {
+        fieldCoords.push([fieldCoords[0][0], fieldCoords[0][1]]);
+    }
+    const tPoly = turf.polygon([fieldCoords]);
+    const ring = window.cadGetGridCellRing_(iu, iv, frame);
+    let shapePoly = null;
+    try {
+        if (type === 'circle') {
+            const mid = window.cadUvToLatLng_((iu + 0.5) * frame.cell, (iv + 0.5) * frame.cell, frame);
+            const radiusKm = Math.max(frame.cell / 2, 0.15) / 1000;
+            shapePoly = turf.circle(turf.point([mid.lng, mid.lat]), radiusKm, { steps: 20, units: 'kilometers' });
+        } else {
+            shapePoly = turf.polygon([ring]);
+        }
+    } catch (e) {
+        return 'fail';
+    }
+
+    // セル中心が圃場外ならスキップ（ドラッグ時は静かに）
+    try {
+        const mid = window.cadUvToLatLng_((iu + 0.5) * frame.cell, (iv + 0.5) * frame.cell, frame);
+        if (!turf.booleanPointInPolygon(turf.point([mid.lng, mid.lat]), tPoly)) {
+            return 'outside';
+        }
+    } catch (e) {}
+
+    let finalPoly = null;
+    try {
+        finalPoly = turf.intersect(tPoly, shapePoly);
+    } catch (e) {
+        finalPoly = shapePoly;
+    }
+    if (!finalPoly) return 'outside';
+
+    let flattened;
+    try {
+        flattened = turf.flatten(finalPoly);
+    } catch (e) {
+        flattened = { features: [finalPoly] };
+    }
+
+    const groupName = type === 'circle' ? '丸' : '四角';
+    let added = null;
+    (flattened.features || []).forEach((feature, fIdx) => {
+        if (!feature || !feature.geometry || feature.geometry.type !== 'Polygon') return;
+        const coordinates = feature.geometry.coordinates;
+        if (!coordinates || !coordinates.length) return;
+        const paths = coordinates.map(r => r.map(c => ({ lat: c[1], lng: c[0] })));
+        if (!paths[0] || paths[0].length < 3) return;
+        const gPoly = window.cadCreateRidgePolygon(paths, {
+            fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(groupName) : '#8BC34A'
+        });
+        gPoly.uneIndex = 'custom_cell_' + iu + '_' + iv + '_' + Date.now() + '_' + fIdx;
+        gPoly.uneGroup = groupName;
+        gPoly._cadCellKey = key;
+        window.bindShapeHistoryEvents(gPoly);
+        window.cadCustomShapes.push(gPoly);
+        if (!added) added = gPoly.uneIndex;
+    });
+
+    if (!added) return 'fail';
+    window.cadPaintedCells[key] = added;
+    window.cadSvgNeedsRebuild = true;
+    if (!opts.silent && typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    return 'painted';
+};
+
+window.cadPaintGridCellAtLatLng = (latLng, opts) => {
+    opts = opts || {};
+    const idx = window.cadLatLngToCellIndex(latLng);
+    if (!idx) return null;
+    return window.cadPaintGridCell(idx.iu, idx.iv, Object.assign({}, opts, { frame: idx.frame }));
+};
+
+window.cadFinishCellPaintStroke_ = () => {
+    if (!window.cadCellPaintDirty) {
+        window.cadCellPainting = false;
+        return;
+    }
+    window.cadCellPaintDirty = false;
+    window.cadCellPainting = false;
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    window.cadSvgNeedsRebuild = true;
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 };
 
 window.updateCadPreviewCount = () => {
@@ -3355,7 +3917,12 @@ window.cadClearLines = (skipHistory = false) => {
     window.cadDrainageMapPolygons.forEach(pl => pl.setMap(null)); window.cadDrainageMapPolygons = [];
     window.cadDrainageLines = [];
     window.cadCustomShapes.forEach(pl => pl.setMap(null)); window.cadCustomShapes = [];
-    if (window.cadGridLines) { window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; }
+    window.cadPaintedCells = {};
+    if (typeof window.cadClearSnapGridLines_ === 'function') window.cadClearSnapGridLines_();
+    else if (window.cadGridLines) { window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; }
+    if (window.cadSnapGridOn && typeof window.cadRebuildSnapGrid === 'function') {
+        window.cadRebuildSnapGrid();
+    }
     if (window.cadUneLabels) { window.cadUneLabels.forEach(lbl => lbl.setMap(null)); window.cadUneLabels = []; }
     if (window.nakamichiTempMarker) { window.nakamichiTempMarker.setMap(null); window.nakamichiTempMarker = null; }
     if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
@@ -3376,7 +3943,11 @@ window.cadClearRidgesOnly = (skipHistory = false) => {
         window.cadCustomShapes.forEach(pl => pl.setMap(null));
         window.cadCustomShapes = [];
     }
-    if (window.cadGridLines) {
+    window.cadPaintedCells = {};
+    // セル配置グリッドは消さない（塗り直し用に残す）
+    if (window.cadSnapGridOn) {
+        if (typeof window.cadRebuildSnapGrid === 'function') window.cadRebuildSnapGrid();
+    } else if (window.cadGridLines) {
         window.cadGridLines.forEach(l => l.setMap(null));
         window.cadGridLines = [];
     }
@@ -4213,6 +4784,16 @@ window.cadSetFrontBar = (position) => {
     window.saveCadStateToHistory();
 };
 
+window.cadSetSnapGridCm = (cm) => {
+    const el = document.getElementById('cadSnapGridCm');
+    if (el) {
+        el.value = String(cm);
+        if (typeof window.cadOnSnapGridCmChange === 'function') {
+            window.cadOnSnapGridCmChange();
+        }
+    }
+};
+
 window.cadAddCustomShape = (type) => {
     const mode = (type === 'circle') ? 'custom_circle' : 'custom_rect';
     // GPS測位中なら止めてタップ配置へ
@@ -4221,11 +4802,26 @@ window.cadAddCustomShape = (type) => {
     }
     window.cadPinMode = mode;
     window.cadCustomShapeGpsType = (type === 'circle') ? 'circle' : 'rect';
+    
+    // 🌟 自由畝追加時はグリッドを自動的にONにしてセル格子を表示！
+    if (!window.cadSnapGridOn) {
+        window.cadToggleSnapGrid(true);
+    } else {
+        window.cadCellEraseMode = false;
+        window.cadRebuildSnapGrid();
+        window.cadUpdateSnapGridUi_();
+    }
     const msgEl = document.getElementById('cadPinModeMsg');
     if (msgEl) {
-        msgEl.innerText = mode === 'custom_rect'
-            ? '【四角畝】配置したい場所をタップ（または「GPSで四角畝」）'
-            : '【丸畝】配置したい場所をタップ（または「GPSで丸畝」）';
+        if (window.cadSnapGridOn) {
+            msgEl.innerText = mode === 'custom_rect'
+                ? '【セル塗り・四角】枠をタップ／ドラッグで塗ります（消しゴム切替可）'
+                : '【セル塗り・丸】枠をタップ／ドラッグで丸畝を塗ります';
+        } else {
+            msgEl.innerText = mode === 'custom_rect'
+                ? '【四角畝】配置したい場所をタップ（または「GPSで四角畝」）'
+                : '【丸畝】配置したい場所をタップ（または「GPSで丸畝」）';
+        }
         msgEl.style.color = '#8BC34A';
     }
 };
@@ -4265,6 +4861,22 @@ window.cadConfirmCustomShapeGps = () => {
         if (!confirm(`現在の精度は ±${acc}m です。\nこのまま置きますか？（あとから移動・変形できます）`)) return;
     }
     const latLng = new google.maps.LatLng(window.cadGpsLastPos.lat, window.cadGpsLastPos.lng);
+    if (window.cadSnapGridOn) {
+        const result = window.cadPaintGridCellAtLatLng(latLng, { type: shape, fromGps: true });
+        window.cadStopGpsPinPlace({ silent: true });
+        if (result === 'painted' || result === 'erased') {
+            if (typeof window.reassignLabels === 'function') window.reassignLabels();
+            if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+        } else if (result === 'outside') {
+            alert('現在地のセルが圃場の外側です。');
+        }
+        const msgEl = document.getElementById('cadPinModeMsg');
+        if (msgEl) {
+            msgEl.innerText = '【セル塗り・GPS】現在地のセルを塗りました。続けてタップ／ドラッグもできます';
+            msgEl.style.color = '#8BC34A';
+        }
+        return;
+    }
     window.cadExecuteAddCustomShape(latLng, shape, { fromGps: true });
     window.cadPinMode = null;
     window.cadStopGpsPinPlace({ silent: true });
@@ -4280,6 +4892,11 @@ window.cadExecuteAddCustomShape = (latLng, type, opts) => {
     opts = opts || {};
     if (!window.cadTargetId || !latLng) return;
 
+    // セル配置グリッドON時は交点へ吸着
+    if (window.cadSnapGridOn && typeof window.cadSnapLatLngToGrid === 'function') {
+        latLng = window.cadSnapLatLngToGrid(latLng);
+    }
+
     const p = loadedPolygons[window.cadTargetId];
     if (!p || !p.coords || p.coords.length < 3) return;
 
@@ -4292,7 +4909,10 @@ window.cadExecuteAddCustomShape = (latLng, type, opts) => {
         fieldCoords.push([fieldCoords[0][0], fieldCoords[0][1]]);
     }
     const tPoly = turf.polygon([fieldCoords]);
-    const centerPt = turf.point([latLng.lng(), latLng.lat()]);
+    const centerPt = turf.point([
+        typeof latLng.lng === 'function' ? latLng.lng() : parseFloat(latLng.lng),
+        typeof latLng.lat === 'function' ? latLng.lat() : parseFloat(latLng.lat)
+    ]);
 
     // 圃場外は拒否
     try {

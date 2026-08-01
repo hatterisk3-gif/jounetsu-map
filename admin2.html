@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [管理者用] v1.23</title>
+  <title>情熱MAP [管理者用] v1.24</title>
   <link rel="apple-touch-icon" href="icon_admin.png">
   <link rel="icon" href="icon_admin.png">
   <link rel="manifest" href="manifest_admin.json">
@@ -21,7 +21,7 @@
     
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v1.23)</h2>
+      <h2 style="color:#4CAF50;">情熱MAP 管理画面 (v1.24)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px; font-weight:bold;"></div>
       <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
       <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -225,6 +225,32 @@
         </div>
 
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">⬛ 自由畝の追加 (タップ／GPSで配置・移動/変形可能)</div>
+        <div style="border:1px solid #555; border-radius:6px; padding:7px; margin-bottom:6px; background:#2a2a2a;">
+          <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
+            <button type="button" id="cadSnapGridToggleBtn" onclick="cadToggleSnapGrid()"
+              style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">グリッド OFF</button>
+            <span style="font-size:10px; color:#aaa; white-space:nowrap;">間隔</span>
+            <input type="number" id="cadSnapGridCm" value="150" min="20" max="2000" step="10"
+              onchange="cadOnSnapGridCmChange()" oninput="cadOnSnapGridCmChange()"
+              style="width:58px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px; font-weight:bold; text-align:center;" title="セル間隔(cm)">
+            <span style="font-size:10px; color:#aaa;">cm</span>
+          </div>
+          <!-- 🌟 ワンタップセルサイズ切替チップ -->
+          <div style="display:flex; gap:4px; margin-bottom:4px; align-items:center;">
+            <span style="font-size:10px; color:#81D4FA;">セル幅:</span>
+            <button type="button" onclick="cadSetSnapGridCm(50)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">50cm</button>
+            <button type="button" onclick="cadSetSnapGridCm(100)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1m</button>
+            <button type="button" onclick="cadSetSnapGridCm(150)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1.5m</button>
+            <button type="button" onclick="cadSetSnapGridCm(200)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">2m</button>
+          </div>
+          <div id="cadCellPaintBar" style="display:none; gap:5px; margin-bottom:4px;">
+            <button type="button" id="cadCellPaintBtn" onclick="cadSetCellEraseMode(false); cadAddCustomShape('rect');"
+              style="flex:1; background:#558B2F; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🖌 セル塗り</button>
+            <button type="button" id="cadCellEraseBtn" onclick="cadSetCellEraseMode(true); if(!window.cadPinMode) window.cadPinMode='custom_rect';"
+              style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🧹 消しゴム</button>
+          </div>
+          <div id="cadSnapGridHint" style="font-size:10px; color:#81D4FA; line-height:1.35;">OFF時は自由配置。ONにするとセルを塗るように畝を置けます</div>
+        </div>
         <div style="display:flex; gap:5px; margin-bottom:5px;">
           <button onclick="cadAddCustomShape('rect')"
             style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛ 四角畝</button>
@@ -749,7 +775,7 @@
 
   <script src="admin2.js?v=1785489000001" defer></script>
   <script src="tracking.js?v=1784615000013" defer></script>
-  <script src="cad.js?v=1785483000003" defer></script>
+  <script src="cad.js?v=1785483000005" defer></script>
   <script type="importmap">
   {
     "imports": {
