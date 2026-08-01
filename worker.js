@@ -924,6 +924,37 @@ async function fetchWeatherAndUpdateUI() {
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
     
+    // --- 🌡️ 昨日との温度差計算・表示パネル ---
+    if (todayIndex > 0 && data.daily && data.daily.temperature_2m_max) {
+      let yMax = data.daily.temperature_2m_max[todayIndex - 1];
+      let yMin = data.daily.temperature_2m_min[todayIndex - 1];
+      let tMax = data.daily.temperature_2m_max[todayIndex];
+      let tMin = data.daily.temperature_2m_min[todayIndex];
+      
+      let diffMaxStr = '';
+      let diffMinStr = '';
+      if (yMax !== undefined && tMax !== undefined) {
+        let diffMax = Math.round((tMax - yMax) * 10) / 10;
+        if (diffMax > 0) diffMaxStr = `<span style="color:#d32f2f; font-weight:bold; background:#ffebee; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 +${diffMax}℃ 🔺</span>`;
+        else if (diffMax < 0) diffMaxStr = `<span style="color:#1976d2; font-weight:bold; background:#e3f2fd; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 ${diffMax}℃ 🔻</span>`;
+        else diffMaxStr = `<span style="color:#666; font-weight:bold; background:#f0f0f0; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 ±0℃</span>`;
+      }
+      if (yMin !== undefined && tMin !== undefined) {
+        let diffMin = Math.round((tMin - yMin) * 10) / 10;
+        if (diffMin > 0) diffMinStr = `<span style="color:#d32f2f; font-weight:bold; background:#ffebee; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 +${diffMin}℃ 🔺</span>`;
+        else if (diffMin < 0) diffMinStr = `<span style="color:#1976d2; font-weight:bold; background:#e3f2fd; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 ${diffMin}℃ 🔻</span>`;
+        else diffMinStr = `<span style="color:#666; font-weight:bold; background:#f0f0f0; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 ±0℃</span>`;
+      }
+
+      html += `<div style="background:#f8f9fa; border:1px solid #e0e0e0; border-radius:8px; padding:8px 12px; margin-bottom:10px; font-size:12px;">
+        <div style="font-weight:bold; color:#333; margin-bottom:4px; font-size:13px;">🌡️ 本日の予想気温（昨日との温度差）</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+          <div>最高: <span style="color:#F44336; font-weight:bold; font-size:14px;">${tMax}℃</span> ${diffMaxStr}</div>
+          <div>最低: <span style="color:#1976D2; font-weight:bold; font-size:14px;">${tMin}℃</span> ${diffMinStr}</div>
+        </div>
+      </div>`;
+    }
+
     // --- 📊 気温・日照 昨年比較パネル ---
     if (historyData && historyData.daily && typeof window.renderSunshinePanelHtml === 'function') {
       html += window.renderSunshinePanelHtml();
@@ -970,7 +1001,7 @@ async function fetchWeatherAndUpdateUI() {
     html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
                <th style="padding: 6px 4px; text-align: left;">日付</th>
                <th style="padding: 6px 4px; text-align: center;">天気</th>
-               <th style="padding: 6px 4px; text-align: right;">最高/最低</th>
+               <th style="padding: 6px 4px; text-align: right;">最高/最低 (前日差)</th>
                <th style="padding: 6px 4px; text-align: right;">降水</th>
                <th style="padding: 6px 4px; text-align: right;">日照</th>
                <th style="padding: 6px 4px; text-align: right;">風速</th>
@@ -989,11 +1020,26 @@ async function fetchWeatherAndUpdateUI() {
       let wind = data.daily.wind_speed_10m_max ? (data.daily.wind_speed_10m_max[i] !== undefined ? data.daily.wind_speed_10m_max[i] + 'm/s' : '-') : '-';
       let dEmoji = getWeatherEmoji(code);
       let dDesc = getWeatherDescription(code);
+
+      let prevMax = (i > 0 && data.daily.temperature_2m_max) ? data.daily.temperature_2m_max[i - 1] : undefined;
+      let prevMin = (i > 0 && data.daily.temperature_2m_min) ? data.daily.temperature_2m_min[i - 1] : undefined;
+      let diffMaxInline = '';
+      let diffMinInline = '';
+      if (prevMax !== undefined && maxT !== undefined) {
+        let dm = Math.round((maxT - prevMax) * 10) / 10;
+        if (dm > 0) diffMaxInline = `<span style="font-size:10px; color:#d32f2f;">(+${dm})</span>`;
+        else if (dm < 0) diffMaxInline = `<span style="font-size:10px; color:#1976d2;">(${dm})</span>`;
+      }
+      if (prevMin !== undefined && minT !== undefined) {
+        let dn = Math.round((minT - prevMin) * 10) / 10;
+        if (dn > 0) diffMinInline = `<span style="font-size:10px; color:#d32f2f;">(+${dn})</span>`;
+        else if (dn < 0) diffMinInline = `<span style="font-size:10px; color:#1976d2;">(${dn})</span>`;
+      }
       
       html += `<tr style="border-bottom: 1px solid #eee;">
                  <td style="padding: 6px 4px; text-align: left;">${shortDate}</td>
                  <td style="padding: 6px 4px; text-align: center;" title="${dDesc}">${dEmoji}</td>
-                 <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                 <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span>${diffMaxInline} / <span style="color: #1976D2;">${minT}</span>${diffMinInline}℃</td>
                  <td style="padding: 6px 4px; text-align: right; color:#2196F3;">${pcp}</td>
                  <td style="padding: 6px 4px; text-align: right; color:#FF9800;">${sunHours}</td>
                  <td style="padding: 6px 4px; text-align: right; color:#4CAF50;">${wind}</td>
@@ -12821,3 +12867,277 @@ window.showTodayGoogleCalendar = async function() {
     await window.renderPersonalSchedulePanel();
   }
 };
+
+// ==========================================
+// 🌳 スキルツリー ＆ 免許・資格 機能
+// ==========================================
+window.openSkillTreeModal = async function(targetUser) {
+  const user = targetUser || currentUser || localStorage.getItem('passionMapUserName') || '作業員';
+  const modal = document.getElementById('skillTreeModal');
+  const content = document.getElementById('skillTreeContent');
+  if (!modal || !content) return;
+
+  modal.style.display = 'flex';
+  content.innerHTML = `<div style="text-align:center; padding:30px; color:#666;">🌳 スキルツリーデータを集計中...</div>`;
+
+  // 1. 全作業記録から該当ユーザーの作業実績を抽出・集計
+  let userWorkRecords = [];
+  if (typeof loadedPolygons !== 'undefined') {
+    for (let pid in loadedPolygons) {
+      const p = loadedPolygons[pid];
+      if (p.photos && Array.isArray(p.photos)) {
+        p.photos.forEach(ph => {
+          if (ph.author === user && (ph.type === 'work' || (ph.data && ph.data.workName))) {
+            userWorkRecords.push(ph);
+          }
+        });
+      }
+    }
+  }
+
+  // カテゴリマッピングと作業名集計
+  const categories = [
+    { id: 'cat_tillage', name: '🌾 耕起・土づくり', keywords: ['耕起', '代かき', '土づくり', '堆肥', '起す', 'トラクター'] },
+    { id: 'cat_sowing', name: '🌱 播種・育苗・定植', keywords: ['播種', '育苗', '定植', '植付', '種まき', '苗', '鉢上げ'] },
+    { id: 'cat_care', name: '💧 肥培・防除・水管理', keywords: ['防除', '消毒', '追肥', '施肥', '水管理', '除草', '草刈り', '追肥'] },
+    { id: 'cat_harvest', name: '📦 収穫・調整・出荷', keywords: ['収穫', '選別', '出荷', '調整', '袋詰め', 'コンテナ', '収穫作業'] },
+    { id: 'cat_machine', name: '🚜 機械操作・整備', keywords: ['整備', '点検', '給油', '洗浄', '修理', 'オイル', '刈払機', 'トラクター'] },
+    { id: 'cat_other', name: '📑 事務・管理・その他', keywords: [] }
+  ];
+
+  let catCounts = {};
+  categories.forEach(c => catCounts[c.id] = { ...c, total: 0, works: {} });
+
+  userWorkRecords.forEach(rec => {
+    const wName = (rec.data && rec.data.workName) ? String(rec.data.workName).trim() : '一般的な作業';
+    let matchedCatId = 'cat_other';
+    for (let c of categories) {
+      if (c.keywords.some(kw => wName.includes(kw))) {
+        matchedCatId = c.id;
+        break;
+      }
+    }
+    catCounts[matchedCatId].total += 1;
+    catCounts[matchedCatId].works[wName] = (catCounts[matchedCatId].works[wName] || 0) + 1;
+  });
+
+  const totalWorks = userWorkRecords.length;
+  const userLevel = Math.floor(totalWorks / 3) + 1;
+  let rankTitle = '🐣 農業ビギナー';
+  if (totalWorks >= 36) rankTitle = '👑 農業マスター';
+  else if (totalWorks >= 20) rankTitle = '🚜 ベテラン農家';
+  else if (totalWorks >= 10) rankTitle = '🌾 一人前農家';
+  else if (totalWorks >= 3) rankTitle = '🌿 見習い農家';
+
+  // 2. 免許・資格データの読み込み (LocalStorage + GAS)
+  let userQuals = [];
+  const localQualKey = `passionMap_qualifications_${user}`;
+  try {
+    const cached = localStorage.getItem(localQualKey);
+    if (cached) userQuals = JSON.parse(cached);
+  } catch (e) {}
+
+  // GASから最新資格の取得
+  try {
+    const gasRes = await callGAS('getUserQualifications', { userName: user });
+    if (gasRes && gasRes.success && Array.isArray(gasRes.qualifications)) {
+      userQuals = gasRes.qualifications;
+      localStorage.setItem(localQualKey, JSON.stringify(userQuals));
+    }
+  } catch (e) {}
+
+  // 3. UIの構築
+  let h = `<div style="padding:15px; background:#f5f7fa; border-radius:8px;">`;
+  
+  // プロフィール＆総合ステータス
+  h += `<div style="background:linear-gradient(135deg, #2e7d32, #4caf50); color:white; padding:15px; border-radius:10px; margin-bottom:15px; box-shadow:0 4px 10px rgba(0,0,0,0.15);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <div style="font-size:18px; font-weight:bold;">👤 ${user} さんのスキルツリー</div>
+      <div style="background:rgba(255,255,255,0.25); padding:3px 10px; border-radius:15px; font-size:12px; font-weight:bold;">${rankTitle}</div>
+    </div>
+    <div style="display:flex; align-items:baseline; gap:10px;">
+      <div style="font-size:32px; font-weight:bold;">Lv.${userLevel}</div>
+      <div style="font-size:13px; opacity:0.9;">累計作業記録: <strong>${totalWorks} 回</strong></div>
+    </div>
+  </div>`;
+
+  // --- タブ切り替え（スキルツリー / 免許・資格） ---
+  h += `<div style="display:flex; gap:8px; margin-bottom:15px; border-bottom:2px solid #ddd; padding-bottom:5px;">
+    <button type="button" onclick="switchSkillTab('tree')" id="tabBtnSkillTree" style="flex:1; padding:8px; border:none; background:#2e7d32; color:white; font-weight:bold; border-radius:6px 6px 0 0; cursor:pointer;">🌳 スキルツリー</button>
+    <button type="button" onclick="switchSkillTab('quals')" id="tabBtnQuals" style="flex:1; padding:8px; border:none; background:#e0e0e0; color:#444; font-weight:bold; border-radius:6px 6px 0 0; cursor:pointer;">🪪 免許・資格 (${userQuals.length})</button>
+  </div>`;
+
+  // --- タブ1: スキルツリーセクション ---
+  h += `<div id="skillSectionTree">`;
+  h += `<div style="font-size:12px; color:#666; margin-bottom:10px;">作業記録が積み重なると経験値が自動集計され、スキルが解放・強化されます！</div>`;
+
+  categories.forEach(cat => {
+    const data = catCounts[cat.id];
+    const catLv = Math.floor(data.total / 2) + 1;
+    const nextExp = catLv * 2;
+    const progressPct = Math.min(100, Math.floor((data.total / nextExp) * 100));
+    const workKeys = Object.keys(data.works);
+
+    h += `<div style="background:white; border:1px solid #e0e0e0; border-radius:8px; padding:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <div style="font-weight:bold; font-size:14px; color:#2e7d32;">${cat.name}</div>
+        <div style="font-size:12px; font-weight:bold; color:#f57c00;">Lv.${catLv} <span style="font-size:10px; color:#888;">(${data.total}回)</span></div>
+      </div>
+      <div style="background:#eee; height:8px; border-radius:4px; overflow:hidden; margin-bottom:8px;">
+        <div style="background:linear-gradient(90deg, #81c784, #4caf50); width:${progressPct}%; height:100%;"></div>
+      </div>`;
+
+    if (workKeys.length > 0) {
+      h += `<div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;">`;
+      workKeys.forEach(wk => {
+        h += `<span style="font-size:11px; background:#e8f5e9; color:#2e7d32; border:1px solid #c8e6c9; padding:2px 8px; border-radius:12px; font-weight:500;">✓ ${wk} (${data.works[wk]}回)</span>`;
+      });
+      h += `</div>`;
+    } else {
+      h += `<div style="font-size:11px; color:#aaa; font-style:italic;">まだこのカテゴリの作業記録がありません</div>`;
+    }
+    h += `</div>`;
+  });
+  h += `</div>`;
+
+  // --- タブ2: 免許・資格セクション ---
+  h += `<div id="skillSectionQuals" style="display:none;">`;
+  h += `<div style="font-size:12px; color:#666; margin-bottom:10px;">保持している運転免許・農業資格を登録・可視化できます。</div>`;
+
+  // 資格追加フォーム
+  h += `<div style="background:white; border:1px solid #4caf50; border-radius:8px; padding:12px; margin-bottom:15px;">
+    <div style="font-size:13px; font-weight:bold; color:#2e7d32; margin-bottom:8px;">➕ 免許・資格の新規追加</div>
+    
+    <div style="font-size:11px; color:#666; margin-bottom:4px;">代表資格から選択:</div>
+    <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
+      <button type="button" onclick="selectPresetQual('大型特殊免許 (農耕用)')" style="font-size:10px; background:#f0f4c3; border:1px solid #c0ca33; padding:3px 6px; border-radius:4px; cursor:pointer;">🚜 大型特殊(農耕)</button>
+      <button type="button" onclick="selectPresetQual('牽引免許 (農耕用)')" style="font-size:10px; background:#f0f4c3; border:1px solid #c0ca33; padding:3px 6px; border-radius:4px; cursor:pointer;">🚜 牽引(農耕)</button>
+      <button type="button" onclick="selectPresetQual('農業用ドローン技能認定')" style="font-size:10px; background:#e1f5fe; border:1px solid #81d4fa; padding:3px 6px; border-radius:4px; cursor:pointer;">🚁 ドローン認定</button>
+      <button type="button" onclick="selectPresetQual('農薬管理指導士')" style="font-size:10px; background:#e8f5e9; border:1px solid #a5d6a7; padding:3px 6px; border-radius:4px; cursor:pointer;">🧪 農薬管理指導士</button>
+      <button type="button" onclick="selectPresetQual('農業機械士')" style="font-size:10px; background:#fff3e0; border:1px solid #ffcc80; padding:3px 6px; border-radius:4px; cursor:pointer;">🔧 農業機械士</button>
+      <button type="button" onclick="selectPresetQual('普通自動車免許')" style="font-size:10px; background:#eceff1; border:1px solid #b0bec5; padding:3px 6px; border-radius:4px; cursor:pointer;">🚗 自動車免許</button>
+      <button type="button" onclick="selectPresetQual('危険物取扱者 (乙4)')" style="font-size:10px; background:#ffebee; border:1px solid #ef9a9a; padding:3px 6px; border-radius:4px; cursor:pointer;">⚡ 危険物乙4</button>
+      <button type="button" onclick="selectPresetQual('刈払機取扱作業者')" style="font-size:10px; background:#f3e5f5; border:1px solid #ce93d8; padding:3px 6px; border-radius:4px; cursor:pointer;">👷 刈払機講習</button>
+    </div>
+
+    <div style="display:flex; gap:6px; margin-bottom:6px;">
+      <input type="text" id="inputQualName" placeholder="資格・免許名を入力" style="flex:2; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+      <input type="month" id="inputQualDate" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+    </div>
+    <button type="button" onclick="saveNewQualification('${user}')" style="width:100%; background:#2e7d32; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">🪪 資格を追加登録する</button>
+  </div>`;
+
+  // 登録済み一覧
+  h += `<div style="font-size:13px; font-weight:bold; color:#333; margin-bottom:8px;">📜 取得済み免許・資格一覧</div>`;
+  if (userQuals.length === 0) {
+    h += `<div style="text-align:center; padding:15px; color:#888; background:white; border-radius:6px; border:1px dashed #ccc;">まだ登録された免許・資格はありません。</div>`;
+  } else {
+    userQuals.forEach((q, idx) => {
+      h += `<div style="background:white; border:1px solid #ddd; border-left:4px solid #2e7d32; border-radius:6px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:13px; font-weight:bold; color:#222;">📜 ${q.name}</div>
+          <div style="font-size:11px; color:#777;">${q.date ? '取得年月: ' + q.date : '取得年月日未設定'}</div>
+        </div>
+        <button type="button" onclick="deleteQualification('${user}', ${idx})" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer; font-weight:bold;">削除 ×</button>
+      </div>`;
+    });
+  }
+
+  h += `</div>`; // skillSectionQuals
+  h += `</div>`; // wrapper
+
+  content.innerHTML = h;
+};
+
+// タブ切り替え関数
+window.switchSkillTab = function(tabName) {
+  const secTree = document.getElementById('skillSectionTree');
+  const secQuals = document.getElementById('skillSectionQuals');
+  const btnTree = document.getElementById('tabBtnSkillTree');
+  const btnQuals = document.getElementById('tabBtnQuals');
+  if (!secTree || !secQuals) return;
+
+  if (tabName === 'tree') {
+    secTree.style.display = 'block';
+    secQuals.style.display = 'none';
+    btnTree.style.background = '#2e7d32';
+    btnTree.style.color = 'white';
+    btnQuals.style.background = '#e0e0e0';
+    btnQuals.style.color = '#444';
+  } else {
+    secTree.style.display = 'none';
+    secQuals.style.display = 'block';
+    btnQuals.style.background = '#2e7d32';
+    btnQuals.style.color = 'white';
+    btnTree.style.background = '#e0e0e0';
+    btnTree.style.color = '#444';
+  }
+};
+
+// プリセット資格名の選択
+window.selectPresetQual = function(name) {
+  const el = document.getElementById('inputQualName');
+  if (el) el.value = name;
+};
+
+// 新規資格保存
+window.saveNewQualification = async function(userName) {
+  const elName = document.getElementById('inputQualName');
+  const elDate = document.getElementById('inputQualDate');
+  if (!elName || !elName.value.trim()) {
+    if (typeof customAlert === 'function') customAlert('資格・免許名を入力してください');
+    else alert('資格・免許名を入力してください');
+    return;
+  }
+  const qualName = elName.value.trim();
+  const qualDate = elDate ? elDate.value : '';
+
+  const localKey = `passionMap_qualifications_${userName}`;
+  let list = [];
+  try {
+    const cached = localStorage.getItem(localKey);
+    if (cached) list = JSON.parse(cached);
+  } catch (e) {}
+
+  list.push({ name: qualName, date: qualDate, createdAt: Date.now() });
+  localStorage.setItem(localKey, JSON.stringify(list));
+
+  // GASへバックグラウンド送信
+  try {
+    callGAS('saveUserQualifications', { userName: userName, qualifications: list });
+  } catch (e) {}
+
+  // モーダルを再描画
+  window.openSkillTreeModal(userName);
+  if (typeof window.switchSkillTab === 'function') window.switchSkillTab('quals');
+};
+
+// 資格削除
+window.deleteQualification = async function(userName, index) {
+  const ok = (typeof customConfirm === 'function')
+    ? await customConfirm('この資格情報を削除しますか？')
+    : confirm('この資格情報を削除しますか？');
+  if (!ok) return;
+
+  const localKey = `passionMap_qualifications_${userName}`;
+  let list = [];
+  try {
+    const cached = localStorage.getItem(localKey);
+    if (cached) list = JSON.parse(cached);
+  } catch (e) {}
+
+  if (index >= 0 && index < list.length) {
+    list.splice(index, 1);
+  }
+  localStorage.setItem(localKey, JSON.stringify(list));
+
+  // GASへ送信
+  try {
+    callGAS('saveUserQualifications', { userName: userName, qualifications: list });
+  } catch (e) {}
+
+  // モーダルを再描画
+  window.openSkillTreeModal(userName);
+  if (typeof window.switchSkillTab === 'function') window.switchSkillTab('quals');
+};
+

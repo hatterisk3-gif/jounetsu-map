@@ -1639,6 +1639,13 @@
           }).catch((e) => console.warn(e));
         }
       });
+
+    // 👕 出勤完了後に本日の予想気温に応じた服装表示を表示！
+    setTimeout(() => {
+      if (typeof window.showClothingAdviceModal === 'function') {
+        window.showClothingAdviceModal();
+      }
+    }, 500);
   };
 
   function toggleLunchFields() {
@@ -2093,3 +2100,317 @@
     scheduleForgotClockOutCheck();
   }
 })();
+
+// ==========================================
+// 👕 出勤時 服装アドバイス ＆ 気温設定機能
+// ==========================================
+(function() {
+  const CLOTHING_RULES_KEY = 'passionMap_clothingRules';
+
+  window.getDefaultClothingRules = function() {
+    return [
+      { id: 'r1', name: '猛暑 (35℃以上)', minMaxTemp: 35, maxMaxTemp: 99, icon: '🥵👕🧢', advice: '【猛暑警戒】通気性の良い半袖・空調服、帽子を着用し、水分・塩分補給と日陰での休憩を徹底してください！' },
+      { id: 'r2', name: '真夏日 (30℃〜34℃)', minMaxTemp: 30, maxMaxTemp: 34.9, icon: '☀️👕🧢', advice: '【真夏日】半袖・帽子を着用し、こまめな水分補給と熱中症対策をして作業を行いましょう。' },
+      { id: 'r3', name: '夏日・暖かい (22℃〜29℃)', minMaxTemp: 22, maxMaxTemp: 29.9, icon: '👕', advice: '【暖かい気候】半袖や薄手の作業着で快適に作業できます。' },
+      { id: 'r4', name: '涼しい・肌寒い (15℃〜21℃)', minMaxTemp: 15, maxMaxTemp: 21.9, icon: '👔🧥', advice: '【肌寒い気候】長袖の作業着や、薄手の上着（ウィンドブレーカー）を羽織りましょう。' },
+      { id: 'r5', name: '寒い・防寒 (14℃以下)', minMaxTemp: -99, maxMaxTemp: 14.9, icon: '🧥🧣🧤', advice: '【防寒必須】気温が低く寒いです。厚手の防寒着、長袖インナー、防寒手袋を着用して温かくしてください。' }
+    ];
+  };
+
+  window.loadClothingRules = function() {
+    try {
+      const local = localStorage.getItem(CLOTHING_RULES_KEY);
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return window.getDefaultClothingRules();
+  };
+
+  window.saveClothingRulesConfig = function(rules) {
+    try {
+      localStorage.setItem(CLOTHING_RULES_KEY, JSON.stringify(rules));
+      if (typeof callGAS === 'function') {
+        callGAS('saveClothingRules', { rules: rules }).catch(() => {});
+      }
+    } catch (e) {}
+  };
+
+  // 出勤時：服装アドバイスモーダル表示
+  window.showClothingAdviceModal = async function(forceMax, forceMin) {
+    let maxTemp = forceMax;
+    let minTemp = forceMin;
+
+    // キャッシュまたは最新の天気ステートから本日の予想気温を取得
+    if (maxTemp === undefined && window.weatherSunshineState && window.weatherSunshineState.data) {
+      const data = window.weatherSunshineState.data;
+      const todayStr = window.weatherSunshineState.todayStr;
+      if (data.daily && data.daily.time) {
+        let idx = data.daily.time.indexOf(todayStr);
+        if (idx === -1) idx = 0;
+        maxTemp = data.daily.temperature_2m_max[idx];
+        minTemp = data.daily.temperature_2m_min[idx];
+      }
+    }
+
+    // まだ天気データが無い場合はデフォルト値を設定
+    if (maxTemp === undefined) maxTemp = 25;
+    if (minTemp === undefined) minTemp = 18;
+
+    const rules = window.loadClothingRules();
+    // 最高気温に適合するルールを探索
+    let matchedRule = rules.find(r => maxTemp >= r.minMaxTemp && maxTemp <= r.maxMaxTemp);
+    if (!matchedRule) matchedRule = rules[0] || window.getDefaultClothingRules()[0];
+
+    // 最低気温による補足アドバイス
+    let minAdvice = '';
+    if (minTemp <= 10) {
+      minAdvice = '<div style="margin-top:6px; font-size:12px; color:#1565c0; background:#e3f2fd; padding:6px 10px; border-radius:6px;">❄️ 最低気温が10℃以下と冷え込みます。朝晩の防寒具・羽織るものを忘れずに！</div>';
+    } else if (minTemp >= 25) {
+      minAdvice = '<div style="margin-top:6px; font-size:12px; color:#c62828; background:#ffebee; padding:6px 10px; border-radius:6px;">🌙 最低気温も25℃以上の熱帯夜・夜間も暑い一日です。夜間作業の熱中症にもご注意ください。</div>';
+    }
+
+    // 本人の担当作業予定の取得
+    const curUser = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : (localStorage.getItem('passionMapUser') || '');
+    let todayTasksHtml = '<div style="text-align:center; padding:8px; font-size:12px; color:#888;">予定を読み込んでいます...</div>';
+
+    const modalHtml = `
+      <div id="clothingAdviceModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:10005; display:flex; align-items:center; justify-content:center;">
+        <div style="background:white; width:92%; max-width:480px; max-height:88vh; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.3); display:flex; flex-direction:column; animation:popIn 0.3s ease;">
+          <div style="background:linear-gradient(135deg, #2e7d32, #4caf50); color:white; padding:14px; text-align:center; flex-shrink:0;">
+            <div style="font-size:13px; opacity:0.9;">🏃‍♂️ 出勤完了！本日のガイド</div>
+            <div style="font-size:18px; font-weight:bold; margin-top:3px;">${matchedRule.icon} ${matchedRule.name}</div>
+          </div>
+          <div style="padding:14px; color:#333; overflow-y:auto; flex:1;">
+            <div style="background:#f5f7fa; border:1px solid #e0e0e0; border-radius:8px; padding:8px; margin-bottom:10px; text-align:center;">
+              <div style="font-size:11px; color:#666;">本日の予想気温</div>
+              <div style="font-size:15px; font-weight:bold;">
+                最高 <span style="color:#d32f2f;">${maxTemp}℃</span> / 最低 <span style="color:#1976d2;">${minTemp}℃</span>
+              </div>
+            </div>
+            <div style="font-size:12px; line-height:1.5; background:#e8f5e9; border:1px solid #c8e6c9; border-radius:8px; padding:10px; color:#1b5e20; font-weight:bold; margin-bottom:12px;">
+              👕 ${matchedRule.advice}
+            </div>
+            ${minAdvice}
+
+            <!-- 📋 本日の担当作業予定セクション -->
+            <div style="margin-top:12px; border-top:1px dashed #ccc; padding-top:10px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-size:13px; font-weight:bold; color:#2e7d32;">📋 本日のあなたの担当作業予定</div>
+                <span id="taskCountBadge" style="background:#4caf50; color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold;">0件</span>
+              </div>
+              <div id="todayAssignedTasksContainer" style="background:#fafafa; border:1px solid #eee; border-radius:8px; padding:8px; max-height:180px; overflow-y:auto;">
+                ${todayTasksHtml}
+              </div>
+            </div>
+          </div>
+
+          <div style="padding:10px 14px; background:#fafafa; border-top:1px solid #eee; display:flex; gap:8px; flex-shrink:0;">
+            <button type="button" onclick="document.getElementById('clothingAdviceModal').remove()" style="flex:2; background:#2e7d32; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">了解（作業開始）</button>
+            <button type="button" onclick="document.getElementById('clothingAdviceModal').remove(); window.openClothingSettingsModal();" style="flex:1; background:#f5f5f5; color:#555; border:1px solid #ccc; padding:12px; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">⚙️ 服装設定</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // 既存があれば削除して追加
+    const existing = document.getElementById('clothingAdviceModal');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // 非同期で担当予定を取得して描画
+    if (curUser && typeof callGAS === 'function') {
+      try {
+        const res = await callGAS('getUserTodayAssignedSchedules', { userName: curUser });
+        const container = document.getElementById('todayAssignedTasksContainer');
+        const badge = document.getElementById('taskCountBadge');
+        if (container && res && res.success) {
+          const tasks = res.schedules || [];
+          if (badge) badge.innerText = `${tasks.length}件`;
+          if (tasks.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding:10px; font-size:12px; color:#888;">本日、あなたに割り当てられた作業予定はありません。</div>';
+          } else {
+            let listHtml = '';
+            tasks.forEach(t => {
+              const wName = t.workName || '作業';
+              const fName = t.fieldName || '全圃場';
+              const cName = t.cropName ? `(${t.cropName})` : '';
+              const person = t.person || curUser;
+              listHtml += `
+                <div style="background:white; border:1px solid #e0e0e0; border-left:4px solid #4caf50; border-radius:6px; padding:8px 10px; margin-bottom:6px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-weight:bold; font-size:13px; color:#1b5e20;">🌱 ${wName} ${cName}</div>
+                    <div style="font-size:11px; color:#777; background:#e8f5e9; padding:2px 6px; border-radius:4px;">📍 ${fName}</div>
+                  </div>
+                  <div style="font-size:11px; color:#666; margin-top:4px; display:flex; justify-content:space-between;">
+                    <span>担当: <b>${person}</b></span>
+                    <span>予定: ${t.schedDateStr || '今日'}</span>
+                  </div>
+                </div>
+              `;
+            });
+            container.innerHTML = listHtml;
+          }
+        }
+      } catch (e) {
+        const container = document.getElementById('todayAssignedTasksContainer');
+        if (container) container.innerHTML = '<div style="text-align:center; padding:10px; font-size:12px; color:#888;">予定の読み込みに失敗しました</div>';
+      }
+    }
+  };
+
+  // 服装ルール設定モーダルの表示
+  window.openClothingSettingsModal = function() {
+    const rules = window.loadClothingRules();
+    
+    let h = `
+      <div id="clothingSettingsModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10006; display:flex; align-items:center; justify-content:center;">
+        <div style="background:white; width:92%; max-width:540px; max-height:85vh; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
+          <div style="background:#2e7d32; color:white; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; font-weight:bold;">
+            <span style="font-size:16px;">⚙️ 出勤時 服装表示の設定</span>
+            <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="document.getElementById('clothingSettingsModal').remove()">×</span>
+          </div>
+          <div style="overflow-y:auto; flex:1; padding:15px; background:#f8f9fa;">
+            <div style="font-size:12px; color:#666; margin-bottom:12px;">最高気温の条件範囲に応じて、どんな表示・アイコン・メッセージを出すかを自由に設定できます。</div>
+            <div id="clothingRulesContainer">`;
+
+    rules.forEach((r, idx) => {
+      h += `
+        <div class="clothing-rule-card" style="background:white; border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+            <input type="text" class="rule-name" value="${r.name}" placeholder="区分名 (例: 猛暑)" style="flex:2; padding:6px; border:1px solid #ccc; border-radius:4px; font-weight:bold; font-size:13px;">
+            <input type="text" class="rule-icon" value="${r.icon}" placeholder="アイコン (例: 👕)" style="width:60px; text-align:center; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:14px;">
+            <button type="button" onclick="this.closest('.clothing-rule-card').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">削除 ×</button>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px; font-size:12px; color:#555;">
+            <span>最高気温:</span>
+            <input type="number" class="rule-min" value="${r.minMaxTemp}" style="width:55px; padding:4px; border:1px solid #ccc; border-radius:4px; text-align:center;">
+            <span>℃ 〜</span>
+            <input type="number" class="rule-max" value="${r.maxMaxTemp}" style="width:55px; padding:4px; border:1px solid #ccc; border-radius:4px; text-align:center;">
+            <span>℃</span>
+          </div>
+          <div>
+            <textarea class="rule-advice" rows="2" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:12px; box-sizing:border-box;" placeholder="服装アドバイスメッセージ">${r.advice}</textarea>
+          </div>
+        </div>`;
+    });
+
+    h += `
+            </div>
+            <button type="button" onclick="addNewClothingRuleRow()" style="width:100%; background:#e8f5e9; color:#2e7d32; border:1px dashed #4caf50; padding:10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:10px;">➕ 新しい気温条件を追加</button>
+          </div>
+          <div style="padding:12px 16px; background:white; border-top:1px solid #ddd; display:flex; gap:8px;">
+            <button type="button" onclick="saveClothingSettingsFromUI()" style="flex:2; background:#2e7d32; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">✔ 設定を保存する</button>
+            <button type="button" onclick="resetClothingRulesToDefault()" style="flex:1; background:#f5f5f5; color:#666; border:1px solid #ccc; padding:10px; border-radius:6px; font-size:11px; cursor:pointer;">↩️ 初期設定に戻す</button>
+          </div>
+        </div>
+      </div>`;
+
+    const existing = document.getElementById('clothingSettingsModal');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', h);
+  };
+
+  // 新規ルール行追加
+  window.addNewClothingRuleRow = function() {
+    const container = document.getElementById('clothingRulesContainer');
+    if (!container) return;
+    const html = `
+      <div class="clothing-rule-card" style="background:white; border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <input type="text" class="rule-name" placeholder="区分名 (例: 快適)" style="flex:2; padding:6px; border:1px solid #ccc; border-radius:4px; font-weight:bold; font-size:13px;">
+          <input type="text" class="rule-icon" value="👕" placeholder="アイコン" style="width:60px; text-align:center; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:14px;">
+          <button type="button" onclick="this.closest('.clothing-rule-card').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">削除 ×</button>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px; font-size:12px; color:#555;">
+          <span>最高気温:</span>
+          <input type="number" class="rule-min" value="20" style="width:55px; padding:4px; border:1px solid #ccc; border-radius:4px; text-align:center;">
+          <span>℃ 〜</span>
+          <input type="number" class="rule-max" value="25" style="width:55px; padding:4px; border:1px solid #ccc; border-radius:4px; text-align:center;">
+          <span>℃</span>
+        </div>
+        <div>
+          <textarea class="rule-advice" rows="2" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:12px; box-sizing:border-box;" placeholder="服装アドバイスメッセージ">薄手の作業着で快適に作業できます。</textarea>
+        </div>
+      </div>`;
+    container.insertAdjacentHTML('beforeend', html);
+  };
+
+  // UIから設定保存
+  window.saveClothingSettingsFromUI = function() {
+    const cards = document.querySelectorAll('.clothing-rule-card');
+    let rules = [];
+    cards.forEach((card, idx) => {
+      const name = card.querySelector('.rule-name').value.trim() || `ルール ${idx+1}`;
+      const icon = card.querySelector('.rule-icon').value.trim() || '👕';
+      const min = parseFloat(card.querySelector('.rule-min').value) || -99;
+      const max = parseFloat(card.querySelector('.rule-max').value) || 99;
+      const advice = card.querySelector('.rule-advice').value.trim() || '作業に適した服装を着用してください。';
+      rules.push({ id: 'r_' + (idx + 1), name, icon, minMaxTemp: min, maxMaxTemp: max, advice });
+    });
+
+    // 最高気温の降順にソート
+    rules.sort((a, b) => b.minMaxTemp - a.minMaxTemp);
+
+    window.saveClothingRulesConfig(rules);
+
+    if (typeof customAlert === 'function') customAlert('服装表示の設定を保存しました');
+    else alert('服装表示の設定を保存しました');
+
+    const modal = document.getElementById('clothingSettingsModal');
+    if (modal) modal.remove();
+  };
+
+  // 初期設定に戻す
+  window.resetClothingRulesToDefault = async function() {
+    const ok = (typeof customConfirm === 'function')
+      ? await customConfirm('服装表示の設定を初期値に戻しますか？')
+      : confirm('服装表示の設定を初期値に戻しますか？');
+    if (!ok) return;
+
+    const defaults = window.getDefaultClothingRules();
+    window.saveClothingRulesConfig(defaults);
+
+    const modal = document.getElementById('clothingSettingsModal');
+    if (modal) modal.remove();
+    window.openClothingSettingsModal();
+  };
+
+  // 管理者用：作業予定への担当メンバー割当モーダル
+  window.openAssignScheduleModal = function(rowIndex, scheduleKey, currentAssignee) {
+    const assignedVal = currentAssignee || '';
+    const html = `
+      <div id="assignScheduleModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10008; display:flex; align-items:center; justify-content:center;">
+        <div style="background:white; width:90%; max-width:420px; border-radius:12px; padding:16px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
+          <h3 style="margin-top:0; color:#2e7d32; font-size:16px;">👤 作業担当メンバーの割り当て</h3>
+          <div style="font-size:12px; color:#666; margin-bottom:10px;">管理者権限：この作業予定を担当するメンバーを指定・割り当てられます。</div>
+          <input type="text" id="assignedUsersInput" value="${assignedVal}" placeholder="例: 山田太郎, 佐藤花子" style="width:100%; padding:8px; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; font-size:14px; margin-bottom:12px;">
+          <div style="display:flex; gap:10px;">
+            <button type="button" onclick="submitScheduleAssignment(${rowIndex || 0}, '${scheduleKey || ''}')" style="flex:2; background:#2e7d32; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">割り当てを更新</button>
+            <button type="button" onclick="document.getElementById('assignScheduleModal').remove()" style="flex:1; background:#ccc; color:#333; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">キャンセル</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const existing = document.getElementById('assignScheduleModal');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+  };
+
+  window.submitScheduleAssignment = async function(rowIndex, scheduleKey) {
+    const val = document.getElementById('assignedUsersInput') ? document.getElementById('assignedUsersInput').value.trim() : '';
+    if (typeof callGAS === 'function') {
+      try {
+        const res = await callGAS('assignScheduleMember', { rowIndex: rowIndex, assignedUsers: val, scheduleKey: scheduleKey });
+        if (res && res.success) {
+          if (typeof customAlert === 'function') customAlert('作業担当メンバーを割り当てました！');
+          else alert('作業担当メンバーを割り当てました！');
+        }
+      } catch (e) {}
+    }
+    const modal = document.getElementById('assignScheduleModal');
+    if (modal) modal.remove();
+  };
+})();
+

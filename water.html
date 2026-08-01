@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>情熱MAP [水管理用] v1.17</title>
+    <title>情熱MAP [水管理用] v1.21</title>
     <link rel="apple-touch-icon" href="icon.png">
     <link rel="icon" href="icon.png">
     <link rel="manifest" href="manifest.json">
@@ -17,7 +17,7 @@
     <!-- プロポータルに戻る×ボタン -->
         <div id="loginScreen">
         <div class="login-box">
-            <h2 style="color:#2196F3;">情熱MAP [水管理] (v1.17)</h2>
+            <h2 style="color:#2196F3;">情熱MAP [水管理] (v1.21)</h2>
             <div id="loginError" style="color:red; margin-bottom:10px;"></div>
             <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
             <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -104,6 +104,19 @@
             <button type="button" id="btnWaterCadOpenEdit" class="water-cad-btn" style="background:#FF9800; color:#fff; display:none;" onclick="enterWaterCadEditMode()">✏️ 給水口を編集</button>
             <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;" onclick="closeWaterCadSimple()">閉じる</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🌳 スキルツリー ＆ 免許・資格 モーダル -->
+    <div id="skillTreeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
+          <h3 style="margin: 0; font-size: 16px;">🌳 スキルツリー ＆ 免許・資格</h3>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;" onclick="document.getElementById('skillTreeModal').style.display='none'">×</span>
+        </div>
+        <div id="skillTreeContent" style="overflow-y: auto; flex: 1;">
+          <div style="text-align:center; padding:20px;">読み込み中...</div>
         </div>
       </div>
     </div>

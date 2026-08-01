@@ -1246,6 +1246,37 @@ async function fetchWeatherAndUpdateUI() {
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
     
+    // --- 🌡️ 昨日との温度差計算・表示パネル ---
+    if (todayIndex > 0 && data.daily && data.daily.temperature_2m_max) {
+      let yMax = data.daily.temperature_2m_max[todayIndex - 1];
+      let yMin = data.daily.temperature_2m_min[todayIndex - 1];
+      let tMax = data.daily.temperature_2m_max[todayIndex];
+      let tMin = data.daily.temperature_2m_min[todayIndex];
+      
+      let diffMaxStr = '';
+      let diffMinStr = '';
+      if (yMax !== undefined && tMax !== undefined) {
+        let diffMax = Math.round((tMax - yMax) * 10) / 10;
+        if (diffMax > 0) diffMaxStr = `<span style="color:#d32f2f; font-weight:bold; background:#ffebee; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 +${diffMax}℃ 🔺</span>`;
+        else if (diffMax < 0) diffMaxStr = `<span style="color:#1976d2; font-weight:bold; background:#e3f2fd; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 ${diffMax}℃ 🔻</span>`;
+        else diffMaxStr = `<span style="color:#666; font-weight:bold; background:#f0f0f0; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 ±0℃</span>`;
+      }
+      if (yMin !== undefined && tMin !== undefined) {
+        let diffMin = Math.round((tMin - yMin) * 10) / 10;
+        if (diffMin > 0) diffMinStr = `<span style="color:#d32f2f; font-weight:bold; background:#ffebee; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 +${diffMin}℃ 🔺</span>`;
+        else if (diffMin < 0) diffMinStr = `<span style="color:#1976d2; font-weight:bold; background:#e3f2fd; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 ${diffMin}℃ 🔻</span>`;
+        else diffMinStr = `<span style="color:#666; font-weight:bold; background:#f0f0f0; padding:2px 6px; border-radius:10px; font-size:11px;">昨日比 ±0℃</span>`;
+      }
+
+      html += `<div style="background:#f8f9fa; border:1px solid #e0e0e0; border-radius:8px; padding:8px 12px; margin-bottom:10px; font-size:12px;">
+        <div style="font-weight:bold; color:#333; margin-bottom:4px; font-size:13px;">🌡️ 本日の予想気温（昨日との温度差）</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+          <div>最高: <span style="color:#F44336; font-weight:bold; font-size:14px;">${tMax}℃</span> ${diffMaxStr}</div>
+          <div>最低: <span style="color:#1976D2; font-weight:bold; font-size:14px;">${tMin}℃</span> ${diffMinStr}</div>
+        </div>
+      </div>`;
+    }
+
     // --- 📊 気温・日照 昨年比較パネル ---
     if (historyData && historyData.daily && typeof window.renderSunshinePanelHtml === 'function') {
       html += window.renderSunshinePanelHtml();
@@ -1292,7 +1323,7 @@ async function fetchWeatherAndUpdateUI() {
     html += `<tr style="background: #f0f0f0; border-bottom: 1px solid #ccc;">
                <th style="padding: 6px 4px; text-align: left;">日付</th>
                <th style="padding: 6px 4px; text-align: center;">天気</th>
-               <th style="padding: 6px 4px; text-align: right;">最高/最低</th>
+               <th style="padding: 6px 4px; text-align: right;">最高/最低 (前日差)</th>
                <th style="padding: 6px 4px; text-align: right;">降水</th>
                <th style="padding: 6px 4px; text-align: right;">日照</th>
                <th style="padding: 6px 4px; text-align: right;">風速</th>
@@ -1311,11 +1342,26 @@ async function fetchWeatherAndUpdateUI() {
       let wind = data.daily.wind_speed_10m_max ? (data.daily.wind_speed_10m_max[i] !== undefined ? data.daily.wind_speed_10m_max[i] + 'm/s' : '-') : '-';
       let dEmoji = getWeatherEmoji(code);
       let dDesc = getWeatherDescription(code);
+
+      let prevMax = (i > 0 && data.daily.temperature_2m_max) ? data.daily.temperature_2m_max[i - 1] : undefined;
+      let prevMin = (i > 0 && data.daily.temperature_2m_min) ? data.daily.temperature_2m_min[i - 1] : undefined;
+      let diffMaxInline = '';
+      let diffMinInline = '';
+      if (prevMax !== undefined && maxT !== undefined) {
+        let dm = Math.round((maxT - prevMax) * 10) / 10;
+        if (dm > 0) diffMaxInline = `<span style="font-size:10px; color:#d32f2f;">(+${dm})</span>`;
+        else if (dm < 0) diffMaxInline = `<span style="font-size:10px; color:#1976d2;">(${dm})</span>`;
+      }
+      if (prevMin !== undefined && minT !== undefined) {
+        let dn = Math.round((minT - prevMin) * 10) / 10;
+        if (dn > 0) diffMinInline = `<span style="font-size:10px; color:#d32f2f;">(+${dn})</span>`;
+        else if (dn < 0) diffMinInline = `<span style="font-size:10px; color:#1976d2;">(${dn})</span>`;
+      }
       
       html += `<tr style="border-bottom: 1px solid #eee;">
                  <td style="padding: 6px 4px; text-align: left;">${shortDate}</td>
                  <td style="padding: 6px 4px; text-align: center;" title="${dDesc}">${dEmoji}</td>
-                 <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span> / <span style="color: #1976D2;">${minT}</span>℃</td>
+                 <td style="padding: 6px 4px; text-align: right;"><span style="color: #F44336;">${maxT}</span>${diffMaxInline} / <span style="color: #1976D2;">${minT}</span>${diffMinInline}℃</td>
                  <td style="padding: 6px 4px; text-align: right; color:#2196F3;">${pcp}</td>
                  <td style="padding: 6px 4px; text-align: right; color:#FF9800;">${sunHours}</td>
                  <td style="padding: 6px 4px; text-align: right; color:#4CAF50;">${wind}</td>

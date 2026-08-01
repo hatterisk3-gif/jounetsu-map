@@ -108,6 +108,12 @@ function doPost(e) {
     else if (action === 'parseWithGemini') result = parseWithGemini(params);
     else if (action === 'parseCropImageWithGemini') result = parseCropImageWithGemini(params);
     else if (action === "getPolygonDrawingHistory") result = getPolygonDrawingHistory(params);
+    else if (action === "saveUserQualifications") result = saveUserQualifications(params.userName, params.qualifications);
+    else if (action === "getUserQualifications") result = getUserQualifications(params.userName);
+    else if (action === "saveClothingRules") result = saveClothingRules(params.rules);
+    else if (action === "getClothingRules") result = getClothingRules();
+    else if (action === "assignScheduleMember") result = assignScheduleMember(params.rowIndex, params.assignedUsers, params.scheduleKey);
+    else if (action === "getUserTodayAssignedSchedules") result = getUserTodayAssignedSchedules(params.userName);
     else if (action === "saveFieldMemo") result = saveFieldMemo(params);
     else if (action === "getFieldMemoHistory") result = getFieldMemoHistory(params);
     else if (action === "saveTrackingData") result = saveTrackingData(params);
@@ -9346,4 +9352,184 @@ function getTodayGoogleCalendarEvents(params) {
     };
   }
 }
+
+/**
+ * ユーザーの免許・資格データを保存
+ */
+function saveUserQualifications(userName, qualifications) {
+  try {
+    if (!userName) return { success: false, message: 'ユーザー名が指定されていません' };
+    const ss = TENANT_SS || SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+    let sheet = ss.getSheetByName('ユーザー資格');
+    if (!sheet) {
+      sheet = ss.insertSheet('ユーザー資格');
+      sheet.appendRow(['ユーザー名', '資格データJSON', '更新日時']);
+    }
+    const data = sheet.getDataRange().getValues();
+    let foundRow = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(userName).trim()) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+    const jsonStr = JSON.stringify(qualifications || []);
+    const nowStr = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+    if (foundRow > 0) {
+      sheet.getRange(foundRow, 2, 1, 2).setValues([[jsonStr, nowStr]]);
+    } else {
+      sheet.appendRow([userName, jsonStr, nowStr]);
+    }
+    return { success: true, message: '資格情報を保存しました' };
+  } catch (err) {
+    return { success: false, message: '保存エラー: ' + String(err) };
+  }
+}
+
+/**
+ * ユーザーの免許・資格データを取得
+ */
+function getUserQualifications(userName) {
+  try {
+    if (!userName) return { success: true, qualifications: [] };
+    const ss = TENANT_SS || SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+    let sheet = ss.getSheetByName('ユーザー資格');
+    if (!sheet) return { success: true, qualifications: [] };
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(userName).trim()) {
+        const rawJson = data[i][1];
+        let parsed = [];
+        try { parsed = JSON.parse(rawJson); } catch (e) {}
+        return { success: true, qualifications: parsed };
+      }
+    }
+    return { success: true, qualifications: [] };
+  } catch (err) {
+    return { success: false, message: '取得エラー: ' + String(err), qualifications: [] };
+  }
+}
+
+/**
+ * 服装表示の設定ルールを保存
+ */
+function saveClothingRules(rules) {
+  try {
+    const ss = TENANT_SS || SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+    let sheet = ss.getSheetByName('服装設定');
+    if (!sheet) {
+      sheet = ss.insertSheet('服装設定');
+      sheet.appendRow(['設定JSON', '更新日時']);
+    }
+    const jsonStr = JSON.stringify(rules || []);
+    const nowStr = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+    sheet.getRange(2, 1, 1, 2).setValues([[jsonStr, nowStr]]);
+    return { success: true, message: '服装設定を保存しました' };
+  } catch (err) {
+    return { success: false, message: '保存エラー: ' + String(err) };
+  }
+}
+
+/**
+ * 服装表示の設定ルールを取得
+ */
+function getClothingRules() {
+  try {
+    const ss = TENANT_SS || SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+    let sheet = ss.getSheetByName('服装設定');
+    if (!sheet) return { success: true, rules: null };
+    const data = sheet.getDataRange().getValues();
+    if (data.length > 1 && data[1][0]) {
+      let parsed = null;
+      try { parsed = JSON.parse(data[1][0]); } catch (e) {}
+      return { success: true, rules: parsed };
+    }
+    return { success: true, rules: null };
+  } catch (err) {
+    return { success: false, message: '取得エラー: ' + String(err), rules: null };
+  }
+}
+
+/**
+ * 管理者が作業予定へ担当者・作業メンバーを割り当て（アサイン）保存する
+ */
+function assignScheduleMember(rowIndex, assignedUsers, scheduleKey) {
+  try {
+    const ss = TENANT_SS || SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+    const sheet = ss.getSheetByName('作業予定');
+    if (!sheet) return { success: false, message: '作業予定シートが存在しません' };
+
+    const assignedStr = Array.isArray(assignedUsers) ? assignedUsers.join(', ') : String(assignedUsers || '');
+    const data = sheet.getDataRange().getValues();
+
+    let targetRow = parseInt(rowIndex, 10);
+    // rowIndexが指定されていない場合、scheduleKeyから行を特定
+    if (!targetRow || isNaN(targetRow) || targetRow <= 1) {
+      if (scheduleKey) {
+        for (let i = 1; i < data.length; i++) {
+          const wName = data[i][0];
+          const fName = data[i][3];
+          const cName = data[i][2];
+          const sDate = data[i][4];
+          const dDate = data[i][5];
+          const key = buildWorkScheduleKey_(wName, fName, cName, sDate, dDate);
+          if (key === scheduleKey) {
+            targetRow = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    if (targetRow && targetRow > 1 && targetRow <= data.length) {
+      sheet.getRange(targetRow, 8).setValue(assignedStr); // H列=8 (担当者/人)
+      return { success: true, message: '担当メンバーを割り当てました', assignedUsers: assignedStr };
+    }
+    return { success: false, message: '対象の作業予定が見つかりませんでした' };
+  } catch (err) {
+    return { success: false, message: 'アサイン保存エラー: ' + String(err) };
+  }
+}
+
+/**
+ * 指定されたユーザーの本日の担当作業予定を取得する
+ */
+function getUserTodayAssignedSchedules(userName) {
+  try {
+    if (!userName) return { success: true, schedules: [] };
+    const res = getScheduleData();
+    if (!res || !res.activeSchedules) return { success: true, schedules: [] };
+
+    const todayStr = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    const uName = String(userName).trim().toLowerCase();
+
+    const assigned = res.activeSchedules.filter(function(item) {
+      const personStr = String(item.person || '').toLowerCase();
+      const isAssignedPerson = personStr.includes(uName);
+      
+      // 個人タスクシートの紐付け（taskUsersMap）も確認
+      let isTaskUser = false;
+      if (item.taskUsers && Array.isArray(item.taskUsers)) {
+        isTaskUser = item.taskUsers.some(function(u) {
+          return String(u.userName || u.userId || '').toLowerCase().includes(uName);
+        });
+      }
+
+      const isForUser = isAssignedPerson || isTaskUser;
+      if (!isForUser) return false;
+
+      // 完了済みでないもの
+      if (item.compDate) return false;
+
+      return true;
+    });
+
+    return { success: true, schedules: assigned };
+  } catch (err) {
+    return { success: false, message: '本日の担当予定取得エラー: ' + String(err), schedules: [] };
+  }
+}
+
+
+
 
