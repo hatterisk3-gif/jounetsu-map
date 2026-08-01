@@ -159,8 +159,7 @@ async function watch() {
  2.コードを修正したら、関連するhtml(箱)のページ名に記載されているバージョン情報を0.01足してください。
  3.テストや検証用にスクリプトを作成する場合は、必ず 'tmp_' から始まるファイル名（例: tmp_test.js）を使用してください。
  4.システム動作に関係のない一時ファイル・画像は削除してください。
- 5.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。
- 6.【重要】clasp push、clasp deploy、git commit、git push は絶対に実行しないこと。修正のみ行ってください。`;
+ 5.必ず Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'レポート本文', 'utf8')\` を使って詳細の解説レポートを記した「 .ai_task_done.txt 」を作成すること。`;
 
             let aiOutput = "AIからの応答テキストを取得できませんでした。";
             let isSuccess = false;
