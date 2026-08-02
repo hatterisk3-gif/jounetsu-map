@@ -57,6 +57,9 @@ function doPost(e) {
     else if (action === "deleteCropWorkPlan") result = deleteCropWorkPlan(params);
     else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
     else if (action === "getSowingProgress") result = getSowingProgress(params);
+    else if (action === "saveManualData") result = saveManualData(params.manual);
+    else if (action === "getManualList") result = getManualList();
+    else if (action === "deleteManualData") result = deleteManualData(params.manualId);
     else if (action === "lookupCultivationByTag") result = lookupCultivationByTag(params);
     else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
     else if (action === "markHarvestQtyLotResolved") result = markHarvestQtyLotResolved(params);
@@ -9529,6 +9532,99 @@ function getUserTodayAssignedSchedules(userName) {
     return { success: false, message: '本日の担当予定取得エラー: ' + String(err), schedules: [] };
   }
 }
+
+/** 📖 作業マニュアルデータのスプレッドシート保存・取得・削除 */
+function getManualSheet() {
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("作業マニュアルマスタ");
+  if (!sheet) {
+    sheet = ss.insertSheet("作業マニュアルマスタ");
+    sheet.appendRow(["ID", "タイトル", "紐付け作業", "注意点", "手順JSON", "写真JSON", "更新日時"]);
+  }
+  return sheet;
+}
+
+function saveManualData(manual) {
+  try {
+    if (!manual || !manual.id) return { success: false, message: '無効なデータ' };
+    const sheet = getManualSheet();
+    const data = sheet.getDataRange().getValues();
+    let targetRow = -1;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(manual.id)) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+
+    const rowVals = [
+      manual.id,
+      manual.title || '',
+      Array.isArray(manual.workNames) ? manual.workNames.join(',') : (manual.workNames || ''),
+      manual.notice || '',
+      JSON.stringify(manual.steps || []),
+      JSON.stringify(manual.photos || []),
+      new Date().toISOString()
+    ];
+
+    if (targetRow > 0) {
+      sheet.getRange(targetRow, 1, 1, rowVals.length).setValues([rowVals]);
+    } else {
+      sheet.appendRow(rowVals);
+    }
+    return { success: true, id: manual.id };
+  } catch(e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function getManualList() {
+  try {
+    const sheet = getManualSheet();
+    const data = sheet.getDataRange().getValues();
+    const manuals = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[0]) continue;
+      let steps = [], photos = [];
+      try { steps = JSON.parse(row[4] || '[]'); } catch(e) {}
+      try { photos = JSON.parse(row[5] || '[]'); } catch(e) {}
+
+      manuals.push({
+        id: String(row[0]),
+        title: String(row[1] || ''),
+        workNames: String(row[2] || '').split(',').filter(Boolean),
+        notice: String(row[3] || ''),
+        steps: steps,
+        photos: photos,
+        updatedAt: String(row[6] || '')
+      });
+    }
+
+    return { success: true, manuals: manuals };
+  } catch(e) {
+    return { success: false, manuals: [], message: e.message };
+  }
+}
+
+function deleteManualData(manualId) {
+  try {
+    const sheet = getManualSheet();
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(manualId)) {
+        sheet.deleteRow(i + 1);
+        break;
+      }
+    }
+    return { success: true };
+  } catch(e) {
+    return { success: false, message: e.message };
+  }
+}
+
 
 
 

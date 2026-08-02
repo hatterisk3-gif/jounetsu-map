@@ -7087,9 +7087,15 @@ function createSignboardMarker(name, pos, icon, id) {
         document.getElementById('rightPanelContent').innerHTML = `<div style="background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.05);">${tempLoadBtn}${html}</div>`;
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
         document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
-        // 開始時間ヒント・「前の終了に合わせる」ボタンを反映
-        if (!isEdit && typeof window.updateStartTimeHintUI === 'function') {
-          setTimeout(() => { window.updateStartTimeHintUI(); }, 0);
+        // 開始時間ヒント・「前の終了に合わせる」ボタンを反映 ＆ 新規登録時は終了時間を開いたリアルタイム時間にセット
+        if (!isEdit) {
+          const freshNow = new Date();
+          const freshEndTime = `${String(freshNow.getHours()).padStart(2, '0')}:${String(freshNow.getMinutes()).padStart(2, '0')}`;
+          const endEl = document.getElementById('rec_end_time');
+          if (endEl) endEl.value = freshEndTime;
+          if (typeof window.updateStartTimeHintUI === 'function') {
+            setTimeout(() => { window.updateStartTimeHintUI(); }, 0);
+          }
         }
         // 他端末で保存した一時保存があればクラウドから取得して復元ボタンを更新
         setTimeout(() => { refreshTempRecordButtonFromCloud_(); }, 50);

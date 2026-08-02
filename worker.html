@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>プロ情熱MAP [作業記録用] v1.96</title>
+  <title>プロ情熱MAP [作業記録用] v1.99</title>
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
   <link rel="manifest" href="manifest.json">
@@ -18,7 +18,7 @@
 <body>
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">情熱MAP (v1.96)</h2>
+      <h2 style="color:#4CAF50;">情熱MAP (v1.99)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px;"></div>
       <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
       <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -44,6 +44,9 @@
     </button>
     <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
       📍
+    </button>
+    <button id="btnManual" class="map-action-btn" onclick="window.location.href='manual.html'" title="作業マニュアル" style="color: #9C27B0;">
+      📖
     </button>
     <button id="btnGpsWorkRecord" class="map-action-btn" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" style="color: #4285F4;">
       📝

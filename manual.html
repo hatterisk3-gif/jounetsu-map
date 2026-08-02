@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>情熱MAP 作業マニュアル v1.00</title>
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" href="icon.png">
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <link rel="stylesheet" href="manual.css">
+</head>
+<body>
+
+  <!-- ヘッダーバー -->
+  <div class="header">
+    <div class="header-title">
+      <span>📖</span> 作業マニュアル手順書 (v1.00)
+    </div>
+    <a href="index.html" class="header-btn">🏠 ポータルへ</a>
+  </div>
+
+  <div class="main-container">
+    <!-- タブ切り替え -->
+    <div class="tab-bar">
+      <button type="button" id="tabBtnList" class="tab-btn active" onclick="switchManualTab('list')">📖 マニュアル一覧</button>
+      <button type="button" id="tabBtnCreate" class="tab-btn" onclick="switchManualTab('create')">➕ 新規作成・編集</button>
+    </div>
+
+    <!-- 画面①：マニュアル一覧 -->
+    <div id="secList">
+      <div class="search-bar">
+        <input type="search" id="manualSearchKeyword" class="search-input" placeholder="🔍 キーワード・注意点・作業名で検索..." oninput="renderManualGrid()">
+        <select id="manualFilterWorkSelect" class="form-control" style="margin-bottom:0;" onchange="renderManualGrid()">
+          <option value="">すべての対象作業</option>
+        </select>
+      </div>
+
+      <div id="manualGrid" class="manual-grid">
+        <!-- JSでカードを描画 -->
+      </div>
+    </div>
+
+    <!-- 画面②：マニュアル新規作成・編集 -->
+    <div id="secCreate" style="display:none;">
+      <div class="form-section">
+        <div style="font-size:16px; font-weight:bold; color:var(--primary-color); margin-bottom:12px;">✏️ マニュアルの新規作成</div>
+        
+        <label class="form-label">マニュアルタイトル <span style="color:red;">*</span></label>
+        <input type="text" id="manualTitleInput" class="form-control" placeholder="例: 【苗植え】定植作業の正しい手順と注意点">
+
+        <label class="form-label">紐付ける作業 <span class="form-sublabel">（複数選択可能）</span></label>
+        <div id="manualWorkSelectContainer" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px;">
+          <!-- JSで作業チップを表示 -->
+        </div>
+
+        <label class="form-label">⚠️ 注意点・重要ポイント <span class="form-sublabel">（危険防止・NG行為など）</span></label>
+        <textarea id="manualNoticeInput" class="form-control" rows="3" placeholder="例: 苗の根を傷つけないよう優しく取り扱うこと。直射日光を避けて保管する。"></textarea>
+
+        <!-- 📸 写真追加 ＆ フォトエディター連動 -->
+        <label class="form-label">📸 マニュアル写真の追加</label>
+        <div style="display:flex; gap:10px; margin-bottom:8px;">
+          <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15);">
+            📸 カメラ撮影
+            <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="addManualPhotoFromInput(this)">
+          </label>
+          <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15);">
+            🖼️ フォルダ参照
+            <input type="file" accept="image/*" multiple style="display:none;" onchange="addManualPhotoFromInput(this)">
+          </label>
+        </div>
+        <div style="font-size:11px; color:#666; margin-bottom:8px;">💡 写真の「✏️編集」ボタンを押すと、送信前に画像の回転やペンで矢印・注釈を自由描き込みできます。</div>
+
+        <!-- プレビュー枠 -->
+        <div id="photoPreviewGrid" class="photo-preview-grid"></div>
+
+        <!-- 📋 作業手順ステップ -->
+        <label class="form-label" style="margin-top:16px;">📋 作業手順ステップ</label>
+        <div id="manualStepInputsContainer">
+          <!-- JSでステップ入力を描画 -->
+        </div>
+        <button type="button" onclick="addManualStep()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #c8e6c9; width:100%; padding:10px; border-radius:8px; font-weight:bold; cursor:pointer; margin-top:8px;">
+          ＋ 手順ステップを追加
+        </button>
+
+        <div style="margin-top:20px; display:flex; gap:10px;">
+          <button type="button" onclick="submitManualForm()" style="flex:2; background:#2E7D32; color:white; border:none; padding:14px; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 3px 8px rgba(46,125,50,0.3);">
+            💾 マニュアルを保存する
+          </button>
+          <button type="button" onclick="resetManualForm(); switchManualTab('list');" style="flex:1; background:#eee; color:#333; border:none; padding:14px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">
+            キャンセル
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🎨 モーダルダイアログ①：送信前写真編集エディター -->
+  <div id="photoEditorModal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>🎨 送信前 写真編集・注釈</span>
+        <button type="button" onclick="closePhotoEditor()" style="background:none; border:none; color:white; font-size:20px; cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="text-align:center;">
+        <div style="font-size:12px; color:#666; margin-bottom:8px;">画面上でなぞって注釈ペンで描画できます</div>
+        <div class="editor-canvas-container">
+          <canvas id="editorCanvas" class="editor-canvas"></canvas>
+        </div>
+
+        <!-- 編集ツールバー -->
+        <div style="display:flex; justify-content:center; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+          <span style="font-size:12px; font-weight:bold;">ペン色:</span>
+          <button type="button" onclick="setEditorPenColor('#FF1744')" style="width:24px; height:24px; border-radius:50%; background:#FF1744; border:2px solid white; cursor:pointer; box-shadow:0 0 4px rgba(0,0,0,0.3);"></button>
+          <button type="button" onclick="setEditorPenColor('#FFEA00')" style="width:24px; height:24px; border-radius:50%; background:#FFEA00; border:2px solid white; cursor:pointer; box-shadow:0 0 4px rgba(0,0,0,0.3);"></button>
+          <button type="button" onclick="setEditorPenColor('#00E676')" style="width:24px; height:24px; border-radius:50%; background:#00E676; border:2px solid white; cursor:pointer; box-shadow:0 0 4px rgba(0,0,0,0.3);"></button>
+          <button type="button" onclick="setEditorPenColor('#00B0FF')" style="width:24px; height:24px; border-radius:50%; background:#00B0FF; border:2px solid white; cursor:pointer; box-shadow:0 0 4px rgba(0,0,0,0.3);"></button>
+          <button type="button" onclick="setEditorPenColor('#FFFFFF')" style="width:24px; height:24px; border-radius:50%; background:#FFFFFF; border:2px solid #ccc; cursor:pointer; box-shadow:0 0 4px rgba(0,0,0,0.3);"></button>
+          
+          <button type="button" onclick="rotateEditorPhoto()" style="background:#37474F; color:white; border:none; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; margin-left:10px;">
+            🔄 90度回転
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" onclick="saveEditedPhoto()" style="background:#2E7D32; color:white; border:none; padding:10px 18px; border-radius:6px; font-weight:bold; cursor:pointer;">
+          ✓ 編集を確定
+        </button>
+        <button type="button" onclick="closePhotoEditor()" style="background:#eee; color:#333; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">
+          キャンセル
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📖 モーダルダイアログ②：マニュアル詳細ビューワー -->
+  <div id="manualDetailModal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>📖 マニュアル詳細</span>
+        <button type="button" onclick="closeManualDetailModal()" style="background:none; border:none; color:white; font-size:20px; cursor:pointer;">✕</button>
+      </div>
+      <div id="manualDetailBody" class="modal-body">
+        <!-- JSで描画 -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" onclick="closeManualDetailModal()" style="background:#2E7D32; color:white; border:none; padding:10px 20px; border-radius:6px; font-weight:bold; cursor:pointer;">
+          閉じる
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="manual.js"></script>
+</body>
+</html>

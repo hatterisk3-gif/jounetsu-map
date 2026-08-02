@@ -305,7 +305,7 @@ async function processJob(data) {
       let aiOutput = 'AIからの応答テキストを取得できませんでした。';
       let isSuccess = false;
 
-      console.log('🚀 AIエージェントによるコード修正を開始します（修正のみ・デプロイなし）...');
+      console.log('🚀 AIエージェントによる処理を開始します...');
 
       try {
         let rawAiOutput = await runAIAgent(modifyPrompt);
@@ -345,11 +345,10 @@ async function processJob(data) {
         const note = isSuccess
           ? 'AIによるコード修正が完了しました。'
           : '修正は行いましたが構文エラー等が残っている可能性があります。';
-        const deployNote = '\n⚠️ デプロイは行っていません。手動で clasp push / git push / clasp deploy を実行してください。';
-        summaryForLine = `【修正報告】\n${note}${fileChangesText}${deployNote}\n\n【AIの修正報告】:\n${shortAiOutput}`;
-        fullSummaryForEmail = `【修正報告】\n${note}${fileChangesText}\n⚠️ デプロイは行っていません。\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
+        summaryForLine = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
+        fullSummaryForEmail = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
         console.log(isSuccess
-          ? '✅ コード修正が完了しました！（デプロイは行っていません）'
+          ? '✅ コード修正が完了しました！'
           : '⚠️ 修正はしましたが問題が残っている可能性があります（修正報告として通知）');
       } else {
         summaryForLine = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因】:\n${shortAiOutput}`;
@@ -391,6 +390,11 @@ async function drainQueue() {
     lastQueueStatus = `処理中 row=${job.rowIndex}`;
     processed++;
     await processJob(job);
+
+    // 🌟 GAS側のスプレッドシート書き込み・完了反映を確実に待つための安全インターバル
+    // （短時間に連続送信された場合の次行スキップ防止）
+    console.log(`⏱️ 次の指示を取得する前にGAS側の更新反映を待機中 (1.5s)...`);
+    await new Promise(resolve => setTimeout(resolve, 1500));
   }
   if (processed > 0) {
     console.log(`📦 キュー消化: ${processed} 件を順番に処理しました。`);
