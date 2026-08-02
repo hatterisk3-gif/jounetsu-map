@@ -570,18 +570,16 @@
             <div id="crVarietyHint" style="margin-top:4px; font-size:10px; color:#888;">「＋ 新規追加」で品種名・メーカー・粒数をまとめて登録できます。</div>
           </div>
 
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom: 10px;">
-            <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">メーカー <span style="font-weight:normal; color:#888;">(共通で記憶・追加/削除可)</span></label>
-              <input type="hidden" id="crMaker" value="">
-              <div id="crMakerBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
-              <button type="button" onclick="addNewMakerTag()" style="margin-top:6px; padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px dashed #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">＋ メーカーを新規登録</button>
-            </div>
-            <div>
-              <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">粒数 <span style="font-weight:normal; color:#888;">(コート / 生種)</span></label>
-              <input type="hidden" id="crGrainCount" value="">
-              <div id="crGrainCountBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
-            </div>
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">メーカー <span style="font-weight:normal; color:#888;">(共通で記憶・追加/削除可)</span></label>
+            <input type="hidden" id="crMaker" value="">
+            <div id="crMakerBtns" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height: 28px;"></div>
+            <button type="button" onclick="addNewMakerTag()" style="margin-top:6px; padding:4px 10px; background:#FFF3E0; color:#E65100; border:1px dashed #FFB74D; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">＋ メーカーを新規登録</button>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">粒数 <span style="font-weight:normal; color:#888;">(コート／生種ごとに複数登録→選択)</span></label>
+            <input type="hidden" id="crGrainCount" value="">
+            <div id="crGrainCountBtns"></div>
           </div>
           <div style="margin-bottom: 10px;">
             <label style="font-size: 11px; font-weight: bold; color: #e65100; display: block; margin-bottom: 4px;">特性タグ <span style="font-weight:normal; color:#888;">(複数選択可・作物ごとに記憶)</span></label>
@@ -792,9 +790,9 @@
             <datalist id="vmdMakerList"></datalist>
           </div>
           <div>
-            <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">粒数（コート / 生種）</label>
+            <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">粒数 <span style="font-weight:normal; color:#888;">(コート／生種ごとに複数登録→選択)</span></label>
             <input type="hidden" id="vmdGrainCount" value="">
-            <div id="vmdGrainCountBtns" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;"></div>
+            <div id="vmdGrainCountBtns"></div>
           </div>
         </div>
         <div style="display:flex; gap:8px; margin-top:16px;">

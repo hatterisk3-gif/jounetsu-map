@@ -631,65 +631,298 @@ async function renameVarietyFromChoices(oldName) {
 window.removeVarietyFromChoices = removeVarietyFromChoices;
 window.renameVarietyFromChoices = renameVarietyFromChoices;
 
-/** 作物+品種からメーカー・粒数を取得（作型DB優先） */
+/** 作物+品種からメーカー・粒数を取得（作型DB優先）
+ * 粒数はコート／生種ごとに複数登録でき、選択中の type+count を保存する。
+ * 保存形式: JSON {"options":{"コート":[5000],"生種":[2000]},"type":"コート","count":5000}
+ * 旧形式互換: 「コート」「生種」「5000」「コート:5000」
+ */
 const GRAIN_TYPE_OPTIONS = ['コート', '生種'];
 
+function emptyGrainMeta() {
+    return { options: { 'コート': [], '生種': [] }, type: '', count: null };
+}
+
+function uniqSortedCounts(arr) {
+    const nums = (Array.isArray(arr) ? arr : [])
+        .map(n => Number(n))
+        .filter(n => Number.isFinite(n) && n > 0)
+        .map(n => Math.round(n));
+    return Array.from(new Set(nums)).sort((a, b) => a - b);
+}
+
+function normalizeGrainMeta(meta) {
+    const out = emptyGrainMeta();
+    if (!meta || typeof meta !== 'object') return out;
+    out.options['コート'] = uniqSortedCounts(meta.options && meta.options['コート']);
+    out.options['生種'] = uniqSortedCounts(meta.options && meta.options['生種']);
+    const type = String(meta.type || '').trim();
+    out.type = GRAIN_TYPE_OPTIONS.includes(type) ? type : '';
+    const count = meta.count != null && meta.count !== '' ? Number(meta.count) : null;
+    out.count = (Number.isFinite(count) && count > 0) ? Math.round(count) : null;
+    if (out.type && out.count != null && !out.options[out.type].includes(out.count)) {
+        out.options[out.type] = uniqSortedCounts(out.options[out.type].concat([out.count]));
+    }
+    return out;
+}
+
+function parseGrainMeta(raw) {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        return normalizeGrainMeta(raw);
+    }
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return emptyGrainMeta();
+
+    if (s.charAt(0) === '{') {
+        try {
+            return normalizeGrainMeta(JSON.parse(s));
+        } catch (e) { /* fallthrough */ }
+    }
+    if (GRAIN_TYPE_OPTIONS.includes(s)) {
+        const m = emptyGrainMeta();
+        m.type = s;
+        return m;
+    }
+    const typed = s.match(/^(コート|生種)\s*[:：]\s*([\d,]+)/);
+    if (typed) {
+        const m = emptyGrainMeta();
+        m.type = typed[1];
+        m.count = Math.round(Number(String(typed[2]).replace(/,/g, '')));
+        if (!Number.isFinite(m.count) || m.count <= 0) m.count = null;
+        return normalizeGrainMeta(m);
+    }
+    if (/^[\d,]+$/.test(s)) {
+        const m = emptyGrainMeta();
+        m.count = Math.round(Number(s.replace(/,/g, '')));
+        if (!Number.isFinite(m.count) || m.count <= 0) return emptyGrainMeta();
+        return m;
+    }
+    return emptyGrainMeta();
+}
+
+function serializeGrainMeta(meta) {
+    const m = normalizeGrainMeta(meta);
+    const hasOpts = m.options['コート'].length > 0 || m.options['生種'].length > 0;
+    if (!hasOpts && !m.type && m.count == null) return '';
+    // 旧形式互換（タイプのみ）
+    if (!hasOpts && m.type && m.count == null) return m.type;
+    // 旧形式互換（数値のみ）
+    if (!hasOpts && !m.type && m.count != null) return String(m.count);
+    return JSON.stringify({
+        options: m.options,
+        type: m.type || '',
+        count: m.count
+    });
+}
+
+/** 互換: 旧コードが期待する単純文字列（タイプ or 数値） */
 function normalizeGrainType(val) {
-    const v = String(val || '').trim();
-    if (GRAIN_TYPE_OPTIONS.includes(v)) return v;
-    // 旧データで数値粒数が入っている場合はそのまま返す（表示用）
-    return v;
+    const m = parseGrainMeta(val);
+    if (m.type && m.count != null) return m.type + ':' + m.count;
+    if (m.type) return m.type;
+    if (m.count != null) return String(m.count);
+    return String(val || '').trim();
 }
 
 function formatGrainTypeLabel(val) {
-    const v = normalizeGrainType(val);
-    if (!v) return '';
-    if (GRAIN_TYPE_OPTIONS.includes(v)) return v;
-    // 互換: 旧数値
-    return v + '粒';
+    const m = parseGrainMeta(val);
+    if (m.type && m.count != null) {
+        return m.type + ' ' + Number(m.count).toLocaleString('ja-JP') + '粒';
+    }
+    if (m.type) return m.type;
+    if (m.count != null) return Number(m.count).toLocaleString('ja-JP') + '粒';
+    return '';
 }
 
+function writeGrainMetaToHidden(hiddenId, meta) {
+    const hidden = document.getElementById(hiddenId);
+    if (hidden) hidden.value = serializeGrainMeta(meta);
+}
+
+function readGrainMetaFromHidden(hiddenId) {
+    const hidden = document.getElementById(hiddenId);
+    return parseGrainMeta(hidden ? hidden.value : '');
+}
+
+/** コート／生種タブ + タイプ別の複数粒数登録・選択 UI
+ *  タブ=編集対象の切替（登録リスト）、チップ=選択中の粒数
+ */
 function renderGrainTypeButtons(wrapId, hiddenId, opts) {
     opts = opts || {};
     const wrap = document.getElementById(wrapId);
     const hidden = document.getElementById(hiddenId);
     if (!wrap || !hidden) return;
-    const selected = normalizeGrainType(hidden.value);
+
     const accent = opts.accent || '#FF9800';
     const accentDark = opts.accentDark || '#EF6C00';
+    let meta = parseGrainMeta(hidden.value);
+    let viewType = String(wrap.dataset.grainViewType || meta.type || 'コート').trim();
+    if (!GRAIN_TYPE_OPTIONS.includes(viewType)) viewType = 'コート';
+    wrap.dataset.grainViewType = viewType;
+
     wrap.innerHTML = '';
+    wrap.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
+
+    const typeRow = document.createElement('div');
+    typeRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; align-items:center;';
     GRAIN_TYPE_OPTIONS.forEach(tag => {
-        const isOn = selected === tag;
+        const viewing = viewType === tag;
+        const selectedType = meta.type === tag;
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.style.cssText = isOn
+        btn.style.cssText = viewing
             ? `display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;`
             : 'display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:12px;line-height:1.2;';
-        btn.textContent = tag;
+        const n = (meta.options[tag] || []).length;
+        btn.textContent = (selectedType ? '✓ ' : '') + (n ? `${tag}（${n}）` : tag);
+        btn.title = viewing ? `${tag}の粒数を編集中` : `${tag}の粒数リストを開く`;
         btn.onclick = function() {
-            hidden.value = (hidden.value === tag) ? '' : tag;
+            wrap.dataset.grainViewType = tag;
             renderGrainTypeButtons(wrapId, hiddenId, opts);
-            if (typeof opts.onChange === 'function') opts.onChange(hidden.value);
         };
-        wrap.appendChild(btn);
+        typeRow.appendChild(btn);
     });
+    wrap.appendChild(typeRow);
+
+    const listBox = document.createElement('div');
+    listBox.style.cssText = 'padding:8px; background:#fafafa; border:1px solid #eee; border-radius:6px;';
+
+    const listTitle = document.createElement('div');
+    listTitle.style.cssText = 'font-size:10px; color:#666; margin-bottom:6px; font-weight:bold;';
+    listTitle.textContent = `${viewType}の粒数（タップで選択・×で削除）`;
+    listBox.appendChild(listTitle);
+
+    const chips = document.createElement('div');
+    chips.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; align-items:center; min-height:28px;';
+    const counts = meta.options[viewType] || [];
+    if (!counts.length) {
+        const empty = document.createElement('span');
+        empty.style.cssText = 'font-size:11px; color:#999;';
+        empty.textContent = '未登録（下で追加）';
+        chips.appendChild(empty);
+    } else {
+        counts.forEach(num => {
+            const selected = meta.type === viewType && Number(meta.count) === Number(num);
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.style.cssText = selected
+                ? `display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid ${accentDark};border-radius:14px;background:${accent};color:#fff;cursor:pointer;font-size:11px;font-weight:bold;`
+                : 'display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #ccc;border-radius:14px;background:#fff;color:#333;cursor:pointer;font-size:11px;';
+            chip.textContent = Number(num).toLocaleString('ja-JP') + '粒';
+            chip.onclick = function() {
+                meta = parseGrainMeta(hidden.value);
+                if (selected) {
+                    meta.type = '';
+                    meta.count = null;
+                } else {
+                    meta.type = viewType;
+                    meta.count = Number(num);
+                }
+                writeGrainMetaToHidden(hiddenId, meta);
+                renderGrainTypeButtons(wrapId, hiddenId, opts);
+                if (typeof opts.onChange === 'function') opts.onChange(hidden.value);
+            };
+            const del = document.createElement('span');
+            del.textContent = '×';
+            del.title = 'この粒数を削除';
+            del.style.cssText = selected
+                ? 'margin-left:2px; opacity:0.9; font-weight:bold;'
+                : 'margin-left:2px; color:#999; font-weight:bold;';
+            del.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                meta = parseGrainMeta(hidden.value);
+                meta.options[viewType] = (meta.options[viewType] || []).filter(x => Number(x) !== Number(num));
+                if (meta.type === viewType && Number(meta.count) === Number(num)) {
+                    meta.count = meta.options[viewType][0] != null ? meta.options[viewType][0] : null;
+                    if (meta.count == null) meta.type = '';
+                }
+                writeGrainMetaToHidden(hiddenId, meta);
+                renderGrainTypeButtons(wrapId, hiddenId, opts);
+                if (typeof opts.onChange === 'function') opts.onChange(hidden.value);
+            };
+            chip.appendChild(del);
+            chips.appendChild(chip);
+        });
+    }
+    listBox.appendChild(chips);
+
+    const addRow = document.createElement('div');
+    addRow.style.cssText = 'display:flex; gap:6px; align-items:center; margin-top:8px;';
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = '1';
+    inp.step = '1';
+    inp.placeholder = '例: 5000';
+    inp.style.cssText = 'flex:1; min-width:0; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:12px; box-sizing:border-box;';
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.textContent = '追加';
+    addBtn.style.cssText = `flex-shrink:0; padding:6px 12px; border:none; border-radius:4px; background:${accent}; color:#fff; font-size:12px; font-weight:bold; cursor:pointer;`;
+    const doAdd = function() {
+        const n = Math.round(Number(inp.value));
+        if (!Number.isFinite(n) || n <= 0) {
+            alert('粒数は1以上の整数で入力してください。');
+            return;
+        }
+        meta = parseGrainMeta(hidden.value);
+        meta.options[viewType] = uniqSortedCounts((meta.options[viewType] || []).concat([n]));
+        meta.type = viewType;
+        meta.count = n;
+        writeGrainMetaToHidden(hiddenId, meta);
+        wrap.dataset.grainViewType = viewType;
+        inp.value = '';
+        renderGrainTypeButtons(wrapId, hiddenId, opts);
+        if (typeof opts.onChange === 'function') opts.onChange(hidden.value);
+    };
+    addBtn.onclick = doAdd;
+    inp.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            doAdd();
+        }
+    };
+    const unit = document.createElement('span');
+    unit.textContent = '粒';
+    unit.style.cssText = 'font-size:11px; color:#666; flex-shrink:0;';
+    addRow.appendChild(inp);
+    addRow.appendChild(unit);
+    addRow.appendChild(addBtn);
+    listBox.appendChild(addRow);
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:10px; color:#888; margin-top:6px; line-height:1.35;';
+    const selLabel = formatGrainTypeLabel(meta);
+    hint.textContent = selLabel
+        ? `選択中: ${selLabel}　／　タブでコート・生種を切り替え、それぞれに粒数を登録できます`
+        : 'コート／生種タブを切り替え、粒数を追加してタップ選択してください';
+    listBox.appendChild(hint);
+
+    wrap.appendChild(listBox);
 }
 
 function setGrainTypeValue(hiddenId, wrapId, val, opts) {
     const hidden = document.getElementById(hiddenId);
-    if (hidden) hidden.value = normalizeGrainType(val);
-    if (wrapId) renderGrainTypeButtons(wrapId, hiddenId, opts || {});
+    const meta = parseGrainMeta(val);
+    if (hidden) hidden.value = serializeGrainMeta(meta);
+    if (wrapId) {
+        const wrap = document.getElementById(wrapId);
+        if (wrap) {
+            wrap.dataset.grainViewType = meta.type || 'コート';
+        }
+        renderGrainTypeButtons(wrapId, hiddenId, opts || {});
+    }
 }
 
 function getGrainTypeValue(hiddenId) {
     const hidden = document.getElementById(hiddenId);
-    return hidden ? normalizeGrainType(hidden.value) : '';
+    if (!hidden) return '';
+    return serializeGrainMeta(parseGrainMeta(hidden.value));
 }
 
 function lookupVarietyMeta(crop, variety) {
     const c = String(crop || '').trim();
     const v = String(variety || '').trim();
-    const result = { maker: '', grainCount: '' };
+    const result = { maker: '', grainCount: '', grainMeta: emptyGrainMeta() };
     if (!c || !v || !cpMasterData || !Array.isArray(cpMasterData.croptypesDB)) return result;
     const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
     const matches = cpMasterData.croptypesDB.filter(db =>
@@ -704,10 +937,15 @@ function lookupVarietyMeta(crop, variety) {
     }
     if (found) {
         result.maker = String(found.maker || '').trim();
-        result.grainCount = normalizeGrainType(found.grainCount || '');
+        result.grainMeta = parseGrainMeta(found.grainCount || '');
+        result.grainCount = serializeGrainMeta(result.grainMeta);
     }
     return result;
 }
+
+window.parseGrainMeta = parseGrainMeta;
+window.serializeGrainMeta = serializeGrainMeta;
+window.formatGrainTypeLabel = formatGrainTypeLabel;
 
 function refreshCpVarietyMakerDatalist() {
     const list = document.getElementById('cpVarietyMakerList');
@@ -1482,6 +1720,72 @@ window.applyCpPlanVariety = applyCpPlanVariety;
 window.refreshCpPlanVarietySelect = refreshCpPlanVarietySelect;
 
 /** 計画カード: メーカー・粒種・種個数（調達確認） */
+function listGrainMetaChoices(grainRaw) {
+    const meta = parseGrainMeta(grainRaw);
+    const choices = [];
+    GRAIN_TYPE_OPTIONS.forEach(type => {
+        (meta.options[type] || []).forEach(count => {
+            choices.push({
+                type: type,
+                count: count,
+                value: serializeGrainMeta({
+                    options: meta.options,
+                    type: type,
+                    count: count
+                }),
+                label: type + ' ' + Number(count).toLocaleString('ja-JP') + '粒'
+            });
+        });
+    });
+    if (!choices.length) {
+        const label = formatGrainTypeLabel(meta);
+        if (label) {
+            choices.push({
+                type: meta.type || '',
+                count: meta.count,
+                value: serializeGrainMeta(meta),
+                label: label
+            });
+        }
+    }
+    return choices;
+}
+
+function refreshCpPlanGrainPicker(planId) {
+    const host = document.getElementById('cpPlanGrainPick_' + planId);
+    const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
+    if (!host || !plan) return;
+    const meta = typeof lookupVarietyMeta === 'function'
+        ? lookupVarietyMeta(plan.crop, plan.variety)
+        : { maker: '', grainCount: '' };
+    const choices = listGrainMetaChoices(meta.grainCount);
+    if (choices.length <= 1) {
+        host.innerHTML = '';
+        return;
+    }
+    const cur = serializeGrainMeta(parseGrainMeta(plan.grainCount || meta.grainCount));
+    let optsHtml = choices.map(c => {
+        const sel = c.value === cur ? ' selected' : '';
+        return `<option value="${escapeCpHtmlAttr(c.value)}"${sel}>${escapeCpHtmlAttr(c.label)}</option>`;
+    }).join('');
+    // 現在値が一覧外なら先頭に追加
+    if (cur && !choices.some(c => c.value === cur)) {
+        const lab = formatGrainTypeLabel(cur) || '選択中';
+        optsHtml = `<option value="${escapeCpHtmlAttr(cur)}" selected>${escapeCpHtmlAttr(lab)}</option>` + optsHtml;
+    }
+    host.innerHTML = `<label style="display:flex;align-items:center;gap:4px;color:#555;">粒数
+      <select onchange="setCpPlanGrainCount('${plan.id}', this.value)" style="flex:1;min-width:0;height:20px;font-size:10px;padding:0 2px;border:1px solid #ffcc80;border-radius:3px;background:#fff;">${optsHtml}</select>
+    </label>`;
+}
+
+function setCpPlanGrainCount(planId, value) {
+    const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
+    if (!plan) return;
+    plan.grainCount = serializeGrainMeta(parseGrainMeta(value));
+    if (typeof refreshCpSeedProcureDisplay === 'function') refreshCpSeedProcureDisplay(planId);
+}
+window.setCpPlanGrainCount = setCpPlanGrainCount;
+
 function refreshCpSeedProcureDisplay(planId) {
     const el = document.getElementById('cpSeedProcure_' + planId);
     const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
@@ -1489,15 +1793,16 @@ function refreshCpSeedProcureDisplay(planId) {
     const meta = typeof lookupVarietyMeta === 'function'
         ? lookupVarietyMeta(plan.crop, plan.variety)
         : { maker: '', grainCount: '' };
+    const grainVal = plan.grainCount || meta.grainCount || '';
     const trays = Number(plan.trays) || 0;
     const holes = Number(plan.holes) || 0;
     const seedCount = (holes === 1) ? trays : (trays * (holes > 0 ? holes : 0));
     const bits = [];
     if (meta.maker) bits.push(meta.maker);
-    if (meta.grainCount) {
+    if (grainVal) {
         bits.push(typeof formatGrainTypeLabel === 'function'
-            ? formatGrainTypeLabel(meta.grainCount)
-            : String(meta.grainCount));
+            ? formatGrainTypeLabel(grainVal)
+            : String(grainVal));
     }
     let seedPart = '種 —';
     if (seedCount > 0) {
@@ -1505,6 +1810,7 @@ function refreshCpSeedProcureDisplay(planId) {
         if (holes > 1 && trays > 0) seedPart += `（${trays}×${holes}）`;
     }
     el.textContent = bits.length ? (bits.join(' ／ ') + ' ／ ' + seedPart) : seedPart;
+    if (typeof refreshCpPlanGrainPicker === 'function') refreshCpPlanGrainPicker(planId);
 }
 window.refreshCpSeedProcureDisplay = refreshCpSeedProcureDisplay;
 
@@ -2375,6 +2681,7 @@ function renderCpPlanRow(plan) {
         <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:3px; font-size:10px; flex-direction:column; gap:2px; background:#fff; padding:3px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
           <div id="cpSeedProcure_${plan.id}" style="font-size:9px; color:#bf360c; font-weight:bold; line-height:1.25;"></div>
           <div id="cpFinance_${plan.id}" style="font-size:9px; line-height:1.3; font-weight:bold;"></div>
+          <div id="cpPlanGrainPick_${plan.id}" style="font-size:10px;"></div>
           <div id="fieldSelectContainer_${plan.id}" style="width:100%; font-size:10px; display:flex; flex-direction:column; gap:2px;">
              <button type="button" onclick="openFieldSelectMap('${plan.id}')" style="width:100%; height:20px; font-size:10px; padding:0; background:#2196F3; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold;">🗺️ 圃場選択 (地図)</button>
              <div style="display:flex; justify-content:space-between; font-weight:bold; color:#e65100; margin-top:1px; font-size:9px;">
@@ -3453,6 +3760,10 @@ async function showPlanListModal() {
         const esc = (s) => String(s == null ? '' : s)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         const formatGrain = (g) => {
+            if (typeof formatGrainTypeLabel === 'function') {
+                const label = formatGrainTypeLabel(g);
+                if (label) return label;
+            }
             const v = String(g || '').trim();
             if (!v) return '';
             if (v === 'コート' || v === '生種') return v;
