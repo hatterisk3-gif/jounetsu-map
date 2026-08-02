@@ -764,7 +764,7 @@ function clearCpVarietyMetaFields() {
 }
 
 /** 品種＋メーカー＋粒数ダイアログ */
-let _vmdState = { mode: 'add', target: 'cp', oldVariety: '' };
+let _vmdState = { mode: 'add', target: 'cp', oldVariety: '', planId: null, crop: '' };
 
 function fillVmdMakerDatalist() {
     const list = document.getElementById('vmdMakerList');
@@ -787,16 +787,20 @@ function openVarietyMetaDialog(opts) {
     const mode = opts.mode === 'edit' ? 'edit' : 'add';
     const target = opts.target === 'cr' ? 'cr' : 'cp';
     const variety = String(opts.variety || '').trim();
+    const planId = opts.planId ? String(opts.planId) : null;
 
-    const crop = target === 'cr'
-        ? (document.getElementById('crCrop') ? document.getElementById('crCrop').value : '')
-        : getCpVal('cpCrop');
+    let crop = String(opts.crop || '').trim();
+    if (!crop) {
+        crop = target === 'cr'
+            ? (document.getElementById('crCrop') ? document.getElementById('crCrop').value : '')
+            : getCpVal('cpCrop');
+    }
     if (!crop || crop === 'custom') {
         alert('先に作物を選択してください。');
         return;
     }
 
-    _vmdState = { mode: mode, target: target, oldVariety: variety };
+    _vmdState = { mode: mode, target: target, oldVariety: variety, planId: planId, crop: crop };
 
     const dlg = document.getElementById('varietyMetaDialog');
     const title = document.getElementById('vmdTitle');
@@ -846,10 +850,11 @@ async function confirmVarietyMetaDialog() {
     const target = _vmdState.target || 'cp';
     const mode = _vmdState.mode || 'add';
     const oldVariety = String(_vmdState.oldVariety || '').trim();
+    const planId = _vmdState.planId || null;
 
-    const crop = target === 'cr'
+    const crop = String(_vmdState.crop || '').trim() || (target === 'cr'
         ? (document.getElementById('crCrop') ? document.getElementById('crCrop').value : '')
-        : getCpVal('cpCrop');
+        : getCpVal('cpCrop'));
     const variety = document.getElementById('vmdVariety')
         ? String(document.getElementById('vmdVariety').value || '').trim()
         : '';
@@ -929,12 +934,27 @@ async function confirmVarietyMetaDialog() {
             if (customOpt) vSel.insertBefore(opt, customOpt);
             else vSel.appendChild(opt);
         }
-        setChoiceValue('cpVariety', variety, false);
-        await saveCpVarietyMeta({ silent: true, varietyOverride: variety, makerOverride: maker, grainOverride: grainCount });
-        updateVarietyList();
-        setChoiceValue('cpVariety', variety, true);
-        refreshChoiceButtons('cpVariety');
-        syncCpVarietyMetaFields();
+        if (getCpVal('cpCrop') === crop) {
+            setChoiceValue('cpVariety', variety, false);
+        }
+        await saveCpVarietyMeta({
+            silent: true,
+            cropOverride: crop,
+            varietyOverride: variety,
+            makerOverride: maker,
+            grainOverride: grainCount
+        });
+        if (getCpVal('cpCrop') === crop) {
+            updateVarietyList();
+            setChoiceValue('cpVariety', variety, true);
+            refreshChoiceButtons('cpVariety');
+            syncCpVarietyMetaFields();
+        }
+        // 計画カードの「＋手入力…」から開いた場合は、そのカードへ反映
+        if (planId) {
+            applyCpPlanVariety(planId, variety);
+            refreshCpPlanVarietySelectsForCrop(crop);
+        }
     } else {
         // 作型登録画面
         rememberCustomVariety(crop, variety);
@@ -989,7 +1009,7 @@ window.confirmVarietyMetaDialog = confirmVarietyMetaDialog;
 
 async function saveCpVarietyMeta(opts) {
     opts = opts || {};
-    const crop = getCpVal('cpCrop');
+    const crop = String(opts.cropOverride || getCpVal('cpCrop') || '').trim();
     let variety = opts.varietyOverride || getCpVal('cpVariety');
     if (!crop) {
         if (!opts.silent) alert('先に作物を選択してください。');
@@ -1383,36 +1403,34 @@ function buildCpVarietySelectHtml(plan) {
     return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="flex:1; min-width:0; height:18px; font-size:10px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
 }
 
-/** 品種カード上で品種を変更 */
-function changeCpPlanVariety(planId, value) {
+/** 計画カードの品種セレクトを作り直す */
+function refreshCpPlanVarietySelect(planId) {
+    const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
+    const sel = document.getElementById('varietySelect_' + planId);
+    if (!plan || !sel) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = buildCpVarietySelectHtml(plan);
+    const next = tmp.firstElementChild;
+    if (next) sel.replaceWith(next);
+}
+
+function refreshCpPlanVarietySelectsForCrop(crop) {
+    const c = String(crop || '').trim();
+    if (!c || !Array.isArray(cpPlans)) return;
+    cpPlans.forEach(p => {
+        if (p && String(p.crop || '') === c) refreshCpPlanVarietySelect(p.id);
+    });
+}
+
+/** 計画カードへ品種を反映（マスタ登録後・セレクト変更共通） */
+function applyCpPlanVariety(planId, variety) {
     const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
     if (!plan) return;
-    const sel = document.getElementById('varietySelect_' + planId);
-    let next = String(value || '');
-
-    if (next === '__custom__') {
-        const name = prompt('品種名を入力してください', plan.variety || '');
-        if (!name || !String(name).trim()) {
-            if (sel) sel.value = plan.variety || '';
-            return;
-        }
-        next = String(name).trim();
-        if (sel) {
-            const exists = Array.from(sel.options).some(o => o.value === next);
-            if (!exists) {
-                const opt = document.createElement('option');
-                opt.value = next;
-                opt.textContent = next;
-                const customOpt = Array.from(sel.options).find(o => o.value === '__custom__');
-                if (customOpt) sel.insertBefore(opt, customOpt);
-                else sel.appendChild(opt);
-            }
-            sel.value = next;
-        }
-        rememberCustomVariety(plan.crop, next);
+    const next = String(variety || '').trim();
+    if (!next || next === plan.variety) {
+        if (typeof refreshCpSeedProcureDisplay === 'function') refreshCpSeedProcureDisplay(planId);
+        return;
     }
-
-    if (!next || next === plan.variety) return;
     plan.variety = next;
 
     // 作型DBに一致すればファイルリンクのみ更新（既に塗ったカレンダーは維持）
@@ -1436,7 +1454,32 @@ function changeCpPlanVariety(planId, value) {
     if (typeof refreshCpSeedProcureDisplay === 'function') refreshCpSeedProcureDisplay(planId);
     if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
 }
+
+/** 品種カード上で品種を変更 */
+function changeCpPlanVariety(planId, value) {
+    const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
+    if (!plan) return;
+    const sel = document.getElementById('varietySelect_' + planId);
+    let next = String(value || '');
+
+    if (next === '__custom__') {
+        // セレクトを元に戻し、品種マスタ登録ポップアップを開く
+        if (sel) sel.value = plan.variety || '';
+        openVarietyMetaDialog({
+            mode: 'add',
+            target: 'cp',
+            planId: planId,
+            crop: plan.crop
+        });
+        return;
+    }
+
+    if (!next || next === plan.variety) return;
+    applyCpPlanVariety(planId, next);
+}
 window.changeCpPlanVariety = changeCpPlanVariety;
+window.applyCpPlanVariety = applyCpPlanVariety;
+window.refreshCpPlanVarietySelect = refreshCpPlanVarietySelect;
 
 /** 計画カード: メーカー・粒種・種個数（調達確認） */
 function refreshCpSeedProcureDisplay(planId) {
