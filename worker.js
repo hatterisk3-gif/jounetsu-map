@@ -4073,12 +4073,9 @@ function createSignboardMarker(name, pos, icon, id) {
         return labels;
       };
 
-      /** 作業一覧の初期作物キー（共通があれば優先） */
+      /** 作業一覧の初期作物キー（何も選択されてない状態にする） */
       window.getDefaultWorkCropKey = (category, p) => {
-        const options = window.getCropOptionsForCategory(category, p);
-        if (!options.length) return '';
-        const common = options.find(o => o.key === '__common__');
-        return common ? common.key : options[0].key;
+        return ''; // デフォルトは何も選択されていない状態
       };
 
       window.selectedWorkCropFilterKeys = [];
@@ -5327,7 +5324,7 @@ function createSignboardMarker(name, pos, icon, id) {
           ).join('');
           const cropNames = (pdlCrops || []).map(c => c.name);
           if (defaultCrop && !cropNames.includes(defaultCrop)) cropNames.unshift(defaultCrop);
-          const cropOpts = '<option value="">共通（全作物）</option>' + cropNames.map(name =>
+          const cropOpts = `<option value="" ${!defaultCrop ? 'selected' : ''}>-- 未選択 --</option><option value="__common__">共通（全作物）</option>` + cropNames.map(name =>
               `<option value="${String(name).replace(/"/g, '&quot;')}" ${name === defaultCrop ? 'selected' : ''}>${name}</option>`
           ).join('');
           const title = mode === 'edit' ? '作業マスタを編集' : '作業マスタを追加';
