@@ -65,7 +65,16 @@ async function runAIAgent(promptText) {
   if (fs.existsSync(DONE_FILE)) fs.unlinkSync(DONE_FILE);
 
   // IDEにAI実行の指示を送信（手紙を保存）
-  fs.writeFileSync(TASK_FILE, promptText, 'utf8');
+  // create+change の二重発火を減らすため、一時ファイルへ書いてから置換する
+  const tmpTask = TASK_FILE + '.tmp';
+  fs.writeFileSync(tmpTask, promptText, 'utf8');
+  try {
+    fs.renameSync(tmpTask, TASK_FILE);
+  } catch (e) {
+    // Windows/OneDrive で rename 失敗時は直接上書き
+    fs.writeFileSync(TASK_FILE, promptText, 'utf8');
+    try { fs.unlinkSync(tmpTask); } catch (e2) { }
+  }
   console.log('📝 IDEにAI実行の指示を送信しました！自動処理が始まります...');
 
   // IDEの処理が終わる（.ai_task_done.txt が作られる）まで待機（最大15分）
