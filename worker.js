@@ -4342,6 +4342,7 @@ function createSignboardMarker(name, pos, icon, id) {
       /** 分数入力が手動指定か（自動配分の対象外） */
       window.isDetailWorkMinutesManual = (minInput) => {
         if (!minInput) return false;
+        if (document.activeElement === minInput) return true;
         return minInput.getAttribute('data-manual') === '1';
       };
 
@@ -4363,7 +4364,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       /**
        * チェック中の詳細作業へ、手動指定以外の分数を再計算して表示し直す
-       * （チェックを外したあと・開始終了変更時）
+       * （チェックを外したあと・開始終了変更時・手入力時）
        */
       window.refreshDetailWorkAutoMinutes = () => {
         const totalWorkMins = (typeof window.getTotalWorkMinutes === 'function') ? window.getTotalWorkMinutes() : 0;
@@ -4388,10 +4389,12 @@ function createSignboardMarker(name, pos, icon, id) {
 
         if (totalWorkMins <= 0) {
           autoInputs.forEach(inp => {
-            inp.value = '';
-            inp.setAttribute('data-auto', '1');
-            inp.removeAttribute('data-manual');
-            inp.placeholder = '分を入力';
+            if (document.activeElement !== inp) {
+              inp.value = '';
+              inp.setAttribute('data-auto', '1');
+              inp.removeAttribute('data-manual');
+              inp.placeholder = '分を入力';
+            }
           });
           return;
         }
@@ -4401,6 +4404,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const base = Math.floor(remainingMins / n);
         let rem = remainingMins - base * n;
         autoInputs.forEach((inp, i) => {
+          if (document.activeElement === inp) return;
           const mins = base + (i < rem ? 1 : 0);
           inp.value = String(mins);
           inp.setAttribute('data-auto', '1');
@@ -5392,7 +5396,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }
       };
 
-      window.submitWorkNameEditor = async (mode, originalName) => {
+      window.submitWorkNameEditor = async (mode, originalName, btnEl) => {
           if (!window.isWorkerAdmin()) {
               if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
               return;
@@ -5412,6 +5416,18 @@ function createSignboardMarker(name, pos, icon, id) {
                   return;
               }
           }
+
+          // 🌟 ボタンの連打防止・二重押しガード ＆ 「追加しています…」表示
+          const submitBtn = btnEl || document.querySelector('#workNameEditorModal button[onclick*="submitWorkNameEditor"]');
+          let oldBtnText = '';
+          if (submitBtn) {
+              oldBtnText = submitBtn.innerText;
+              submitBtn.disabled = true;
+              submitBtn.style.pointerEvents = 'none';
+              submitBtn.style.opacity = '0.65';
+              submitBtn.innerText = (mode === 'edit') ? '⏳ 更新しています…' : '⏳ 追加しています…';
+          }
+
           try {
               let updatedList;
               if (mode === 'add') {
@@ -5440,6 +5456,13 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof customAlert === 'function') customAlert(mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！');
           } catch (e) {
               if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました。');
+              // エラー発生時はボタンを活性化状態に復元
+              if (submitBtn) {
+                  submitBtn.disabled = false;
+                  submitBtn.style.pointerEvents = '';
+                  submitBtn.style.opacity = '';
+                  submitBtn.innerText = oldBtnText || (mode === 'edit' ? '更新する' : '追加する');
+              }
           }
       };
 
