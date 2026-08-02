@@ -12190,13 +12190,15 @@ window.toggleTracking = () => {
         }
         html += `</div>`;
         
-        const modalBody = document.getElementById('modalBody');
-        const modal = document.getElementById('modal');
-        if (modalBody && modal) {
-            modalBody.innerHTML = html;
-            modal.style.display = 'flex';
+        if (typeof window.showClockModal === 'function') {
+            window.showClockModal(html);
         } else {
-            console.error('Modal elements not found.');
+            const modalBody = document.getElementById('modalBody');
+            const modal = document.getElementById('modal');
+            if (modalBody && modal) {
+                modalBody.innerHTML = html;
+                modal.style.display = 'flex';
+            }
         }
     } else {
         if (!navigator.geolocation) {
@@ -12218,16 +12220,18 @@ window.toggleTracking = () => {
         html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
         html += `<div style="display:flex; gap:10px;">`;
         html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
-        html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
+        html += `  <button onclick="if(window.hideClockModal) window.hideClockModal(); else document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
         html += `</div>`;
         
-        const modalBody = document.getElementById('modalBody');
-        const modal = document.getElementById('modal');
-        if (modalBody && modal) {
-            modalBody.innerHTML = html;
-            modal.style.display = 'flex';
+        if (typeof window.showClockModal === 'function') {
+            window.showClockModal(html);
         } else {
-            console.error('Modal elements not found.');
+            const modalBody = document.getElementById('modalBody');
+            const modal = document.getElementById('modal');
+            if (modalBody && modal) {
+                modalBody.innerHTML = html;
+                modal.style.display = 'flex';
+            }
         }
     }
 };

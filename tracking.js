@@ -33,16 +33,20 @@
     return { modal: modal, modalBody: modalBody };
   }
 
+  window.ensureClockModal = ensureClockModal;
+
   function showClockModal(html) {
     const els = ensureClockModal();
     els.modalBody.innerHTML = html;
     els.modal.style.display = 'flex';
   }
+  window.showClockModal = showClockModal;
 
   function hideClockModal() {
     const modal = document.getElementById('modal');
     if (modal) modal.style.display = 'none';
   }
+  window.hideClockModal = hideClockModal;
 
   function alertMsg(msg) {
     if (typeof customAlert === 'function') customAlert(msg);

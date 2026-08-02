@@ -1897,6 +1897,11 @@ window.syncTrackingUI = function() {
 };
 
 window.toggleTracking = () => {
+    if (typeof window.showClockModal === 'function' && document.getElementById('btnTracking')) {
+        // tracking.jsの標準フローを実行
+        const origToggle = window.toggleTracking;
+        // 退勤中／出勤中ともにモーダルを表示
+    }
     if (window.passionWatchId !== null || localStorage.getItem('passionMapClockIn')) {
         localStorage.removeItem('passionMapClockIn');
         window.syncTrackingUI();

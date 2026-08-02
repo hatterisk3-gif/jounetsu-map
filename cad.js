@@ -17,8 +17,11 @@ window.cadGridLines = [];
 window.cadSnapGridOn = false; // 自由畝セル配置グリッド
 window.cadSnapGridSizeM = null; // nullなら基準畝幅
 window.cadCellEraseMode = false; // true=消しゴム（塗ったセルを消す）
-window.cadPaintedCells = {}; // "iu,iv" -> uneIndex
+window.cadPaintedCellSet = new Set(); // 塗ったセル "iu,iv"（隣接点は結合して1畝）
+window.cadPaintedCells = {}; // 互換: 塗り済み判定用（Setと同期）
 window.cadCellPainting = false; // ドラッグ塗り中
+window.cadSnapGridAlignPoint = null; // {lat,lng} 選んだ辺上の点（位相合わせ）
+window.cadSnapGridAlignBearing = null;
 window.nakamichiTempMarker = null;
 
 window.cadCurrentRotation = 0;
@@ -313,7 +316,7 @@ window.updateCadSvgOverlay = (opts) => {
     if (window.cadSvgNeedsRebuild || !svg.querySelector('#cadSvgPaths') || svg._lastPolysLength !== currentPolysLength) {
         svg._lastPolysLength = currentPolysLength;
         let html = '<defs><filter id="hover-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/></filter></defs>' +
-                   '<g id="cadSvgGrid"></g><g id="cadSvgCellHover" style="pointer-events:none;"></g><g id="cadSvgPaths"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="cadSvgPins"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
+                   '<g id="cadSvgGrid"></g><g id="cadSvgCellFills" style="pointer-events:none;"></g><g id="cadSvgCellHover" style="pointer-events:none;"></g><g id="cadSvgPaths"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="cadSvgPins"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
         svg.innerHTML = html;
         let gridGroup = svg.querySelector('#cadSvgGrid');
         let pathsGroup = svg.querySelector('#cadSvgPaths');
@@ -1529,6 +1532,10 @@ window.handleMapClick = (pageX, pageY) => {
                 window.cadStopGpsPinPlace({ silent: true });
             }
             if (result === 'painted' || result === 'erased') {
+                // 単発クリック時は即結合（ドラッグ中は mouseup で結合）
+                if (!window.cadCellPainting) {
+                    window.cadSyncMergedCellRidges_({ type: shapeType });
+                }
                 if (typeof window.reassignLabels === 'function') window.reassignLabels();
                 if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
             } else if (result === 'outside' && !window.cadCellEraseMode) {
@@ -1539,7 +1546,7 @@ window.handleMapClick = (pageX, pageY) => {
                     msgEl.innerText = '【セル消しゴム】続けてタップ／ドラッグで消去できます';
                     msgEl.style.color = '#EF5350';
                 } else {
-                    msgEl.innerText = `【セル塗り・${shapeType === 'circle' ? '丸' : '四角'}】枠をドラッグすると連続して塗れます`;
+                    msgEl.innerText = `【セル塗り・${shapeType === 'circle' ? '丸' : '四角'}】隣り合うセルは1畝になります。ドラッグで連続塗り`;
                     msgEl.style.color = '#8BC34A';
                 }
             }
@@ -1574,12 +1581,14 @@ window.handleMapClick = (pageX, pageY) => {
             
             let minD = Infinity;
             let bestBearing = 0;
+            let bestLine = null;
             for (let i = 0; i < coords.length - 1; i++) {
                 let line = turf.lineString([coords[i], coords[i+1]]);
                 let d = turf.pointToLineDistance(pt, line, {units: 'meters'});
                 if (d < minD) {
                     minD = d;
                     bestBearing = turf.bearing(turf.point(coords[i]), turf.point(coords[i+1]));
+                    bestLine = line;
                 }
             }
             
@@ -1587,15 +1596,29 @@ window.handleMapClick = (pageX, pageY) => {
             while (angle < 0) angle += 360;
             while (angle >= 180) angle -= 180; // keep it 0-180 for standard ridge direction
             angle = Math.round(angle * 10) / 10;
+
+            // グリッド位相をこの辺に合わせる（線とセル枠を一致）
+            try {
+                if (bestLine && typeof turf.nearestPointOnLine === 'function') {
+                    const np = turf.nearestPointOnLine(bestLine, pt, { units: 'meters' });
+                    window.cadSnapGridAlignPoint = {
+                        lng: np.geometry.coordinates[0],
+                        lat: np.geometry.coordinates[1]
+                    };
+                    window.cadSnapGridAlignBearing = bestBearing;
+                }
+            } catch (e) {}
             
             const angleEl = document.getElementById('cadAngle');
             if (angleEl) angleEl.value = angle;
-            if (typeof window.cadAlignMapHeading === 'function') window.cadAlignMapHeading(); // 🌟 地図も垂直に合わせる
+            if (typeof window.cadAlignMapHeading === 'function') window.cadAlignMapHeading(); // 地図＋グリッド再生成
             if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount(); // 畝数を自動計算
             if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 
             if (msgEl) {
-                msgEl.innerText = `🎯 角度をセットしました（${angle}°）。「🔄 180°反転」で向きを反対にできます。`;
+                msgEl.innerText = window.cadSnapGridOn
+                    ? `🎯 角度 ${angle}° とグリッドをこの辺に揃えました。「🔄 180°反転」で向きを反対にできます。`
+                    : `🎯 角度をセットしました（${angle}°）。「🔄 180°反転」で向きを反対にできます。`;
                 msgEl.style.color = "#4CAF50";
             }
 
@@ -3341,6 +3364,9 @@ window.cadRotateMap = (deg) => {
     if (displayAngle < 0) displayAngle += 360;
     document.getElementById('cadAngle').value = displayAngle;
     updateCadPreviewCount();
+    if (window.cadSnapGridOn && typeof window.cadRebuildSnapGrid === 'function') {
+        window.cadRebuildSnapGrid();
+    }
 };
 
 window.cadFlipDirection = () => {
@@ -3427,6 +3453,77 @@ window.cadClearSnapGridLines_ = () => {
     window.cadGridLines = [];
 };
 
+/** 方位差 0〜90 */
+window.cadBearingDiff90_ = (a, b) => {
+    let d = Math.abs(Number(a) - Number(b)) % 180;
+    if (d > 90) d = 180 - d;
+    return d;
+};
+
+/**
+ * 選んだ辺（または最長辺）にグリッド位相を合わせた原点を求める。
+ * セル角とグリッド線が一致するよう、同一の平面UV系で計算する。
+ */
+window.cadResolveSnapGridOrigin_ = (centerPt, angle, cell, fieldCoords) => {
+    const base = {
+        origin: { lng: centerPt.geometry.coordinates[0], lat: centerPt.geometry.coordinates[1] },
+        originPt: centerPt,
+        angle: angle,
+        cell: cell
+    };
+
+    let alignLat = null;
+    let alignLng = null;
+    let alignBearing = window.cadSnapGridAlignBearing;
+    if (window.cadSnapGridAlignPoint) {
+        alignLat = window.cadSnapGridAlignPoint.lat;
+        alignLng = window.cadSnapGridAlignPoint.lng;
+    } else if (fieldCoords && fieldCoords.length >= 2) {
+        // 現在角度に最も平行な最長辺へ自動位相合わせ
+        let bestLen = -1;
+        let bestLine = null;
+        let bestB = angle;
+        for (let i = 0; i < fieldCoords.length - 1; i++) {
+            const a = fieldCoords[i];
+            const b = fieldCoords[i + 1];
+            const len = turf.distance(turf.point(a), turf.point(b), { units: 'meters' });
+            if (len < 0.5) continue;
+            const br = turf.bearing(turf.point(a), turf.point(b));
+            if (window.cadBearingDiff90_(br, angle) > 25) continue;
+            if (len > bestLen) {
+                bestLen = len;
+                bestLine = turf.lineString([a, b]);
+                bestB = br;
+            }
+        }
+        if (bestLine) {
+            try {
+                const np = turf.nearestPointOnLine(bestLine, centerPt, { units: 'meters' });
+                alignLng = np.geometry.coordinates[0];
+                alignLat = np.geometry.coordinates[1];
+                alignBearing = bestB;
+            } catch (e) {}
+        }
+    }
+
+    if (alignLat == null || alignLng == null) {
+        return base.origin;
+    }
+
+    const uv = window.cadLatLngToUvMeters_(alignLat, alignLng, base);
+    // 辺が畝方向(u)に平行 → v を格子に吸着／垂直なら u を吸着
+    const parallelToU = window.cadBearingDiff90_(alignBearing != null ? alignBearing : angle, angle) <= 45;
+    let phaseU = 0;
+    let phaseV = 0;
+    if (parallelToU) {
+        phaseV = uv.v - Math.round(uv.v / cell) * cell;
+    } else {
+        phaseU = uv.u - Math.round(uv.u / cell) * cell;
+    }
+    const shifted = window.cadUvToLatLng_(phaseU, phaseV, base);
+    return { lng: shifted.lng, lat: shifted.lat };
+};
+
 /** 圃場中心＋畝角度基準の直交グリッドを再生成（SVGに描画） */
 window.cadRebuildSnapGrid = () => {
     window.cadClearSnapGridLines_();
@@ -3450,23 +3547,28 @@ window.cadRebuildSnapGrid = () => {
     const angleEl = document.getElementById('cadAngle');
     const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
     const centerPt = turf.center(tPoly);
-    window.cadSnapGridOrigin = {
-        lng: centerPt.geometry.coordinates[0],
-        lat: centerPt.geometry.coordinates[1]
-    };
-    window.cadSnapGridAngle = angle;
-
     const cell = window.cadGetSnapGridSizeM();
-    const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' }) + cell * 2;
-    const half = diagDist / 2;
-    // 密度上限（重すぎ防止）
-    const maxLines = 90;
-    let step = cell;
-    if ((diagDist / step) > maxLines) step = diagDist / maxLines;
 
-    const makeLine = (c1, c2, major) => {
+    window.cadSnapGridAngle = angle;
+    window.cadSnapGridOrigin = window.cadResolveSnapGridOrigin_(centerPt, angle, cell, coords);
+
+    const frame = {
+        origin: window.cadSnapGridOrigin,
+        originPt: turf.point([window.cadSnapGridOrigin.lng, window.cadSnapGridOrigin.lat]),
+        angle: angle,
+        cell: cell
+    };
+
+    const diagDist = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' }) + cell * 2;
+    // 必ずセル間隔で線を引く（stepを広げるとセルとズレる）
+    const maxHalfCells = 45;
+    let halfCells = Math.ceil(diagDist / 2 / cell) + 1;
+    if (halfCells > maxHalfCells) halfCells = maxHalfCells;
+    const half = halfCells * cell;
+
+    const makeLine = (p1, p2, major) => {
         const line = new google.maps.Polyline({
-            path: [{ lat: c1[1], lng: c1[0] }, { lat: c2[1], lng: c2[0] }],
+            path: [{ lat: p1.lat, lng: p1.lng }, { lat: p2.lat, lng: p2.lng }],
             strokeColor: '#90A4AE',
             strokeOpacity: 0.01,
             strokeWeight: 1,
@@ -3478,27 +3580,23 @@ window.cadRebuildSnapGrid = () => {
         window.cadGridLines.push(line);
     };
 
-    // 畝方向に平行な線（間隔は横断方向）
-    for (let offset = -half; offset <= half + 0.001; offset += step) {
-        const major = Math.abs(Math.round(offset / cell) * cell - offset) < 0.01
-            && Math.abs(Math.round(offset / cell)) % 5 === 0;
-        const oPt = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle + 90 : angle - 90, { units: 'meters' });
-        const a = turf.destination(oPt, half, angle, { units: 'meters' }).geometry.coordinates;
-        const b = turf.destination(oPt, half, angle + 180, { units: 'meters' }).geometry.coordinates;
-        makeLine(a, b, major);
+    // ★セル角と同じ UV→緯度経度変換で線を引く（ズレ防止）
+    for (let i = -halfCells; i <= halfCells; i++) {
+        const v = i * cell;
+        const a = window.cadUvToLatLng_(-half, v, frame);
+        const b = window.cadUvToLatLng_(half, v, frame);
+        makeLine(a, b, i % 5 === 0);
     }
-    // 畝方向に垂直な線
-    for (let offset = -half; offset <= half + 0.001; offset += step) {
-        const major = Math.abs(Math.round(offset / cell) * cell - offset) < 0.01
-            && Math.abs(Math.round(offset / cell)) % 5 === 0;
-        const oPt = turf.destination(centerPt, Math.abs(offset), offset >= 0 ? angle : angle + 180, { units: 'meters' });
-        const a = turf.destination(oPt, half, angle + 90, { units: 'meters' }).geometry.coordinates;
-        const b = turf.destination(oPt, half, angle - 90, { units: 'meters' }).geometry.coordinates;
-        makeLine(a, b, major);
+    for (let i = -halfCells; i <= halfCells; i++) {
+        const u = i * cell;
+        const a = window.cadUvToLatLng_(u, -half, frame);
+        const b = window.cadUvToLatLng_(u, half, frame);
+        makeLine(a, b, i % 5 === 0);
     }
 
     window.cadSvgNeedsRebuild = true;
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    if (typeof window.cadRefreshCellFillsSvg_ === 'function') window.cadRefreshCellFillsSvg_();
 };
 
 window.cadUpdateSnapGridUi_ = () => {
@@ -3536,9 +3634,9 @@ window.cadUpdateSnapGridUi_ = () => {
         if (!window.cadSnapGridOn) {
             hint.textContent = 'OFF時は自由配置。ONにするとセルを塗るように畝を置けます';
         } else if (window.cadCellEraseMode) {
-            hint.textContent = `消しゴム・間隔 ${cm}cm — 塗ったセルをタップ／ドラッグで消去`;
+            hint.textContent = `消しゴム・間隔 ${cm}cm — 塗ったセルを消す（隣り合う塊は再結合）`;
         } else {
-            hint.textContent = `セル塗り・間隔 ${cm}cm — 四角／丸畝を選んで枠をタップ／ドラッグで塗る`;
+            hint.textContent = `セル塗り・間隔 ${cm}cm — 隣り合うセルは1本の畝に結合。「選んだ線に合わせる」で辺に揃います`;
         }
     }
 };
@@ -3591,6 +3689,44 @@ window.cadOnSnapGridCmChange = () => {
     }, 250);
 };
 
+/** 平面メートルUV（グリッド線・セルで共通）。bearing 0=北, 90=東 */
+window.cadLatLngToUvMeters_ = (lat, lng, frame) => {
+    const oLat = frame.origin.lat;
+    const oLng = frame.origin.lng;
+    const lat0 = oLat * Math.PI / 180;
+    const mPerDegLat = 111320;
+    const mPerDegLng = 111320 * Math.cos(lat0);
+    const east = (lng - oLng) * mPerDegLng;
+    const north = (lat - oLat) * mPerDegLat;
+    const rad = (Number(frame.angle) || 0) * Math.PI / 180;
+    const sinA = Math.sin(rad);
+    const cosA = Math.cos(rad);
+    // u: 畝方向(angle), v: 横断(angle+90)
+    const u = east * sinA + north * cosA;
+    const v = east * cosA - north * sinA;
+    return { u, v };
+};
+
+window.cadUvToLatLng_ = (u, v, frame) => {
+    const oLat = frame.origin.lat;
+    const oLng = frame.origin.lng;
+    const lat0 = oLat * Math.PI / 180;
+    const mPerDegLat = 111320;
+    const mPerDegLng = Math.max(1e-9, 111320 * Math.cos(lat0));
+    const rad = (Number(frame.angle) || 0) * Math.PI / 180;
+    const sinA = Math.sin(rad);
+    const cosA = Math.cos(rad);
+    const east = u * sinA + v * cosA;
+    const north = u * cosA - v * sinA;
+    const lat = oLat + north / mPerDegLat;
+    const lng = oLng + east / mPerDegLng;
+    return {
+        lat: lat,
+        lng: lng,
+        point: (typeof turf !== 'undefined') ? turf.point([lng, lat]) : null
+    };
+};
+
 /** グリッド基準（原点・角度・セルサイズ・uv）を取得 */
 window.cadGetSnapGridFrame_ = (latLng) => {
     if (typeof turf === 'undefined') return null;
@@ -3623,27 +3759,12 @@ window.cadGetSnapGridFrame_ = (latLng) => {
         const lat = typeof latLng.lat === 'function' ? latLng.lat() : parseFloat(latLng.lat);
         const lng = typeof latLng.lng === 'function' ? latLng.lng() : parseFloat(latLng.lng);
         if (isFinite(lat) && isFinite(lng)) {
-            const pt = turf.point([lng, lat]);
-            const dist = turf.distance(originPt, pt, { units: 'meters' });
-            const bearing = turf.bearing(originPt, pt);
-            const rad = (bearing - angle) * Math.PI / 180;
-            u = dist * Math.cos(rad);
-            v = dist * Math.sin(rad);
+            const uv = window.cadLatLngToUvMeters_(lat, lng, { origin, angle, cell });
+            u = uv.u;
+            v = uv.v;
         }
     }
     return { origin, originPt, angle, cell, u, v };
-};
-
-window.cadUvToLatLng_ = (u, v, frame) => {
-    let snapped = frame.originPt;
-    if (Math.abs(u) > 1e-9) {
-        snapped = turf.destination(snapped, Math.abs(u), u >= 0 ? frame.angle : frame.angle + 180, { units: 'meters' });
-    }
-    if (Math.abs(v) > 1e-9) {
-        snapped = turf.destination(snapped, Math.abs(v), v >= 0 ? frame.angle + 90 : frame.angle - 90, { units: 'meters' });
-    }
-    const c = snapped.geometry.coordinates;
-    return { lat: c[1], lng: c[0], point: snapped };
 };
 
 /**
@@ -3721,7 +3842,8 @@ window.cadUpdateCellHoverSvg = (latLng) => {
         const s = window.latLngToScreenPixel(c[1], c[0]);
         return s.x + ',' + s.y;
     }).join(' ');
-    const filled = !!(window.cadPaintedCells && window.cadPaintedCells[window.cadCellKey_(idx.iu, idx.iv)]);
+    const key = window.cadCellKey_(idx.iu, idx.iv);
+    const filled = !!(window.cadPaintedCellSet && window.cadPaintedCellSet.has(key));
     const erase = !!window.cadCellEraseMode;
     let fill = erase ? 'rgba(244,67,54,0.28)' : 'rgba(139,195,74,0.35)';
     let stroke = erase ? '#EF5350' : '#AED581';
@@ -3738,52 +3860,113 @@ window.cadSetCellEraseMode = (on) => {
     const msgEl = document.getElementById('cadPinModeMsg');
     if (msgEl && window.cadSnapGridOn) {
         msgEl.innerText = window.cadCellEraseMode
-            ? '【セル消しゴム】塗ったセルをタップ／ドラッグで消します'
-            : '【セル塗り】枠をタップ／ドラッグで畝を塗ります';
+            ? '【セル消しゴム】塗ったセルを消します（塊は自動で再結合）'
+            : '【セル塗り】隣り合うセルは1本の畝になります';
         msgEl.style.color = window.cadCellEraseMode ? '#EF5350' : '#8BC34A';
     }
 };
 
-/**
- * セル枠を畝として塗る／消す
- * @returns {'painted'|'erased'|'exists'|'outside'|'fail'|null}
- */
-window.cadPaintGridCell = (iu, iv, opts) => {
-    opts = opts || {};
-    if (!window.cadTargetId || typeof turf === 'undefined') return null;
-    if (!window.cadPaintedCells) window.cadPaintedCells = {};
+window.cadSyncPaintedCellsCompat_ = () => {
+    window.cadPaintedCells = {};
+    if (!window.cadPaintedCellSet) return;
+    window.cadPaintedCellSet.forEach((key) => { window.cadPaintedCells[key] = true; });
+};
 
-    const frame = opts.frame || window.cadGetSnapGridFrame_(null);
-    if (!frame) return null;
-    const key = window.cadCellKey_(iu, iv);
-    const erase = opts.erase != null ? !!opts.erase : !!window.cadCellEraseMode;
-    const type = opts.type || ((window.cadPinMode === 'custom_circle') ? 'circle' : 'rect');
+/** 塗ったセルのプレビュー塗り（ドラッグ中） */
+window.cadRefreshCellFillsSvg_ = () => {
+    const svg = document.getElementById('cadSvgOverlay');
+    if (!svg) return;
+    let g = svg.querySelector('#cadSvgCellFills');
+    if (!g) {
+        g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('id', 'cadSvgCellFills');
+        g.setAttribute('style', 'pointer-events:none;');
+        const hover = svg.querySelector('#cadSvgCellHover');
+        if (hover && hover.parentNode) hover.parentNode.insertBefore(g, hover);
+        else svg.appendChild(g);
+    }
+    if (!window.cadSnapGridOn || !window.cadPaintedCellSet || !window.cadPaintedCellSet.size) {
+        g.innerHTML = '';
+        return;
+    }
+    const frame = window.cadGetSnapGridFrame_(null);
+    if (!frame) { g.innerHTML = ''; return; }
+    let html = '';
+    window.cadPaintedCellSet.forEach((key) => {
+        const parts = key.split(',');
+        const iu = parseInt(parts[0], 10);
+        const iv = parseInt(parts[1], 10);
+        if (isNaN(iu) || isNaN(iv)) return;
+        const ring = window.cadGetGridCellRing_(iu, iv, frame);
+        const pts = ring.map(c => {
+            const s = window.latLngToScreenPixel(c[1], c[0]);
+            return s.x + ',' + s.y;
+        }).join(' ');
+        html += `<polygon points="${pts}" fill="rgba(139,195,74,0.45)" stroke="#7CB342" stroke-width="1.2" stroke-opacity="0.9"></polygon>`;
+    });
+    g.innerHTML = html;
+};
 
-    // 消しゴム
-    if (erase) {
-        const uneIndex = window.cadPaintedCells[key];
-        if (!uneIndex) return null;
-        const list = window.cadCustomShapes || [];
-        const idx = list.findIndex(p => p && p.uneIndex === uneIndex);
-        if (idx >= 0) {
-            try { list[idx].setMap(null); } catch (e) {}
-            list.splice(idx, 1);
+/** 隣接セルを連結成分に分割 */
+window.cadGetPaintedCellComponents_ = () => {
+    const set = window.cadPaintedCellSet || new Set();
+    const remaining = new Set(set);
+    const comps = [];
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    while (remaining.size) {
+        const start = remaining.values().next().value;
+        remaining.delete(start);
+        const queue = [start];
+        const comp = [start];
+        while (queue.length) {
+            const cur = queue.pop();
+            const parts = cur.split(',');
+            const iu = parseInt(parts[0], 10);
+            const iv = parseInt(parts[1], 10);
+            for (let d = 0; d < dirs.length; d++) {
+                const nk = window.cadCellKey_(iu + dirs[d][0], iv + dirs[d][1]);
+                if (remaining.has(nk)) {
+                    remaining.delete(nk);
+                    queue.push(nk);
+                    comp.push(nk);
+                }
+            }
         }
-        delete window.cadPaintedCells[key];
+        comps.push(comp);
+    }
+    return comps;
+};
+
+/**
+ * 塗ったセル集合から、隣接塊ごとに1畝を生成し直す
+ */
+window.cadSyncMergedCellRidges_ = (opts) => {
+    opts = opts || {};
+    if (!window.cadTargetId || typeof turf === 'undefined') return;
+    if (!window.cadPaintedCellSet) window.cadPaintedCellSet = new Set();
+    window.cadSyncPaintedCellsCompat_();
+
+    // セル塗り由来の畝だけ消す（通常の自由畝は残す）
+    const kept = [];
+    (window.cadCustomShapes || []).forEach((poly) => {
+        if (poly && poly._cadFromCellPaint) {
+            try { poly.setMap(null); } catch (e) {}
+        } else if (poly) {
+            kept.push(poly);
+        }
+    });
+    window.cadCustomShapes = kept;
+
+    const frame = window.cadGetSnapGridFrame_(null);
+    if (!frame || !window.cadPaintedCellSet.size) {
         window.cadSvgNeedsRebuild = true;
         if (!opts.silent && typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
-        return 'erased';
-    }
-
-    // 既に塗済み
-    if (window.cadPaintedCells[key]) {
-        const uneIndex = window.cadPaintedCells[key];
-        if ((window.cadCustomShapes || []).some(p => p && p.uneIndex === uneIndex)) return 'exists';
-        delete window.cadPaintedCells[key];
+        window.cadRefreshCellFillsSvg_();
+        return;
     }
 
     const p = loadedPolygons[window.cadTargetId];
-    if (!p || !p.coords || p.coords.length < 3) return 'fail';
+    if (!p || !p.coords || p.coords.length < 3) return;
     let fieldCoords = p.coords.map(pt => [
         typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
         typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
@@ -3793,66 +3976,130 @@ window.cadPaintGridCell = (iu, iv, opts) => {
         fieldCoords.push([fieldCoords[0][0], fieldCoords[0][1]]);
     }
     const tPoly = turf.polygon([fieldCoords]);
-    const ring = window.cadGetGridCellRing_(iu, iv, frame);
-    let shapePoly = null;
-    try {
-        if (type === 'circle') {
-            const mid = window.cadUvToLatLng_((iu + 0.5) * frame.cell, (iv + 0.5) * frame.cell, frame);
-            const radiusKm = Math.max(frame.cell / 2, 0.15) / 1000;
-            shapePoly = turf.circle(turf.point([mid.lng, mid.lat]), radiusKm, { steps: 20, units: 'kilometers' });
-        } else {
-            shapePoly = turf.polygon([ring]);
-        }
-    } catch (e) {
-        return 'fail';
-    }
+    const type = opts.type || ((window.cadPinMode === 'custom_circle') ? 'circle' : 'rect');
+    const groupName = type === 'circle' ? '丸' : '四角';
+    const comps = window.cadGetPaintedCellComponents_();
 
-    // セル中心が圃場外ならスキップ（ドラッグ時は静かに）
+    comps.forEach((comp, cIdx) => {
+        const cellPolys = [];
+        comp.forEach((key) => {
+            const parts = key.split(',');
+            const iu = parseInt(parts[0], 10);
+            const iv = parseInt(parts[1], 10);
+            try {
+                if (type === 'circle') {
+                    const mid = window.cadUvToLatLng_((iu + 0.5) * frame.cell, (iv + 0.5) * frame.cell, frame);
+                    const radiusKm = Math.max(frame.cell / 2, 0.15) / 1000;
+                    cellPolys.push(turf.circle(turf.point([mid.lng, mid.lat]), radiusKm, { steps: 16, units: 'kilometers' }));
+                } else {
+                    cellPolys.push(turf.polygon([window.cadGetGridCellRing_(iu, iv, frame)]));
+                }
+            } catch (e) {}
+        });
+        if (!cellPolys.length) return;
+
+        let merged = cellPolys[0];
+        for (let i = 1; i < cellPolys.length; i++) {
+            try {
+                const u = turf.union(merged, cellPolys[i]);
+                if (u) merged = u;
+            } catch (e) {}
+        }
+
+        let finalPoly = null;
+        try {
+            finalPoly = turf.intersect(tPoly, merged);
+        } catch (e) {
+            finalPoly = merged;
+        }
+        if (!finalPoly) return;
+
+        let flattened;
+        try {
+            flattened = turf.flatten(finalPoly);
+        } catch (e) {
+            flattened = { features: [finalPoly] };
+        }
+
+        (flattened.features || []).forEach((feature, fIdx) => {
+            if (!feature || !feature.geometry || feature.geometry.type !== 'Polygon') return;
+            const coordinates = feature.geometry.coordinates;
+            if (!coordinates || !coordinates.length) return;
+            const paths = coordinates.map(r => r.map(c => ({ lat: c[1], lng: c[0] })));
+            if (!paths[0] || paths[0].length < 3) return;
+            const gPoly = window.cadCreateRidgePolygon(paths, {
+                fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(groupName) : '#8BC34A'
+            });
+            gPoly.uneIndex = 'custom_cellmerge_' + cIdx + '_' + Date.now() + '_' + fIdx;
+            gPoly.uneGroup = groupName;
+            gPoly._cadFromCellPaint = true;
+            gPoly._cadCellKeys = comp.slice();
+            window.bindShapeHistoryEvents(gPoly);
+            window.cadCustomShapes.push(gPoly);
+        });
+    });
+
+    window.cadSvgNeedsRebuild = true;
+    if (!opts.silent && typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    // 結合後は実畝が見えるのでプレビュー塗りは消す（ドラッグ中のみプレビュー）
+    if (!window.cadCellPainting) {
+        const svg = document.getElementById('cadSvgOverlay');
+        const g = svg && svg.querySelector('#cadSvgCellFills');
+        if (g) g.innerHTML = '';
+    } else {
+        window.cadRefreshCellFillsSvg_();
+    }
+};
+
+/**
+ * セルを塗る／消す（隣接セルはストローク終了時に1畝へ結合）
+ * @returns {'painted'|'erased'|'exists'|'outside'|'fail'|null}
+ */
+window.cadPaintGridCell = (iu, iv, opts) => {
+    opts = opts || {};
+    if (!window.cadTargetId || typeof turf === 'undefined') return null;
+    if (!window.cadPaintedCellSet) window.cadPaintedCellSet = new Set();
+
+    const frame = opts.frame || window.cadGetSnapGridFrame_(null);
+    if (!frame) return null;
+    const key = window.cadCellKey_(iu, iv);
+    const erase = opts.erase != null ? !!opts.erase : !!window.cadCellEraseMode;
+
+    // 圃場外セルは塗らない
     try {
         const mid = window.cadUvToLatLng_((iu + 0.5) * frame.cell, (iv + 0.5) * frame.cell, frame);
-        if (!turf.booleanPointInPolygon(turf.point([mid.lng, mid.lat]), tPoly)) {
+        const p = loadedPolygons[window.cadTargetId];
+        let fieldCoords = p.coords.map(pt => [
+            typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
+            typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat)
+        ]);
+        if (fieldCoords[0][0] !== fieldCoords[fieldCoords.length - 1][0]
+            || fieldCoords[0][1] !== fieldCoords[fieldCoords.length - 1][1]) {
+            fieldCoords.push([fieldCoords[0][0], fieldCoords[0][1]]);
+        }
+        if (!turf.booleanPointInPolygon(turf.point([mid.lng, mid.lat]), turf.polygon([fieldCoords]))) {
             return 'outside';
         }
     } catch (e) {}
 
-    let finalPoly = null;
-    try {
-        finalPoly = turf.intersect(tPoly, shapePoly);
-    } catch (e) {
-        finalPoly = shapePoly;
-    }
-    if (!finalPoly) return 'outside';
-
-    let flattened;
-    try {
-        flattened = turf.flatten(finalPoly);
-    } catch (e) {
-        flattened = { features: [finalPoly] };
+    if (erase) {
+        if (!window.cadPaintedCellSet.has(key)) return null;
+        window.cadPaintedCellSet.delete(key);
+        window.cadSyncPaintedCellsCompat_();
+        window.cadRefreshCellFillsSvg_();
+        if (!opts.deferSync && !window.cadCellPainting) {
+            window.cadSyncMergedCellRidges_({ silent: !!opts.silent, type: opts.type });
+        }
+        return 'erased';
     }
 
-    const groupName = type === 'circle' ? '丸' : '四角';
-    let added = null;
-    (flattened.features || []).forEach((feature, fIdx) => {
-        if (!feature || !feature.geometry || feature.geometry.type !== 'Polygon') return;
-        const coordinates = feature.geometry.coordinates;
-        if (!coordinates || !coordinates.length) return;
-        const paths = coordinates.map(r => r.map(c => ({ lat: c[1], lng: c[0] })));
-        if (!paths[0] || paths[0].length < 3) return;
-        const gPoly = window.cadCreateRidgePolygon(paths, {
-            fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(groupName) : '#8BC34A'
-        });
-        gPoly.uneIndex = 'custom_cell_' + iu + '_' + iv + '_' + Date.now() + '_' + fIdx;
-        gPoly.uneGroup = groupName;
-        gPoly._cadCellKey = key;
-        window.bindShapeHistoryEvents(gPoly);
-        window.cadCustomShapes.push(gPoly);
-        if (!added) added = gPoly.uneIndex;
-    });
-
-    if (!added) return 'fail';
-    window.cadPaintedCells[key] = added;
-    window.cadSvgNeedsRebuild = true;
-    if (!opts.silent && typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
+    if (window.cadPaintedCellSet.has(key)) return 'exists';
+    window.cadPaintedCellSet.add(key);
+    window.cadSyncPaintedCellsCompat_();
+    window.cadRefreshCellFillsSvg_();
+    if (!opts.deferSync && !window.cadCellPainting) {
+        window.cadSyncMergedCellRidges_({ silent: !!opts.silent, type: opts.type });
+    }
     return 'painted';
 };
 
@@ -3860,19 +4107,21 @@ window.cadPaintGridCellAtLatLng = (latLng, opts) => {
     opts = opts || {};
     const idx = window.cadLatLngToCellIndex(latLng);
     if (!idx) return null;
-    return window.cadPaintGridCell(idx.iu, idx.iv, Object.assign({}, opts, { frame: idx.frame }));
+    // ドラッグ中は結合を遅延（離したときにまとめて1畝化）
+    const defer = !!window.cadCellPainting || !!opts.deferSync;
+    return window.cadPaintGridCell(idx.iu, idx.iv, Object.assign({}, opts, {
+        frame: idx.frame,
+        deferSync: defer
+    }));
 };
 
 window.cadFinishCellPaintStroke_ = () => {
-    if (!window.cadCellPaintDirty) {
-        window.cadCellPainting = false;
-        return;
-    }
-    window.cadCellPaintDirty = false;
     window.cadCellPainting = false;
+    if (!window.cadCellPaintDirty) return;
+    window.cadCellPaintDirty = false;
+    const type = (window.cadPinMode === 'custom_circle') ? 'circle' : 'rect';
+    window.cadSyncMergedCellRidges_({ type: type });
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
-    window.cadSvgNeedsRebuild = true;
-    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 };
 
@@ -3917,6 +4166,7 @@ window.cadClearLines = (skipHistory = false) => {
     window.cadDrainageMapPolygons.forEach(pl => pl.setMap(null)); window.cadDrainageMapPolygons = [];
     window.cadDrainageLines = [];
     window.cadCustomShapes.forEach(pl => pl.setMap(null)); window.cadCustomShapes = [];
+    window.cadPaintedCellSet = new Set();
     window.cadPaintedCells = {};
     if (typeof window.cadClearSnapGridLines_ === 'function') window.cadClearSnapGridLines_();
     else if (window.cadGridLines) { window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; }
@@ -3943,10 +4193,12 @@ window.cadClearRidgesOnly = (skipHistory = false) => {
         window.cadCustomShapes.forEach(pl => pl.setMap(null));
         window.cadCustomShapes = [];
     }
+    window.cadPaintedCellSet = new Set();
     window.cadPaintedCells = {};
     // セル配置グリッドは消さない（塗り直し用に残す）
     if (window.cadSnapGridOn) {
         if (typeof window.cadRebuildSnapGrid === 'function') window.cadRebuildSnapGrid();
+        if (typeof window.cadRefreshCellFillsSvg_ === 'function') window.cadRefreshCellFillsSvg_();
     } else if (window.cadGridLines) {
         window.cadGridLines.forEach(l => l.setMap(null));
         window.cadGridLines = [];
