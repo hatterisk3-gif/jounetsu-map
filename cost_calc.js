@@ -347,6 +347,7 @@
 
   window.refreshCpCostSummaryBar_ = function () {
     const bar = document.getElementById('cpCostSummaryBar');
+    const empty = document.getElementById('cpCostSummaryEmpty');
     if (!bar) return;
     const profile = window._cpCostProfile;
     const plans = (typeof cpPlans !== 'undefined' ? cpPlans : []).filter(p =>
@@ -354,9 +355,11 @@
     );
     if (!profile || !profile.cropName) {
       bar.style.display = 'none';
+      if (empty) empty.style.display = 'block';
       return;
     }
     bar.style.display = 'block';
+    if (empty) empty.style.display = 'none';
     let cost = 0, rev = 0, hasRev = false, area = 0, yieldSum = 0;
     plans.forEach(p => {
       const eco = window.computeCropEconomicsLocal_(profile, window.getCpPlanCostInputs_(p));

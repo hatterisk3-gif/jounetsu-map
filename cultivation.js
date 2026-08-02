@@ -2371,11 +2371,10 @@ function renderCpPlanRow(plan) {
               <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" ${modeArea ? 'disabled' : ''} title="枚数/株数" style="${numInputCss} background:${modeArea ? '#f0f0f0' : '#fff'};">
               <span id="unitTraysInput_${plan.id}" style="flex-shrink:0;">${qtyWord}</span>
             </label>
-            <div id="cpSeedProcure_${plan.id}" style="font-size:9px; color:#bf360c; font-weight:bold; line-height:1.25; min-height:11px;"></div>
-            <div id="cpFinance_${plan.id}" style="font-size:9px; line-height:1.3; min-height:11px; font-weight:bold;"></div>
         </div>
-        <div id="cpSemiHint_${plan.id}" style="display:none; margin-top:1px; font-size:9px; font-weight:bold; line-height:1.15;"></div>
         <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:3px; font-size:10px; flex-direction:column; gap:2px; background:#fff; padding:3px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
+          <div id="cpSeedProcure_${plan.id}" style="font-size:9px; color:#bf360c; font-weight:bold; line-height:1.25;"></div>
+          <div id="cpFinance_${plan.id}" style="font-size:9px; line-height:1.3; font-weight:bold;"></div>
           <div id="fieldSelectContainer_${plan.id}" style="width:100%; font-size:10px; display:flex; flex-direction:column; gap:2px;">
              <button type="button" onclick="openFieldSelectMap('${plan.id}')" style="width:100%; height:20px; font-size:10px; padding:0; background:#2196F3; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold;">🗺️ 圃場選択 (地図)</button>
              <div style="display:flex; justify-content:space-between; font-weight:bold; color:#e65100; margin-top:1px; font-size:9px;">
@@ -2474,6 +2473,7 @@ function renderCpPlanRow(plan) {
     }
     
     // 半自動ヒント（カードごと）を反映
+    syncCpSemiAutoStepForPlan(plan.id);
     if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint();
     
     // 左右の高さを同期
@@ -2623,6 +2623,45 @@ function getSemiAutoTool(step) {
     return 'harvesting';
 }
 
+/** 塗済みセル（または plan.tasks）から半自動の次工程を決める */
+function planHasPaintedTask(plan, taskType) {
+    if (!plan || !taskType) return false;
+    const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
+    if (tr) {
+        return !!tr.querySelector(`td[data-task="${taskType}"]`);
+    }
+    const fromTasks = plan.tasks && Array.isArray(plan.tasks[taskType]) ? plan.tasks[taskType] : null;
+    if (fromTasks && fromTasks.length > 0) return true;
+    const fromFlat = Array.isArray(plan[taskType]) ? plan[taskType] : null;
+    return !!(fromFlat && fromFlat.length > 0);
+}
+
+function inferCpSemiAutoStepFromPlan(plan) {
+    // 欠ける工程を播種→定植→収穫の順で埋める
+    // 例: 播種のみ→定植 / 播種+定植→収穫 / 播種+収穫(定植なし)→定植 / 定植+収穫(播種なし)→播種
+    if (!planHasPaintedTask(plan, 'sowing')) return 0;
+    if (!planHasPaintedTask(plan, 'planting')) return 1;
+    return 2;
+}
+
+function syncCpSemiAutoStepForPlan(planId) {
+    const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p && p.id === planId);
+    if (!plan) return;
+    cpSemiAutoSteps[planId] = inferCpSemiAutoStepFromPlan(plan);
+}
+
+function syncCpSemiAutoStepsFromPlans() {
+    const next = {};
+    (typeof cpPlans !== 'undefined' ? cpPlans : []).forEach(plan => {
+        if (!plan || !plan.id) return;
+        next[plan.id] = inferCpSemiAutoStepFromPlan(plan);
+    });
+    cpSemiAutoSteps = next;
+    cpSemiAutoLastPaint = {};
+    if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint();
+}
+window.syncCpSemiAutoStepsFromPlans = syncCpSemiAutoStepsFromPlans;
+
 function clearCpCellPaint(td) {
     const div = td.querySelector('div');
     td.dataset.task = '';
@@ -2647,31 +2686,19 @@ function updateCpSemiAutoHint(planId) {
     const isSemi = checked && checked.value === 'semiauto';
     if (planId != null) cpSemiAutoActivePlanId = planId;
 
-    // 品種カードごとに次工程を表示（順序はカード独立）
+    // 操作中カードの枠だけ強調（「次:」文言はツールバー側のみ）
     cpPlans.forEach(plan => {
-        const el = document.getElementById('cpSemiHint_' + plan.id);
         const card = document.getElementById('cpLeftCard_' + plan.id);
-        if (!el) return;
+        if (!card) return;
         if (isSemi) {
-            const step = cpSemiAutoSteps[plan.id] || 0;
-            const tool = getSemiAutoTool(step);
-            el.style.display = '';
-            el.textContent = '次: ' + SEMI_AUTO_LABELS[tool];
-            el.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
-            if (card) {
-                const active = String(plan.id) === String(cpSemiAutoActivePlanId);
-                card.style.outline = active ? '2px solid #1976D2' : '';
-                card.style.outlineOffset = active ? '-2px' : '';
-                card.style.background = active ? '#bbdefb' : '#e3f2fd';
-            }
+            const active = String(plan.id) === String(cpSemiAutoActivePlanId);
+            card.style.outline = active ? '2px solid #1976D2' : '';
+            card.style.outlineOffset = active ? '-2px' : '';
+            card.style.background = active ? '#bbdefb' : '#e3f2fd';
         } else {
-            el.style.display = 'none';
-            el.textContent = '';
-            if (card) {
-                card.style.outline = '';
-                card.style.outlineOffset = '';
-                card.style.background = '#e3f2fd';
-            }
+            card.style.outline = '';
+            card.style.outlineOffset = '';
+            card.style.background = '#e3f2fd';
         }
     });
 
@@ -2682,6 +2709,10 @@ function updateCpSemiAutoHint(planId) {
             hint.style.display = '';
             hint.textContent = '操作中 → 次: ' + SEMI_AUTO_LABELS[tool];
             hint.style.color = TOOL_COLORS[tool] === '#8D6E63' ? '#6D4C41' : TOOL_COLORS[tool];
+        } else if (isSemi) {
+            hint.style.display = '';
+            hint.textContent = '品種枠をタップして開始';
+            hint.style.color = '#1565C0';
         } else {
             hint.style.display = 'none';
             hint.textContent = '';
@@ -2716,10 +2747,9 @@ function updateCrSemiAutoHint() {
 function onCpToolChange() {
     const checked = document.querySelector('input[name="cpTool"]:checked');
     if (checked && checked.value === 'semiauto') {
-        // 半自動を選び直したら順序を播種から
-        cpSemiAutoSteps = {};
-        cpSemiAutoActivePlanId = null;
-        cpSemiAutoLastPaint = {};
+        // 塗済み状態から次工程を復元（播種から強制リセットしない）
+        syncCpSemiAutoStepsFromPlans();
+        return;
     }
     updateCpSemiAutoHint();
 }
@@ -2789,18 +2819,18 @@ function toggleCpCell(td, planId) {
         // 直前に塗った同じマスを再クリック → 消して順序を戻す
         if (last && isSameSemiAutoCell(last, cellKey) && td.dataset.task === last.tool) {
             clearCpCellPaint(td);
-            cpSemiAutoSteps[planId] = Math.max(0, last.stepBefore);
             delete cpSemiAutoLastPaint[planId];
+            syncCpSemiAutoStepForPlan(planId);
             updateCpCellsText(planId);
             updateCpSemiAutoHint(planId);
             return;
         }
 
-        // 今の順序と同じ種類が既にあるセル → 消して順序を1つ戻す
+        // 今の順序と同じ種類が既にあるセル → 消して順序を塗り状態から再判定
         if (td.dataset.task === tool) {
             clearCpCellPaint(td);
-            cpSemiAutoSteps[planId] = Math.max(0, step - 1);
             if (last && isSameSemiAutoCell(last, cellKey)) delete cpSemiAutoLastPaint[planId];
+            syncCpSemiAutoStepForPlan(planId);
             updateCpCellsText(planId);
             updateCpSemiAutoHint(planId);
             return;
@@ -2820,14 +2850,16 @@ function toggleCpCell(td, planId) {
             tool: tool,
             stepBefore: step
         };
-        cpSemiAutoSteps[planId] = step + 1;
+        syncCpSemiAutoStepForPlan(planId);
         updateCpCellsText(planId);
         updateCpSemiAutoHint(planId);
         return;
     }
     
     applyPaintTool(td, tool);
+    syncCpSemiAutoStepForPlan(planId);
     updateCpCellsText(planId);
+    if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint(planId);
 }
 
 function updateCpCellsText(planId, forceRatioRebuild) {
@@ -3751,6 +3783,9 @@ function loadCultivationPlanDraft(options) {
         }
     });
 
+    // 塗済みセルから半自動の次工程を復元
+    syncCpSemiAutoStepsFromPlans();
+
     updateCpDraftStatusUI();
     if (!opts.silent) {
         const statusEl = document.getElementById('cpDraftStatus');
@@ -4173,6 +4208,68 @@ if (document.readyState === 'loading') {
 // モーダルHTMLが後から差し込まれる場合にも対応
 setTimeout(initCpStepsAccordion, 500);
 setTimeout(initCpStepsAccordion, 2000);
+
+/** 下部ドックタブ（収穫・作業・原価・保存）。同じタブ再クリックで閉じる */
+const CP_BOTTOM_TAB_KEYS = ['harvest', 'work', 'cost', 'save'];
+
+function openCpBottomTab(key) {
+    const k = String(key || '').trim();
+    const panelsWrap = document.getElementById('cpBottomPanels');
+    let anyOpen = false;
+
+    CP_BOTTOM_TAB_KEYS.forEach(id => {
+        const panel = document.getElementById('cpBottomPanel' + id.charAt(0).toUpperCase() + id.slice(1));
+        const tab = document.getElementById('cpBottomTab' + id.charAt(0).toUpperCase() + id.slice(1));
+        const on = id === k;
+        if (on) anyOpen = true;
+        if (panel) {
+            panel.classList.toggle('is-open', on);
+            panel.hidden = !on;
+        }
+        if (tab) {
+            tab.classList.toggle('is-active', on);
+            tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        }
+    });
+    if (panelsWrap) panelsWrap.classList.toggle('has-open', anyOpen);
+
+    if (anyOpen && k === 'harvest' && typeof refreshCpHarvestChart === 'function') {
+        refreshCpHarvestChart();
+    }
+    if (anyOpen && k === 'work' && typeof refreshCpWorkSchedulePanel === 'function') {
+        refreshCpWorkSchedulePanel();
+    }
+    if (anyOpen && k === 'cost' && typeof refreshCpCostSummaryBar_ === 'function') {
+        refreshCpCostSummaryBar_();
+    }
+}
+window.openCpBottomTab = openCpBottomTab;
+
+function initCpBottomDock() {
+    CP_BOTTOM_TAB_KEYS.forEach(id => {
+        const tabId = 'cpBottomTab' + id.charAt(0).toUpperCase() + id.slice(1);
+        const tab = document.getElementById(tabId);
+        if (!tab || tab._cpBottomBound) return;
+        tab._cpBottomBound = true;
+        tab.addEventListener('click', function(e) {
+            e.preventDefault();
+            const panel = document.getElementById('cpBottomPanel' + id.charAt(0).toUpperCase() + id.slice(1));
+            if (panel && panel.classList.contains('is-open')) openCpBottomTab('');
+            else openCpBottomTab(id);
+        });
+        tab.removeAttribute('onclick');
+    });
+    // 初期は閉じてペイント領域を広く
+    openCpBottomTab('');
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCpBottomDock);
+} else {
+    initCpBottomDock();
+}
+setTimeout(initCpBottomDock, 500);
+setTimeout(initCpBottomDock, 2000);
 
 // --- CULTIVATION MENU ---
 function toggleCultivationMenu() {
@@ -5755,6 +5852,9 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
             });
             if (typeof syncAllRowHeights === 'function') {
                 setTimeout(() => syncAllRowHeights(), 50);
+            }
+            if (typeof syncCpSemiAutoStepsFromPlans === 'function') {
+                syncCpSemiAutoStepsFromPlans();
             }
             if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
         } else {

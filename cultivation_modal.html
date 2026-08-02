@@ -266,25 +266,75 @@
             .cp-step-panel.is-open { animation: none; opacity: 1; transform: none; }
             .cp-step-tab { transition: none; }
           }
-        </style>
-        <div id="cpCostSummaryBar" style="display:none; margin-bottom:8px; padding:8px 10px; background:#fff3e0; border:1px solid #ffcc80; border-radius:6px;">
-          <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; justify-content:space-between;">
-            <div style="font-size:12px; font-weight:bold; color:#e65100;">💰 原価・売上予測</div>
-            <label style="font-size:11px; color:#555; display:flex; align-items:center; gap:4px;">
-              出荷単価
-              <input type="number" id="cpCostSellPriceOverride" min="0" step="any" placeholder="円" oninput="onCpCostSellPriceOverride()" style="width:72px; padding:3px 6px; border:1px solid #ffb74d; border-radius:4px; font-size:12px;">
-              <span style="color:#888;">円</span>
-            </label>
-          </div>
-          <div style="display:flex; flex-wrap:wrap; gap:12px 18px; margin-top:6px; font-size:13px; align-items:baseline;">
-            <span>原価合計 <b id="cpCostSumCost" style="color:#e65100;">—</b></span>
-            <span>売上予測 <b id="cpCostSumRevenue" style="color:#2e7d32;">—</b></span>
-            <span>利益 <b id="cpCostSumProfit" style="color:#1565c0;">—</b></span>
-          </div>
-          <div id="cpCostSumMeta" style="font-size:10px; color:#888; margin-top:4px;"></div>
-        </div>
 
-        <div style="margin-bottom: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px; border: 1px solid #ddd; display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap;">
+          /* 下部ドック: 収穫・作業・原価・保存（初期閉でペイント領域を確保） */
+          #cpBottomDock {
+            flex-shrink: 0;
+            margin-top: 6px;
+            border-top: 1px solid #e0e0e0;
+            background: #fff;
+          }
+          .cp-bottom-tabs {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+            padding: 4px 0 0;
+          }
+          .cp-bottom-tab {
+            margin: 0;
+            padding: 6px 4px;
+            border-radius: 6px 6px 0 0;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            background: #fafafa;
+            cursor: pointer;
+            text-align: center;
+            font: inherit;
+            color: #555;
+            font-size: 11px;
+            font-weight: bold;
+            line-height: 1.2;
+            transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+          }
+          .cp-bottom-tab:hover { background: #f0f0f0; }
+          .cp-bottom-tab.is-active {
+            background: #fff;
+            color: #1565C0;
+            box-shadow: 0 -2px 0 #1976D2 inset;
+            z-index: 1;
+          }
+          .cp-bottom-tab--harvest.is-active { color: #e65100; box-shadow: 0 -2px 0 #FF9800 inset; }
+          .cp-bottom-tab--work.is-active { color: #2e7d32; box-shadow: 0 -2px 0 #4CAF50 inset; }
+          .cp-bottom-tab--cost.is-active { color: #e65100; box-shadow: 0 -2px 0 #FF9800 inset; }
+          .cp-bottom-tab--save.is-active { color: #EF6C00; box-shadow: 0 -2px 0 #FF9800 inset; }
+          .cp-bottom-panels {
+            display: grid;
+            grid-template-rows: 0fr;
+            transition: grid-template-rows 0.25s ease;
+            border: 1px solid #ddd;
+            border-radius: 0 0 6px 6px;
+            background: #fafafa;
+          }
+          .cp-bottom-panels.has-open { grid-template-rows: 1fr; }
+          .cp-bottom-panels-clip { overflow: hidden; min-height: 0; }
+          .cp-bottom-panel {
+            display: none;
+            padding: 8px 10px;
+            max-height: min(28vh, 220px);
+            overflow: auto;
+            box-sizing: border-box;
+          }
+          .cp-bottom-panel.is-open { display: block; }
+          @media (max-width: 560px) {
+            .cp-bottom-tab { font-size: 10px; padding: 5px 2px; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .cp-bottom-panels { transition: none; }
+            .cp-bottom-tab { transition: none; }
+          }
+        </style>
+
+        <div style="margin-bottom: 6px; padding: 6px 10px; background: #fafafa; border-radius: 4px; border: 1px solid #ddd; display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap; flex-shrink: 0;">
           <span style="font-size: 12px; font-weight: bold; color:#666;">🖌 ペイントツール:</span>
           <label style="cursor: pointer; font-size: 12px; display: flex; align-items: center; gap:4px;">
             <input type="radio" name="cpTool" value="semiauto" checked onchange="onCpToolChange()"> <span style="display:inline-block; width:12px; height:12px; background: linear-gradient(90deg, #8D6E63 0%, #8D6E63 33%, #4CAF50 33%, #4CAF50 66%, #FF9800 66%, #FF9800 100%); border-radius:2px;"></span>半自動
@@ -306,7 +356,7 @@
           <button type="button" onclick="clearCpColumnHighlights()" title="ハイライト選択した半旬列をすべて解除" style="font-size: 11px; padding: 2px 8px; border: 1px solid #FFCA28; background: #FFF8E1; color: #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🧹 列ハイライト解除</button>
         </div>
         
-        <div id="cpTwoColContainer" style="flex: 1; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 100px;">
+        <div id="cpTwoColContainer" style="flex: 1; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 120px;">
           <div id="cpLeftPanel" style="width: 188px; min-width: 188px; overflow-y: auto; border-right: 2px solid #1976D2; background: #f5f5f5; flex-shrink: 0;">
             <style>
               #cpLeftBody input[type=number]::-webkit-outer-spin-button,
@@ -322,41 +372,75 @@
             </table>
           </div>
         </div>
-        
-        <div style="text-align: center; margin-top: 15px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px;">
-          <button type="button" id="btnCpDraftSave" onclick="saveCultivationPlanDraft()" style="padding: 10px 24px; background: #607D8B; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">一時保存</button>
-          <button type="button" id="btnCpDraftLoad" onclick="loadCultivationPlanDraft({ force: true })" style="padding: 10px 16px; background: #fff; color: #455A64; border: 2px solid #607D8B; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: none;">📂 下書きを読込</button>
-          <button type="button" onclick="saveCultivationPlan()" style="padding: 10px 28px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span></button>
-          <div id="cpDraftStatus" style="width: 100%; font-size: 11px; color: #607D8B; margin-top: 2px;"></div>
-        </div>
 
-        <!-- 半旬別収穫量グラフ（開いている計画） -->
-        <div id="cpHarvestChartPanel" style="margin-top: 10px; padding: 8px 10px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
-            <div style="font-size:12px; font-weight:bold; color:#e65100;">
-              📊 収穫量（半旬）
-              <span id="cpHarvestChartCrop" style="font-weight:normal; color:#666;"></span>
-              <span id="cpHarvestChartTotal" style="margin-left:6px; color:#bf360c;"></span>
+        <!-- 下部タブ: 収穫量・作業・原価・保存（閉じてペイント領域を広く） -->
+        <div id="cpBottomDock">
+          <div class="cp-bottom-tabs" role="tablist" aria-label="栽培計画の補助パネル">
+            <button type="button" role="tab" id="cpBottomTabHarvest" class="cp-bottom-tab cp-bottom-tab--harvest" aria-selected="false" aria-controls="cpBottomPanelHarvest" data-bottom="harvest" onclick="openCpBottomTab('harvest')">📊 収穫量</button>
+            <button type="button" role="tab" id="cpBottomTabWork" class="cp-bottom-tab cp-bottom-tab--work" aria-selected="false" aria-controls="cpBottomPanelWork" data-bottom="work" onclick="openCpBottomTab('work')">🛠️ 作業</button>
+            <button type="button" role="tab" id="cpBottomTabCost" class="cp-bottom-tab cp-bottom-tab--cost" aria-selected="false" aria-controls="cpBottomPanelCost" data-bottom="cost" onclick="openCpBottomTab('cost')">💰 原価</button>
+            <button type="button" role="tab" id="cpBottomTabSave" class="cp-bottom-tab cp-bottom-tab--save" aria-selected="false" aria-controls="cpBottomPanelSave" data-bottom="save" onclick="openCpBottomTab('save')">💾 保存</button>
+          </div>
+          <div id="cpBottomPanels" class="cp-bottom-panels">
+            <div class="cp-bottom-panels-clip">
+              <div id="cpBottomPanelHarvest" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabHarvest" hidden>
+                <div id="cpHarvestChartPanel" style="padding:0; background:transparent; border:none;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                    <div style="font-size:12px; font-weight:bold; color:#e65100;">
+                      📊 収穫量（半旬）
+                      <span id="cpHarvestChartCrop" style="font-weight:normal; color:#666;"></span>
+                      <span id="cpHarvestChartTotal" style="margin-left:6px; color:#bf360c;"></span>
+                    </div>
+                    <div id="cpHarvestChartLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555;"></div>
+                  </div>
+                  <div id="cpHarvestChartBars" style="overflow-x:auto; overflow-y:hidden; height:72px; border:1px solid #ffe082; border-radius:4px; background:#fff; padding:4px 2px 0;">
+                    <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">収穫を塗るとここに表示されます</div>
+                  </div>
+                  <div id="cpHarvestChartAxis" style="overflow-x:auto; overflow-y:hidden; height:16px; margin-top:2px;"></div>
+                </div>
+              </div>
+              <div id="cpBottomPanelWork" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabWork" hidden>
+                <div id="cpWorkSchedulePanel" style="padding:0; background:transparent; border:none;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                    <div style="font-size:12px; font-weight:bold; color:#2e7d32;">
+                      🛠️ 定植からの作業発生（半旬）
+                      <span id="cpWorkScheduleCrop" style="font-weight:normal; color:#666;"></span>
+                    </div>
+                    <button type="button" onclick="refreshCpWorkSchedulePanel()" style="font-size:11px; padding:3px 8px; border:1px solid #81c784; background:#fff; color:#2e7d32; border-radius:4px; cursor:pointer; font-weight:bold;">更新</button>
+                  </div>
+                  <div id="cpWorkScheduleHint" style="font-size:11px; color:#666; margin-bottom:6px;">定植を塗ると、品目別作業設定から発生作業が半旬で表示されます</div>
+                  <div id="cpWorkScheduleList" style="max-height:140px; overflow:auto; font-size:12px;"></div>
+                </div>
+              </div>
+              <div id="cpBottomPanelCost" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabCost" hidden>
+                <div id="cpCostSummaryBar" style="display:none; padding:0; background:transparent; border:none;">
+                  <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; justify-content:space-between;">
+                    <div style="font-size:12px; font-weight:bold; color:#e65100;">💰 原価・売上予測</div>
+                    <label style="font-size:11px; color:#555; display:flex; align-items:center; gap:4px;">
+                      出荷単価
+                      <input type="number" id="cpCostSellPriceOverride" min="0" step="any" placeholder="円" oninput="onCpCostSellPriceOverride()" style="width:72px; padding:3px 6px; border:1px solid #ffb74d; border-radius:4px; font-size:12px;">
+                      <span style="color:#888;">円</span>
+                    </label>
+                  </div>
+                  <div style="display:flex; flex-wrap:wrap; gap:12px 18px; margin-top:6px; font-size:13px; align-items:baseline;">
+                    <span>原価合計 <b id="cpCostSumCost" style="color:#e65100;">—</b></span>
+                    <span>売上予測 <b id="cpCostSumRevenue" style="color:#2e7d32;">—</b></span>
+                    <span>利益 <b id="cpCostSumProfit" style="color:#1565c0;">—</b></span>
+                  </div>
+                  <div id="cpCostSumMeta" style="font-size:10px; color:#888; margin-top:4px;"></div>
+                </div>
+                <div id="cpCostSummaryEmpty" style="font-size:11px; color:#888; padding:8px 0;">作物を選ぶと原価・売上予測が表示されます</div>
+              </div>
+              <div id="cpBottomPanelSave" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabSave" hidden>
+                <div style="text-align: center; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px;">
+                  <button type="button" id="btnCpDraftSave" onclick="saveCultivationPlanDraft()" style="padding: 10px 24px; background: #607D8B; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">一時保存</button>
+                  <button type="button" id="btnCpDraftLoad" onclick="loadCultivationPlanDraft({ force: true })" style="padding: 10px 16px; background: #fff; color: #455A64; border: 2px solid #607D8B; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: none;">📂 下書きを読込</button>
+                  <button type="button" onclick="saveCultivationPlan()" style="padding: 10px 28px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span></button>
+                  <div id="cpDraftStatus" style="width: 100%; font-size: 11px; color: #607D8B; margin-top: 2px;"></div>
+                </div>
+              </div>
             </div>
-            <div id="cpHarvestChartLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555;"></div>
           </div>
-          <div id="cpHarvestChartBars" style="overflow-x:auto; overflow-y:hidden; height:72px; border:1px solid #ffe082; border-radius:4px; background:#fff; padding:4px 2px 0;">
-            <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">収穫を塗るとここに表示されます</div>
-          </div>
-          <div id="cpHarvestChartAxis" style="overflow-x:auto; overflow-y:hidden; height:16px; margin-top:2px;"></div>
-        </div>
-
-        <!-- 定植起点の作業予定（品目別作業設定） -->
-        <div id="cpWorkSchedulePanel" style="margin-top: 10px; padding: 8px 10px; background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
-            <div style="font-size:12px; font-weight:bold; color:#2e7d32;">
-              🛠️ 定植からの作業発生（半旬）
-              <span id="cpWorkScheduleCrop" style="font-weight:normal; color:#666;"></span>
-            </div>
-            <button type="button" onclick="refreshCpWorkSchedulePanel()" style="font-size:11px; padding:3px 8px; border:1px solid #81c784; background:#fff; color:#2e7d32; border-radius:4px; cursor:pointer; font-weight:bold;">更新</button>
-          </div>
-          <div id="cpWorkScheduleHint" style="font-size:11px; color:#666; margin-bottom:6px;">定植を塗ると、品目別作業設定から発生作業が半旬で表示されます</div>
-          <div id="cpWorkScheduleList" style="max-height:160px; overflow:auto; font-size:12px;"></div>
         </div>
       </div>
     </div>
