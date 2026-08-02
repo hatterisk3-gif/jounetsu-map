@@ -909,6 +909,109 @@
     return minsToHm(maxEnd);
   }
 
+  /**
+   * その日の作業記録の「間時間」（連続作業のあいだの空き）から昼休憩候補を返す。
+   * 優先: 昼帯(11:00〜14:30)に重なる空き → なければ最大の空き
+   * 午後の作業がまだ無い場合: 午前最後の終了 〜 現在時刻（または 13:00）
+   * @returns {{ start: string, end: string, mins: number, reason: string } | null}
+   */
+  function suggestLunchFromWorkGaps(user, workDateYmd) {
+    const raw = collectUserWorkIntervals(user, workDateYmd);
+    if (!raw.length) return null;
+
+    const merged = mergeIntervals(raw.map((iv) => ({ start: iv.start, end: iv.end })));
+    if (!merged.length) return null;
+
+    const MID_LO = 11 * 60;      // 11:00
+    const MID_HI = 14 * 60 + 30; // 14:30
+    const MIN_GAP = 10;          // 10分未満は無視
+
+    const gaps = [];
+    for (let i = 0; i < merged.length - 1; i++) {
+      const a = merged[i];
+      const b = merged[i + 1];
+      if (b.start - a.end < MIN_GAP) continue;
+      gaps.push({ start: a.end, end: b.start, mins: b.start - a.end });
+    }
+
+    const overlapsMidday = (g) => g.end > MID_LO && g.start < MID_HI;
+
+    let best = null;
+    const middayGaps = gaps.filter(overlapsMidday);
+    const pool = middayGaps.length ? middayGaps : gaps;
+    pool.forEach((g) => {
+      if (!best || g.mins > best.mins) best = g;
+    });
+
+    // 午前作業だけで午後がまだ無い → 最後の終了〜いま（昼帯なら）を候補に
+    if (!best) {
+      const last = merged[merged.length - 1];
+      const nowM = timeToMins(defaultDateTime().time);
+      if (last && last.end < MID_HI && nowM != null && nowM - last.end >= MIN_GAP) {
+        // 終了が昼前〜昼過ぎ、かつ今がその後
+        if (last.end <= MID_HI && nowM >= Math.min(MID_LO, last.end + MIN_GAP)) {
+          const endCand = Math.min(Math.max(nowM, last.end + MIN_GAP), 24 * 60 - 1);
+          if (endCand - last.end >= MIN_GAP) {
+            best = {
+              start: last.end,
+              end: endCand,
+              mins: endCand - last.end,
+              openEnded: true
+            };
+          }
+        }
+      }
+    }
+
+    if (!best) return null;
+    return {
+      start: minsToHm(best.start),
+      end: minsToHm(best.end),
+      mins: best.mins,
+      reason: best.openEnded
+        ? '午前の作業終了〜現在時刻'
+        : `作業のあいだ（${formatDuration(best.mins)}）`
+    };
+  }
+  window.suggestLunchFromWorkGaps = suggestLunchFromWorkGaps;
+
+  /** 昼休憩の開始・終了を、その日の作業記録の間時間に合わせる */
+  window.setLunchFromWorkGaps = function (opts) {
+    opts = opts || {};
+    const silent = !!opts.silent;
+    const startEl = document.getElementById('clockLunchStart');
+    const endEl = document.getElementById('clockLunchEnd');
+    if (!startEl || !endEl) return false;
+
+    const workDateYmd = getClockOutWorkDateYmd();
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      getCurrentUserName() ||
+      '';
+
+    const sug = suggestLunchFromWorkGaps(user, workDateYmd);
+    if (!sug) {
+      if (!silent) {
+        alertMsg('その日の作業記録に、昼休憩に使えそうな「間時間」がありません。\n午前と午後の作業が分かれて記録されていると自動セットできます。');
+      }
+      return false;
+    }
+
+    ensureLunchFieldsEnabled();
+    startEl.value = sug.start;
+    endEl.value = sug.end;
+    const hint = document.getElementById('lunchGapHint');
+    if (hint) {
+      hint.textContent = `✅ 間時間からセット: ${sug.start}〜${sug.end}（${sug.reason}）`;
+      hint.style.color = '#2E7D32';
+    }
+    if (!silent) {
+      alertMsg(`作業記録の間時間からセットしました。\n${sug.start} 〜 ${sug.end}\n（${sug.reason}）`);
+    }
+    return true;
+  };
+
   /** 指定日の作業記録に入力された休憩時間（分）の合計（「作業名：休憩」の時間も合算） */
   function sumWorkRecordBreakMins(user, workDateYmd) {
     const intervals = collectUserWorkIntervals(user, workDateYmd);
@@ -1665,8 +1768,27 @@
     const clockInTime = getClockInTimeStr();
     const workDate = getActiveClockInDateYmd();
     const existing = loadLunchBreak(workDate);
-    const startVal = (existing && existing.enabled && existing.start) || pref.lunchStart || '12:00';
-    const endVal = (existing && existing.enabled && existing.end) || pref.lunchEnd || '13:00';
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      getCurrentUserName() ||
+      '';
+    const gapSug = suggestLunchFromWorkGaps(user, workDate);
+
+    // 既存登録がなければ、作業の間時間 → 初期値 → 12:00-13:00
+    let startVal = (existing && existing.enabled && existing.start) || '';
+    let endVal = (existing && existing.enabled && existing.end) || '';
+    let autoHint = '';
+    if (!startVal || !endVal) {
+      if (gapSug) {
+        startVal = gapSug.start;
+        endVal = gapSug.end;
+        autoHint = `作業記録の間時間から仮セット: ${gapSug.start}〜${gapSug.end}（${gapSug.reason}）`;
+      } else {
+        startVal = startVal || pref.lunchStart || '12:00';
+        endVal = endVal || pref.lunchEnd || '13:00';
+      }
+    }
 
     let html = `<h3 style="margin-top:0; color:#E65100;">🍱 昼休憩登録</h3>`;
     html += buildClockInEditHtml(clockInTime, workDate);
@@ -1678,7 +1800,9 @@
     html += `<span style="color:#666;">〜</span>`;
     html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${endVal}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
     html += `</div>`;
+    html += `<div id="lunchGapHint" style="font-size:11px; color:${autoHint ? '#2E7D32' : '#888'}; margin-top:8px; line-height:1.4;">${autoHint || '午前と午後の作業記録があると、そのあいだの時間を自動で入れられます。'}</div>`;
     html += `<div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">`;
+    html += `<button type="button" onclick="setLunchFromWorkGaps()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1E88E5; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">📋 作業記録の間時間に合わせる</button>`;
     html += `<button type="button" onclick="setLunchStartToLastWorkEnd()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 開始を最後の作業記録の終了時間に合わせる</button>`;
     html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
     html += `</div></div>`;
@@ -1834,12 +1958,22 @@
       const lunchOn = (lunchReg && lunchReg.registered)
         ? !!lunchReg.enabled
         : ((pending && pending.lunchEnabled != null) ? !!pending.lunchEnabled : !!pref.lunchEnabled);
-      const ls = (lunchReg && lunchReg.registered && lunchReg.start)
+      const gapSugClock = suggestLunchFromWorkGaps(user, workDateForLunch || outDate);
+      let ls = (lunchReg && lunchReg.registered && lunchReg.start)
         ? lunchReg.start
-        : ((pending && pending.lunchStart) || (lunchReg && lunchReg.start) || pref.lunchStart || '12:00');
-      const le = (lunchReg && lunchReg.registered && lunchReg.end)
+        : ((pending && pending.lunchStart) || (lunchReg && lunchReg.start) || '');
+      let le = (lunchReg && lunchReg.registered && lunchReg.end)
         ? lunchReg.end
-        : ((pending && pending.lunchEnd) || (lunchReg && lunchReg.end) || pref.lunchEnd || '13:00');
+        : ((pending && pending.lunchEnd) || (lunchReg && lunchReg.end) || '');
+      if (!ls || !le) {
+        if (gapSugClock) {
+          ls = ls || gapSugClock.start;
+          le = le || gapSugClock.end;
+        } else {
+          ls = ls || pref.lunchStart || '12:00';
+          le = le || pref.lunchEnd || '13:00';
+        }
+      }
       html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
       html += `<input type="checkbox" id="clockLunchEnabled" ${lunchOn ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
       html += `</label>`;
@@ -1848,7 +1982,9 @@
       html += `<span style="color:#666;">〜</span>`;
       html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${le}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
       html += `</div>`;
+      html += `<div id="lunchGapHint" style="font-size:11px; color:${gapSugClock ? '#2E7D32' : '#888'}; margin-top:6px;">${gapSugClock ? `間時間候補: ${gapSugClock.start}〜${gapSugClock.end}` : '作業のあいだが分かれていると自動セットできます'}</div>`;
       html += `<div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">`;
+      html += `<button type="button" onclick="setLunchFromWorkGaps()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1E88E5; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">📋 作業記録の間時間に合わせる</button>`;
       html += `<button type="button" onclick="setLunchStartToLastWorkEnd()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 開始を最後の作業記録の終了時間に合わせる</button>`;
       html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
       html += `</div>`;
