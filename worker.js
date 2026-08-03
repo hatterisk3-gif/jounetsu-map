@@ -3428,15 +3428,30 @@ function createSignboardMarker(name, pos, icon, id) {
         return rows;
       };
 
+      // ===== メイン作業名 ＋ 詳細作業名を統合した判定用テキストの取得 =====
+      window.getActiveCombinedWorkName = () => {
+        const mainName = String(document.getElementById('rec_work_name')?.value || '').trim();
+        const detailNames = [];
+        document.querySelectorAll('input[name="detail_work_ids"]:checked').forEach(cb => {
+          if (cb && cb.value) detailNames.push(String(cb.value).trim());
+        });
+        if (Array.isArray(window.recordExtraDetailWorks)) {
+          window.recordExtraDetailWorks.forEach(d => {
+            if (d) detailNames.push(String(d).trim());
+          });
+        }
+        return [mainName, ...detailNames].filter(Boolean).join(' ');
+      };
+
       // ===== 潅水・田まわり：吸水栓 / 排水溝 開閉・ポンプ設置 =====
       window.isIrrigationWork = (wName) => {
-        const n = String(wName || '');
+        const n = wName != null ? String(wName) : window.getActiveCombinedWorkName();
         return n.includes('潅水') || n.includes('灌水');
       };
 
       /** 吸水栓・排水溝の開閉UIを出す作業（潅水＋田まわり） */
       window.isWaterValveWork = (wName) => {
-        const n = String(wName || '');
+        const n = wName != null ? String(wName) : window.getActiveCombinedWorkName();
         if (window.isIrrigationWork(n)) return true;
         return n.includes('田まわり') || n.includes('田回り') || n.includes('田廻り');
       };
@@ -4462,14 +4477,26 @@ function createSignboardMarker(name, pos, icon, id) {
           row.style.background = '#fff';
           row.style.borderColor = '#90caf9';
         }
+        // 🌟 メイン作業名 ＋ 詳細作業名の変更に反応し、灌水（水栓・ポンプ）・整備（機械）・使ったもの等の各種専用UIを一括更新する
+        window.handleCombinedWorkChange = () => {
+          if (window._skipDetailWorkAutoRefresh) return;
+          const combined = (typeof window.getActiveCombinedWorkName === 'function')
+            ? window.getActiveCombinedWorkName()
+            : (document.getElementById('rec_work_name')?.value || '');
+
+          if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+          if (typeof window.refreshDrainageValveUI === 'function') window.refreshDrainageValveUI();
+          if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
+          if (typeof window.refreshMaintenanceSection === 'function') window.refreshMaintenanceSection(combined);
+          if (typeof window.renderUsedItems === 'function') window.renderUsedItems(combined);
+        };
+
         // 残ったチェック項目へ分数を再計算（復元中はスキップ）
         if (!window._skipDetailWorkAutoRefresh && typeof window.refreshDetailWorkAutoMinutes === 'function') {
           window.refreshDetailWorkAutoMinutes();
         }
-        // 詳細作業に「整備」が含まれる場合も機械選択を出す
-        if (!window._skipDetailWorkAutoRefresh && typeof window.refreshMaintenanceSection === 'function') {
-          window.refreshMaintenanceSection();
-        }
+        // 詳細作業に「灌水」「整備」等が含まれる場合も専用UIを表示
+        window.handleCombinedWorkChange();
       };
 
       window.restoreDetailedWorksWithMinutes = (detailedWorksStr) => {
@@ -5085,8 +5112,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof customAlert === 'function') customAlert(`作物名「${name}」は既に登録されています。`);
               return;
           }
-          const densStr = await customPrompt('栽植密度（本/10a・任意）:', '0');
-          const density = parseInt(String(densStr || '0').trim(), 10) || 0;
+          const density = 0;
           try {
               const updated = await callGAS('manageMaster', {
                   masterType: 'crop',
@@ -5120,8 +5146,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof customAlert === 'function') customAlert(`作物名「${name}」は既に登録されています。`);
               return;
           }
-          const densStr = await customPrompt('栽植密度（本/10a）:', String(existing.density || 0));
-          const density = parseInt(String(densStr != null ? densStr : '0').trim(), 10) || 0;
+          const density = existing.density || 0;
           try {
               const updated = await callGAS('manageMaster', {
                   masterType: 'crop',
@@ -6044,8 +6069,12 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         
         window.renderDetailWorksSection(wName);
-        window.renderUsedItems(wName);
-        if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+        if (typeof window.handleCombinedWorkChange === 'function') {
+          window.handleCombinedWorkChange();
+        } else {
+          window.renderUsedItems(wName);
+          if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+        }
       };
 
       window.isPrepWorkName = (name) => {

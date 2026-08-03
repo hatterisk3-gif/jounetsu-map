@@ -878,8 +878,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">作物名</label>
                 <input type="text" id="add_crop_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: トマト">
-                <label style="font-size:12px; font-weight:bold; color:#555;">標準栽植密度 (本/10a)</label>
-                <input type="number" id="add_crop_density" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 2500">
+                <input type="hidden" id="add_crop_density" value="0">
                 <button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'cropCultSetting') {
