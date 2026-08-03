@@ -3646,10 +3646,11 @@ function createSignboardMarker(name, pos, icon, id) {
           const statusObj = window.parseWaterStatusObj(poly.water_status);
           const safePid = String(pid).replace(/'/g, "\\'");
           html += `<div class="irrig-field-block" data-poly-id="${pid}" style="background:#fff; padding:10px; border-radius:8px; margin-bottom:10px; border:1px solid #bbdefb;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-              <div style="font-weight:bold; color:#0d47a1; font-size:13px;">📍 ${poly.name || pid}</div>
-              ${isAdmin ? `<button type="button" onclick="openAdminCadForField('${safePid}')" style="background:#FF9800; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">🚜 農業CADを開く</button>` : ''}
+              <button type="button" onclick="openAdminCadForField('${safePid}')" style="background:#FF9800; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15);">💧 水栓・CADを開く</button>
             </div>`;
+            if (typeof window.preloadAdminCadIframe === 'function') {
+              window.preloadAdminCadIframe();
+            }
           if (pins.length === 0) {
             html += `<div style="font-size:12px; color:#888;">この圃場にはCADの吸水ピンが登録されていません。</div>`;
           } else {
@@ -3766,11 +3767,6 @@ function createSignboardMarker(name, pos, icon, id) {
 
       // ===== 管理者：農業CAD / 機械マスタ追加（潅水UIから） =====
       window.openAdminCadForField = (polyId) => {
-        if (!(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())) {
-          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
-          else alert('管理者権限が必要です。');
-          return;
-        }
         const pid = String(polyId || '');
         const poly = loadedPolygons[pid];
         if (!poly || poly.isMarker) {
@@ -3785,12 +3781,14 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
         window._adminCadTargetFieldId = pid;
+
+        // ⚡ ボタンを押した瞬間に0ミリ秒でモーダルを表示
+        modal.style.display = 'flex';
+
         const params = new URLSearchParams({
           openCad: '1',
-          fieldId: pid,
-          v: String(Date.now())
+          fieldId: pid
         });
-        // 可能なら中心座標も渡して地図位置を合わせる
         try {
           if (poly.coords && poly.coords.length) {
             let latSum = 0, lngSum = 0, n = 0;
@@ -3806,15 +3804,40 @@ function createSignboardMarker(name, pos, icon, id) {
             }
           }
         } catch (e) {}
-        modal.style.display = 'flex';
-        iframe.src = `admin.html?${params.toString()}`;
+
+        const targetUrl = `admin.html?${params.toString()}`;
+
+        // ⚡ 既に iframe に admin.html が読み込まれている場合は再リロードせず postMessage で瞬時切替！
+        if (iframe.src && iframe.src.includes('admin.html') && window._adminCadIframeReady) {
+          try {
+            iframe.contentWindow.postMessage({ type: 'openCadField', fieldId: pid }, '*');
+            if (typeof iframe.contentWindow.openCADMode === 'function') {
+              iframe.contentWindow.openCADMode(pid);
+            }
+          } catch(e) {
+            iframe.src = targetUrl;
+          }
+        } else {
+          // 初回読み込み
+          iframe.src = targetUrl;
+          window._adminCadIframeReady = true;
+        }
+      };
+
+      // ⚡ 灌水作業選択時・静かなバックグラウンドでのCAD事前ウォームアップ（プリロード）
+      window.preloadAdminCadIframe = () => {
+        const iframe = document.getElementById('adminCadIframe');
+        if (!iframe || iframe.src) return;
+        try {
+          iframe.src = 'admin.html?openCad=1';
+          window._adminCadIframeReady = true;
+        } catch(e) {}
       };
 
       window.closeAdminCadModal = async () => {
         const modal = document.getElementById('adminCadModal');
-        const iframe = document.getElementById('adminCadIframe');
         if (modal) modal.style.display = 'none';
-        if (iframe) iframe.src = '';
+        // ⚡ 全リロード破棄(iframe.src = '')を行わず非表示のみで状態維持し次回を瞬時化！
         // CAD更新後の給水栓情報を反映
         try {
           if (typeof loadInitData === 'function') {
@@ -3826,7 +3849,7 @@ function createSignboardMarker(name, pos, icon, id) {
         setTimeout(() => {
           if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
           if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
-        }, 300);
+        }, 100);
       };
 
       window.openNewMachineFromIrrigationPump = () => {
@@ -7613,8 +7636,24 @@ function createSignboardMarker(name, pos, icon, id) {
         selectedPolyIds = targetIds;
         // 進捗状況は画面から撤去されたため必須チェックを行わない
         const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
+        const isEditBtn = !!currentEditRecordId;
         if (btn) { btn.disabled = true; btn.innerText = "通信中..."; }
         
+        // 🌟 通信中のまま永久フリーズするのを防ぐ35秒セイフティタイマー
+        let isTimedOut = false;
+        const submitTimer = setTimeout(() => {
+          isTimedOut = true;
+          if (btn) { 
+            btn.disabled = false; 
+            btn.innerText = isEditBtn ? "更新する" : "保存する"; 
+          }
+          if (typeof customAlert === 'function') {
+            customAlert("⚠️ 通信がタイムアウトしました。電波状態をご確認のうえ、再度「保存する」をお試しください。");
+          } else {
+            alert("⚠️ 通信がタイムアウトしました。電波状態をご確認のうえ、再度「保存する」をお試しください。");
+          }
+        }, 35000);
+
         try {
           const files = pendingFiles || [];
           let photos = []; 
@@ -7949,9 +7988,15 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         } catch(e) {
           console.error("submitRecord error:", e);
-          customAlert("保存中にエラーが発生しました: " + e.message);
+          if (!isTimedOut) {
+            customAlert("保存中にエラーが発生しました: " + (e.message || e));
+          }
         } finally {
-          if (btn) { btn.disabled = false; btn.innerText = "保存する"; }
+          clearTimeout(submitTimer);
+          if (btn) { 
+            btn.disabled = false; 
+            btn.innerText = isEditBtn ? "更新する" : "保存する"; 
+          }
         }
       }
 

@@ -164,8 +164,16 @@ async function fetchNextJob() {
     }
   }
 
-  if (data.rowIndex > 0 && data.command) {
-    return data;
+  if (data.rowIndex > 0) {
+    const cmdStr = String(data.command || '').trim();
+    if (cmdStr) {
+      return data;
+    } else {
+      // 🌟 エディタに指示を飛ばさずスキップした場合、GAS側のシートが「処理中」のまま固まるのを即座に防止！
+      console.warn(`⚠️ 行 row=${data.rowIndex} の指示内容が空のため、シートの処理中状態をスキップ解除します。`);
+      await notifyJobComplete(data.rowIndex, '【スキップ】指示文が空のため処理をスキップしました。', '指示文が空のため処理をスキップしました。', []);
+      return null;
+    }
   }
   return null;
 }
