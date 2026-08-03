@@ -1114,131 +1114,145 @@ async function confirmVarietyMetaDialog() {
         return;
     }
 
-    // 改名が必要なら先にリネーム
-    if (mode === 'edit' && oldVariety && oldVariety !== variety) {
-        // 重複チェック
-        const existing = (cpMasterData && cpMasterData.crops && cpMasterData.crops[crop])
-            ? cpMasterData.crops[crop].map(v => String(v))
-            : [];
-        if (existing.some(v => v === variety)) {
-            alert(`品種「${variety}」は既にあります。`);
-            return;
+    const confirmBtn = document.getElementById('vmdConfirmBtn');
+    const origText = confirmBtn ? confirmBtn.textContent : (mode === 'edit' ? '保存する' : '追加する');
+    if (confirmBtn) {
+        confirmBtn.textContent = '保存中...';
+        confirmBtn.disabled = true;
+    }
+
+    try {
+        // 改名が必要なら先にリネーム
+        if (mode === 'edit' && oldVariety && oldVariety !== variety) {
+            // 重複チェック
+            const existing = (cpMasterData && cpMasterData.crops && cpMasterData.crops[crop])
+                ? cpMasterData.crops[crop].map(v => String(v))
+                : [];
+            if (existing.some(v => v === variety)) {
+                alert(`品種「${variety}」は既にあります。`);
+                return;
+            }
+            // ローカル改名（サーバーも）
+            if (cpMasterData && cpMasterData.crops) {
+                if (!Array.isArray(cpMasterData.crops[crop])) cpMasterData.crops[crop] = [];
+                cpMasterData.crops[crop] = cpMasterData.crops[crop].map(v =>
+                    String(v) === oldVariety ? variety : v
+                );
+                if (!cpMasterData.crops[crop].includes(variety)) cpMasterData.crops[crop].push(variety);
+            }
+            if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
+                cpMasterData.croptypesDB.forEach(db => {
+                    if (db && db.crop === crop && db.variety === oldVariety) db.variety = variety;
+                });
+            }
+            const customMap = getCustomVarietiesMap();
+            if (Array.isArray(customMap[crop])) {
+                customMap[crop] = customMap[crop].map(v => (v === oldVariety ? variety : v));
+                if (!customMap[crop].includes(variety)) customMap[crop].push(variety);
+                saveCustomVarietiesMap(customMap);
+            }
+            try {
+                if (typeof callGAS === 'function') {
+                    await callGAS('renameCultivationVariety', {
+                        crop: crop, oldName: oldVariety, newName: variety
+                    });
+                }
+            } catch (e) {
+                console.warn('品種改名のサーバー同期失敗:', e);
+            }
         }
-        // ローカル改名（サーバーも）
-        if (cpMasterData && cpMasterData.crops) {
+
+        // メーカー・粒数を保存（既存 saveCpVarietyMeta ロジックを流用）
+        const makerEl = document.getElementById('cpVarietyMaker');
+        const grainEl = document.getElementById('cpVarietyGrainCount');
+        if (makerEl) makerEl.value = maker;
+        if (grainEl) grainEl.value = grainCount;
+
+        if (target === 'cp') {
+            // 一時的に選択をセットして保存
+            rememberCustomVariety(crop, variety);
+            const vSel = document.getElementById('cpVariety');
+            if (vSel && !Array.from(vSel.options).some(o => o.value === variety)) {
+                const opt = document.createElement('option');
+                opt.value = variety;
+                opt.text = variety;
+                const customOpt = Array.from(vSel.options).find(o => o.value === 'custom');
+                if (customOpt) vSel.insertBefore(opt, customOpt);
+                else vSel.appendChild(opt);
+            }
+            if (getCpVal('cpCrop') === crop) {
+                setChoiceValue('cpVariety', variety, false);
+            }
+            await saveCpVarietyMeta({
+                silent: true,
+                cropOverride: crop,
+                varietyOverride: variety,
+                makerOverride: maker,
+                grainOverride: grainCount
+            });
+            if (getCpVal('cpCrop') === crop) {
+                updateVarietyList();
+                setChoiceValue('cpVariety', variety, true);
+                refreshChoiceButtons('cpVariety');
+                syncCpVarietyMetaFields();
+            }
+            // 計画カードの「＋手入力…」から開いた場合は、そのカードへ反映
+            if (planId) {
+                applyCpPlanVariety(planId, variety);
+                refreshCpPlanVarietySelectsForCrop(crop);
+            }
+        } else {
+            // 作型登録画面
+            rememberCustomVariety(crop, variety);
+            if (maker) registerMaker(maker);
+            setCrVariety(variety);
+            setSelectedMaker(maker);
+            setGrainTypeValue('crGrainCount', 'crGrainCountBtns', grainCount, { accent: '#FF9800', accentDark: '#EF6C00' });
+            // サーバーにもメタ保存
+            try {
+                if (typeof callGAS === 'function') {
+                    await callGAS('updateVarietyMeta', {
+                        crop: crop,
+                        variety: variety,
+                        maker: maker,
+                        grainCount: grainCount,
+                        climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : ''
+                    });
+                }
+            } catch (e) {
+                console.warn('品種メタ保存失敗:', e);
+            }
+            // ローカルDBも更新
+            if (!cpMasterData) cpMasterData = { crops: {}, croptypesDB: [] };
+            if (!cpMasterData.crops) cpMasterData.crops = {};
             if (!Array.isArray(cpMasterData.crops[crop])) cpMasterData.crops[crop] = [];
-            cpMasterData.crops[crop] = cpMasterData.crops[crop].map(v =>
-                String(v) === oldVariety ? variety : v
-            );
             if (!cpMasterData.crops[crop].includes(variety)) cpMasterData.crops[crop].push(variety);
-        }
-        if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
+            if (!Array.isArray(cpMasterData.croptypesDB)) cpMasterData.croptypesDB = [];
+            let touched = 0;
             cpMasterData.croptypesDB.forEach(db => {
-                if (db && db.crop === crop && db.variety === oldVariety) db.variety = variety;
+                if (db && db.crop === crop && db.variety === variety) {
+                    db.maker = maker;
+                    db.grainCount = grainCount;
+                    touched++;
+                }
             });
-        }
-        const customMap = getCustomVarietiesMap();
-        if (Array.isArray(customMap[crop])) {
-            customMap[crop] = customMap[crop].map(v => (v === oldVariety ? variety : v));
-            if (!customMap[crop].includes(variety)) customMap[crop].push(variety);
-            saveCustomVarietiesMap(customMap);
-        }
-        try {
-            if (typeof callGAS === 'function') {
-                await callGAS('renameCultivationVariety', {
-                    crop: crop, oldName: oldVariety, newName: variety
+            if (touched === 0) {
+                cpMasterData.croptypesDB.push({
+                    crop, variety, season: '', climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
+                    sowing: [], planting: [], harvesting: [], fileUrl: '', characteristics: '',
+                    maker, grainCount, harvestSeason: ''
                 });
             }
-        } catch (e) {
-            console.warn('品種改名のサーバー同期失敗:', e);
+            renderCrVarietyBadges();
+        }
+
+        closeVarietyMetaDialog();
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.textContent = origText;
+            confirmBtn.disabled = false;
         }
     }
-
-    // メーカー・粒数を保存（既存 saveCpVarietyMeta ロジックを流用）
-    const makerEl = document.getElementById('cpVarietyMaker');
-    const grainEl = document.getElementById('cpVarietyGrainCount');
-    if (makerEl) makerEl.value = maker;
-    if (grainEl) grainEl.value = grainCount;
-
-    if (target === 'cp') {
-        // 一時的に選択をセットして保存
-        rememberCustomVariety(crop, variety);
-        const vSel = document.getElementById('cpVariety');
-        if (vSel && !Array.from(vSel.options).some(o => o.value === variety)) {
-            const opt = document.createElement('option');
-            opt.value = variety;
-            opt.text = variety;
-            const customOpt = Array.from(vSel.options).find(o => o.value === 'custom');
-            if (customOpt) vSel.insertBefore(opt, customOpt);
-            else vSel.appendChild(opt);
-        }
-        if (getCpVal('cpCrop') === crop) {
-            setChoiceValue('cpVariety', variety, false);
-        }
-        await saveCpVarietyMeta({
-            silent: true,
-            cropOverride: crop,
-            varietyOverride: variety,
-            makerOverride: maker,
-            grainOverride: grainCount
-        });
-        if (getCpVal('cpCrop') === crop) {
-            updateVarietyList();
-            setChoiceValue('cpVariety', variety, true);
-            refreshChoiceButtons('cpVariety');
-            syncCpVarietyMetaFields();
-        }
-        // 計画カードの「＋手入力…」から開いた場合は、そのカードへ反映
-        if (planId) {
-            applyCpPlanVariety(planId, variety);
-            refreshCpPlanVarietySelectsForCrop(crop);
-        }
-    } else {
-        // 作型登録画面
-        rememberCustomVariety(crop, variety);
-        if (maker) registerMaker(maker);
-        setCrVariety(variety);
-        setSelectedMaker(maker);
-        setGrainTypeValue('crGrainCount', 'crGrainCountBtns', grainCount, { accent: '#FF9800', accentDark: '#EF6C00' });
-        // サーバーにもメタ保存
-        try {
-            if (typeof callGAS === 'function') {
-                await callGAS('updateVarietyMeta', {
-                    crop: crop,
-                    variety: variety,
-                    maker: maker,
-                    grainCount: grainCount,
-                    climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : ''
-                });
-            }
-        } catch (e) {
-            console.warn('品種メタ保存失敗:', e);
-        }
-        // ローカルDBも更新
-        if (!cpMasterData) cpMasterData = { crops: {}, croptypesDB: [] };
-        if (!cpMasterData.crops) cpMasterData.crops = {};
-        if (!Array.isArray(cpMasterData.crops[crop])) cpMasterData.crops[crop] = [];
-        if (!cpMasterData.crops[crop].includes(variety)) cpMasterData.crops[crop].push(variety);
-        if (!Array.isArray(cpMasterData.croptypesDB)) cpMasterData.croptypesDB = [];
-        let touched = 0;
-        cpMasterData.croptypesDB.forEach(db => {
-            if (db && db.crop === crop && db.variety === variety) {
-                db.maker = maker;
-                db.grainCount = grainCount;
-                touched++;
-            }
-        });
-        if (touched === 0) {
-            cpMasterData.croptypesDB.push({
-                crop, variety, season: '', climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
-                sowing: [], planting: [], harvesting: [], fileUrl: '', characteristics: '',
-                maker, grainCount, harvestSeason: ''
-            });
-        }
-        renderCrVarietyBadges();
-    }
-
-    closeVarietyMetaDialog();
 }
 
 window.openVarietyMetaDialog = openVarietyMetaDialog;
@@ -4394,9 +4408,11 @@ async function saveVarietyData() {
     const file = fileInput.files[0];
     
     const btn = document.getElementById('btnSaveVarietyModal');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '送信中...';
-    btn.disabled = true;
+    const originalText = btn ? btn.innerHTML : '保存する';
+    if (btn) {
+        btn.innerHTML = '保存中...';
+        btn.disabled = true;
+    }
     
     const params = {
         location: getCpVal('cpLocation') || '',

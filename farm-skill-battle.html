@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>農技バトル — スキルツリー試作</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --soil: #3e2723;
+      --leaf: #2e7d32;
+      --leaf-deep: #1b5e20;
+      --sun: #f9a825;
+      --clay: #efebe9;
+      --mist: #f5f0e8;
+      --ink: #2c2118;
+      --muted: #6d5c4d;
+      --danger: #c62828;
+      --sky: #81d4fa;
+      --card: rgba(255, 252, 247, 0.92);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Zen Kaku Gothic New", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 80% 50% at 10% 0%, rgba(129, 212, 250, 0.35), transparent 55%),
+        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(249, 168, 37, 0.22), transparent 50%),
+        linear-gradient(180deg, #e8f5e9 0%, var(--mist) 38%, #d7ccc8 100%);
+    }
+    h1, h2, .brand {
+      font-family: "Shippori Mincho", serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 18px 14px 40px;
+    }
+    header.hero {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+      animation: rise 0.6s ease both;
+    }
+    header.hero h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      color: var(--leaf-deep);
+    }
+    header.hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 36em;
+      line-height: 1.5;
+    }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid rgba(62, 39, 35, 0.12);
+      font-size: 0.85rem;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(62, 39, 35, 0.06);
+    }
+    .pill b { color: var(--leaf-deep); }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 14px;
+      align-items: start;
+    }
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid rgba(62, 39, 35, 0.1);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 10px 28px rgba(62, 39, 35, 0.08);
+      animation: rise 0.7s ease both;
+    }
+    .panel:nth-child(2) { animation-delay: 0.08s; }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 1.15rem;
+      color: var(--soil);
+    }
+    .sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: -4px 0 12px;
+      line-height: 1.4;
+    }
+    .work-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+      gap: 8px;
+    }
+    .work-btn {
+      appearance: none;
+      border: 1px solid rgba(62, 39, 35, 0.14);
+      background: #fff;
+      border-radius: 12px;
+      padding: 12px 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s;
+      font: inherit;
+      color: inherit;
+    }
+    .work-btn:hover {
+      transform: translateY(-2px);
+      border-color: var(--leaf);
+      box-shadow: 0 6px 14px rgba(46, 125, 50, 0.15);
+    }
+    .work-btn:active { transform: translateY(0) scale(0.98); }
+    .work-btn .icon { font-size: 1.4rem; display: block; margin-bottom: 4px; }
+    .work-btn .name { font-weight: 700; font-size: 0.9rem; }
+    .work-btn .exp { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+    .log {
+      margin-top: 12px;
+      max-height: 120px;
+      overflow: auto;
+      font-size: 0.8rem;
+      color: var(--muted);
+      border-top: 1px dashed rgba(62, 39, 35, 0.15);
+      padding-top: 8px;
+    }
+    .log div { padding: 2px 0; }
+    .tree {
+      display: grid;
+      gap: 10px;
+    }
+    .skill {
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(62, 39, 35, 0.1);
+      background: #fff;
+      transition: opacity 0.2s, filter 0.2s;
+    }
+    .skill.locked {
+      opacity: 0.45;
+      filter: grayscale(0.6);
+    }
+    .skill .emoji {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-size: 1.45rem;
+      background: linear-gradient(145deg, #e8f5e9, #fff8e1);
+    }
+    .skill .meta .title { font-weight: 700; font-size: 0.95rem; }
+    .skill .meta .desc { font-size: 0.75rem; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+    .skill .lv {
+      text-align: right;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--leaf-deep);
+      white-space: nowrap;
+    }
+    .bar {
+      height: 7px;
+      background: #ece7df;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .bar > i {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--leaf), var(--sun));
+      border-radius: inherit;
+      transition: width 0.45s ease;
+    }
+    .battle {
+      margin-top: 14px;
+      animation: rise 0.75s ease both;
+      animation-delay: 0.12s;
+    }
+    .arena {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      min-height: 220px;
+      background:
+        linear-gradient(180deg, rgba(129, 212, 250, 0.45) 0%, transparent 42%),
+        linear-gradient(180deg, transparent 55%, rgba(76, 175, 80, 0.35) 100%),
+        #c8e6c9;
+      border: 1px solid rgba(62, 39, 35, 0.12);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: end;
+      padding: 16px;
+      gap: 8px;
+    }
+    .fighter {
+      text-align: center;
+      transition: transform 0.2s ease;
+    }
+    .fighter.hit { animation: shake 0.35s ease; }
+    .fighter.attack { animation: lunge 0.35s ease; }
+    .fighter .avatar {
+      font-size: 3.2rem;
+      filter: drop-shadow(0 8px 10px rgba(0,0,0,0.18));
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .fighter .fname {
+      font-family: "Shippori Mincho", serif;
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+    .hpwrap {
+      margin-top: 6px;
+      background: rgba(255,255,255,0.75);
+      border-radius: 8px;
+      padding: 4px 6px;
+    }
+    .hpbar {
+      height: 10px;
+      background: #efebe9;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .hpbar > i {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #43a047, #fdd835);
+      width: 100%;
+      transition: width 0.35s ease;
+    }
+    .hpbar.enemy > i { background: linear-gradient(90deg, #e53935, #fb8c00); }
+    .hptext { font-size: 0.72rem; font-weight: 700; margin-top: 2px; }
+    .float-dmg {
+      position: absolute;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--danger);
+      pointer-events: none;
+      animation: floatUp 0.8s ease forwards;
+      text-shadow: 0 1px 0 #fff;
+    }
+    .float-dmg.heal { color: var(--leaf-deep); }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .actions button {
+      flex: 1 1 120px;
+      appearance: none;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 10px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--leaf);
+      color: #fff;
+      box-shadow: 0 4px 0 var(--leaf-deep);
+      transition: transform 0.12s ease;
+    }
+    .actions button:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--leaf-deep); }
+    .actions button:disabled {
+      background: #bdbdbd;
+      box-shadow: none;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .actions button.secondary {
+      background: #fff;
+      color: var(--soil);
+      border: 1px solid rgba(62, 39, 35, 0.2);
+      box-shadow: 0 3px 0 rgba(62, 39, 35, 0.15);
+    }
+    .actions button.sun {
+      background: var(--sun);
+      color: var(--soil);
+      box-shadow: 0 4px 0 #f57f17;
+    }
+    .battle-log {
+      margin-top: 10px;
+      min-height: 52px;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      color: var(--ink);
+      background: rgba(255,255,255,0.65);
+      border-radius: 10px;
+      padding: 10px 12px;
+      border: 1px solid rgba(62, 39, 35, 0.08);
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .toolbar button {
+      appearance: none;
+      border: 1px solid rgba(62, 39, 35, 0.18);
+      background: #fff;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: var(--muted);
+    }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--soil);
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+      z-index: 20;
+      max-width: 90vw;
+      text-align: center;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-8px); }
+      75% { transform: translateX(8px); }
+    }
+    @keyframes lunge {
+      0%, 100% { transform: translateX(0); }
+      40% { transform: translateX(18px) scale(1.05); }
+    }
+    .fighter.enemy.attack { animation-name: lungeEnemy; }
+    @keyframes lungeEnemy {
+      0%, 100% { transform: translateX(0); }
+      40% { transform: translateX(-18px) scale(1.05); }
+    }
+    @keyframes floatUp {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(-40px); }
+    }
+    footer.note {
+      margin-top: 18px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="brand">農技バトル</div>
+      <h1>作業が、技になる。</h1>
+      <p>作業を記録するとスキルに経験値が入り、覚えた農技で雑草ボスと戦えます。情熱MAPの作業記録をゲーム化する試作です。</p>
+      <div class="badge-row">
+        <span class="pill">Lv <b id="playerLevel">1</b></span>
+        <span class="pill">総EXP <b id="totalExp">0</b></span>
+        <span class="pill">連勝 <b id="winStreak">0</b></span>
+        <span class="pill">解放技 <b id="unlockedCount">0</b></span>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>📝 今日の作業を記録</h2>
+        <p class="sub">タップするだけでEXP獲得（試作なので実データ連携なし）。連続で記録するとコンボボーナス。</p>
+        <div class="work-grid" id="workGrid"></div>
+        <div class="log" id="workLog"></div>
+        <div class="toolbar">
+          <button type="button" onclick="resetProgress()">進捗リセット</button>
+          <button type="button" onclick="grantDemoDay()">デモ：忙しい一日</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>🌳 農技スキルツリー</h2>
+        <p class="sub">作業種ごとに育ちます。必要Lvに達するとバトルで使えるようになります。</p>
+        <div class="tree" id="skillTree"></div>
+      </section>
+    </div>
+
+    <section class="panel battle">
+      <h2>⚔️ 畑の防衛戦</h2>
+      <p class="sub">解放した技で攻撃。HPが尽きた方が負け。勝てば称号EXP、負けると雑草が増える（気持ちの問題）。</p>
+      <div class="arena" id="arena">
+        <div class="fighter" id="heroFighter">
+          <div class="avatar">🧑‍🌾</div>
+          <div class="fname" id="heroName">あなた</div>
+          <div class="hpwrap">
+            <div class="hpbar"><i id="heroHpBar"></i></div>
+            <div class="hptext" id="heroHpText">100 / 100</div>
+          </div>
+        </div>
+        <div class="fighter enemy" id="enemyFighter">
+          <div class="avatar" id="enemyAvatar">🌿</div>
+          <div class="fname" id="enemyName">暴れるスギナ</div>
+          <div class="hpwrap">
+            <div class="hpbar enemy"><i id="enemyHpBar"></i></div>
+            <div class="hptext" id="enemyHpText">80 / 80</div>
+          </div>
+        </div>
+      </div>
+      <div class="actions" id="battleActions"></div>
+      <div class="battle-log" id="battleLog">「作業を記録して技を覚え、挑戦せよ。」</div>
+      <div class="toolbar">
+        <button type="button" onclick="startBattle()">新しい敵と戦う</button>
+      </div>
+    </section>
+
+    <footer class="note">
+      データはこのブラウザの localStorage に保存されます。<br />
+      本番連携するなら、作業記録保存時に同じEXPテーブルへ加算する想定です。
+    </footer>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const STORAGE_KEY = 'jonetsuFarmSkillBattle_v1';
+
+    const WORKS = [
+      { id: 'sowing', name: '播種', icon: '🌱', exp: 12, skill: 'sowing' },
+      { id: 'planting', name: '定植', icon: '🥬', exp: 14, skill: 'planting' },
+      { id: 'harvest', name: '収穫', icon: '🧺', exp: 16, skill: 'harvest' },
+      { id: 'weeding', name: '草刈り', icon: '✂️', exp: 10, skill: 'weeding' },
+      { id: 'water', name: '灌水', icon: '💧', exp: 8, skill: 'water' },
+      { id: 'pest', name: '防除', icon: '🛡️', exp: 13, skill: 'pest' },
+      { id: 'ridge', name: '畝立て', icon: '🧱', exp: 11, skill: 'ridge' },
+      { id: 'pack', name: '調整出荷', icon: '📦', exp: 9, skill: 'pack' }
+    ];
+
+    const SKILLS = [
+      {
+        id: 'sowing', name: '種まき連撃', icon: '🌱',
+        desc: '播種の手数で連続ヒット。基礎ダメージ中。',
+        needLv: 1, power: 18, type: 'atk'
+      },
+      {
+        id: 'planting', name: '定植の構え', icon: '🥬',
+        desc: 'しっかり根を張る。次の被ダメ軽減。',
+        needLv: 2, power: 0, type: 'guard'
+      },
+      {
+        id: 'harvest', name: '収穫一閃', icon: '🧺',
+        desc: '一気に刈り取る強攻撃。',
+        needLv: 3, power: 32, type: 'atk'
+      },
+      {
+        id: 'weeding', name: '草刈り回転刃', icon: '✂️',
+        desc: '雑草系の敵に特効。',
+        needLv: 2, power: 22, type: 'weed'
+      },
+      {
+        id: 'water', name: '慈雨ヒール', icon: '💧',
+        desc: 'HPを回復する。',
+        needLv: 2, power: 20, type: 'heal'
+      },
+      {
+        id: 'pest', name: '防除バリア', icon: '🛡️',
+        desc: 'ダメージを大きく軽減（1ターン）。',
+        needLv: 3, power: 0, type: 'barrier'
+      },
+      {
+        id: 'ridge', name: '畝の壁', icon: '🧱',
+        desc: '土の壁で反撃ダメージ。',
+        needLv: 2, power: 14, type: 'counter'
+      },
+      {
+        id: 'pack', name: '出荷プレッシャー', icon: '📦',
+        desc: '締切の圧で敵の気力を削る。',
+        needLv: 1, power: 15, type: 'atk'
+      }
+    ];
+
+    const ENEMIES = [
+      { name: '暴れるスギナ', avatar: '🌿', hp: 70, atk: 12, weed: true },
+      { name: '頑固なカタバミ', avatar: '☘️', hp: 90, atk: 14, weed: true },
+      { name: '雨乞いナメクジ', avatar: '🐌', hp: 85, atk: 16, weed: false },
+      { name: 'カラスの略奪隊', avatar: '🐦‍⬛', hp: 100, atk: 18, weed: false },
+      { name: '干ばつスピリット', avatar: '☀️', hp: 110, atk: 20, weed: false },
+      { name: '巨大イノシシ', avatar: '🐗', hp: 140, atk: 22, weed: false }
+    ];
+
+    let state = loadState();
+    let battle = null;
+    let combo = 0;
+    let comboTimer = null;
+
+    function defaultState() {
+      const skills = {};
+      SKILLS.forEach(s => { skills[s.id] = { exp: 0, lv: 1 }; });
+      return {
+        totalExp: 0,
+        wins: 0,
+        streak: 0,
+        log: [],
+        skills
+      };
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return defaultState();
+        const parsed = JSON.parse(raw);
+        const base = defaultState();
+        return Object.assign(base, parsed, {
+          skills: Object.assign(base.skills, parsed.skills || {})
+        });
+      } catch (e) {
+        return defaultState();
+      }
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function skillLevelFromExp(exp) {
+      // 0-29:1, 30-69:2, 70-119:3, 120+:4
+      if (exp >= 120) return 4;
+      if (exp >= 70) return 3;
+      if (exp >= 30) return 2;
+      return 1;
+    }
+
+    function expToNext(exp) {
+      const thresholds = [0, 30, 70, 120, 200];
+      const lv = skillLevelFromExp(exp);
+      if (lv >= 4) return { cur: exp - 120, need: 80, pct: 100 };
+      const prev = thresholds[lv - 1];
+      const next = thresholds[lv];
+      return { cur: exp - prev, need: next - prev, pct: Math.min(100, ((exp - prev) / (next - prev)) * 100) };
+    }
+
+    function playerLevel() {
+      return Math.max(1, Math.floor(state.totalExp / 40) + 1);
+    }
+
+    function unlockedSkills() {
+      return SKILLS.filter(s => {
+        const st = state.skills[s.id] || { exp: 0 };
+        return skillLevelFromExp(st.exp) >= s.needLv;
+      });
+    }
+
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove('show'), 1800);
+    }
+
+    function renderHeader() {
+      document.getElementById('playerLevel').textContent = String(playerLevel());
+      document.getElementById('totalExp').textContent = String(state.totalExp);
+      document.getElementById('winStreak').textContent = String(state.streak);
+      document.getElementById('unlockedCount').textContent = String(unlockedSkills().length);
+    }
+
+    function renderWorks() {
+      const grid = document.getElementById('workGrid');
+      grid.innerHTML = WORKS.map(w => `
+        <button type="button" class="work-btn" onclick="recordWork('${w.id}')">
+          <span class="icon">${w.icon}</span>
+          <span class="name">${w.name}</span>
+          <div class="exp">+${w.exp} EXP</div>
+        </button>
+      `).join('');
+    }
+
+    function renderLog() {
+      const el = document.getElementById('workLog');
+      if (!state.log.length) {
+        el.innerHTML = '<div>まだ記録がありません。上の作業をタップしてみてください。</div>';
+        return;
+      }
+      el.innerHTML = state.log.slice(0, 8).map(line => `<div>${line}</div>`).join('');
+    }
+
+    function renderSkills() {
+      const tree = document.getElementById('skillTree');
+      tree.innerHTML = SKILLS.map(s => {
+        const st = state.skills[s.id] || { exp: 0 };
+        const lv = skillLevelFromExp(st.exp);
+        const unlocked = lv >= s.needLv;
+        const prog = expToNext(st.exp);
+        return `
+          <div class="skill ${unlocked ? '' : 'locked'}">
+            <div class="emoji">${s.icon}</div>
+            <div class="meta">
+              <div class="title">${s.name}</div>
+              <div class="desc">${s.desc}（解放Lv${s.needLv}）</div>
+              <div class="bar"><i style="width:${prog.pct}%"></i></div>
+            </div>
+            <div class="lv">${unlocked ? '使用可' : '未解放'}<br>Lv ${lv}<br><span style="font-weight:500;color:#6d5c4d">${st.exp}exp</span></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function recordWork(workId) {
+      const w = WORKS.find(x => x.id === workId);
+      if (!w) return;
+
+      clearTimeout(comboTimer);
+      combo += 1;
+      comboTimer = setTimeout(() => { combo = 0; }, 4000);
+
+      const bonus = combo >= 3 ? Math.round(w.exp * 0.3) : 0;
+      const gained = w.exp + bonus;
+
+      const sk = state.skills[w.skill] || { exp: 0 };
+      const beforeLv = skillLevelFromExp(sk.exp);
+      sk.exp += gained;
+      const afterLv = skillLevelFromExp(sk.exp);
+      state.skills[w.skill] = sk;
+      state.totalExp += gained;
+
+      const now = new Date();
+      const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      let line = `${hm} ${w.icon}${w.name} +${gained}EXP`;
+      if (bonus) line += `（コンボ×${combo}）`;
+      state.log.unshift(line);
+      state.log = state.log.slice(0, 40);
+
+      saveState();
+      renderAll();
+      renderBattleActions();
+
+      if (afterLv > beforeLv) {
+        toast(`${w.name}スキルが Lv${afterLv} に！`);
+      } else if (bonus) {
+        toast(`${w.name} +${gained}（コンボ！）`);
+      } else {
+        toast(`${w.name} を記録 +${gained}EXP`);
+      }
+
+      // 解放直後ならバトル導線
+      const skill = SKILLS.find(s => s.id === w.skill);
+      if (skill && beforeLv < skill.needLv && afterLv >= skill.needLv) {
+        setTimeout(() => toast(`技「${skill.name}」を覚えた！`), 900);
+      }
+    }
+
+    function grantDemoDay() {
+      ['sowing', 'planting', 'weeding', 'water', 'harvest', 'planting', 'pack'].forEach((id, i) => {
+        setTimeout(() => recordWork(id), i * 180);
+      });
+    }
+
+    function resetProgress() {
+      if (!confirm('スキル・EXP・連勝をすべてリセットしますか？')) return;
+      state = defaultState();
+      saveState();
+      battle = null;
+      renderAll();
+      document.getElementById('battleLog').textContent = '進捗をリセットしました。もう一度、畑から始めよう。';
+      renderBattleActions();
+      toast('リセットしました');
+    }
+
+    function heroMaxHp() {
+      return 90 + playerLevel() * 12 + unlockedSkills().length * 4;
+    }
+
+    function startBattle() {
+      const pool = ENEMIES.slice();
+      const boost = Math.min(state.streak, 5);
+      const enemyBase = pool[Math.floor(Math.random() * pool.length)];
+      const enemy = Object.assign({}, enemyBase, {
+        maxHp: enemyBase.hp + boost * 8 + Math.floor(playerLevel() * 3),
+        atk: enemyBase.atk + Math.floor(boost * 1.5)
+      });
+      enemy.hp = enemy.maxHp;
+
+      battle = {
+        heroHp: heroMaxHp(),
+        heroMax: heroMaxHp(),
+        enemy,
+        guard: 0,
+        barrier: 0,
+        counter: 0,
+        over: false,
+        turn: 'hero'
+      };
+      document.getElementById('enemyAvatar').textContent = enemy.avatar;
+      document.getElementById('enemyName').textContent = enemy.name;
+      document.getElementById('heroName').textContent = `あなた（Lv${playerLevel()}）`;
+      setBattleLog(`${enemy.name} が畑に現れた！`);
+      updateHpUi();
+      renderBattleActions();
+    }
+
+    function updateHpUi() {
+      if (!battle) return;
+      const hb = document.getElementById('heroHpBar');
+      const eb = document.getElementById('enemyHpBar');
+      hb.style.width = Math.max(0, (battle.heroHp / battle.heroMax) * 100) + '%';
+      eb.style.width = Math.max(0, (battle.enemy.hp / battle.enemy.maxHp) * 100) + '%';
+      document.getElementById('heroHpText').textContent = `${Math.max(0, Math.ceil(battle.heroHp))} / ${battle.heroMax}`;
+      document.getElementById('enemyHpText').textContent = `${Math.max(0, Math.ceil(battle.enemy.hp))} / ${battle.enemy.maxHp}`;
+    }
+
+    function setBattleLog(msg) {
+      document.getElementById('battleLog').textContent = msg;
+    }
+
+    function floatText(targetEl, text, heal) {
+      const arena = document.getElementById('arena');
+      const rect = targetEl.getBoundingClientRect();
+      const aRect = arena.getBoundingClientRect();
+      const span = document.createElement('div');
+      span.className = 'float-dmg' + (heal ? ' heal' : '');
+      span.textContent = text;
+      span.style.left = (rect.left - aRect.left + rect.width / 2 - 10) + 'px';
+      span.style.top = (rect.top - aRect.top + 20) + 'px';
+      arena.appendChild(span);
+      setTimeout(() => span.remove(), 800);
+    }
+
+    function renderBattleActions() {
+      const box = document.getElementById('battleActions');
+      const unlocked = unlockedSkills();
+      if (!battle || battle.over) {
+        box.innerHTML = `<button type="button" class="sun" onclick="startBattle()">バトル開始</button>`;
+        return;
+      }
+      if (!unlocked.length) {
+        box.innerHTML = `<button type="button" disabled>技がまだない（作業を記録しよう）</button>
+          <button type="button" class="secondary" onclick="startBattle()">敵を変える</button>`;
+        return;
+      }
+      box.innerHTML = unlocked.map(s =>
+        `<button type="button" ${battle.turn !== 'hero' ? 'disabled' : ''} onclick="useSkill('${s.id}')">${s.icon} ${s.name}</button>`
+      ).join('') + `<button type="button" class="secondary" ${battle.turn !== 'hero' ? 'disabled' : ''} onclick="useSkill('basic')">たたかう</button>`;
+    }
+
+    function useSkill(skillId) {
+      if (!battle || battle.over || battle.turn !== 'hero') return;
+
+      const heroEl = document.getElementById('heroFighter');
+      const enemyEl = document.getElementById('enemyFighter');
+
+      if (skillId === 'basic') {
+        const dmg = 10 + Math.floor(playerLevel() * 1.5) + Math.floor(Math.random() * 5);
+        dealToEnemy(dmg, '基本の農作業');
+        return;
+      }
+
+      const skill = SKILLS.find(s => s.id === skillId);
+      if (!skill) return;
+      const st = state.skills[skill.id];
+      const lv = skillLevelFromExp(st.exp);
+      const scale = 1 + (lv - 1) * 0.15;
+
+      heroEl.classList.remove('attack');
+      void heroEl.offsetWidth;
+      heroEl.classList.add('attack');
+
+      if (skill.type === 'heal') {
+        const heal = Math.round(skill.power * scale);
+        battle.heroHp = Math.min(battle.heroMax, battle.heroHp + heal);
+        floatText(heroEl, '+' + heal, true);
+        setBattleLog(`${skill.name}！ HPが ${heal} 回復した。`);
+        updateHpUi();
+        endHeroTurn();
+        return;
+      }
+      if (skill.type === 'guard') {
+        battle.guard = 0.45;
+        setBattleLog(`${skill.name}！ 次の攻撃を受け止めやすい。`);
+        endHeroTurn();
+        return;
+      }
+      if (skill.type === 'barrier') {
+        battle.barrier = 0.65;
+        setBattleLog(`${skill.name}！ 防除バリアを展開。`);
+        endHeroTurn();
+        return;
+      }
+      if (skill.type === 'counter') {
+        battle.counter = Math.round(skill.power * scale);
+        setBattleLog(`${skill.name}！ 畝の壁が反撃を構えた。`);
+        endHeroTurn();
+        return;
+      }
+
+      let dmg = Math.round(skill.power * scale + Math.random() * 6);
+      if (skill.type === 'weed' && battle.enemy.weed) dmg = Math.round(dmg * 1.45);
+      dealToEnemy(dmg, skill.name);
+    }
+
+    function dealToEnemy(dmg, label) {
+      const enemyEl = document.getElementById('enemyFighter');
+      battle.enemy.hp -= dmg;
+      enemyEl.classList.remove('hit');
+      void enemyEl.offsetWidth;
+      enemyEl.classList.add('hit');
+      floatText(enemyEl, '-' + dmg, false);
+      setBattleLog(`${label}！ ${battle.enemy.name} に ${dmg} ダメージ。`);
+      updateHpUi();
+      if (battle.enemy.hp <= 0) {
+        winBattle();
+        return;
+      }
+      endHeroTurn();
+    }
+
+    function endHeroTurn() {
+      battle.turn = 'enemy';
+      renderBattleActions();
+      setTimeout(enemyTurn, 650);
+    }
+
+    function enemyTurn() {
+      if (!battle || battle.over) return;
+      const heroEl = document.getElementById('heroFighter');
+      const enemyEl = document.getElementById('enemyFighter');
+      enemyEl.classList.remove('attack');
+      void enemyEl.offsetWidth;
+      enemyEl.classList.add('attack');
+
+      let dmg = battle.enemy.atk + Math.floor(Math.random() * 6);
+      if (battle.barrier) dmg = Math.round(dmg * (1 - battle.barrier));
+      else if (battle.guard) dmg = Math.round(dmg * (1 - battle.guard));
+      battle.barrier = 0;
+      battle.guard = 0;
+
+      battle.heroHp -= dmg;
+      heroEl.classList.remove('hit');
+      void heroEl.offsetWidth;
+      heroEl.classList.add('hit');
+      floatText(heroEl, '-' + dmg, false);
+
+      let msg = `${battle.enemy.name} の攻撃！ ${dmg} ダメージ。`;
+      if (battle.counter > 0) {
+        const c = battle.counter;
+        battle.enemy.hp -= c;
+        floatText(enemyEl, '-' + c, false);
+        msg += ` 畝の壁が ${c} の反撃！`;
+        battle.counter = 0;
+      }
+      setBattleLog(msg);
+      updateHpUi();
+
+      if (battle.enemy.hp <= 0) {
+        winBattle();
+        return;
+      }
+      if (battle.heroHp <= 0) {
+        loseBattle();
+        return;
+      }
+      battle.turn = 'hero';
+      renderBattleActions();
+    }
+
+    function winBattle() {
+      battle.over = true;
+      const gain = 20 + playerLevel() * 3;
+      state.totalExp += gain;
+      state.wins += 1;
+      state.streak += 1;
+      state.log.unshift(`🏆 ${battle.enemy.name} を撃退！ +${gain}EXP`);
+      saveState();
+      setBattleLog(`勝利！ ${battle.enemy.name} を畑から追い払った。（+${gain}EXP / 連勝${state.streak}）`);
+      renderAll();
+      renderBattleActions();
+      toast('防衛成功！');
+    }
+
+    function loseBattle() {
+      battle.over = true;
+      battle.heroHp = 0;
+      state.streak = 0;
+      saveState();
+      setBattleLog(`敗北… ${battle.enemy.name} に畑を荒らされた。作業を積んで再戦しよう。`);
+      updateHpUi();
+      renderHeader();
+      renderBattleActions();
+      toast('また挑戦しよう');
+    }
+
+    function renderAll() {
+      renderHeader();
+      renderWorks();
+      renderLog();
+      renderSkills();
+    }
+
+    renderAll();
+    startBattle();
+  </script>
+</body>
+</html>
