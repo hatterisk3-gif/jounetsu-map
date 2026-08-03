@@ -2668,8 +2668,8 @@ function renderCpPlanRow(plan) {
     card.id = 'cpLeftCard_' + plan.id;
     const qtyWord = (plan.holes === 1) ? '株' : '枚';
     const modeArea = plan.inputMode !== 'trays';
-    card.style.cssText = 'padding:3px 5px 2px; background:#e3f2fd; border-bottom:1px solid #bbdefb; box-sizing:border-box;';
-    const numInputCss = 'flex:1; min-width:56px; width:0; height:20px; font-size:12px; padding:0 6px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; -moz-appearance:textfield;';
+    card.style.cssText = 'padding:3px 3px 2px; background:#e3f2fd; border-bottom:1px solid #bbdefb; box-sizing:border-box;';
+    const numInputCss = 'flex:1; min-width:32px; width:0; height:18px; font-size:11px; padding:0 3px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; -moz-appearance:textfield;';
     card.innerHTML = `
         <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
             <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0; font-weight:bold;">${escapeCpHtmlAttr(plan.crop)}</span>
@@ -4274,14 +4274,41 @@ function openCultivationPlanModal(options) {
     }
 }
 
-/** 圃場（または畝）を起点に栽培計画を開く */
+/** 圃場（または畝）を起点に栽培計画を開く（農業CAD設定の畝連動対応） */
 window.openCultivationPlanFromField = function(p, attachOpts) {
     if (!p || p.isMarker) {
-        alert('圃場を選択してください。');
+        if (typeof customAlert === 'function') customAlert('圃場を選択してください。');
+        else alert('圃場を選択してください。');
         return;
     }
     const attach = attachOpts || {};
-    const fieldIds = attach.fieldIds || [p.id];
+
+    // 既に具体的なfieldIds (畝ID #une# 含む) やオプションが指定されている場合
+    if (attach.fieldIds && attach.fieldIds.length > 0 && (attach.fieldIds[0].includes('#une#') || attach.skipRidgeChoice)) {
+        proceedOpen(attach.fieldIds, attach.areaA, attach.label);
+        return;
+    }
+
+    // 農業CADの畝設定（uneSimData / getCadRidgeShapes）が存在するかチェック
+    let ridges = [];
+    if (typeof getCadRidgeShapes === 'function') {
+        ridges = getCadRidgeShapes(p);
+    } else if (p.uneSimData) {
+        try {
+            const rawData = (typeof p.uneSimData === 'string') ? JSON.parse(p.uneSimData) : p.uneSimData;
+            if (rawData && Array.isArray(rawData.unePolygons)) {
+                ridges = rawData.unePolygons;
+            }
+        } catch (e) {}
+    }
+
+    // CAD畝が存在し、かつ明示的にスキップされていない場合は選択肢ダイアログを表示
+    if (ridges.length > 0 && !attach.skipRidgeChoice) {
+        showRidgeSelectionModalForCultivation(p, ridges);
+        return;
+    }
+
+    // 畝なし、または全体選択の場合
     let areaA = attach.areaA;
     if (areaA == null || areaA === '') {
         areaA = parseFloat(p.area);
@@ -4290,19 +4317,94 @@ window.openCultivationPlanFromField = function(p, attachOpts) {
         }
         areaA = areaA || 0;
     }
-    const label = attach.label || p.name || '圃場';
+    proceedOpen([p.id], areaA, attach.label || p.name || '圃場');
 
-    openCultivationPlanModal({
-        skipDraft: true,
-        location: p.location || '',
-        fieldCondition: p.condition || '',
-        fieldAttach: {
-            fieldIds: fieldIds,
-            areaA: areaA,
-            label: label
-        }
-    });
+    function proceedOpen(fIds, aA, lbl) {
+        openCultivationPlanModal({
+            skipDraft: true,
+            location: p.location || '',
+            fieldCondition: p.condition || '',
+            fieldAttach: {
+                fieldIds: fIds,
+                areaA: aA,
+                label: lbl
+            }
+        });
+    }
 };
+
+/** 農業CAD畝が存在する圃場で、計画を作成する対象畝を選択するモーダル */
+function showRidgeSelectionModalForCultivation(p, ridges) {
+    const existing = document.getElementById('ridgeCultModal');
+    if (existing) existing.remove();
+
+    const totalAreaA = parseFloat(p.area) || (typeof computeCoordsAreaAres === 'function' ? computeCoordsAreaAres(p.coords) : 0) || 0;
+
+    const modal = document.createElement('div');
+    modal.id = 'ridgeCultModal';
+    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center; padding:15px; box-sizing:border-box; font-family:sans-serif;';
+
+    let ridgeButtonsHtml = ridges.map((r, idx) => {
+        const uLabel = (r.une && r.une.customLabel) ? r.une.customLabel : ((r.une && r.une.group) ? `${r.une.group}-${idx+1}` : `畝${idx+1}`);
+        const selId = `${p.id}#une#${r.index != null ? r.index : idx}`;
+        
+        let ridgeArea = 0;
+        if (r.coords && typeof computeCoordsAreaAres === 'function') {
+            ridgeArea = computeCoordsAreaAres(r.coords);
+        }
+        if (!ridgeArea && totalAreaA > 0) {
+            ridgeArea = Math.round((totalAreaA / ridges.length) * 10) / 10;
+        }
+
+        return `
+          <button type="button" class="ridge-select-btn" data-sel-id="${selId}" data-area="${ridgeArea}" data-label="${p.name} (${uLabel})"
+            style="background:#ffffff; border:1.5px solid #8BC34A; border-radius:8px; padding:10px 12px; font-weight:bold; font-size:13px; color:#2E7D32; cursor:pointer; text-align:left; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 4px rgba(0,0,0,0.08);">
+            <span>🚜 ${uLabel}</span>
+            <span style="font-size:11px; background:#e8f5e9; color:#1b5e20; padding:2px 6px; border-radius:4px;">${ridgeArea > 0 ? ridgeArea + 'a' : '面積指定なし'}</span>
+          </button>`;
+    }).join('');
+
+    modal.innerHTML = `
+      <div style="background:#fff; border-radius:12px; width:100%; max-width:400px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.3); max-height:85vh; display:flex; flex-direction:column; box-sizing:border-box;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:12px;">
+          <h3 style="margin:0; font-size:16px; color:#1B5E20; font-weight:bold; display:flex; align-items:center; gap:6px;">🌱 栽培計画の対象を選択</h3>
+          <button type="button" id="closeRidgeCultModal" style="background:none; border:none; font-size:20px; color:#888; cursor:pointer; font-weight:bold; padding:0; line-height:1;">×</button>
+        </div>
+        <div style="font-size:12px; color:#555; margin-bottom:12px;">【${escapeCpHtmlAttr(p.name)}】には農業CADの畝設定が登録されています。計画を作成する対象を選択してください。</div>
+        
+        <div style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px; padding-right:2px; margin-bottom:12px;">
+          <button type="button" id="btnSelectAllField" style="background:linear-gradient(135deg, #4CAF50, #2E7D32); color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer; text-align:center; box-shadow:0 3px 6px rgba(46,125,50,0.25);">
+            🌾 圃場全体で計画を作成 (全${ridges.length}畝 / ${totalAreaA}a)
+          </button>
+          
+          <div style="font-size:11px; font-weight:bold; color:#777; margin-top:6px;">または対象の畝を個別選択:</div>
+          ${ridgeButtonsHtml}
+        </div>
+        
+        <button type="button" id="btnCancelRidgeCult" style="background:#f5f5f5; border:1px solid #ccc; color:#666; border-radius:6px; padding:8px; font-weight:bold; font-size:12px; cursor:pointer;">キャンセル</button>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    document.getElementById('closeRidgeCultModal').onclick = () => modal.remove();
+    document.getElementById('btnCancelRidgeCult').onclick = () => modal.remove();
+
+    document.getElementById('btnSelectAllField').onclick = () => {
+        modal.remove();
+        openCultivationPlanFromField(p, { skipRidgeChoice: true, fieldIds: [p.id], areaA: totalAreaA, label: p.name });
+    };
+
+    modal.querySelectorAll('.ridge-select-btn').forEach(btn => {
+        btn.onclick = () => {
+            const selId = btn.dataset.selId;
+            const area = parseFloat(btn.dataset.area) || 0;
+            const label = btn.dataset.label;
+            modal.remove();
+            openCultivationPlanFromField(p, { skipRidgeChoice: true, fieldIds: [selId], areaA: area, label: label });
+        };
+    });
+}
 
 // --- VARIETY REGISTRATION ---
 

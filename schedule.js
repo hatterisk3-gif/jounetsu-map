@@ -759,7 +759,21 @@ async function fetchWeatherAndUpdateUI() {
                   if (titleEl) titleEl.innerText = `📅 ${targetDate ? targetDate : '直近24時間'} の出勤・未出勤リスト`;
                   document.getElementById('trackingListModal').style.display = 'flex';
               }
-              
+
+              // ユーザー選択肢ドロップダウンの更新
+              const dataUsers = [...new Set(data.map(d => d.userName).filter(Boolean))];
+              const uSelectMobile = document.getElementById('trackingUserSelectMobile');
+              const uSelect = document.getElementById('trackingUserSelect');
+              [uSelectMobile, uSelect].forEach(sel => {
+                  if (!sel) return;
+                  const curVal = sel.value || 'ALL';
+                  sel.innerHTML = '<option value="ALL">👥 全員の軌跡を表示</option>' +
+                      dataUsers.map(u => `<option value="${u}">👤 ${u}</option>`).join('');
+                  if (Array.from(sel.options).some(o => o.value === curVal)) sel.value = curVal;
+              });
+
+              const selectedUser = (uSelectMobile && uSelectMobile.value) ? uSelectMobile.value : ((uSelect && uSelect.value) ? uSelect.value : 'ALL');
+
               // 出勤マーカーの表示ロジック
               if (window.clockInMarkers) {
                   window.clockInMarkers.forEach(m => m.setMap(null));
@@ -767,6 +781,7 @@ async function fetchWeatherAndUpdateUI() {
               window.clockInMarkers = [];
               
               data.filter(d => d.type === '出勤' || d.type === 'アプリ起動').forEach(d => {
+                  if (selectedUser !== 'ALL' && d.userName !== selectedUser) return;
                   const pos = new google.maps.LatLng(parseFloat(d.lat), parseFloat(d.lng));
                   const m = new google.maps.Marker({
                       position: pos,
@@ -807,6 +822,7 @@ async function fetchWeatherAndUpdateUI() {
               data.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
               data.forEach(d => {
+                  if (selectedUser !== 'ALL' && d.userName !== selectedUser) return;
                   if (!pathsByUser[d.userName]) pathsByUser[d.userName] = { path: [], timestamps: [] };
                   // 時刻をミリ秒から秒に変換
                   const t = new Date(d.time).getTime() / 1000;
@@ -823,21 +839,36 @@ async function fetchWeatherAndUpdateUI() {
 
               const loopLength = maxTime - minTime || 1; // 0割回避
 
-              // ランダムカラー生成用関数
-              const getColor = (str) => {
-                  let hash = 0;
-                  for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); }
-                  return [(hash & 0xFF0000) >> 16, (hash & 0x00FF00) >> 8, hash & 0x0000FF];
+              // 高コントラスト ＆ 鮮明な高視認性ビビッドカラーパレット
+              const VIVID_COLORS = [
+                  [255, 61, 0],   // 鮮やかネオンオレンジ
+                  [0, 230, 118],  // ネオングリーン
+                  [41, 121, 255], // ディープブルー
+                  [255, 0, 127],  // ビビッドピンク
+                  [255, 234, 0],  // ネオンイエロー
+                  [0, 229, 255],  // シアン
+                  [170, 0, 255],  // パープル
+                  [255, 145, 0]   // アンバー
+              ];
+
+              const getColor = (str, index) => {
+                  return VIVID_COLORS[index % VIVID_COLORS.length];
               };
 
-              const pathData = Object.keys(pathsByUser)
+              const userNames = Object.keys(pathsByUser);
+              if (userNames.length === 0) {
+                  customAlert(selectedUser !== 'ALL' ? `👤 ${selectedUser} さんの該当期間の移動軌跡はありません。` : "移動履歴のデータがありません。");
+                  return;
+              }
+
+              const pathData = userNames
                   .filter(userName => pathsByUser[userName].path.length > 1) // deck.gl needs at least 2 points
-                  .map(userName => {
+                  .map((userName, uIdx) => {
                   return {
                       name: userName,
                       path: pathsByUser[userName].path,
                       timestamps: pathsByUser[userName].timestamps,
-                      color: getColor(userName)
+                      color: getColor(userName, uIdx)
                   };
               });
 
@@ -848,11 +879,11 @@ async function fetchWeatherAndUpdateUI() {
                       id: 'tracking-path',
                       data: pathData,
                       pickable: true,
-                      widthScale: 2,
-                      widthMinPixels: 4,
+                      widthScale: 3,
+                      widthMinPixels: 8, // ★ 従来の4pxから8pxへ太線化して視認性を劇的向上
                       getPath: d => d.path,
                       getColor: d => d.color,
-                      getWidth: d => 5
+                      getWidth: d => 8
                   });
 
                   if (!trackingOverlay) {
@@ -861,7 +892,7 @@ async function fetchWeatherAndUpdateUI() {
                   } else {
                       trackingOverlay.setProps({ layers: [layer] });
                   }
-                  customAlert("移動履歴（線）を表示しました！");
+                  customAlert("移動履歴（太線ハイライト）を表示しました！");
               } else if (mode === 'trip') {
                   tripTime = 0;
                   // 全体の時間を約10秒で1周するように設定
@@ -875,7 +906,7 @@ async function fetchWeatherAndUpdateUI() {
                           getTimestamps: d => d.timestamps,
                           getColor: d => d.color,
                           opacity: 0.8,
-                          widthMinPixels: 5,
+                          widthMinPixels: 7, // ★ 視認性UP
                           rounded: true,
                           trailLength: Math.max(loopLength / 5, 10), // トレイルの長さ
                           currentTime: tripTime

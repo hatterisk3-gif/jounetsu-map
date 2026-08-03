@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>試験栽培トラッカー v1.00 — 情熱MAP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --primary: #2e7d32;
+      --primary-dark: #1b5e20;
+      --accent: #e65100;
+      --bg: #f4f6f8;
+      --card-bg: #ffffff;
+      --text: #2c2118;
+      --muted: #666666;
+      --border: #e0e0e0;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Zen Kaku Gothic New', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding-bottom: 40px;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);
+      color: #fff;
+      padding: 16px 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-title {
+      font-family: 'Shippori Mincho', serif;
+      font-size: 1.4rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sub-title {
+      font-size: 0.8rem;
+      opacity: 0.9;
+      margin-top: 2px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 16px auto;
+      padding: 0 12px;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      background: #fff;
+      padding: 6px;
+      border-radius: var(--radius);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 10px 4px;
+      border: none;
+      background: transparent;
+      font-size: 0.85rem;
+      font-weight: bold;
+      color: var(--muted);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(46,125,50,0.3);
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      border: 1px solid var(--border);
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: bold;
+      color: var(--primary-dark);
+      margin-bottom: 4px;
+    }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-family: inherit;
+      background: #fff;
+    }
+
+    .form-textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #2e7d32, #1b5e20);
+      color: #fff;
+      font-weight: bold;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(46,125,50,0.3);
+    }
+
+    .test-item {
+      border-left: 4px solid var(--primary);
+      padding: 12px 14px;
+      background: #fff;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+      position: relative;
+    }
+
+    .test-item.variety {
+      border-left-color: #d81b60;
+    }
+
+    .item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .item-title {
+      font-size: 1rem;
+      font-weight: bold;
+      color: var(--text);
+    }
+
+    .tag-badge {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: bold;
+    }
+
+    .tag-material { background: #e8f5e9; color: #1b5e20; }
+    .tag-variety { background: #fce4ec; color: #c2185b; }
+
+    .item-location {
+      font-size: 0.85rem;
+      color: #1565c0;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .item-content {
+      font-size: 0.9rem;
+      color: #444;
+      white-space: pre-wrap;
+      background: #fafafa;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #eee;
+    }
+
+    .item-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-title">
+      <span>🧪 試験栽培トラッカー <small style="font-size:0.7rem; font-weight:normal;">v1.00</small></span>
+      <button type="button" onclick="history.back()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; padding:4px 10px; border-radius:6px; font-size:0.8rem; cursor:pointer;">戻る</button>
+    </div>
+    <div class="sub-title">資材・品種 ➔ 圃場 ➔ 農業CAD畝 ➔ 実験内容の管理ダッシュボード</div>
+  </header>
+
+  <div class="container">
+    <div class="nav-tabs">
+      <button type="button" class="tab-btn active" onclick="switchTab('list')">📋 試験一覧・参照</button>
+      <button type="button" class="tab-btn" onclick="switchTab('new')">➕ 新規試験を登録</button>
+    </div>
+
+    <!-- ➕ 新規登録タブ -->
+    <div id="tabNew" class="card" style="display:none;">
+      <h3 style="margin-bottom: 14px; color: var(--primary-dark); font-size: 1.1rem;">🧪 試験栽培の新規登録</h3>
+      
+      <div class="form-group">
+        <label class="form-label">試験区分</label>
+        <div style="display:flex; gap:12px;">
+          <label style="font-size:0.9rem; font-weight:bold; cursor:pointer;"><input type="radio" name="testType" value="material" checked onchange="updateFormType()"> 🧪 資材試験 (肥料/防除/土壌)</label>
+          <label style="font-size:0.9rem; font-weight:bold; cursor:pointer;"><input type="radio" name="testType" value="variety" onchange="updateFormType()"> 🌱 品種試験 (試作/新種)</label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" id="targetNameLabel">🧪 資材名</label>
+        <input type="text" id="targetName" class="form-input" placeholder="例: 有機特殊液肥A / カタバミ用除草剤" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">🗺️ 対象圃場</label>
+        <select id="fieldSelect" class="form-select" onchange="onFieldChange()">
+          <option value="">(選択してください)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">🚜 対象畝（農業CAD連動）</label>
+        <select id="ridgeSelect" class="form-select">
+          <option value="">(圃場を先に選択してください)</option>
+        </select>
+        <div id="ridgeHint" style="font-size:0.75rem; color:#666; margin-top:2px;">農業CADの畝設定がある圃場では、個別畝を選べます。</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">📝 試験内容・経過・観察メモ</label>
+        <textarea id="testContent" class="form-textarea" placeholder="試験目的、散布濃度、株間、対照区との違い、観察結果などを入力してください。"></textarea>
+      </div>
+
+      <div class="form-group" style="display:flex; gap:10px;">
+        <div style="flex:1;">
+          <label class="form-label">⭐ 評価スコア</label>
+          <select id="testScore" class="form-select">
+            <option value="5">⭐⭐⭐⭐⭐ (非常に優秀)</option>
+            <option value="4">⭐⭐⭐⭐ (良好・効果あり)</option>
+            <option value="3" selected>⭐⭐⭐ (普通・経過観察)</option>
+            <option value="2">⭐⭐ (微妙・変化なし)</option>
+            <option value="1">⭐ (不適切・悪影響)</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label class="form-label">📅 試験開始日</label>
+          <input type="date" id="startDate" class="form-input" />
+        </div>
+      </div>
+
+      <button type="button" class="btn-submit" onclick="saveTestItem()">💾 試験栽培データを保存する</button>
+    </div>
+
+    <!-- 📋 一覧参照タブ -->
+    <div id="tabList">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; gap:6px;">
+          <button type="button" onclick="filterList('all')" id="fAll" class="tab-btn active" style="padding:4px 12px; font-size:0.8rem;">すべて</button>
+          <button type="button" onclick="filterList('material')" id="fMat" class="tab-btn" style="padding:4px 12px; font-size:0.8rem; background:#e8f5e9; color:#1b5e20;">🧪 資材試験</button>
+          <button type="button" onclick="filterList('variety')" id="fVar" class="tab-btn" style="padding:4px 12px; font-size:0.8rem; background:#fce4ec; color:#c2185b;">🌱 品種試験</button>
+        </div>
+        <input type="search" id="searchKeyword" oninput="renderList()" placeholder="🔍 資材・品種・圃場・内容で検索" style="padding:6px 10px; border-radius:6px; border:1px solid #ccc; font-size:0.85rem;" />
+      </div>
+
+      <div id="testListView">
+        <!-- 登録データ一覧 -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'passionMapTestCultivationData';
+    let testDataList = [];
+    let fieldsMap = {};
+    let currentFilter = 'all';
+
+    function init() {
+      loadData();
+      loadFields();
+      document.getElementById('startDate').valueAsDate = new Date();
+      renderList();
+    }
+
+    function loadData() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        testDataList = raw ? JSON.parse(raw) : [];
+      } catch(e) { testDataList = []; }
+    }
+
+    function saveData() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(testDataList));
+    }
+
+    function loadFields() {
+      const fieldSel = document.getElementById('fieldSelect');
+      fieldSel.innerHTML = '<option value="">(選択してください)</option>';
+      fieldsMap = {};
+
+      try {
+        const initRaw = localStorage.getItem('passionMapInitData') || localStorage.getItem('pMapAdminInitData');
+        if (initRaw) {
+          const initData = JSON.parse(initRaw);
+          const polys = initData.loadedPolygons || {};
+          Object.values(polys).forEach(p => {
+            if (!p || p.isMarker || !p.id) return;
+            fieldsMap[p.id] = p;
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name || `圃場 ${p.id}`;
+            fieldSel.appendChild(opt);
+          });
+        }
+      } catch(e) {
+        console.warn('圃場データロードエラー:', e);
+      }
+    }
+
+    function onFieldChange() {
+      const fId = document.getElementById('fieldSelect').value;
+      const ridgeSel = document.getElementById('ridgeSelect');
+      ridgeSel.innerHTML = '<option value="">(圃場全体 / CAD畝なし)</option>';
+
+      if (!fId || !fieldsMap[fId]) return;
+      const p = fieldsMap[fId];
+
+      let ridges = [];
+      try {
+        if (p.uneSimData) {
+          const raw = (typeof p.uneSimData === 'string') ? JSON.parse(p.uneSimData) : p.uneSimData;
+          if (raw && Array.isArray(raw.unePolygons)) ridges = raw.unePolygons;
+        }
+      } catch(e) {}
+
+      if (ridges.length > 0) {
+        ridges.forEach((r, idx) => {
+          const uLabel = (r.customLabel) ? r.customLabel : ((r.group) ? `${r.group}-${idx+1}` : `畝${idx+1}`);
+          const opt = document.createElement('option');
+          opt.value = `${p.id}#une#${idx}`;
+          opt.textContent = `🚜 ${uLabel}`;
+          ridgeSel.appendChild(opt);
+        });
+      }
+    }
+
+    function updateFormType() {
+      const isMat = document.querySelector('input[name="testType"]:checked').value === 'material';
+      document.getElementById('targetNameLabel').textContent = isMat ? '🧪 資材名' : '🌱 品種名';
+      document.getElementById('targetName').placeholder = isMat ? '例: 有機特殊液肥A / 防除用剤B' : '例: 試験キャベツCR-99 / 試作イチゴ';
+    }
+
+    function switchTab(tab) {
+      document.getElementById('tabList').style.display = (tab === 'list') ? 'block' : 'none';
+      document.getElementById('tabNew').style.display = (tab === 'new') ? 'block' : 'none';
+      const btns = document.querySelectorAll('.nav-tabs .tab-btn');
+      btns[0].classList.toggle('active', tab === 'list');
+      btns[1].classList.toggle('active', tab === 'new');
+    }
+
+    function filterList(type) {
+      currentFilter = type;
+      document.getElementById('fAll').classList.toggle('active', type === 'all');
+      document.getElementById('fMat').classList.toggle('active', type === 'material');
+      document.getElementById('fVar').classList.toggle('active', type === 'variety');
+      renderList();
+    }
+
+    function saveTestItem() {
+      const type = document.querySelector('input[name="testType"]:checked').value;
+      const name = document.getElementById('targetName').value.trim();
+      const fieldId = document.getElementById('fieldSelect').value;
+      const ridgeVal = document.getElementById('ridgeSelect').value;
+      const content = document.getElementById('testContent').value.trim();
+      const score = document.getElementById('testScore').value;
+      const startDate = document.getElementById('startDate').value;
+
+      if (!name) { alert('資材名または品種名を入力してください。'); return; }
+      if (!fieldId) { alert('対象圃場を選択してください。'); return; }
+
+      const fieldObj = fieldsMap[fieldId] || {};
+      const fieldName = fieldObj.name || '選択圃場';
+
+      let ridgeName = '圃場全体';
+      if (ridgeVal && ridgeVal.includes('#une#')) {
+        const ridgeSel = document.getElementById('ridgeSelect');
+        const selOpt = ridgeSel.options[ridgeSel.selectedIndex];
+        if (selOpt) ridgeName = selOpt.textContent;
+      }
+
+      const newItem = {
+        id: 'tc_' + Date.now(),
+        type,
+        name,
+        fieldId,
+        fieldName,
+        ridgeVal,
+        ridgeName,
+        content,
+        score: parseInt(score, 10),
+        startDate,
+        createdAt: new Date().toISOString()
+      };
+
+      testDataList.unshift(newItem);
+      saveData();
+      alert(`✅ 試験データを登録しました！\n【${name}】➔ 【${fieldName} / ${ridgeName}】`);
+      
+      document.getElementById('targetName').value = '';
+      document.getElementById('testContent').value = '';
+      switchTab('list');
+      renderList();
+    }
+
+    function deleteItem(id) {
+      if (!confirm('この試験栽培データを削除しますか？')) return;
+      testDataList = testDataList.filter(x => x.id !== id);
+      saveData();
+      renderList();
+    }
+
+    function renderList() {
+      const container = document.getElementById('testListView');
+      const q = (document.getElementById('searchKeyword').value || '').trim().toLowerCase();
+
+      let filtered = testDataList.filter(x => {
+        if (currentFilter !== 'all' && x.type !== currentFilter) return false;
+        if (q) {
+          const hay = `${x.name} ${x.fieldName} ${x.ridgeName} ${x.content}`.toLowerCase();
+          return hay.includes(q);
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:#888; padding:30px; background:#fff; border-radius:12px;">該当する試験栽培データがありません。右上の「➕ 新規試験を登録」から追加できます。</div>';
+        return;
+      }
+
+      const stars = ['★☆☆☆☆', '★★☆☆☆', '★★★☆☆', '★★★★☆', '★★★★★'];
+
+      container.innerHTML = filtered.map(x => `
+        <div class="test-item ${x.type}">
+          <div class="item-header">
+            <span class="item-title">${x.type === 'material' ? '🧪' : '🌱'} ${escapeHtml(x.name)}</span>
+            <span class="tag-badge ${x.type === 'material' ? 'tag-material' : 'tag-variety'}">${x.type === 'material' ? '資材試験' : '品種試験'}</span>
+          </div>
+          <div class="item-location">
+            🗺️ ${escapeHtml(x.fieldName)} ➔ ${escapeHtml(x.ridgeName)}
+          </div>
+          <div class="item-content">${escapeHtml(x.content || '内容の記載なし')}</div>
+          <div class="item-meta">
+            <span>📅 開始: ${x.startDate || '未指定'} | 評価: <b style="color:#f57f17">${stars[(x.score||3)-1]}</b></span>
+            <button type="button" onclick="deleteItem('${x.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-weight:bold;">削除</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function escapeHtml(str) {
+      return String(str||'').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>

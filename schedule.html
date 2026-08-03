@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.25</title>
+  <title>情熱MAP [予定確認用] v1.33</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -20,7 +20,7 @@
     style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #222; padding: 30px; border-radius: 8px; width: 80%; max-width: 320px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP</h2>
+      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP (v1.33)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px;"></div>
 
       <input type="text" id="loginId" placeholder="スタッフID"
@@ -60,6 +60,9 @@
       <button type="button" onclick="executeLogout()"
         style="background:#c62828; color:#fff; border:1px solid #ef9a9a; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; cursor:pointer; white-space:nowrap;">🚪 ログアウト</button>
       <!-- 軌跡表示用（下部タブのアクションシートから参照・非表示） -->
+      <select id="trackingUserSelect" class="desktop-only" aria-hidden="true">
+        <option value="ALL">全員</option>
+      </select>
       <select id="trackingMode" class="desktop-only" aria-hidden="true">
         <option value="path">線(Path)</option>
         <option value="trip">アニメ(Trip)</option>
@@ -163,25 +166,37 @@
     </div>
   </div>
 
-  <!-- 市況情報（農水省 日別単価グラフ） -->
+  <!-- 市況情報（農水省 日別単価グラフ・チンゲンサイ等） -->
   <div id="cropMarketModal"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;">
     <div
       style="background: #fff; color: #333; padding: 18px 20px; border-radius: 8px; width: 100%; max-width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); box-sizing: border-box;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <h3 style="margin: 0; color: #E65100; font-size: 18px;">📈 市況情報</h3>
+        <h3 style="margin: 0; color: #E65100; font-size: 18px;">📈 野菜市況情報</h3>
         <span id="marketModalClose" style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;">×</span>
       </div>
 
-      <p style="margin: 0 0 16px 0; font-size: 13px; color: #555; line-height: 1.6;">
-        農林水産省の青果物・日別卸売価格グラフを開きます。<br>
-        開いた先で品目・市場を選んでください。
+      <p style="margin: 0 0 12px 0; font-size: 13px; color: #555; line-height: 1.5;">
+        農林水産省・東京都中央卸売市場等の最新市況価格を開きます。
       </p>
 
+      <!-- 🥬 チンゲンサイ特設ボタン -->
+      <button type="button" id="marketOpenChingensai"
+        style="width:100%; background:linear-gradient(135deg, #2e7d32, #1b5e20); color:#fff; border:none; padding:14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px; text-align:left; margin-bottom:10px; box-shadow:0 3px 8px rgba(46,125,50,0.3);">
+        🥬 チンゲンサイ（青梗菜）の市況・単価グラフを見る
+        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:4px;">農水省青果物価格・卸売市場データ直行</div>
+      </button>
+
       <button type="button" id="marketOpenMaffGraph"
-        style="width:100%; background:#1565C0; color:#fff; border:none; padding:16px 14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px; text-align:left;">
-        📊 農水省 日別単価グラフを開く
-        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:6px;">青果物の卸売価格推移（公式）</div>
+        style="width:100%; background:#1565C0; color:#fff; border:none; padding:12px 14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:14px; text-align:left; margin-bottom:8px;">
+        📊 農水省 全品目 日別単価グラフ
+        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:2px;">青果物全般の卸売価格推移（公式）</div>
+      </button>
+
+      <button type="button" id="marketOpenTokyo"
+        style="width:100%; background:#e65100; color:#fff; border:none; padding:12px 14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:14px; text-align:left;">
+        🏙️ 東京都中央卸売市場 市況日報
+        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:2px;">大田市場・豊洲市場等の当日入荷・価格情報</div>
       </button>
     </div>
   </div>
@@ -256,17 +271,25 @@
   <div id="mobileTrackingMenu" class="mobile-action-sheet" style="display:none;" onclick="this.style.display='none'">
     <div class="action-sheet-content" onclick="event.stopPropagation()">
       <div style="padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; text-align: center; color: #333;">
-        軌跡表示モード</div>
+        🏃‍♂️ 移動軌跡表示設定</div>
       <div style="padding: 15px; box-sizing: border-box;">
-        <select id="trackingModeMobile"
-          style="width:100%; max-width:100%; box-sizing:border-box; padding: 10px; font-size:16px; border:1px solid #ccc; border-radius:5px;">
-          <option value="path">線 (Path)</option>
-          <option value="trip">アニメ (Trip)</option>
+        <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">👤 対象ユーザー選択</label>
+        <select id="trackingUserSelectMobile" style="width:100%; max-width:100%; box-sizing:border-box; padding: 10px; font-size:15px; border:1px solid #ccc; border-radius:5px; margin-bottom:10px; font-weight:bold; color:#1b5e20;">
+          <option value="ALL">👥 全員の軌跡を表示</option>
         </select>
-        <input type="date" id="trackingDateMobile" style="width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding: 10px; font-size:16px; border:1px solid #ccc; border-radius:5px; margin-top:10px; display:block;">
+
+        <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">🎨 描画スタイル</label>
+        <select id="trackingModeMobile"
+          style="width:100%; max-width:100%; box-sizing:border-box; padding: 10px; font-size:15px; border:1px solid #ccc; border-radius:5px; margin-bottom:10px;">
+          <option value="path">太線ハイライト (Path)</option>
+          <option value="trip">アニメーション移動 (Trip)</option>
+        </select>
+
+        <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">📅 日付</label>
+        <input type="date" id="trackingDateMobile" style="width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding: 10px; font-size:15px; border:1px solid #ccc; border-radius:5px; display:block;">
       </div>
       <button
-        onclick="document.getElementById('trackingMode').value = document.getElementById('trackingModeMobile').value; document.getElementById('trackingDate').value = document.getElementById('trackingDateMobile').value; loadTrackingData(); document.getElementById('mobileTrackingMenu').style.display='none'">🏃‍♂️
+        onclick="document.getElementById('trackingMode').value = document.getElementById('trackingModeMobile').value; document.getElementById('trackingDate').value = document.getElementById('trackingDateMobile').value; if(document.getElementById('trackingUserSelect')) document.getElementById('trackingUserSelect').value = document.getElementById('trackingUserSelectMobile').value; loadTrackingData(); document.getElementById('mobileTrackingMenu').style.display='none'">🏃‍♂️
         表示する</button>
       <button class="cancel-btn"
         onclick="document.getElementById('mobileTrackingMenu').style.display='none'">キャンセル</button>

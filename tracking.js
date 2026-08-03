@@ -1038,15 +1038,122 @@
       (typeof currentUser !== 'undefined' && currentUser) ||
       localStorage.getItem('passionMapUserName') ||
       '';
-    const total = sumWorkRecordBreakMins(user, workDateYmd);
+    const recordBreak = sumWorkRecordBreakMins(user, workDateYmd);
+    const extraEl = document.getElementById('clockExtraMidBreak');
+    const extraBreak = extraEl ? Math.max(0, parseInt(extraEl.value, 10) || 0) : 0;
+    const total = recordBreak + extraBreak;
     if (hidden) hidden.value = String(total);
     if (el) {
       if (total > 0) {
-        el.innerHTML = `<b style="color:#e65100; font-size:16px;">${formatDuration(total)}</b><div style="font-size:11px; color:#888; margin-top:4px;">作業記録に入力された休憩の合計です（ここでは変更できません）</div>`;
+        let detail = `<b style="color:#e65100; font-size:16px;">${formatDuration(total)}</b>`;
+        if (extraBreak > 0) {
+          detail += `<div style="font-size:11px; color:#5D4037; margin-top:4px;">作業記録の休憩: ${formatDuration(recordBreak)} ＋ 追加休憩: ${formatDuration(extraBreak)}</div>`;
+        } else {
+          detail += `<div style="font-size:11px; color:#888; margin-top:4px;">作業記録に入力された休憩の合計です</div>`;
+        }
+        el.innerHTML = detail;
       } else {
         el.innerHTML = `<b style="color:#888; font-size:16px;">0分</b><div style="font-size:11px; color:#888; margin-top:4px;">作業記録の「休憩」欄に入力するとここに合計されます</div>`;
       }
     }
+  };
+
+  /** 作業中休憩: 最後の作業記録の終了時間〜退勤時間のギャップを休憩として計算 */
+  window.calcMidBreakFromLastWork = function () {
+    const dateEl = document.getElementById('clockOutDate');
+    const timeEl = document.getElementById('clockOutTime');
+    const workDateYmd = (dateEl && dateEl.value) || getActiveClockInDateYmd() || todayYmd();
+    const user = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
+
+    let lastEnd = getLastWorkEndTime(user, workDateYmd);
+    if (!lastEnd && typeof window.getLatestEndTimeForDate === 'function') {
+      lastEnd = window.getLatestEndTimeForDate(workDateYmd) || '';
+    }
+    if (!lastEnd) {
+      alertMsg('最後の作業記録の終了時間が見つかりません。作業記録を先に登録してください。');
+      return;
+    }
+
+    const clockOutTime = (timeEl && timeEl.value) || '';
+    if (!clockOutTime) {
+      alertMsg('退勤時間が設定されていません。');
+      return;
+    }
+
+    const endMins = timeToMins(lastEnd);
+    const outMins = timeToMins(clockOutTime);
+    if (endMins == null || outMins == null) {
+      alertMsg('時間の解析に失敗しました。');
+      return;
+    }
+
+    const gapMins = Math.max(0, outMins - endMins);
+    if (gapMins <= 0) {
+      alertMsg('退勤時間が最後の作業記録の終了時間以前のため、休憩時間は 0分 です。');
+      return;
+    }
+
+    const extraEl = document.getElementById('clockExtraMidBreak');
+    if (extraEl) extraEl.value = String(gapMins);
+    updateMidBreakCalcResult(lastEnd, clockOutTime, gapMins, '退勤時間');
+    if (typeof window.refreshClockOutBreakSummary === 'function') window.refreshClockOutBreakSummary();
+  };
+
+  /** 作業中休憩: 最後の作業記録の終了時間〜今の時間のギャップを休憩として計算 */
+  window.calcMidBreakFromNow = function () {
+    const dateEl = document.getElementById('clockOutDate');
+    const workDateYmd = (dateEl && dateEl.value) || getActiveClockInDateYmd() || todayYmd();
+    const user = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
+
+    let lastEnd = getLastWorkEndTime(user, workDateYmd);
+    if (!lastEnd && typeof window.getLatestEndTimeForDate === 'function') {
+      lastEnd = window.getLatestEndTimeForDate(workDateYmd) || '';
+    }
+    if (!lastEnd) {
+      alertMsg('最後の作業記録の終了時間が見つかりません。作業記録を先に登録してください。');
+      return;
+    }
+
+    const now = new Date();
+    const nowHm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const endMins = timeToMins(lastEnd);
+    const nowMins = timeToMins(nowHm);
+    if (endMins == null || nowMins == null) {
+      alertMsg('時間の解析に失敗しました。');
+      return;
+    }
+
+    const gapMins = Math.max(0, nowMins - endMins);
+    if (gapMins <= 0) {
+      alertMsg('現在時刻が最後の作業記録の終了時間以前のため、休憩時間は 0分 です。');
+      return;
+    }
+
+    const extraEl = document.getElementById('clockExtraMidBreak');
+    if (extraEl) extraEl.value = String(gapMins);
+    updateMidBreakCalcResult(lastEnd, nowHm, gapMins, '現在時刻');
+    if (typeof window.refreshClockOutBreakSummary === 'function') window.refreshClockOutBreakSummary();
+  };
+
+  /** 作業中休憩計算結果の表示 */
+  function updateMidBreakCalcResult(fromTime, toTime, mins, label) {
+    const el = document.getElementById('midBreakCalcResult');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = `
+      <div style="font-size:13px; font-weight:bold; color:#F57F17; margin-bottom:4px;">☕ 追加休憩: ${formatDuration(mins)}</div>
+      <div style="font-size:12px; color:#5D4037;">最後の作業終了 <b>${fromTime}</b> 〜 ${label} <b>${toTime}</b></div>
+      <button type="button" onclick="clearExtraMidBreak()" style="margin-top:6px; background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">✕ 追加休憩をクリア</button>
+    `;
+  }
+
+  /** 追加休憩をクリア */
+  window.clearExtraMidBreak = function () {
+    const extraEl = document.getElementById('clockExtraMidBreak');
+    if (extraEl) extraEl.value = '0';
+    const resultEl = document.getElementById('midBreakCalcResult');
+    if (resultEl) { resultEl.style.display = 'none'; resultEl.innerHTML = ''; }
+    if (typeof window.refreshClockOutBreakSummary === 'function') window.refreshClockOutBreakSummary();
   };
 
   /** 退勤モーダル：退勤日の最後の作業終了時間を退勤時間欄へ反映 */
@@ -1995,8 +2102,14 @@
     );
     html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（作業記録の合計）</label>`;
     html += `<input type="hidden" id="clockMidBreak" value="${breakTotal}">`;
+    html += `<input type="hidden" id="clockExtraMidBreak" value="0">`;
     html += `<div id="clockMidBreakSummary" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:10px 12px;"></div>`;
-    html += `<div style="font-size:11px; color:#888; margin-top:6px;">必要作業時間 ＝ 出勤〜退勤 − 昼休憩 − 作業中休憩<br>休憩の入力・修正は各圃場作業記録から行います。</div>`;
+    html += `<div id="midBreakCalcArea" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">`;
+    html += `  <button type="button" onclick="calcMidBreakFromLastWork()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 最後の作業記録の終了時間に合わせる</button>`;
+    html += `  <button type="button" onclick="calcMidBreakFromNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 今の時間に合わせる</button>`;
+    html += `</div>`;
+    html += `<div id="midBreakCalcResult" style="display:none; margin-top:8px; background:#FFFDE7; border:1px solid #FFF176; border-radius:6px; padding:10px 12px;"></div>`;
+    html += `<div style="font-size:11px; color:#888; margin-top:6px;">必要作業時間 ＝ 出勤〜退勤 − 昼休憩 − 作業中休憩<br>上のボタンで最後の作業からの空き時間を休憩として記録できます。</div>`;
     html += `</div>`;
 
     html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">`;

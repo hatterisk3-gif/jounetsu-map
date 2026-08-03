@@ -692,9 +692,17 @@ function openManureStatusModal(pData) {
         </div>
 
         <label class="form-label">カテゴリ</label>
-        <select id="prodStatusCategorySelect" class="form-input" onchange="onModalCategoryChange()">
-            ${catOptions}
-        </select>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <select id="prodStatusCategorySelect" class="form-input" onchange="onModalCategoryChange()" style="flex:1; min-width:120px;">
+                ${catOptions}
+            </select>
+            ${currentUserRole === '管理者' ? `
+            <div style="display:flex; gap:4px; flex-shrink:0;">
+                <button type="button" onclick="toggleInlineCategoryEditor()" title="カテゴリ編集" style="background:#5D4037; color:white; border:none; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 編集</button>
+            </div>
+            ` : ''}
+        </div>
+        <div id="inlineCategoryEditorArea" style="display:none; margin-top:10px; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:8px; padding:12px;"></div>
         
         <label class="form-label">ステータス</label>
         <select id="manureStatusSelect" class="form-input" onchange="toggleDateInputs()">
@@ -2361,6 +2369,155 @@ window.saveTransplantSettings = async function() {
         alert('定植設定の保存に失敗しました: ' + (e.message || e));
     } finally {
         if (area) area.style.pointerEvents = '';
+    }
+};
+
+// ====== 生産管理ステータス変更モーダル内 インラインカテゴリ編集（管理者） ======
+let inlineCatDraft = [];
+
+window.toggleInlineCategoryEditor = function() {
+    const area = document.getElementById('inlineCategoryEditorArea');
+    if (!area) return;
+    if (area.style.display !== 'none') {
+        area.style.display = 'none';
+        area.innerHTML = '';
+        return;
+    }
+    inlineCatDraft = (prodCategories || []).map((c, i) => ({
+        id: c.id,
+        name: c.name,
+        order: c.order != null ? c.order : (i + 1)
+    }));
+    area.style.display = 'block';
+    renderInlineCategoryEditor();
+};
+
+function renderInlineCategoryEditor() {
+    const area = document.getElementById('inlineCategoryEditorArea');
+    if (!area) return;
+    inlineCatDraft.sort((a, b) => (a.order || 0) - (b.order || 0));
+    inlineCatDraft.forEach((c, i) => { c.order = i + 1; });
+
+    let html = `<div style="font-size:14px; font-weight:bold; color:#5D4037; margin-bottom:10px; border-bottom:1px solid #FFE0B2; padding-bottom:6px;">
+        ✏️ カテゴリ管理（追加・編集・削除）
+    </div>`;
+
+    if (!inlineCatDraft.length) {
+        html += '<div style="color:#888; padding:8px; text-align:center; font-size:13px;">カテゴリがありません</div>';
+    } else {
+        inlineCatDraft.forEach((c, idx) => {
+            const safeName = String(c.name || '').replace(/"/g, '&quot;');
+            const safeId = String(c.id || '').replace(/"/g, '&quot;');
+            html += `<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
+                <div style="display:flex; flex-direction:column; gap:1px;">
+                    <button type="button" onclick="inlineMoveCategory(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}
+                        style="background:#fff; border:1px solid #bbb; border-radius:3px; padding:1px 6px; cursor:pointer; font-size:10px;" title="上へ">▲</button>
+                    <button type="button" onclick="inlineMoveCategory(${idx}, 1)" ${idx === inlineCatDraft.length - 1 ? 'disabled' : ''}
+                        style="background:#fff; border:1px solid #bbb; border-radius:3px; padding:1px 6px; cursor:pointer; font-size:10px;" title="下へ">▼</button>
+                </div>
+                <span style="width:22px; text-align:center; font-weight:bold; color:#5D4037; font-size:12px;">${idx + 1}</span>
+                <input type="text" value="${safeName}"
+                    oninput="inlineCatDraft[${idx}].name=this.value"
+                    style="flex:1; min-width:90px; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;" placeholder="カテゴリ名">
+                <button type="button" onclick="inlineRemoveCategory(${idx})"
+                    style="background:#f44336; color:#fff; border:none; padding:6px 8px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px;" title="削除">🗑️</button>
+            </div>`;
+        });
+    }
+
+    html += `<div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <button type="button" onclick="inlineAddCategory()"
+            style="flex:1; min-width:100px; background:#FF9800; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">＋ カテゴリ追加</button>
+        <button type="button" onclick="inlineSaveCategories(this)"
+            style="flex:1; min-width:100px; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">💾 保存</button>
+        <button type="button" onclick="toggleInlineCategoryEditor()"
+            style="flex:0.5; min-width:60px; background:#9e9e9e; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">閉じる</button>
+    </div>`;
+    area.innerHTML = html;
+}
+
+window.inlineMoveCategory = function(idx, delta) {
+    const to = idx + delta;
+    if (to < 0 || to >= inlineCatDraft.length) return;
+    const item = inlineCatDraft.splice(idx, 1)[0];
+    inlineCatDraft.splice(to, 0, item);
+    inlineCatDraft.forEach((c, i) => { c.order = i + 1; });
+    renderInlineCategoryEditor();
+};
+
+window.inlineAddCategory = function() {
+    const maxOrder = inlineCatDraft.reduce((m, c) => Math.max(m, parseInt(c.order, 10) || 0), 0);
+    const n = inlineCatDraft.length + 1;
+    inlineCatDraft.push({
+        id: 'cat_' + Date.now().toString(36),
+        name: '新しいカテゴリ' + n,
+        order: maxOrder + 1
+    });
+    renderInlineCategoryEditor();
+};
+
+window.inlineRemoveCategory = function(idx) {
+    const item = inlineCatDraft[idx];
+    if (item && item.id === COMPOST_CATEGORY_ID) {
+        if (!confirm('「堆肥散布」は既存データと紐づいています。削除すると地図上の既存ステータス参照に影響します。本当に削除しますか？')) return;
+    }
+    if (!confirm('「' + (item ? item.name : '') + '」を削除しますか？')) return;
+    inlineCatDraft.splice(idx, 1);
+    inlineCatDraft.forEach((c, i) => { c.order = i + 1; });
+    renderInlineCategoryEditor();
+};
+
+window.inlineSaveCategories = async function(btnElement) {
+    if (currentUserRole !== '管理者') {
+        alert('管理者のみ保存できます');
+        return;
+    }
+    const cleaned = [];
+    const seen = {};
+    for (let i = 0; i < inlineCatDraft.length; i++) {
+        const c = inlineCatDraft[i];
+        const id = String(c.id || '').trim();
+        const name = String(c.name || '').trim();
+        if (!id || !name) {
+            alert((i + 1) + '行目: IDと名前を入力してください');
+            return;
+        }
+        if (seen[id]) {
+            alert('IDが重複しています: ' + id);
+            return;
+        }
+        seen[id] = true;
+        cleaned.push({ id, name, order: parseInt(c.order, 10) || (i + 1) });
+    }
+    if (!cleaned.length) {
+        alert('カテゴリを1つ以上残してください');
+        return;
+    }
+    cleaned.sort((a, b) => (a.order || 0) - (b.order || 0));
+    cleaned.forEach((c, i) => { c.order = i + 1; });
+    const btn = btnElement;
+    if (btn) { btn.disabled = true; btn.innerText = '保存中...'; }
+    try {
+        const res = await callGAS('saveProdMgmtCategories', {
+            categories: cleaned,
+            userName: currentUserName || localStorage.getItem('passionMapUserName') || ''
+        });
+        setProdCategories((res && res.categories) ? res.categories : cleaned);
+        // ドロップダウンを更新
+        const sel = document.getElementById('prodStatusCategorySelect');
+        if (sel) {
+            const prevVal = sel.value;
+            sel.innerHTML = (prodCategories || []).map(c =>
+                `<option value="${c.id}" ${c.id === prevVal ? 'selected' : ''}>${c.name}</option>`
+            ).join('');
+        }
+        toggleInlineCategoryEditor();
+        alert('カテゴリを保存しました');
+        if (polygons && polygons.length) setActiveProdCategory(activeProdCategoryId);
+    } catch (e) {
+        alert('カテゴリ保存に失敗しました: ' + (e.message || e));
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerText = '💾 保存'; }
     }
 };
 

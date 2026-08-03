@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <title>農技バトル — スキルツリー試作</title>
+  <title>農技バトル v1.02 — 装備 ＆ ガチャ実装</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -409,17 +409,57 @@
       <h1>作業が、技になる。</h1>
       <p>作業を記録するとスキルに経験値が入り、覚えた農技で雑草ボスと戦えます。情熱MAPの作業記録をゲーム化する試作です。</p>
       <div class="badge-row">
+        <span class="pill" style="background:#e8f5e9; color:#1b5e20; border-color:#a5d6a7;">👤 <span id="currentUserPill">読込中...</span></span>
         <span class="pill">Lv <b id="playerLevel">1</b></span>
         <span class="pill">総EXP <b id="totalExp">0</b></span>
+        <span class="pill" style="background:#fff8e1; color:#f57f17; border-color:#ffe082;">🪙 <b id="coinCount">0</b> 枚</span>
+        <span class="pill" style="background:#e3f2fd; color:#1565c0; border-color:#90caf9;">⚔️ 補正: <b id="equipStatsBonus">+0 ATK / +0 HP</b></span>
         <span class="pill">連勝 <b id="winStreak">0</b></span>
         <span class="pill">解放技 <b id="unlockedCount">0</b></span>
       </div>
+      <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85rem;">
+        <label for="userSelect" style="font-weight: bold; color: var(--soil);">データ連動ユーザー:</label>
+        <select id="userSelect" onchange="switchUser(this.value)" style="padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(62,39,35,0.2); font-size: 0.85rem; background: #fff; font-family: inherit; font-weight: bold; color: var(--leaf-deep); cursor: pointer;">
+          <option value="">(ログイン中のユーザー)</option>
+        </select>
+        <span id="syncStatusHint" style="color: var(--muted); font-size: 0.8rem;">🔄 実記録同期完了</span>
+      </div>
     </header>
+
+    <!-- 🎁 農業道具ガチャ & 🎒 装備枠セクション -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+      <section class="panel" style="background: linear-gradient(135deg, #fffde7 0%, #fff8e1 100%); border: 1px solid #ffe082;">
+        <h2 style="color: #f57f17; display: flex; align-items: center; justify-content: space-between;">
+          <span>🎁 農業道具ガチャ</span>
+          <span style="font-size: 0.85rem; background: #fff; padding: 2px 10px; border-radius: 12px; border: 1px solid #ffecb3;">1回 10 コイン</span>
+        </h2>
+        <p class="sub">作業記録や敵撃破でコインを獲得！ガチャを回して伝説の農機具や作業着をゲットしよう。</p>
+        <div style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+          <button type="button" onclick="playGacha(1)" style="flex: 1; padding: 10px; background: linear-gradient(135deg, #ffb300, #ff8f00); color: #fff; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 3px 8px rgba(255,143,0,0.3); font-size: 0.95rem;">🎰 1回ガチャ (10枚)</button>
+          <button type="button" onclick="playGacha(10)" style="flex: 1; padding: 10px; background: linear-gradient(135deg, #e65100, #bf360c); color: #fff; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 3px 8px rgba(191,54,12,0.3); font-size: 0.95rem;">🔥 10連ガチャ (100枚)</button>
+        </div>
+        <div id="gachaResult" style="min-height: 48px; background: #fff; border: 1px dashed #ffe082; border-radius: 8px; padding: 8px; font-size: 0.85rem; color: #5d4037; display: flex; align-items: center; justify-content: center; text-align: center;">
+          ガチャを回すとここに結果が表示されます！
+        </div>
+      </section>
+
+      <section class="panel" style="background: linear-gradient(135deg, #e8eaf6 0%, #e3f2fd 100%); border: 1px solid #90caf9;">
+        <h2 style="color: #1565c0;">🎒 現在の装備スロット</h2>
+        <p class="sub">タップで装備を着脱できます。レア装備でステータスが大幅UP！</p>
+        <div id="equippedSlots" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px;">
+          <!-- 装備スロット -->
+        </div>
+        <div style="font-size: 0.8rem; font-weight: bold; color: #1565c0; margin-bottom: 4px;">所持装備一覧 (タップで装備):</div>
+        <div id="inventoryList" style="display: flex; flex-wrap: wrap; gap: 6px; max-height: 90px; overflow-y: auto; background: #fff; padding: 6px; border-radius: 8px; border: 1px solid #bbdefb; min-height: 40px;">
+          <!-- インベントリ -->
+        </div>
+      </section>
+    </div>
 
     <div class="grid">
       <section class="panel">
-        <h2>📝 今日の作業を記録</h2>
-        <p class="sub">タップするだけでEXP獲得（試作なので実データ連携なし）。連続で記録するとコンボボーナス。</p>
+        <h2>📝 今日の作業を記録 (EXP ＆ コイン獲得)</h2>
+        <p class="sub">作業を記録するとリアルタイムでレベルが上がります。連続で記録するとコンボボーナス！</p>
         <div class="work-grid" id="workGrid"></div>
         <div class="log" id="workLog"></div>
         <div class="toolbar">
@@ -536,6 +576,34 @@
       { name: '巨大イノシシ', avatar: '🐗', hp: 140, atk: 22, weed: false }
     ];
 
+    const EQUIPMENTS = [
+      // 道具 (tool)
+      { id: 'eq_sickle_n', name: '普及型鎌', icon: '🪓', type: 'tool', rarity: 'N', atk: 4, hp: 0, desc: 'どこにでもある普通の鎌。' },
+      { id: 'eq_hoe_r', name: '鍛造クワ', icon: '⛏️', type: 'tool', rarity: 'R', atk: 10, hp: 5, desc: '職人が打ったしっかりしたクワ。' },
+      { id: 'eq_cutter_sr', name: '黄金の刈払機', icon: '⚙️', type: 'tool', rarity: 'SR', atk: 22, hp: 10, desc: '草を高速で刈り倒す強力エンジン。' },
+      { id: 'eq_tractor_ssr', name: 'クボタ・赤トラクター', icon: '🚜', type: 'tool', rarity: 'SSR', atk: 42, hp: 30, desc: '圧倒的馬力で畑を開墾する重農機。' },
+      { id: 'eq_god_sickle_ur', name: '神農の宝鎌', icon: '✨', type: 'tool', rarity: 'UR', atk: 68, hp: 50, desc: '豊作の神が宿る伝説の神器。' },
+
+      // 頭 (head)
+      { id: 'eq_straw_n', name: '麦わら帽子', icon: '👒', type: 'head', rarity: 'N', atk: 0, hp: 12, desc: '日差しを防ぐ基本装備。' },
+      { id: 'eq_towel_r', name: '職人手ぬぐい', icon: '🧣', type: 'head', rarity: 'R', atk: 3, hp: 22, desc: '汗を抑え集中力を高める。' },
+      { id: 'eq_visor_sr', name: '太陽のサンバイザー', icon: '🧢', type: 'head', rarity: 'SR', atk: 6, hp: 40, desc: '眩しさを完全にカットするバイザー。' },
+      { id: 'eq_helm_ssr', name: '豊作の黄金兜', icon: '🪖', type: 'head', rarity: 'SSR', atk: 12, hp: 75, desc: '黄金に輝く威厳ある兜。' },
+
+      // 手袋 (hand)
+      { id: 'eq_glove_n', name: 'イボ付き軍手', icon: '🧤', type: 'hand', rarity: 'N', atk: 2, hp: 5, desc: 'グリップ力のある軍手。' },
+      { id: 'eq_rubber_r', name: '耐油ゴム手袋', icon: '🧤', type: 'hand', rarity: 'R', atk: 6, hp: 12, desc: '水や薬品に強い丈夫な手袋。' },
+      { id: 'eq_leather_sr', name: '革製プロ手袋', icon: '🥊', type: 'hand', rarity: 'SR', atk: 14, hp: 25, desc: '怪我を防ぐ本格革手袋。' },
+      { id: 'eq_gauntlet_ssr', name: '精霊のグローブ', icon: '🔮', type: 'hand', rarity: 'SSR', atk: 25, hp: 45, desc: '大地の力を宿した神秘のグローブ。' },
+
+      // 靴/アクセ (feet)
+      { id: 'eq_boots_n', name: '田んぼ長靴', icon: '👢', type: 'feet', rarity: 'N', atk: 0, hp: 15, desc: '泥の中でも歩きやすい長靴。' },
+      { id: 'eq_tabi_r', name: '軽量地下足袋', icon: '👟', type: 'feet', rarity: 'R', atk: 4, hp: 25, desc: '踏ん張りが効く伝統の足袋。' },
+      { id: 'eq_amulet_sr', name: '豊作祈願の御守り', icon: '⛩️', type: 'feet', rarity: 'SR', atk: 10, hp: 40, desc: '神社の御加護がある御守り。' },
+      { id: 'eq_boots_ssr', name: '疾風のスパイクブーツ', icon: '🥾', type: 'feet', rarity: 'SSR', atk: 20, hp: 65, desc: '軽やかに畑を疾走できる特殊ブーツ。' }
+    ];
+
+    let activeUser = localStorage.getItem('passionMapUserName') || '作業員';
     let state = loadState();
     let battle = null;
     let combo = 0;
@@ -546,22 +614,143 @@
       SKILLS.forEach(s => { skills[s.id] = { exp: 0, lv: 1 }; });
       return {
         totalExp: 0,
+        coins: 50,
         wins: 0,
         streak: 0,
         log: [],
-        skills
+        skills,
+        inventory: ['eq_sickle_n', 'eq_straw_n', 'eq_glove_n', 'eq_boots_n'],
+        equipped: { tool: 'eq_sickle_n', head: 'eq_straw_n', hand: 'eq_glove_n', feet: 'eq_boots_n' }
+      };
+    }
+
+    // ===== 🌟 情熱MAPの実作業記録（loadedPolygons / photos）からリアル経験値を動的集計 =====
+    function calculateRealUserSkills(targetUser) {
+      const user = targetUser || activeUser;
+      const skills = {};
+      SKILLS.forEach(s => { skills[s.id] = { exp: 0, lv: 1, count: 0 }; });
+
+      let recordCount = 0;
+      const usersFound = new Set();
+
+      try {
+        const initDataRaw = localStorage.getItem('passionMapInitData') || localStorage.getItem('pMapAdminInitData');
+        if (initDataRaw) {
+          const initData = JSON.parse(initDataRaw);
+          const polys = initData.loadedPolygons || {};
+          
+          Object.values(polys).forEach(poly => {
+            if (!poly || !Array.isArray(poly.photos)) return;
+            poly.photos.forEach(ph => {
+              if (!ph) return;
+              const author = String(ph.author || ph.userName || ph.data?.userName || '').trim();
+              if (author) usersFound.add(author);
+
+              // ターゲットユーザーのフィルタリング（ターゲット未指定、全員対象、あるいは一致）
+              if (user && user !== '全員' && author && author !== user) return;
+
+              const wName = String(ph.data?.workName || ph.workName || ph.comment || '').trim();
+              const details = String(ph.data?.detailedWorks || ph.detailedWorks || '').trim();
+              const combinedText = (wName + ' ' + details).toLowerCase();
+              const mins = parseInt(ph.data?.workMinutes || ph.workMinutes || ph.data?.rec_total_time || 0, 10) || 0;
+
+              if (!combinedText && mins === 0) return;
+              recordCount++;
+
+              // スキル別のキーワードマッピング
+              if (combinedText.includes('播種') || combinedText.includes('種まき') || combinedText.includes('接ぎ木') || combinedText.includes('苗')) {
+                skills.sowing.exp += 15 + Math.floor(mins * 0.5);
+                skills.sowing.count++;
+              }
+              if (combinedText.includes('定植') || combinedText.includes('植え付け') || combinedText.includes('苗植え')) {
+                skills.planting.exp += 20 + Math.floor(mins * 0.6);
+                skills.planting.count++;
+              }
+              if (combinedText.includes('収穫') || combinedText.includes('穫り')) {
+                skills.harvest.exp += 25 + Math.floor(mins * 0.8);
+                skills.harvest.count++;
+              }
+              if (combinedText.includes('草刈り') || combinedText.includes('草むしり') || combinedText.includes('草抜き') || combinedText.includes('除草') || combinedText.includes('刈り')) {
+                skills.weeding.exp += 18 + Math.floor(mins * 0.5);
+                skills.weeding.count++;
+              }
+              if (combinedText.includes('潅水') || combinedText.includes('灌水') || combinedText.includes('水まき') || combinedText.includes('水やり') || combinedText.includes('田まわり')) {
+                skills.water.exp += 15 + Math.floor(mins * 0.4);
+                skills.water.count++;
+              }
+              if (combinedText.includes('防除') || combinedText.includes('消毒') || combinedText.includes('農薬') || combinedText.includes('散布')) {
+                skills.pest.exp += 20 + Math.floor(mins * 0.6);
+                skills.pest.count++;
+              }
+              if (combinedText.includes('畝') || combinedText.includes('畝立て') || combinedText.includes('マルチャー') || combinedText.includes('耕起') || combinedText.includes('代かき')) {
+                skills.ridge.exp += 20 + Math.floor(mins * 0.6);
+                skills.ridge.count++;
+              }
+              if (combinedText.includes('パック') || combinedText.includes('選別') || combinedText.includes('調整') || combinedText.includes('出荷') || combinedText.includes('パッキング')) {
+                skills.pack.exp += 15 + Math.floor(mins * 0.5);
+                skills.pack.count++;
+              }
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('リアル作業データの集計中にエラー:', e);
+      }
+
+      let totalExp = 0;
+      Object.keys(skills).forEach(id => {
+        const sk = skills[id];
+        sk.lv = skillLevelFromExp(sk.exp);
+        totalExp += sk.exp;
+      });
+
+      return {
+        skills,
+        totalExp,
+        recordCount,
+        usersFound: Array.from(usersFound).filter(Boolean)
       };
     }
 
     function loadState() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return defaultState();
-        const parsed = JSON.parse(raw);
         const base = defaultState();
-        return Object.assign(base, parsed, {
-          skills: Object.assign(base.skills, parsed.skills || {})
+        const real = calculateRealUserSkills(activeUser);
+
+        // リアル集計経験値とローカル手動記録経験値を合成
+        let parsed = {};
+        if (raw) {
+          try { parsed = JSON.parse(raw); } catch (e) {}
+        }
+
+        const mergedSkills = {};
+        SKILLS.forEach(s => {
+          const rExp = (real.skills[s.id] ? real.skills[s.id].exp : 0);
+          const lExp = (parsed.skills && parsed.skills[s.id]) ? (parsed.skills[s.id].exp || 0) : 0;
+          const totalExp = rExp + lExp;
+          mergedSkills[s.id] = {
+            exp: totalExp,
+            lv: skillLevelFromExp(totalExp),
+            realExp: rExp,
+            manualExp: lExp
+          };
         });
+
+        const totalMergedExp = Object.values(mergedSkills).reduce((acc, cur) => acc + cur.exp, 0);
+
+        return {
+          totalExp: totalMergedExp,
+          coins: parsed.coins != null ? parsed.coins : (base.coins + (real.recordCount * 5)),
+          wins: parsed.wins || 0,
+          streak: parsed.streak || 0,
+          log: parsed.log || [],
+          skills: mergedSkills,
+          inventory: Array.isArray(parsed.inventory) ? parsed.inventory : base.inventory,
+          equipped: Object.assign({}, base.equipped, parsed.equipped || {}),
+          recordCount: real.recordCount,
+          usersFound: real.usersFound
+        };
       } catch (e) {
         return defaultState();
       }
@@ -607,11 +796,198 @@
       toast._t = setTimeout(() => el.classList.remove('show'), 1800);
     }
 
+    function switchUser(userName) {
+      activeUser = userName || localStorage.getItem('passionMapUserName') || '作業員';
+      state = loadState();
+      render();
+      toast(`👤 ${activeUser} さんの作業データに切り替えました！`);
+    }
+
+    // ===== ⚔️ 装備補正計算 =====
+    function getEquippedStats() {
+      let atk = 0;
+      let hp = 0;
+      if (state.equipped) {
+        Object.values(state.equipped).forEach(eqId => {
+          const item = EQUIPMENTS.find(e => e.id === eqId);
+          if (item) {
+            atk += item.atk || 0;
+            hp += item.hp || 0;
+          }
+        });
+      }
+      return { atk, hp };
+    }
+
     function renderHeader() {
       document.getElementById('playerLevel').textContent = String(playerLevel());
       document.getElementById('totalExp').textContent = String(state.totalExp);
       document.getElementById('winStreak').textContent = String(state.streak);
       document.getElementById('unlockedCount').textContent = String(unlockedSkills().length);
+
+      const coinEl = document.getElementById('coinCount');
+      if (coinEl) coinEl.textContent = String(state.coins || 0);
+
+      const bonusStats = getEquippedStats();
+      const bonusEl = document.getElementById('equipStatsBonus');
+      if (bonusEl) bonusEl.textContent = `+${bonusStats.atk} ATK / +${bonusStats.hp} HP`;
+
+      const pill = document.getElementById('currentUserPill');
+      if (pill) pill.textContent = activeUser;
+
+      const hint = document.getElementById('syncStatusHint');
+      if (hint) {
+        hint.textContent = `🔄 実記録 ${state.recordCount || 0} 件から同期中`;
+      }
+
+      // ユーザー選択肢の動的生成
+      const select = document.getElementById('userSelect');
+      if (select && select.children.length <= 1) {
+        const found = state.usersFound || [];
+        if (!found.includes(activeUser) && activeUser !== '全員') found.push(activeUser);
+        const options = ['(ログイン中のユーザー)', '全員', ...found.filter(u => u !== '(ログイン中のユーザー)')];
+        select.innerHTML = options.map(u => {
+          const val = u === '(ログイン中のユーザー)' ? (localStorage.getItem('passionMapUserName') || '作業員') : u;
+          const selected = (val === activeUser) ? 'selected' : '';
+          return `<option value="${val}" ${selected}>${u}</option>`;
+        }).join('');
+      }
+    }
+
+    // ===== 🎒 装備 ＆ ガチャUIの描画 =====
+    function renderEquipmentSection() {
+      const slotContainer = document.getElementById('equippedSlots');
+      const invContainer = document.getElementById('inventoryList');
+      if (!slotContainer || !invContainer) return;
+
+      const slotTypes = [
+        { type: 'tool', label: '道具', icon: '🪓' },
+        { type: 'head', label: '頭', icon: '👒' },
+        { type: 'hand', label: '手', icon: '🧤' },
+        { type: 'feet', label: '靴', icon: '👢' }
+      ];
+
+      // 装備スロット表示
+      slotContainer.innerHTML = slotTypes.map(s => {
+        const eqId = state.equipped[s.type];
+        const item = EQUIPMENTS.find(e => e.id === eqId);
+        if (item) {
+          const rBg = item.rarity === 'UR' ? '#ffe082' : (item.rarity === 'SSR' ? '#f8bbd0' : (item.rarity === 'SR' ? '#e1bee7' : '#e3f2fd'));
+          return `
+            <div onclick="unequipSlot('${s.type}')" title="クリックで解除: ${item.desc}" style="background:${rBg}; border:1.5px solid #ab47bc; border-radius:8px; padding:6px 4px; text-align:center; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.08);">
+              <div style="font-size:10px; color:#555;">${s.label} [<b style="color:#7b1fa2;">${item.rarity}</b>]</div>
+              <div style="font-size:1.2rem;">${item.icon}</div>
+              <div style="font-size:11px; font-weight:bold; color:#2c2118; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</div>
+              <div style="font-size:10px; color:#2e7d32;">+${item.atk}ATK +${item.hp}HP</div>
+            </div>`;
+        } else {
+          return `
+            <div style="background:#fafafa; border:1px dashed #ccc; border-radius:8px; padding:6px 4px; text-align:center; color:#aaa;">
+              <div style="font-size:10px;">${s.label}</div>
+              <div style="font-size:1.2rem;">${s.icon}</div>
+              <div style="font-size:10px;">未装備</div>
+            </div>`;
+        }
+      }).join('');
+
+      // 所持インベントリ表示
+      const uniqueInv = Array.from(new Set(state.inventory || []));
+      if (!uniqueInv.length) {
+        invContainer.innerHTML = '<div style="font-size:11px; color:#999; width:100%; text-align:center; padding:10px;">ガチャで装備を獲得しよう！</div>';
+      } else {
+        invContainer.innerHTML = uniqueInv.map(id => {
+          const item = EQUIPMENTS.find(e => e.id === id);
+          if (!item) return '';
+          const isEquipped = Object.values(state.equipped).includes(id);
+          const bg = isEquipped ? '#d1c4e9' : '#fff';
+          const border = isEquipped ? '#7b1fa2' : '#ddd';
+          return `
+            <button type="button" onclick="equipItem('${item.id}')" title="${item.desc} (+${item.atk}ATK / +${item.hp}HP)" style="background:${bg}; border:1px solid ${border}; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:4px;">
+              <span>${item.icon}</span>
+              <span><b>${item.name}</b> (${item.rarity})</span>
+              ${isEquipped ? '<span style="font-size:9px; background:#7b1fa2; color:#fff; padding:1px 4px; border-radius:4px;">装備中</span>' : ''}
+            </button>`;
+        }).join('');
+      }
+    }
+
+    function equipItem(id) {
+      const item = EQUIPMENTS.find(e => e.id === id);
+      if (!item) return;
+      state.equipped[item.type] = id;
+      saveState();
+      render();
+      toast(`🎒 ${item.name} (${item.rarity}) を装備しました！`);
+    }
+
+    function unequipSlot(type) {
+      if (state.equipped[type]) {
+        state.equipped[type] = null;
+        saveState();
+        render();
+        toast(`🎒 装備を外しました。`);
+      }
+    }
+
+    // ===== 🎰 ガチャ処理 =====
+    function playGacha(times) {
+      const cost = times * 10;
+      if ((state.coins || 0) < cost) {
+        toast(`⚠️ ガチャコインが足りません！(必要: ${cost}枚 / 所持: ${state.coins || 0}枚)\n作業記録やバトルでコインを獲得しましょう。`);
+        return;
+      }
+      state.coins -= cost;
+
+      const results = [];
+      for (let i = 0; i < times; i++) {
+        const rand = Math.random() * 100;
+        let pool = [];
+        if (rand < 3) pool = EQUIPMENTS.filter(e => e.rarity === 'UR');
+        else if (rand < 15) pool = EQUIPMENTS.filter(e => e.rarity === 'SSR');
+        else if (rand < 40) pool = EQUIPMENTS.filter(e => e.rarity === 'SR');
+        else if (rand < 75) pool = EQUIPMENTS.filter(e => e.rarity === 'R');
+        else pool = EQUIPMENTS.filter(e => e.rarity === 'N');
+
+        if (!pool.length) pool = EQUIPMENTS;
+        const picked = pool[Math.floor(Math.random() * pool.length)];
+
+        if (!state.inventory.includes(picked.id)) {
+          state.inventory.push(picked.id);
+        }
+        // 自動で強力な装備へ装備
+        if (!state.equipped[picked.type]) {
+          state.equipped[picked.type] = picked.id;
+        } else {
+          const currentEq = EQUIPMENTS.find(e => e.id === state.equipped[picked.type]);
+          if (!currentEq || picked.atk + picked.hp > currentEq.atk + currentEq.hp) {
+            state.equipped[picked.type] = picked.id;
+          }
+        }
+        results.push(picked);
+      }
+
+      saveState();
+      render();
+
+      const resBox = document.getElementById('gachaResult');
+      if (resBox) {
+        if (times === 1) {
+          const item = results[0];
+          const color = item.rarity === 'UR' ? '#d50000' : (item.rarity === 'SSR' ? '#c2185b' : (item.rarity === 'SR' ? '#7b1fa2' : '#1976d2'));
+          resBox.innerHTML = `
+            <div>
+              <div style="font-size:1.1rem; font-weight:bold; color:${color};">✨ ガチャ獲得: ${item.icon} ${item.name} (${item.rarity}) ✨</div>
+              <div style="font-size:0.8rem; color:#666; margin-top:2px;">+${item.atk} ATK / +${item.hp} HP — ${item.desc}</div>
+            </div>`;
+        } else {
+          resBox.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:center;">` +
+            results.map(item => {
+              const color = item.rarity === 'UR' ? '#d50000' : (item.rarity === 'SSR' ? '#c2185b' : (item.rarity === 'SR' ? '#7b1fa2' : '#1976d2'));
+              return `<span style="font-size:0.8rem; background:#fff3e0; border:1px solid #ffe0b2; padding:2px 6px; border-radius:4px; color:${color};"><b>${item.icon} ${item.name}</b>(${item.rarity})</span>`;
+            }).join('') + `</div>`;
+        }
+      }
+      toast(`🎰 ガチャ結果: ${results.length}個の装備を獲得！`);
     }
 
     function renderWorks() {
@@ -717,7 +1093,8 @@
     }
 
     function heroMaxHp() {
-      return 90 + playerLevel() * 12 + unlockedSkills().length * 4;
+      const eqStats = getEquippedStats();
+      return 90 + playerLevel() * 12 + unlockedSkills().length * 4 + eqStats.hp;
     }
 
     function startBattle() {
@@ -779,7 +1156,7 @@
       const box = document.getElementById('battleActions');
       const unlocked = unlockedSkills();
       if (!battle || battle.over) {
-        box.innerHTML = `<button type="button" class="sun" onclick="startBattle()">バトル開始</button>`;
+        box.innerHTML = `<button type="button" class="sun" onclick="startBattle()">次なる敵とたたかう</button>`;
         return;
       }
       if (!unlocked.length) {
@@ -797,9 +1174,10 @@
 
       const heroEl = document.getElementById('heroFighter');
       const enemyEl = document.getElementById('enemyFighter');
+      const eqStats = getEquippedStats();
 
       if (skillId === 'basic') {
-        const dmg = 10 + Math.floor(playerLevel() * 1.5) + Math.floor(Math.random() * 5);
+        const dmg = 10 + Math.floor(playerLevel() * 1.5) + eqStats.atk + Math.floor(Math.random() * 5);
         dealToEnemy(dmg, '基本の農作業');
         return;
       }
@@ -815,7 +1193,7 @@
       heroEl.classList.add('attack');
 
       if (skill.type === 'heal') {
-        const heal = Math.round(skill.power * scale);
+        const heal = Math.round(skill.power * scale + (eqStats.hp * 0.2));
         battle.heroHp = Math.min(battle.heroMax, battle.heroHp + heal);
         floatText(heroEl, '+' + heal, true);
         setBattleLog(`${skill.name}！ HPが ${heal} 回復した。`);
@@ -836,13 +1214,13 @@
         return;
       }
       if (skill.type === 'counter') {
-        battle.counter = Math.round(skill.power * scale);
+        battle.counter = Math.round(skill.power * scale + eqStats.atk);
         setBattleLog(`${skill.name}！ 畝の壁が反撃を構えた。`);
         endHeroTurn();
         return;
       }
 
-      let dmg = Math.round(skill.power * scale + Math.random() * 6);
+      let dmg = Math.round(skill.power * scale + eqStats.atk + Math.random() * 6);
       if (skill.type === 'weed' && battle.enemy.weed) dmg = Math.round(dmg * 1.45);
       dealToEnemy(dmg, skill.name);
     }
@@ -912,18 +1290,33 @@
       renderBattleActions();
     }
 
+    // ===== 🏆 防衛勝利＆装備宝箱ドロップ処理 =====
     function winBattle() {
       battle.over = true;
-      const gain = 20 + playerLevel() * 3;
-      state.totalExp += gain;
+      const gainExp = 20 + playerLevel() * 3;
+      const gainCoins = 15 + Math.floor(Math.random() * 10);
+      state.totalExp += gainExp;
+      state.coins = (state.coins || 0) + gainCoins;
       state.wins += 1;
       state.streak += 1;
-      state.log.unshift(`🏆 ${battle.enemy.name} を撃退！ +${gain}EXP`);
+
+      // 40% の確率で敵から装備ドロップ
+      let dropMsg = '';
+      if (Math.random() < 0.40) {
+        const dropPool = EQUIPMENTS.filter(e => e.rarity !== 'UR');
+        const dropItem = dropPool[Math.floor(Math.random() * dropPool.length)];
+        if (!state.inventory.includes(dropItem.id)) {
+          state.inventory.push(dropItem.id);
+        }
+        dropMsg = ` 🎁 宝箱から 【${dropItem.icon} ${dropItem.name}(${dropItem.rarity})】 をドロップ！`;
+      }
+
+      state.log.unshift(`🏆 ${battle.enemy.name} を撃退！ +${gainExp}EXP +${gainCoins}コイン${dropMsg}`);
       saveState();
-      setBattleLog(`勝利！ ${battle.enemy.name} を畑から追い払った。（+${gain}EXP / 連勝${state.streak}）`);
+      setBattleLog(`勝利！ ${battle.enemy.name} を畑から追い払った。（+${gainExp}EXP / +${gainCoins}コイン / 連勝${state.streak}）${dropMsg}`);
       renderAll();
       renderBattleActions();
-      toast('防衛成功！');
+      toast(`防衛成功！ +${gainCoins}コイン獲得！`);
     }
 
     function loseBattle() {
@@ -940,6 +1333,7 @@
 
     function renderAll() {
       renderHeader();
+      renderEquipmentSection();
       renderWorks();
       renderLog();
       renderSkills();
