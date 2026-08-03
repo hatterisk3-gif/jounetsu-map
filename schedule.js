@@ -1384,6 +1384,7 @@ window.updatePlanRatio = function(planId, index, value) {
     }
 
     updateCpCellsText(planId, true);
+    if (typeof window.pushCpEditHistoryDebounced === 'function') window.pushCpEditHistoryDebounced(350);
 };
 
 window.setCpPlanInputMode = function(planId, mode) {
@@ -1424,6 +1425,7 @@ window.updateRowParams = function(planId, source) {
     }
 
     updateRowCalculations(planId);
+    if (typeof window.pushCpEditHistoryDebounced === 'function') window.pushCpEditHistoryDebounced(400);
 };
 
 /**
@@ -2210,6 +2212,7 @@ window.confirmFieldSelection = function() {
         if (typeof saveCultivationPlan === 'function') {
             saveCultivationPlan({ keepOpen: true, silent: true });
         }
+        if (typeof window.pushCpEditHistory === 'function') window.pushCpEditHistory();
     }
     window.exitFieldSelectionMode();
 };

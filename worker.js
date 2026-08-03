@@ -7931,6 +7931,22 @@ function createSignboardMarker(name, pos, icon, id) {
       async function submitRecord() {
         // 紐づけ先の解決（圃場作業のときだけ圃場必須）
         let targetIds = [...selectedPolyIds].filter(id => id && loadedPolygons[id]);
+        // 技術上の保存先として看板を借りただけか（場所名に看板名を出さない）
+        let technicalFallbackParent = false;
+        const findMarkerBySignHints_ = (hints) => {
+          const list = Object.keys(loadedPolygons || {});
+          for (const hint of hints) {
+            const hit = list.find(id => {
+              const p = loadedPolygons[id];
+              if (!p || !p.isMarker) return false;
+              const fn = String(p.signFunction || '');
+              const nm = String(p.name || '');
+              return fn.includes(hint) || nm.includes(hint);
+            });
+            if (hit) return hit;
+          }
+          return null;
+        };
         if (targetIds.length === 0) {
           const requiresField = currentRecordType === 'work' && typeof window.workRecordRequiresField === 'function'
             ? window.workRecordRequiresField()
@@ -7939,13 +7955,27 @@ function createSignboardMarker(name, pos, icon, id) {
             customAlert("記録を保存するには、紐づける圃場（または看板）が必要です。マップから選択してください。");
             return;
           }
-          // 非畜場作業: 技術上の保存先が必要（表示用の場所名には使わない）
+          // 非圃場作業: 技術上の保存先が必要（表示用の場所名には使わない）
           if (activePolyId && loadedPolygons[activePolyId]) {
             targetIds = [activePolyId];
+            // active が看板で、ユーザーがマップから開いていない／選択していない場合のみ技術フォールバック扱い
+            if (loadedPolygons[activePolyId].isMarker && !(selectedPolyIds || []).map(String).includes(String(activePolyId))) {
+              technicalFallbackParent = true;
+            }
           } else {
-            const signId = Object.keys(loadedPolygons).find(id => loadedPolygons[id] && loadedPolygons[id].isMarker);
+            const catHint = (document.getElementById('rec_work_category')?.value || '').trim();
+            const preferHints = [];
+            if (catHint.includes('倉庫')) preferHints.push('倉庫');
+            if (catHint.includes('事務')) preferHints.push('事務所', '事務');
+            if (catHint.includes('整備') || catHint.includes('保全')) preferHints.push('整備', '農機具', '車両');
+            preferHints.push('倉庫', '事務所', 'パックセンター', '研究所');
+            let signId = findMarkerBySignHints_(preferHints);
+            if (!signId) {
+              signId = Object.keys(loadedPolygons).find(id => loadedPolygons[id] && loadedPolygons[id].isMarker);
+            }
             if (signId) {
               targetIds = [signId];
+              technicalFallbackParent = true;
             } else {
               customAlert("保存先となる看板が見つかりません。地図に看板を登録するか、拠点看板から記録を開いてください。");
               return;
@@ -8234,13 +8264,27 @@ function createSignboardMarker(name, pos, icon, id) {
           }
 
           const keptUrls = existingUrlsInEdit.filter(u=>u!==null);
-          // ?????????????????????????????????????????
+          // 表示用の場所名: 実圃場を優先。技術フォールバックの看板名（例: 鳥被害が発生）は使わない
           const fieldNames = selectedPolyIds
             .filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker)
             .map(id => loadedPolygons[id].name)
             .filter(Boolean);
-          const nameStr = fieldNames.join(', ') || selectedPolyIds.map(i => loadedPolygons[i] ? loadedPolygons[i].name : "").filter(Boolean).join(', ');
+          let nameStr = fieldNames.join(', ');
+          if (!nameStr) {
+            if (technicalFallbackParent) {
+              const catLabel = (document.getElementById('rec_work_category')?.value || '').trim();
+              nameStr = (catLabel && catLabel !== 'すべて' && catLabel !== '圃場作業')
+                ? catLabel
+                : ((document.getElementById('rec_work_name')?.value || '').trim() || '拠点作業');
+            } else {
+              nameStr = selectedPolyIds
+                .map(i => loadedPolygons[i] ? loadedPolygons[i].name : '')
+                .filter(Boolean)
+                .join(', ');
+            }
+          }
           data.multiFieldNames = fieldNames.join(', ');
+          data.placeLabel = nameStr;
 
           if (currentEditRecordId) {
               let updated = await callGAS('updateRecordItem', {id: activePolyId, recordId: currentEditRecordId, recordType: currentRecordType, data, photos, keptUrls, userName: currentUser});
