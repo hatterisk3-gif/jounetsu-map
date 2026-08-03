@@ -1217,7 +1217,22 @@
       const s = timeToMins(startEl.value);
       const e = timeToMins(endEl.value);
       if (s != null && e != null && e <= s) {
-        alertMsg('終了時刻が開始時刻以前になっています。開始時刻も確認してください。');
+        // 開始が終了以降なら、開始を最後の作業終了（なければ終了-60分）に自動調整
+        const workDateYmd = getClockOutWorkDateYmd();
+        const user =
+          (typeof currentUser !== 'undefined' && currentUser) ||
+          localStorage.getItem('passionMapUserName') ||
+          '';
+        let lastEnd = getLastWorkEndTime(user, workDateYmd);
+        if (!lastEnd && typeof window.getLatestEndTimeForDate === 'function') {
+          lastEnd = window.getLatestEndTimeForDate(workDateYmd) || '';
+        }
+        if (lastEnd && timeToMins(lastEnd) != null && timeToMins(lastEnd) < e) {
+          startEl.value = lastEnd;
+        } else {
+          const adj = Math.max(0, e - 60);
+          startEl.value = minsToHm(adj);
+        }
       }
     }
   };
@@ -1243,12 +1258,51 @@
     ensureLunchFieldsEnabled();
     startEl.value = endTime;
     const endEl = document.getElementById('clockLunchEnd');
-    if (endEl && endEl.value) {
+    if (endEl) {
       const s = timeToMins(startEl.value);
-      const e = timeToMins(endEl.value);
-      if (s != null && e != null && e <= s) {
-        alertMsg('開始時刻が終了時刻以降になっています。終了時刻も確認してください。');
+      let e = endEl.value ? timeToMins(endEl.value) : null;
+      // 終了が空、または開始以降なら「いま」に自動セット
+      if (e == null || (s != null && e <= s)) {
+        endEl.value = defaultDateTime().time;
+        e = timeToMins(endEl.value);
+        if (s != null && e != null && e <= s) {
+          alertMsg('開始時刻が現在時刻以降です。終了時刻を手入力してください。');
+        }
       }
+    }
+  };
+
+  /** 前の作業終了〜いま をまとめてセット */
+  window.setLunchFromLastWorkToNow = function () {
+    ensureLunchFieldsEnabled();
+    const workDateYmd = getClockOutWorkDateYmd();
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      '';
+    let endTime = getLastWorkEndTime(user, workDateYmd);
+    if (!endTime && typeof window.getLatestEndTimeForDate === 'function') {
+      endTime = window.getLatestEndTimeForDate(workDateYmd) || '';
+    }
+    if (!endTime) {
+      alertMsg(`${workDateYmd} の作業記録に終了時間がありません。`);
+      return;
+    }
+    const startEl = document.getElementById('clockLunchStart');
+    const endEl = document.getElementById('clockLunchEnd');
+    const nowHm = defaultDateTime().time;
+    if (startEl) startEl.value = endTime;
+    if (endEl) endEl.value = nowHm;
+    const s = timeToMins(endTime);
+    const e = timeToMins(nowHm);
+    if (s != null && e != null && e <= s) {
+      alertMsg(`開始（前作業終了 ${endTime}）が現在時刻以降です。終了時刻を手入力してください。`);
+      return;
+    }
+    const hint = document.getElementById('lunchGapHint');
+    if (hint) {
+      hint.style.color = '#2E7D32';
+      hint.textContent = `✅ 前の作業終了〜いま: ${endTime}〜${nowHm}`;
     }
   };
 
@@ -1909,6 +1963,7 @@
     html += `</div>`;
     html += `<div id="lunchGapHint" style="font-size:11px; color:${autoHint ? '#2E7D32' : '#888'}; margin-top:8px; line-height:1.4;">${autoHint || '午前と午後の作業記録があると、そのあいだの時間を自動で入れられます。'}</div>`;
     html += `<div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">`;
+    html += `<button type="button" onclick="setLunchFromLastWorkToNow()" style="width:100%; background:#FF9800; color:#fff; border:1px solid #F57C00; padding:10px 10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">⏱️ 前の作業終了〜今の時間にセット</button>`;
     html += `<button type="button" onclick="setLunchFromWorkGaps()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1E88E5; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">📋 作業記録の間時間に合わせる</button>`;
     html += `<button type="button" onclick="setLunchStartToLastWorkEnd()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 開始を最後の作業記録の終了時間に合わせる</button>`;
     html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
@@ -2091,6 +2146,7 @@
       html += `</div>`;
       html += `<div id="lunchGapHint" style="font-size:11px; color:${gapSugClock ? '#2E7D32' : '#888'}; margin-top:6px;">${gapSugClock ? `間時間候補: ${gapSugClock.start}〜${gapSugClock.end}` : '作業のあいだが分かれていると自動セットできます'}</div>`;
       html += `<div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">`;
+      html += `<button type="button" onclick="setLunchFromLastWorkToNow()" style="width:100%; background:#FF9800; color:#fff; border:1px solid #F57C00; padding:10px 10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">⏱️ 前の作業終了〜今の時間にセット</button>`;
       html += `<button type="button" onclick="setLunchFromWorkGaps()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1E88E5; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">📋 作業記録の間時間に合わせる</button>`;
       html += `<button type="button" onclick="setLunchStartToLastWorkEnd()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 開始を最後の作業記録の終了時間に合わせる</button>`;
       html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
