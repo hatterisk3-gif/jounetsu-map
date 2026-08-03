@@ -2751,7 +2751,9 @@ function renderCpPlanRow(plan) {
             td.dataset.month = m;
             td.dataset.period = i;
             td.dataset.task = '';
-            td.onclick = function() { toggleCpCell(this, plan.id); };
+            td.style.userSelect = 'none';
+            td.style.touchAction = 'none';
+            bindCpCellPaintEvents(td, plan.id);
             
             let div = document.createElement('div');
             div.style.cssText = 'width: 100%; height: 45px; transition: 0.1s; box-sizing:border-box; text-align:center; overflow:hidden; pointer-events: none; display:flex; align-items:center; justify-content:center;';
@@ -2917,6 +2919,133 @@ function copyCpPlanRow(sourcePlanId) {
 }
 
 window.copyCpPlanRow = copyCpPlanRow;
+
+/** 計画行の指定タスクの最早期列（半旬 colIdx）。未塗は後ろへ */
+function getCpPlanEarliestTaskCol(planId, taskType) {
+    const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
+    if (tr) {
+        let min = Infinity;
+        tr.querySelectorAll(`td[data-task="${taskType}"]`).forEach(td => {
+            const c = parseInt(td.dataset.colIdx, 10);
+            if (!isNaN(c) && c < min) min = c;
+        });
+        if (min !== Infinity) return min;
+    }
+    const plan = (cpPlans || []).find(p => p && String(p.id) === String(planId));
+    const list = plan && plan.tasks && Array.isArray(plan.tasks[taskType]) ? plan.tasks[taskType] : [];
+    let min2 = Infinity;
+    list.forEach(t => {
+        if (!t) return;
+        const mi = parseInt(t.monthIndex, 10);
+        if (isNaN(mi)) return;
+        let col;
+        if (t.periodIndex != null || t.period != null) {
+            const pi = parseInt(t.periodIndex != null ? t.periodIndex : t.period, 10) || 0;
+            col = (mi <= 17) ? (mi * 6 + pi) : mi;
+        } else {
+            col = mi;
+        }
+        if (col < min2) min2 = col;
+    });
+    return min2 === Infinity ? 9999 : min2;
+}
+
+/** cpPlans の順に左カード・右行を並べ直す */
+function applyCpPlanOrderToDom() {
+    const leftBody = document.getElementById('cpLeftBody');
+    const tbody = document.getElementById('cpTableBody');
+    if (!leftBody || !tbody) return;
+    (cpPlans || []).forEach(plan => {
+        if (!plan || !plan.id) return;
+        const wrap = document.getElementById('cpLeftCardWrap_' + plan.id)
+            || document.getElementById('cpLeftCard_' + plan.id);
+        const tr = tbody.querySelector(`tr[data-plan-id="${plan.id}"]`);
+        if (wrap && wrap.parentNode === leftBody) leftBody.appendChild(wrap);
+        else if (wrap) leftBody.appendChild(wrap);
+        if (tr) tbody.appendChild(tr);
+    });
+    setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 40);
+}
+
+/**
+ * 品種カードを並べ替え
+ * taskType: 'planting' | 'harvesting' | 'sowing'
+ */
+function sortCpPlansByTask(taskType, options) {
+    const opts = options || {};
+    const type = String(taskType || '').trim();
+    if (!type || !Array.isArray(cpPlans) || cpPlans.length < 2) {
+        if (!opts.silent && cpPlans && cpPlans.length < 2) {
+            if (typeof customAlert === 'function') customAlert('並べ替える品種が2件以上必要です。');
+            else alert('並べ替える品種が2件以上必要です。');
+        }
+        return false;
+    }
+
+    // DOMの塗り状態を plans に反映してから判定
+    if (typeof collectCurrentCpPlansFromDom === 'function') {
+        try {
+            const synced = collectCurrentCpPlansFromDom();
+            if (Array.isArray(synced) && synced.length) cpPlans = synced;
+        } catch (e) {}
+    }
+
+    const before = cpPlans.map(p => p.id).join(',');
+    const decorated = cpPlans.map((plan, idx) => ({
+        plan: plan,
+        key: getCpPlanEarliestTaskCol(plan.id, type),
+        idx: idx
+    }));
+    decorated.sort((a, b) => {
+        if (a.key !== b.key) return a.key - b.key;
+        return a.idx - b.idx;
+    });
+    cpPlans = decorated.map(d => d.plan);
+    const after = cpPlans.map(p => p.id).join(',');
+    applyCpPlanOrderToDom();
+
+    // 並びが変わったカードを一瞬ハイライト
+    cpPlans.forEach((plan, i) => {
+        const el = document.getElementById('cpLeftCardWrap_' + plan.id)
+            || document.getElementById('cpLeftCard_' + plan.id);
+        if (!el) return;
+        el.style.outline = '2px solid #66BB6A';
+        setTimeout(() => { el.style.outline = ''; }, 700 + i * 30);
+    });
+
+    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    if (before !== after && typeof pushCpEditHistory === 'function') pushCpEditHistory();
+
+    if (!opts.silent) {
+        const label = type === 'planting' ? '定植' : (type === 'harvesting' ? '収穫' : (type === 'sowing' ? '播種' : type));
+        const statusEl = document.getElementById('cpDraftStatus');
+        if (statusEl) {
+            const prev = statusEl.textContent;
+            statusEl.textContent = `✓ ${label}の早い順に並べ替えました`;
+            statusEl.style.color = '#2e7d32';
+            statusEl.style.fontWeight = 'bold';
+            setTimeout(() => {
+                if (typeof updateCpDraftStatusUI === 'function') updateCpDraftStatusUI();
+                else {
+                    statusEl.textContent = prev;
+                    statusEl.style.color = '';
+                    statusEl.style.fontWeight = '';
+                }
+            }, 1800);
+        }
+    }
+    return true;
+}
+
+function sortCpPlansByPlanting() { return sortCpPlansByTask('planting'); }
+function sortCpPlansByHarvesting() { return sortCpPlansByTask('harvesting'); }
+function sortCpPlansBySowing() { return sortCpPlansByTask('sowing'); }
+
+window.sortCpPlansByTask = sortCpPlansByTask;
+window.sortCpPlansByPlanting = sortCpPlansByPlanting;
+window.sortCpPlansByHarvesting = sortCpPlansByHarvesting;
+window.sortCpPlansBySowing = sortCpPlansBySowing;
+window.applyCpPlanOrderToDom = applyCpPlanOrderToDom;
 
 
 const TOOL_COLORS = {
@@ -3128,6 +3257,134 @@ function applyPaintTool(td, tool) {
         }
     }
 }
+
+/** ドラッグ塗り用: トグルせず強制で塗る／消す */
+function forcePaintCpCell(td, tool) {
+    if (!td) return;
+    const div = td.querySelector('div');
+    if (!div) return;
+    if (tool === 'eraser') {
+        clearCpCellPaint(td);
+        return;
+    }
+    td.dataset.task = tool;
+    div.style.backgroundColor = TOOL_COLORS[tool] || '';
+    if (tool !== 'harvesting') {
+        td.dataset.amount = '';
+        div.innerHTML = '';
+    }
+}
+
+function paintCpCellRange(planId, colA, colB, tool) {
+    const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
+    if (!tr) return;
+    const lo = Math.min(colA, colB);
+    const hi = Math.max(colA, colB);
+    for (let c = lo; c <= hi; c++) {
+        const td = tr.querySelector(`td[data-col-idx="${c}"]`);
+        if (td) forcePaintCpCell(td, tool);
+    }
+}
+
+// ドラッグ塗り状態
+let cpPaintDrag = null;
+
+function resolveCpPaintToolForPlan(planId) {
+    const selected = document.querySelector('input[name="cpTool"]:checked');
+    const mode = selected ? selected.value : 'semiauto';
+    if (mode === 'semiauto') {
+        cpSemiAutoActivePlanId = planId;
+        const step = cpSemiAutoSteps[planId] || 0;
+        return { mode: 'semiauto', tool: getSemiAutoTool(step) };
+    }
+    return { mode: mode, tool: mode };
+}
+
+function bindCpCellPaintEvents(td, planId) {
+    td.onpointerdown = function(e) {
+        if (e.button != null && e.button !== 0) return;
+        // スクロールとの競合を抑えつつドラッグ塗りを開始
+        e.preventDefault();
+        try { td.setPointerCapture(e.pointerId); } catch (err) {}
+        const resolved = resolveCpPaintToolForPlan(planId);
+        const startCol = parseInt(td.dataset.colIdx, 10);
+        cpPaintDrag = {
+            planId: planId,
+            startTd: td,
+            startCol: startCol,
+            lastCol: startCol,
+            pointerId: e.pointerId,
+            mode: resolved.mode,
+            tool: resolved.tool,
+            dragged: false
+        };
+    };
+
+    td.onpointermove = function(e) {
+        if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
+        if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
+
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const overTd = el && el.closest
+            ? el.closest(`#cpTableBody tr[data-plan-id="${planId}"] td[data-col-idx]`)
+            : null;
+        if (!overTd) return;
+
+        const col = parseInt(overTd.dataset.colIdx, 10);
+        if (isNaN(col)) return;
+
+        if (!cpPaintDrag.dragged) {
+            if (col === cpPaintDrag.startCol) return;
+            // 隣の枠へ動いたらドラッグ塗り開始（始点も強制塗り）
+            cpPaintDrag.dragged = true;
+            paintCpCellRange(planId, cpPaintDrag.startCol, col, cpPaintDrag.tool);
+            cpPaintDrag.lastCol = col;
+            if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
+            return;
+        }
+
+        if (col === cpPaintDrag.lastCol) return;
+        paintCpCellRange(planId, cpPaintDrag.startCol, col, cpPaintDrag.tool);
+        cpPaintDrag.lastCol = col;
+        if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
+    };
+
+    const endDrag = function(e) {
+        if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
+        if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
+        const drag = cpPaintDrag;
+        cpPaintDrag = null;
+        try { td.releasePointerCapture(e.pointerId); } catch (err) {}
+
+        if (!drag.dragged) {
+            // クリックのみ → 従来のトグル
+            toggleCpCell(drag.startTd, planId);
+            return;
+        }
+
+        // ドラッグ終了: 半自動状態・履歴をまとめて更新
+        if (drag.mode === 'semiauto') {
+            const endTd = document.querySelector(
+                `#cpTableBody tr[data-plan-id="${planId}"] td[data-col-idx="${drag.lastCol}"]`
+            ) || drag.startTd;
+            cpSemiAutoLastPaint[planId] = {
+                monthIndex: endTd.dataset.monthIndex,
+                period: endTd.dataset.period,
+                tool: drag.tool,
+                stepBefore: cpSemiAutoSteps[planId] || 0
+            };
+            syncCpSemiAutoStepForPlan(planId);
+            updateCpSemiAutoHint(planId);
+        }
+        if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
+        if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+        if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
+    };
+
+    td.onpointerup = endDrag;
+    td.onpointercancel = endDrag;
+}
+window.bindCpCellPaintEvents = bindCpCellPaintEvents;
 
 function toggleCpCell(td, planId) {
     const selected = document.querySelector('input[name="cpTool"]:checked').value;
