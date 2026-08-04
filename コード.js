@@ -560,6 +560,7 @@ function getInitData() {
   // コンテナマスタを正とし、旧・作業マスタのコンテナ名は移行用に渡す
   pdl.containers = readContainerMasterList_(containerNames);
   pdl.containerNames = [...new Set(pdl.containers.map(c => c.name))];
+  pdl.contentUnits = getContentUnitMasterList_(pdl.containers);
   pdl.maintenanceContents = [...new Set(maintenanceContents)].filter(String); 
 
   pdl.crops = readMergedCropMasterList_();
@@ -943,6 +944,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'sign') sheetName = '看板マスタ';
   else if (masterType === 'location') sheetName = '拠点マスタ';
   else if (masterType === 'workCategory') sheetName = '作業カテゴリマスタ';
+  else if (masterType === 'contentUnit') sheetName = 'コンテナ内容単位マスタ';
   else if (masterType === 'machineType') sheetName = '機種マスタ';
   else if (masterType === 'machineGroup') sheetName = '機械グループマスタ';
   else if (masterType === 'container') sheetName = 'コンテナマスタ';
@@ -959,6 +961,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet.appendRow(["圃場作業"]);
           sheet.appendRow(["事務作業"]);
           sheet.appendRow(["保全・整備"]);
+      } else if (masterType === 'contentUnit') {
+          sheet = ensureContentUnitMasterSheet_();
       } else if (masterType === 'crop') {
           sheet = ss.insertSheet(sheetName);
           sheet.appendRow(["作物名", "栽植密度"]);
@@ -994,6 +998,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'container') {
     sheet = ensureContainerMasterSheet_();
+  }
+  if (masterType === 'contentUnit') {
+    sheet = ensureContentUnitMasterSheet_();
   }
   if (masterType === 'pesticide') {
     sheet = ensurePesticideMasterSheet_();
@@ -1204,6 +1211,28 @@ function manageMasterData(masterType, manageAction, value, userName) {
         renameWorkMasterCategory_(originalName, newName);
       }
       writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
+    } else if (masterType === 'contentUnit') {
+      const originalName = String(value.originalName || '').trim();
+      const newName = String((value.newData && value.newData.name) || value.name || '').trim();
+      if (!originalName) throw new Error('変更前の単位名がありません');
+      if (!newName) throw new Error('単位名を入力してください');
+      if (newName !== originalName) {
+        for (let i = 1; i < data.length; i++) {
+          if (String(data[i][0] || '').trim() === newName) {
+            throw new Error(`単位名「${newName}」は既に登録されています`);
+          }
+        }
+      }
+      let found = false;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === originalName) {
+          sheet.getRange(i + 1, 1).setValue(newName);
+          found = true;
+          break;
+        }
+      }
+      if (!found) throw new Error(`単位「${originalName}」が見つかりません`);
+      writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
     } else if (masterType === 'crop') {
       const originalName = String(value.originalName || '').trim();
       const newData = value.newData || value || {};
@@ -1353,7 +1382,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim() || String(data[i][1] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'cropCultSetting') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
-      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'machineType' || masterType === 'machineGroup') {
+      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'crop') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
@@ -1389,6 +1418,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'container') {
     return readContainerMasterList_();
+  }
+  if (masterType === 'contentUnit') {
+    return getContentUnitMasterList_();
   }
   if (masterType === 'pesticide') {
     return readPesticideMasterList_();
@@ -1714,6 +1746,51 @@ function readMergedCropMasterList_() {
     }
   }
   return Object.keys(map).sort((a, b) => a.localeCompare(b, 'ja')).map(k => map[k]);
+}
+
+/** コンテナ内容単位マスタ */
+function ensureContentUnitMasterSheet_() {
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('データベースに接続できません');
+  let sheet = ss.getSheetByName('コンテナ内容単位マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('コンテナ内容単位マスタ');
+    sheet.appendRow(['単位名']);
+    ['kg', 'g', '本', 'パック', '個', '束'].forEach(u => sheet.appendRow([u]));
+    sheet.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
+  } else {
+    const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    if (!headers[0]) sheet.getRange(1, 1).setValue('単位名').setFontWeight('bold').setBackground('#e0e0e0');
+  }
+  return sheet;
+}
+
+/**
+ * 内容単位一覧。シート＋（任意）コンテナマスタの既存単位をマージ
+ * @param {Array=} containersOpt
+ */
+function getContentUnitMasterList_(containersOpt) {
+  let list = [];
+  try {
+    const sheet = ensureContentUnitMasterSheet_();
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const u = String(data[i][0] || '').trim();
+      if (u) list.push(u);
+    }
+  } catch (e) {
+    console.warn('内容単位マスタ読込スキップ', e);
+  }
+  try {
+    const containers = containersOpt || readContainerMasterList_();
+    (containers || []).forEach(c => {
+      const u = String((c && c.contentUnit) || '').trim();
+      if (u) list.push(u);
+    });
+  } catch (e2) {}
+  list = Array.from(new Set(list));
+  if (!list.length) list = ['kg', 'g', '本', 'パック', '個', '束'];
+  return list;
 }
 
 /** コンテナマスタシート確保（1行＝コンテナ種類×品目） */

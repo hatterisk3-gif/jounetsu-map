@@ -1,6 +1,6 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
       let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
-      let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], activeLots = [];
+      let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], pdlContentUnits = [], activeLots = [];
       let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
       let pdlNurseryLocations = [], pdlCropCultSettings = [];
       let selectedPolyIds = [], isMapSelecting = false, backupSelectedPolyIds = [];
@@ -472,6 +472,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           pdlLocations=data.pdl.locations||[]; pdlCrops=data.pdl.crops||[]; pdlStages=data.pdl.stages||[];
           pdlWorkMaster=data.pdl.workMaster||[]; pdlWorkStatuses=data.pdl.workStatuses||[];
           pdlContainerNames=data.pdl.containerNames||[]; pdlContainers=data.pdl.containers||[];
+          pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
           if ((!pdlContainers || !pdlContainers.length) && pdlContainerNames.length) {
             pdlContainers = pdlContainerNames.map(n => ({ name: n, crops: [] }));
           }
@@ -4094,6 +4095,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
         if (typeof window.refreshMaintenanceSection === 'function') window.refreshMaintenanceSection();
+        if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
       };
 
       window.normalizeWorkCropKey = (val) => {
@@ -4297,9 +4299,41 @@ function createSignboardMarker(name, pos, icon, id) {
         window.syncRecordCropFromFilter(next);
         const category = document.getElementById('rec_work_category')?.value || 'すべて';
         if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(category, next);
+        if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
         if (!opts.skipSideEffects) {
           if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
           if (typeof window.refreshWorkHarvestQtySection === 'function') window.refreshWorkHarvestQtySection();
+        }
+      };
+
+      /** カテゴリ・作物が揃っているときだけ作業名を出す */
+      window.isWorkNameSelectionReady = () => {
+        const cat = (document.getElementById('rec_work_category')?.value || '').trim();
+        if (!cat) return false;
+        const keys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
+          ? window.getSelectedWorkCropFilterKeys()
+          : [];
+        return Array.isArray(keys) && keys.length > 0;
+      };
+
+      window.refreshWorkNameSectionVisibility = () => {
+        const section = document.getElementById('work_name_section');
+        const hint = document.getElementById('work_name_gate_hint');
+        const ready = typeof window.isWorkNameSelectionReady === 'function'
+          ? window.isWorkNameSelectionReady()
+          : false;
+        if (section) section.style.display = ready ? 'block' : 'none';
+        if (hint) hint.style.display = ready ? 'none' : 'block';
+        if (!ready) {
+          const sel = document.getElementById('rec_work_name');
+          if (sel && sel.value) {
+            sel.value = '';
+            if (typeof window.handleWorkNameChange === 'function') {
+              try { window.handleWorkNameChange(''); } catch (e) {}
+            }
+          }
+          const restNotice = document.getElementById('work_rest_notice');
+          if (restNotice) restNotice.style.display = 'none';
         }
       };
 
@@ -4875,11 +4909,16 @@ function createSignboardMarker(name, pos, icon, id) {
             : (typeof window.getSelectedWorkCropFilterKeys === 'function'
                 ? window.getSelectedWorkCropFilterKeys()
                 : (document.getElementById('rec_work_crop_filter')?.value || ''));
-          // 作物未選択でもカテゴリ内の作業を出す（作物は絞り込み用）
-          const filteredWorks = window.getWorksByCategoryAndCrop(cat, crop, p);
+
+          const ready = typeof window.isWorkNameSelectionReady === 'function'
+            ? window.isWorkNameSelectionReady()
+            : true;
+          const filteredWorks = ready ? window.getWorksByCategoryAndCrop(cat, crop, p) : [];
 
           let allChipsHTML = '';
-          if (!filteredWorks.length) {
+          if (!ready) {
+            allChipsHTML = `<div id="all_chips_container" style="padding:12px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px; color:#888; font-size:13px; text-align:center;">カテゴリと作物を選んでください</div>`;
+          } else if (!filteredWorks.length) {
             const masterCount = (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) ? pdlWorkMaster.length : 0;
             const tip = masterCount === 0
               ? '作業マスタに作業がありません。管理者は「作業マスタ」から追加してください。'
@@ -4903,13 +4942,14 @@ function createSignboardMarker(name, pos, icon, id) {
           if (select) {
             const current = select.value;
             select.innerHTML = wNames;
-            if (filteredWorks.some(w => w.name === current)) select.value = current;
+            if (ready && filteredWorks.some(w => w.name === current)) select.value = current;
             else select.value = '';
           }
           if (typeof window.renderWorkNameAdminBar === 'function') {
               window.renderWorkNameAdminBar(select ? select.value : '');
           }
           if (typeof window.filterWorkChips === 'function') window.filterWorkChips();
+          if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
       };
 
       window.renderWorkNameAdminBar = (wName) => {
@@ -6481,6 +6521,34 @@ function createSignboardMarker(name, pos, icon, id) {
         return window.getContainerMasterList().filter(c => window.containerMatchesCrop(c, crop));
       };
 
+      /** 内容単位マスタの <option> HTML（選択値も候補に含める） */
+      window.buildContentUnitOptionsHtml = (selected) => {
+        const units = Array.isArray(pdlContentUnits) ? pdlContentUnits.slice() : ['kg', 'g', '本', 'パック', '個', '束'];
+        const sel = String(selected || '').trim();
+        if (sel && !units.includes(sel)) units.unshift(sel);
+        let html = '<option value="">選択してください</option>';
+        units.forEach(u => {
+          const s = String(u || '').trim();
+          if (!s) return;
+          html += `<option value="${s.replace(/"/g, '&quot;')}"${s === sel ? ' selected' : ''}>${s.replace(/</g, '&lt;')}</option>`;
+        });
+        return html;
+      };
+
+      /** select に値をセット（マスタ外の値も一時 option として追加） */
+      window.setContentUnitSelectValue = (elOrId, value) => {
+        const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
+        if (!el) return;
+        const v = String(value || '').trim();
+        if (v && !Array.from(el.options).some(o => o.value === v)) {
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          el.appendChild(opt);
+        }
+        el.value = v;
+      };
+
       window.updateWorkHarvestTotalDisplay = () => {
         const el = document.getElementById('wh_total_display');
         if (!el) return;
@@ -6510,7 +6578,11 @@ function createSignboardMarker(name, pos, icon, id) {
         const found = (name && crop && typeof window.findHarvestContainerEntry === 'function')
           ? window.findHarvestContainerEntry(name, crop)
           : null;
-        unitEl.value = found ? String(found.contentUnit || '') : '';
+        if (typeof window.setContentUnitSelectValue === 'function') {
+          window.setContentUnitSelectValue(unitEl, found ? String(found.contentUnit || '') : '');
+        } else {
+          unitEl.value = found ? String(found.contentUnit || '') : '';
+        }
         qtyEl.value = (found && found.contentQty !== '' && found.contentQty != null) ? String(found.contentQty) : '';
         window.updateWorkHarvestTotalDisplay();
       };
@@ -6668,7 +6740,7 @@ function createSignboardMarker(name, pos, icon, id) {
           <div style="display:flex; gap:10px;">
             <div style="flex:1;">
               <label class="form-label">📏 内容単位</label>
-              <input type="text" id="wh_content_unit" class="form-input" placeholder="例: kg・本" oninput="updateWorkHarvestTotalDisplay()">
+              <select id="wh_content_unit" class="form-input" onchange="updateWorkHarvestTotalDisplay()">${typeof window.buildContentUnitOptionsHtml === 'function' ? window.buildContentUnitOptionsHtml(p.contentUnit || '') : '<option value="">選択してください</option>'}</select>
             </div>
             <div style="flex:1;">
               <label class="form-label">🔢 1箱の重量/内容量</label>
@@ -7363,16 +7435,21 @@ function createSignboardMarker(name, pos, icon, id) {
                   ${timeUI}
                   ${workTimeUI}
                   ${targetSection}
-                  <div class="rec-zone rec-zone-work" style="background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:12px; margin-bottom:15px;">
-                  <label class="form-label" style="margin-top:0; color:#E65100;">📁 カテゴリ</label>
+                  <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:1px solid #9FA8DA; border-radius:10px; padding:12px; margin-bottom:12px;">
+                  <label class="form-label" style="margin-top:0; color:#3949AB;">📁 カテゴリ</label>
                   <div id="work_category_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_category" value="${defaultWorkCat}">
-                  <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
-                  <label class="form-label" style="margin-top:10px; color:#E65100;">🌱 作物名 <span style="font-size:11px; color:#BF360C; font-weight:normal;">（複数選択可・作業名はOR）</span></label>
+                  <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;"></div>
+                  </div>
+                  <div class="rec-zone rec-zone-crop" style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;">
+                  <label class="form-label" style="margin-top:0; color:#2E7D32;">🌱 作物名 <span style="font-size:11px; color:#558B2F; font-weight:normal;">（複数選択可・作業名はOR）</span></label>
                   <div id="work_crop_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_crop_filter" value="">
-                  <div id="work_crop_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:15px;"></div>
-                  <label class="form-label" style="margin-top:10px; color:#E65100;">🚜 作業名</label>
+                  <div id="work_crop_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;"></div>
+                  </div>
+                  <div id="work_name_gate_hint" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:14px 12px; margin-bottom:15px; color:#757575; font-size:13px; text-align:center; font-weight:bold;">カテゴリと作物を選ぶと、作業名が表示されます</div>
+                  <div id="work_name_section" class="rec-zone rec-zone-workname" style="display:none; background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:12px; margin-bottom:15px;">
+                  <label class="form-label" style="margin-top:0; color:#E65100;">🚜 作業名</label>
                   <div id="work_name_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <div id="work_chips_wrapper">
                     ${recentChipsHTML}
@@ -7501,6 +7578,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof window.refreshProgressStatusVisibility === 'function') window.refreshProgressStatusVisibility();
             if (typeof window.applyPrefillWorkTime === 'function') window.applyPrefillWorkTime();
             if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar('');
+            if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
         }, 50);
 
         if (currentRecordType === 'work') setTimeout(() => {
@@ -8778,7 +8856,7 @@ function createSignboardMarker(name, pos, icon, id) {
            <label class="form-label">📦 コンテナ個数</label>
            <input type="number" id="gh_count" class="form-input" placeholder="例: 10" oninput="refreshHarvestContentQtyUI()" min="0">
            <label class="form-label">📏 内容単位</label>
-           <input type="text" id="gh_content_unit" class="form-input" placeholder="例: kg・本・パック" oninput="updateHarvestTotalDisplay()">
+           <select id="gh_content_unit" class="form-input" onchange="updateHarvestTotalDisplay()">${typeof window.buildContentUnitOptionsHtml === 'function' ? window.buildContentUnitOptionsHtml('') : '<option value="">選択してください</option>'}</select>
            <label class="form-label" style="margin-top:8px;">🔢 内容個数の設定方法</label>
            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
              <label style="display:flex; align-items:center; gap:4px; background:#f4f6f8; padding:8px 10px; border-radius:8px; font-size:13px; cursor:pointer; border:1px solid #ddd;">
@@ -8890,7 +8968,11 @@ function createSignboardMarker(name, pos, icon, id) {
          if (!unitEl || !qtyEl) return;
          const found = name && crop ? window.findHarvestContainerEntry(name, crop) : null;
          // マスタ値を初期表示（ユーザーがこの場で変更可能）
-         unitEl.value = found ? String(found.contentUnit || '') : '';
+         if (typeof window.setContentUnitSelectValue === 'function') {
+           window.setContentUnitSelectValue(unitEl, found ? String(found.contentUnit || '') : '');
+         } else {
+           unitEl.value = found ? String(found.contentUnit || '') : '';
+         }
          qtyEl.value = (found && found.contentQty !== '' && found.contentQty != null) ? String(found.contentQty) : '';
          const remQty = document.getElementById('gh_remainder_qty');
          if (remQty && !remQty.value) remQty.value = '';
@@ -8969,7 +9051,7 @@ function createSignboardMarker(name, pos, icon, id) {
              <div style="display:flex; gap:10px;">
                <div style="flex:1;">
                  <label class="form-label">📏 内容単位</label>
-                 <input type="text" id="hc_content_unit" class="form-input" value="${unitVal}" placeholder="例: kg・本・パック">
+                 <select id="hc_content_unit" class="form-input">${typeof window.buildContentUnitOptionsHtml === 'function' ? window.buildContentUnitOptionsHtml(unitVal) : `<option value="${unitVal}">${unitVal}</option>`}</select>
                </div>
                <div style="flex:1;">
                  <label class="form-label">🔢 内容個数</label>
@@ -9298,7 +9380,7 @@ function createSignboardMarker(name, pos, icon, id) {
            <label class="form-label">状態</label>
            <select id="lot_edit_status" class="form-input">${statusOptions}</select>
            <label class="form-label">📏 内容単位</label>
-           <input type="text" id="lot_edit_content_unit" class="form-input" value="${String(lot.contentUnit || '').replace(/"/g, '&quot;')}">
+           <select id="lot_edit_content_unit" class="form-input">${typeof window.buildContentUnitOptionsHtml === 'function' ? window.buildContentUnitOptionsHtml(lot.contentUnit || '') : `<option value="${String(lot.contentUnit || '').replace(/"/g, '&quot;')}">${String(lot.contentUnit || '')}</option>`}</select>
            <label class="form-label">🔢 内容個数</label>
            <input type="number" id="lot_edit_content_qty" class="form-input" min="0" step="0.01" value="${lot.contentQty ?? ''}">
            <label class="form-label">圃場</label>
