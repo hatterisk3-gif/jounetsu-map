@@ -861,10 +861,14 @@
 
     const normUser = String(user || '').replace(/\s+/g, '');
     const targetKey = normalizeDateKey(workDateYmd);
+    if (!targetKey) return intervals;
+
+    const candidates = [];
     for (const id in polys) {
       const p = polys[id];
       if (!p || !p.photos) continue;
       p.photos.forEach((ph) => {
+        if (!ph) return;
         if (ph.type !== 'work' && !(ph.data && ph.data.workName)) return;
         const phAuthor = String(ph.author || '').replace(/\s+/g, '');
         const isAuthorMatch =
@@ -877,25 +881,112 @@
         if (!isAuthorMatch) return;
 
         const data = ph.data || {};
-        const key = normalizeDateKey(data.workDate || ph.date);
+        // 作業日は data.workDate を優先（未設定のレガシーのみ ph.date）
+        // ※同期日が翌日になると、退勤忘れ時に勤務日とずれて不足扱いになるのを防ぐ
+        const workDateRaw = String(data.workDate || '').trim();
+        const key = normalizeDateKey(workDateRaw) || (!workDateRaw ? normalizeDateKey(ph.date) : '');
         if (!key || key !== targetKey) return;
         const s = timeToMins(data.startTime);
         let e = timeToMins(data.endTime);
         if (s == null || e == null) return;
         if (e <= s) e += 24 * 60;
-        intervals.push({
+        const recId = String(ph.id || data.recordId || '').trim();
+        const isLocal = !recId || recId.indexOf('local_') === 0;
+        const breakMins = Math.max(0, parseInt(data.breakMins, 10) || 0);
+        const workName = String(data.workName || '作業').trim() || '作業';
+        // 複数圃場コピー／楽観同期の二重登録をまとめるための指紋（圃場は含めない）
+        const fingerprint = [
+          key,
+          String(data.startTime || ''),
+          String(data.endTime || ''),
+          workName,
+          String(breakMins),
+          phAuthor || normUser
+        ].join('|');
+        candidates.push({
           start: s,
           end: e,
-          name: data.workName || '作業',
+          name: workName,
           polyName: p.name || id,
-          polyId: id,
+          polyId: String(id),
           multiFieldNames: (data.multiFieldNames || '').trim(),
           totalTime: data.totalTime || '',
-          breakMins: Math.max(0, parseInt(data.breakMins, 10) || 0)
+          breakMins: breakMins,
+          recId: recId,
+          isLocal: isLocal,
+          fingerprint: fingerprint,
+          workDateYmd: key
         });
       });
     }
-    return intervals;
+
+    // 1) 同一レコードID（複数圃場に同一ID）で統合
+    // 2) IDが違っても同一指紋（時間・作業名・休憩が同じ）なら統合
+    const byId = new Map();
+    const byFp = new Map();
+    const mergePolyNames_ = (into, from) => {
+      const names = new Set();
+      String(into.multiFieldNames || '')
+        .split(/[,、]/)
+        .map((x) => String(x || '').trim())
+        .filter(Boolean)
+        .forEach((n) => names.add(n));
+      if (into.polyName) names.add(into.polyName);
+      if (from.polyName) names.add(from.polyName);
+      String(from.multiFieldNames || '')
+        .split(/[,、]/)
+        .map((x) => String(x || '').trim())
+        .filter(Boolean)
+        .forEach((n) => names.add(n));
+      into.multiFieldNames = Array.from(names).join(', ');
+    };
+
+    candidates.forEach((c) => {
+      if (c.recId && !c.isLocal) {
+        if (byId.has(c.recId)) {
+          mergePolyNames_(byId.get(c.recId), c);
+          return;
+        }
+        byId.set(c.recId, c);
+      }
+    });
+    // local_ はサーバー版が無いときだけ採用
+    candidates.forEach((c) => {
+      if (c.recId && c.isLocal) {
+        if (byId.has(c.recId)) {
+          mergePolyNames_(byId.get(c.recId), c);
+          return;
+        }
+        // 同じ指紋のサーバー版があればスキップ
+        const hasServerFp = candidates.some(
+          (o) => !o.isLocal && o.fingerprint === c.fingerprint
+        );
+        if (hasServerFp) return;
+        if (!byId.has(c.recId)) byId.set(c.recId, c);
+      }
+    });
+
+    const idList = Array.from(byId.values());
+    // ID無し／残件も指紋で統合
+    const allForFp = idList.concat(
+      candidates.filter((c) => !c.recId)
+    );
+    allForFp.forEach((c) => {
+      const existing = byFp.get(c.fingerprint);
+      if (!existing) {
+        byFp.set(c.fingerprint, Object.assign({}, c));
+        return;
+      }
+      if (existing.isLocal && !c.isLocal) {
+        const upgraded = Object.assign({}, c);
+        mergePolyNames_(upgraded, existing);
+        byFp.set(c.fingerprint, upgraded);
+      } else {
+        mergePolyNames_(existing, c);
+      }
+    });
+
+    return Array.from(byFp.values()).sort((a, b) => a.start - b.start || a.end - b.end);
   }
 
   /** 指定日の作業記録のうち、最も遅い終了時刻（HH:MM）。なければ空文字 */
@@ -1030,6 +1121,7 @@
 
     const dateEl = document.getElementById('clockOutDate');
     const workDateYmd =
+      getClockOutWorkDateYmd() ||
       (dateEl && dateEl.value) ||
       getActiveClockInDateYmd() ||
       todayYmd();
@@ -1061,7 +1153,7 @@
   window.calcMidBreakFromLastWork = function () {
     const dateEl = document.getElementById('clockOutDate');
     const timeEl = document.getElementById('clockOutTime');
-    const workDateYmd = (dateEl && dateEl.value) || getActiveClockInDateYmd() || todayYmd();
+    const workDateYmd = getClockOutWorkDateYmd() || (dateEl && dateEl.value) || getActiveClockInDateYmd() || todayYmd();
     const user = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
 
     let lastEnd = getLastWorkEndTime(user, workDateYmd);
@@ -1101,7 +1193,7 @@
   /** 作業中休憩: 最後の作業記録の終了時間〜今の時間のギャップを休憩として計算 */
   window.calcMidBreakFromNow = function () {
     const dateEl = document.getElementById('clockOutDate');
-    const workDateYmd = (dateEl && dateEl.value) || getActiveClockInDateYmd() || todayYmd();
+    const workDateYmd = getClockOutWorkDateYmd() || (dateEl && dateEl.value) || getActiveClockInDateYmd() || todayYmd();
     const user = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
 
     let lastEnd = getLastWorkEndTime(user, workDateYmd);
@@ -1162,11 +1254,9 @@
     if (!timeEl) return;
 
     const workDateYmd =
+      getClockOutWorkDateYmd() ||
       (dateEl && dateEl.value) ||
-      (() => {
-        const n = new Date();
-        return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
-      })();
+      todayYmd();
 
     const user =
       (typeof currentUser !== 'undefined' && currentUser) ||
@@ -1201,9 +1291,22 @@
   }
 
   function getClockOutWorkDateYmd() {
+    // 退勤日（翌朝など）と勤務日（出勤日）は別。作業記録の集計は常に勤務日を使う
+    try {
+      const forgot = typeof getForgotClockOutInfo === 'function' ? getForgotClockOutInfo() : null;
+      if (forgot && forgot.clockInDateYmd) return normalizeDateKey(forgot.clockInDateYmd);
+    } catch (e) {}
+    try {
+      const pending = typeof loadPending === 'function' ? loadPending() : null;
+      if (pending && (pending.workDateYmd || pending.clockInDateYmd)) {
+        return normalizeDateKey(pending.workDateYmd || pending.clockInDateYmd);
+      }
+    } catch (e) {}
+    const active = getActiveClockInDateYmd();
+    if (active) return normalizeDateKey(active);
     const dateEl = document.getElementById('clockOutDate');
-    if (dateEl && dateEl.value) return dateEl.value;
-    return getActiveClockInDateYmd();
+    if (dateEl && dateEl.value) return normalizeDateKey(dateEl.value);
+    return todayYmd();
   }
 
   /** 昼休憩の終了時刻を現在時刻に合わせる */
@@ -1448,7 +1551,8 @@
     html += `</div>`;
 
     if (a.records.length) {
-      html += `<div style="font-size:12px; color:#555; margin-bottom:6px;">本日の作業記録</div>`;
+      const dayLabel = pending.workDateYmd || pending.clockInDateYmd || '';
+      html += `<div style="font-size:12px; color:#555; margin-bottom:6px;">${dayLabel ? dayLabel + ' の作業記録' : '作業記録'}（${a.records.length}件）</div>`;
       html += `<div style="max-height:120px; overflow-y:auto; margin-bottom:12px; border:1px solid #eee; border-radius:6px;">`;
       a.records.forEach((r) => {
         html += `<div style="padding:8px 10px; border-bottom:1px solid #f0f0f0; font-size:12px;">`;
@@ -1461,7 +1565,8 @@
       });
       html += `</div>`;
     } else {
-      html += `<div style="background:#fff3e0; color:#e65100; padding:10px; border-radius:6px; font-size:13px; margin-bottom:12px;">この日の作業記録がまだありません。不足時間を記録してください。</div>`;
+      const dayLabel = pending.workDateYmd || pending.clockInDateYmd || 'この日';
+      html += `<div style="background:#fff3e0; color:#e65100; padding:10px; border-radius:6px; font-size:13px; margin-bottom:12px;">${dayLabel} の作業記録がまだありません。不足時間を記録してください。</div>`;
     }
 
     if (!a.matched && a.diff > 0) {
@@ -2075,7 +2180,8 @@
       (typeof currentUser !== 'undefined' && currentUser) ||
       localStorage.getItem('passionMapUserName') ||
       '';
-    const lastWorkEnd = getLastWorkEndTime(user, outDate) || (typeof window.getLatestEndTimeForDate === 'function' ? (window.getLatestEndTimeForDate(outDate) || '') : '');
+    const workDateForRecords = normalizeDateKey(workDateForLunch || outDate) || outDate;
+    const lastWorkEnd = getLastWorkEndTime(user, workDateForRecords) || (typeof window.getLatestEndTimeForDate === 'function' ? (window.getLatestEndTimeForDate(workDateForRecords) || '') : '');
 
     let outTime = options.defaultTime || (pending && pending.clockOutTime) || '';
     if (!outTime) {

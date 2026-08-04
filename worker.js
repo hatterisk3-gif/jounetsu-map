@@ -3556,6 +3556,13 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!box) return;
         const catEl = document.getElementById('rec_work_category');
         const cat = catEl ? catEl.value : '';
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        const isRidgeWork = typeof window.isRidgeMakeWorkName === 'function' && window.isRidgeMakeWorkName(wName);
+        // 畝立て作業は「追加記録」ボタンで開くまで非表示。それ以外の圃場作業は従来どおり自動表示
+        if (isRidgeWork && !window.isExtraRecordOpen_('ridge')) {
+          box.style.display = 'none';
+          return;
+        }
         const show = selectedPolyIds.length > 0 && cat === '圃場作業';
         if (!show) {
           box.style.display = 'none';
@@ -3697,6 +3704,8 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.collectRidgeProgressData = () => {
+        const box = document.getElementById('ridge_progress_section');
+        if (!box || box.style.display === 'none') return [];
         const rows = [];
         document.querySelectorAll('.ridge-field-block').forEach(block => {
           const pid = block.getAttribute('data-poly-id');
@@ -3854,6 +3863,10 @@ function createSignboardMarker(name, pos, icon, id) {
           box.innerHTML = '';
           return;
         }
+        if (!window.isExtraRecordOpen_('irrigation')) {
+          box.style.display = 'none';
+          return;
+        }
 
         const prev = {};
         document.querySelectorAll('.pump-install-btn').forEach(el => {
@@ -3922,6 +3935,14 @@ function createSignboardMarker(name, pos, icon, id) {
           box.innerHTML = '';
           if (typeof window.refreshDrainageValveUI === 'function') window.refreshDrainageValveUI();
           if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
+          return;
+        }
+        if (!window.isExtraRecordOpen_('irrigation')) {
+          box.style.display = 'none';
+          const drainBox = document.getElementById('drainage_valve_section');
+          if (drainBox) { drainBox.style.display = 'none'; }
+          const pumpBox = document.getElementById('irrigation_pump_section');
+          if (pumpBox) { pumpBox.style.display = 'none'; }
           return;
         }
 
@@ -4003,6 +4024,10 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!window.isWaterValveWork(wName)) {
           box.style.display = 'none';
           box.innerHTML = '';
+          return;
+        }
+        if (!window.isExtraRecordOpen_('irrigation')) {
+          box.style.display = 'none';
           return;
         }
 
@@ -4201,6 +4226,8 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.collectIrrigationValveData = () => {
+        const box = document.getElementById('irrigation_valve_section');
+        if (!box || box.style.display === 'none') return [];
         const byPoly = {};
         document.querySelectorAll('.irrig-valve-select').forEach(el => {
           const pid = el.getAttribute('data-poly-id');
@@ -4223,6 +4250,8 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.collectDrainageValveData = () => {
+        const box = document.getElementById('drainage_valve_section');
+        if (!box || box.style.display === 'none') return [];
         const byPoly = {};
         document.querySelectorAll('.drain-valve-select').forEach(el => {
           const pid = el.getAttribute('data-poly-id');
@@ -4245,6 +4274,8 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.collectInstalledPumps = () => {
+        const box = document.getElementById('irrigation_pump_section');
+        if (!box || box.style.display === 'none') return [];
         const rows = [];
         document.querySelectorAll('.pump-install-btn[data-installed="1"]').forEach(btn => {
           rows.push({
@@ -5303,6 +5334,12 @@ function createSignboardMarker(name, pos, icon, id) {
           // 休憩はマスタ未登録でも複数回登録できるよう補完
           if (!wObj && name.includes('休憩')) {
             wObj = { name: name || '休憩', category: '管理/その他', cropName: '共通', detailWorks: '' };
+            if (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) {
+              pdlWorkMaster.push(wObj);
+            }
+          }
+          if (!wObj && (name === '播種' || name === '定植' || name === '畝立て')) {
+            wObj = { name: name, category: '圃場作業', cropName: '共通', detailWorks: '' };
             if (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) {
               pdlWorkMaster.push(wObj);
             }
@@ -6822,18 +6859,24 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         const useSec = document.getElementById('lot_use_section');
-        if(useSec) {
-           if (!isRest && (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング'))) useSec.style.display = 'block';
-           else useSec.style.display = 'none';
+        if (useSec) {
+           useSec.style.display = 'none';
         }
-        if (typeof window.refreshWorkHarvestQtySection === 'function') {
-          window.refreshWorkHarvestQtySection();
+        if (typeof window.syncExtraRecordFlagsForWork_ === 'function') {
+          window.syncExtraRecordFlagsForWork_(wName);
         }
-        if (typeof window.refreshSowingRecordSection === 'function') {
-          window.refreshSowingRecordSection();
-        }
-        if (typeof window.refreshPrepTargetWorkSection === 'function') {
-          window.refreshPrepTargetWorkSection();
+        if (typeof window.applyExtraRecordPanels_ === 'function') {
+          window.applyExtraRecordPanels_();
+        } else {
+          if (typeof window.refreshWorkHarvestQtySection === 'function') {
+            window.refreshWorkHarvestQtySection();
+          }
+          if (typeof window.refreshSowingRecordSection === 'function') {
+            window.refreshSowingRecordSection();
+          }
+          if (typeof window.refreshPrepTargetWorkSection === 'function') {
+            window.refreshPrepTargetWorkSection();
+          }
         }
         
         window.renderDetailWorksSection(wName);
@@ -6842,6 +6885,9 @@ function createSignboardMarker(name, pos, icon, id) {
         } else {
           window.renderUsedItems(wName);
           if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+        }
+        if (typeof window.refreshExtraRecordButtons === 'function') {
+          window.refreshExtraRecordButtons();
         }
       };
 
@@ -6860,6 +6906,13 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!window.isPrepWorkName(wName)) {
           box.style.display = 'none';
           box.innerHTML = '';
+          return;
+        }
+        if (preset != null && String(preset).trim() !== '') {
+          window.setExtraRecordOpen_('prep', true);
+        }
+        if (!window.isExtraRecordOpen_('prep')) {
+          box.style.display = 'none';
           return;
         }
 
@@ -6958,6 +7011,165 @@ function createSignboardMarker(name, pos, icon, id) {
         return n === '播種' || n.indexOf('播種') === 0;
       };
 
+      window.isPlantingWorkName = (name) => {
+        const n = String(name || '').trim();
+        return n === '定植' || n.indexOf('定植') === 0 || n.includes('植付');
+      };
+
+      window.isRidgeMakeWorkName = (name) => {
+        const n = String(name || '').trim();
+        return n === '畝立て' || n.indexOf('畝立て') === 0 || n.includes('畝立');
+      };
+
+      window.isLotUseWorkName = (name) => {
+        const n = String(name || '').trim();
+        return n.includes('パック') || n.includes('選別') || n.includes('パッキング');
+      };
+
+      /** 作業名に応じた「追加記録」パネル定義 */
+      window.listExtraRecordDefs_ = (wName) => {
+        const name = String(wName || '').trim();
+        const defs = [];
+        if (!name || name.includes('休憩')) return defs;
+        if (typeof window.isSowingWorkName === 'function' && window.isSowingWorkName(name)) {
+          defs.push({ key: 'sowing', label: '播種・育苗記録', emoji: '🌱', color: '#7B1FA2' });
+        }
+        if (typeof window.isPlantingWorkName === 'function' && window.isPlantingWorkName(name)) {
+          defs.push({ key: 'planting', label: '定植メモ・詳細', emoji: '🌿', color: '#558B2F' });
+        }
+        if (typeof window.isRidgeMakeWorkName === 'function' && window.isRidgeMakeWorkName(name)) {
+          defs.push({ key: 'ridge', label: '畝立て進捗', emoji: '🛤️', color: '#00838F' });
+        }
+        if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(name)) {
+          defs.push({ key: 'prep', label: '準備対象の指定', emoji: '📋', color: '#6A1B9A' });
+        }
+        if (typeof window.isHarvestWorkName === 'function' && window.isHarvestWorkName(name)) {
+          defs.push({ key: 'harvest', label: '収穫量記録', emoji: '🥬', color: '#2E7D32' });
+        }
+        if (typeof window.isLotUseWorkName === 'function' && window.isLotUseWorkName(name)) {
+          defs.push({ key: 'lotUse', label: 'ロット使用', emoji: '📦', color: '#43A047' });
+        }
+        if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(name)) {
+          defs.push({ key: 'maintenance', label: '整備・修理詳細', emoji: '🔧', color: '#E65100' });
+        }
+        if (typeof window.isWaterValveWork === 'function' && window.isWaterValveWork(name)) {
+          defs.push({ key: 'irrigation', label: '水弁・ポンプ記録', emoji: '💧', color: '#1565C0' });
+        }
+        return defs;
+      };
+
+      window.isExtraRecordOpen_ = (key) => !!(window._extraRecordOpen && window._extraRecordOpen[key]);
+
+      window.setExtraRecordOpen_ = (key, open) => {
+        window._extraRecordOpen = window._extraRecordOpen || {};
+        if (open) window._extraRecordOpen[key] = true;
+        else delete window._extraRecordOpen[key];
+      };
+
+      window.resetExtraRecordOpenFlags_ = (keepKeys) => {
+        const keep = Array.isArray(keepKeys) ? keepKeys : [];
+        const prev = window._extraRecordOpen || {};
+        window._extraRecordOpen = {};
+        keep.forEach((k) => {
+          if (prev[k]) window._extraRecordOpen[k] = true;
+        });
+      };
+
+      window.refreshExtraRecordButtons = () => {
+        const wrap = document.getElementById('extra_record_buttons');
+        if (!wrap) return;
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        const defs = (typeof window.listExtraRecordDefs_ === 'function')
+          ? window.listExtraRecordDefs_(wName)
+          : [];
+        if (!defs.length) {
+          wrap.style.display = 'none';
+          wrap.innerHTML = '';
+          return;
+        }
+        wrap.style.display = 'block';
+        const btns = defs.map((d) => {
+          const open = window.isExtraRecordOpen_(d.key);
+          const bg = open ? d.color : '#fff';
+          const color = open ? '#fff' : d.color;
+          const border = d.color;
+          const mark = open ? '▼' : '＋';
+          const labelSuffix = open ? '（記入中・タップで閉じる）' : 'を追加';
+          const safeKey = String(d.key).replace(/'/g, "\\'");
+          return `<button type="button" onclick="toggleExtraRecordPanel('${safeKey}')" style="background:${bg}; color:${color}; border:2px solid ${border}; padding:10px 12px; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; text-align:left; box-shadow:0 1px 3px rgba(0,0,0,0.08);">${mark} ${d.emoji || ''} ${String(d.label).replace(/</g, '&lt;')}${labelSuffix}</button>`;
+        }).join('');
+        wrap.innerHTML = `
+          <div style="font-weight:bold; color:#555; margin-bottom:8px; font-size:13px;">📝 追加記録 <span style="font-weight:normal; font-size:11px; color:#888;">必要な項目だけボタンで開いて記入</span></div>
+          <div style="display:flex; flex-direction:column; gap:8px;">${btns}</div>
+        `;
+      };
+
+      window.applyExtraRecordPanels_ = () => {
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (typeof window.refreshSowingRecordSection === 'function') window.refreshSowingRecordSection();
+        if (typeof window.refreshPlantingRecordSection === 'function') window.refreshPlantingRecordSection();
+        if (typeof window.refreshPrepTargetWorkSection === 'function') window.refreshPrepTargetWorkSection();
+        if (typeof window.refreshWorkHarvestQtySection === 'function') window.refreshWorkHarvestQtySection();
+        if (typeof window.refreshMaintenanceSection === 'function') window.refreshMaintenanceSection(wName);
+        if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
+        if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+        const useSec = document.getElementById('lot_use_section');
+        if (useSec) {
+          const showLot = window.isLotUseWorkName && window.isLotUseWorkName(wName) && window.isExtraRecordOpen_('lotUse');
+          useSec.style.display = showLot ? 'block' : 'none';
+        }
+        if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
+      };
+
+      window.toggleExtraRecordPanel = (key) => {
+        const k = String(key || '').trim();
+        if (!k) return;
+        window.setExtraRecordOpen_(k, !window.isExtraRecordOpen_(k));
+        window.applyExtraRecordPanels_();
+        // 開いたパネルへスクロール
+        if (window.isExtraRecordOpen_(k)) {
+          const idMap = {
+            sowing: 'sowing_record_section',
+            planting: 'planting_record_section',
+            prep: 'prep_target_work_section',
+            harvest: 'work_harvest_qty_section',
+            lotUse: 'lot_use_section',
+            maintenance: 'maintenance_section',
+            ridge: 'ridge_progress_section',
+            irrigation: 'irrigation_valve_section'
+          };
+          const el = document.getElementById(idMap[k] || '');
+          if (el) {
+            try { el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
+          }
+        }
+      };
+
+      window.openExtraRecordPanel = (key) => {
+        window.setExtraRecordOpen_(key, true);
+        window.applyExtraRecordPanels_();
+      };
+
+      window.syncExtraRecordFlagsForWork_ = (wName) => {
+        const name = String(wName || '').trim();
+        const prev = window._extraRecordWorkName || '';
+        if (prev !== name) {
+          window._extraRecordOpen = {};
+          window._extraRecordWorkName = name;
+        }
+        // 専用記録モード／復元時の自動オープン
+        const session = window._specialWorkSession;
+        if (session && session.kind === 'sowing' && window.isSowingWorkName(name)) {
+          window.setExtraRecordOpen_('sowing', true);
+        }
+        if (session && session.kind === 'planting' && window.isPlantingWorkName(name)) {
+          window.setExtraRecordOpen_('planting', true);
+        }
+        if (session && session.kind === 'ridge' && window.isRidgeMakeWorkName(name)) {
+          window.setExtraRecordOpen_('ridge', true);
+        }
+      };
+
       window.getDefaultSowingHolesForCrop_ = (cropName) => {
         const crop = String(cropName || '').trim();
         if (!crop) return '';
@@ -6972,6 +7184,16 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!window.isSowingWorkName(wName)) {
           box.style.display = 'none';
           box.innerHTML = '';
+          return;
+        }
+        if (preset) window.setExtraRecordOpen_('sowing', true);
+        if (!window.isExtraRecordOpen_('sowing')) {
+          box.style.display = 'none';
+          return;
+        }
+        // すでに描画済みで preset なしなら表示のみ
+        if (!preset && box.innerHTML && box.querySelector('#sow_tag')) {
+          box.style.display = 'block';
           return;
         }
         const today = new Date();
@@ -7075,6 +7297,69 @@ function createSignboardMarker(name, pos, icon, id) {
           holes: document.getElementById('sow_holes')?.value || '',
           planId: (document.getElementById('sow_plan_id')?.value || '').trim(),
           note: ''
+        };
+      };
+
+      window.refreshPlantingRecordSection = (preset) => {
+        const box = document.getElementById('planting_record_section');
+        if (!box) return;
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (!window.isPlantingWorkName(wName)) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        if (preset) window.setExtraRecordOpen_('planting', true);
+        if (!window.isExtraRecordOpen_('planting')) {
+          box.style.display = 'none';
+          return;
+        }
+        if (!preset && box.innerHTML && box.querySelector('#plant_tag')) {
+          box.style.display = 'block';
+          return;
+        }
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+        const p = preset || {};
+        const cropHint = (typeof window.getWorkRecordPrimaryCrop === 'function') ? window.getWorkRecordPrimaryCrop() : '';
+        box.style.display = 'block';
+        box.innerHTML = `
+          <div style="font-weight:bold; color:#2E7D32; margin-bottom:8px; font-size:14px;">🌿 定植記録</div>
+          <label class="form-label">TAG（育苗TAG）</label>
+          <input type="text" id="plant_tag" class="form-input" value="${String(p.tag||'').replace(/"/g,'&quot;')}" placeholder="例: キャベツ1">
+          <label class="form-label">品種名</label>
+          <input type="text" id="plant_variety" class="form-input" value="${String(p.variety||'').replace(/"/g,'&quot;')}" placeholder="品種">
+          <input type="hidden" id="plant_crop_name" value="${String(p.cropName||cropHint||'').replace(/"/g,'&quot;')}">
+          <label class="form-label">定植日</label>
+          <input type="date" id="plant_date" class="form-input" value="${String(p.plantingDate||todayStr)}">
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1;">
+              <label class="form-label">定植株数</label>
+              <input type="number" id="plant_count" class="form-input" min="0" step="1" value="${p.plantCount != null ? p.plantCount : ''}" placeholder="本">
+            </div>
+            <div style="flex:1;">
+              <label class="form-label">使用トレイ枚数</label>
+              <input type="number" id="plant_trays" class="form-input" min="0" step="1" value="${p.trays != null ? p.trays : ''}" placeholder="枚">
+            </div>
+          </div>
+          <label class="form-label">メモ</label>
+          <textarea id="plant_note" class="form-input" rows="2" placeholder="欠株・補植など">${String(p.note||'').replace(/</g,'&lt;')}</textarea>
+        `;
+      };
+
+      window.collectPlantingRecordData = () => {
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (!window.isPlantingWorkName(wName)) return null;
+        const box = document.getElementById('planting_record_section');
+        if (!box || box.style.display === 'none') return null;
+        return {
+          tag: (document.getElementById('plant_tag')?.value || '').trim(),
+          variety: (document.getElementById('plant_variety')?.value || '').trim(),
+          cropName: (document.getElementById('plant_crop_name')?.value || '').trim() || ((typeof window.getWorkRecordPrimaryCrop === 'function') ? window.getWorkRecordPrimaryCrop() : ''),
+          plantingDate: (document.getElementById('plant_date')?.value || '').trim(),
+          plantCount: document.getElementById('plant_count')?.value || '',
+          trays: document.getElementById('plant_trays')?.value || '',
+          note: (document.getElementById('plant_note')?.value || '').trim()
         };
       };
 
@@ -7269,6 +7554,11 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!window.isHarvestWorkName(wName)) {
           box.style.display = 'none';
           box.innerHTML = '';
+          return;
+        }
+        if (preset) window.setExtraRecordOpen_('harvest', true);
+        if (!window.isExtraRecordOpen_('harvest')) {
+          box.style.display = 'none';
           return;
         }
         const crop = window.getWorkRecordPrimaryCrop();
@@ -7732,9 +8022,16 @@ function createSignboardMarker(name, pos, icon, id) {
         const name = workName != null
           ? workName
           : (document.getElementById('rec_work_name')?.value || '');
-        const show = window.isMaintenanceRelatedWork(name);
-        mSection.style.display = show ? 'block' : 'none';
-        if (!show) return;
+        const eligible = window.isMaintenanceRelatedWork(name);
+        if (!eligible) {
+          mSection.style.display = 'none';
+          return;
+        }
+        if (!window.isExtraRecordOpen_('maintenance')) {
+          mSection.style.display = 'none';
+          return;
+        }
+        mSection.style.display = 'block';
 
         const prevId = document.getElementById('m_tool')?.value || '';
         window.populateMaintenanceMachineSelect(prevId);
@@ -8007,6 +8304,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const defaultWorkCat = (!p.isMarker && !isEdit) ? '圃場作業' : 'すべて';
 
           html = `<label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;">
+                  <div id="linked_special_work_banner" style="display:none; border:1px solid #CE93D8; border-radius:8px; padding:10px 12px; margin:10px 0 12px; font-size:13px; font-weight:bold; line-height:1.4;"></div>
                   <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
                   ${timeUI}
                   ${workTimeUI}
@@ -8033,6 +8331,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   </div>
                   <select id="rec_work_name" class="form-input" style="display:none;" onchange="handleWorkNameChange()">${wNames}</select>
                   </div>
+                  <div id="extra_record_buttons" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
                   <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:6px; margin-bottom:15px; border:1px solid #ffcc80;">
                     <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:13px;">🔧 整備・修理・点検の詳細（機械＆道具マスタ連動）</div>
@@ -8070,6 +8369,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="used_items_section"></div>
                   <div id="work_harvest_qty_section" class="lot-section" style="display:none; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="sowing_record_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
+                  <div id="planting_record_section" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
                    <div id="progress_status_section" style="display:none;">
@@ -8156,6 +8456,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof window.applyPrefillWorkTime === 'function') window.applyPrefillWorkTime();
             if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar('');
             if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
+            if (typeof window.refreshLinkedSpecialWorkBanner === 'function') window.refreshLinkedSpecialWorkBanner();
         }, 50);
 
         if (currentRecordType === 'work') setTimeout(() => {
@@ -8210,6 +8511,10 @@ function createSignboardMarker(name, pos, icon, id) {
             const syncClockElWork = document.getElementById('sync_clockin');
             if (syncClockElWork) syncClockElWork.checked = false;
             setTimeout(() => {
+              if (d.ridgeProgress && Array.isArray(d.ridgeProgress) && d.ridgeProgress.length) {
+                window.setExtraRecordOpen_('ridge', true);
+              }
+              if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
               if (d.ridgeProgress && Array.isArray(d.ridgeProgress)) {
                 d.ridgeProgress.forEach(rp => {
                   const worked = document.querySelector(`.ridge-worked[data-poly-id="${rp.polyId}"]`);
@@ -8224,6 +8529,11 @@ function createSignboardMarker(name, pos, icon, id) {
                 const next = document.querySelector('.ridge-next');
                 if (worked) worked.value = d.workedRidges || '';
                 if (next) next.value = d.nextRidge || '';
+              }
+              if ((d.irrigationValves && Array.isArray(d.irrigationValves) && d.irrigationValves.length)
+                  || (d.drainageValves && Array.isArray(d.drainageValves) && d.drainageValves.length)
+                  || (Array.isArray(d.installedPumps) && d.installedPumps.length)) {
+                window.setExtraRecordOpen_('irrigation', true);
               }
               if (d.irrigationValves && Array.isArray(d.irrigationValves) && typeof window.refreshIrrigationValveUI === 'function') {
                 window.refreshIrrigationValveUI();
@@ -8250,6 +8560,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (Array.isArray(d.installedPumps) && typeof window.refreshIrrigationPumpUI === 'function') {
                 window.refreshIrrigationPumpUI(d.installedPumps.map(p => p && p.id).filter(Boolean));
               }
+              if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
             }, 80);
             
             if (d.workName && typeof selectWorkChip === 'function') {
@@ -8260,13 +8571,24 @@ function createSignboardMarker(name, pos, icon, id) {
 
             if (d.harvestQty && typeof window.refreshWorkHarvestQtySection === 'function') {
               setTimeout(() => {
+                window.setExtraRecordOpen_('harvest', true);
                 window.refreshWorkHarvestQtySection(d.harvestQty);
+                if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
               }, 100);
             }
             if (d.sowingRecord && typeof window.refreshSowingRecordSection === 'function') {
               setTimeout(() => {
+                window.setExtraRecordOpen_('sowing', true);
                 window.refreshSowingRecordSection(d.sowingRecord);
+                if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
               }, 120);
+            }
+            if (d.plantingRecord && typeof window.refreshPlantingRecordSection === 'function') {
+              setTimeout(() => {
+                window.setExtraRecordOpen_('planting', true);
+                window.refreshPlantingRecordSection(d.plantingRecord);
+                if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
+              }, 125);
             }
             if (d.prepTargetWork || (d.detailedWorks && (d.detailedWorks.includes('対象:') || d.detailedWorks.includes('準備対象')))) {
               setTimeout(() => {
@@ -8276,7 +8598,9 @@ function createSignboardMarker(name, pos, icon, id) {
                   if (m) target = m[1] || m[2];
                 }
                 if (target && typeof window.refreshPrepTargetWorkSection === 'function') {
+                  window.setExtraRecordOpen_('prep', true);
                   window.refreshPrepTargetWorkSection(target);
+                  if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
                 }
               }, 130);
             }
@@ -8327,15 +8651,25 @@ function createSignboardMarker(name, pos, icon, id) {
                ? window.isMaintenanceRelatedWork(d.workName)
                : ((d.workName.includes("整備") || d.workName.includes("修理")) && !d.workName.includes("圃場")))) {
                setTimeout(() => {
+                  window.setExtraRecordOpen_('maintenance', true);
                   if (typeof window.refreshMaintenanceSection === 'function') {
                     window.refreshMaintenanceSection(d.workName);
                   }
+                  if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
                   if(document.getElementById('m_tool')) document.getElementById('m_tool').value = d.maintenanceToolId || "";
                   if (typeof updatePartsList === 'function') updatePartsList();
                   if(document.getElementById('m_symptom')) document.getElementById('m_symptom').value = d.maintenanceSymptom || "";
                   if(document.getElementById('m_content')) document.getElementById('m_content').value = d.maintenanceContent || "";
                   setTimeout(() => { if(document.getElementById('m_parts')) document.getElementById('m_parts').value = d.maintenanceParts || ""; }, 50);
                }, 100);
+            }
+            if (d.selectedLots || d.lotAction === 'use') {
+              setTimeout(() => {
+                window.setExtraRecordOpen_('lotUse', true);
+                const useSec = document.getElementById('lot_use_section');
+                if (useSec) useSec.style.display = 'block';
+                if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
+              }, 110);
             }
           } else if (!p.isMarker) {
             document.getElementById('rec_crop').value = d.crop||''; document.getElementById('rec_field_status').value = d.fieldStatus||'';
@@ -9004,6 +9338,22 @@ function createSignboardMarker(name, pos, icon, id) {
             const sowingRec = (typeof window.collectSowingRecordData === 'function') ? window.collectSowingRecordData() : null;
             if (sowingRec) data.sowingRecord = sowingRec;
 
+            const plantingRec = (typeof window.collectPlantingRecordData === 'function') ? window.collectPlantingRecordData() : null;
+            if (plantingRec) data.plantingRecord = plantingRec;
+
+            if (window._linkedSpecialWorkSet && !window._specialWorkSession) {
+              const linked = window._linkedSpecialWorkSet;
+              data.linkedSpecialWork = {
+                kind: linked.kind || '',
+                label: linked.label || '',
+                workName: linked.workName || '',
+                crop: linked.crop || '',
+                localId: linked.localId || '',
+                summary: linked.summary || '',
+                sowingRecord: linked.sowingRecord || null
+              };
+            }
+
             if (typeof window.isWaterValveWork === 'function' && window.isWaterValveWork(wName)) {
               const valveRows = (typeof window.collectIrrigationValveData === 'function') ? window.collectIrrigationValveData() : [];
               if (valveRows.length > 0) {
@@ -9039,9 +9389,11 @@ function createSignboardMarker(name, pos, icon, id) {
               data.installedPumps = installedPumps;
             }
 
-           if (typeof window.isMaintenanceRelatedWork === 'function'
+           if ((typeof window.isMaintenanceRelatedWork === 'function'
                ? window.isMaintenanceRelatedWork(wName)
-               : ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場"))) {
+               : ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")))
+               && document.getElementById('maintenance_section')
+               && document.getElementById('maintenance_section').style.display !== 'none') {
                const tId = document.getElementById('m_tool')?.value || "";
                const toolObj = (pdlMachines || []).find(t => t.id === tId); 
                data.maintenanceToolId = tId; data.maintenanceTool = toolObj ? toolObj.name : "";
@@ -9060,7 +9412,9 @@ function createSignboardMarker(name, pos, icon, id) {
                data.maintenanceContent = document.getElementById('m_content')?.value || ""; 
                data.maintenanceParts = document.getElementById('m_parts')?.value || "";
             }
-            if (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')) { 
+            if ((typeof window.isLotUseWorkName === 'function' ? window.isLotUseWorkName(wName) : (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')))
+                && document.getElementById('lot_use_section')
+                && document.getElementById('lot_use_section').style.display !== 'none') { 
               data.lotAction = 'use'; 
               const checked = Array.from(document.querySelectorAll('input[name="use_lots"]:checked')).map(cb => cb.value); 
               data.selectedLots = checked.join(','); 
@@ -9149,6 +9503,10 @@ function createSignboardMarker(name, pos, icon, id) {
           const activePolySnap = activePolyId;
           const recordTypeSnap = currentRecordType;
           const userSnap = currentUser;
+          const specialSessionSnap = window._specialWorkSession
+            ? Object.assign({}, window._specialWorkSession)
+            : null;
+          const targetIdsSnap = (selectedPolyIds || []).slice();
           const isLocalOnlyEdit = String(editIdSnap).indexOf('local_') === 0;
           const newlyAddedIds = (editIdSnap && !isLocalOnlyEdit)
             ? selectedPolyIds.filter(id => id !== activePolySnap)
@@ -9179,6 +9537,20 @@ function createSignboardMarker(name, pos, icon, id) {
             && data
             && String(data.workName || '').includes('休憩');
 
+          // closeRightPanel で圃場選択が消える前に専用記録セットを退避
+          if (!isEditBtn && recordTypeSnap === 'work' && specialSessionSnap && specialSessionSnap.askContinueAfterSave) {
+            if (typeof window.captureLinkedSpecialWorkSet_ === 'function') {
+              try { window.captureLinkedSpecialWorkSet_(data, localId, specialSessionSnap.kind); } catch (e) {}
+            }
+            window._specialWorkSession = null;
+          }
+          const clearingLinkedAfterFollowUp = !!(
+            !isEditBtn
+            && recordTypeSnap === 'work'
+            && window._linkedSpecialWorkSet
+            && !specialSessionSnap
+          );
+
           // フォーム状態をクリアして即閉じる
           pendingFiles = [];
           existingUrlsInEdit = [];
@@ -9192,7 +9564,7 @@ function createSignboardMarker(name, pos, icon, id) {
             editId: isLocalOnlyEdit ? '' : editIdSnap,
             activePolyId: activePolySnap,
             newlyAddedIds: newlyAddedIds,
-            targetIds: selectedPolyIds.slice(),
+            targetIds: targetIdsSnap,
             recordType: recordTypeSnap,
             data: data,
             files: files,
@@ -9220,6 +9592,16 @@ function createSignboardMarker(name, pos, icon, id) {
             if (again && typeof window.openRestBreakRecord === 'function') {
               window.openRestBreakRecord();
             }
+          } else if (!isEditBtn && recordTypeSnap === 'work' && specialSessionSnap && specialSessionSnap.askContinueAfterSave && typeof customConfirm === 'function') {
+            const label = specialSessionSnap.label || '専用記録';
+            const cont = await customConfirm(label + "を保存しました。\n続けて作業記録を登録しますか？\n（" + label + "の内容はセット済みのまま引き継ぎます）");
+            if (cont && typeof window.openWorkRecordWithSpecialSet === 'function') {
+              window.openWorkRecordWithSpecialSet();
+            } else {
+              window._linkedSpecialWorkSet = null;
+            }
+          } else if (clearingLinkedAfterFollowUp) {
+            window._linkedSpecialWorkSet = null;
           }
         } catch(e) {
           console.error("submitRecord error:", e);
@@ -12030,6 +12412,208 @@ function createSignboardMarker(name, pos, icon, id) {
           setTimeout(applyRest, 80);
           setTimeout(applyRest, 280);
           setTimeout(() => { window._openingRestBreak = false; }, 400);
+      };
+
+      /** 播種・定植・畝立ての専用記録メタ */
+      window.SPECIAL_WORK_KINDS = {
+        sowing: { kind: 'sowing', workName: '播種', label: '播種記録', category: '圃場作業' },
+        planting: { kind: 'planting', workName: '定植', label: '定植記録', category: '圃場作業' },
+        ridge: { kind: 'ridge', workName: '畝立て', label: '畝立て記録', category: '圃場作業' }
+      };
+
+      window.ensureSpecialWorkInMaster_ = (workName, category) => {
+        const name = String(workName || '').trim();
+        if (!name) return;
+        const cat = String(category || '圃場作業').trim() || '圃場作業';
+        if (typeof pdlWorkMaster === 'undefined' || !Array.isArray(pdlWorkMaster)) return;
+        const exists = pdlWorkMaster.some(w => w && String(w.name || '').trim() === name);
+        if (!exists) {
+          pdlWorkMaster.push({ name: name, category: cat, cropName: '共通', detailWorks: '' });
+        }
+      };
+
+      window.buildLinkedSpecialSummary_ = (data, kind) => {
+        const parts = [];
+        const crop = String((data && data.crop) || '').trim();
+        if (crop) parts.push('作物: ' + crop);
+        if (kind === 'sowing' && data && data.sowingRecord) {
+          const s = data.sowingRecord;
+          if (s.tag) parts.push('TAG: ' + s.tag);
+          if (s.variety) parts.push('品種: ' + s.variety);
+          if (s.nurseryName) parts.push('区画: ' + s.nurseryName);
+          if (s.trays !== '' && s.trays != null) parts.push(s.trays + '枚');
+        }
+        if (kind === 'planting') {
+          parts.push('定植');
+        }
+        if (kind === 'ridge' && data && Array.isArray(data.ridgeProgress) && data.ridgeProgress.length) {
+          const r0 = data.ridgeProgress[0];
+          if (r0 && r0.workedRidges) parts.push('畝: ' + r0.workedRidges);
+        }
+        const polyNames = (selectedPolyIds || []).map(id => {
+          const p = loadedPolygons && loadedPolygons[id];
+          return p && p.name ? p.name : '';
+        }).filter(Boolean);
+        if (polyNames.length) parts.push('圃場: ' + polyNames.join('・'));
+        return parts.length ? parts.join(' / ') : '内容を引き継ぎます';
+      };
+
+      window.captureLinkedSpecialWorkSet_ = (data, localId, kind) => {
+        const meta = (window.SPECIAL_WORK_KINDS && window.SPECIAL_WORK_KINDS[kind]) || { kind: kind, workName: '', label: '専用記録' };
+        window._linkedSpecialWorkSet = {
+          kind: kind,
+          label: meta.label || '専用記録',
+          workName: meta.workName || String((data && data.workName) || ''),
+          crop: (data && data.crop) || '',
+          category: (data && data.category) || '',
+          polyIds: (selectedPolyIds || []).map(String),
+          workDate: (data && data.workDate) || '',
+          endTime: (data && data.endTime) || '',
+          sowingRecord: (data && data.sowingRecord) ? Object.assign({}, data.sowingRecord) : null,
+          ridgeProgress: (data && data.ridgeProgress) ? JSON.parse(JSON.stringify(data.ridgeProgress)) : null,
+          localId: localId || '',
+          summary: window.buildLinkedSpecialSummary_(data, kind)
+        };
+      };
+
+      window.refreshLinkedSpecialWorkBanner = () => {
+        const box = document.getElementById('linked_special_work_banner');
+        if (!box) return;
+        const set = window._linkedSpecialWorkSet;
+        const session = window._specialWorkSession;
+        if (set && !session) {
+          box.style.display = 'block';
+          box.style.background = '#E8F5E9';
+          box.style.borderColor = '#81C784';
+          box.style.color = '#1B5E20';
+          box.innerHTML = '<div style="font-weight:bold; margin-bottom:4px;">✅ ' + String(set.label || '専用記録').replace(/</g, '&lt;') + 'がセット済みです</div>'
+            + '<div style="font-weight:normal; font-size:12px; line-height:1.4;">' + String(set.summary || '').replace(/</g, '&lt;') + '</div>'
+            + '<div style="font-weight:normal; font-size:11px; color:#558B2F; margin-top:6px;">作業名・時間を入力して通常の作業記録として保存してください</div>';
+          return;
+        }
+        if (session && session.label) {
+          box.style.display = 'block';
+          box.style.background = '#F3E5F5';
+          box.style.borderColor = '#CE93D8';
+          box.style.color = '#6A1B9A';
+          box.innerHTML = '<div style="font-weight:bold;">🌱 ' + String(session.label).replace(/</g, '&lt;') + 'モード</div>'
+            + '<div style="font-weight:normal; font-size:12px; margin-top:4px;">保存後、「続けて作業記録を登録しますか？」と確認します</div>';
+          return;
+        }
+        box.style.display = 'none';
+        box.innerHTML = '';
+      };
+
+      /**
+       * 播種 / 定植 / 畝立ての専用記録フォームを開く
+       */
+      window.openSpecializedWorkRecord = (kind) => {
+        const meta = window.SPECIAL_WORK_KINDS && window.SPECIAL_WORK_KINDS[kind];
+        if (!meta) return;
+        currentEditRecordId = null;
+        currentRecordType = 'work';
+        window._linkedSpecialWorkSet = null;
+        window._specialWorkSession = {
+          kind: meta.kind,
+          workName: meta.workName,
+          label: meta.label,
+          askContinueAfterSave: true
+        };
+        window.ensureSpecialWorkInMaster_(meta.workName, meta.category);
+        if (typeof window.findCurrentFieldAndOpenForm === 'function') {
+          window.findCurrentFieldAndOpenForm('work');
+        } else if (typeof directOpenForm === 'function') {
+          directOpenForm(null, 'work');
+        } else {
+          if (typeof renderRecordForm === 'function') renderRecordForm();
+          const panel = document.getElementById('rightPanel');
+          if (panel) panel.classList.add('open');
+        }
+        const applySpecial = () => {
+          if (typeof window.selectWorkCategory === 'function') {
+            try { window.selectWorkCategory(meta.category || '圃場作業'); } catch (e) {}
+          }
+          const cropKeys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
+            ? window.getSelectedWorkCropFilterKeys()
+            : [];
+          if ((!cropKeys || !cropKeys.length) && typeof window.selectWorkCropFilter === 'function') {
+            try { window.selectWorkCropFilter('共通'); } catch (e) {}
+          }
+          if (typeof selectWorkChip === 'function') {
+            try { selectWorkChip(meta.workName); } catch (e) {}
+          } else {
+            const sel = document.getElementById('rec_work_name');
+            if (sel) {
+              const exists = Array.from(sel.options).some(o => o.value === meta.workName);
+              if (!exists) {
+                const opt = document.createElement('option');
+                opt.value = meta.workName;
+                opt.textContent = meta.workName;
+                sel.appendChild(opt);
+              }
+              sel.value = meta.workName;
+              if (typeof handleWorkNameChange === 'function') handleWorkNameChange(meta.workName);
+            }
+          }
+          if (typeof window.refreshLinkedSpecialWorkBanner === 'function') {
+            try { window.refreshLinkedSpecialWorkBanner(); } catch (e) {}
+          }
+        };
+        setTimeout(applySpecial, 80);
+        setTimeout(applySpecial, 280);
+        setTimeout(applySpecial, 520);
+      };
+
+      window.openSowingRecord = () => window.openSpecializedWorkRecord('sowing');
+      window.openPlantingRecord = () => window.openSpecializedWorkRecord('planting');
+      window.openRidgeMakeRecord = () => window.openSpecializedWorkRecord('ridge');
+
+      /**
+       * 専用記録保存後：セット済み状態で通常の作業記録フォームを開く
+       */
+      window.openWorkRecordWithSpecialSet = () => {
+        const set = window._linkedSpecialWorkSet;
+        window._specialWorkSession = null;
+        window._openingFromSpecialSet = true;
+        currentEditRecordId = null;
+        currentRecordType = 'work';
+        if (set && Array.isArray(set.polyIds) && set.polyIds.length) {
+          selectedPolyIds = set.polyIds.map(String);
+          activePolyId = set.polyIds[0];
+          if (typeof directOpenForm === 'function') {
+            directOpenForm(activePolyId, 'work');
+          } else if (typeof findCurrentFieldAndOpenForm === 'function') {
+            findCurrentFieldAndOpenForm('work');
+          }
+        } else if (typeof findCurrentFieldAndOpenForm === 'function') {
+          findCurrentFieldAndOpenForm('work');
+        } else if (typeof directOpenForm === 'function') {
+          directOpenForm(null, 'work');
+        }
+        const applySet = () => {
+          if (set && set.crop) {
+            const firstCrop = String(set.crop).split(',')[0].trim();
+            if (firstCrop) {
+              if (typeof window.ensureWorkCropFilterSelected === 'function') {
+                try { window.ensureWorkCropFilterSelected(window.normalizeWorkCropKey(firstCrop)); } catch (e) {}
+              } else if (typeof window.selectWorkCropFilter === 'function') {
+                try { window.selectWorkCropFilter(firstCrop); } catch (e) {}
+              }
+            }
+          }
+          if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
+            try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
+          }
+          if (typeof window.refreshLinkedSpecialWorkBanner === 'function') {
+            try { window.refreshLinkedSpecialWorkBanner(); } catch (e) {}
+          }
+          if (typeof window.refreshFieldTargetUI === 'function') {
+            try { window.refreshFieldTargetUI(); } catch (e) {}
+          }
+        };
+        setTimeout(applySet, 100);
+        setTimeout(applySet, 320);
+        setTimeout(() => { window._openingFromSpecialSet = false; }, 600);
       };
     // 🌟ここから上書き：共有されたURLを開いた瞬間に「全自動」で解析＆判定する！🌟
       const urlParams = new URLSearchParams(window.location.search);
