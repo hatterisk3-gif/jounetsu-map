@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <link rel="stylesheet" href="worker.css?v=1785307000003">
+  <link rel="stylesheet" href="worker.css?v=1785307000004">
 </head>
 
 <body>
@@ -33,11 +33,17 @@
     <button id="btnWeather" class="map-action-btn" onclick="openWeatherModal()" style="color: #ff9800;">
       ☁️
     </button>
+    <button id="btnSoilMoisture" class="map-action-btn" onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示" style="color: #1565c0;">
+      🌱
+    </button>
     <button id="btnSkillTree" class="map-action-btn" onclick="openSkillTreeModal()" title="スキルツリー & 免許・資格" style="color: #2E7D32;">
       🌳
     </button>
     <button id="btnTracking" class="map-action-btn" onclick="toggleTracking()" style="color: #4CAF50;">
       🏃‍♂️
+    </button>
+    <button id="btnRestBreak" class="map-action-btn" onclick="openRestBreakRecord()" title="休憩時間を登録" style="color: #E65100;">
+      ☕
     </button>
     <button id="btnPersonalSchedule" class="map-action-btn" onclick="openPersonalSchedule()" title="スケジュール" style="color: #2E7D32;">
       🗓️
@@ -165,6 +171,10 @@
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; findCurrentFieldAndOpenForm('work')"
           style="background: #FF9800; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜
           現在地で作業記録</button>
+        <button
+          onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openRestBreakRecord()"
+          style="background: #FFF3E0; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FF9800; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">☕
+          休憩時間を登録</button>
         <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openGlobalHarvest()"
           style="background: #66BB6A; color: #fff; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); position:relative;">🚜
@@ -332,8 +342,9 @@
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
   <script src="map-loading.js?v=1785312000001"></script>
-  <script src="worker.js?v=1785489000016"></script>
-  <script src="tracking.js?v=1784615000016"></script>
+  <script src="weather-agri.js?v=1785489000100"></script>
+  <script src="worker.js?v=1785489000025"></script>
+  <script src="tracking.js?v=1784615000019"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js?v=worker', { scope: '/worker.html' });

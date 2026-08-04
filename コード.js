@@ -1738,10 +1738,13 @@ function readMergedCropMasterList_() {
     for (let i = 1; i < data.length; i++) {
       const n = String(data[i][0] || '').trim();
       if (!n) continue;
+      const density = Number(data[i][1]) || 0;
+      const color = String(data[i][2] || '').trim();
       if (!map[n]) {
-        map[n] = { name: n, density: Number(data[i][1]) || 0 };
-      } else if (!map[n].density && data[i][1]) {
-        map[n].density = Number(data[i][1]) || 0;
+        map[n] = { name: n, density: density, color: color || '' };
+      } else {
+        if (!map[n].density && density) map[n].density = density;
+        if (!map[n].color && color) map[n].color = color;
       }
     }
   }
@@ -4143,9 +4146,75 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
 
 function deleteRecordItem(polyId, recordId, user) {
   const found = findSheetAndRowById(polyId); if (!found) throw new Error("対象なし");
-  const pc = 10; let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} } if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch(e) {} }
-  const updated = ex.filter(item => item.id !== recordId && item.url !== recordId); found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(updated)); 
-  writeLog(user, "記録削除", found.rowData[1], `対象ID: ${recordId}`);
+  const pType = found.sheet.getName();
+  const pc = 10;
+  let ex = [];
+  if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {} }
+  if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) {} }
+
+  const deleted = ex.find(item => item && (item.id === recordId || item.url === recordId));
+  const updated = ex.filter(item => item && item.id !== recordId && item.url !== recordId);
+  found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(updated));
+
+  // 一覧シート（作業記録／生育記録／看板記録）の行も削除して本体と揃える
+  const recordType = deleted ? String(deleted.type || '') : '';
+  const sheetSpecs = [];
+  if (recordType === 'work' || recordType === '作業') {
+    sheetSpecs.push({ name: '作業記録', idCol: 12 });
+  } else if (pType === '看板' || recordType === 'sign') {
+    sheetSpecs.push({ name: '看板記録', idCol: 4 });
+  } else if (recordType === 'growth' || recordType === '生育') {
+    sheetSpecs.push({ name: '生育記録', idCol: 21 });
+  } else {
+    // タイプ不明時は候補を順に探す（1件だけ消す）
+    sheetSpecs.push(
+      { name: '作業記録', idCol: 12 },
+      { name: '生育記録', idCol: 21 },
+      { name: '看板記録', idCol: 4 }
+    );
+  }
+
+  let listDeleted = false;
+  for (let s = 0; s < sheetSpecs.length; s++) {
+    if (listDeleted && sheetSpecs.length > 1 && !(recordType === 'work' || recordType === '作業' || recordType === 'growth' || recordType === '生育' || pType === '看板')) {
+      // 不明タイプで既に1件消したら打ち切り
+      break;
+    }
+    const spec = sheetSpecs[s];
+    const rs = TENANT_SS.getSheetByName(spec.name);
+    if (!rs || rs.getLastRow() < 2) continue;
+    const d = rs.getDataRange().getValues();
+    for (let i = d.length - 1; i >= 1; i--) {
+      if (String(d[i][spec.idCol] || '') === String(recordId)) {
+        rs.deleteRow(i + 1);
+        listDeleted = true;
+        break;
+      }
+    }
+    // タイプが明確ならそのシートだけで終了
+    if (recordType === 'work' || recordType === '作業' || recordType === 'growth' || recordType === '生育' || pType === '看板' || recordType === 'sign') {
+      break;
+    }
+  }
+
+  // 写真ファイルもゴミ箱へ（失敗しても記録削除自体は成功扱い）
+  try {
+    if (deleted && Array.isArray(deleted.urls)) {
+      deleted.urls.forEach(function (u) {
+        const s = String(u || '');
+        let fid = '';
+        const m1 = s.match(/[?&]id=([^&]+)/);
+        const m2 = s.match(/\/d\/([^/]+)/);
+        if (m1) fid = m1[1];
+        else if (m2) fid = m2[1];
+        if (fid) {
+          try { DriveApp.getFileById(fid).setTrashed(true); } catch (e2) {}
+        }
+      });
+    }
+  } catch (e) {}
+
+  writeLog(user, "記録削除", found.rowData[1], `対象ID: ${recordId}` + (listDeleted ? ' / 一覧シート削除済' : ' / 一覧シート該当なし'));
   return updated;
 }
 

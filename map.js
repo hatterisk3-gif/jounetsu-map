@@ -1324,6 +1324,10 @@ async function fetchWeatherAndUpdateUI() {
     if (historyData && historyData.daily) {
       html += window.renderSunshinePanelHtml();
     }
+    // --- 🌱 農業天気（土壌水分・適日・アラート） ---
+    if (typeof window.renderAgriWeatherPanelHtml === 'function') {
+      html += window.renderAgriWeatherPanelHtml();
+    }
 
     html += `<div style="display:flex; margin-bottom:15px; border-bottom:1px solid #ccc;">
       <div id="tabForecast" onclick="switchWeatherTab('forecast')" style="flex:1; text-align:center; padding:10px; font-weight:bold; cursor:pointer; border-bottom:3px solid #2196F3; color:#2196F3;">週間予報</div>

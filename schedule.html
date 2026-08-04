@@ -56,6 +56,8 @@
         台風</button>
       <button id="btnWeather" onclick="openWeatherModal()"
         style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
+      <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示"
+        style="margin-right:10px; background:white; color:#1565c0; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">🌱</button>
       <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
       <button type="button" onclick="executeLogout()"
         style="background:#c62828; color:#fff; border:1px solid #ef9a9a; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; cursor:pointer; white-space:nowrap;">🚪 ログアウト</button>
@@ -326,6 +328,7 @@
     }
 
     appendScript('map-loading.js?v=1785312000001')
+      .then(() => appendScript('weather-agri.js?v=1785489000100'))
       .then(() => appendScript('schedule.js?v=' + cacheBust))
       .then(() => appendScript('market.js?v=' + cacheBust))
       .then(() => appendScript('tracking.js?v=1784615000015'))

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <title>農技バトル v1.02 — 装備 ＆ ガチャ実装</title>
+  <title>農技バトル v1.03 — 情熱MAPログイン連動</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -399,17 +399,119 @@
       text-align: center;
       line-height: 1.5;
     }
+    #loginScreen {
+      position: fixed; inset: 0; z-index: 5000;
+      display: flex; align-items: center; justify-content: center;
+      background:
+        radial-gradient(ellipse 70% 50% at 20% 10%, rgba(129, 212, 250, 0.4), transparent 55%),
+        radial-gradient(ellipse 50% 40% at 90% 20%, rgba(249, 168, 37, 0.25), transparent 50%),
+        linear-gradient(180deg, #e8f5e9 0%, var(--mist) 45%, #d7ccc8 100%);
+      padding: 20px;
+    }
+    #loginScreen.hidden { display: none; }
+    .login-box {
+      width: 100%; max-width: 360px;
+      background: var(--card);
+      border: 1px solid rgba(62, 39, 35, 0.12);
+      border-radius: 18px;
+      padding: 28px 22px 24px;
+      box-shadow: 0 16px 40px rgba(62, 39, 35, 0.14);
+      text-align: center;
+    }
+    .login-box h2 {
+      margin: 0 0 6px;
+      font-family: "Shippori Mincho", serif;
+      color: var(--leaf-deep);
+      font-size: 1.45rem;
+    }
+    .login-box .login-sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+    .login-input {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 0 0 10px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(62, 39, 35, 0.2);
+      font-size: 1rem;
+      font-family: inherit;
+      background: #fff;
+    }
+    .login-btn {
+      width: 100%;
+      margin-top: 6px;
+      padding: 13px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--leaf), var(--leaf-deep));
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      box-shadow: 0 4px 14px rgba(46, 125, 50, 0.35);
+    }
+    .login-btn:disabled { opacity: 0.65; cursor: wait; }
+    .login-btn:active:not(:disabled) { opacity: 0.85; }
+    #loginError { color: var(--danger); font-size: 0.85rem; margin-bottom: 10px; min-height: 1.2em; }
+    .logout-btn {
+      border: 1px solid rgba(62, 39, 35, 0.18);
+      background: #fff;
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .logout-btn:active { opacity: 0.75; }
+    #appMain.hidden { display: none; }
+    #syncOverlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 4000;
+      background: rgba(44, 33, 24, 0.35);
+      align-items: center; justify-content: center;
+    }
+    #syncOverlay.show { display: flex; }
+    #syncOverlay .sync-card {
+      background: var(--card);
+      padding: 22px 28px;
+      border-radius: 14px;
+      font-weight: 700;
+      color: var(--leaf-deep);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.2);
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div id="loginScreen">
+    <div class="login-box">
+      <h2>⚔️ 農技バトル</h2>
+      <p class="login-sub">情熱MAPと同じIDでログインすると、<br>あなたの作業記録が経験値に連動します。</p>
+      <div id="loginError"></div>
+      <input type="text" id="loginId" class="login-input" placeholder="スタッフID" autocomplete="username" />
+      <input type="password" id="loginPw" class="login-input" placeholder="パスワード" autocomplete="current-password" />
+      <button type="button" class="login-btn" id="loginBtn" onclick="executeBattleLogin(false)">ログイン</button>
+      <p class="login-sub" style="margin-top:14px; margin-bottom:0;">ポータルへ戻る場合は <a href="index2.html" style="color:var(--leaf-deep); font-weight:700;">こちら</a></p>
+    </div>
+  </div>
+
+  <div id="syncOverlay"><div class="sync-card">🌾 作業記録を同期中…</div></div>
+
+  <div class="wrap hidden" id="appMain">
     <header class="hero">
-      <a class="back-portal" href="index.html">← ポータル</a>
+      <a class="back-portal" href="index2.html">← ポータル</a>
       <div class="brand">農技バトル</div>
       <h1>作業が、技になる。</h1>
-      <p>作業を記録するとスキルに経験値が入り、覚えた農技で雑草ボスと戦えます。情熱MAPの作業記録をゲーム化する試作です。</p>
+      <p>情熱MAPにログインした作業記録がスキル経験値に反映されます。覚えた農技で雑草ボスと戦いましょう。</p>
       <div class="badge-row">
         <span class="pill" style="background:#e8f5e9; color:#1b5e20; border-color:#a5d6a7;">👤 <span id="currentUserPill">読込中...</span></span>
+        <button type="button" class="logout-btn" onclick="logoutBattle()">ログアウト</button>
         <span class="pill">Lv <b id="playerLevel">1</b></span>
         <span class="pill">総EXP <b id="totalExp">0</b></span>
         <span class="pill" style="background:#fff8e1; color:#f57f17; border-color:#ffe082;">🪙 <b id="coinCount">0</b> 枚</span>
@@ -422,7 +524,8 @@
         <select id="userSelect" onchange="switchUser(this.value)" style="padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(62,39,35,0.2); font-size: 0.85rem; background: #fff; font-family: inherit; font-weight: bold; color: var(--leaf-deep); cursor: pointer;">
           <option value="">(ログイン中のユーザー)</option>
         </select>
-        <span id="syncStatusHint" style="color: var(--muted); font-size: 0.8rem;">🔄 実記録同期完了</span>
+        <span id="syncStatusHint" style="color: var(--muted); font-size: 0.8rem;">🔄 同期待機</span>
+        <button type="button" class="logout-btn" onclick="resyncBattleRecords()" style="color:var(--leaf-deep);">記録を再同期</button>
       </div>
     </header>
 
@@ -504,14 +607,16 @@
     </section>
 
     <footer class="note">
-      データはこのブラウザの localStorage に保存されます。<br />
-      本番連携するなら、作業記録保存時に同じEXPテーブルへ加算する想定です。
+      情熱MAPと同じアカウントでログインし、作業記録を経験値に連動します。<br />
+      ガチャ・装備・連勝などのゲーム進捗は、ユーザーごとにこの端末へ保存されます。
     </footer>
   </div>
   <div class="toast" id="toast"></div>
 
   <script>
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
     const STORAGE_KEY = 'jonetsuFarmSkillBattle_v1';
+    let battleLoggedIn = false;
 
     const WORKS = [
       { id: 'sowing', name: '播種', icon: '🌱', exp: 12, skill: 'sowing' },
@@ -603,11 +708,61 @@
       { id: 'eq_boots_ssr', name: '疾風のスパイクブーツ', icon: '🥾', type: 'feet', rarity: 'SSR', atk: 20, hp: 65, desc: '軽やかに畑を疾走できる特殊ブーツ。' }
     ];
 
-    let activeUser = localStorage.getItem('passionMapUserName') || '作業員';
-    let state = loadState();
+    let activeUser = localStorage.getItem('passionMapUserName') || '';
+    let state = null;
     let battle = null;
     let combo = 0;
     let comboTimer = null;
+
+    async function callGAS(action, params = {}, retries = 2) {
+      params.action = action;
+      if (action !== 'login') {
+        const spreadsheetId = localStorage.getItem('spreadsheetId');
+        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || !String(spreadsheetId).trim()) {
+          throw new Error('ログインセッションが無効です。再ログインしてください。');
+        }
+        params.spreadsheetId = spreadsheetId;
+      }
+      let lastError = null;
+      for (let i = 0; i <= retries; i++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45000);
+        try {
+          const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
+          clearTimeout(timeoutId);
+          const text = await res.text();
+          let json;
+          try { json = JSON.parse(text); }
+          catch (e) {
+            if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+              throw new Error('Googleサーバーの一時エラーです。再試行中…');
+            }
+            throw new Error('サーバー応答が不正です');
+          }
+          if (json.status !== 'success') throw new Error(json.message || '通信エラー');
+          return json.data;
+        } catch (err) {
+          clearTimeout(timeoutId);
+          lastError = err;
+          if (i < retries) await new Promise(r => setTimeout(r, 1200));
+        }
+      }
+      if (lastError && lastError.name === 'AbortError') {
+        throw new Error('通信がタイムアウトしました');
+      }
+      throw lastError;
+    }
+
+    function showSyncOverlay(on) {
+      const el = document.getElementById('syncOverlay');
+      if (!el) return;
+      el.classList.toggle('show', !!on);
+    }
+
+    function battleStorageKey(user) {
+      const u = String(user || activeUser || 'guest').trim() || 'guest';
+      return STORAGE_KEY + ':' + u;
+    }
 
     function defaultState() {
       const skills = {};
@@ -624,123 +779,121 @@
       };
     }
 
-    // ===== 🌟 情熱MAPの実作業記録（loadedPolygons / photos）からリアル経験値を動的集計 =====
+    function parseWorkMinutes_(ph) {
+      const d = (ph && ph.data) || {};
+      let mins = parseInt(d.workMinutes || ph.workMinutes || 0, 10) || 0;
+      if (mins > 0) return mins;
+      const t = String(d.totalTime || '').trim();
+      if (t) {
+        const hm = t.match(/(\d+)\s*時間/);
+        const mm = t.match(/(\d+)\s*分/);
+        mins = (hm ? parseInt(hm[1], 10) * 60 : 0) + (mm ? parseInt(mm[1], 10) : 0);
+        if (mins > 0) return mins;
+      }
+      const st = String(d.startTime || '').trim();
+      const et = String(d.endTime || '').trim();
+      if (st && et && /^\d{1,2}:\d{2}$/.test(st) && /^\d{1,2}:\d{2}$/.test(et)) {
+        const [sh, sm] = st.split(':').map(Number);
+        const [eh, em] = et.split(':').map(Number);
+        let diff = (eh * 60 + em) - (sh * 60 + sm);
+        if (diff < 0) diff += 24 * 60;
+        const br = Math.max(0, parseInt(d.breakMins, 10) || 0);
+        return Math.max(0, diff - br);
+      }
+      return 0;
+    }
+
+    function collectPolygonsFromInit_(initData) {
+      if (!initData) return [];
+      if (initData.loadedPolygons && typeof initData.loadedPolygons === 'object') {
+        return Object.values(initData.loadedPolygons);
+      }
+      if (Array.isArray(initData.polygons)) return initData.polygons;
+      return [];
+    }
+
     function calculateRealUserSkills(targetUser) {
       const user = targetUser || activeUser;
       const skills = {};
       SKILLS.forEach(s => { skills[s.id] = { exp: 0, lv: 1, count: 0 }; });
-
       let recordCount = 0;
       const usersFound = new Set();
-
       try {
         const initDataRaw = localStorage.getItem('passionMapInitData') || localStorage.getItem('pMapAdminInitData');
         if (initDataRaw) {
           const initData = JSON.parse(initDataRaw);
-          const polys = initData.loadedPolygons || {};
-          
-          Object.values(polys).forEach(poly => {
+          const polys = collectPolygonsFromInit_(initData);
+          polys.forEach(poly => {
             if (!poly || !Array.isArray(poly.photos)) return;
             poly.photos.forEach(ph => {
               if (!ph) return;
-              const author = String(ph.author || ph.userName || ph.data?.userName || '').trim();
+              const author = String(ph.author || ph.userName || (ph.data && ph.data.userName) || '').trim();
               if (author) usersFound.add(author);
-
-              // ターゲットユーザーのフィルタリング（ターゲット未指定、全員対象、あるいは一致）
               if (user && user !== '全員' && author && author !== user) return;
-
-              const wName = String(ph.data?.workName || ph.workName || ph.comment || '').trim();
-              const details = String(ph.data?.detailedWorks || ph.detailedWorks || '').trim();
+              const wName = String((ph.data && ph.data.workName) || ph.workName || ph.comment || '').trim();
+              const details = String((ph.data && ph.data.detailedWorks) || ph.detailedWorks || '').trim();
               const combinedText = (wName + ' ' + details).toLowerCase();
-              const mins = parseInt(ph.data?.workMinutes || ph.workMinutes || ph.data?.rec_total_time || 0, 10) || 0;
-
+              const mins = parseWorkMinutes_(ph);
               if (!combinedText && mins === 0) return;
+              const typ = String(ph.type || ph.recordType || 'work');
+              if (typ && typ !== 'work' && typ !== '作業') return;
               recordCount++;
-
-              // スキル別のキーワードマッピング
               if (combinedText.includes('播種') || combinedText.includes('種まき') || combinedText.includes('接ぎ木') || combinedText.includes('苗')) {
-                skills.sowing.exp += 15 + Math.floor(mins * 0.5);
-                skills.sowing.count++;
+                skills.sowing.exp += 15 + Math.floor(mins * 0.5); skills.sowing.count++;
               }
               if (combinedText.includes('定植') || combinedText.includes('植え付け') || combinedText.includes('苗植え')) {
-                skills.planting.exp += 20 + Math.floor(mins * 0.6);
-                skills.planting.count++;
+                skills.planting.exp += 20 + Math.floor(mins * 0.6); skills.planting.count++;
               }
               if (combinedText.includes('収穫') || combinedText.includes('穫り')) {
-                skills.harvest.exp += 25 + Math.floor(mins * 0.8);
-                skills.harvest.count++;
+                skills.harvest.exp += 25 + Math.floor(mins * 0.8); skills.harvest.count++;
               }
               if (combinedText.includes('草刈り') || combinedText.includes('草むしり') || combinedText.includes('草抜き') || combinedText.includes('除草') || combinedText.includes('刈り')) {
-                skills.weeding.exp += 18 + Math.floor(mins * 0.5);
-                skills.weeding.count++;
+                skills.weeding.exp += 18 + Math.floor(mins * 0.5); skills.weeding.count++;
               }
               if (combinedText.includes('潅水') || combinedText.includes('灌水') || combinedText.includes('水まき') || combinedText.includes('水やり') || combinedText.includes('田まわり')) {
-                skills.water.exp += 15 + Math.floor(mins * 0.4);
-                skills.water.count++;
+                skills.water.exp += 15 + Math.floor(mins * 0.4); skills.water.count++;
               }
               if (combinedText.includes('防除') || combinedText.includes('消毒') || combinedText.includes('農薬') || combinedText.includes('散布')) {
-                skills.pest.exp += 20 + Math.floor(mins * 0.6);
-                skills.pest.count++;
+                skills.pest.exp += 20 + Math.floor(mins * 0.6); skills.pest.count++;
               }
               if (combinedText.includes('畝') || combinedText.includes('畝立て') || combinedText.includes('マルチャー') || combinedText.includes('耕起') || combinedText.includes('代かき')) {
-                skills.ridge.exp += 20 + Math.floor(mins * 0.6);
-                skills.ridge.count++;
+                skills.ridge.exp += 20 + Math.floor(mins * 0.6); skills.ridge.count++;
               }
               if (combinedText.includes('パック') || combinedText.includes('選別') || combinedText.includes('調整') || combinedText.includes('出荷') || combinedText.includes('パッキング')) {
-                skills.pack.exp += 15 + Math.floor(mins * 0.5);
-                skills.pack.count++;
+                skills.pack.exp += 15 + Math.floor(mins * 0.5); skills.pack.count++;
               }
-            }
+            });
           });
         }
-      } catch (e) {
-        console.warn('リアル作業データの集計中にエラー:', e);
-      }
-
-      let totalExp = 0;
-      Object.keys(skills).forEach(id => {
-        const sk = skills[id];
-        sk.lv = skillLevelFromExp(sk.exp);
-        totalExp += sk.exp;
-      });
-
-      return {
-        skills,
-        totalExp,
-        recordCount,
-        usersFound: Array.from(usersFound).filter(Boolean)
-      };
+      } catch (e) { console.warn('リアル作業データの集計中にエラー:', e); }
+      Object.keys(skills).forEach(id => { skills[id].lv = skillLevelFromExp(skills[id].exp); });
+      const totalExp = Object.values(skills).reduce((a, sk) => a + sk.exp, 0);
+      return { skills, totalExp, recordCount, usersFound: Array.from(usersFound).filter(Boolean) };
     }
 
     function loadState() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(battleStorageKey()) || localStorage.getItem(STORAGE_KEY);
         const base = defaultState();
         const real = calculateRealUserSkills(activeUser);
-
-        // リアル集計経験値とローカル手動記録経験値を合成
         let parsed = {};
-        if (raw) {
-          try { parsed = JSON.parse(raw); } catch (e) {}
-        }
-
+        if (raw) { try { parsed = JSON.parse(raw); } catch (e) {} }
         const mergedSkills = {};
         SKILLS.forEach(s => {
           const rExp = (real.skills[s.id] ? real.skills[s.id].exp : 0);
-          const lExp = (parsed.skills && parsed.skills[s.id]) ? (parsed.skills[s.id].exp || 0) : 0;
-          const totalExp = rExp + lExp;
-          mergedSkills[s.id] = {
-            exp: totalExp,
-            lv: skillLevelFromExp(totalExp),
-            realExp: rExp,
-            manualExp: lExp
-          };
+          let manual = 0;
+          if (parsed.skills && parsed.skills[s.id]) {
+            if (parsed.skills[s.id].manualExp != null) manual = parsed.skills[s.id].manualExp;
+            else manual = Math.max(0, (parsed.skills[s.id].exp || 0) - (parsed.skills[s.id].realExp || 0));
+          }
+          const total = rExp + Math.max(0, manual);
+          mergedSkills[s.id] = { exp: total, lv: skillLevelFromExp(total), realExp: rExp, manualExp: Math.max(0, manual) };
         });
-
         const totalMergedExp = Object.values(mergedSkills).reduce((acc, cur) => acc + cur.exp, 0);
-
+        const extraExp = parsed.extraExp || 0;
         return {
-          totalExp: totalMergedExp,
+          totalExp: totalMergedExp + extraExp,
+          extraExp: extraExp,
           coins: parsed.coins != null ? parsed.coins : (base.coins + (real.recordCount * 5)),
           wins: parsed.wins || 0,
           streak: parsed.streak || 0,
@@ -751,13 +904,144 @@
           recordCount: real.recordCount,
           usersFound: real.usersFound
         };
-      } catch (e) {
-        return defaultState();
-      }
+      } catch (e) { return defaultState(); }
     }
 
     function saveState() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      if (!activeUser || !state) return;
+      const toSave = {
+        coins: state.coins,
+        wins: state.wins,
+        streak: state.streak,
+        log: state.log,
+        inventory: state.inventory,
+        equipped: state.equipped,
+        extraExp: state.extraExp || 0,
+        skills: {}
+      };
+      SKILLS.forEach(s => {
+        const sk = (state.skills && state.skills[s.id]) || {};
+        toSave.skills[s.id] = { manualExp: sk.manualExp != null ? sk.manualExp : 0 };
+      });
+      localStorage.setItem(battleStorageKey(), JSON.stringify(toSave));
+    }
+
+    async function syncWorkRecordsFromServer() {
+      showSyncOverlay(true);
+      const hint = document.getElementById('syncStatusHint');
+      if (hint) hint.textContent = '🔄 サーバーから作業記録を取得中…';
+      try {
+        const data = await callGAS('getInitData');
+        localStorage.setItem('passionMapInitData', JSON.stringify(data));
+        state = loadState();
+        if (hint) hint.textContent = '🔄 実記録 ' + (state.recordCount || 0) + ' 件から同期済み';
+        return data;
+      } finally { showSyncOverlay(false); }
+    }
+
+    function showApp() {
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('appMain').classList.remove('hidden');
+      battleLoggedIn = true;
+      activeUser = localStorage.getItem('passionMapUserName') || activeUser || '作業員';
+      state = loadState();
+      const heroName = document.getElementById('heroName');
+      if (heroName) heroName.textContent = activeUser;
+      renderAll();
+      if (!battle) startBattle();
+    }
+
+    function showLogin() {
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.getElementById('appMain').classList.add('hidden');
+      battleLoggedIn = false;
+      const savedId = localStorage.getItem('passionMapUserId') || '';
+      const idEl = document.getElementById('loginId');
+      if (idEl && savedId) idEl.value = savedId;
+    }
+
+    async function executeBattleLogin(isAuto) {
+      isAuto = isAuto === true;
+      const idEl = document.getElementById('loginId');
+      const pwEl = document.getElementById('loginPw');
+      const errEl = document.getElementById('loginError');
+      const btn = document.getElementById('loginBtn');
+      const id = ((idEl && idEl.value) || '').trim() || localStorage.getItem('passionMapUserId') || '';
+      const pw = (pwEl && pwEl.value) || localStorage.getItem('passionMapUserPw') || '';
+      if (errEl) errEl.textContent = '';
+      if (!id || !pw) {
+        if (!isAuto && errEl) errEl.textContent = 'スタッフIDとパスワードを入力してください';
+        if (!isAuto) showLogin();
+        return false;
+      }
+      if (!isAuto && btn) { btn.disabled = true; btn.textContent = '通信中...'; }
+      try {
+        const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
+        if (!result || !result.success) throw new Error((result && result.message) || 'ログインに失敗しました');
+        localStorage.setItem('passionMapUserId', id);
+        localStorage.setItem('passionMapUserPw', pw);
+        localStorage.setItem('passionMapUserName', result.name);
+        localStorage.setItem('passionMapUserRole', result.role || '作業員');
+        localStorage.setItem('spreadsheetId', result.spreadsheetId);
+        activeUser = result.name;
+        await syncWorkRecordsFromServer();
+        showApp();
+        toast('👤 ' + activeUser + ' さんでログイン・連動しました');
+        return true;
+      } catch (e) {
+        console.warn('battle login failed', e);
+        if (errEl) errEl.textContent = e.message || String(e);
+        if (!isAuto) showLogin();
+        return false;
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'ログイン'; }
+      }
+    }
+
+    async function logoutBattle() {
+      if (!confirm('ログアウトしますか？（ゲーム進捗はこの端末に残ります）')) return;
+      localStorage.removeItem('passionMapUserPw');
+      localStorage.removeItem('spreadsheetId');
+      battle = null;
+      showLogin();
+      toast('ログアウトしました');
+    }
+
+    async function resyncBattleRecords() {
+      try {
+        await syncWorkRecordsFromServer();
+        const select = document.getElementById('userSelect');
+        if (select) select.innerHTML = '<option value="">(ログイン中のユーザー)</option>';
+        renderAll();
+        toast('作業記録を再同期しました（' + (state.recordCount || 0) + '件）');
+      } catch (e) {
+        toast('再同期に失敗: ' + (e.message || e));
+      }
+    }
+
+    async function tryAutoLogin() {
+      const id = localStorage.getItem('passionMapUserId');
+      const pw = localStorage.getItem('passionMapUserPw');
+      const sid = localStorage.getItem('spreadsheetId');
+      const name = localStorage.getItem('passionMapUserName');
+      if (id && pw) {
+        const ok = await executeBattleLogin(true);
+        if (ok) return;
+      }
+      if (sid && name) {
+        activeUser = name;
+        try {
+          await syncWorkRecordsFromServer();
+          showApp();
+          toast('👤 ' + activeUser + ' さんの作業記録と連動しました');
+          return;
+        } catch (e) { console.warn('session sync failed', e); }
+      }
+      showLogin();
+      if (id) {
+        const idEl = document.getElementById('loginId');
+        if (idEl) idEl.value = id;
+      }
     }
 
     function skillLevelFromExp(exp) {
@@ -799,7 +1083,11 @@
     function switchUser(userName) {
       activeUser = userName || localStorage.getItem('passionMapUserName') || '作業員';
       state = loadState();
-      render();
+      const select = document.getElementById('userSelect');
+      if (select) select.innerHTML = '<option value="">(ログイン中のユーザー)</option>';
+      const heroName = document.getElementById('heroName');
+      if (heroName) heroName.textContent = activeUser;
+      renderAll();
       toast(`👤 ${activeUser} さんの作業データに切り替えました！`);
     }
 
@@ -1042,12 +1330,14 @@
       const bonus = combo >= 3 ? Math.round(w.exp * 0.3) : 0;
       const gained = w.exp + bonus;
 
-      const sk = state.skills[w.skill] || { exp: 0 };
+      const sk = state.skills[w.skill] || { exp: 0, manualExp: 0, realExp: 0 };
       const beforeLv = skillLevelFromExp(sk.exp);
-      sk.exp += gained;
+      sk.manualExp = (sk.manualExp || 0) + gained;
+      sk.exp = (sk.realExp || 0) + sk.manualExp;
       const afterLv = skillLevelFromExp(sk.exp);
       state.skills[w.skill] = sk;
       state.totalExp += gained;
+      state.coins = (state.coins || 0) + Math.max(1, Math.floor(gained / 4));
 
       const now = new Date();
       const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -1082,14 +1372,15 @@
     }
 
     function resetProgress() {
-      if (!confirm('スキル・EXP・連勝をすべてリセットしますか？')) return;
-      state = defaultState();
-      saveState();
+      if (!confirm('ガチャ進捗・手動EXP・連勝をリセットしますか？\n（情熱MAPの作業記録から来る経験値は残ります）')) return;
+      localStorage.removeItem(battleStorageKey());
+      localStorage.removeItem(STORAGE_KEY);
+      state = loadState();
       battle = null;
       renderAll();
       document.getElementById('battleLog').textContent = '進捗をリセットしました。もう一度、畑から始めよう。';
       renderBattleActions();
-      toast('リセットしました');
+      toast('リセットしました（実記録EXPは維持）');
     }
 
     function heroMaxHp() {
@@ -1295,6 +1586,7 @@
       battle.over = true;
       const gainExp = 20 + playerLevel() * 3;
       const gainCoins = 15 + Math.floor(Math.random() * 10);
+      state.extraExp = (state.extraExp || 0) + gainExp;
       state.totalExp += gainExp;
       state.coins = (state.coins || 0) + gainCoins;
       state.wins += 1;
@@ -1339,8 +1631,14 @@
       renderSkills();
     }
 
-    renderAll();
-    startBattle();
+    // Enterキーでログイン
+    document.getElementById('loginPw')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') executeBattleLogin(false);
+    });
+    document.getElementById('loginId')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('loginPw')?.focus();
+    });
+    tryAutoLogin();
   </script>
 </body>
 </html>

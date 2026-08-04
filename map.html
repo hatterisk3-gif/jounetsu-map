@@ -45,6 +45,7 @@
             <button id="btnEditProdCategories" onclick="openProdCategoryEditModal()" class="ctrl-btn" style="display:none; background:#5D4037; color:white; border:none;">✏️ カテゴリ編集</button>
             <button onclick="location.reload()" class="ctrl-btn" style="background:#fff; color:#333; border:1px solid #ccc;">🔄 更新</button>
             <button id="btnWeather" onclick="openWeatherModal()" class="ctrl-btn" style="background:#fff; color:#ff9800; border:1px solid #ff9800;">☁️ 天気</button>
+            <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" class="ctrl-btn" style="background:#fff; color:#1565c0; border:1px solid #1565c0;">🌱 水分</button>
             <button id="btnTyphoon" onclick="openTyphoonModal()" class="ctrl-btn" style="display:none; background:#ffebee; color:#d32f2f; border:1px solid #d32f2f;">🌀 台風</button>
             <button onclick="openTransplantSettingModal()" class="ctrl-btn" style="background:#E8F5E9; color:#2E7D32; border:1px solid #66BB6A; font-weight:bold;">🌱 定植設定</button>
             <button onclick="openContactModal()" class="ctrl-btn" style="background:#E8F5E9; color:#388E3C; border:1px solid #388E3C;">📞 連絡先</button>
@@ -321,7 +322,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <script src="map-loading.js?v=1785481000001"></script>
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-    <script src="map.js?v=1785484000001"></script>
+    <script src="weather-agri.js?v=1785489000100"></script>
+    <script src="map.js?v=1785484000002"></script>
     <script src="field-memo.js?v=1785200000001"></script>
     <script>
       if ('serviceWorker' in navigator) {

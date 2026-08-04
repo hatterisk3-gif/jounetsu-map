@@ -1,7 +1,8 @@
 /**
  * 出退勤UI（全ページ共通）
  * - 出勤/退勤（日付＋時間）
- * - 退勤時: 昼休憩・作業中休憩、勤務時間と作業記録の整合チェック
+ * - 退勤時: 昼休憩・作業中休憩（作業記録の休憩合計）、勤務時間と作業記録の整合チェック
+ * - 作業中休憩は退勤画面では入力せず、「休憩」作業記録として登録する
  * - 日付を跨いだ退勤忘れの確認・登録誘導
  */
 (function () {
@@ -1006,9 +1007,7 @@
       hint.textContent = `✅ 間時間からセット: ${sug.start}〜${sug.end}（${sug.reason}）`;
       hint.style.color = '#2E7D32';
     }
-    if (!silent) {
-      alertMsg(`作業記録の間時間からセットしました。\n${sug.start} 〜 ${sug.end}\n（${sug.reason}）`);
-    }
+    // 成功時のダイアログは出さない（欄への反映とヒント表示のみ）
     return true;
   };
 
@@ -1184,6 +1183,7 @@
       return;
     }
     timeEl.value = endTime;
+    // 成功時はダイアログを出さず、欄に反映するだけ
   };
 
   /** 昼休憩チェックをONにして入力欄を有効化 */
@@ -1261,12 +1261,13 @@
     if (endEl) {
       const s = timeToMins(startEl.value);
       let e = endEl.value ? timeToMins(endEl.value) : null;
-      // 終了が空、または開始以降なら「いま」に自動セット
+      // 終了が空、または開始以降なら「いま」に自動セット（ダイアログは出さない）
       if (e == null || (s != null && e <= s)) {
         endEl.value = defaultDateTime().time;
         e = timeToMins(endEl.value);
+        // それでも開始以降なら終了を空にして手入力待ち
         if (s != null && e != null && e <= s) {
-          alertMsg('開始時刻が現在時刻以降です。終了時刻を手入力してください。');
+          endEl.value = '';
         }
       }
     }
@@ -1292,17 +1293,19 @@
     const endEl = document.getElementById('clockLunchEnd');
     const nowHm = defaultDateTime().time;
     if (startEl) startEl.value = endTime;
-    if (endEl) endEl.value = nowHm;
-    const s = timeToMins(endTime);
-    const e = timeToMins(nowHm);
-    if (s != null && e != null && e <= s) {
-      alertMsg(`開始（前作業終了 ${endTime}）が現在時刻以降です。終了時刻を手入力してください。`);
-      return;
+    if (endEl) {
+      const s = timeToMins(endTime);
+      const e = timeToMins(nowHm);
+      // 開始が現在以降なら終了は空（ダイアログは出さない）
+      endEl.value = (s != null && e != null && e <= s) ? '' : nowHm;
     }
     const hint = document.getElementById('lunchGapHint');
     if (hint) {
       hint.style.color = '#2E7D32';
-      hint.textContent = `✅ 前の作業終了〜いま: ${endTime}〜${nowHm}`;
+      const endShown = endEl ? endEl.value : nowHm;
+      hint.textContent = endShown
+        ? `✅ 前の作業終了〜いま: ${endTime}〜${endShown}`
+        : `✅ 開始を前の作業終了（${endTime}）にセット（終了は手入力）`;
     }
   };
 
@@ -1499,7 +1502,7 @@
     html += `<button onclick="backToClockOutSettings()" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer; font-size:13px;">◀ 戻る（退勤時刻を修正）</button>`;
     html += `<button onclick="cancelPendingClockOut()" style="background:#eee; color:#333; width:100%; padding:10px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤をやめる（出勤継続）</button>`;
     html += `</div>`;
-    html += `<p style="font-size:11px; color:#888; margin:10px 0 0;">出勤〜退勤から昼休憩・作業中休憩を除いた時間が、作業記録の実作業時間（開始〜終了 − 休憩）の合計と一致する必要があります。休憩の修正は各作業記録の編集から行ってください。</p>`;
+    html += `<p style="font-size:11px; color:#888; margin:10px 0 0;">出勤〜退勤から昼休憩・作業中休憩を除いた時間が、作業記録の実作業時間（開始〜終了 − 作業内休憩）の合計と一致する必要があります。作業中の休憩は「☕ 休憩登録」から休憩記録として登録・修正してください。</p>`;
 
     showClockModal(html);
   }
@@ -2156,16 +2159,13 @@
       (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '',
       workDateForLunch || outDate
     );
-    html += `<label class="form-label" style="display:block; margin:12px 0 5px;">作業中休憩（作業記録の合計）</label>`;
     html += `<input type="hidden" id="clockMidBreak" value="${breakTotal}">`;
     html += `<input type="hidden" id="clockExtraMidBreak" value="0">`;
-    html += `<div id="clockMidBreakSummary" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:10px 12px;"></div>`;
-    html += `<div id="midBreakCalcArea" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">`;
-    html += `  <button type="button" onclick="calcMidBreakFromLastWork()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 最後の作業記録の終了時間に合わせる</button>`;
-    html += `  <button type="button" onclick="calcMidBreakFromNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 今の時間に合わせる</button>`;
-    html += `</div>`;
-    html += `<div id="midBreakCalcResult" style="display:none; margin-top:8px; background:#FFFDE7; border:1px solid #FFF176; border-radius:6px; padding:10px 12px;"></div>`;
-    html += `<div style="font-size:11px; color:#888; margin-top:6px;">必要作業時間 ＝ 出勤〜退勤 − 昼休憩 − 作業中休憩<br>上のボタンで最後の作業からの空き時間を休憩として記録できます。</div>`;
+    if (breakTotal > 0) {
+      html += `<div style="margin-top:10px; font-size:12px; color:#666; background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:8px 10px;">作業中休憩（作業記録の合計）: <b style="color:#e65100;">${formatDuration(breakTotal)}</b><div style="font-size:11px; color:#888; margin-top:4px;">休憩は「☕ 休憩登録」から何度でも追加できます</div></div>`;
+    } else {
+      html += `<div style="margin-top:10px; font-size:11px; color:#888;">作業中の休憩は退勤ではなく「☕ 休憩登録」から何度でも登録してください</div>`;
+    }
     html += `</div>`;
 
     html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">`;
@@ -2184,9 +2184,7 @@
     }
     html += `</div>`;
     showClockModal(html);
-    if (typeof window.refreshClockOutBreakSummary === 'function') {
-      window.refreshClockOutBreakSummary();
-    }
+    // 作業中休憩の入力UIは撤去済み（作業記録の合計のみ参照）
 
     // 退勤忘れ時: 地図データ未読込だと最終終了時間が取れないため、読み込み後に再セット
     if (isForgot && !options.defaultTime) {
