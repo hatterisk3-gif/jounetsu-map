@@ -8469,12 +8469,19 @@ function createSignboardMarker(name, pos, icon, id) {
           const footerElem = document.getElementById('rightPanelFooter');
           if (footerElem) footerElem.innerHTML = '';
 
+          // ★右パネルを確実に開き、不要なタイプ選択モーダルを閉じる！
+          const panel = document.getElementById('rightPanel');
+          if (panel) panel.classList.add('open');
+          const typeModal = document.getElementById('recordTypeSelectModal');
+          if (typeModal) typeModal.style.display = 'none';
+
           // 時間の全自動セット＆表示同期
           setTimeout(() => {
             if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
               try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
             }
             if (typeof window.updateRestNoticeCardUI === 'function') window.updateRestNoticeCardUI();
+            window._openingRestBreak = false;
           }, 30);
 
           return;
@@ -12694,13 +12701,15 @@ function createSignboardMarker(name, pos, icon, id) {
           activePolyId = null;
           selectedPolyIds = [];
           window._openingRestBreak = true;
-          if (typeof directOpenForm === 'function') {
-              directOpenForm(null, 'work');
-          } else {
-              if (typeof renderRecordForm === 'function') renderRecordForm();
-              const panel = document.getElementById('rightPanel');
-              if (panel) panel.classList.add('open');
+          
+          if (typeof renderRecordForm === 'function') {
+              renderRecordForm();
           }
+          const panel = document.getElementById('rightPanel');
+          if (panel) panel.classList.add('open');
+          const typeModal = document.getElementById('recordTypeSelectModal');
+          if (typeModal) typeModal.style.display = 'none';
+
           const applyRest = () => {
               // 「休憩」マスタが所属するカテゴリ（または「すべて」）をカテゴリ欄に自動設定
               const restMaster = (typeof window.findWorkMasterByName_ === 'function') ? window.findWorkMasterByName_('休憩') : null;
