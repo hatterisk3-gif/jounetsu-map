@@ -4,13 +4,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.33</title>
+  <title>情熱MAP [予定確認用] v1.34</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <script>
+    window.addEventListener('beforeunload', function (e) {
+      var msg = 'アプリを閉じますか？';
+      e.preventDefault();
+      e.returnValue = msg;
+      return msg;
+    });
+  </script>
   <link rel="stylesheet" href="schedule.css">
 </head>
 

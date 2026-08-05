@@ -3,7 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [機械管理] v1.85</title>
+  <title>情熱MAP [機械管理] v1.86</title>
+
+  <script>
+    window.addEventListener('beforeunload', function (e) {
+      var msg = 'アプリを閉じますか？';
+      e.preventDefault();
+      e.returnValue = msg;
+      return msg;
+    });
+  </script>
   <link rel="stylesheet" href="admin.css">
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; }

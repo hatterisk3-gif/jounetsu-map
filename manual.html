@@ -3,13 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP 作業マニュアル v1.00</title>
+  <title>情熱MAP 作業マニュアル v1.01</title>
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
   <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <script>
+    window.addEventListener('beforeunload', function (e) {
+      var msg = 'アプリを閉じますか？';
+      e.preventDefault();
+      e.returnValue = msg;
+      return msg;
+    });
+  </script>
 
   <link rel="stylesheet" href="manual.css">
 </head>
