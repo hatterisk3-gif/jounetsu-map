@@ -8464,7 +8464,7 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
           `;
 
-          const bodyElem = document.getElementById('rightPanelBody');
+          const bodyElem = document.getElementById('rightPanelContent');
           if (bodyElem) bodyElem.innerHTML = html;
           const footerElem = document.getElementById('rightPanelFooter');
           if (footerElem) footerElem.innerHTML = '';
@@ -12701,7 +12701,7 @@ function createSignboardMarker(name, pos, icon, id) {
           activePolyId = null;
           selectedPolyIds = [];
           window._openingRestBreak = true;
-          
+
           if (typeof renderRecordForm === 'function') {
               renderRecordForm();
           }
@@ -12710,52 +12710,17 @@ function createSignboardMarker(name, pos, icon, id) {
           const typeModal = document.getElementById('recordTypeSelectModal');
           if (typeModal) typeModal.style.display = 'none';
 
-          const applyRest = () => {
-              // 「休憩」マスタが所属するカテゴリ（または「すべて」）をカテゴリ欄に自動設定
-              const restMaster = (typeof window.findWorkMasterByName_ === 'function') ? window.findWorkMasterByName_('休憩') : null;
-              const targetCat = restMaster ? (restMaster.category || '管理/その他') : 'すべて';
-
-              const catInput = document.getElementById('rec_work_category');
-              if (catInput) catInput.value = targetCat;
-              if (typeof window.renderWorkCategoryButtons === 'function') {
-                  window.renderWorkCategoryButtons(targetCat);
-              }
-
-              const cropInput = document.getElementById('rec_work_crop_filter');
-              if (cropInput) cropInput.value = '';
-              if (typeof window.renderCropFilterButtons === 'function') {
-                  window.renderCropFilterButtons('');
-              }
-
-              const sel = document.getElementById('rec_work_name');
-              if (sel) {
-                  const exists = Array.from(sel.options).some(o => o.value === '休憩');
-                  if (!exists) {
-                      const opt = document.createElement('option');
-                      opt.value = '休憩';
-                      opt.textContent = '休憩';
-                      sel.appendChild(opt);
-                  }
-                  sel.value = '休憩';
-              }
-
-              if (typeof selectWorkChip === 'function') {
-                  try { selectWorkChip('休憩'); } catch (e) {}
-              }
-              if (typeof handleWorkNameChange === 'function') {
-                  try { handleWorkNameChange('休憩'); } catch (e) {}
-              }
-
+          // 専用フォーム描画後に開始〜終了だけ同期（チップ選択は専用フォームでは不要）
+          const syncRestTimes = () => {
               if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
                   try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
               }
-              if (typeof window.refreshTodayRestBreaksUI === 'function') {
-                  try { window.refreshTodayRestBreaksUI(); } catch (e) {}
+              if (typeof window.updateRestNoticeCardUI === 'function') {
+                  try { window.updateRestNoticeCardUI(); } catch (e) {}
               }
           };
-          // フォーム描画・チップ生成後に休憩を選択（複数回押しても毎回新規）
-          setTimeout(applyRest, 50);
-          setTimeout(applyRest, 200);
+          setTimeout(syncRestTimes, 50);
+          setTimeout(syncRestTimes, 200);
           setTimeout(() => { window._openingRestBreak = false; }, 400);
       };
 
@@ -13959,6 +13924,44 @@ window.loadMyAttendance = async function() {
         html += `</div>`;
         html += `<div style="font-size:11px; color:#888; margin-top:6px;">直近30日分を新しい日付から表示</div>`;
         box.innerHTML = html;
+
+        // マイページで「出勤中」なら、トラッキングボタンも退勤側に揃える
+        const openSess = sessions.find((s) => s && s.open);
+        if (openSess) {
+            try {
+                let needRestore = true;
+                try {
+                    const active = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null');
+                    if (active && active.active) needRestore = false;
+                } catch (e) {}
+                if (needRestore) {
+                    const ymd = openSess.dateYmd || '';
+                    const time = openSess.inTime || '08:00';
+                    localStorage.setItem('passionMapClockIn', JSON.stringify({
+                        active: true,
+                        time: time,
+                        dateYmd: ymd,
+                        dateLocale: ymd,
+                        syncedFromMyPage: true
+                    }));
+                    localStorage.setItem('passionMapClockInToday', JSON.stringify({
+                        time: time,
+                        dateYmd: ymd,
+                        date: ymd
+                    }));
+                }
+            } catch (e) {}
+            if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+            else if (typeof window.refreshTrackingModeUI === 'function') window.refreshTrackingModeUI();
+            if (typeof window.resolveForgotClockOutInfo === 'function') {
+                window.resolveForgotClockOutInfo()
+                    .then(() => {
+                        if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+                        else if (typeof window.refreshTrackingModeUI === 'function') window.refreshTrackingModeUI();
+                    })
+                    .catch(() => {});
+            }
+        }
     } catch (e) {
         console.warn('出退勤取得エラー', e);
         const localHint = getLocalClockInHint();

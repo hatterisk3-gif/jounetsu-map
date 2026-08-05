@@ -381,10 +381,17 @@
 
   /**
    * 出退勤ボタンのモード
-   * clockIn: 未出勤 / lunch: 出勤中で昼休憩未登録 / clockOut: 昼休憩登録済（orなし確定）
+   * clockIn: 未出勤 / lunch: 出勤中で昼休憩未登録 / clockOut: 昼休憩登録済（orなし確定）／退勤忘れ
    */
   function getTrackingMode() {
     if (!isLocallyClockedIn()) return 'clockIn';
+    // 過去日の未退勤（退勤忘れ）は昼休憩を挟まず退勤ボタンにする
+    // （マイページ「出勤中」とボタン表示を一致させる）
+    try {
+      if (typeof getForgotClockOutInfo === 'function' && getForgotClockOutInfo()) {
+        return 'clockOut';
+      }
+    } catch (e) {}
     const lunch = loadLunchBreak(getActiveClockInDateYmd());
     if (!lunch || lunch.registered !== true) return 'lunch';
     return 'clockOut';
@@ -407,7 +414,9 @@
     } else {
       btn.style.backgroundColor = '#4CAF50';
       btn.style.color = 'white';
-      btn.title = '退勤処理';
+      const forgot =
+        typeof getForgotClockOutInfo === 'function' ? getForgotClockOutInfo() : null;
+      btn.title = forgot ? '退勤処理（未完了の出勤あり）' : '退勤処理';
       btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">退勤</span>';
     }
   }

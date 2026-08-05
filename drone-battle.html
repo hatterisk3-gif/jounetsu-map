@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>ドローンバトル — Mode1/2・対CPU</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --sky-top: #0b1e33;
+      --sky-mid: #1a4a6e;
+      --accent: #00e5ff;
+      --warn: #ff6d00;
+      --danger: #ff1744;
+      --ok: #00e676;
+      --panel: rgba(8, 18, 32, 0.88);
+      --ink: #e8f4ff;
+      --muted: #8aa4bc;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Zen Kaku Gothic New", sans-serif;
+      color: var(--ink);
+      background: #061018;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #gameCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .screen {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background:
+        radial-gradient(ellipse 70% 50% at 50% 20%, rgba(0, 229, 255, 0.18), transparent 55%),
+        linear-gradient(180deg, #0a2035 0%, #061018 55%, #0d1a12 100%);
+    }
+    .screen.active { display: flex; }
+    .card {
+      width: min(440px, 100%);
+      background: var(--panel);
+      border: 1px solid rgba(0, 229, 255, 0.28);
+      border-radius: 16px;
+      padding: 24px 20px 20px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(10px);
+    }
+    .brand {
+      font-family: Orbitron, sans-serif;
+      font-size: clamp(1.35rem, 5vw, 1.85rem);
+      letter-spacing: 0.06em;
+      margin: 0 0 6px;
+      color: var(--accent);
+      text-shadow: 0 0 18px rgba(0, 229, 255, 0.35);
+    }
+    .sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+    .mode-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .mode-btn {
+      appearance: none;
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--ink);
+      border-radius: 12px;
+      padding: 12px 10px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.95rem;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    }
+    .mode-btn small {
+      display: block;
+      margin-top: 6px;
+      font-weight: 400;
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .mode-btn.selected {
+      border-color: var(--accent);
+      background: rgba(0, 229, 255, 0.14);
+      box-shadow: inset 0 0 0 1px rgba(0, 229, 255, 0.35);
+    }
+    .mode-btn:active { transform: scale(0.98); }
+    .help {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-bottom: 16px;
+    }
+    .help strong { color: var(--ink); }
+    .actions { display: flex; flex-direction: column; gap: 10px; }
+    .btn {
+      appearance: none;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: center;
+      color: #041018;
+      background: linear-gradient(180deg, #5ef0ff, #00bcd4);
+    }
+    .btn:active { opacity: 0.85; }
+    .btn.secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ink);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+    .btn.warn {
+      background: linear-gradient(180deg, #ffab40, #ff6d00);
+      color: #1a0a00;
+    }
+
+    #hud {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+    }
+    #hud.active { display: block; }
+    .hud-top {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .hp-box {
+      flex: 1;
+      max-width: 220px;
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+    .hp-box.enemy { margin-left: auto; text-align: right; }
+    .hp-label {
+      font-family: Orbitron, sans-serif;
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .hp-bar {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+    }
+    .hp-fill {
+      height: 100%;
+      width: 100%;
+      border-radius: inherit;
+      transition: width 0.12s linear;
+    }
+    .hp-fill.player { background: linear-gradient(90deg, #00e676, #69f0ae); }
+    .hp-fill.enemy { background: linear-gradient(90deg, #ff5252, #ff1744); margin-left: auto; }
+    .hud-meta {
+      position: absolute;
+      top: 78px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .pill {
+      background: var(--panel);
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 0.72rem;
+      font-family: Orbitron, sans-serif;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+    }
+    .crosshair {
+      position: absolute;
+      left: 50%;
+      top: 42%;
+      width: 28px;
+      height: 28px;
+      margin: -14px 0 0 -14px;
+      border: 2px solid rgba(0, 229, 255, 0.55);
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+    }
+    .crosshair::before, .crosshair::after {
+      content: "";
+      position: absolute;
+      background: rgba(0, 229, 255, 0.7);
+    }
+    .crosshair::before { left: 50%; top: 4px; bottom: 4px; width: 2px; margin-left: -1px; }
+    .crosshair::after { top: 50%; left: 4px; right: 4px; height: 2px; margin-top: -1px; }
+
+    .controls {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .stick-zone {
+      position: absolute;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      width: 42vw;
+      max-width: 190px;
+      height: 42vw;
+      max-height: 190px;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    .stick-zone.left { left: 12px; }
+    .stick-zone.right { right: 12px; }
+    .stick-base {
+      position: absolute;
+      inset: 12%;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.07);
+      border: 2px solid rgba(255, 255, 255, 0.18);
+    }
+    .stick-knob {
+      position: absolute;
+      width: 38%;
+      height: 38%;
+      left: 31%;
+      top: 31%;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #7ef9ff, #00acc1 70%);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      will-change: transform;
+    }
+    .stick-label {
+      position: absolute;
+      top: 2px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 0.65rem;
+      color: rgba(255, 255, 255, 0.55);
+      pointer-events: none;
+    }
+    .fire-btn, .cam-btn, .pause-btn {
+      pointer-events: auto;
+      position: absolute;
+      border: none;
+      border-radius: 50%;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    }
+    .fire-btn {
+      right: calc(12px + min(42vw, 190px) + 8px);
+      bottom: max(36px, calc(env(safe-area-inset-bottom) + 28px));
+      width: 72px;
+      height: 72px;
+      background: radial-gradient(circle at 35% 30%, #ff8a65, #ff1744 75%);
+      font-size: 0.85rem;
+    }
+    .cam-btn {
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: max(18px, env(safe-area-inset-bottom));
+      width: 56px;
+      height: 56px;
+      background: rgba(8, 18, 32, 0.85);
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      font-size: 0.72rem;
+      color: var(--accent);
+    }
+    .pause-btn {
+      top: 10px;
+      right: 10px;
+      width: 40px;
+      height: 40px;
+      background: rgba(8, 18, 32, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 0.85rem;
+      z-index: 12;
+      pointer-events: auto;
+    }
+    #toast {
+      position: fixed;
+      left: 50%;
+      top: 38%;
+      transform: translate(-50%, -50%);
+      z-index: 30;
+      background: rgba(0, 0, 0, 0.72);
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+    .result-title {
+      font-family: Orbitron, sans-serif;
+      font-size: 1.6rem;
+      margin: 0 0 8px;
+    }
+    .result-title.win { color: var(--ok); }
+    .result-title.lose { color: var(--danger); }
+    @media (min-width: 900px) {
+      .stick-zone { opacity: 0.55; }
+      .fire-btn { opacity: 0.7; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="titleScreen" class="screen active">
+    <div class="card">
+      <h1 class="brand">DRONE BATTLE</h1>
+      <p class="sub">Mode1 / Mode2 切替対応の対CPUドッグファイト。仮想スティックまたはキーボードで操作。</p>
+
+      <div class="mode-row">
+        <button type="button" class="mode-btn" id="mode1Btn" data-mode="1">
+          Mode 1
+          <small>左: ピッチ／ヨー<br>右: スロットル／ロール</small>
+        </button>
+        <button type="button" class="mode-btn selected" id="mode2Btn" data-mode="2">
+          Mode 2
+          <small>左: スロットル／ヨー<br>右: ピッチ／ロール</small>
+        </button>
+      </div>
+
+      <div class="help" id="modeHelp">
+        <strong>Mode 2（初期）</strong> — 左スティック上下が上昇・下降。右スティックで機首操作。
+      </div>
+
+      <div class="help">
+        <strong>操作</strong><br>
+        ・タッチ: 左右スティック＋赤ボタン射撃<br>
+        ・キー: WASD＋矢印（モード連動）／Space射撃／Cカメラ<br>
+        ・地面衝突・弾命中でダメージ。先にHP0で敗北。
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" id="startBtn">対戦開始（対CPU）</button>
+        <a class="btn secondary" href="index.html">ポータルへ戻る</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultScreen" class="screen">
+    <div class="card">
+      <h2 class="result-title" id="resultTitle">勝利</h2>
+      <p class="sub" id="resultMsg">CPUを撃墜しました。</p>
+      <div class="actions">
+        <button type="button" class="btn warn" id="retryBtn">再戦</button>
+        <button type="button" class="btn secondary" id="toTitleBtn">モード設定へ</button>
+        <a class="btn secondary" href="index.html">ポータルへ戻る</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="hud">
+    <button type="button" class="pause-btn" id="pauseBtn" title="中断">✕</button>
+    <div class="hud-top">
+      <div class="hp-box">
+        <div class="hp-label">YOU</div>
+        <div class="hp-bar"><div class="hp-fill player" id="playerHpFill"></div></div>
+      </div>
+      <div class="hp-box enemy">
+        <div class="hp-label">CPU</div>
+        <div class="hp-bar"><div class="hp-fill enemy" id="enemyHpFill"></div></div>
+      </div>
+    </div>
+    <div class="hud-meta">
+      <span class="pill" id="modePill">MODE 2</span>
+      <span class="pill" id="altPill">ALT 10m</span>
+      <span class="pill" id="spdPill">SPD 0</span>
+    </div>
+    <div class="crosshair"></div>
+    <div class="controls">
+      <div class="stick-zone left" id="stickLeft">
+        <div class="stick-label" id="leftStickLabel">スロットル / ヨー</div>
+        <div class="stick-base"><div class="stick-knob" id="knobLeft"></div></div>
+      </div>
+      <div class="stick-zone right" id="stickRight">
+        <div class="stick-label" id="rightStickLabel">ピッチ / ロール</div>
+        <div class="stick-base"><div class="stick-knob" id="knobRight"></div></div>
+      </div>
+      <button type="button" class="fire-btn" id="fireBtn">射撃</button>
+      <button type="button" class="cam-btn" id="camBtn">CAM</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+  <script type="module">
+import * as THREE from 'three';
+
+const MODE_KEY = 'passionMapDroneBattleMode';
+const MAX_HP = 100;
+const FIRE_COOLDOWN = 0.28;
+const BULLET_SPEED = 55;
+const BULLET_LIFE = 1.6;
+const HIT_RADIUS = 1.35;
+const GROUND_Y = 0;
+const ARENA = 90;
+
+const state = {
+  mode: Number(localStorage.getItem(MODE_KEY) || '2') === 1 ? 1 : 2,
+  playing: false,
+  over: false,
+  firstPerson: false,
+  leftStick: { x: 0, y: 0 },
+  rightStick: { x: 0, y: 0 },
+  keys: Object.create(null),
+  fireHeld: false,
+  playerFireCd: 0,
+  enemyFireCd: 0,
+  bullets: [],
+  toastTimer: 0
+};
+
+const titleScreen = document.getElementById('titleScreen');
+const resultScreen = document.getElementById('resultScreen');
+const hud = document.getElementById('hud');
+const toastEl = document.getElementById('toast');
+const mode1Btn = document.getElementById('mode1Btn');
+const mode2Btn = document.getElementById('mode2Btn');
+const modeHelp = document.getElementById('modeHelp');
+const modePill = document.getElementById('modePill');
+const leftStickLabel = document.getElementById('leftStickLabel');
+const rightStickLabel = document.getElementById('rightStickLabel');
+
+function setMode(m) {
+  state.mode = m === 1 ? 1 : 2;
+  localStorage.setItem(MODE_KEY, String(state.mode));
+  mode1Btn.classList.toggle('selected', state.mode === 1);
+  mode2Btn.classList.toggle('selected', state.mode === 2);
+  modePill.textContent = 'MODE ' + state.mode;
+  if (state.mode === 1) {
+    modeHelp.innerHTML = '<strong>Mode 1</strong> — 左スティック上下が機首上下（ピッチ）。右スティック上下が上昇・下降。';
+    leftStickLabel.textContent = 'ピッチ / ヨー';
+    rightStickLabel.textContent = 'スロットル / ロール';
+  } else {
+    modeHelp.innerHTML = '<strong>Mode 2（初期）</strong> — 左スティック上下が上昇・下降。右スティックで機首操作。';
+    leftStickLabel.textContent = 'スロットル / ヨー';
+    rightStickLabel.textContent = 'ピッチ / ロール';
+  }
+}
+mode1Btn.addEventListener('click', () => setMode(1));
+mode2Btn.addEventListener('click', () => setMode(2));
+setMode(state.mode);
+
+function showToast(msg, ms) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(state.toastTimer);
+  state.toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms || 1200);
+}
+
+/** スティック＋キー → throttle/yaw/pitch/roll (throttle 0..1, 他 -1..1) */
+function readControls() {
+  const k = state.keys;
+  // 仮想スティック（y+: スティック上方向）
+  let Lx = state.leftStick.x;
+  let Ly = state.leftStick.y;
+  let Rx = state.rightStick.x;
+  let Ry = state.rightStick.y;
+
+  // キーボード: WASD=左スティック、矢印=右スティック（上=+）
+  const keyLx = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0);
+  const keyLy = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0);
+  const keyRx = (k.ArrowRight ? 1 : 0) - (k.ArrowLeft ? 1 : 0);
+  const keyRy = (k.ArrowUp ? 1 : 0) - (k.ArrowDown ? 1 : 0);
+  if (keyLx || keyLy) { Lx = keyLx; Ly = keyLy; }
+  if (keyRx || keyRy) { Rx = keyRx; Ry = keyRy; }
+
+  let throttle;
+  let yaw;
+  let pitch;
+  let roll;
+  if (state.mode === 2) {
+    // 左: スロットル / ヨー　右: ピッチ / ロール
+    throttle = (Ly + 1) * 0.5;
+    yaw = Lx;
+    pitch = -Ry;
+    roll = Rx;
+  } else {
+    // 左: ピッチ / ヨー　右: スロットル / ロール
+    pitch = -Ly;
+    yaw = Lx;
+    throttle = (Ry + 1) * 0.5;
+    roll = Rx;
+  }
+
+  return {
+    throttle: THREE.MathUtils.clamp(throttle, 0, 1),
+    yaw: THREE.MathUtils.clamp(yaw, -1, 1),
+    pitch: THREE.MathUtils.clamp(pitch, -1, 1),
+    roll: THREE.MathUtils.clamp(roll, -1, 1),
+    fire: !!(state.fireHeld || k.Space)
+  };
+}
+
+// --- Virtual sticks ---
+function bindStick(zoneEl, knobEl, which) {
+  let activeId = null;
+  const base = zoneEl.querySelector('.stick-base');
+
+  function setFromEvent(clientX, clientY) {
+    const rect = base.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const maxR = rect.width * 0.42;
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    if (len > maxR) {
+      dx = (dx / len) * maxR;
+      dy = (dy / len) * maxR;
+    }
+    knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
+    const nx = dx / maxR;
+    const ny = dy / maxR; // screen down = +
+    // stick: up should be negative y for RC (pull up = climb in mode2 maps via 1-y)
+    // We store: x right+, y up+ (invert screen y)
+    const stick = which === 'left' ? state.leftStick : state.rightStick;
+    stick.x = nx;
+    stick.y = -ny;
+  }
+
+  function reset() {
+    activeId = null;
+    knobEl.style.transform = 'translate(0,0)';
+    const stick = which === 'left' ? state.leftStick : state.rightStick;
+    stick.x = 0;
+    stick.y = 0;
+  }
+
+  zoneEl.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    zoneEl.setPointerCapture(e.pointerId);
+    activeId = e.pointerId;
+    setFromEvent(e.clientX, e.clientY);
+  });
+  zoneEl.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== activeId) return;
+    setFromEvent(e.clientX, e.clientY);
+  });
+  const end = (e) => {
+    if (e.pointerId !== activeId) return;
+    reset();
+  };
+  zoneEl.addEventListener('pointerup', end);
+  zoneEl.addEventListener('pointercancel', end);
+}
+bindStick(document.getElementById('stickLeft'), document.getElementById('knobLeft'), 'left');
+bindStick(document.getElementById('stickRight'), document.getElementById('knobRight'), 'right');
+
+const fireBtn = document.getElementById('fireBtn');
+fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); state.fireHeld = true; });
+fireBtn.addEventListener('pointerup', () => { state.fireHeld = false; });
+fireBtn.addEventListener('pointercancel', () => { state.fireHeld = false; });
+fireBtn.addEventListener('pointerleave', () => { state.fireHeld = false; });
+
+document.getElementById('camBtn').addEventListener('click', () => {
+  state.firstPerson = !state.firstPerson;
+  showToast(state.firstPerson ? '一人称カメラ' : '三人称カメラ');
+});
+
+window.addEventListener('keydown', (e) => {
+  state.keys[e.code] = true;
+  if (e.code === 'KeyC') {
+    state.firstPerson = !state.firstPerson;
+    showToast(state.firstPerson ? '一人称カメラ' : '三人称カメラ');
+  }
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+});
+window.addEventListener('keyup', (e) => { state.keys[e.code] = false; });
+
+// --- Three.js scene ---
+const canvas = document.getElementById('gameCanvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87b8d8);
+scene.fog = new THREE.Fog(0x87b8d8, 60, 180);
+
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 400);
+const clock = new THREE.Clock();
+
+const hemi = new THREE.HemisphereLight(0xb3e5fc, 0x4e342e, 0.85);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff3e0, 1.05);
+sun.position.set(40, 80, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+scene.add(sun);
+
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(ARENA + 20, 64),
+  new THREE.MeshStandardMaterial({ color: 0x4caf50, roughness: 0.85, metalness: 0.05 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(ARENA * 2, 40, 0xffffff, 0xffffff);
+grid.material.opacity = 0.12;
+grid.material.transparent = true;
+scene.add(grid);
+
+function makeTree(x, z) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25, 0.35, 2.2, 6),
+    new THREE.MeshStandardMaterial({ color: 0x6d4c41 })
+  );
+  trunk.position.y = 1.1;
+  trunk.castShadow = true;
+  const crown = new THREE.Mesh(
+    new THREE.ConeGeometry(1.4, 3.2, 7),
+    new THREE.MeshStandardMaterial({ color: 0x2e7d32 })
+  );
+  crown.position.y = 3.2;
+  crown.castShadow = true;
+  g.add(trunk, crown);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return g;
+}
+
+function makeBarn(x, z) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(6, 3.2, 4.5),
+    new THREE.MeshStandardMaterial({ color: 0xc62828 })
+  );
+  body.position.y = 1.6;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(4.2, 2.2, 4),
+    new THREE.MeshStandardMaterial({ color: 0x455a64 })
+  );
+  roof.position.y = 4.2;
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = true;
+  g.add(body, roof);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return { mesh: g, radius: 4.5, yMax: 5.2 };
+}
+
+const obstacles = [];
+[[-25, -18], [30, 12], [-12, 28], [18, -30], [0, 40], [-35, 8]].forEach(([x, z], i) => {
+  if (i % 2 === 0) makeTree(x, z);
+  else obstacles.push(makeBarn(x, z));
+});
+makeTree(8, 8);
+makeTree(-8, -22);
+
+function createDrone(color, accent) {
+  const root = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2, 0.28, 1.2),
+    new THREE.MeshStandardMaterial({ color, metalness: 0.35, roughness: 0.45 })
+  );
+  body.castShadow = true;
+  root.add(body);
+  const nose = new THREE.Mesh(
+    new THREE.BoxGeometry(0.35, 0.22, 0.45),
+    new THREE.MeshStandardMaterial({ color: accent })
+  );
+  nose.position.set(0, 0, -0.7);
+  root.add(nose);
+  const arms = [];
+  const props = [];
+  const armMat = new THREE.MeshStandardMaterial({ color: 0x263238 });
+  const propMat = new THREE.MeshStandardMaterial({ color: 0xeceff1, transparent: true, opacity: 0.75 });
+  [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]].forEach(([ax, az]) => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.9), armMat);
+    arm.position.set(ax * 0.55, 0.05, az * 0.55);
+    arm.lookAt(ax, 0.05, az);
+    root.add(arm);
+    arms.push(arm);
+    const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.12, 8), armMat);
+    motor.position.set(ax, 0.12, az);
+    root.add(motor);
+    const prop = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.12), propMat);
+    prop.position.set(ax, 0.2, az);
+    root.add(prop);
+    props.push(prop);
+  });
+  root.userData = { props, body };
+  return root;
+}
+
+function createCraft(isPlayer) {
+  const mesh = createDrone(isPlayer ? 0x0277bd : 0xb71c1c, isPlayer ? 0x00e5ff : 0xffab40);
+  scene.add(mesh);
+  return {
+    mesh,
+    pos: new THREE.Vector3(isPlayer ? 0 : 18, isPlayer ? 12 : 14, isPlayer ? 18 : -18),
+    vel: new THREE.Vector3(),
+    yaw: isPlayer ? Math.PI : 0,
+    pitch: 0,
+    roll: 0,
+    hp: MAX_HP,
+    radius: HIT_RADIUS,
+    alive: true
+  };
+}
+
+let player = createCraft(true);
+let enemy = createCraft(false);
+
+function resetCrafts() {
+  player.pos.set(0, 12, 18);
+  player.vel.set(0, 0, 0);
+  player.yaw = Math.PI;
+  player.pitch = 0;
+  player.roll = 0;
+  player.hp = MAX_HP;
+  player.alive = true;
+
+  enemy.pos.set(18, 14, -18);
+  enemy.vel.set(0, 0, 0);
+  enemy.yaw = 0;
+  enemy.pitch = 0;
+  enemy.roll = 0;
+  enemy.hp = MAX_HP;
+  enemy.alive = true;
+
+  state.bullets.forEach((b) => scene.remove(b.mesh));
+  state.bullets = [];
+  state.playerFireCd = 0;
+  state.enemyFireCd = 0;
+  state.over = false;
+  updateHpUi();
+}
+
+function updateHpUi() {
+  document.getElementById('playerHpFill').style.width = Math.max(0, (player.hp / MAX_HP) * 100) + '%';
+  document.getElementById('enemyHpFill').style.width = Math.max(0, (enemy.hp / MAX_HP) * 100) + '%';
+}
+
+function applyFlight(craft, ctrl, dt, isAi) {
+  const maxSpd = isAi ? 28 : 32;
+  const thrust = 38;
+  const liftBias = 9.5;
+
+  craft.yaw += ctrl.yaw * 2.4 * dt;
+  craft.pitch = THREE.MathUtils.clamp(craft.pitch + ctrl.pitch * 1.8 * dt, -0.85, 0.85);
+  craft.roll = THREE.MathUtils.clamp(craft.roll + ctrl.roll * 2.2 * dt, -0.9, 0.9);
+  // auto-level slightly
+  craft.pitch *= (1 - 0.55 * dt);
+  craft.roll *= (1 - 0.7 * dt);
+
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+
+  const throttleForce = (ctrl.throttle - 0.42) * thrust;
+  const accel = new THREE.Vector3()
+    .addScaledVector(up, throttleForce + liftBias * (ctrl.throttle - 0.35))
+    .addScaledVector(forward, ctrl.throttle * 10)
+    .add(new THREE.Vector3(0, -18, 0)); // gravity
+
+  craft.vel.addScaledVector(accel, dt);
+  craft.vel.multiplyScalar(Math.exp(-1.8 * dt));
+  if (craft.vel.length() > maxSpd) craft.vel.setLength(maxSpd);
+
+  craft.pos.addScaledVector(craft.vel, dt);
+
+  // Arena clamp
+  craft.pos.x = THREE.MathUtils.clamp(craft.pos.x, -ARENA, ARENA);
+  craft.pos.z = THREE.MathUtils.clamp(craft.pos.z, -ARENA, ARENA);
+
+  // Ground / obstacle
+  if (craft.pos.y < craft.radius + 0.2) {
+    craft.pos.y = craft.radius + 0.2;
+    if (craft.vel.y < 0) {
+      const impact = Math.min(35, Math.abs(craft.vel.y) * 2.2);
+      craft.vel.y = Math.abs(craft.vel.y) * 0.25;
+      craft.hp -= impact;
+      if (!isAi && impact > 4) showToast('地面接触 -' + Math.round(impact));
+    }
+  }
+  craft.pos.y = Math.min(craft.pos.y, 55);
+
+  obstacles.forEach((ob) => {
+    const dx = craft.pos.x - ob.mesh.position.x;
+    const dz = craft.pos.z - ob.mesh.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < ob.radius + craft.radius && craft.pos.y < ob.yMax + craft.radius) {
+      const push = (ob.radius + craft.radius - dist) + 0.05;
+      const nx = dx / (dist || 1);
+      const nz = dz / (dist || 1);
+      craft.pos.x += nx * push;
+      craft.pos.z += nz * push;
+      craft.vel.x *= -0.4;
+      craft.vel.z *= -0.4;
+      craft.hp -= 8 * dt;
+    }
+  });
+
+  craft.mesh.position.copy(craft.pos);
+  craft.mesh.quaternion.copy(q);
+  const spin = 18 + ctrl.throttle * 40;
+  (craft.mesh.userData.props || []).forEach((p, i) => {
+    p.rotation.y += spin * dt * (i % 2 ? 1 : -1);
+  });
+}
+
+function fireBullet(from, toward, owner) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 8, 8),
+    new THREE.MeshBasicMaterial({ color: owner === 'player' ? 0x00e5ff : 0xff5252 })
+  );
+  mesh.position.copy(from);
+  scene.add(mesh);
+  const dir = toward.clone().normalize();
+  state.bullets.push({
+    mesh,
+    vel: dir.multiplyScalar(BULLET_SPEED),
+    life: BULLET_LIFE,
+    owner
+  });
+}
+
+function updateBullets(dt) {
+  for (let i = state.bullets.length - 1; i >= 0; i--) {
+    const b = state.bullets[i];
+    b.life -= dt;
+    b.mesh.position.addScaledVector(b.vel, dt);
+    if (b.life <= 0 || b.mesh.position.y < 0) {
+      scene.remove(b.mesh);
+      state.bullets.splice(i, 1);
+      continue;
+    }
+    const target = b.owner === 'player' ? enemy : player;
+    if (!target.alive) continue;
+    if (b.mesh.position.distanceTo(target.pos) < target.radius + 0.25) {
+      target.hp -= b.owner === 'player' ? 12 : 10;
+      scene.remove(b.mesh);
+      state.bullets.splice(i, 1);
+      updateHpUi();
+      if (b.owner === 'player') showToast('HIT!', 500);
+    }
+  }
+}
+
+function aiControl(dt) {
+  const toPlayer = player.pos.clone().sub(enemy.pos);
+  const dist = toPlayer.length();
+  const desiredDir = toPlayer.clone().normalize();
+
+  // Desired yaw toward player
+  const desiredYaw = Math.atan2(-desiredDir.x, -desiredDir.z);
+  let yawErr = desiredYaw - enemy.yaw;
+  while (yawErr > Math.PI) yawErr -= Math.PI * 2;
+  while (yawErr < -Math.PI) yawErr += Math.PI * 2;
+
+  const altErr = (player.pos.y + 2) - enemy.pos.y;
+  let throttle = 0.5 + THREE.MathUtils.clamp(altErr * 0.04, -0.35, 0.4);
+  if (dist > 28) throttle += 0.12;
+  if (dist < 10) throttle -= 0.08;
+
+  const ctrl = {
+    throttle: THREE.MathUtils.clamp(throttle, 0.15, 1),
+    yaw: THREE.MathUtils.clamp(yawErr * 1.4, -1, 1),
+    pitch: THREE.MathUtils.clamp(-desiredDir.y * 1.2 + (dist > 20 ? 0.35 : 0.1), -1, 1),
+    roll: THREE.MathUtils.clamp(yawErr * 0.55, -1, 1),
+    fire: false
+  };
+
+  // Fire when roughly facing player
+  const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(enemy.pitch, enemy.yaw, -enemy.roll, 'YXZ'));
+  const aim = desiredDir.dot(forward);
+  if (aim > 0.88 && dist < 42 && dist > 6) ctrl.fire = true;
+
+  // Occasional weave
+  ctrl.roll += Math.sin(performance.now() * 0.002) * 0.25;
+
+  return ctrl;
+}
+
+function updateCamera(dt) {
+  if (state.firstPerson) {
+    const q = player.mesh.quaternion;
+    const offset = new THREE.Vector3(0, 0.25, -0.1).applyQuaternion(q);
+    camera.position.copy(player.pos).add(offset);
+    const look = player.pos.clone().add(new THREE.Vector3(0, 0, -8).applyQuaternion(q));
+    camera.lookAt(look);
+  } else {
+    const back = new THREE.Vector3(0, 4.5, 10).applyQuaternion(player.mesh.quaternion);
+    const desired = player.pos.clone().add(back);
+    camera.position.lerp(desired, 1 - Math.pow(0.001, dt));
+    const lookAt = player.pos.clone().add(new THREE.Vector3(0, 1.2, -6).applyQuaternion(player.mesh.quaternion));
+    camera.lookAt(lookAt);
+  }
+}
+
+function endBattle(win) {
+  state.playing = false;
+  state.over = true;
+  hud.classList.remove('active');
+  resultScreen.classList.add('active');
+  const title = document.getElementById('resultTitle');
+  const msg = document.getElementById('resultMsg');
+  if (win) {
+    title.textContent = '勝利';
+    title.className = 'result-title win';
+    msg.textContent = 'CPUドローンを撃墜しました。Mode ' + state.mode + ' でクリア。';
+  } else {
+    title.textContent = '敗北';
+    title.className = 'result-title lose';
+    msg.textContent = '機体が大破しました。操作モードを変えて再挑戦してみてください。';
+  }
+}
+
+function startBattle() {
+  titleScreen.classList.remove('active');
+  resultScreen.classList.remove('active');
+  hud.classList.add('active');
+  resetCrafts();
+  state.playing = true;
+  state.firstPerson = false;
+  clock.getDelta();
+  showToast('対戦開始！ Mode ' + state.mode, 1400);
+}
+
+document.getElementById('startBtn').addEventListener('click', startBattle);
+document.getElementById('retryBtn').addEventListener('click', startBattle);
+document.getElementById('toTitleBtn').addEventListener('click', () => {
+  resultScreen.classList.remove('active');
+  titleScreen.classList.add('active');
+  state.playing = false;
+});
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  if (!state.playing) return;
+  state.playing = false;
+  hud.classList.remove('active');
+  titleScreen.classList.add('active');
+  showToast('中断しました');
+});
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(0.05, clock.getDelta());
+
+  if (state.playing && !state.over) {
+    const ctrl = readControls();
+    applyFlight(player, ctrl, dt, false);
+
+    const ai = aiControl(dt);
+    applyFlight(enemy, ai, dt, true);
+
+    state.playerFireCd = Math.max(0, state.playerFireCd - dt);
+    state.enemyFireCd = Math.max(0, state.enemyFireCd - dt);
+
+    if (ctrl.fire && state.playerFireCd <= 0 && player.alive) {
+      const q = player.mesh.quaternion;
+      const muzzle = player.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+      fireBullet(muzzle, dir, 'player');
+      state.playerFireCd = FIRE_COOLDOWN;
+    }
+    if (ai.fire && state.enemyFireCd <= 0 && enemy.alive) {
+      const q = enemy.mesh.quaternion;
+      const muzzle = enemy.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+      fireBullet(muzzle, dir, 'enemy');
+      state.enemyFireCd = FIRE_COOLDOWN * 1.15;
+    }
+
+    updateBullets(dt);
+    updateHpUi();
+
+    const spd = player.vel.length();
+    document.getElementById('altPill').textContent = 'ALT ' + Math.max(0, player.pos.y).toFixed(0) + 'm';
+    document.getElementById('spdPill').textContent = 'SPD ' + spd.toFixed(0);
+
+    if (player.hp <= 0) {
+      player.alive = false;
+      endBattle(false);
+    } else if (enemy.hp <= 0) {
+      enemy.alive = false;
+      endBattle(true);
+    }
+
+    updateCamera(dt);
+  } else if (!state.playing) {
+    // idle orbit camera on title
+    const t = performance.now() * 0.00025;
+    camera.position.set(Math.cos(t) * 28, 16, Math.sin(t) * 28);
+    camera.lookAt(0, 8, 0);
+    player.mesh.position.copy(player.pos);
+    enemy.mesh.position.copy(enemy.pos);
+  }
+
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+tick();
+  </script>
+</body>
+</html>
