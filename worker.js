@@ -6939,7 +6939,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (wrapper) {
               restNotice = document.createElement('div');
               restNotice.id = 'work_rest_notice';
-              restNotice.style.cssText = 'background:#FFF3E0; color:#E65100; border:2px solid #FFCC80; padding:14px; border-radius:10px; margin:12px 0; font-size:13px; font-weight:bold; display:flex; flex-direction:column; gap:8px; box-shadow:0 3px 6px rgba(255,152,0,0.15);';
+              restNotice.style.cssText = 'background:#FFF3E0; color:#E65100; border:2px solid #FFCC80; padding:16px; border-radius:12px; margin:12px 0; font-size:13px; font-weight:bold; display:flex; flex-direction:column; gap:10px; box-shadow:0 4px 12px rgba(255,152,0,0.18);';
               wrapper.insertAdjacentElement('afterend', restNotice);
             }
           }
@@ -6947,6 +6947,24 @@ function createSignboardMarker(name, pos, icon, id) {
             restNotice.style.display = 'flex';
             window.updateRestNoticeCardUI();
           }
+
+          // 🌟 休憩時は不要な「圃場作業記録」要素を隠して超シンプル画面にする！
+          const hideSelectors = [
+            '.rec-zone-category',
+            '#field_target_section',
+            '.rec-zone-crop',
+            '#work_chips_wrapper',
+            '#work_name_gate_hint',
+            '#detailed_works_section',
+            '#usedItemsContainer',
+            '#lot_use_section',
+            '#extra_record_buttons',
+            '#ridge_progress_section',
+            '.rec-zone-status'
+          ];
+          hideSelectors.forEach(selStr => {
+            document.querySelectorAll(selStr).forEach(el => { el.style.display = 'none'; });
+          });
 
           // 新規入力時は休憩の開始〜終了を自動セット
           if (!currentEditRecordId && typeof window.matchStartEndToPreviousEndAndNow === 'function') {
@@ -6957,26 +6975,27 @@ function createSignboardMarker(name, pos, icon, id) {
               } catch (e) {}
             }, 30);
           }
-          // 休憩でも圃場選択を見えるようにする
-          if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
           if (typeof window.refreshTodayRestBreaksUI === 'function') {
             setTimeout(() => { try { window.refreshTodayRestBreaksUI(); } catch (e) {} }, 40);
           }
-          // 作業内休憩欄は別枠休憩と紛らわしいので隠す
-          const breakMinsRow = document.getElementById('rec_break_mins');
-          if (breakMinsRow) {
-            const zone = breakMinsRow.closest('.rec-zone-duration');
-            if (zone) {
-              const breakRow = breakMinsRow.parentElement;
-              if (breakRow) breakRow.style.display = 'none';
-            }
-          }
-        } else if (restNotice) {
-          restNotice.style.display = 'none';
+        } else {
+          if (restNotice) restNotice.style.display = 'none';
           const startElClr = document.getElementById('rec_start_time');
           if (startElClr) startElClr.removeAttribute('data-rest-pair');
-          const breakMinsRow = document.getElementById('rec_break_mins');
-          if (breakMinsRow && breakMinsRow.parentElement) breakMinsRow.parentElement.style.display = '';
+          
+          // 通常作業記録に戻った時は要素を復元
+          const showSelectors = [
+            '.rec-zone-category',
+            '.rec-zone-crop',
+            '#work_chips_wrapper',
+            '#detailed_works_section',
+            '#usedItemsContainer',
+            '#extra_record_buttons'
+          ];
+          showSelectors.forEach(selStr => {
+            document.querySelectorAll(selStr).forEach(el => { el.style.display = ''; });
+          });
+          if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
         }
 
         const useSec = document.getElementById('lot_use_section');
