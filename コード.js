@@ -1466,7 +1466,7 @@ function workMasterNameExists_(sheet, headers, name, excludeName) {
 
 /** 作業マスタ必須ヘッダーを保証（欠けていれば末尾に追加） */
 function ensureWorkMasterHeaders_(sheet) {
-  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業'];
+  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名'];
   let lastCol = Math.max(sheet.getLastColumn(), 1);
   let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   let changed = false;
@@ -1487,6 +1487,10 @@ function ensureWorkMasterHeaders_(sheet) {
       }
       if (name === '詳細作業名') {
         const aliasIdx = findWorkDetailColumnIndex_(headers);
+        if (aliasIdx >= 0) return;
+      }
+      if (name === '類似作業名') {
+        const aliasIdx = findWorkAliasColumnIndex_(headers);
         if (aliasIdx >= 0) return;
       }
       lastCol += 1;
@@ -1515,11 +1519,18 @@ function applyWorkMasterValuesToRow_(rowVals, headers, value) {
   const idxCrop = findWorkCropColumnIndex_(headers);
   const idxDetail = findWorkDetailColumnIndex_(headers);
   const idxCropDetails = headers.indexOf('作物別詳細作業');
+  const idxAlias = findWorkAliasColumnIndex_(headers);
 
   if (idxName >= 0) rowVals[idxName] = String((value && value.name) || '').trim();
   if (idxCat >= 0) rowVals[idxCat] = String((value && value.category) || '圃場作業').trim() || '圃場作業';
   if (idxCrop >= 0) rowVals[idxCrop] = String((value && value.cropName) || '').trim();
   if (idxDetail >= 0) rowVals[idxDetail] = String((value && value.detailWorks) || '').trim();
+  if (idxAlias >= 0) {
+    const aliasVal = value && value.aliasNames != null
+      ? String(value.aliasNames).trim()
+      : (value && Array.isArray(value.aliases) ? value.aliases.join(', ') : '');
+    rowVals[idxAlias] = aliasVal;
+  }
   if (idxCropDetails >= 0) {
     const cd = value && value.cropDetails ? JSON.stringify(value.cropDetails) : '';
     rowVals[idxCropDetails] = cd;
@@ -1537,10 +1548,13 @@ function readWorkMasterList_(sheet) {
   const idxCrop = findWorkCropColumnIndex_(headers);
   const idxDetail = findWorkDetailColumnIndex_(headers);
   const idxCropDetails = headers.indexOf('作物別詳細作業');
+  const idxAlias = findWorkAliasColumnIndex_(headers);
 
   return data.slice(1).filter(r => idxName >= 0 && String(r[idxName] || '').trim()).map(r => {
     const cropStr = idxCrop >= 0 ? String(r[idxCrop] || '').trim() : '';
     const crops = cropStr ? cropStr.split(/[,、]/).map(s => s.trim()).filter(Boolean) : [];
+    const aliasStr = idxAlias >= 0 ? String(r[idxAlias] || '').trim() : '';
+    const aliases = aliasStr ? aliasStr.split(/[,、\n]/).map(s => s.trim()).filter(Boolean) : [];
     let cropDetails = null;
     if (idxCropDetails >= 0 && r[idxCropDetails]) {
       try {
@@ -1555,7 +1569,9 @@ function readWorkMasterList_(sheet) {
       cropName: cropStr,
       crops: crops,
       cropDetails: cropDetails,
-      detailWorks: idxDetail >= 0 && r[idxDetail] ? String(r[idxDetail]).trim() : ''
+      detailWorks: idxDetail >= 0 && r[idxDetail] ? String(r[idxDetail]).trim() : '',
+      aliasNames: aliasStr,
+      aliases: aliases
     };
   });
 }
@@ -1590,12 +1606,23 @@ function findWorkDetailColumnIndex_(headers) {
   return -1;
 }
 
+/** 作業マスタの類似作業名（別名）列を解決 */
+function findWorkAliasColumnIndex_(headers) {
+  const candidates = ['類似作業名', '別名', '類似名', 'エイリアス', '類似作業', '別称'];
+  for (let i = 0; i < candidates.length; i++) {
+    const idx = headers.indexOf(candidates[i]);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
 /** 作業マスタ追加/編集用の列名→値マップ（担当部署列は部署用のため変更しない） */
 function buildWorkMasterColumnMap_(value) {
   const category = value.category || "圃場作業";
   const details = value.detailWorks || "";
   const cropName = value.cropName != null ? String(value.cropName).trim() : "";
   const cd = value && value.cropDetails ? JSON.stringify(value.cropDetails) : "";
+  const aliasNames = value.aliasNames != null ? String(value.aliasNames).trim() : (Array.isArray(value.aliases) ? value.aliases.join(', ') : "");
   return {
     '作業名': value.name,
     'カテゴリ': category,
@@ -1608,6 +1635,10 @@ function buildWorkMasterColumnMap_(value) {
     '作物・品種': cropName,
     '詳細作業名': details,
     '詳細作業': details,
+    '類似作業名': aliasNames,
+    '別名': aliasNames,
+    '類似名': aliasNames,
+    'エイリアス': aliasNames,
     '詳細': details,
     '詳細作業（カンマ区切り）': details,
     '作物別詳細作業': cd

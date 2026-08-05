@@ -138,6 +138,15 @@
     }
   }
 
+  var safetyTimer = null;
+
+  function resetSafetyTimer() {
+    if (safetyTimer) {
+      clearTimeout(safetyTimer);
+      safetyTimer = null;
+    }
+  }
+
   function setMessage(msg) {
     var text = document.getElementById('mapDataLoadingText');
     if (text && msg) text.textContent = msg;
@@ -152,12 +161,21 @@
     el.style.pointerEvents = 'auto';
     el.setAttribute('aria-busy', 'true');
     lockMapGestures();
+
+    // ★ セーフティタイマー：12秒経っても解除されない場合は強制解除
+    resetSafetyTimer();
+    safetyTimer = setTimeout(function () {
+      console.warn('[map-loading] 読み込み安全タイムアウト（12秒）が作動しました。');
+      endMapDataLoad(true);
+    }, 12000);
   }
 
   function endMapDataLoad(force) {
     if (force) depth = 0;
     else depth = Math.max(0, depth - 1);
     if (depth > 0) return;
+
+    resetSafetyTimer();
     var el = document.getElementById('mapDataLoadingOverlay');
     if (el) {
       el.classList.remove('is-visible');
@@ -175,6 +193,7 @@
   /** 読み込み中でなくてもジェスチャを強制復旧（不具合時の保険） */
   function ensureMapGesturesEnabled() {
     depth = 0;
+    resetSafetyTimer();
     var el = document.getElementById('mapDataLoadingOverlay');
     if (el) {
       el.classList.remove('is-visible');

@@ -445,20 +445,27 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       function loadInitData() {
           if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
           callGAS('getInitData').then(data => {
-              const newDataStr = JSON.stringify(data);
-              const oldDataStr = localStorage.getItem('passionMapInitData');
-              
-              // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
-              if (newDataStr === oldDataStr) {
-                  console.log("変更なし：再描画をスキップしました");
-                  if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
-                  return; 
-              }
+              try {
+                  const newDataStr = JSON.stringify(data);
+                  const oldDataStr = localStorage.getItem('passionMapInitData');
+                  
+                  // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
+                  if (newDataStr === oldDataStr) {
+                      console.log("変更なし：再描画をスキップしました");
+                      if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                      return; 
+                  }
 
-              // 変更があった場合のみ保存して再描画
-              localStorage.setItem('passionMapInitData', newDataStr);
-              renderInitData(data);
-              if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                  // 変更があった場合のみ保存して再描画
+                  if (data) {
+                      localStorage.setItem('passionMapInitData', newDataStr);
+                      renderInitData(data);
+                  }
+              } catch (err) {
+                  console.error("renderInitData/Data processing Error:", err);
+              } finally {
+                  if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+              }
           }).catch(e => {
               console.log("InitData Error:", e);
               if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
@@ -6003,6 +6010,10 @@ function createSignboardMarker(name, pos, icon, id) {
               const name = String(w.name || '');
               const safe = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               const details = String(w.detailWorks || '').trim();
+              const aliasStr = String(w.aliasNames || (Array.isArray(w.aliases) ? w.aliases.join(', ') : '')).trim();
+              const aliasPreview = aliasStr
+                  ? `<div style="font-size:11px; color:#E65100; margin-top:2px; font-weight:bold;">🏷️ 別名/類似名: ${aliasStr.replace(/</g, '&lt;')}</div>`
+                  : '';
               const detailPreview = details
                   ? `<div style="font-size:11px; color:#666; margin-top:4px; line-height:1.35;">詳細: ${details.split(/[,、]/).map(s => s.trim()).filter(Boolean).slice(0, 6).join(' / ')}${details.split(/[,、]/).filter(s => s.trim()).length > 6 ? ' …' : ''}</div>`
                   : `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし</div>`;
@@ -6010,6 +6021,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div style="min-width:0; flex:1;">
                     <div style="font-weight:bold; font-size:14px; color:#333; word-break:break-all;">${name.replace(/</g, '&lt;')}</div>
+                    ${aliasPreview}
                     <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">
                       <span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px;">${(w.category || '圃場作業').replace(/</g, '&lt;')}</span>
                       <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px;">${window.getWorkCropLabel(w.cropName).replace(/</g, '&lt;')}</span>
@@ -6053,6 +6065,7 @@ function createSignboardMarker(name, pos, icon, id) {
               `<option value="${String(name).replace(/"/g, '&quot;')}" ${name === defaultCrop ? 'selected' : ''}>${name}</option>`
           ).join('');
           const title = mode === 'edit' ? '作業マスタを編集' : '作業マスタを追加';
+          const existingAliases = (existing && (existing.aliasNames || (Array.isArray(existing.aliases) ? existing.aliases.join(', ') : ''))) || '';
           const detailsHtml = window.buildWorkerDetailWorksHtml('wn_edit_details_list', (existing && existing.detailWorks) || '');
           const modal = document.createElement('div');
           modal.id = 'workNameEditorModal';
@@ -6066,11 +6079,14 @@ function createSignboardMarker(name, pos, icon, id) {
                 <select id="wn_edit_crop" style="flex:1; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; font-size:14px;">${cropOpts}</select>
                 <button type="button" onclick="addNewCropFromWorkMaster()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:0 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋</button>
               </div>
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業名</label>
-              <input type="text" id="wn_edit_name" value="${String((existing && existing.name) || '').replace(/"/g, '&quot;')}" placeholder="例: 定植" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:15px;">
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業名（正順名）</label>
+              <input type="text" id="wn_edit_name" value="${String((existing && existing.name) || '').replace(/"/g, '&quot;')}" placeholder="例: 畝つぶし" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:15px;">
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">類似作業名（地域呼称・別名など）</label>
+              <input type="text" id="wn_edit_aliases" value="${String(existingAliases).replace(/"/g, '&quot;')}" placeholder="例: 畝戻し, すき込み, 畝立て直し" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:4px; font-size:14px;">
+              <div style="font-size:11px; color:#666; margin-bottom:10px; line-height:1.35;">※地域特有の呼称や表記ゆれをカンマ区切りで登録すると、同じ作業として連動します。</div>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（各枠に1つ）</label>
               ${detailsHtml}
-              <div style="display:flex; gap:8px; margin-top:4px;">
+              <div style="display:flex; gap:8px; margin-top:12px;">
                 <button type="button" onclick="closeWorkNameEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
                 <button type="button" onclick="submitWorkNameEditor('${mode}', '${String(originalName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="flex:1; background:#FF9800; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${mode === 'edit' ? '更新する' : '追加する'}</button>
               </div>
@@ -6125,6 +6141,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const name = String(document.getElementById('wn_edit_name')?.value || '').trim();
           const category = document.getElementById('wn_edit_category')?.value || '圃場作業';
           const cropName = String(document.getElementById('wn_edit_crop')?.value || '').trim();
+          const aliasNames = String(document.getElementById('wn_edit_aliases')?.value || '').trim();
           const detailWorks = window.collectWorkerDetailWorks('wn_edit_details_list');
           if (!name) {
               if (typeof customAlert === 'function') customAlert('作業名を入力してください。');
@@ -6155,7 +6172,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   updatedList = await callGAS('manageMaster', {
                       masterType: 'work',
                       manageAction: 'add',
-                      value: { name, category, cropName, detailWorks },
+                      value: { name, category, cropName, detailWorks, aliasNames },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
               } else {
@@ -6164,7 +6181,7 @@ function createSignboardMarker(name, pos, icon, id) {
                       manageAction: 'edit',
                       value: {
                           originalName: orig,
-                          newData: { name, category, cropName, detailWorks }
+                          newData: { name, category, cropName, detailWorks, aliasNames }
                       },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
@@ -6498,14 +6515,46 @@ function createSignboardMarker(name, pos, icon, id) {
       window.findWorkMasterByName_ = (workName) => {
          const name = String(workName || '').trim();
          if (!name) return null;
-         return (pdlWorkMaster || []).find(w => String(w.name || '').trim() === name) || null;
+         if (!Array.isArray(pdlWorkMaster)) return null;
+         
+         // 1. 正順名（主名）に完全一致
+         let match = pdlWorkMaster.find(w => w && String(w.name || '').trim() === name);
+         if (match) return match;
+
+         // 2. 類似作業名（別名/エイリアス）に一致するか検索
+         match = pdlWorkMaster.find(w => {
+            if (!w) return false;
+            const aliases = Array.isArray(w.aliases)
+               ? w.aliases
+               : (w.aliasNames ? String(w.aliasNames).split(/[,、\n]/).map(s => s.trim()).filter(Boolean) : []);
+            return aliases.some(alias => String(alias).trim() === name);
+         });
+
+         return match || null;
+      };
+
+      /** 作業名の代表名（正規化された正順名）を取得。類似名であればマスターの主名を返す */
+      window.getCanonicalWorkName = (workName) => {
+         const master = window.findWorkMasterByName_(workName);
+         return master ? master.name : String(workName || '').trim();
+      };
+
+      /** 2つの作業名が同じ（同等または類似名関係）か判定 */
+      window.areWorksEquivalent = (nameA, nameB) => {
+         if (!nameA || !nameB) return false;
+         const strA = String(nameA).trim();
+         const strB = String(nameB).trim();
+         if (strA === strB) return true;
+
+         const canonA = window.getCanonicalWorkName(strA);
+         const canonB = window.getCanonicalWorkName(strB);
+         return !!(canonA && canonB && canonA === canonB);
       };
 
       window.getExistingDetailWorkNameSet_ = () => {
          const currentWorkName = String(document.getElementById('rec_work_name')?.value || '').trim();
-         const masterDetails = window.parseDetailWorksList(
-           ((pdlWorkMaster || []).find(w => String(w.name || '').trim() === currentWorkName) || {}).detailWorks || ''
-         );
+         const masterObj = window.findWorkMasterByName_(currentWorkName);
+         const masterDetails = window.parseDetailWorksList((masterObj || {}).detailWorks || '');
          return new Set([
            ...masterDetails,
            ...(Array.isArray(window.recordExtraDetailWorks) ? window.recordExtraDetailWorks : [])
@@ -8308,13 +8357,13 @@ function createSignboardMarker(name, pos, icon, id) {
                   <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
                   ${timeUI}
                   ${workTimeUI}
-                  ${targetSection}
                   <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:1px solid #9FA8DA; border-radius:10px; padding:12px; margin-bottom:12px;">
                   <label class="form-label" style="margin-top:0; color:#3949AB;">📁 カテゴリ</label>
                   <div id="work_category_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_category" value="${defaultWorkCat}">
                   <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;"></div>
                   </div>
+                  ${targetSection}
                   <div class="rec-zone rec-zone-crop" style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;">
                   <label class="form-label" style="margin-top:0; color:#2E7D32;">🌱 作物名 <span style="font-size:11px; color:#558B2F; font-weight:normal;">（複数選択可・詳細作業は作物別）</span></label>
                   <div id="work_crop_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
@@ -12948,7 +12997,8 @@ window.executeAutoRecord = async () => {
                   try {
                       if (typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
                       renderInitData(JSON.parse(cachedData));
-                      if (typeof endMapDataLoad === 'function') endMapDataLoad();
+                      if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                      else if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
                       // 開始時間ヒントは getInitData より軽量なので、地図表示と同時に先行取得
                       if (typeof window.prefetchWorkTimeHints === 'function') {
                           const now = new Date();

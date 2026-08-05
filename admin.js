@@ -1145,8 +1145,11 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">作業カテゴリ</label>
                 <select id="add_work_category" class="form-input" style="margin-bottom:0; padding:8px;">${catOpts}</select>
-                <label style="font-size:12px; font-weight:bold; color:#555;">作業名</label>
-                <input type="text" id="add_work_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 播種">
+                <label style="font-size:12px; font-weight:bold; color:#555;">作業名（正順名）</label>
+                <input type="text" id="add_work_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 畝つぶし">
+                <label style="font-size:12px; font-weight:bold; color:#555;">類似作業名（地域呼称・別名など）</label>
+                <input type="text" id="add_work_aliases" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 畝戻し, すき込み (カンマ区切り)">
+                <div style="font-size:11px; color:#666; margin-top:-4px;">※地域ごとの呼称や表記ゆれを登録すると、同じ作業として連動します。</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">対象作物（複数選択可）</label>
                 ${buildWorkCropsCheckboxesHtml('add_work', ['__common__'])}
                 ${buildPerCropDetailWorksEditorHtml('add_work', ['__common__'], {})}
@@ -1270,7 +1273,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             }
             if (type === 'work') {
                 const cropsDisp = (v.crops && v.crops.length) ? v.crops.join(', ') : (v.cropName || '共通');
-                subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px; margin-left:4px;">🌱 ${cropsDisp}</span>`;
+                const aliasStr = String(v.aliasNames || (Array.isArray(v.aliases) ? v.aliases.join(', ') : '')).trim();
+                const aliasBadge = aliasStr ? `<span style="font-size:11px; background:#fff3e0; color:#e65100; padding:2px 6px; border-radius:4px; margin-left:4px; font-weight:bold;">🏷️ 別名: ${aliasStr}</span>` : '';
+                subInfo = `<span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.category || '圃場作業'}</span> <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px; margin-left:4px;">🌱 ${cropsDisp}</span>${aliasBadge}`;
                 if (v.cropDetails && Object.keys(v.cropDetails).length > 0) {
                     let detailsPreview = Object.keys(v.cropDetails).map(cKey => {
                         const label = cKey === '__common__' ? '共通' : cKey;
@@ -3167,6 +3172,7 @@ window.openEditWorkMasterLegacy = (encodedStr) => {
     if (!selectedCrops.length) selectedCrops = ['__common__'];
 
     const safeName = (v.name || "").replace(/"/g, '&quot;');
+    const safeAliases = String(v.aliasNames || (Array.isArray(v.aliases) ? v.aliases.join(', ') : '')).replace(/"/g, '&quot;');
 
     const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
@@ -3176,8 +3182,11 @@ window.openEditWorkMasterLegacy = (encodedStr) => {
             <select id="edit_work_category" class="form-input">
                 ${catOpts}
             </select>
-            <label class="form-label">作業名</label>
+            <label class="form-label">作業名（正順名）</label>
             <input type="text" id="edit_work_name" class="form-input" value="${safeName}">
+            <label class="form-label">類似作業名（地域呼称・別名など）</label>
+            <input type="text" id="edit_work_aliases" class="form-input" value="${safeAliases}" placeholder="例: 畝戻し, すき込み (カンマ区切り)">
+            <div style="font-size:11px; color:#666; margin-top:-4px; margin-bottom:8px;">※地域ごとの呼称や表記ゆれを登録すると、同じ作業として連動します。</div>
             <label class="form-label">対象作物（複数選択可）</label>
             ${buildWorkCropsCheckboxesHtml('edit_work', selectedCrops)}
             ${buildPerCropDetailWorksEditorHtml('edit_work', selectedCrops, v.cropDetails || { detailWorks: v.detailWorks })}
@@ -3436,10 +3445,12 @@ window.execMaster = async (type, act, val) => {
                 customAlert(`作業名「${name}」は既に登録されています`);
                 return;
             }
+            const aliasNames = (document.getElementById('add_work_aliases')?.value || '').trim();
             const perCropData = collectPerCropDetailWorks('add_work');
             value = {
                 name: name,
                 category: document.getElementById('add_work_category').value,
+                aliasNames: aliasNames,
                 crops: perCropData.crops,
                 cropName: perCropData.cropName,
                 cropDetails: perCropData.cropDetails,
@@ -3471,12 +3482,14 @@ window.execMaster = async (type, act, val) => {
                 customAlert(`作業名「${newName}」は既に登録されています`);
                 return;
             }
+            const aliasNames = (document.getElementById('edit_work_aliases')?.value || '').trim();
             const perCropData = collectPerCropDetailWorks('edit_work');
             value = {
                 originalName: originalName,
                 newData: {
                     name: newName,
                     category: document.getElementById('edit_work_category').value,
+                    aliasNames: aliasNames,
                     crops: perCropData.crops,
                     cropName: perCropData.cropName,
                     cropDetails: perCropData.cropDetails,
