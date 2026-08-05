@@ -3268,6 +3268,9 @@ function createSignboardMarker(name, pos, icon, id) {
           if (endEl) endEl.value = endVal;
           if (typeof calcTotalTime === 'function') calcTotalTime();
           window.updateStartTimeHintUI();
+          if (typeof window.updateRestNoticeCardUI === 'function') {
+            window.updateRestNoticeCardUI();
+          }
           // 終了が空でもダイアログは出さない（ヒント表示のみ）
           return true;
         };
@@ -6897,6 +6900,33 @@ function createSignboardMarker(name, pos, icon, id) {
          window.restoreDetailWorkSelections(selectionMap);
       };
 
+      window.updateRestNoticeCardUI = () => {
+        const card = document.getElementById('work_rest_notice');
+        if (!card) return;
+        const sTime = document.getElementById('rec_start_time')?.value || '--:--';
+        const eTime = document.getElementById('rec_end_time')?.value || '--:--';
+        const displayTotal = document.getElementById('rec_total_time_display')?.innerText || '--';
+
+        card.innerHTML = `
+          <div style="font-size:13px; color:#E65100; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:6px;">
+            ☕ 前の作業終了 〜 現在時刻（ワンタップ登録）
+          </div>
+          <div style="font-size:24px; font-weight:bold; color:#D84315; margin:8px 0; text-align:center;">
+            ${sTime} 〜 ${eTime}
+          </div>
+          <div style="font-size:13px; color:#795548; font-weight:bold; text-align:center; margin-bottom:12px;">
+            （実時間: ${displayTotal}）
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" onclick="submitRecord()" style="flex:2; background:#FF9800; color:#fff; border:none; padding:14px; border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer; box-shadow:0 3px 6px rgba(255,152,0,0.4); text-align:center;">
+              ☕ この内容で休憩を登録する
+            </button>
+            <button type="button" onclick="matchStartEndToPreviousEndAndNow()" style="flex:1; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:10px; font-size:12px; font-weight:bold; cursor:pointer;" title="時間を再計算">
+              🔄 再合わせ
+            </button>
+          </div>`;
+      };
+
       window.handleWorkNameChange = (forcedName) => {
         const sel = document.getElementById('rec_work_name');
         const wName = String(forcedName != null ? forcedName : (sel ? sel.value : '') || '').trim();
@@ -6909,23 +6939,22 @@ function createSignboardMarker(name, pos, icon, id) {
             if (wrapper) {
               restNotice = document.createElement('div');
               restNotice.id = 'work_rest_notice';
-              restNotice.style.cssText = 'background:#fff3e0; color:#e65100; border:1px solid #ffe0b2; padding:10px; border-radius:8px; margin:10px 0; font-size:13px; font-weight:bold; display:flex; flex-direction:column; gap:8px;';
-              restNotice.innerHTML = '☕ <b>休憩時間として登録します（1日に何度でも可）。</b> 出退勤・日報の集計で「休憩」として記録されます。開始は前の作業／休憩の終了時刻に合わせます。'
-                + '<button type="button" onclick="matchStartEndToPreviousEndAndNow()" style="align-self:flex-start; background:#FF9800; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">⏱️ 前の終了〜今の時間にセット</button>';
+              restNotice.style.cssText = 'background:#FFF3E0; color:#E65100; border:2px solid #FFCC80; padding:14px; border-radius:10px; margin:12px 0; font-size:13px; font-weight:bold; display:flex; flex-direction:column; gap:8px; box-shadow:0 3px 6px rgba(255,152,0,0.15);';
               wrapper.insertAdjacentElement('afterend', restNotice);
             }
-          } else {
-            restNotice.style.display = 'flex';
-            // 文言を複数回対応に更新（既存DOMでも）
-            if (restNotice.innerHTML && !restNotice.innerHTML.includes('何度でも')) {
-              const btnHtml = '<button type="button" onclick="matchStartEndToPreviousEndAndNow()" style="align-self:flex-start; background:#FF9800; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">⏱️ 前の終了〜今の時間にセット</button>';
-              restNotice.innerHTML = '☕ <b>休憩時間として登録します（1日に何度でも可）。</b> 出退勤・日報の集計で「休憩」として記録されます。開始は前の作業／休憩の終了時刻に合わせます。' + btnHtml;
-            }
           }
+          if (restNotice) {
+            restNotice.style.display = 'flex';
+            window.updateRestNoticeCardUI();
+          }
+
           // 新規入力時は休憩の開始〜終了を自動セット
           if (!currentEditRecordId && typeof window.matchStartEndToPreviousEndAndNow === 'function') {
             setTimeout(() => {
-              try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
+              try { 
+                window.matchStartEndToPreviousEndAndNow({ silent: true });
+                window.updateRestNoticeCardUI();
+              } catch (e) {}
             }, 30);
           }
           // 休憩でも圃場選択を見えるようにする

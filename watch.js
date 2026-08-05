@@ -358,15 +358,26 @@ async function processJob(data) {
       const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...(以下省略)' : aiOutput;
       const didModify = !!(fileChangesText && fileChangesText.trim());
 
+      const isDeployTask = String(rawCommand || '').toLowerCase().includes('deploy') || 
+                           String(rawCommand || '').includes('デプロイ') ||
+                           String(aiOutput || '').includes('clasp deploy') ||
+                           String(aiOutput || '').includes('デプロイが完了');
+
       if (isSuccess || didModify) {
-        const note = isSuccess
-          ? 'AIによるコード修正が完了しました。'
-          : '修正は行いましたが構文エラー等が残っている可能性があります。';
-        summaryForLine = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
-        fullSummaryForEmail = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
-        console.log(isSuccess
-          ? '✅ コード修正が完了しました！'
-          : '⚠️ 修正はしましたが問題が残っている可能性があります（修正報告として通知）');
+        if (isDeployTask) {
+          summaryForLine = `🚀 【本番システム デプロイ完了報告】\nGitHubへのコミット・プッシュおよびGAS本番環境へのデプロイが正常に完了しました！\n${fileChangesText}\n\n【デプロイ詳細・更新報告】:\n${shortAiOutput}`;
+          fullSummaryForEmail = `🚀 【本番システム デプロイ完了報告】\nGitHubへのコミット・プッシュおよびGAS本番環境へのデプロイが正常に完了しました！\n${fileChangesText}\n\n【デプロイ詳細・更新報告(全文)】:\n${aiOutput}`;
+          console.log('🚀 デプロイ完了報告をLINEへ送信します！');
+        } else {
+          const note = isSuccess
+            ? 'AIによるコード修正が完了しました。'
+            : '修正は行いましたが構文エラー等が残っている可能性があります。';
+          summaryForLine = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
+          fullSummaryForEmail = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
+          console.log(isSuccess
+            ? '✅ コード修正が完了しました！'
+            : '⚠️ 修正はしましたが問題が残っている可能性があります（修正報告として通知）');
+        }
       } else {
         summaryForLine = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因】:\n${shortAiOutput}`;
         fullSummaryForEmail = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因(全文)】:\n${aiOutput}`;
