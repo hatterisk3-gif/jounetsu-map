@@ -77,22 +77,20 @@ async function runAIAgent(promptText) {
   }
   console.log('📝 IDEにAI実行の指示を送信しました！自動処理が始まります...');
 
-  // IDEの処理が終わる（.ai_task_done.txt が作られる）まで待機（最大15分）
+  // IDEの処理が終わる（.ai_task_done.txt が作られる）まで待機（最大30分）
   let waitTime = 0;
-  while (!fs.existsSync(DONE_FILE) && waitTime < 900) {
+  while (!fs.existsSync(DONE_FILE) && waitTime < 1800) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     waitTime++;
   }
 
-  // 🚨 IDEがタイムアウトした場合（処理中 or 制限がかかっている可能性）
+  // 🚨 IDEが応答しなかった場合
   if (!fs.existsSync(DONE_FILE)) {
-    console.log('⚠️ IDEでの処理がタイムアウトしました（15分以内に .ai_task_done.txt が作成されませんでした）。');
-    console.log('💡 IDEが処理中の可能性があります。手動で確認してください。');
-
+    console.log('⚠️ 待機時間を超えましたが、不要なタイムアウト報告はLINEへ送信せずスキップします。');
     // タスクファイルを削除（重複実行防止）
     try { fs.unlinkSync(TASK_FILE); } catch (e) { }
-
-    return '【タイムアウト】IDEでの処理が15分以内に完了しませんでした。IDEが処理中の可能性があります。手動で確認してください。';
+    // 不要なタイムアウトLINEメッセージを送信しない（空文字または静かな完了メッセージ）
+    return '';
   }
 
   console.log('✅ IDEでのAI処理が完了しました！');
@@ -378,6 +376,10 @@ async function processJob(data) {
             ? '✅ コード修正が完了しました！'
             : '⚠️ 修正はしましたが問題が残っている可能性があります（修正報告として通知）');
         }
+      } else if (!aiOutput) {
+        // 🌟 応答なし/タイムアウト時は不要なタイムアウトLINEメッセージを送信しない（通知スキップ）
+        summaryForLine = '【スキップ】応答なしのため通知を省略しました。';
+        fullSummaryForEmail = summaryForLine;
       } else {
         summaryForLine = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因】:\n${shortAiOutput}`;
         fullSummaryForEmail = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因(全文)】:\n${aiOutput}`;

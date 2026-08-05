@@ -6901,11 +6901,19 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.updateRestNoticeCardUI = () => {
-        const card = document.getElementById('work_rest_notice');
-        if (!card) return;
         const sTime = document.getElementById('rec_start_time')?.value || '--:--';
         const eTime = document.getElementById('rec_end_time')?.value || '--:--';
         const displayTotal = document.getElementById('rec_total_time_display')?.innerText || '--';
+
+        const sDisp = document.getElementById('rec_simple_start_display');
+        if (sDisp) sDisp.innerText = sTime;
+        const eDisp = document.getElementById('rec_simple_end_display');
+        if (eDisp) eDisp.innerText = eTime;
+        const tDisp = document.getElementById('rec_simple_total_display');
+        if (tDisp) tDisp.innerText = `（実時間: ${displayTotal}）`;
+
+        const card = document.getElementById('work_rest_notice');
+        if (!card) return;
 
         card.innerHTML = `
           <div style="font-size:13px; color:#E65100; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:6px;">
@@ -8394,6 +8402,84 @@ function createSignboardMarker(name, pos, icon, id) {
         window.selectedWorkCrops = [];
         window.selectedWorkCropFilterKeys = [];
         window.recordExtraDetailWorks = [];
+
+        // ☕ 休憩ボタンから開かれた場合：不要な要素や圃場連動警告を一切排除し、時間＋登録ボタン専用の超シンプルフォームを単独生成する！
+        if (window._openingRestBreak) {
+          const titleElem = document.getElementById('rightPanelTitle');
+          if (titleElem) titleElem.innerText = "☕ 休憩時間の登録";
+          const todayStr = (typeof window.getTodayDateString === 'function')
+            ? window.getTodayDateString()
+            : (new Date().toISOString().split('T')[0]);
+
+          const html = `
+            <div class="rest-break-dedicated-container" style="padding:16px; background:#fff;">
+              <div style="background:#FFF3E0; border:2px solid #FF9800; border-radius:12px; padding:18px; margin-bottom:20px; text-align:center; box-shadow:0 4px 12px rgba(255,152,0,0.18);">
+                <div style="font-size:14px; color:#E65100; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:6px;">
+                  ☕ 前の作業終了 〜 現在時刻（ワンタップ登録）
+                </div>
+                <div style="font-size:26px; font-weight:bold; color:#D84315; margin:10px 0; text-align:center;">
+                  <span id="rec_simple_start_display">--:--</span> 〜 <span id="rec_simple_end_display">--:--</span>
+                </div>
+                <div id="rec_simple_total_display" style="font-size:14px; color:#795548; font-weight:bold; text-align:center; margin-bottom:16px;">
+                  （実時間: --分）
+                </div>
+                <button type="button" onclick="submitRecord()" style="background:#FF9800; color:#fff; border:none; width:100%; padding:15px; border-radius:10px; font-size:17px; font-weight:bold; cursor:pointer; box-shadow:0 4px 8px rgba(255,152,0,0.4); text-align:center;">
+                  ☕ この内容で休憩を登録する
+                </button>
+              </div>
+
+              <label class="form-label">👤 ユーザー名</label>
+              <input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666; margin-bottom:15px;">
+
+              <label class="form-label">📅 作業日</label>
+              <input type="date" id="rec_work_date" class="form-input" value="${todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();" style="margin-bottom:15px;">
+
+              <!-- 保存用の隠しフィールド（カテゴリ・作業名） -->
+              <input type="hidden" id="rec_work_category" value="管理/その他">
+              <input type="hidden" id="rec_work_name" value="休憩">
+
+              <div class="rec-zone" style="background:#EFEBE9; padding:16px; border-radius:12px; border:1px solid #D7CCC8; margin-bottom:15px;">
+                <label class="form-label" style="margin-top:0; color:#4E342E; font-size:14px;">⏰ 休憩の時間設定</label>
+                <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
+                  <div style="flex:1;">
+                    <label style="font-size:11px; color:#666;">開始時刻</label>
+                    <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" value="" onclick="if(window.openAppTimePicker) openAppTimePicker('rec_start_time', '開始時間')" style="margin:0; text-align:center; font-weight:bold; font-size:16px;">
+                  </div>
+                  <span style="margin-top:14px; font-size:18px; font-weight:bold;">〜</span>
+                  <div style="flex:1;">
+                    <label style="font-size:11px; color:#666;">終了時刻</label>
+                    <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" value="" onclick="if(window.openAppTimePicker) openAppTimePicker('rec_end_time', '終了時間')" style="margin:0; text-align:center; font-weight:bold; font-size:16px;">
+                  </div>
+                </div>
+                <div style="display:none;">
+                  <span id="rec_total_time_display">--</span>
+                  <input type="number" id="rec_break_mins" value="0">
+                </div>
+                <div style="text-align:right;">
+                  <button type="button" onclick="matchStartEndToPreviousEndAndNow()" style="background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">
+                    🔄 前終了〜今の時間に再セット
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+
+          const bodyElem = document.getElementById('rightPanelBody');
+          if (bodyElem) bodyElem.innerHTML = html;
+          const footerElem = document.getElementById('rightPanelFooter');
+          if (footerElem) footerElem.innerHTML = '';
+
+          // 時間の全自動セット＆表示同期
+          setTimeout(() => {
+            if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
+              try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
+            }
+            if (typeof window.updateRestNoticeCardUI === 'function') window.updateRestNoticeCardUI();
+          }, 30);
+
+          return;
+        }
+
         const p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [], area: 0 };
         const isEdit = !!currentEditRecordId;
         selectedPolyIds = activePolyId ? [String(activePolyId)] : []; pendingFiles = []; 
