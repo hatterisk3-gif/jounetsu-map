@@ -268,6 +268,15 @@
   window.openCancelClockOutModal = openCancelClockOutModal;
 
   window.openFreshClockInFromCancelModal = function () {
+    openClockInModal();
+  };
+
+  /** 出勤モーダルを即表示（サーバー待ちなし） */
+  function openClockInModal() {
+    if (!navigator.geolocation) {
+      alertMsg('お使いの端末ではGPSがサポートされていません。');
+      return;
+    }
     const dt = defaultDateTime();
     let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>`;
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
@@ -275,11 +284,12 @@
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
     html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
     html += `<div style="display:flex; gap:10px;">`;
-    html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
+    html += `  <button id="confirmClockInBtn" onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
     html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
     html += `</div>`;
     showClockModal(html);
-  };
+  }
+  window.openClockInModal = openClockInModal;
 
   window.confirmCancelTodaysClockOut = function () {
     const snap = getCancelableClockOutLocal() || window._cancelableClockOutFromServer;
@@ -409,9 +419,10 @@
   /**
    * サーバーの出勤中状態をこの端末の localStorage / ボタン表示へ反映する。
    * （端末を変えても出退勤ボタンが連動するようにする）
+   * ※退勤忘れ（前日以前の未退勤）でも復元する。しないとボタンが「出勤」のままになり退勤できない。
    */
   function applyOpenClockInFromServer(res) {
-    if (!res || !res.open || res.forgot) return false;
+    if (!res || !res.open) return false;
     try {
       let lat = 0;
       let lng = 0;
@@ -438,8 +449,10 @@
         time: time,
         active: true,
         dateYmd: dateYmd,
-        dateLocale: new Date().toLocaleDateString(),
-        syncedFromServer: true
+        // 退勤忘れ判定は dateYmd を正とする。今日のロケール日付を入れると誤判定の元になる
+        dateLocale: dateYmd,
+        syncedFromServer: true,
+        forgot: !!res.forgot
       };
       localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
       localStorage.setItem(
@@ -447,7 +460,7 @@
         JSON.stringify({
           time: time,
           dateYmd: dateYmd,
-          date: clockInState.dateLocale
+          date: dateYmd
         })
       );
 
@@ -531,7 +544,9 @@
       }
 
       // サーバー上で前日以前の出勤が開いている → 退勤忘れ
+      // ローカルにも出勤中として復元し、ボタンを「昼休憩／退勤」にする
       if (res.open && res.forgot) {
+        applyOpenClockInFromServer(res);
         return {
           clockInTime: res.clockInTime || (localInfo && localInfo.clockInTime) || getClockInTimeStr(),
           clockInDateYmd: res.clockInDateYmd,
@@ -771,7 +786,7 @@
     }
   }
 
-  /** GPS取得（高精度→通常の順で試行） */
+  /** GPS取得（キャッシュ優先→通常→高精度） */
   function getPositionRobust() {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
@@ -781,12 +796,32 @@
       const tryOnce = (options, onFail) => {
         navigator.geolocation.getCurrentPosition(resolve, onFail, options);
       };
-      tryOnce({ enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 }, () => {
-        tryOnce({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }, (err) => {
-          reject(err || { code: 3, message: 'timeout' });
+      // 1) 直近キャッシュを短時間で返す（体感を速く）
+      tryOnce({ enableHighAccuracy: false, timeout: 2500, maximumAge: 300000 }, () => {
+        // 2) 通常精度
+        tryOnce({ enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }, () => {
+          // 3) 高精度（最後の手段）
+          tryOnce({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }, (err) => {
+            reject(err || { code: 3, message: 'timeout' });
+          });
         });
       });
     });
+  }
+
+  /** 地図などで取得済みの現在地があれば即利用 */
+  function getQuickLatLng_() {
+    try {
+      if (typeof latestUserPos !== 'undefined' && latestUserPos && latestUserPos.lat != null && latestUserPos.lng != null) {
+        return { lat: Number(latestUserPos.lat), lng: Number(latestUserPos.lng) };
+      }
+    } catch (e) {}
+    try {
+      if (window.latestUserPos && window.latestUserPos.lat != null && window.latestUserPos.lng != null) {
+        return { lat: Number(window.latestUserPos.lat), lng: Number(window.latestUserPos.lng) };
+      }
+    } catch (e) {}
+    return null;
   }
 
   function gpsFailHint(err) {
@@ -1747,14 +1782,26 @@
     clearPending();
     window._forgotClockOutPromptedOnce = false;
 
+    const afterClockOutSaved = () => {
+      // 過去日の退勤忘れを直したあと、別日の未退勤が残っていれば続けて案内する
+      setTimeout(() => {
+        resolveForgotClockOutInfo()
+          .then((info) => {
+            if (info) promptForgotClockOut({ openEvenIfCancel: true, forcePrompt: true });
+          })
+          .catch(() => {});
+      }, 800);
+    };
+
     if (!user || typeof callGAS !== 'function') {
       alertMsg('退勤を記録しました。\n※同じ日のうちなら、もう一度ボタンを押して退勤を取り消せます。');
+      afterClockOutSaved();
       return;
     }
 
     getPositionRobust()
       .then((p) => {
-        callGAS('saveTrackingData', {
+        return callGAS('saveTrackingData', {
           userName: user,
           lat: p.coords.latitude,
           lng: p.coords.longitude,
@@ -1763,14 +1810,15 @@
         }).catch((e) => console.warn('退勤送信エラー', e));
       })
       .catch(() => {
-        callGAS('saveTrackingData', {
+        return callGAS('saveTrackingData', {
           userName: user,
           lat: 0,
           lng: 0,
           type: typeLabel,
           time: clockAt.getTime()
         }).catch((e) => console.warn('退勤送信エラー', e));
-      });
+      })
+      .finally(() => afterClockOutSaved());
 
     alertMsg('退勤を記録しました。\n※同じ日のうちなら、もう一度ボタンを押して退勤を取り消せます。');
   };
@@ -1961,6 +2009,11 @@
       alertMsg('日付と時間を入力してください');
       return;
     }
+    const confBtn = document.getElementById('confirmClockInBtn');
+    if (confBtn) {
+      confBtn.disabled = true;
+      confBtn.textContent = '出勤中…';
+    }
     hideClockModal();
     if (!navigator.geolocation) return;
 
@@ -1977,42 +2030,50 @@
     localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
     localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
     if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+    if (typeof window.refreshTrackingModeUI === 'function') refreshTrackingModeUI();
 
     const user = typeof currentUser !== 'undefined' ? currentUser : '';
+    let gasSent = false;
+    const sendGas_ = (lat, lng) => {
+      if (gasSent || !user || typeof callGAS !== 'function') return;
+      gasSent = true;
+      callGAS('saveTrackingData', {
+        userName: user,
+        lat: lat,
+        lng: lng,
+        type: '出勤',
+        time: clockAt.getTime()
+      }).catch((e) => console.warn(e));
+    };
+    const applyCoords_ = (lat, lng) => {
+      clockInState.lat = lat;
+      clockInState.lng = lng;
+      clockInTodayState.lat = lat;
+      clockInTodayState.lng = lng;
+      localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+      localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
+      if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+    };
+
+    // 地図の現在地があれば即送信（体感を速く）
+    const quick = getQuickLatLng_();
+    if (quick) {
+      applyCoords_(quick.lat, quick.lng);
+      sendGas_(quick.lat, quick.lng);
+    }
 
     getPositionRobust()
       .then((p) => {
         const lat = p.coords.latitude;
         const lng = p.coords.longitude;
-        clockInState.lat = lat;
-        clockInState.lng = lng;
-        clockInTodayState.lat = lat;
-        clockInTodayState.lng = lng;
-        localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
-        localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
-        if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
-
-        if (user && typeof callGAS === 'function') {
-          callGAS('saveTrackingData', {
-            userName: user,
-            lat: lat,
-            lng: lng,
-            type: '出勤',
-            time: clockAt.getTime()
-          }).catch((e) => console.warn(e));
-        }
+        applyCoords_(lat, lng);
+        sendGas_(lat, lng);
       })
       .catch((err) => {
         console.warn('GPSエラー', err);
-        alertMsg('GPSの取得に失敗しましたが、出勤時間は記録しました。' + gpsFailHint(err));
-        if (user && typeof callGAS === 'function') {
-          callGAS('saveTrackingData', {
-            userName: user,
-            lat: '',
-            lng: '',
-            type: '出勤',
-            time: clockAt.getTime()
-          }).catch((e) => console.warn(e));
+        if (!gasSent) {
+          alertMsg('GPSの取得に失敗しましたが、出勤時間は記録しました。' + gpsFailHint(err));
+          sendGas_('', '');
         }
       });
 
@@ -2021,7 +2082,7 @@
       if (typeof window.showClothingAdviceModal === 'function') {
         window.showClothingAdviceModal();
       }
-    }, 500);
+    }, 300);
   };
 
   function toggleLunchFields() {
@@ -2405,11 +2466,11 @@
   }
 
   window.toggleTracking = async function () {
-    // 他端末で退勤済みなら、この端末の古い出勤状態を先に消す
-    const forgotInfo = await resolveForgotClockOutInfo();
+    // ★体感速度優先: 端末の状態で即UIを開き、サーバー確認は裏で行う
+    // （以前は毎回 GAS を待ってからモーダル表示していたため遅かった）
 
-    // 退勤忘れは最優先で退勤処理へ
-    if (forgotInfo) {
+    const localForgot = getForgotClockOutInfo();
+    if (localForgot) {
       const pending = loadPending();
       if (pending) {
         showReconcileUI();
@@ -2420,76 +2481,47 @@
     }
 
     if (!isLocallyClockedIn()) {
-      // 本日退勤済みなら、取り消し UI を優先
       const cancelable = getCancelableClockOutLocal() || window._cancelableClockOutFromServer;
       if (cancelable) {
         openCancelClockOutModal(cancelable);
+        resolveForgotClockOutInfo().catch(() => {});
         return;
-      }
-      // サーバーにも本日退勤があるか確認してから出勤へ
-      const user = getCurrentUserName();
-      if (user && typeof callGAS === 'function') {
-        try {
-          const res = await callGAS('getOpenClockInStatus', { userName: user });
-          if (res && res.cancelableClockOut) {
-            const snap = {
-              savedDateYmd: res.todayYmd || todayYmd(),
-              workDateYmd: res.clockInDateYmd || todayYmd(),
-              clockInTime: res.clockInTime || '',
-              clockInDateYmd: res.clockInDateYmd || todayYmd(),
-              clockOutDate: res.clockOutDateYmd || res.todayYmd || todayYmd(),
-              clockOutTime: res.clockOutTime || '',
-              lunchEnabled: !!res.lunchEnabled,
-              lunchStart: res.lunchStart || '',
-              lunchEnd: res.lunchEnd || '',
-              lunchRegistered: !!res.lunchRegistered,
-              fromServer: true
-            };
-            window._cancelableClockOutFromServer = snap;
-            try {
-              localStorage.setItem(LAST_CLOCKOUT_KEY, JSON.stringify(snap));
-            } catch (e) {}
-            openCancelClockOutModal(snap);
-            return;
-          }
-          if (res && res.open && !res.forgot && typeof applyOpenClockInFromServer === 'function') {
-            applyOpenClockInFromServer(res);
-            // 出勤中に戻ったので、このまま通常フローへ
-            if (isLocallyClockedIn()) {
-              const pending2 = loadPending();
-              if (pending2) {
-                showReconcileUI();
-                return;
-              }
-              const mode2 = getTrackingMode();
-              if (mode2 === 'lunch') {
-                openLunchBreakModal();
-                return;
-              }
-              openClockOutModal();
-              return;
-            }
-          }
-        } catch (e) {
-          console.warn('退勤取消候補の確認に失敗:', e);
-        }
       }
 
-      if (!navigator.geolocation) {
-        alertMsg('お使いの端末ではGPSがサポートされていません。');
-        return;
-      }
-      const dt = defaultDateTime();
-      let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>`;
-      html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
-      html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
-      html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
-      html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
-      html += `<div style="display:flex; gap:10px;">`;
-      html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
-      html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
-      html += `</div>`;
-      showClockModal(html);
+      // 出勤モーダルを即表示（裏で未退勤が見つかれば退勤へ差し替え）
+      openClockInModal();
+
+      // 裏でサーバー確認。他端末の退勤取消候補／出勤中同期／退勤忘れがあれば差し替え
+      resolveForgotClockOutInfo()
+        .then((forgotInfo) => {
+          // 未退勤（退勤忘れ）は出勤モーダルを閉じていても必ず退勤へ誘導
+          if (forgotInfo) {
+            promptForgotClockOut({ openEvenIfCancel: true, forcePrompt: true });
+            return;
+          }
+
+          const stillOnClockIn = !!document.getElementById('clockInDate');
+          if (!stillOnClockIn) return;
+
+          // 他端末で出勤中として同期された場合
+          if (isLocallyClockedIn()) {
+            hideClockModal();
+            const pending2 = loadPending();
+            if (pending2) {
+              showReconcileUI();
+              return;
+            }
+            const mode2 = getTrackingMode();
+            if (mode2 === 'lunch') openLunchBreakModal();
+            else openClockOutModal();
+            return;
+          }
+          const c = window._cancelableClockOutFromServer || getCancelableClockOutLocal();
+          if (c) {
+            openCancelClockOutModal(c);
+          }
+        })
+        .catch((e) => console.warn('出勤前のサーバー確認に失敗:', e));
       return;
     }
 
@@ -2502,9 +2534,18 @@
     const mode = getTrackingMode();
     if (mode === 'lunch') {
       openLunchBreakModal();
-      return;
+    } else {
+      openClockOutModal();
     }
-    openClockOutModal();
+
+    // 出勤中表示のまま、裏で退勤忘れ／他端末状態を確認
+    resolveForgotClockOutInfo()
+      .then((forgotInfo) => {
+        if (forgotInfo) {
+          promptForgotClockOut({ openEvenIfCancel: true });
+        }
+      })
+      .catch(() => {});
   };
 
   if (document.readyState === 'loading') {
