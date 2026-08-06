@@ -5109,6 +5109,190 @@ function createSignboardMarker(name, pos, icon, id) {
         });
       };
 
+      // ===== 詳細作業の段階計測（工程ごとに「ここまで」で区切る） =====
+      window.getNowTimeHm_ = () => {
+        const n = new Date();
+        return String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0');
+      };
+
+      window.diffMinutesHm_ = (startHm, endHm) => {
+        const toM = (hm) => {
+          const n = window.normalizeTimeHm ? window.normalizeTimeHm(hm) : String(hm || '');
+          if (!n || !n.includes(':')) return null;
+          const [h, m] = n.split(':').map(Number);
+          if (isNaN(h) || isNaN(m)) return null;
+          return h * 60 + m;
+        };
+        const s = toM(startHm);
+        const e = toM(endHm);
+        if (s == null || e == null) return null;
+        let d = e - s;
+        if (d < 0) d += 24 * 60;
+        return d;
+      };
+
+      window.getDetailStageCursor_ = () => {
+        const hidden = document.getElementById('rec_detail_stage_cursor');
+        if (hidden && hidden.value) return window.normalizeTimeHm(hidden.value) || hidden.value;
+        if (window._detailStageCursorHm) {
+          return window.normalizeTimeHm(window._detailStageCursorHm) || window._detailStageCursorHm;
+        }
+        const start = document.getElementById('rec_start_time')?.value || '';
+        return window.normalizeTimeHm(start) || start || '';
+      };
+
+      window.setDetailStageCursor_ = (hm) => {
+        const t = window.normalizeTimeHm ? (window.normalizeTimeHm(hm) || String(hm || '')) : String(hm || '');
+        window._detailStageCursorHm = t;
+        let hidden = document.getElementById('rec_detail_stage_cursor');
+        if (!hidden) {
+          const formRoot = document.getElementById('rightPanelContent');
+          if (formRoot) {
+            hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = 'rec_detail_stage_cursor';
+            formRoot.appendChild(hidden);
+          }
+        }
+        if (hidden) hidden.value = t;
+        window.refreshDetailStagePanelUI_();
+      };
+
+      window.refreshDetailStagePanelUI_ = () => {
+        const cursorEl = document.getElementById('detail_stage_cursor_label');
+        const lastEl = document.getElementById('detail_stage_last_label');
+        const cursor = window.getDetailStageCursor_() || '--:--';
+        if (cursorEl) cursorEl.textContent = cursor;
+        if (lastEl) {
+          const last = window._detailStageLastStamp || null;
+          if (last && last.name) {
+            lastEl.textContent = `直前: ${last.name} ${last.start || ''}〜${last.end || ''}（${last.mins != null ? last.mins + '分' : ''}）`;
+            lastEl.style.display = 'block';
+          } else {
+            lastEl.textContent = '';
+            lastEl.style.display = 'none';
+          }
+        }
+      };
+
+      /** 段階計測の起点を「作業開始」に合わせる */
+      window.resetDetailStageCursorToStart = () => {
+        const start = document.getElementById('rec_start_time')?.value || '';
+        if (!start) {
+          if (typeof customAlert === 'function') customAlert('先に作業の開始時刻を入力してください。');
+          return;
+        }
+        window._detailStageLastStamp = null;
+        window.setDetailStageCursor_(start);
+        if (typeof customAlert === 'function') customAlert(`段階計測の起点を ${start} にセットしました。`);
+      };
+
+      /** 段階計測の起点を「いま」にする（まだ始まっていない工程の開始） */
+      window.setDetailStageCursorToNow = () => {
+        const now = window.getNowTimeHm_();
+        const startEl = document.getElementById('rec_start_time');
+        if (startEl && !String(startEl.value || '').trim()) {
+          startEl.value = now;
+          startEl.removeAttribute('data-autofill');
+          if (typeof calcTotalTime === 'function') calcTotalTime();
+        }
+        window.setDetailStageCursor_(now);
+        if (typeof customAlert === 'function') customAlert(`次の工程の開始を ${now} にセットしました。`);
+      };
+
+      /**
+       * 詳細作業1件に「直前区切り〜いま」を割り当てて一時保存
+       * @param {HTMLElement} btnEl
+       */
+      window.stampDetailWorkStageUntilNow = (btnEl) => {
+        const row = btnEl ? btnEl.closest('.detail-work-item-row') : null;
+        if (!row) return;
+        const cb = row.querySelector('input[name="detail_work_ids"]');
+        const minInput = row.querySelector('.detail-work-min-input');
+        if (!cb || !minInput) return;
+
+        let cursor = window.getDetailStageCursor_();
+        if (!cursor) {
+          const start = document.getElementById('rec_start_time')?.value || '';
+          if (start) {
+            cursor = start;
+            window.setDetailStageCursor_(start);
+          } else {
+            if (typeof customAlert === 'function') {
+              customAlert('先に作業開始時刻を入れるか、「起点をいまに」を押してください。');
+            }
+            return;
+          }
+        }
+
+        const nowHm = window.getNowTimeHm_();
+        const mins = window.diffMinutesHm_(cursor, nowHm);
+        if (mins == null) {
+          if (typeof customAlert === 'function') customAlert('時刻の計算に失敗しました。');
+          return;
+        }
+        if (mins === 0) {
+          if (typeof customAlert === 'function') {
+            customAlert('開始と同じ時刻です。1分以上経過してから「ここまで」を押してください。');
+          }
+          return;
+        }
+
+        // チェックON＋分数を手動確定
+        if (!cb.checked) {
+          cb.checked = true;
+          window.toggleDetailWorkMinutes(cb);
+        } else {
+          const minWrapper = row.querySelector('.detail-work-min-wrapper');
+          if (minWrapper) minWrapper.style.display = 'inline-flex';
+        }
+        minInput.value = String(mins);
+        minInput.setAttribute('data-manual', '1');
+        minInput.removeAttribute('data-auto');
+        minInput.setAttribute('data-stage-start', cursor);
+        minInput.setAttribute('data-stage-end', nowHm);
+
+        // 行に区間表示
+        let rangeEl = row.querySelector('.detail-stage-range');
+        if (!rangeEl) {
+          rangeEl = document.createElement('span');
+          rangeEl.className = 'detail-stage-range';
+          rangeEl.style.cssText = 'display:inline-block; margin-left:6px; font-size:11px; color:#1565c0; background:#e3f2fd; border-radius:10px; padding:2px 8px; white-space:nowrap;';
+          const nameSpan = row.querySelector('span');
+          if (nameSpan && nameSpan.parentNode) nameSpan.parentNode.appendChild(rangeEl);
+          else row.appendChild(rangeEl);
+        }
+        rangeEl.textContent = `${cursor}〜${nowHm}`;
+
+        // 作業全体の終了時刻も今に伸ばす（段階計測中）
+        const endEl = document.getElementById('rec_end_time');
+        if (endEl) {
+          endEl.value = nowHm;
+          if (typeof calcTotalTime === 'function') calcTotalTime();
+        }
+
+        window._detailStageLastStamp = {
+          name: String(cb.value || '').trim(),
+          start: cursor,
+          end: nowHm,
+          mins: mins
+        };
+        window.setDetailStageCursor_(nowHm);
+
+        // 他の自動配分対象があれば再計算（手動は維持）
+        if (typeof window.refreshDetailWorkAutoMinutes === 'function') {
+          window.refreshDetailWorkAutoMinutes();
+        }
+        if (typeof window.handleCombinedWorkChange === 'function') {
+          window.handleCombinedWorkChange();
+        }
+
+        // 裏で一時保存（アラートなし）
+        if (typeof window.saveTempRecord === 'function' && !currentEditRecordId) {
+          window.saveTempRecord({ silent: true }).catch(() => {});
+        }
+      };
+
       window.toggleDetailWorkMinutes = (cb) => {
         const row = cb.closest('.detail-work-item-row');
         if (!row) return;
@@ -6499,6 +6683,18 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.getDetailNamesForWorkCrop_ = (wName, cropKey) => {
+        // 準備作業は作物キーではなく「準備×対象作業」組み合わせで詳細を持つ
+        if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName)) {
+          const target = String(window.selectedPrepTargetWork
+            || document.getElementById('prep_target_work_select')?.value
+            || '').trim();
+          if (!target) return [];
+          if (typeof window.getPrepComboDetailNames_ === 'function') {
+            return window.getPrepComboDetailNames_(wName, target);
+          }
+          return [];
+        }
+
         const wObj = window.findWorkMasterForNameAndCrop_(wName, cropKey);
         let details = [];
         if (typeof window.getDetailWorksForWorkAndCrop === 'function' && wObj) {
@@ -6526,6 +6722,12 @@ function createSignboardMarker(name, pos, icon, id) {
         return details;
       };
 
+      window.getPrepTargetWorkName_ = () => {
+        return String(window.selectedPrepTargetWork
+          || document.getElementById('prep_target_work_select')?.value
+          || '').trim();
+      };
+
       window.renderDetailWorksSection = (wName) => {
          const detailSec = document.getElementById('detailed_works_section');
          if (!detailSec) return;
@@ -6535,22 +6737,63 @@ function createSignboardMarker(name, pos, icon, id) {
             return;
          }
 
-         const crops = window.getCropsForDetailWorks();
-         const isMulti = crops.filter(c => c.key !== '__common__').length > 1;
+         const isPrep = typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName);
+         const prepTarget = isPrep ? window.getPrepTargetWorkName_() : '';
          const extraDetails = Array.isArray(window.recordExtraDetailWorks) ? window.recordExtraDetailWorks : [];
          const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
          const isAdmin = (userRole === '管理者');
          const safeWName = String(wName).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,"\\'");
 
+         // 準備作業: 対象未選択なら詳細は出さない（必須選択を促す）
+         if (isPrep && !prepTarget) {
+           detailSec.innerHTML = `
+             <div style="background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:14px 12px; color:#E65100; font-size:13px; line-height:1.5;">
+               <b>詳細作業は「準備 − 対象作業」の組み合わせごと</b>に分かれます。<br>
+               上で<strong>何の作業の準備か</strong>を選ぶと、その組み合わせ用の詳細作業が表示されます。
+             </div>`;
+           detailSec.style.display = 'block';
+           return;
+         }
+
+         const crops = isPrep
+           ? [{ key: '__prep__', label: '準備 − ' + prepTarget }]
+           : window.getCropsForDetailWorks();
+         const isMulti = !isPrep && crops.filter(c => c.key !== '__common__').length > 1;
+         const headerTitle = isPrep
+           ? `✅ 詳細作業を選択 <span style="font-size:11px; color:#2e7d32;">（準備 − ${String(prepTarget).replace(/</g,'&lt;')}）</span>`
+           : `✅ 詳細作業を選択${isMulti ? ' <span style="font-size:11px; color:#2e7d32;">（作物別）</span>' : ''}`;
+
          let dHtml = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
-            <div style="font-size:13px; font-weight:bold; color:#1a73e8;">✅ 詳細作業を選択${isMulti ? ' <span style="font-size:11px; color:#2e7d32;">（作物別）</span>' : ''}</div>
+            <div style="font-size:13px; font-weight:bold; color:#1a73e8;">${headerTitle}</div>
             <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
               <button type="button" onclick="openDetailWorkFromMasterPicker()" style="background:#ede7f6; color:#5e35b1; border:1px solid #d1c4e9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業名から追加</button>
               ${isAdmin ? `<button type="button" onclick="adminAddDetailWork('${safeWName}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px;">＋ 詳細を追加</button>` : ''}
             </div>
          </div>
+         <div id="detail_stage_panel" style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+             <div style="min-width:0;">
+               <div style="font-size:13px; font-weight:bold; color:#F57F17;">⏱ 段階計測</div>
+               <div style="font-size:12px; color:#6D4C41; margin-top:4px; line-height:1.4;">
+                 次の開始: <b id="detail_stage_cursor_label">--:--</b>
+                 <div id="detail_stage_last_label" style="display:none; margin-top:2px; color:#5D4037;"></div>
+               </div>
+             </div>
+             <div style="display:flex; gap:6px; flex-wrap:wrap;">
+               <button type="button" onclick="resetDetailStageCursorToStart()" style="background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">起点＝作業開始</button>
+               <button type="button" onclick="setDetailStageCursorToNow()" style="background:#FF9800; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">起点＝いま</button>
+             </div>
+           </div>
+           <div style="font-size:11px; color:#795548; margin-top:8px; line-height:1.45;">
+             工程が終わったら、その詳細作業の <b>⏱ ここまで</b> を押すと<br>
+             「直前の区切り〜いま」が分数として入り、自動で一時保存します。
+           </div>
+           <input type="hidden" id="rec_detail_stage_cursor" value="">
+         </div>
          <div style="font-size:11px; color:#546e7a; background:#e8eaf6; border:1px solid #c5cae9; border-radius:6px; padding:8px 10px; margin-bottom:10px; line-height:1.45;">
-           作業1件に複数作物を選べます。詳細作業は<strong>作物ごと</strong>に選択してください。<br>
+           ${isPrep
+             ? `詳細作業は<strong>準備 − ${String(prepTarget).replace(/</g,'&lt;')}</strong> の組み合わせ専用です。対象作業の詳細はここに出ません。<br>`
+             : `作業1件に複数作物を選べます。詳細作業は<strong>作物ごと</strong>に選択してください。<br>`}
            <b>開始・終了が分からないとき</b>は、チェック後に右の「分」だけ手入力すれば時間を記録できます。
          </div>`;
 
@@ -6558,20 +6801,22 @@ function createSignboardMarker(name, pos, icon, id) {
          crops.forEach((cropInfo) => {
             const cropKey = cropInfo.key;
             const cropLabel = cropInfo.label || '共通';
-            const details = window.getDetailNamesForWorkCrop_(wName, cropKey);
+            const details = isPrep
+              ? (window.getPrepComboDetailNames_(wName, prepTarget) || [])
+              : window.getDetailNamesForWorkCrop_(wName, cropKey);
             const mergedDetails = [...details];
             extraDetails.forEach(name => {
               if (name && !mergedDetails.includes(name)) mergedDetails.push(name);
             });
             if (mergedDetails.length) anyDetails = true;
 
-            const cropAttr = String(cropLabel === '共通' ? '' : cropLabel).replace(/"/g, '&quot;');
+            const cropAttr = isPrep ? '' : String(cropLabel === '共通' ? '' : cropLabel).replace(/"/g, '&quot;');
             dHtml += `<div class="detail-work-crop-block" data-crop="${cropAttr}" style="margin-bottom:12px; background:#fff; border:1px solid #c5cae9; border-radius:8px; padding:10px 12px;">`;
-            dHtml += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin-bottom:8px;">🌱 ${String(cropLabel).replace(/</g,'&lt;')} <span style="font-weight:normal; color:#888;">／ ${safeWName}</span></div>`;
+            dHtml += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin-bottom:8px;">${isPrep ? '📋' : '🌱'} ${String(cropLabel).replace(/</g,'&lt;')} <span style="font-weight:normal; color:#888;">／ ${safeWName}</span></div>`;
             dHtml += `<div style="display:flex; flex-direction:column; gap:8px;">`;
 
             if (mergedDetails.length === 0) {
-               dHtml += `<div style="font-size:12px; color:#888; padding:8px; text-align:center; background:#fafafa; border:1px dashed #90caf9; border-radius:6px;">この作物の詳細作業はまだありません</div>`;
+               dHtml += `<div style="font-size:12px; color:#888; padding:8px; text-align:center; background:#fafafa; border:1px dashed #90caf9; border-radius:6px;">${isPrep ? 'この組み合わせの詳細作業はまだありません（管理者が「＋ 詳細を追加」で登録できます）' : 'この作物の詳細作業はまだありません'}</div>`;
             }
 
             mergedDetails.forEach((d) => {
@@ -6579,7 +6824,7 @@ function createSignboardMarker(name, pos, icon, id) {
                const isExtra = extraDetails.includes(d) && !details.includes(d);
                const masterIdx = details.indexOf(d);
                const safeArg = window.escapeDetailWorkJsArg(d);
-               const idSuffix = (cropAttr || 'common') + '_' + safeVal;
+               const idSuffix = (cropAttr || (isPrep ? 'prep' : 'common')) + '_' + safeVal;
                dHtml += `<label class="checkbox-label detail-work-item-row" style="padding:10px 12px; background:#f8fbff; border:1px solid #90caf9; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;">
                   <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
                      <input type="checkbox" name="detail_work_ids" value="${safeVal}" data-crop="${cropAttr}" onchange="toggleDetailWorkMinutes(this)" style="width:18px; height:18px; flex-shrink:0;">
@@ -6587,6 +6832,7 @@ function createSignboardMarker(name, pos, icon, id) {
                      ${isExtra ? `<span style="background:#ede7f6; color:#5e35b1; font-size:10px; padding:2px 6px; border-radius:10px; flex-shrink:0;">作業名</span>` : ''}
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                     <button type="button" onclick="event.stopPropagation(); event.preventDefault(); stampDetailWorkStageUntilNow(this)" title="直前の区切り〜いまをこの工程に記録" style="background:#FF9800; color:#fff; border:none; border-radius:4px; padding:5px 8px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">⏱ ここまで</button>
                      <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
                         <input type="number" name="detail_work_min_${idSuffix}" class="detail-work-min-input" data-work="${safeVal}" data-crop="${cropAttr}" placeholder="分" min="0" style="width:64px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()" oninput="onDetailWorkMinutesInput(this)" title="開始終了が不明でも分数だけ入力できます">
                         <span style="font-size:12px; color:#666;">分</span>
@@ -6610,6 +6856,14 @@ function createSignboardMarker(name, pos, icon, id) {
 
          detailSec.innerHTML = dHtml;
          detailSec.style.display = 'block';
+         // 段階計測の起点を初期化（作業開始があればそれを使う）
+         try {
+           const start = document.getElementById('rec_start_time')?.value || '';
+           const existingCursor = document.getElementById('rec_detail_stage_cursor')?.value || '';
+           if (existingCursor) window.setDetailStageCursor_(existingCursor);
+           else if (start) window.setDetailStageCursor_(start);
+           else window.refreshDetailStagePanelUI_();
+         } catch (e) {}
       };
 
       window.findWorkMasterByName_ = (workName) => {
@@ -7110,13 +7364,8 @@ function createSignboardMarker(name, pos, icon, id) {
           box.innerHTML = '';
           return;
         }
-        if (preset != null && String(preset).trim() !== '') {
-          window.setExtraRecordOpen_('prep', true);
-        }
-        if (!window.isExtraRecordOpen_('prep')) {
-          box.style.display = 'none';
-          return;
-        }
+        // 準備作業では対象指定が必須 → パネルは常時表示
+        window.setExtraRecordOpen_('prep', true);
 
         const allWorks = Array.isArray(pdlWorkMaster) ? [...pdlWorkMaster] : [];
         allWorks.sort((a, b) => window.getWorkDisplayLabel(a).localeCompare(window.getWorkDisplayLabel(b), 'ja'));
@@ -7153,7 +7402,8 @@ function createSignboardMarker(name, pos, icon, id) {
           return wCrop === window.selectedPrepCrop;
         });
 
-        const currentVal = preset != null ? preset : (window.selectedPrepTargetWork || '');
+        const currentVal = preset != null ? String(preset).trim() : (window.selectedPrepTargetWork || '');
+        if (preset != null) window.selectedPrepTargetWork = currentVal;
 
         // --- カテゴリボタンHTML ---
         const catBtnsHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">` +
@@ -7185,7 +7435,7 @@ function createSignboardMarker(name, pos, icon, id) {
           prepChipsHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; max-height:220px; overflow-y:auto; padding:8px; background:#fff; border:1px solid #A5D6A7; border-radius:8px;">` +
             finalWorks.map(w => {
               const name = String(w.name).trim();
-              const label = name; // ★ユーザー様ご指定: カテゴリや作物を入れず「作業名だけ」をシンプルに表示！
+              const label = name;
               const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               const isSelected = (name === currentVal);
               const bg = isSelected ? '#4CAF50' : '#ffffff';
@@ -7203,15 +7453,19 @@ function createSignboardMarker(name, pos, icon, id) {
         const selectedBadge = currentVal
           ? `<div style="margin-bottom:8px; font-size:12px; color:#1B5E20; font-weight:bold; background:#C8E6C9; padding:6px 12px; border-radius:6px; display:inline-flex; align-items:center; gap:8px;">
                <span>選択中: <b>${String(currentVal).replace(/</g, '&lt;')}</b></span>
-               <button type="button" onclick="onPrepTargetWorkChange('')" style="background:transparent; border:none; color:#2E7D32; font-weight:bold; cursor:pointer; font-size:14px; padding:0 4px;">✕ 解除</button>
+               <button type="button" onclick="onPrepTargetWorkChange('')" style="background:transparent; border:none; color:#2E7D32; font-weight:bold; cursor:pointer; font-size:14px; padding:0 4px;">✕ 変更</button>
              </div>`
-          : '';
+          : `<div style="margin-bottom:8px; font-size:12px; color:#B71C1C; font-weight:bold; background:#FFEBEE; border:1px solid #EF9A9A; padding:8px 12px; border-radius:6px;">
+               ⚠ 準備対象の作業を必ず選んでください（未選択では保存できません）
+             </div>`;
 
         box.style.display = 'block';
-        box.style.cssText = 'background:#F1F8E9; border:1px solid #C8E6C9; border-radius:10px; padding:12px; margin-bottom:15px;';
+        box.style.cssText = 'background:#F1F8E9; border:2px solid #66BB6A; border-radius:10px; padding:12px; margin-bottom:15px;';
         box.innerHTML = `
-          <div style="font-weight:bold; color:#2E7D32; margin-bottom:6px; font-size:14px; display:flex; align-items:center; gap:6px;">
-            📋 何の作業の準備ですか？ <span style="font-size:11px; font-weight:normal; color:#4CAF50;">（段階的に絞り込み選択）</span>
+          <div style="font-weight:bold; color:#2E7D32; margin-bottom:6px; font-size:14px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            📋 何の作業の準備ですか？
+            <span style="font-size:11px; font-weight:bold; color:#fff; background:#C62828; padding:2px 8px; border-radius:10px;">必須</span>
+            <span style="font-size:11px; font-weight:normal; color:#4CAF50;">（段階的に絞り込み選択）</span>
           </div>
           <div style="font-size:11px; color:#555; margin-bottom:4px; font-weight:bold;">1. カテゴリを選択:</div>
           ${catBtnsHTML}
@@ -7220,11 +7474,60 @@ function createSignboardMarker(name, pos, icon, id) {
           <div style="font-size:11px; color:#555; margin-bottom:4px; font-weight:bold;">3. 準備対象の作業名をタップ:</div>
           ${selectedBadge}
           ${prepChipsHTML}
+          <input type="hidden" id="prep_target_work_select" value="${String(currentVal).replace(/"/g, '&quot;')}">
         `;
+      };
+
+      /** 準備作業マスタから「準備×対象作業」組み合わせの詳細作業を取得 */
+      window.getPrepComboDetailNames_ = (prepWorkName, targetWorkName) => {
+        const target = String(targetWorkName || '').trim();
+        if (!target) return [];
+        const prepMaster = (typeof window.findWorkMasterByName_ === 'function')
+          ? window.findWorkMasterByName_(prepWorkName)
+          : (pdlWorkMaster || []).find(w => String(w.name || '').trim() === String(prepWorkName || '').trim());
+        if (!prepMaster) return [];
+
+        const names = [];
+        const pushList = (str) => {
+          window.parseDetailWorksList(str || '').forEach(n => {
+            if (n && names.indexOf(n) < 0) names.push(n);
+          });
+        };
+
+        const cd = prepMaster.cropDetails && typeof prepMaster.cropDetails === 'object'
+          ? prepMaster.cropDetails
+          : null;
+        if (cd) {
+          // キー候補: 対象作業名 / 準備-対象 / 準備−対象
+          const keys = [
+            target,
+            '準備-' + target,
+            '準備−' + target,
+            '準備ー' + target
+          ];
+          keys.forEach(k => {
+            if (cd[k] != null) pushList(cd[k]);
+          });
+          // 共通（準備全般）も足す
+          if (cd['__common__'] != null) pushList(cd['__common__']);
+          if (cd['共通'] != null) pushList(cd['共通']);
+        }
+
+        // cropDetails が無い（または空の）旧データだけ: detailWorks を共通として使う
+        // ※ 他組み合わせ用のキーはあるが当該対象が未登録のときは混ぜない
+        const hasAnyCropDetailKey = cd && Object.keys(cd).some(k => {
+          const kk = String(k || '');
+          return kk && kk !== '__common__' && kk !== '共通' && String(cd[k] || '').trim();
+        });
+        if (!names.length && !hasAnyCropDetailKey && prepMaster.detailWorks) {
+          pushList(prepMaster.detailWorks);
+        }
+        return names;
       };
 
       window.onPrepTargetWorkChange = (val) => {
         const targetName = String(val || '').trim();
+        const prevTarget = String(window.selectedPrepTargetWork || '').trim();
         window.selectedPrepTargetWork = targetName;
 
         // チップ表記およびハイライト更新
@@ -7232,19 +7535,22 @@ function createSignboardMarker(name, pos, icon, id) {
           window.refreshPrepTargetWorkSection(targetName);
         }
 
-        if (!targetName) return;
-
-        const prepLabel = `${targetName}（準備対象）`;
-        if (typeof window.addDetailWorksFromMasterNames === 'function') {
-          window.addDetailWorksFromMasterNames([prepLabel]);
+        // 前の組み合わせで足した一時詳細はクリア（組み合わせ別に分ける）
+        if (Array.isArray(window.recordExtraDetailWorks) && window.recordExtraDetailWorks.length) {
+          window.recordExtraDetailWorks = [];
         }
 
-        const targetMaster = window.findWorkMasterByName_(targetName);
-        if (targetMaster && targetMaster.detailWorks) {
-          const details = window.parseDetailWorksList(targetMaster.detailWorks);
-          if (details.length && typeof window.addDetailWorksFromMasterNames === 'function') {
-            window.addDetailWorksFromMasterNames(details);
-          }
+        const prepName = document.getElementById('rec_work_name')?.value || '準備作業';
+        // 詳細作業を「準備−対象」組み合わせで再描画
+        if (typeof window.renderDetailWorksSection === 'function') {
+          window.renderDetailWorksSection(prepName);
+        }
+
+        if (!targetName) return;
+
+        // 組み合わせ専用の詳細が無い場合の案内は render 側
+        if (prevTarget !== targetName && typeof window.saveTempRecord === 'function' && !currentEditRecordId) {
+          try { window.saveTempRecord({ silent: true }); } catch (e) {}
         }
       };
 
@@ -7485,6 +7791,12 @@ function createSignboardMarker(name, pos, icon, id) {
         if (prev !== name) {
           window._extraRecordOpen = {};
           window._extraRecordWorkName = name;
+          // 作業切替時は準備対象をリセット（記録復元時は別途セット）
+          window.selectedPrepTargetWork = '';
+        }
+        // 準備作業は対象指定が必須なので、パネルを必ず開く
+        if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(name)) {
+          window.setExtraRecordOpen_('prep', true);
         }
         // 専用記録モード／復元時の自動オープン
         const session = window._specialWorkSession;
@@ -8040,6 +8352,35 @@ function createSignboardMarker(name, pos, icon, id) {
           if (m) m.remove();
       };
 
+      /** 管理者編集用に、いま画面で編集対象の詳細リストを取得（準備×対象なら組み合わせ別） */
+      window.getAdminEditableDetailNames_ = (wName) => {
+          const name = String(wName || '').trim();
+          if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(name)) {
+              const target = typeof window.getPrepTargetWorkName_ === 'function' ? window.getPrepTargetWorkName_() : '';
+              if (!target) return [];
+              // 組み合わせキー本体のみ（共通は管理画面で混ぜない）
+              const prepMaster = (typeof window.findWorkMasterByName_ === 'function')
+                  ? window.findWorkMasterByName_(name)
+                  : (pdlWorkMaster || []).find(w => String(w.name || '').trim() === name);
+              const cd = prepMaster && prepMaster.cropDetails && typeof prepMaster.cropDetails === 'object'
+                  ? prepMaster.cropDetails : null;
+              if (cd) {
+                  const raw = cd[target] != null ? cd[target]
+                      : (cd['準備-' + target] != null ? cd['準備-' + target]
+                      : (cd['準備−' + target] != null ? cd['準備−' + target]
+                      : (cd['準備ー' + target] != null ? cd['準備ー' + target] : '')));
+                  if (raw) return window.parseDetailWorksList(raw);
+              }
+              // 旧データで cropDetails が無いときのみ detailWorks 全体
+              if (!cd && prepMaster && prepMaster.detailWorks) {
+                  return window.parseDetailWorksList(prepMaster.detailWorks);
+              }
+              return [];
+          }
+          const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === name);
+          return window.parseDetailWorksList(workData ? workData.detailWorks : '');
+      };
+
       window.openDetailWorkEditorModal = (mode, wName, index = -1) => {
           const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
           if (userRole !== '管理者') {
@@ -8047,19 +8388,27 @@ function createSignboardMarker(name, pos, icon, id) {
               return;
           }
           window.closeDetailWorkEditorModal();
-          const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === String(wName || '').trim());
-          let details = window.parseDetailWorksList(workData ? workData.detailWorks : '');
+          const isPrep = typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName);
+          const prepTarget = isPrep && typeof window.getPrepTargetWorkName_ === 'function' ? window.getPrepTargetWorkName_() : '';
+          if (isPrep && !prepTarget) {
+              if (typeof customAlert === 'function') customAlert('準備対象の作業を選んでから、詳細作業を追加してください。');
+              return;
+          }
+          let details = window.getAdminEditableDetailNames_(wName);
           const isEdit = (mode === 'edit');
           const targetVal = isEdit && index >= 0 && index < details.length ? details[index] : '';
           const title = isEdit ? '詳細作業名を編集' : '新しい詳細作業を追加';
           const safeNameAttr = String(wName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const scopeLabel = isPrep
+              ? `準備 − ${prepTarget}`
+              : String(wName || '');
 
           const modal = document.createElement('div');
           modal.id = 'detailWorkEditorModal';
           modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12200; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
           modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:400px; border-radius:10px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
               <h3 style="margin:0 0 8px; font-size:16px; color:#1565c0;">${title}</h3>
-              <div style="font-size:12px; color:#666; margin-bottom:12px;">対象作業: <b>${String(wName || '').replace(/</g, '&lt;')}</b></div>
+              <div style="font-size:12px; color:#666; margin-bottom:12px;">登録先: <b>${String(scopeLabel).replace(/</g, '&lt;')}</b>${isPrep ? `<div style="margin-top:4px; color:#2E7D32;">（準備作業「${String(wName || '').replace(/</g,'&lt;')}」の組み合わせ別）</div>` : ''}</div>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業名</label>
               <input type="text" id="dw_edit_name_input" value="${String(targetVal).replace(/"/g, '&quot;')}" placeholder="例: 苗の選別" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:14px; font-size:15px;" onkeydown="if(event.key==='Enter') submitDetailWorkEditor('${mode}', '${safeNameAttr}', ${index})">
               <div style="display:flex; gap:8px;">
@@ -8082,8 +8431,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof customAlert === 'function') customAlert('詳細作業名を入力してください。');
               return;
           }
-          const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === String(wName || '').trim());
-          let details = window.parseDetailWorksList(workData ? workData.detailWorks : '');
+          let details = window.getAdminEditableDetailNames_(wName);
 
           if (mode === 'add') {
               if (details.includes(newVal)) {
@@ -8121,8 +8469,7 @@ function createSignboardMarker(name, pos, icon, id) {
               return;
           }
 
-          const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
-          let details = window.parseDetailWorksList(workData ? workData.detailWorks : '');
+          let details = window.getAdminEditableDetailNames_(wName);
           if (index < 0 || index >= details.length) return;
 
           const targetVal = details[index];
@@ -8133,31 +8480,62 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.saveAdminDetailWorks = async function(wName, newDetailsArray, actionLabel) {
-          const newDetailWorksStr = newDetailsArray.join(', ');
+          const newDetailWorksStr = (newDetailsArray || []).join(', ');
           let workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
+          const isPrep = typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName);
+          const prepTarget = isPrep && typeof window.getPrepTargetWorkName_ === 'function'
+              ? window.getPrepTargetWorkName_() : '';
+
+          if (isPrep && !prepTarget) {
+              if (typeof customAlert === 'function') customAlert('準備対象の作業を選んでから詳細作業を保存してください。');
+              return;
+          }
 
           if (!workData) {
               workData = {
                   name: wName,
-                  category: '圃場作業',
+                  category: isPrep ? '準備作業' : '圃場作業',
                   cropName: '',
-                  detailWorks: newDetailWorksStr
+                  detailWorks: isPrep ? '' : newDetailWorksStr,
+                  cropDetails: isPrep ? { [prepTarget]: newDetailWorksStr } : null
               };
               if (!Array.isArray(pdlWorkMaster)) pdlWorkMaster = [];
               pdlWorkMaster.push(workData);
+          } else if (isPrep) {
+              // 組み合わせ別に cropDetails[対象作業名] へ保存（対象作業の詳細は混ぜない）
+              const cd = (workData.cropDetails && typeof workData.cropDetails === 'object')
+                  ? { ...workData.cropDetails } : {};
+              // 旧キー表記があれば整理して対象名キーに統一
+              ['準備-' + prepTarget, '準備−' + prepTarget, '準備ー' + prepTarget].forEach(k => {
+                  if (cd[k] != null && cd[prepTarget] == null) cd[prepTarget] = cd[k];
+                  delete cd[k];
+              });
+              cd[prepTarget] = newDetailWorksStr;
+              workData.cropDetails = cd;
           } else {
               workData.detailWorks = newDetailWorksStr;
           }
 
           try {
+              const newData = {
+                  name: workData.name,
+                  category: workData.category || (isPrep ? '準備作業' : '圃場作業'),
+                  cropName: workData.cropName || '',
+                  // 準備の組み合わせ編集では detailWorks（共通列）は触らない
+                  detailWorks: isPrep
+                      ? String(workData.detailWorks || '')
+                      : newDetailWorksStr
+              };
+              // 作物別/組み合わせ別詳細は、存在するときだけ送る（未指定でサーバが消さないよう GAS 側も対応済）
+              if (workData.cropDetails && typeof workData.cropDetails === 'object') {
+                  newData.cropDetails = workData.cropDetails;
+              } else if (!isPrep) {
+                  // 非準備で cropDetails 無し → 送らない
+              }
+
               const valueObj = {
                   originalName: wName,
-                  newData: {
-                      name: workData.name,
-                      category: workData.category || '圃場作業',
-                      cropName: workData.cropName || '',
-                      detailWorks: newDetailWorksStr
-                  }
+                  newData: newData
               };
 
               const updatedList = await callGAS('manageMaster', {
@@ -8175,7 +8553,10 @@ function createSignboardMarker(name, pos, icon, id) {
               localStorage.removeItem('pMapAdminInitData');
 
               window.renderDetailWorksSection(wName);
-              if (typeof customAlert === 'function') customAlert(`✅ 詳細作業を${actionLabel}しました！`);
+              if (typeof customAlert === 'function') {
+                  const scope = isPrep ? `（準備 − ${prepTarget}）` : '';
+                  customAlert(`✅ 詳細作業を${actionLabel}しました！${scope}`);
+              }
           } catch (e) {
               console.warn('saveAdminDetailWorks Error:', e);
               window.renderDetailWorksSection(wName);
@@ -9010,19 +9391,26 @@ function createSignboardMarker(name, pos, icon, id) {
                 }
                 if (target && typeof window.refreshPrepTargetWorkSection === 'function') {
                   window.setExtraRecordOpen_('prep', true);
+                  window.selectedPrepTargetWork = String(target).trim();
                   window.refreshPrepTargetWorkSection(target);
+                  const wNameNow = document.getElementById('rec_work_name')?.value || '';
+                  if (wNameNow && typeof window.renderDetailWorksSection === 'function') {
+                    window.renderDetailWorksSection(wNameNow);
+                  }
+                  if (d.detailedWorks && typeof window.restoreDetailedWorksWithMinutes === 'function') {
+                    window.restoreDetailedWorksWithMinutes(d.detailedWorks);
+                  }
                   if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
                 }
               }, 130);
-            }
-            
-            if (d.detailedWorks) {
+            } else if (d.detailedWorks) {
                setTimeout(() => {
                   if (typeof window.restoreDetailedWorksWithMinutes === 'function') {
                      window.restoreDetailedWorksWithMinutes(d.detailedWorks);
                   }
                }, 50);
             }
+            
            // ★追加：使ったもの（農機・資材）のチェックと数値を復元する処理
              if (d.usedMaterials) {
                 setTimeout(() => {
@@ -9178,12 +9566,16 @@ function createSignboardMarker(name, pos, icon, id) {
           }
       }
 
-      window.saveTempRecord = async () => {
+      window.saveTempRecord = async (opts) => {
+          opts = opts || {};
+          const silent = !!opts.silent;
           const container = document.getElementById('rightPanelContent');
           if (!container) return;
           if (currentEditRecordId) {
-            if (typeof customAlert !== 'undefined') customAlert('編集中の記録は一時保存できません。更新するか、新規登録画面で一時保存してください。');
-            else alert('編集中の記録は一時保存できません。');
+            if (!silent) {
+              if (typeof customAlert !== 'undefined') customAlert('編集中の記録は一時保存できません。更新するか、新規登録画面で一時保存してください。');
+              else alert('編集中の記録は一時保存できません。');
+            }
             return;
           }
           const inputs = container.querySelectorAll('input, select, textarea');
@@ -9203,7 +9595,13 @@ function createSignboardMarker(name, pos, icon, id) {
                   name: el.name,
                   value: el.value,
                   type: el.type,
-                  checked: el.checked
+                  checked: el.checked,
+                  dataset: {
+                    manual: el.getAttribute('data-manual') || '',
+                    auto: el.getAttribute('data-auto') || '',
+                    stageStart: el.getAttribute('data-stage-start') || '',
+                    stageEnd: el.getAttribute('data-stage-end') || ''
+                  }
               });
           });
           const now = new Date();
@@ -9219,21 +9617,37 @@ function createSignboardMarker(name, pos, icon, id) {
               selectedPolyIds: Array.isArray(selectedPolyIds) ? selectedPolyIds.map(String) : [],
               savedAt: savedAt,
               savedAtMs: savedAtMs,
-              userName: currentUser || localStorage.getItem('passionMapUserName') || ''
+              userName: currentUser || localStorage.getItem('passionMapUserName') || '',
+              detailStageCursor: window.getDetailStageCursor_ ? window.getDetailStageCursor_() : '',
+              detailStageLastStamp: window._detailStageLastStamp || null
           };
           // まず端末に保存して即座に完了表示（クラウド待ちでボタンが無反応に見えないようにする）
           try {
               setLocalTempWorkRecord_(payload);
           } catch (e) {
-              if (typeof customAlert !== 'undefined') customAlert('一時保存に失敗しました: ' + (e.message || e));
-              else alert('一時保存に失敗しました: ' + (e.message || e));
+              if (!silent) {
+                if (typeof customAlert !== 'undefined') customAlert('一時保存に失敗しました: ' + (e.message || e));
+                else alert('一時保存に失敗しました: ' + (e.message || e));
+              }
               return;
           }
           upsertTempLoadButton_(polyName, savedAt);
-          if (typeof customAlert !== 'undefined') {
-              customAlert("✅ 入力内容を一時保存しました！\n（他端末への同期をバックグラウンドで実行中）");
+          if (!silent) {
+            if (typeof customAlert !== 'undefined') {
+                customAlert("✅ 入力内容を一時保存しました！\n（他端末への同期をバックグラウンドで実行中）");
+            } else {
+                alert("✅ 入力内容を一時保存しました！");
+            }
           } else {
-              alert("✅ 入力内容を一時保存しました！");
+            // 段階計測時は軽いフィードバック
+            const hint = document.getElementById('detail_stage_last_label');
+            if (hint) {
+              const prev = hint.textContent || '';
+              if (prev && !prev.includes('一時保存済')) {
+                hint.textContent = prev + ' ・一時保存済';
+                hint.style.display = 'block';
+              }
+            }
           }
 
           const userId = getTempWorkRecordUserId_();
@@ -9305,6 +9719,13 @@ function createSignboardMarker(name, pos, icon, id) {
                   } else {
                       el.value = savedEl.value;
                   }
+                  // 段階計測の手動・区間属性も戻す
+                  if (savedEl.dataset) {
+                    if (savedEl.dataset.manual) el.setAttribute('data-manual', savedEl.dataset.manual);
+                    if (savedEl.dataset.auto) el.setAttribute('data-auto', savedEl.dataset.auto);
+                    if (savedEl.dataset.stageStart) el.setAttribute('data-stage-start', savedEl.dataset.stageStart);
+                    if (savedEl.dataset.stageEnd) el.setAttribute('data-stage-end', savedEl.dataset.stageEnd);
+                  }
                   // イベント発火して関連UIを更新
                   try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
               }
@@ -9318,6 +9739,58 @@ function createSignboardMarker(name, pos, icon, id) {
           } else if (typeof handleWorkNameChange === 'function' && document.getElementById('rec_work_name')) {
               try { handleWorkNameChange(); } catch (e) {}
           }
+
+          // 詳細作業のチェック・分数をもう一度当てる（作業名変更で再描画された場合）
+          setTimeout(() => {
+            (parsed.data || []).forEach(savedEl => {
+              if (!savedEl) return;
+              let el = savedEl.id ? document.getElementById(savedEl.id) : null;
+              if (!el && savedEl.name) {
+                const els = document.getElementsByName(savedEl.name);
+                for (let e of els) {
+                  if (String(e.value) === String(savedEl.value)) { el = e; break; }
+                }
+              }
+              if (!el) return;
+              if (el.type === 'checkbox' || el.type === 'radio') {
+                el.checked = !!savedEl.checked;
+                if (el.name === 'detail_work_ids' && el.checked && typeof toggleDetailWorkMinutes === 'function') {
+                  toggleDetailWorkMinutes(el);
+                }
+              } else {
+                el.value = savedEl.value != null ? savedEl.value : el.value;
+              }
+              if (savedEl.dataset) {
+                if (savedEl.dataset.manual) el.setAttribute('data-manual', savedEl.dataset.manual);
+                if (savedEl.dataset.auto) el.setAttribute('data-auto', savedEl.dataset.auto);
+                if (savedEl.dataset.stageStart) el.setAttribute('data-stage-start', savedEl.dataset.stageStart);
+                if (savedEl.dataset.stageEnd) el.setAttribute('data-stage-end', savedEl.dataset.stageEnd);
+                if (savedEl.dataset.stageStart && savedEl.dataset.stageEnd) {
+                  const row = el.closest('.detail-work-item-row');
+                  if (row) {
+                    let rangeEl = row.querySelector('.detail-stage-range');
+                    if (!rangeEl) {
+                      rangeEl = document.createElement('span');
+                      rangeEl.className = 'detail-stage-range';
+                      rangeEl.style.cssText = 'display:inline-block; margin-left:6px; font-size:11px; color:#1565c0; background:#e3f2fd; border-radius:10px; padding:2px 8px; white-space:nowrap;';
+                      const nameSpan = row.querySelector('span');
+                      if (nameSpan && nameSpan.parentNode) nameSpan.parentNode.appendChild(rangeEl);
+                    }
+                    rangeEl.textContent = `${savedEl.dataset.stageStart}〜${savedEl.dataset.stageEnd}`;
+                  }
+                }
+              }
+            });
+            if (parsed.detailStageCursor && typeof window.setDetailStageCursor_ === 'function') {
+              window.setDetailStageCursor_(parsed.detailStageCursor);
+            }
+            if (parsed.detailStageLastStamp) {
+              window._detailStageLastStamp = parsed.detailStageLastStamp;
+              if (typeof window.refreshDetailStagePanelUI_ === 'function') window.refreshDetailStagePanelUI_();
+            }
+            if (typeof calcTotalTime === 'function') calcTotalTime();
+          }, 80);
+
           if (typeof calcTotalTime === 'function') calcTotalTime();
           if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
           if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
@@ -9603,6 +10076,21 @@ function createSignboardMarker(name, pos, icon, id) {
         // 進捗状況は画面から撤去されたため必須チェックを行わない
         const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
         const isEditBtn = !!currentEditRecordId;
+
+        // 準備作業: 対象作業の選択は必須
+        if (currentRecordType === 'work') {
+          const prepCheckName = document.getElementById('rec_work_name')?.value || '';
+          if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(prepCheckName)) {
+            const prepMust = (typeof window.getPrepTargetWorkName_ === 'function')
+              ? window.getPrepTargetWorkName_()
+              : (document.getElementById('prep_target_work_select')?.value || window.selectedPrepTargetWork || '');
+            if (!String(prepMust || '').trim()) {
+              customAlert('準備作業では「何の作業の準備か」を必ず選択してください。');
+              return;
+            }
+          }
+        }
+
         if (btn) { btn.disabled = true; btn.innerText = "反映中..."; }
 
         try {

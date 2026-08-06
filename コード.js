@@ -1532,8 +1532,11 @@ function applyWorkMasterValuesToRow_(rowVals, headers, value) {
     rowVals[idxAlias] = aliasVal;
   }
   if (idxCropDetails >= 0) {
-    const cd = value && value.cropDetails ? JSON.stringify(value.cropDetails) : '';
-    rowVals[idxCropDetails] = cd;
+    // cropDetails 未指定時は既存セルを消さない（詳細作業だけ更新するケース）
+    if (value && Object.prototype.hasOwnProperty.call(value, 'cropDetails')) {
+      const cd = value.cropDetails ? JSON.stringify(value.cropDetails) : '';
+      rowVals[idxCropDetails] = cd;
+    }
   }
   return rowVals;
 }
