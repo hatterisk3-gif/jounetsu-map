@@ -2913,9 +2913,10 @@ function createSignboardMarker(name, pos, icon, id) {
                 const recordYmd = phWorkDate || phDate;
 
                 if (recordYmd === normTarget) {
-                  const endTime = window.normalizeTimeHm(ph.data && ph.data.endTime);
-                  if (endTime && window.isTimeHmLater(endTime, latestEnd)) {
-                    latestEnd = endTime;
+                  // endTime があれば endTime、無ければ startTime を作業完了時刻として評価
+                  const recTime = window.normalizeTimeHm((ph.data && ph.data.endTime) || (ph.data && ph.data.startTime));
+                  if (recTime && window.isTimeHmLater(recTime, latestEnd)) {
+                    latestEnd = recTime;
                     const wName = String((ph.data && ph.data.workName) || '').trim();
                     latestName = wName;
                     latestIsRest = wName.includes('休憩');
@@ -3529,6 +3530,12 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
+      window.isFieldCategory = (cat) => {
+        const c = String(cat || '').trim();
+        if (!c) return false;
+        return c.includes('圃場');
+      };
+
       window.refreshFieldTargetUI = () => {
         const box = document.getElementById('field_target_section');
         if (!box) return;
@@ -3536,18 +3543,12 @@ function createSignboardMarker(name, pos, icon, id) {
         const cat = catEl ? catEl.value : '';
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
         const isRest = wName.includes('休憩');
-        // 起点が圃場なら選択状態を維持
-        if (activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker) {
-          const ids = (selectedPolyIds || []).map(String);
-          if (!ids.includes(String(activePolyId))) {
-            selectedPolyIds = [String(activePolyId)].concat(ids);
-          }
-        }
-        const hasField = (selectedPolyIds && selectedPolyIds.length > 0) ||
-          (activePolyId && loadedPolygons[activePolyId] && !loadedPolygons[activePolyId].isMarker);
-        // 圃場作業・すべて・休憩・既に圃場選択あり → 表示（消えて「未選択」に見えないように）
-        const show = cat === '圃場作業' || cat === 'すべて' || isRest || hasField;
+
+        // 🌟 ユーザー様ご指定: 「圃場」のつくカテゴリ（例: 圃場作業 など）以外は圃場を表示・選択しない
+        const isFieldCat = window.isFieldCategory(cat);
+        const show = isFieldCat;
         box.style.display = show ? 'block' : 'none';
+
         if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
         if (typeof window.refreshLastWorkFieldButton === 'function') window.refreshLastWorkFieldButton();
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
@@ -7326,6 +7327,11 @@ function createSignboardMarker(name, pos, icon, id) {
           window.handleWorkNameChange();
         }
 
+        // 🌟 前の準備作業の開始時間と一致・重複するのを防ぎ、最新の終了時刻または現在時刻をセット
+        if (typeof window.matchStartTimeToPreviousEnd === 'function') {
+          window.matchStartTimeToPreviousEnd();
+        }
+
         window.dismissPrepNextSuggestion();
       };
 
@@ -9550,6 +9556,11 @@ function createSignboardMarker(name, pos, icon, id) {
 
       async function submitRecord() {
         // 紐づけ先の解決（圃場作業のときだけ圃場必須）
+        const catVal = document.getElementById('rec_work_category')?.value || '';
+        // 🌟 ユーザー様ご指定: カテゴリに「圃場」が含まれない場合は圃場を紐付け・記録しない（勝手な畑入力を防止）
+        if (currentRecordType === 'work' && typeof window.isFieldCategory === 'function' && !window.isFieldCategory(catVal)) {
+          selectedPolyIds = [];
+        }
         let targetIds = [...selectedPolyIds].filter(id => id && loadedPolygons[id]);
         // 技術上の保存先として看板を借りただけか（場所名に看板名を出さない）
         let technicalFallbackParent = false;
@@ -9583,23 +9594,9 @@ function createSignboardMarker(name, pos, icon, id) {
               technicalFallbackParent = true;
             }
           } else {
-            const catHint = (document.getElementById('rec_work_category')?.value || '').trim();
-            const preferHints = [];
-            if (catHint.includes('倉庫')) preferHints.push('倉庫');
-            if (catHint.includes('事務')) preferHints.push('事務所', '事務');
-            if (catHint.includes('整備') || catHint.includes('保全')) preferHints.push('整備', '農機具', '車両');
-            preferHints.push('倉庫', '事務所', 'パックセンター', '研究所');
-            let signId = findMarkerBySignHints_(preferHints);
-            if (!signId) {
-              signId = Object.keys(loadedPolygons).find(id => loadedPolygons[id] && loadedPolygons[id].isMarker);
-            }
-            if (signId) {
-              targetIds = [signId];
-              technicalFallbackParent = true;
-            } else {
-              customAlert("保存先となる看板が見つかりません。地図に看板を登録するか、拠点看板から記録を開いてください。");
-              return;
-            }
+            // ★ユーザー様ご指定: 圃場未選択時に勝手に近くの看板の場所を検索・記録するのをストップ
+            targetIds = [];
+            technicalFallbackParent = false;
           }
         }
         selectedPolyIds = targetIds;
@@ -9901,7 +9898,7 @@ function createSignboardMarker(name, pos, icon, id) {
               nameStr = selectedPolyIds
                 .map(i => loadedPolygons[i] ? loadedPolygons[i].name : '')
                 .filter(Boolean)
-                .join(', ');
+                .join(', ') || '未選択';
             }
           }
           data.multiFieldNames = fieldNames.join(', ');

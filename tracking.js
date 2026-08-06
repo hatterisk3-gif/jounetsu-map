@@ -946,8 +946,9 @@
         if (!key || key !== targetKey) return;
         const s = timeToMins(data.startTime);
         let e = timeToMins(data.endTime);
-        if (s == null || e == null) return;
-        if (e <= s) e += 24 * 60;
+        if (s == null) return;
+        if (e == null) e = s; // endTime が空の場合も開始時間と同刻として収集に含める
+        if (e <= s && data.endTime) e += 24 * 60;
         const recId = String(ph.id || data.recordId || '').trim();
         const isLocal = !recId || recId.indexOf('local_') === 0;
         const breakMins = Math.max(0, parseInt(data.breakMins, 10) || 0);
@@ -2268,11 +2269,21 @@
     const workDateForRecords = normalizeDateKey(workDateForLunch || outDate) || outDate;
     const lastWorkEnd = getLastWorkEndTime(user, workDateForRecords) || (typeof window.getLatestEndTimeForDate === 'function' ? (window.getLatestEndTimeForDate(workDateForRecords) || '') : '');
 
-    let outTime = options.defaultTime || (pending && pending.clockOutTime) || '';
-    if (!outTime) {
-      if (lastWorkEnd) {
+    let outTime = options.defaultTime || '';
+    if (!outTime && pending && pending.clockOutTime) {
+      outTime = pending.clockOutTime;
+    }
+    // 🌟 実際の作業記録の最遅終了時間(lastWorkEnd)が存在し、それが古い outTime より遅い場合は自動最新化！
+    if (lastWorkEnd) {
+      const isLater = (typeof window.isTimeHmLater === 'function')
+        ? window.isTimeHmLater(lastWorkEnd, outTime)
+        : (lastWorkEnd > outTime);
+      if (!outTime || isLater) {
         outTime = lastWorkEnd;
-      } else if (isForgot) {
+      }
+    }
+    if (!outTime) {
+      if (isForgot) {
         outTime = clockInTime;
       } else {
         outTime = dt.time;
