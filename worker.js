@@ -4485,12 +4485,14 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.normalizeWorkCropKey = (val) => {
         const s = String(val || '').trim();
-        return s || '__common__';
+        if (!s || s === '__common__' || s.toLowerCase() === 'common' || s === '共通') return '__common__';
+        return s;
       };
 
       window.getWorkCropLabel = (val) => {
         const s = String(val || '').trim();
-        return s || '共通';
+        if (!s || s === '__common__' || s.toLowerCase() === 'common') return '共通';
+        return s;
       };
 
       window.getBaseWorksForPoly = (p) => {
@@ -7139,14 +7141,15 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const crops = ['すべて'];
         catFilteredWorks.forEach(w => {
-          const crop = String(w.cropName || '共通').trim();
+          const crop = window.getWorkCropLabel(w.cropName);
           if (crop && !crops.includes(crop)) crops.push(crop);
         });
 
         // 3. 選択中作物による最終作業名の絞り込み
         const finalWorks = catFilteredWorks.filter(w => {
           if (window.selectedPrepCrop === 'すべて') return true;
-          return String(w.cropName || '共通').trim() === window.selectedPrepCrop;
+          const wCrop = window.getWorkCropLabel(w.cropName);
+          return wCrop === window.selectedPrepCrop;
         });
 
         const currentVal = preset != null ? preset : (window.selectedPrepTargetWork || '');
@@ -7181,7 +7184,7 @@ function createSignboardMarker(name, pos, icon, id) {
           prepChipsHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; max-height:220px; overflow-y:auto; padding:8px; background:#fff; border:1px solid #A5D6A7; border-radius:8px;">` +
             finalWorks.map(w => {
               const name = String(w.name).trim();
-              const label = window.getWorkDisplayLabel(w);
+              const label = name; // ★ユーザー様ご指定: カテゴリや作物を入れず「作業名だけ」をシンプルに表示！
               const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               const isSelected = (name === currentVal);
               const bg = isSelected ? '#4CAF50' : '#ffffff';
