@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>バトルポータル — 情熱MAP</title>
+  <link rel="apple-touch-icon" href="icon_index.png" />
+  <link rel="icon" href="icon_index.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #eef6ff;
+      --muted: #8fa8c0;
+      --panel: rgba(6, 16, 28, 0.78);
+      --accent: #ff8a18;
+      --cyan: #2ee6ff;
+      --farm: #6fbf3a;
+      --drone: #1e90d6;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: "Zen Kaku Gothic New", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 90% 55% at 50% -10%, rgba(255, 138, 24, 0.22), transparent 55%),
+        radial-gradient(ellipse 70% 45% at 100% 80%, rgba(46, 230, 255, 0.12), transparent 50%),
+        radial-gradient(ellipse 50% 40% at 0% 70%, rgba(111, 191, 58, 0.1), transparent 45%),
+        linear-gradient(165deg, #07101a 0%, #102033 45%, #0a1522 100%);
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 16px 40px;
+      min-height: 100vh;
+    }
+    .stage {
+      width: min(440px, 100%);
+      position: relative;
+    }
+    .brand {
+      font-family: Orbitron, sans-serif;
+      font-size: clamp(1.7rem, 7vw, 2.35rem);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin: 0 0 8px;
+      text-align: center;
+      color: #fff;
+      text-shadow: 0 0 28px rgba(255, 138, 24, 0.35);
+    }
+    .brand em {
+      font-style: normal;
+      color: var(--accent);
+    }
+    .tagline {
+      text-align: center;
+      margin: 0 0 28px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+    .game-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .game {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      border-radius: 14px;
+      padding: 18px 18px 16px;
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+      transition: transform 0.12s, border-color 0.15s, box-shadow 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .game::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 5px;
+      background: var(--tone, var(--accent));
+    }
+    .game:active { transform: scale(0.98); }
+    .game.farm { --tone: var(--farm); }
+    .game.drone { --tone: var(--drone); }
+    .game:hover {
+      border-color: color-mix(in srgb, var(--tone) 55%, transparent);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in srgb, var(--tone) 25%, transparent);
+    }
+    .game-kicker {
+      font-family: Orbitron, sans-serif;
+      font-size: 0.68rem;
+      letter-spacing: 0.14em;
+      color: var(--tone);
+      margin-bottom: 6px;
+    }
+    .game-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin: 0 0 6px;
+    }
+    .game-desc {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .nav-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .nav-link {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 12px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .nav-link:active { opacity: 0.8; }
+    .nav-link.primary {
+      color: var(--cyan);
+      border-color: rgba(46, 230, 255, 0.28);
+    }
+    .reload {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-size: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+  </style>
+</head>
+<body>
+  <a href="javascript:location.reload()" class="reload" title="画面を更新">🔄</a>
+
+  <div class="stage">
+    <h1 class="brand">情熱MAP <em>BATTLE</em></h1>
+    <p class="tagline">バトルポータル — 遊ぶゲームを選んでください</p>
+
+    <div class="game-list">
+      <a class="game farm" href="farm-skill-battle.html">
+        <div class="game-kicker">FARM SKILL</div>
+        <h2 class="game-title">⚔️ 農技バトル</h2>
+        <p class="game-desc">作業スキルを武器に戦うカード／育成バトル。ログイン連動で進行を保存。</p>
+      </a>
+
+      <a class="game drone" href="drone-battle.html">
+        <div class="game-kicker">DRONE</div>
+        <h2 class="game-title">🛸 ドローンバトル</h2>
+        <p class="game-desc">Mode1/2操作の空中ドッグファイト、圃場ミッション、オンライン対戦。</p>
+      </a>
+    </div>
+
+    <div class="nav-row">
+      <a class="nav-link primary" href="index.html">総合案内所へ戻る</a>
+      <a class="nav-link" href="index2.html">プロポータルへ</a>
+    </div>
+  </div>
+</body>
+</html>

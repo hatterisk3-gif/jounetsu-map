@@ -341,11 +341,21 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
           params.spreadsheetId = spreadsheetId;
         }
+
+        // マスタ編集（カテゴリ名変更など）は作業マスタ一括更新があり重いので長めに待つ
+        const heavyActions = {
+          manageMaster: 90000,
+          getInitData: 60000,
+          saveCultivationPlans: 90000
+        };
+        const timeoutMs = heavyActions[action] || 30000;
+        // 重い処理はタイムアウト後の再送で二重更新しやすいのでリトライを抑える
+        const maxRetries = (action === 'manageMaster') ? 0 : retries;
         
         let lastError = null;
-        for (let i = 0; i <= retries; i++) {
+        for (let i = 0; i <= maxRetries; i++) {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             try {
                 const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
                 clearTimeout(timeoutId);
@@ -364,14 +374,17 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             } catch (err) {
                 clearTimeout(timeoutId);
                 lastError = err;
-                if (i < retries) {
-                    console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${retries})`, err);
+                if (i < maxRetries) {
+                    console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${maxRetries})`, err);
                     await new Promise(r => setTimeout(r, 1500));
                 }
             }
         }
-        lastError.message = lastError.message.replace("（リトライ中...）", "");
+        lastError.message = String(lastError.message || '').replace("（リトライ中...）", "");
         if (lastError.name === 'AbortError') {
+            if (action === 'manageMaster') {
+                throw new Error("通信がタイムアウトしました。サーバー側では更新が完了している場合があります。画面を再読み込みして確認してください。");
+            }
             throw new Error("通信がタイムアウトしました。電波の良い場所で再度お試しください。");
         }
         throw lastError;
@@ -393,6 +406,10 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               const result = await callGAS('login', {orgId: 'default', userId: id, password: pw});
               if (result.success) {
                   currentUser = result.name;
+                  // ログイン画面を消す前にロード表示を出す（チラつき・ワンテンポ遅れ防止）
+                  if (typeof beginMapDataLoad === 'function') {
+                      beginMapDataLoad('圃場データを読み込み中...');
+                  }
                   document.getElementById('loginScreen').style.display = 'none';
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
@@ -400,7 +417,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   localStorage.setItem('passionMapUserRole', result.role || '作業員');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
                   
-                  // 最新データを取りに行く（ローディングは loadInitData 内）
+                  // 最新データを取りに行く（ローディングは loadInitData 内でも維持）
                   loadInitData(); 
                   startLocationWatch();
                   // 作業開始時間ヒントを先行取得（getInitData完了を待たない）
@@ -13255,33 +13272,36 @@ window.executeAutoRecord = async () => {
           if(document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw; 
           
           if(id && pw) { 
-              // 画面を即座に隠す
+              // ログイン画面を消す前にロード表示（空白のワンテンポを作らない）
+              if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
            
-              // キャッシュがあれば先に0.1秒で地図を描画する！
+              // キャッシュがあれば先に地図を描画（ロード表示はサーバー更新まで維持）
               const cachedData = localStorage.getItem('passionMapInitData');
               if (cachedData) {
-                  try {
-                      if (typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
-                      renderInitData(JSON.parse(cachedData));
-                      if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
-                      else if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
-                      // 開始時間ヒントは getInitData より軽量なので、地図表示と同時に先行取得
-                      if (typeof window.prefetchWorkTimeHints === 'function') {
-                          const now = new Date();
-                          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                          window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
-                      }
-                      // 裏のログイン＆全体更新もすぐ開始（以前の1.5秒待ちをやめて高速化）
-                      setTimeout(() => { executeLogin(true); }, 50);
-                  } catch(e) {
-                      if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
-                      executeLogin(true);
+                  if (typeof setMapDataLoadingMessage === 'function') {
+                      setMapDataLoadingMessage('キャッシュを反映中...');
                   }
+                  // オーバーレイを先に描画してから重い描画へ
+                  requestAnimationFrame(() => {
+                      try {
+                          renderInitData(JSON.parse(cachedData));
+                          if (typeof setMapDataLoadingMessage === 'function') {
+                              setMapDataLoadingMessage('圃場データを更新中...');
+                          }
+                          if (typeof window.prefetchWorkTimeHints === 'function') {
+                              const now = new Date();
+                              const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                              window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
+                          }
+                          executeLogin(true);
+                      } catch(e) {
+                          if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
+                          executeLogin(true);
+                      }
+                  });
               } else {
-                  // キャッシュがない初回はすぐに通信する（ログイン完了まで操作不可）
-                  if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
                   executeLogin(true);
               }
           }

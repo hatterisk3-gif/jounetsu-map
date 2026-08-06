@@ -3362,50 +3362,64 @@ function deleteCropFromSeikuMaster_(cropName) {
   }
 }
 
-/** 作業マスタのカテゴリ列をリネーム */
+/** 作業マスタのカテゴリ列をリネーム（一括書き込みで高速化） */
 function renameWorkMasterCategory_(oldName, newName) {
   const sheet = TENANT_SS.getSheetByName('作業マスタ');
   if (!sheet) return;
   const orig = String(oldName || '').trim();
   const next = String(newName || '').trim();
   if (!orig || !next || orig === next) return;
-  const data = sheet.getDataRange().getValues();
-  if (data.length < 2) return;
-  const headers = data[0].map(h => String(h).trim());
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   const catIdx = findWorkCategoryColumnIndex_(headers);
   if (catIdx < 0) return;
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][catIdx] || '').trim() === orig) {
-      sheet.getRange(i + 1, catIdx + 1).setValue(next);
+  const col = catIdx + 1;
+  const range = sheet.getRange(2, col, lastRow, col);
+  const colValues = range.getValues();
+  let changed = false;
+  for (let i = 0; i < colValues.length; i++) {
+    if (String(colValues[i][0] || '').trim() === orig) {
+      colValues[i][0] = next;
+      changed = true;
     }
   }
+  if (changed) range.setValues(colValues);
 }
 
-/** 作業マスタの作物名列をリネーム（カンマ区切り複数にも対応） */
+/** 作業マスタの作物名列をリネーム（カンマ区切り複数にも対応・一括書き込み） */
 function renameWorkMasterCrop_(oldName, newName) {
   const sheet = TENANT_SS.getSheetByName('作業マスタ');
   if (!sheet) return;
   const orig = String(oldName || '').trim();
   const next = String(newName || '').trim();
   if (!orig || !next || orig === next) return;
-  const data = sheet.getDataRange().getValues();
-  if (data.length < 2) return;
-  const headers = data[0].map(h => String(h).trim());
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   const cropIdx = findWorkCropColumnIndex_(headers);
   if (cropIdx < 0) return;
-  for (let i = 1; i < data.length; i++) {
-    const raw = String(data[i][cropIdx] || '').trim();
+  const col = cropIdx + 1;
+  const range = sheet.getRange(2, col, lastRow, col);
+  const colValues = range.getValues();
+  let changed = false;
+  for (let i = 0; i < colValues.length; i++) {
+    const raw = String(colValues[i][0] || '').trim();
     if (!raw) continue;
     const parts = raw.split(/[,、]/).map(s => s.trim()).filter(Boolean);
-    let changed = false;
+    let rowChanged = false;
     const updated = parts.map(p => {
-      if (p === orig) { changed = true; return next; }
+      if (p === orig) { rowChanged = true; return next; }
       return p;
     });
-    if (changed) {
-      sheet.getRange(i + 1, cropIdx + 1).setValue(updated.join(','));
+    if (rowChanged) {
+      colValues[i][0] = updated.join(',');
+      changed = true;
     }
   }
+  if (changed) range.setValues(colValues);
 }
 
 function getToukiDetails(idsStr) {

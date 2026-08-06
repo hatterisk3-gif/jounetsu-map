@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -283,14 +283,97 @@
       color: #fff;
       cursor: pointer;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      touch-action: none;
     }
     .fire-btn {
-      right: calc(12px + min(42vw, 190px) + 8px);
-      bottom: max(36px, calc(env(safe-area-inset-bottom) + 28px));
-      width: 72px;
-      height: 72px;
+      /* 右スティックの真上 — 親指が届きやすい位置 */
+      right: max(10px, env(safe-area-inset-right));
+      bottom: calc(max(18px, env(safe-area-inset-bottom)) + min(42vw, 190px) + 10px);
+      width: min(30vw, 112px);
+      height: min(30vw, 112px);
       background: radial-gradient(circle at 35% 30%, #ff8a65, #ff1744 75%);
-      font-size: 0.85rem;
+      font-size: clamp(0.85rem, 3.2vw, 1.05rem);
+      letter-spacing: 0.04em;
+      z-index: 3;
+      border: 3px solid rgba(255, 255, 255, 0.35);
+    }
+    .fire-btn::before {
+      /* 見た目より広いタッチ判定 */
+      content: '';
+      position: absolute;
+      inset: -18px;
+      border-radius: 50%;
+    }
+    .fire-btn.held {
+      transform: scale(0.94);
+      filter: brightness(1.15);
+      box-shadow: 0 0 0 4px rgba(255, 82, 82, 0.45), 0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+    .fire-btn-alt {
+      /* 左手側の予備射撃（左スティック上） */
+      left: max(10px, env(safe-area-inset-left));
+      right: auto;
+      bottom: calc(max(18px, env(safe-area-inset-bottom)) + min(42vw, 190px) + 10px);
+      width: min(22vw, 84px);
+      height: min(22vw, 84px);
+      font-size: clamp(0.7rem, 2.6vw, 0.85rem);
+      background: radial-gradient(circle at 35% 30%, #ffab40, #e65100 75%);
+      z-index: 3;
+    }
+    .sens-block {
+      margin-bottom: 14px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .sens-block label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+    .sens-block label span {
+      font-family: Orbitron, sans-serif;
+      font-size: 0.78rem;
+      color: var(--accent);
+    }
+    .sens-block input[type="range"] {
+      width: 100%;
+      accent-color: #00e5ff;
+      margin: 0 0 10px;
+    }
+    .sens-block .sens-presets {
+      display: flex;
+      gap: 6px;
+    }
+    .sens-block .sens-presets button {
+      flex: 1;
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(0, 0, 0, 0.25);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 8px 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .sens-block .sens-presets button.active {
+      border-color: var(--accent);
+      background: rgba(0, 229, 255, 0.16);
+      color: var(--accent);
+    }
+    .sens-hint {
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.4;
+      margin: -2px 0 0;
     }
     .cam-btn {
       left: 50%;
@@ -397,7 +480,13 @@
     .rarity-N { color: #b0bec5; }
     @media (min-width: 900px) {
       .stick-zone { opacity: 0.55; }
-      .fire-btn { opacity: 0.7; }
+      .fire-btn { opacity: 0.75; }
+    }
+    @media (max-width: 420px) {
+      .fire-btn {
+        width: min(28vw, 100px);
+        height: min(28vw, 100px);
+      }
     }
   </style>
 </head>
@@ -438,7 +527,7 @@
       </div>
 
       <div class="actions">
-        <a class="btn secondary" href="index.html">ポータルへ戻る</a>
+        <a class="btn secondary" href="battle-portal.html">バトルポータルへ</a>
       </div>
     </div>
   </div>
@@ -536,16 +625,29 @@
         <strong>Mode 2（初期）</strong> — 左スティック上下が上昇・下降。右スティックで機首操作。
       </div>
 
+      <div class="sens-block">
+        <label>スティック感度 <span id="sensValueLabel">1.00×</span></label>
+        <input type="range" id="sensSlider" min="40" max="220" value="100" step="5" />
+        <label>精密さ（中央） <span id="expoValueLabel">25%</span></label>
+        <input type="range" id="expoSlider" min="0" max="85" value="25" step="5" />
+        <div class="sens-presets">
+          <button type="button" data-sens="70" data-expo="45" id="sensPresetSoft">ゆるめ</button>
+          <button type="button" data-sens="100" data-expo="25" id="sensPresetNormal" class="active">標準</button>
+          <button type="button" data-sens="145" data-expo="10" id="sensPresetSharp">きつめ</button>
+        </div>
+        <p class="sens-hint">感度↑＝小さく動かしても反応。精密さ↑＝中央付近は細かく、端は急に効く。</p>
+      </div>
+
       <div class="help" id="gameHelp">
         <strong>操作</strong><br>
-        ・タッチ: 左右スティック＋赤ボタン射撃<br>
+        ・タッチ: 左右スティック＋赤／オレンジ射撃<br>
         ・キー: WASD＋矢印／Space射撃／Cカメラ
       </div>
 
       <div class="actions">
         <button type="button" class="btn" id="startBtn">開始</button>
         <button type="button" class="btn secondary" id="backLobbyBtn">ロビーへ戻る</button>
-        <a class="btn secondary" href="index.html">ポータルへ戻る</a>
+        <a class="btn secondary" href="battle-portal.html">バトルポータルへ</a>
       </div>
     </div>
   </div>
@@ -558,7 +660,7 @@
         <button type="button" class="btn warn" id="retryBtn">再戦</button>
         <button type="button" class="btn secondary" id="toSetupBtn">操作設定へ</button>
         <button type="button" class="btn secondary" id="toLobbyBtn">ロビーへ</button>
-        <a class="btn secondary" href="index.html">ポータルへ戻る</a>
+        <a class="btn secondary" href="battle-portal.html">バトルポータルへ</a>
       </div>
     </div>
   </div>
@@ -592,7 +694,8 @@
         <div class="stick-label" id="rightStickLabel">ピッチ / ロール</div>
         <div class="stick-base"><div class="stick-knob" id="knobRight"></div></div>
       </div>
-      <button type="button" class="fire-btn" id="fireBtn">射撃</button>
+      <button type="button" class="fire-btn" id="fireBtn" aria-label="射撃">射撃</button>
+      <button type="button" class="fire-btn fire-btn-alt" id="fireBtnAlt" aria-label="射撃（左）">FIRE</button>
       <button type="button" class="cam-btn" id="camBtn">CAM</button>
     </div>
   </div>
@@ -612,6 +715,8 @@ import * as THREE from 'three';
 
 const MODE_KEY = 'passionMapDroneBattleMode';
 const GAME_KEY = 'passionMapDroneBattleGame';
+const SENS_KEY = 'passionMapDroneBattleSens';
+const EXPO_KEY = 'passionMapDroneBattleExpo';
 const MAX_HP = 100;
 const FIRE_COOLDOWN = 0.28;
 const BULLET_SPEED = 55;
@@ -621,12 +726,24 @@ const ARENA = 90;
 const MISSION_TIME = 150;
 const MISSION_LAPS = 2;
 
+function loadStickFeel() {
+  const s = Number(localStorage.getItem(SENS_KEY));
+  const e = Number(localStorage.getItem(EXPO_KEY));
+  return {
+    stickSens: Number.isFinite(s) ? Math.min(2.2, Math.max(0.4, s)) : 1,
+    stickExpo: Number.isFinite(e) ? Math.min(0.85, Math.max(0, e)) : 0.25
+  };
+}
+const _feel = loadStickFeel();
+
 const state = {
   mode: Number(localStorage.getItem(MODE_KEY) || '2') === 1 ? 1 : 2,
   gameType: localStorage.getItem(GAME_KEY) === 'mission' ? 'mission' : 'dogfight',
   playing: false,
   over: false,
   firstPerson: false,
+  stickSens: _feel.stickSens,
+  stickExpo: _feel.stickExpo,
   leftStick: { x: 0, y: 0 },
   rightStick: { x: 0, y: 0 },
   keys: Object.create(null),
@@ -1166,9 +1283,6 @@ function refreshMetaUI() {
 }
 
 function refreshFireButtonLabel() {
-  const btn = document.getElementById('fireBtn');
-  if (!btn) return;
-  const kind = (player && player.weaponKind) || (getPlayerLoadoutStats().weaponKind) || 'beam';
   const map = {
     beam: '射撃',
     cannon: 'キャノン',
@@ -1177,7 +1291,55 @@ function refreshFireButtonLabel() {
     gatling: 'ガトリング',
     sniper: '狙撃'
   };
-  btn.textContent = map[kind] || '射撃';
+  const kind = (player && player.weaponKind) || (getPlayerLoadoutStats().weaponKind) || 'beam';
+  const label = map[kind] || '射撃';
+  const btn = document.getElementById('fireBtn');
+  const alt = document.getElementById('fireBtnAlt');
+  if (btn) btn.textContent = label;
+  if (alt) alt.textContent = label.length > 4 ? 'FIRE' : label;
+}
+
+function applyStickAxis(v) {
+  const sens = state.stickSens || 1;
+  const expo = state.stickExpo || 0;
+  const sign = v < 0 ? -1 : 1;
+  let a = Math.min(1, Math.abs(v) * sens);
+  // expo: 中央を鈍く、端で急に効く（0=線形）
+  if (expo > 0.001) {
+    const curved = a * a * a;
+    a = a * (1 - expo) + curved * expo;
+  }
+  return sign * a;
+}
+
+function saveStickFeel() {
+  localStorage.setItem(SENS_KEY, String(state.stickSens));
+  localStorage.setItem(EXPO_KEY, String(state.stickExpo));
+}
+
+function syncSensUI() {
+  const sensSlider = document.getElementById('sensSlider');
+  const expoSlider = document.getElementById('expoSlider');
+  const sensLabel = document.getElementById('sensValueLabel');
+  const expoLabel = document.getElementById('expoValueLabel');
+  if (!sensSlider || !expoSlider) return;
+  sensSlider.value = String(Math.round(state.stickSens * 100));
+  expoSlider.value = String(Math.round(state.stickExpo * 100));
+  if (sensLabel) sensLabel.textContent = state.stickSens.toFixed(2) + '×';
+  if (expoLabel) expoLabel.textContent = Math.round(state.stickExpo * 100) + '%';
+  document.querySelectorAll('.sens-presets button').forEach((b) => {
+    const s = Number(b.dataset.sens) / 100;
+    const e = Number(b.dataset.expo) / 100;
+    const match = Math.abs(s - state.stickSens) < 0.03 && Math.abs(e - state.stickExpo) < 0.03;
+    b.classList.toggle('active', match);
+  });
+}
+
+function setStickFeel(sens, expo) {
+  state.stickSens = Math.min(2.2, Math.max(0.4, sens));
+  state.stickExpo = Math.min(0.85, Math.max(0, expo));
+  saveStickFeel();
+  syncSensUI();
 }
 
 function applyLoadoutToPlayerMesh() {
@@ -1224,6 +1386,28 @@ function setStickMode(m) {
 mode1Btn.addEventListener('click', () => setStickMode(1));
 mode2Btn.addEventListener('click', () => setStickMode(2));
 setStickMode(state.mode);
+
+(function bindSensControls() {
+  const sensSlider = document.getElementById('sensSlider');
+  const expoSlider = document.getElementById('expoSlider');
+  if (!sensSlider || !expoSlider) return;
+  sensSlider.addEventListener('input', () => {
+    state.stickSens = Number(sensSlider.value) / 100;
+    saveStickFeel();
+    syncSensUI();
+  });
+  expoSlider.addEventListener('input', () => {
+    state.stickExpo = Number(expoSlider.value) / 100;
+    saveStickFeel();
+    syncSensUI();
+  });
+  document.querySelectorAll('.sens-presets button').forEach((b) => {
+    b.addEventListener('click', () => {
+      setStickFeel(Number(b.dataset.sens) / 100, Number(b.dataset.expo) / 100);
+    });
+  });
+  syncSensUI();
+})();
 
 function openSetup(gameType) {
   if (gameType === 'online') {
@@ -1497,6 +1681,11 @@ function readControls() {
   if (keyLx || keyLy) { Lx = keyLx; Ly = keyLy; }
   if (keyRx || keyRy) { Rx = keyRx; Ry = keyRy; }
 
+  Lx = applyStickAxis(Lx);
+  Ly = applyStickAxis(Ly);
+  Rx = applyStickAxis(Rx);
+  Ry = applyStickAxis(Ry);
+
   let throttle;
   let yaw;
   let pitch;
@@ -1581,10 +1770,35 @@ bindStick(document.getElementById('stickLeft'), document.getElementById('knobLef
 bindStick(document.getElementById('stickRight'), document.getElementById('knobRight'), 'right');
 
 const fireBtn = document.getElementById('fireBtn');
-fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); state.fireHeld = true; });
-fireBtn.addEventListener('pointerup', () => { state.fireHeld = false; });
-fireBtn.addEventListener('pointercancel', () => { state.fireHeld = false; });
-fireBtn.addEventListener('pointerleave', () => { state.fireHeld = false; });
+const fireBtnAlt = document.getElementById('fireBtnAlt');
+const firePointers = new Set();
+
+function syncFireHeld() {
+  state.fireHeld = firePointers.size > 0;
+  fireBtn.classList.toggle('held', state.fireHeld);
+  if (fireBtnAlt) fireBtnAlt.classList.toggle('held', state.fireHeld);
+}
+
+function bindFireButton(btn) {
+  if (!btn) return;
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try { btn.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    firePointers.add(e.pointerId);
+    syncFireHeld();
+  });
+  const end = (e) => {
+    if (!firePointers.has(e.pointerId)) return;
+    firePointers.delete(e.pointerId);
+    syncFireHeld();
+  };
+  btn.addEventListener('pointerup', end);
+  btn.addEventListener('pointercancel', end);
+  // pointerleave では解除しない（指が少しずれても射撃継続）
+}
+bindFireButton(fireBtn);
+bindFireButton(fireBtnAlt);
 
 document.getElementById('camBtn').addEventListener('click', () => {
   state.firstPerson = !state.firstPerson;
@@ -2827,6 +3041,8 @@ function startBattle() {
   hud.classList.add('active');
   setMissionWorldVisible(state.gameType === 'mission');
   resetCrafts();
+  firePointers.clear();
+  syncFireHeld();
   state.playing = true;
   state.firstPerson = false;
   clock.getDelta();

@@ -152,6 +152,16 @@
     if (text && msg) text.textContent = msg;
   }
 
+  /** 既に表示中なら文言だけ更新（depthは増やさない） */
+  function setMapDataLoadingMessage(msg) {
+    if (!msg) return;
+    if (depth <= 0) {
+      beginMapDataLoad(msg);
+      return;
+    }
+    setMessage(msg);
+  }
+
   function beginMapDataLoad(msg) {
     var el = ensureOverlay();
     depth += 1;
@@ -160,6 +170,8 @@
     el.style.display = 'flex';
     el.style.pointerEvents = 'auto';
     el.setAttribute('aria-busy', 'true');
+    // 直後に重い同期処理があっても、先に1フレーム描画させる
+    try { void el.offsetWidth; } catch (e) {}
     lockMapGestures();
 
     // ★ セーフティタイマー：12秒経っても解除されない場合は強制解除
@@ -211,6 +223,7 @@
   global.hideMapDataLoading = function () { endMapDataLoad(true); };
   global.isMapDataLoading = isMapDataLoading;
   global.ensureMapGesturesEnabled = ensureMapGesturesEnabled;
+  global.setMapDataLoadingMessage = setMapDataLoadingMessage;
 
   // 既存コード互換
   global.showLoader = function (msg) { beginMapDataLoad(msg || '処理中...'); };
