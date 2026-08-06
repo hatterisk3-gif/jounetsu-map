@@ -7118,23 +7118,68 @@ function createSignboardMarker(name, pos, icon, id) {
         const allWorks = Array.isArray(pdlWorkMaster) ? [...pdlWorkMaster] : [];
         allWorks.sort((a, b) => window.getWorkDisplayLabel(a).localeCompare(window.getWorkDisplayLabel(b), 'ja'));
 
-        const targetWorks = allWorks.filter(w => w && w.name && !window.isPrepWorkName(w.name));
+        const targetWorksBase = allWorks.filter(w => w && w.name && !window.isPrepWorkName(w.name));
 
-        const targetOptions = targetWorks.map(w => {
-          const name = String(w.name).trim();
-          const label = window.getWorkDisplayLabel(w);
-          const safeVal = name.replace(/"/g, '&quot;');
-          const safeLabel = String(label).replace(/</g, '&lt;');
-          return `<option value="${safeVal}">${safeLabel}</option>`;
-        }).join('');
+        // グローバルな段階的選択状態
+        if (!window.selectedPrepCategory) window.selectedPrepCategory = 'すべて';
+        if (!window.selectedPrepCrop) window.selectedPrepCrop = 'すべて';
+
+        // 1. カテゴリ一覧の取得
+        const categories = ['すべて'];
+        targetWorksBase.forEach(w => {
+          const cat = String(w.category || '管理/その他').trim();
+          if (cat && !categories.includes(cat)) categories.push(cat);
+        });
+
+        // 2. 選択中カテゴリによる絞り込みと作物一覧の取得
+        const catFilteredWorks = targetWorksBase.filter(w => {
+          if (window.selectedPrepCategory === 'すべて') return true;
+          return String(w.category || '').trim() === window.selectedPrepCategory;
+        });
+
+        const crops = ['すべて'];
+        catFilteredWorks.forEach(w => {
+          const crop = String(w.cropName || '共通').trim();
+          if (crop && !crops.includes(crop)) crops.push(crop);
+        });
+
+        // 3. 選択中作物による最終作業名の絞り込み
+        const finalWorks = catFilteredWorks.filter(w => {
+          if (window.selectedPrepCrop === 'すべて') return true;
+          return String(w.cropName || '共通').trim() === window.selectedPrepCrop;
+        });
 
         const currentVal = preset != null ? preset : (window.selectedPrepTargetWork || '');
 
-        // 🌟 普通の作業名を選ぶときと全く同じデザインの作業チップ（ボタン）HTMLを生成
+        // --- カテゴリボタンHTML ---
+        const catBtnsHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">` +
+          categories.map(cat => {
+            const isSel = (cat === window.selectedPrepCategory);
+            const bg = isSel ? '#1976D2' : '#E3F2FD';
+            const color = isSel ? '#ffffff' : '#1565C0';
+            const border = isSel ? '#0D47A1' : '#90CAF9';
+            const fontW = isSel ? 'bold' : 'normal';
+            return `<button type="button" onclick="window.selectedPrepCategory='${cat.replace(/'/g, "\\'")}'; window.selectedPrepCrop='すべて'; window.refreshPrepTargetWorkSection();" style="background:${bg}; color:${color}; border:1px solid ${border}; padding:4px 10px; border-radius:16px; font-size:12px; font-weight:${fontW}; cursor:pointer;">📁 ${String(cat).replace(/</g, '&lt;')}</button>`;
+          }).join('') +
+          `</div>`;
+
+        // --- 作物ボタンHTML ---
+        const cropBtnsHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">` +
+          crops.map(crop => {
+            const isSel = (crop === window.selectedPrepCrop);
+            const bg = isSel ? '#E65100' : '#FFF3E0';
+            const color = isSel ? '#ffffff' : '#E65100';
+            const border = isSel ? '#EF6C00' : '#FFB74D';
+            const fontW = isSel ? 'bold' : 'normal';
+            return `<button type="button" onclick="window.selectedPrepCrop='${crop.replace(/'/g, "\\'")}'; window.refreshPrepTargetWorkSection();" style="background:${bg}; color:${color}; border:1px solid ${border}; padding:4px 10px; border-radius:16px; font-size:12px; font-weight:${fontW}; cursor:pointer;">🌱 ${String(crop).replace(/</g, '&lt;')}</button>`;
+          }).join('') +
+          `</div>`;
+
+        // --- 絞り込まれた作業名チップHTML ---
         let prepChipsHTML = '';
-        if (targetWorks.length > 0) {
-          prepChipsHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; max-height:240px; overflow-y:auto; padding:8px; background:#fff; border:1px solid #A5D6A7; border-radius:8px;">` +
-            targetWorks.map(w => {
+        if (finalWorks.length > 0) {
+          prepChipsHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; max-height:220px; overflow-y:auto; padding:8px; background:#fff; border:1px solid #A5D6A7; border-radius:8px;">` +
+            finalWorks.map(w => {
               const name = String(w.name).trim();
               const label = window.getWorkDisplayLabel(w);
               const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -7147,6 +7192,8 @@ function createSignboardMarker(name, pos, icon, id) {
               return `<button type="button" onclick="onPrepTargetWorkChange('${safeName}')" style="background:${bg}; color:${color}; border:1px solid ${border}; padding:7px 14px; border-radius:20px; font-size:13px; font-weight:${fontWeight}; cursor:pointer; ${shadow}">${String(label).replace(/</g, '&lt;')}</button>`;
             }).join('') +
             `</div>`;
+        } else {
+          prepChipsHTML = `<div style="font-size:12px; color:#888; padding:10px; text-align:center; background:#fff; border-radius:8px;">該当する作業がありません</div>`;
         }
 
         const selectedBadge = currentVal
@@ -7160,8 +7207,13 @@ function createSignboardMarker(name, pos, icon, id) {
         box.style.cssText = 'background:#F1F8E9; border:1px solid #C8E6C9; border-radius:10px; padding:12px; margin-bottom:15px;';
         box.innerHTML = `
           <div style="font-weight:bold; color:#2E7D32; margin-bottom:6px; font-size:14px; display:flex; align-items:center; gap:6px;">
-            📋 何の作業の準備ですか？ <span style="font-size:11px; font-weight:normal; color:#4CAF50;">（作業チップをタップ）</span>
+            📋 何の作業の準備ですか？ <span style="font-size:11px; font-weight:normal; color:#4CAF50;">（段階的に絞り込み選択）</span>
           </div>
+          <div style="font-size:11px; color:#555; margin-bottom:4px; font-weight:bold;">1. カテゴリを選択:</div>
+          ${catBtnsHTML}
+          <div style="font-size:11px; color:#555; margin-bottom:4px; font-weight:bold;">2. 作物を選択:</div>
+          ${cropBtnsHTML}
+          <div style="font-size:11px; color:#555; margin-bottom:4px; font-weight:bold;">3. 準備対象の作業名をタップ:</div>
           ${selectedBadge}
           ${prepChipsHTML}
         `;
