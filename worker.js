@@ -3252,13 +3252,31 @@ function createSignboardMarker(name, pos, icon, id) {
         window.updateStartTimeHintUI();
       };
 
+      /** 終了時間を今の時刻に合わせる（新規・編集中どちらでも動作） */
+      window.setEndTimeToNow = () => {
+        const now = new Date();
+        const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const endEl = document.getElementById('rec_end_time');
+        if (endEl) {
+          endEl.value = nowHm;
+          if (typeof calcTotalTime === 'function') calcTotalTime();
+          if (typeof updateRestNoticeCardUI === 'function') updateRestNoticeCardUI();
+          return true;
+        }
+        return false;
+      };
+
       /** 前の記録終了〜いまの時間を開始・終了にセット（休憩登録向け） */
       window.matchStartEndToPreviousEndAndNow = (opts) => {
         opts = opts || {};
         const silent = !!opts.silent;
         if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) {
-          if (!silent && typeof customAlert === 'function') customAlert('編集中は時間の自動合わせを行いません。');
-          return false;
+          // ★編集中でも終了時刻を「いまの時間」にセットするリクエストを叶える！
+          window.setEndTimeToNow();
+          if (!silent && typeof customAlert === 'function') {
+            customAlert('終了時間を現在の時間に更新しました。');
+          }
+          return true;
         }
         const dateEl = document.getElementById('rec_work_date');
         const ymd = dateEl ? window.normalizeDateStr(dateEl.value) : '';
@@ -7112,54 +7130,41 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const currentVal = preset != null ? preset : (window.selectedPrepTargetWork || '');
 
-        // 🌟 普通の作業名を選ぶときと同じ作業チップ（ボタン）HTMLを動的生成
+        // 🌟 普通の作業名を選ぶときと全く同じデザインの作業チップ（ボタン）HTMLを生成
         let prepChipsHTML = '';
         if (targetWorks.length > 0) {
-          prepChipsHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; max-height:220px; overflow-y:auto; padding:8px; background:#fff; border:1px solid #e1bee7; border-radius:8px;">` +
+          prepChipsHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; max-height:240px; overflow-y:auto; padding:8px; background:#fff; border:1px solid #A5D6A7; border-radius:8px;">` +
             targetWorks.map(w => {
               const name = String(w.name).trim();
               const label = window.getWorkDisplayLabel(w);
               const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               const isSelected = (name === currentVal);
-              const bg = isSelected ? '#7b1fa2' : '#f3e5f5';
-              const color = isSelected ? '#fff' : '#4a148c';
-              const border = isSelected ? '#4a148c' : '#ce93d8';
+              const bg = isSelected ? '#4CAF50' : '#ffffff';
+              const color = isSelected ? '#ffffff' : '#2E7D32';
+              const border = isSelected ? '#388E3C' : '#A5D6A7';
               const fontWeight = isSelected ? 'bold' : 'normal';
-              const shadow = isSelected ? 'box-shadow: 0 2px 5px rgba(123,31,162,0.4);' : '';
-              return `<button type="button" onclick="onPrepTargetWorkChange('${safeName}')" style="background:${bg}; color:${color}; border:1px solid ${border}; padding:6px 14px; border-radius:20px; font-size:13px; font-weight:${fontWeight}; cursor:pointer; ${shadow}">${String(label).replace(/</g, '&lt;')}</button>`;
+              const shadow = isSelected ? 'box-shadow: 0 2px 5px rgba(76,175,80,0.4);' : '';
+              return `<button type="button" onclick="onPrepTargetWorkChange('${safeName}')" style="background:${bg}; color:${color}; border:1px solid ${border}; padding:7px 14px; border-radius:20px; font-size:13px; font-weight:${fontWeight}; cursor:pointer; ${shadow}">${String(label).replace(/</g, '&lt;')}</button>`;
             }).join('') +
             `</div>`;
         }
 
         const selectedBadge = currentVal
-          ? `<div style="margin-bottom:8px; font-size:12px; color:#4a148c; font-weight:bold; background:#e1bee7; padding:6px 12px; border-radius:6px; display:inline-flex; align-items:center; gap:8px;">
+          ? `<div style="margin-bottom:8px; font-size:12px; color:#1B5E20; font-weight:bold; background:#C8E6C9; padding:6px 12px; border-radius:6px; display:inline-flex; align-items:center; gap:8px;">
                <span>選択中: <b>${String(currentVal).replace(/</g, '&lt;')}</b></span>
-               <button type="button" onclick="onPrepTargetWorkChange('')" style="background:transparent; border:none; color:#7b1fa2; font-weight:bold; cursor:pointer; font-size:14px; padding:0 4px;">✕ 解除</button>
+               <button type="button" onclick="onPrepTargetWorkChange('')" style="background:transparent; border:none; color:#2E7D32; font-weight:bold; cursor:pointer; font-size:14px; padding:0 4px;">✕ 解除</button>
              </div>`
           : '';
 
         box.style.display = 'block';
-        box.style.cssText = 'background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;';
+        box.style.cssText = 'background:#F1F8E9; border:1px solid #C8E6C9; border-radius:10px; padding:12px; margin-bottom:15px;';
         box.innerHTML = `
-          <div style="font-weight:bold; color:#4a148c; margin-bottom:6px; font-size:14px; display:flex; align-items:center; gap:6px;">
-            📋 何の作業の準備ですか？ <span style="font-size:11px; font-weight:normal; color:#6a1b9a;">（ボタンをタップ）</span>
-          </div>
-          <div style="font-size:12px; color:#666; margin-bottom:8px; line-height:1.4;">
-            準備対象の作業名をタップすると、対応する詳細作業が自動選択されます。
+          <div style="font-weight:bold; color:#2E7D32; margin-bottom:6px; font-size:14px; display:flex; align-items:center; gap:6px;">
+            📋 何の作業の準備ですか？ <span style="font-size:11px; font-weight:normal; color:#4CAF50;">（作業チップをタップ）</span>
           </div>
           ${selectedBadge}
           ${prepChipsHTML}
-          <div style="font-size:11px; color:#888; margin-bottom:4px;">プルダウンから選択:</div>
-          <select id="prep_target_work_select" class="form-input" onchange="onPrepTargetWorkChange(this.value)" style="margin-bottom:0; font-size:13px; border:1px solid #ab47bc; background:#fff;">
-            <option value="">対象の作業名を選択してください</option>
-            ${targetOptions}
-          </select>
         `;
-
-        if (currentVal) {
-          const sel = document.getElementById('prep_target_work_select');
-          if (sel) sel.value = currentVal;
-        }
       };
 
       window.onPrepTargetWorkChange = (val) => {
@@ -8565,6 +8570,7 @@ function createSignboardMarker(name, pos, icon, id) {
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; gap:6px; flex-wrap:wrap;">
             <label class="form-label" style="margin:0; color:#1565C0;">⏰ 時間</label>
             <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+              <button type="button" onclick="setEndTimeToNow()" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" title="編集中でも終了時刻を今の時間に合わせます">⏱️ 終了を今にセット</button>
               <button type="button" id="btn_match_prev_end" onclick="matchStartTimeToPreviousEnd()" style="display:none; background:#E8F5E9; color:#2e7d32; border:1px solid #A5D6A7; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">◀️ 前の終了に合わせる</button>
               <button type="button" onclick="matchStartEndToPreviousEndAndNow()" style="background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">⏱️ 前終了〜今</button>
               <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); document.getElementById('rec_start_time').removeAttribute('data-start-source'); document.getElementById('rec_start_time').removeAttribute('data-rest-pair'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア</button>
@@ -8579,7 +8585,10 @@ function createSignboardMarker(name, pos, icon, id) {
               </label>
             </div>
             <div>
-              <label class="form-label" style="font-size:11px; margin-bottom:2px;">⏹️ 終了</label>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                <label class="form-label" style="font-size:11px; margin:0;">⏹️ 終了</label>
+                <button type="button" onclick="setEndTimeToNow()" style="background:#E3F2FD; color:#1565C0; border:none; padding:1px 5px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;">⏱️ 今にセット</button>
+              </div>
               <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:0;" value="${isEdit ? '' : currentTimeStr}" onclick="openAppTimePicker('rec_end_time', '終了時間')" onchange="calcTotalTime()">
             </div>
           </div>
