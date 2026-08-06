@@ -129,6 +129,7 @@
       localStorage.removeItem('passionMapClockInToday');
       clearLunchBreak();
     } catch (e) {}
+    try { window._trackingListOpenClockIn = null; } catch (e2) {}
     clearPending();
     try {
       if (window.passionWatchId !== null && window.passionWatchId !== undefined) {
@@ -513,6 +514,19 @@
         // 直前に退勤取り消しした場合は、反映待ち中にローカル出勤を消さない
         if (window._clockOutUndoUntil && Date.now() < window._clockOutUndoUntil) {
           return null;
+        }
+        // マイページの打刻一覧で直近に「出勤中」と出ている場合は消さない
+        // （getOpenClockInStatus と一覧の一時的な不一致で退勤できなくなるのを防ぐ）
+        const listGuard = window._trackingListOpenClockIn;
+        if (listGuard && listGuard.open && listGuard.until && Date.now() < listGuard.until) {
+          applyOpenClockInFromServer({
+            open: true,
+            forgot: !!listGuard.forgot || (listGuard.dateYmd && listGuard.dateYmd < todayYmd()),
+            clockInTime: listGuard.inTime || '',
+            clockInDateYmd: listGuard.dateYmd || todayYmd(),
+            lunchRegistered: false
+          });
+          return getForgotClockOutInfo();
         }
         // 本日の退勤取り消し候補を端末に保持（別端末退勤にも対応）
         if (res.cancelableClockOut) {
@@ -1774,6 +1788,7 @@
     localStorage.removeItem('passionMapClockIn');
     localStorage.removeItem('passionMapClockInToday');
     clearLunchBreak();
+    try { window._trackingListOpenClockIn = null; } catch (e) {}
     if (window.clockInMarker) {
       window.clockInMarker.setMap(null);
       window.clockInMarker = null;
@@ -2477,6 +2492,21 @@
   window.toggleTracking = async function () {
     // ★体感速度優先: 端末の状態で即UIを開き、サーバー確認は裏で行う
     // （以前は毎回 GAS を待ってからモーダル表示していたため遅かった）
+
+    // マイページで出勤中と出ているのに端末キャッシュが空のとき、先に復元する
+    try {
+      const guard = window._trackingListOpenClockIn;
+      if (guard && guard.open && guard.until && Date.now() < guard.until && !isLocallyClockedIn()) {
+        applyOpenClockInFromServer({
+          open: true,
+          forgot: !!guard.forgot || (guard.dateYmd && guard.dateYmd < todayYmd()),
+          clockInTime: guard.inTime || '',
+          clockInDateYmd: guard.dateYmd || todayYmd(),
+          lunchRegistered: false
+        });
+        refreshTrackingModeUI();
+      }
+    } catch (e) {}
 
     const localForgot = getForgotClockOutInfo();
     if (localForgot) {

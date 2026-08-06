@@ -13677,6 +13677,10 @@ function isClockCancelType(type) {
     return String(type || '') === '出勤取消';
 }
 
+function isClockOutCancelType(type) {
+    return String(type || '') === '退勤取消';
+}
+
 function getLocalClockInHint(targetYmd) {
     try {
         const active = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null');
@@ -13780,7 +13784,7 @@ function summarizeMyAttendanceList(rows, userName) {
             const author = String(row.userName || '').replace(/\s+/g, '');
             if (!normUser || !author) return false;
             if (author !== normUser && !normUser.includes(author) && !author.includes(normUser)) return false;
-            return isClockInType(row.type) || isClockOutType(row.type) || isClockCancelType(row.type);
+            return isClockInType(row.type) || isClockOutType(row.type) || isClockCancelType(row.type) || isClockOutCancelType(row.type);
         })
         .map((row) => ({
             type: row.type,
@@ -13791,13 +13795,17 @@ function summarizeMyAttendanceList(rows, userName) {
         .filter((ev) => ev.ymd && !isNaN(ev.sortKey))
         .sort((a, b) => a.sortKey - b.sortKey);
 
+    // getOpenClockInStatus と同じく「退勤取消」でセッションを再開する
     const sessions = [];
     let openIn = null;
+    let lastClosed = null; // { openIn }
     events.forEach((ev) => {
         if (isClockInType(ev.type)) {
             openIn = ev;
+            lastClosed = null;
         } else if (isClockCancelType(ev.type)) {
             openIn = null;
+            lastClosed = null;
         } else if (isClockOutType(ev.type)) {
             sessions.push({
                 dateYmd: (openIn && openIn.ymd) || ev.ymd,
@@ -13807,7 +13815,16 @@ function summarizeMyAttendanceList(rows, userName) {
                 open: false,
                 sortKey: openIn ? openIn.sortKey : ev.sortKey
             });
+            lastClosed = { openIn: openIn };
             openIn = null;
+        } else if (isClockOutCancelType(ev.type)) {
+            if (lastClosed && lastClosed.openIn) {
+                if (sessions.length && sessions[sessions.length - 1].open === false) {
+                    sessions.pop();
+                }
+                openIn = lastClosed.openIn;
+                lastClosed = null;
+            }
         }
     });
 
@@ -13899,6 +13916,7 @@ window.loadMyAttendance = async function() {
 
         if (!sessions.length) {
             box.innerHTML = `<div style="color:#888; font-size:13px; text-align:center; padding:8px 0;">直近の出退勤記録はありません。</div>`;
+            window._trackingListOpenClockIn = null;
             return;
         }
 
@@ -13922,27 +13940,59 @@ window.loadMyAttendance = async function() {
                 </div>`;
         });
         html += `</div>`;
-        html += `<div style="font-size:11px; color:#888; margin-top:6px;">直近30日分を新しい日付から表示</div>`;
+
+        // 打刻由来の「出勤中」だけをボタン同期の正とする（作業記録だけの推定は除外）
+        const openSess = sessions.find((s) => {
+            if (!s || !s.open) return false;
+            const n = String(s.note || '');
+            return n === '出勤中' || n === '出勤中（端末）' || n.indexOf('出勤中') === 0;
+        });
+
+        if (openSess) {
+            html += `<button type="button" onclick="clockOutFromMyPage()"
+              style="width:100%; background:#4CAF50; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:15px; cursor:pointer; margin-top:10px;">🏃 退勤する</button>`;
+            html += `<div style="font-size:11px; color:#888; margin-top:6px;">直近30日分を新しい日付から表示</div>`;
+        } else {
+            html += `<div style="font-size:11px; color:#888; margin-top:6px;">直近30日分を新しい日付から表示</div>`;
+        }
         box.innerHTML = html;
 
-        // マイページで「出勤中」なら、トラッキングボタンも退勤側に揃える
-        const openSess = sessions.find((s) => s && s.open);
+        // マイページで「出勤中」なら、端末の出勤状態とトラッキングボタンを退勤側に揃える
         if (openSess) {
             try {
-                let needRestore = true;
-                try {
-                    const active = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null');
-                    if (active && active.active) needRestore = false;
-                } catch (e) {}
-                if (needRestore) {
-                    const ymd = openSess.dateYmd || '';
-                    const time = openSess.inTime || '08:00';
+                const today = (() => {
+                    const n = new Date();
+                    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+                })();
+                const ymd = openSess.dateYmd || today;
+                const time = (openSess.inTime && openSess.inTime !== '—') ? openSess.inTime : '08:00';
+                const forgot = !!(ymd && ymd < today);
+
+                window._trackingListOpenClockIn = {
+                    open: true,
+                    dateYmd: ymd,
+                    inTime: time,
+                    forgot: forgot,
+                    until: Date.now() + 10 * 60 * 1000
+                };
+
+                if (typeof window.applyOpenClockInFromServer === 'function') {
+                    window.applyOpenClockInFromServer({
+                        open: true,
+                        forgot: forgot,
+                        clockInTime: time,
+                        clockInDateYmd: ymd,
+                        // 既存の昼休憩登録は消さない（apply側で lunchRegistered 時のみ上書き）
+                        lunchRegistered: false
+                    });
+                } else {
                     localStorage.setItem('passionMapClockIn', JSON.stringify({
                         active: true,
                         time: time,
                         dateYmd: ymd,
                         dateLocale: ymd,
-                        syncedFromMyPage: true
+                        syncedFromMyPage: true,
+                        forgot: forgot
                     }));
                     localStorage.setItem('passionMapClockInToday', JSON.stringify({
                         time: time,
@@ -13950,7 +14000,9 @@ window.loadMyAttendance = async function() {
                         date: ymd
                     }));
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.warn('マイページ出勤状態の端末同期に失敗', e);
+            }
             if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
             else if (typeof window.refreshTrackingModeUI === 'function') window.refreshTrackingModeUI();
             if (typeof window.resolveForgotClockOutInfo === 'function') {
@@ -13961,6 +14013,8 @@ window.loadMyAttendance = async function() {
                     })
                     .catch(() => {});
             }
+        } else {
+            window._trackingListOpenClockIn = null;
         }
     } catch (e) {
         console.warn('出退勤取得エラー', e);
@@ -13977,6 +14031,49 @@ window.loadMyAttendance = async function() {
             box.innerHTML = `<div style="color:#c62828; font-size:13px;">出退勤の取得に失敗しました。</div>`;
         }
     }
+};
+
+window.clockOutFromMyPage = function() {
+    try {
+        const guard = window._trackingListOpenClockIn;
+        if (guard && guard.open && guard.dateYmd) {
+            const today = (() => {
+                const n = new Date();
+                return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+            })();
+            const forgot = !!(guard.forgot || (guard.dateYmd < today));
+            if (typeof window.applyOpenClockInFromServer === 'function') {
+                window.applyOpenClockInFromServer({
+                    open: true,
+                    forgot: forgot,
+                    clockInTime: guard.inTime || '08:00',
+                    clockInDateYmd: guard.dateYmd,
+                    lunchRegistered: false
+                });
+            } else {
+                localStorage.setItem('passionMapClockIn', JSON.stringify({
+                    active: true,
+                    time: guard.inTime || '08:00',
+                    dateYmd: guard.dateYmd,
+                    dateLocale: guard.dateYmd,
+                    syncedFromMyPage: true,
+                    forgot: forgot
+                }));
+            }
+        }
+    } catch (e) {}
+
+    if (typeof window.closeAppModal === 'function') window.closeAppModal();
+    else {
+        const modal = document.getElementById('modal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    // フローティング出勤ボタンと同じ退勤フローへ
+    setTimeout(() => {
+        if (typeof window.toggleTracking === 'function') window.toggleTracking();
+        else if (typeof window.openClockOutModal === 'function') window.openClockOutModal();
+    }, 50);
 };
 
 window.closeAppModal = function() {

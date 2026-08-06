@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>ドローンバトル — Mode1/2・対CPU</title>
+  <title>ドローンバトル — ロビー / Mode1/2</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -338,6 +338,63 @@
     }
     .result-title.win { color: var(--ok); }
     .result-title.lose { color: var(--danger); }
+    .hangar-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .coin-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: rgba(255, 193, 7, 0.12);
+      border: 1px solid rgba(255, 193, 7, 0.35);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 0.9rem;
+    }
+    .coin-bar b { color: #ffd54f; font-family: Orbitron, sans-serif; }
+    .slot-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(0,229,255,0.2);
+      border-radius: 10px;
+      padding: 8px;
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .slot-card .ico { font-size: 1.35rem; display: block; margin-bottom: 4px; }
+    .slot-card .name { color: var(--ink); font-weight: 700; font-size: 0.78rem; }
+    .inv-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 120px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+    .inv-item {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    .inv-item.on {
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.16);
+    }
+    .rarity-UR { color: #ff1744; }
+    .rarity-SSR { color: #f50057; }
+    .rarity-SR { color: #e040fb; }
+    .rarity-R { color: #40c4ff; }
+    .rarity-N { color: #b0bec5; }
     @media (min-width: 900px) {
       .stick-zone { opacity: 0.55; }
       .fire-btn { opacity: 0.7; }
@@ -347,10 +404,122 @@
 <body>
   <canvas id="gameCanvas"></canvas>
 
-  <div id="titleScreen" class="screen active">
-    <div class="card">
+  <div id="lobbyScreen" class="screen active">
+    <div class="card" style="max-height:92vh; overflow-y:auto;">
       <h1 class="brand">DRONE BATTLE</h1>
-      <p class="sub">Mode1 / Mode2 切替対応の対CPUドッグファイト。仮想スティックまたはキーボードで操作。</p>
+      <p class="sub">ロビー — ガチャでパーツを集め、機体をカスタムして出撃しよう。</p>
+
+      <div class="coin-bar">
+        <span>🪙 ドローンコイン <b id="lobbyCoinCount">0</b></span>
+        <button type="button" class="btn secondary" id="claimWorkCoinsBtn" style="padding:8px 10px; font-size:0.78rem; width:auto;">作業時間から獲得</button>
+      </div>
+      <div class="help" id="workCoinHint" style="margin-top:-6px;">
+        情熱MAPの作業記録の実作業時間からコインを獲得できます（未受取分）。
+      </div>
+
+      <div class="mode-row" style="grid-template-columns:1fr 1fr; margin-bottom:10px;">
+        <button type="button" class="mode-btn" id="openHangarBtn">🛠️ 格納庫<br><small>装備・カスタム</small></button>
+        <button type="button" class="mode-btn" id="openGachaBtn">🎁 ガチャ<br><small>パーツ獲得</small></button>
+      </div>
+
+      <div class="mode-row" style="grid-template-columns:1fr;">
+        <button type="button" class="mode-btn game-pick" id="pickDogfight" data-game="dogfight">
+          ⚔️ ドッグファイト（1-A）
+          <small>対CPUの空中撃ち合い。先に相手のHPを0にすれば勝利。</small>
+        </button>
+        <button type="button" class="mode-btn game-pick" id="pickMission" data-game="mission">
+          🌾 圃場ミッション（1-B）
+          <small>ゲート周回＋害虫ターゲット破壊。農業フィールド上のタイムアタック。</small>
+        </button>
+        <button type="button" class="mode-btn game-pick" id="pickOnline" data-game="online">
+          🌐 オンライン対戦（1v1）
+          <small>ルームコードで友人とドッグファイト。サーバー不要（PeerJS）。</small>
+        </button>
+      </div>
+
+      <div class="actions">
+        <a class="btn secondary" href="index.html">ポータルへ戻る</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="hangarScreen" class="screen">
+    <div class="card" style="max-height:92vh; overflow-y:auto;">
+      <h1 class="brand">HANGAR</h1>
+      <p class="sub">獲得パーツを装着して機体をカスタマイズ。性能は出撃時に反映されます。</p>
+      <div class="coin-bar">
+        <span>🪙 <b id="hangarCoinCount">0</b></span>
+        <span id="hangarStatSummary" style="font-size:0.75rem; color:var(--muted);">HP -- / SPD -- / ATK --</span>
+      </div>
+      <div class="hangar-grid" id="equipSlots"></div>
+      <div class="help"><strong>所持パーツ</strong>（タップで装着／同スロットは上書き）</div>
+      <div class="inv-wrap" id="inventoryList"></div>
+      <div class="actions">
+        <button type="button" class="btn secondary" id="hangarToGachaBtn">ガチャへ</button>
+        <button type="button" class="btn secondary" id="hangarBackBtn">ロビーへ戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="gachaScreen" class="screen">
+    <div class="card" style="max-height:92vh; overflow-y:auto;">
+      <h1 class="brand">GACHA</h1>
+      <p class="sub">ドローンパーツ＆スキンガチャ。作業時間コインやバトル報酬で回せます。</p>
+      <div class="coin-bar">
+        <span>🪙 所持 <b id="gachaCoinCount">0</b></span>
+      </div>
+      <div class="mode-row">
+        <button type="button" class="btn" id="gachaOnceBtn" style="margin:0;">🎰 1回 (10枚)</button>
+        <button type="button" class="btn warn" id="gachaTenBtn" style="margin:0;">🔥 10連 (100枚)</button>
+      </div>
+      <div class="help" id="gachaResult" style="min-height:64px; display:flex; align-items:center; justify-content:center; text-align:center;">
+        ガチャ結果がここに表示されます
+      </div>
+      <div class="actions">
+        <button type="button" class="btn secondary" id="gachaToHangarBtn">格納庫で装備</button>
+        <button type="button" class="btn secondary" id="gachaBackBtn">ロビーへ戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="onlineScreen" class="screen">
+    <div class="card">
+      <h1 class="brand">ONLINE 1v1</h1>
+      <p class="sub">同じ Mode（操作）を選んでから、ホスト作成またはルーム参加してください。</p>
+
+      <div class="mode-row">
+        <button type="button" class="mode-btn" id="onlineMode1Btn" data-mode="1">Mode 1</button>
+        <button type="button" class="mode-btn selected" id="onlineMode2Btn" data-mode="2">Mode 2</button>
+      </div>
+
+      <div class="help" id="onlineStatus">接続待機中…</div>
+
+      <div id="onlineHostBox" style="margin-bottom:12px;">
+        <button type="button" class="btn" id="hostRoomBtn" style="width:100%;">ルームを作成（ホスト）</button>
+        <div id="roomCodeDisplay" style="display:none; margin-top:12px; text-align:center;">
+          <div style="font-size:0.75rem; color:var(--muted);">ルームコード（相手に伝えてください）</div>
+          <div id="roomCodeText" style="font-family:Orbitron,sans-serif; font-size:2rem; letter-spacing:0.2em; color:var(--accent); margin:8px 0;">----</div>
+          <button type="button" class="btn secondary" id="copyRoomBtn" style="width:100%;">コードをコピー</button>
+        </div>
+      </div>
+
+      <div id="onlineJoinBox" style="margin-bottom:12px;">
+        <label style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:6px;">ルームコードで参加</label>
+        <input id="joinRoomInput" maxlength="6" placeholder="例: A3K9" autocomplete="off"
+          style="width:100%; padding:12px; border-radius:8px; border:1px solid rgba(0,229,255,0.3); background:rgba(0,0,0,0.35); color:#fff; font-size:1.2rem; letter-spacing:0.15em; text-align:center; text-transform:uppercase; margin-bottom:8px; box-sizing:border-box;" />
+        <button type="button" class="btn warn" id="joinRoomBtn" style="width:100%;">参加する</button>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn secondary" id="onlineCancelBtn">ロビーへ戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="titleScreen" class="screen">
+    <div class="card">
+      <h1 class="brand" id="setupTitle">SETUP</h1>
+      <p class="sub" id="setupSub">操作モードを選んで開始します。</p>
 
       <div class="mode-row">
         <button type="button" class="mode-btn" id="mode1Btn" data-mode="1">
@@ -367,15 +536,15 @@
         <strong>Mode 2（初期）</strong> — 左スティック上下が上昇・下降。右スティックで機首操作。
       </div>
 
-      <div class="help">
+      <div class="help" id="gameHelp">
         <strong>操作</strong><br>
         ・タッチ: 左右スティック＋赤ボタン射撃<br>
-        ・キー: WASD＋矢印（モード連動）／Space射撃／Cカメラ<br>
-        ・地面衝突・弾命中でダメージ。先にHP0で敗北。
+        ・キー: WASD＋矢印／Space射撃／Cカメラ
       </div>
 
       <div class="actions">
-        <button type="button" class="btn" id="startBtn">対戦開始（対CPU）</button>
+        <button type="button" class="btn" id="startBtn">開始</button>
+        <button type="button" class="btn secondary" id="backLobbyBtn">ロビーへ戻る</button>
         <a class="btn secondary" href="index.html">ポータルへ戻る</a>
       </div>
     </div>
@@ -387,7 +556,8 @@
       <p class="sub" id="resultMsg">CPUを撃墜しました。</p>
       <div class="actions">
         <button type="button" class="btn warn" id="retryBtn">再戦</button>
-        <button type="button" class="btn secondary" id="toTitleBtn">モード設定へ</button>
+        <button type="button" class="btn secondary" id="toSetupBtn">操作設定へ</button>
+        <button type="button" class="btn secondary" id="toLobbyBtn">ロビーへ</button>
         <a class="btn secondary" href="index.html">ポータルへ戻る</a>
       </div>
     </div>
@@ -400,8 +570,8 @@
         <div class="hp-label">YOU</div>
         <div class="hp-bar"><div class="hp-fill player" id="playerHpFill"></div></div>
       </div>
-      <div class="hp-box enemy">
-        <div class="hp-label">CPU</div>
+      <div class="hp-box enemy" id="hudRightBox">
+        <div class="hp-label" id="hudRightLabel">CPU</div>
         <div class="hp-bar"><div class="hp-fill enemy" id="enemyHpFill"></div></div>
       </div>
     </div>
@@ -409,6 +579,8 @@
       <span class="pill" id="modePill">MODE 2</span>
       <span class="pill" id="altPill">ALT 10m</span>
       <span class="pill" id="spdPill">SPD 0</span>
+      <span class="pill" id="missionPill" style="display:none;">LAP 0/2</span>
+      <span class="pill" id="timePill" style="display:none;">TIME 150</span>
     </div>
     <div class="crosshair"></div>
     <div class="controls">
@@ -427,6 +599,7 @@
 
   <div id="toast"></div>
 
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script type="importmap">
   {
     "imports": {
@@ -438,16 +611,19 @@
 import * as THREE from 'three';
 
 const MODE_KEY = 'passionMapDroneBattleMode';
+const GAME_KEY = 'passionMapDroneBattleGame';
 const MAX_HP = 100;
 const FIRE_COOLDOWN = 0.28;
 const BULLET_SPEED = 55;
 const BULLET_LIFE = 1.6;
 const HIT_RADIUS = 1.35;
-const GROUND_Y = 0;
 const ARENA = 90;
+const MISSION_TIME = 150;
+const MISSION_LAPS = 2;
 
 const state = {
   mode: Number(localStorage.getItem(MODE_KEY) || '2') === 1 ? 1 : 2,
+  gameType: localStorage.getItem(GAME_KEY) === 'mission' ? 'mission' : 'dogfight',
   playing: false,
   over: false,
   firstPerson: false,
@@ -458,9 +634,28 @@ const state = {
   playerFireCd: 0,
   enemyFireCd: 0,
   bullets: [],
-  toastTimer: 0
+  toastTimer: 0,
+  // mission
+  nextGate: 0,
+  laps: 0,
+  timeLeft: MISSION_TIME,
+  targetsLeft: 0,
+  // online
+  isHost: false,
+  roomCode: '',
+  netSendAcc: 0,
+  remoteTarget: new THREE.Vector3(),
+  remoteYaw: 0,
+  remotePitch: 0,
+  remoteRoll: 0,
+  remoteHp: MAX_HP,
+  hitCooldown: 0
 };
 
+const lobbyScreen = document.getElementById('lobbyScreen');
+const hangarScreen = document.getElementById('hangarScreen');
+const gachaScreen = document.getElementById('gachaScreen');
+const onlineScreen = document.getElementById('onlineScreen');
 const titleScreen = document.getElementById('titleScreen');
 const resultScreen = document.getElementById('resultScreen');
 const hud = document.getElementById('hud');
@@ -468,11 +663,549 @@ const toastEl = document.getElementById('toast');
 const mode1Btn = document.getElementById('mode1Btn');
 const mode2Btn = document.getElementById('mode2Btn');
 const modeHelp = document.getElementById('modeHelp');
+const gameHelp = document.getElementById('gameHelp');
 const modePill = document.getElementById('modePill');
 const leftStickLabel = document.getElementById('leftStickLabel');
 const rightStickLabel = document.getElementById('rightStickLabel');
+const missionPill = document.getElementById('missionPill');
+const timePill = document.getElementById('timePill');
+const hudRightLabel = document.getElementById('hudRightLabel');
+const onlineStatus = document.getElementById('onlineStatus');
 
-function setMode(m) {
+let peer = null;
+let conn = null;
+
+function showScreen(which) {
+  lobbyScreen.classList.toggle('active', which === 'lobby');
+  hangarScreen.classList.toggle('active', which === 'hangar');
+  gachaScreen.classList.toggle('active', which === 'gacha');
+  onlineScreen.classList.toggle('active', which === 'online');
+  titleScreen.classList.toggle('active', which === 'setup');
+  resultScreen.classList.toggle('active', which === 'result');
+  if (which === 'lobby' || which === 'hangar' || which === 'gacha') refreshMetaUI();
+}
+
+/* ========== ガチャ・装備・作業時間コイン ========== */
+const META_KEY = 'passionMapDroneMeta';
+const SLOT_DEFS = [
+  { key: 'frame', label: 'フレーム', icon: '🧱' },
+  { key: 'motor', label: 'モーター', icon: '🌀' },
+  { key: 'armor', label: 'アーマー', icon: '🛡️' },
+  { key: 'weapon', label: '武装', icon: '🔫' },
+  { key: 'skin', label: 'スキン', icon: '🎨' }
+];
+const DRONE_PARTS = [
+  { id: 'fr_basic', name: '標準フレーム', icon: '🟦', type: 'frame', rarity: 'N', hp: 0, color: 0x0277bd, desc: '初期フレーム' },
+  { id: 'fr_carb', name: 'カーボン殻', icon: '⬛', type: 'frame', rarity: 'R', hp: 20, color: 0x37474f, desc: '軽量高剛性' },
+  { id: 'fr_tita', name: 'チタンフレーム', icon: '⬜', type: 'frame', rarity: 'SR', hp: 40, color: 0x90a4ae, desc: '耐久強化' },
+  { id: 'fr_gold', name: '黄金機体', icon: '🟨', type: 'frame', rarity: 'SSR', hp: 70, color: 0xf9a825, desc: '農園チャンピオン仕様' },
+  { id: 'fr_myth', name: '神話コア', icon: '🟪', type: 'frame', rarity: 'UR', hp: 110, color: 0x7b1fa2, desc: '伝説の機体骨格' },
+
+  { id: 'mo_basic', name: '標準モーター', icon: '⚙️', type: 'motor', rarity: 'N', spd: 0, thrust: 0, desc: '初期モーター' },
+  { id: 'mo_sport', name: 'スポーツモーター', icon: '🔋', type: 'motor', rarity: 'R', spd: 3, thrust: 3, desc: '加速向上' },
+  { id: 'mo_race', name: 'レーシングユニット', icon: '🏎️', type: 'motor', rarity: 'SR', spd: 6, thrust: 6, desc: '高回転' },
+  { id: 'mo_hyper', name: 'ハイパーローター', icon: '✨', type: 'motor', rarity: 'SSR', spd: 10, thrust: 10, desc: '瞬間推力' },
+  { id: 'mo_warp', name: 'ワープドライブ', icon: '🌌', type: 'motor', rarity: 'UR', spd: 15, thrust: 14, desc: '常識外れの機動' },
+
+  { id: 'ar_basic', name: '樹脂ガード', icon: '🛡️', type: 'armor', rarity: 'N', hp: 5, def: 0, desc: '軽い保護' },
+  { id: 'ar_plate', name: '合金プレート', icon: '🧱', type: 'armor', rarity: 'R', hp: 15, def: 0.08, desc: '被弾軽減' },
+  { id: 'ar_ceramic', name: 'セラミック装甲', icon: '🪨', type: 'armor', rarity: 'SR', hp: 30, def: 0.14, desc: '衝撃吸収' },
+  { id: 'ar_force', name: 'フォースバリア', icon: '💠', type: 'armor', rarity: 'SSR', hp: 50, def: 0.22, desc: 'エネルギー障壁' },
+  { id: 'ar_aegis', name: 'イージス殻', icon: '🧿', type: 'armor', rarity: 'UR', hp: 80, def: 0.32, desc: '究極防御' },
+
+  { id: 'wp_basic', name: '標準ビーム', icon: '🔫', type: 'weapon', rarity: 'N', atk: 0, kind: 'beam', desc: '初期の前方ビーム' },
+  { id: 'wp_pulse', name: 'パルス砲', icon: '💥', type: 'weapon', rarity: 'R', atk: 4, kind: 'beam', desc: '連射寄りのビーム' },
+  { id: 'wp_rail', name: 'レールガン', icon: '⚡', type: 'weapon', rarity: 'SR', atk: 9, kind: 'sniper', desc: '高速・高威力の狙撃弾' },
+  { id: 'wp_plasma', name: 'プラズマ砲', icon: '🔥', type: 'weapon', rarity: 'SSR', atk: 15, kind: 'cannon', desc: '重砲タイプの高火力' },
+  { id: 'wp_nova', name: 'ノヴァキャノン', icon: '☄️', type: 'weapon', rarity: 'UR', atk: 24, kind: 'cannon', desc: '星を穿つ大口径砲' },
+
+  { id: 'wp_cannon_r', name: '農薬キャノン', icon: '💣', type: 'weapon', rarity: 'R', atk: 6, kind: 'cannon', desc: '大口径・低連射の重砲' },
+  { id: 'wp_cannon_sr', name: 'ブラストキャノン', icon: '🧨', type: 'weapon', rarity: 'SR', atk: 12, kind: 'cannon', desc: '爆風半径の大きい砲弾' },
+  { id: 'wp_cannon_ssr', name: '榴弾キャノン', icon: '💥', type: 'weapon', rarity: 'SSR', atk: 18, kind: 'cannon', desc: '一発の破壊力重視' },
+
+  { id: 'wp_laser_r', name: '刈取レーザー', icon: '🔴', type: 'weapon', rarity: 'R', atk: 5, kind: 'laser', desc: '光速ビーム・貫通1' },
+  { id: 'wp_laser_sr', name: '紅蓮レーザー', icon: '🟥', type: 'weapon', rarity: 'SR', atk: 10, kind: 'laser', desc: '高速・貫通強化' },
+  { id: 'wp_laser_ssr', name: 'ソルレーザー', icon: '☀️', type: 'weapon', rarity: 'SSR', atk: 16, kind: 'laser', desc: '連続貫通の熱線' },
+  { id: 'wp_laser_ur', name: 'ゼロ点レーザー', icon: '✦', type: 'weapon', rarity: 'UR', atk: 22, kind: 'laser', desc: 'ほぼ瞬着の貫通レーザー' },
+
+  { id: 'wp_missile_r', name: '追尾ミサイル', icon: '🚀', type: 'weapon', rarity: 'R', atk: 7, kind: 'missile', desc: '敵へ緩やかにホーミング' },
+  { id: 'wp_missile_sr', name: 'マルチミサイル', icon: '🛰️', type: 'weapon', rarity: 'SR', atk: 11, kind: 'missile', desc: '強い追尾・中威力' },
+  { id: 'wp_missile_ssr', name: 'ハーベストミサイル', icon: '🌾', type: 'weapon', rarity: 'SSR', atk: 17, kind: 'missile', desc: '強追尾の農業特化弾' },
+  { id: 'wp_missile_ur', name: 'スマートミサイル', icon: '🎯', type: 'weapon', rarity: 'UR', atk: 23, kind: 'missile', desc: '最強追尾・高威力' },
+
+  { id: 'wp_gatling_r', name: '散弾ガトリング', icon: '🔫', type: 'weapon', rarity: 'R', atk: 2, kind: 'gatling', desc: '超連射・弾幕' },
+  { id: 'wp_gatling_sr', name: 'ミニガン', icon: '⚙️', type: 'weapon', rarity: 'SR', atk: 4, kind: 'gatling', desc: '高回転連射' },
+  { id: 'wp_gatling_ssr', name: 'ストームガトリング', icon: '🌪️', type: 'weapon', rarity: 'SSR', atk: 6, kind: 'gatling', desc: '弾幕で押し切る' },
+  { id: 'wp_gatling_ur', name: 'バレットヘイロー', icon: '💫', type: 'weapon', rarity: 'UR', atk: 8, kind: 'gatling', desc: '圧倒的弾幕' },
+
+  { id: 'wp_sniper_r', name: 'フィールドスナイパー', icon: '🎯', type: 'weapon', rarity: 'R', atk: 8, kind: 'sniper', desc: '遠距離・高初速' },
+  { id: 'wp_sniper_sr', name: 'アンチマテリアル', icon: '🔭', type: 'weapon', rarity: 'SR', atk: 14, kind: 'sniper', desc: '長射程狙撃' },
+  { id: 'wp_sniper_ssr', name: 'バードアイ狙撃銃', icon: '🦅', type: 'weapon', rarity: 'SSR', atk: 20, kind: 'sniper', desc: '高威力狙撃' },
+  { id: 'wp_sniper_ur', name: '軌道狙撃砲', icon: '🛰️', type: 'weapon', rarity: 'UR', atk: 28, kind: 'sniper', desc: '一発必中クラス' },
+
+  // ===== スキン（機体見た目） =====
+  { id: 'sk_basic', name: '標準スキン', icon: '🩵', type: 'skin', rarity: 'N', style: 'default', body: 0x0277bd, accent: 0x00e5ff, desc: '初期機体カラー' },
+  { id: 'sk_orange', name: 'サンセット', icon: '🧡', type: 'skin', rarity: 'N', style: 'default', body: 0xef6c00, accent: 0xffcc80, desc: '夕焼けカラー' },
+  { id: 'sk_forest', name: 'フォレスト', icon: '🌲', type: 'skin', rarity: 'N', style: 'default', body: 0x2e7d32, accent: 0xa5d6a7, desc: '森の迷彩' },
+
+  { id: 'sk_racer', name: 'レーサースキン', icon: '🏎️', type: 'skin', rarity: 'R', style: 'racer', body: 0xc62828, accent: 0xffffff, stripe: 0xffeb3b, desc: 'レーシングストライプ' },
+  { id: 'sk_bee', name: 'みつばち号', icon: '🐝', type: 'skin', rarity: 'R', style: 'bee', body: 0xfbc02d, accent: 0x212121, desc: 'ハチ模様の可愛い機体' },
+  { id: 'sk_camo', name: '圃場カモ', icon: '🌾', type: 'skin', rarity: 'R', style: 'camo', body: 0x558b2f, accent: 0x8d6e63, desc: '畑に溶け込む迷彩' },
+  { id: 'sk_ice', name: 'アイスクリスタル', icon: '❄️', type: 'skin', rarity: 'R', style: 'ice', body: 0xb3e5fc, accent: 0xe1f5fe, emissive: 0x4fc3f7, desc: '氷の光沢' },
+
+  { id: 'sk_stealth', name: 'ステルス黒', icon: '🌑', type: 'skin', rarity: 'SR', style: 'stealth', body: 0x212121, accent: 0x00e676, emissive: 0x1b5e20, desc: '黒機体＋緑エッジ' },
+  { id: 'sk_sakura', name: '桜吹雪', icon: '🌸', type: 'skin', rarity: 'SR', style: 'sakura', body: 0xf8bbd0, accent: 0xffffff, emissive: 0xec407a, desc: '桜色の優雅な機体' },
+  { id: 'sk_tractor', name: '赤トラ風', icon: '🚜', type: 'skin', rarity: 'SR', style: 'farm', body: 0xd32f2f, accent: 0xffeb3b, desc: 'トラクターイメージ' },
+  { id: 'sk_ocean', name: 'オーシャンブルー', icon: '🌊', type: 'skin', rarity: 'SR', style: 'racer', body: 0x0277bd, accent: 0x00bcd4, stripe: 0xffffff, desc: '海を翔ぶレーサー' },
+
+  { id: 'sk_neon', name: 'ネオンシティ', icon: '🌃', type: 'skin', rarity: 'SSR', style: 'neon', body: 0x311b92, accent: 0xff4081, emissive: 0x7c4dff, desc: 'ネオン発光スキン' },
+  { id: 'sk_dragon', name: 'ドラゴン翅', icon: '🐉', type: 'skin', rarity: 'SSR', style: 'dragon', body: 0xbf360c, accent: 0xff6f00, emissive: 0xe65100, desc: '翼付きの迫力機体' },
+  { id: 'sk_gold', name: 'ゴールデンハーベスト', icon: '🥇', type: 'skin', rarity: 'SSR', style: 'gold', body: 0xffc107, accent: 0xfff8e1, emissive: 0xff8f00, metal: 0.85, desc: '黄金に輝く機体' },
+  { id: 'sk_ghost', name: 'ゴースト', icon: '👻', type: 'skin', rarity: 'SSR', style: 'ghost', body: 0x90a4ae, accent: 0xeceff1, opacity: 0.72, emissive: 0x78909c, desc: '半透明の幽体スキン' },
+
+  { id: 'sk_rainbow', name: 'プリズム虹', icon: '🌈', type: 'skin', rarity: 'UR', style: 'rainbow', body: 0x7b1fa2, accent: 0x00e5ff, emissive: 0xe040fb, desc: '虹色に輝くURスキン' },
+  { id: 'sk_phoenix', name: 'フェニックス', icon: '🔥', type: 'skin', rarity: 'UR', style: 'phoenix', body: 0xff3d00, accent: 0xffea00, emissive: 0xff6d00, desc: '炎の翼を持つ伝説機' },
+  { id: 'sk_legend', name: '情熱レジェンド', icon: '⭐', type: 'skin', rarity: 'UR', style: 'legend', body: 0x1b5e20, accent: 0xff9800, emissive: 0x4caf50, stripe: 0xffeb3b, desc: '情熱MAP記念スキン' },
+
+  // 旧カラーID互換
+  { id: 'pt_cyan', name: 'シアン塗装', icon: '🩵', type: 'skin', rarity: 'N', style: 'default', body: 0x0277bd, accent: 0x00e5ff, desc: '（旧）標準カラー' },
+  { id: 'pt_orange', name: 'オレンジ塗装', icon: '🧡', type: 'skin', rarity: 'R', style: 'default', body: 0xef6c00, accent: 0xff9100, desc: '（旧）視認性アップ' },
+  { id: 'pt_lime', name: 'ライム塗装', icon: '💚', type: 'skin', rarity: 'SR', style: 'default', body: 0x558b2f, accent: 0x76ff03, desc: '（旧）圃場カモ' },
+  { id: 'pt_pink', name: 'ネオンピンク', icon: '💖', type: 'skin', rarity: 'SSR', style: 'neon', body: 0xad1457, accent: 0xff4081, emissive: 0xf50057, desc: '（旧）ネオン' },
+  { id: 'pt_rainbow', name: '虹彩メッキ', icon: '🌈', type: 'skin', rarity: 'UR', style: 'rainbow', body: 0x7b1fa2, accent: 0xe040fb, emissive: 0xe040fb, desc: '（旧）虹彩' }
+];
+
+function metaUser() {
+  return localStorage.getItem('passionMapUserName') || 'guest';
+}
+function metaStorageKey() {
+  return META_KEY + ':' + metaUser();
+}
+function defaultMeta() {
+  return {
+    coins: 30,
+    claimedWorkMins: 0,
+    inventory: ['fr_basic', 'mo_basic', 'ar_basic', 'wp_basic', 'sk_basic'],
+    equipped: {
+      frame: 'fr_basic',
+      motor: 'mo_basic',
+      armor: 'ar_basic',
+      weapon: 'wp_basic',
+      skin: 'sk_basic'
+    },
+    wins: 0
+  };
+}
+let meta = defaultMeta();
+
+function loadMeta() {
+  try {
+    const raw = localStorage.getItem(metaStorageKey());
+    const base = defaultMeta();
+    if (!raw) { meta = base; return meta; }
+    const parsed = JSON.parse(raw);
+    meta = {
+      coins: parsed.coins != null ? parsed.coins : base.coins,
+      claimedWorkMins: parsed.claimedWorkMins || 0,
+      inventory: Array.isArray(parsed.inventory) ? parsed.inventory : base.inventory,
+      equipped: Object.assign({}, base.equipped, parsed.equipped || {}),
+      wins: parsed.wins || 0
+    };
+    // paint → skin 移行
+    if (meta.equipped.paint && !meta.equipped.skin) {
+      meta.equipped.skin = meta.equipped.paint;
+    }
+    delete meta.equipped.paint;
+    if (meta.inventory.includes('pt_cyan') && !meta.inventory.includes('sk_basic')) {
+      meta.inventory.push('sk_basic');
+    }
+    // 必須初期パーツを保証
+    base.inventory.forEach((id) => {
+      if (!meta.inventory.includes(id)) meta.inventory.push(id);
+    });
+    if (!meta.equipped.skin) meta.equipped.skin = 'sk_basic';
+  } catch (e) {
+    meta = defaultMeta();
+  }
+  return meta;
+}
+function saveMeta() {
+  try {
+    localStorage.setItem(metaStorageKey(), JSON.stringify({
+      coins: meta.coins,
+      claimedWorkMins: meta.claimedWorkMins,
+      inventory: meta.inventory,
+      equipped: meta.equipped,
+      wins: meta.wins
+    }));
+  } catch (e) {}
+}
+
+function findPart(id) {
+  return DRONE_PARTS.find((p) => p.id === id) || null;
+}
+
+function getPlayerLoadoutStats() {
+  let hp = MAX_HP;
+  let maxSpd = 32;
+  let thrust = 38;
+  let atk = 12;
+  let def = 0;
+  let color = 0x0277bd;
+  let accent = 0x00e5ff;
+  let weaponKind = 'beam';
+  let skin = findPart('sk_basic');
+  SLOT_DEFS.forEach((s) => {
+    const part = findPart(meta.equipped[s.key]);
+    if (!part) return;
+    hp += part.hp || 0;
+    maxSpd += part.spd || 0;
+    thrust += part.thrust || 0;
+    atk += part.atk || 0;
+    def += part.def || 0;
+    if (part.type === 'frame' && part.color != null) color = part.color;
+    if (part.type === 'weapon' && part.kind) weaponKind = part.kind;
+    if (part.type === 'skin') {
+      skin = part;
+      if (part.body != null) color = part.body;
+      if (part.accent != null) accent = part.accent;
+    }
+  });
+  return {
+    maxHp: Math.max(60, hp),
+    maxSpd: Math.max(22, maxSpd),
+    thrust: Math.max(28, thrust),
+    atk: Math.max(8, atk),
+    def: Math.min(0.4, Math.max(0, def)),
+    color,
+    accent,
+    weaponKind,
+    skin
+  };
+}
+
+/** 武装種別ごとの射撃プロファイル */
+function getWeaponProfile(kind, atk) {
+  const k = kind || 'beam';
+  const base = {
+    kind: k,
+    cooldown: 0.28,
+    speed: BULLET_SPEED,
+    life: BULLET_LIFE,
+    radius: 0.25,
+    color: 0x00e5ff,
+    size: 0.18,
+    dmgMul: 1,
+    pierce: 0,
+    homing: 0,
+    spread: 0,
+    pellets: 1,
+    shape: 'sphere'
+  };
+  if (k === 'cannon') {
+    return Object.assign(base, {
+      cooldown: 0.72,
+      speed: 38,
+      life: 2.0,
+      radius: 0.85,
+      color: 0xff9100,
+      size: 0.42,
+      dmgMul: 1.55,
+      shape: 'sphere'
+    });
+  }
+  if (k === 'laser') {
+    return Object.assign(base, {
+      cooldown: 0.38,
+      speed: 120,
+      life: 0.55,
+      radius: 0.35,
+      color: 0xff1744,
+      size: 0.1,
+      dmgMul: 1.15,
+      pierce: 2,
+      shape: 'laser'
+    });
+  }
+  if (k === 'missile') {
+    return Object.assign(base, {
+      cooldown: 0.85,
+      speed: 28,
+      life: 3.2,
+      radius: 0.55,
+      color: 0xffeb3b,
+      size: 0.22,
+      dmgMul: 1.45,
+      homing: 2.8,
+      shape: 'missile'
+    });
+  }
+  if (k === 'gatling') {
+    return Object.assign(base, {
+      cooldown: 0.08,
+      speed: 70,
+      life: 1.1,
+      radius: 0.22,
+      color: 0xb0bec5,
+      size: 0.1,
+      dmgMul: 0.55,
+      spread: 0.12,
+      pellets: 1,
+      shape: 'sphere'
+    });
+  }
+  if (k === 'sniper') {
+    return Object.assign(base, {
+      cooldown: 0.95,
+      speed: 140,
+      life: 2.4,
+      radius: 0.28,
+      color: 0x69f0ae,
+      size: 0.12,
+      dmgMul: 1.85,
+      shape: 'sniper'
+    });
+  }
+  // beam
+  return Object.assign(base, {
+    cooldown: Math.max(0.16, 0.32 - Math.min(0.12, (atk - 12) * 0.004)),
+    color: 0x00e5ff,
+    dmgMul: 1
+  });
+}
+
+function getEquippedWeaponProfile() {
+  const st = getPlayerLoadoutStats();
+  return getWeaponProfile(st.weaponKind, st.atk);
+}
+
+function parseWorkMinutesFromPhoto(ph) {
+  const d = (ph && ph.data) || {};
+  let mins = parseInt(d.workMinutes || ph.workMinutes || 0, 10) || 0;
+  if (mins > 0) return mins;
+  const t = String(d.totalTime || '').trim();
+  if (t) {
+    const hm = t.match(/(\d+)\s*時間/);
+    const mm = t.match(/(\d+)\s*分/);
+    mins = (hm ? parseInt(hm[1], 10) * 60 : 0) + (mm ? parseInt(mm[1], 10) : 0);
+    if (mins > 0) return mins;
+  }
+  const st = String(d.startTime || '').trim();
+  const et = String(d.endTime || '').trim();
+  if (st && et && /^\d{1,2}:\d{2}$/.test(st) && /^\d{1,2}:\d{2}$/.test(et)) {
+    const [sh, sm] = st.split(':').map(Number);
+    const [eh, em] = et.split(':').map(Number);
+    let diff = (eh * 60 + em) - (sh * 60 + sm);
+    if (diff < 0) diff += 24 * 60;
+    const br = Math.max(0, parseInt(d.breakMins, 10) || 0);
+    return Math.max(0, diff - br);
+  }
+  return 0;
+}
+
+function collectUserWorkMinutes() {
+  const user = String(metaUser() || '').replace(/\s+/g, '');
+  let total = 0;
+  let records = 0;
+  try {
+    const raw = localStorage.getItem('passionMapInitData') || localStorage.getItem('pMapAdminInitData');
+    if (!raw) return { total: 0, records: 0 };
+    const initData = JSON.parse(raw);
+    const polys = initData.loadedPolygons
+      ? Object.values(initData.loadedPolygons)
+      : (Array.isArray(initData.polygons) ? initData.polygons : []);
+    const seen = new Set();
+    polys.forEach((poly) => {
+      if (!poly || !Array.isArray(poly.photos)) return;
+      poly.photos.forEach((ph) => {
+        if (!ph) return;
+        const typ = String(ph.type || ph.recordType || 'work');
+        if (typ && typ !== 'work' && typ !== '作業') return;
+        const author = String(ph.author || ph.userName || (ph.data && ph.data.userName) || '').replace(/\s+/g, '');
+        if (user && user !== 'guest' && author && author !== user && !user.includes(author) && !author.includes(user)) return;
+        const id = ph.id || (ph.data && ph.data.recordId) || '';
+        if (id && seen.has(id)) return;
+        if (id) seen.add(id);
+        const mins = parseWorkMinutesFromPhoto(ph);
+        if (mins <= 0) return;
+        total += mins;
+        records++;
+      });
+    });
+  } catch (e) {
+    console.warn(e);
+  }
+  return { total, records };
+}
+
+function claimWorkCoins() {
+  loadMeta();
+  const { total, records } = collectUserWorkMinutes();
+  const unclaimed = Math.max(0, total - (meta.claimedWorkMins || 0));
+  // 5分で1コイン（端数切り捨て）、最低でも記録があれば様子が分かる
+  const gain = Math.floor(unclaimed / 5);
+  if (gain <= 0) {
+    document.getElementById('workCoinHint').textContent =
+      records
+        ? `作業時間合計 ${total} 分（受取済）。新しい作業記録が増えるとコインになります（5分＝1枚）。`
+        : '作業記録が見つかりません。作業員MAPでログイン・同期後に再試行してください。';
+    showToast(gain === 0 ? '獲得できるコインはありません' : 'コインなし');
+    refreshMetaUI();
+    return;
+  }
+  meta.coins += gain;
+  meta.claimedWorkMins = total;
+  saveMeta();
+  document.getElementById('workCoinHint').textContent =
+    `+${gain} 枚獲得（未受取 ${unclaimed} 分 ÷ 5）。累計作業 ${total} 分 / ${records} 件。`;
+  showToast('🪙 +' + gain + ' コイン獲得！');
+  refreshMetaUI();
+}
+
+function playDroneGacha(times) {
+  loadMeta();
+  const cost = times * 10;
+  if ((meta.coins || 0) < cost) {
+    showToast('コイン不足（必要 ' + cost + ' / 所持 ' + (meta.coins || 0) + '）');
+    return;
+  }
+  meta.coins -= cost;
+  const results = [];
+  for (let i = 0; i < times; i++) {
+    const rand = Math.random() * 100;
+    let pool;
+    if (rand < 3) pool = DRONE_PARTS.filter((e) => e.rarity === 'UR' && !String(e.id).startsWith('pt_'));
+    else if (rand < 15) pool = DRONE_PARTS.filter((e) => e.rarity === 'SSR' && !String(e.id).startsWith('pt_'));
+    else if (rand < 40) pool = DRONE_PARTS.filter((e) => e.rarity === 'SR' && !String(e.id).startsWith('pt_'));
+    else if (rand < 75) pool = DRONE_PARTS.filter((e) => e.rarity === 'R' && !String(e.id).startsWith('pt_'));
+    else pool = DRONE_PARTS.filter((e) => e.rarity === 'N' && !String(e.id).startsWith('pt_'));
+    if (!pool.length) pool = DRONE_PARTS.filter((e) => !String(e.id).startsWith('pt_'));
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    if (!meta.inventory.includes(picked.id)) meta.inventory.push(picked.id);
+    // より強い物を自動装備（同スロット）
+    const cur = findPart(meta.equipped[picked.type]);
+    const score = (p) => {
+      if (!p) return -1;
+      if (p.type === 'skin') {
+        return ({ N: 1, R: 2, SR: 3, SSR: 4, UR: 5 }[p.rarity] || 0) * 100;
+      }
+      return (p.hp || 0) + (p.atk || 0) * 2 + (p.spd || 0) + (p.thrust || 0) + (p.def || 0) * 50;
+    };
+    if (!cur || score(picked) >= score(cur)) meta.equipped[picked.type] = picked.id;
+    results.push(picked);
+  }
+  saveMeta();
+  const box = document.getElementById('gachaResult');
+  if (box) {
+    if (times === 1) {
+      const item = results[0];
+      box.innerHTML = `<div><b class="rarity-${item.rarity}">${item.icon} ${item.name} (${item.rarity})</b><div style="font-size:0.75rem;margin-top:4px;color:var(--muted)">${item.desc}</div></div>`;
+    } else {
+      box.innerHTML = results.map((item) =>
+        `<span class="rarity-${item.rarity}" style="margin:2px;display:inline-block;">${item.icon}${item.name}(${item.rarity})</span>`
+      ).join(' ');
+    }
+  }
+  showToast('ガチャ ' + results.length + ' 件獲得！');
+  refreshMetaUI();
+  applyLoadoutToPlayerMesh();
+}
+
+function equipDronePart(id) {
+  const part = findPart(id);
+  if (!part) return;
+  meta.equipped[part.type] = id;
+  saveMeta();
+  showToast(part.icon + ' ' + part.name + ' を装着');
+  refreshMetaUI();
+  applyLoadoutToPlayerMesh();
+}
+
+function refreshMetaUI() {
+  loadMeta();
+  const st = getPlayerLoadoutStats();
+  const coinEls = ['lobbyCoinCount', 'hangarCoinCount', 'gachaCoinCount'];
+  coinEls.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(meta.coins || 0);
+  });
+  const sum = document.getElementById('hangarStatSummary');
+  if (sum) {
+    const kindLabel = ({
+      beam: 'ビーム', cannon: 'キャノン', laser: 'レーザー',
+      missile: 'ミサイル', gatling: 'ガトリング', sniper: 'スナイパー'
+    })[st.weaponKind] || st.weaponKind;
+    const skinName = st.skin ? st.skin.icon + st.skin.name : '標準';
+    sum.textContent = `HP ${st.maxHp} / SPD ${st.maxSpd} / ATK ${st.atk} / ${kindLabel} / ${skinName}`;
+  }
+
+  const slots = document.getElementById('equipSlots');
+  if (slots) {
+    slots.innerHTML = SLOT_DEFS.map((s) => {
+      const part = findPart(meta.equipped[s.key]);
+      return `<div class="slot-card"><span class="ico">${s.icon}</span>${s.label}<div class="name">${part ? part.icon + ' ' + part.name : '未装備'}</div><div class="rarity-${part ? part.rarity : 'N'}">${part ? part.rarity : '-'}</div></div>`;
+    }).join('');
+  }
+  const inv = document.getElementById('inventoryList');
+  if (inv) {
+    const unique = Array.from(new Set(meta.inventory || []));
+    if (!unique.length) {
+      inv.innerHTML = '<div style="width:100%;text-align:center;color:var(--muted);font-size:0.8rem;">ガチャでパーツを獲得しよう</div>';
+    } else {
+      inv.innerHTML = unique.map((id) => {
+        const part = findPart(id);
+        if (!part) return '';
+        const on = meta.equipped[part.type] === id;
+        return `<button type="button" class="inv-item ${on ? 'on' : ''}" data-part="${part.id}"><span class="rarity-${part.rarity}">${part.icon} ${part.name}</span> (${part.rarity})${on ? ' ✓' : ''}</button>`;
+      }).join('');
+      inv.querySelectorAll('[data-part]').forEach((btn) => {
+        btn.addEventListener('click', () => equipDronePart(btn.getAttribute('data-part')));
+      });
+    }
+  }
+}
+
+function refreshFireButtonLabel() {
+  const btn = document.getElementById('fireBtn');
+  if (!btn) return;
+  const kind = (player && player.weaponKind) || (getPlayerLoadoutStats().weaponKind) || 'beam';
+  const map = {
+    beam: '射撃',
+    cannon: 'キャノン',
+    laser: 'レーザー',
+    missile: 'ミサイル',
+    gatling: 'ガトリング',
+    sniper: '狙撃'
+  };
+  btn.textContent = map[kind] || '射撃';
+}
+
+function applyLoadoutToPlayerMesh() {
+  if (!player || !player.mesh) return;
+  const st = getPlayerLoadoutStats();
+  applySkinDecor(player.mesh, st.skin);
+  player.maxHp = st.maxHp;
+  player.atk = st.atk;
+  player.def = st.def;
+  player.maxSpd = st.maxSpd;
+  player.thrust = st.thrust;
+  player.weaponKind = st.weaponKind;
+  refreshFireButtonLabel();
+}
+
+loadMeta();
+document.getElementById('openHangarBtn').addEventListener('click', () => showScreen('hangar'));
+document.getElementById('openGachaBtn').addEventListener('click', () => showScreen('gacha'));
+document.getElementById('hangarBackBtn').addEventListener('click', () => showScreen('lobby'));
+document.getElementById('gachaBackBtn').addEventListener('click', () => showScreen('lobby'));
+document.getElementById('hangarToGachaBtn').addEventListener('click', () => showScreen('gacha'));
+document.getElementById('gachaToHangarBtn').addEventListener('click', () => showScreen('hangar'));
+document.getElementById('claimWorkCoinsBtn').addEventListener('click', claimWorkCoins);
+document.getElementById('gachaOnceBtn').addEventListener('click', () => playDroneGacha(1));
+document.getElementById('gachaTenBtn').addEventListener('click', () => playDroneGacha(10));
+refreshMetaUI();
+
+function setStickMode(m) {
   state.mode = m === 1 ? 1 : 2;
   localStorage.setItem(MODE_KEY, String(state.mode));
   mode1Btn.classList.toggle('selected', state.mode === 1);
@@ -488,9 +1221,257 @@ function setMode(m) {
     rightStickLabel.textContent = 'ピッチ / ロール';
   }
 }
-mode1Btn.addEventListener('click', () => setMode(1));
-mode2Btn.addEventListener('click', () => setMode(2));
-setMode(state.mode);
+mode1Btn.addEventListener('click', () => setStickMode(1));
+mode2Btn.addEventListener('click', () => setStickMode(2));
+setStickMode(state.mode);
+
+function openSetup(gameType) {
+  if (gameType === 'online') {
+    state.gameType = 'online';
+    localStorage.setItem(GAME_KEY, 'online');
+    onlineStatus.textContent = 'ホスト作成、またはルームコードで参加してください。';
+    document.getElementById('roomCodeDisplay').style.display = 'none';
+    document.getElementById('joinRoomInput').value = '';
+    syncOnlineModeButtons();
+    showScreen('online');
+    return;
+  }
+  state.gameType = gameType === 'mission' ? 'mission' : 'dogfight';
+  localStorage.setItem(GAME_KEY, state.gameType);
+  const isM = state.gameType === 'mission';
+  document.getElementById('setupTitle').textContent = isM ? '圃場ミッション' : 'ドッグファイト';
+  document.getElementById('setupSub').textContent = isM
+    ? 'ゲートを周回しながら害虫ターゲットを全破壊。制限時間あり。'
+    : '対CPUの空中ドッグファイト。先にHPを0にした方が勝ち。';
+  gameHelp.innerHTML = isM
+    ? '<strong>クリア条件</strong><br>・チェックポイントを順に通過して ' + MISSION_LAPS + ' 周<br>・害虫バルーンを全て撃墜<br>・制限時間 ' + MISSION_TIME + ' 秒／HP0で失敗'
+    : '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。';
+  document.getElementById('startBtn').textContent = isM ? 'ミッション開始' : '対戦開始（対CPU）';
+  showScreen('setup');
+}
+
+document.getElementById('pickDogfight').addEventListener('click', () => openSetup('dogfight'));
+document.getElementById('pickMission').addEventListener('click', () => openSetup('mission'));
+document.getElementById('pickOnline').addEventListener('click', () => openSetup('online'));
+document.getElementById('backLobbyBtn').addEventListener('click', () => {
+  state.playing = false;
+  cleanupNet();
+  showScreen('lobby');
+});
+
+function syncOnlineModeButtons() {
+  document.getElementById('onlineMode1Btn').classList.toggle('selected', state.mode === 1);
+  document.getElementById('onlineMode2Btn').classList.toggle('selected', state.mode === 2);
+}
+document.getElementById('onlineMode1Btn').addEventListener('click', () => {
+  setStickMode(1);
+  syncOnlineModeButtons();
+});
+document.getElementById('onlineMode2Btn').addEventListener('click', () => {
+  setStickMode(2);
+  syncOnlineModeButtons();
+});
+
+function genRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+function peerIdFromCode(code) {
+  return 'pmapdrone-' + String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function netSend(msg) {
+  if (conn && conn.open) {
+    try { conn.send(msg); } catch (e) { console.warn(e); }
+  }
+}
+
+function cleanupNet() {
+  try { if (conn) conn.close(); } catch (e) {}
+  try { if (peer) peer.destroy(); } catch (e) {}
+  conn = null;
+  peer = null;
+  state.roomCode = '';
+  state.isHost = false;
+}
+
+function bindConnection(c) {
+  conn = c;
+  conn.on('data', onNetData);
+  conn.on('close', () => {
+    onlineStatus.textContent = '相手が切断しました。';
+    showToast('相手が切断しました');
+    if (state.playing) endBattle(true, 'disconnect');
+    else {
+      cleanupNet();
+      showScreen('online');
+    }
+  });
+  conn.on('error', (err) => {
+    console.warn(err);
+    onlineStatus.textContent = '接続エラー: ' + (err && err.type ? err.type : 'unknown');
+  });
+}
+
+function onNetData(msg) {
+  if (!msg || !msg.t) return;
+  if (msg.t === 'hello') {
+    onlineStatus.textContent = '相手と接続しました。対戦を開始します…';
+    if (state.isHost) {
+      netSend({ t: 'start', mode: state.mode });
+      startOnlineBattle(true);
+    }
+  } else if (msg.t === 'start') {
+    if (msg.mode === 1 || msg.mode === 2) setStickMode(msg.mode);
+    syncOnlineModeButtons();
+    startOnlineBattle(false);
+  } else if (msg.t === 'state') {
+    state.remoteTarget.set(msg.x, msg.y, msg.z);
+    state.remoteYaw = msg.yaw;
+    state.remotePitch = msg.pitch;
+    state.remoteRoll = msg.roll;
+    state.remoteHp = msg.hp;
+    enemy.hp = msg.hp;
+    updateHpUi();
+  } else if (msg.t === 'shot') {
+    const from = new THREE.Vector3(msg.x, msg.y, msg.z);
+    const dir = new THREE.Vector3(msg.dx, msg.dy, msg.dz);
+    const profile = getWeaponProfile(msg.kind || 'beam', msg.atk || 10);
+    const enemyProfile = Object.assign({}, profile, { color: 0xff5252 });
+    fireBullet(from, dir, 'enemy', enemyProfile);
+  } else if (msg.t === 'dmg') {
+    if (state.hitCooldown > 0) return;
+    state.hitCooldown = 0.15;
+    let dmg = msg.amount || 10;
+    if (player.def) dmg *= (1 - player.def);
+    player.hp -= dmg;
+    updateHpUi();
+    showToast('被弾！', 400);
+    if (player.hp <= 0 && state.playing) {
+      player.alive = false;
+      netSend({ t: 'die' });
+      endBattle(false);
+    }
+  } else if (msg.t === 'die') {
+    enemy.hp = 0;
+    enemy.alive = false;
+    updateHpUi();
+    if (state.playing) endBattle(true);
+  }
+}
+
+function startOnlineBattle(asHost) {
+  state.gameType = 'online';
+  state.isHost = !!asHost;
+  showScreen('');
+  lobbyScreen.classList.remove('active');
+  onlineScreen.classList.remove('active');
+  titleScreen.classList.remove('active');
+  resultScreen.classList.remove('active');
+  hud.classList.add('active');
+  hudRightLabel.textContent = 'RIVAL';
+  setMissionWorldVisible(false);
+  resetCrafts();
+  // ホストとゲストで対面スポーン
+  if (state.isHost) {
+    player.pos.set(0, 12, 20);
+    player.yaw = Math.PI;
+    enemy.pos.set(0, 12, -20);
+    enemy.yaw = 0;
+  } else {
+    player.pos.set(0, 12, -20);
+    player.yaw = 0;
+    enemy.pos.set(0, 12, 20);
+    enemy.yaw = Math.PI;
+  }
+  state.remoteTarget.copy(enemy.pos);
+  state.remoteYaw = enemy.yaw;
+  state.remoteHp = MAX_HP;
+  enemy.mesh.visible = true;
+  state.playing = true;
+  state.over = false;
+  state.firstPerson = false;
+  clock.getDelta();
+  showToast('オンライン対戦開始！ Mode ' + state.mode, 1400);
+}
+
+document.getElementById('hostRoomBtn').addEventListener('click', () => {
+  if (typeof Peer === 'undefined') {
+    onlineStatus.textContent = 'PeerJS の読み込みに失敗しました。通信環境を確認してください。';
+    return;
+  }
+  cleanupNet();
+  const code = genRoomCode();
+  state.roomCode = code;
+  state.isHost = true;
+  onlineStatus.textContent = 'ルーム作成中…';
+  peer = new Peer(peerIdFromCode(code), { debug: 1 });
+  peer.on('open', () => {
+    document.getElementById('roomCodeText').textContent = code;
+    document.getElementById('roomCodeDisplay').style.display = 'block';
+    onlineStatus.textContent = '相手の参加を待っています…（コード: ' + code + '）';
+  });
+  peer.on('connection', (c) => {
+    bindConnection(c);
+    onlineStatus.textContent = '接続確立。相手の準備待ち…';
+    c.on('open', () => {
+      netSend({ t: 'hello', role: 'host' });
+    });
+  });
+  peer.on('error', (err) => {
+    console.warn(err);
+    onlineStatus.textContent = 'エラー: 別のコードで再作成してください（' + (err.type || 'error') + '）';
+  });
+});
+
+document.getElementById('copyRoomBtn').addEventListener('click', async () => {
+  const code = document.getElementById('roomCodeText').textContent || '';
+  try {
+    await navigator.clipboard.writeText(code);
+    showToast('コピーしました: ' + code);
+  } catch (e) {
+    showToast(code);
+  }
+});
+
+document.getElementById('joinRoomBtn').addEventListener('click', () => {
+  if (typeof Peer === 'undefined') {
+    onlineStatus.textContent = 'PeerJS の読み込みに失敗しました。';
+    return;
+  }
+  const code = String(document.getElementById('joinRoomInput').value || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (code.length < 4) {
+    onlineStatus.textContent = '4文字のルームコードを入力してください。';
+    return;
+  }
+  cleanupNet();
+  state.isHost = false;
+  state.roomCode = code;
+  onlineStatus.textContent = '接続中…';
+  peer = new Peer({ debug: 1 });
+  peer.on('open', () => {
+    const c = peer.connect(peerIdFromCode(code), { reliable: true });
+    bindConnection(c);
+    c.on('open', () => {
+      onlineStatus.textContent = 'ホストに接続しました。';
+      netSend({ t: 'hello', role: 'guest' });
+    });
+  });
+  peer.on('error', (err) => {
+    console.warn(err);
+    onlineStatus.textContent = '接続失敗（コードやホストの状態を確認）: ' + (err.type || 'error');
+  });
+});
+
+document.getElementById('onlineCancelBtn').addEventListener('click', () => {
+  cleanupNet();
+  showScreen('lobby');
+});
 
 function showToast(msg, ms) {
   toastEl.textContent = msg;
@@ -704,23 +1685,168 @@ const obstacles = [];
 makeTree(8, 8);
 makeTree(-8, -22);
 
-function createDrone(color, accent) {
-  const root = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(1.2, 0.28, 1.2),
-    new THREE.MeshStandardMaterial({ color, metalness: 0.35, roughness: 0.45 })
+/** 圃場パッチ（見た目） */
+function makePaddy(x, z, w, d) {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshStandardMaterial({ color: 0x66bb6a, roughness: 0.9, metalness: 0.05 })
   );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, 0.05, z);
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  // 畝ライン
+  for (let i = -Math.floor(d / 4); i <= Math.floor(d / 4); i++) {
+    const ridge = new THREE.Mesh(
+      new THREE.BoxGeometry(w * 0.92, 0.08, 0.35),
+      new THREE.MeshStandardMaterial({ color: 0x33691e })
+    );
+    ridge.position.set(x, 0.1, z + i * 2.2);
+    scene.add(ridge);
+  }
+}
+makePaddy(-20, 0, 28, 22);
+makePaddy(22, -8, 24, 26);
+makePaddy(5, 22, 30, 18);
+
+/** 周回ゲート */
+const gateGroup = new THREE.Group();
+scene.add(gateGroup);
+const gates = [];
+const GATE_PATH = [
+  { x: 0, y: 10, z: 32 },
+  { x: 28, y: 11, z: 12 },
+  { x: 30, y: 12, z: -20 },
+  { x: 5, y: 10, z: -34 },
+  { x: -28, y: 11, z: -16 },
+  { x: -26, y: 12, z: 18 }
+];
+
+function makeGate(i, pos) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: i === 0 ? 0xffeb3b : 0x00e5ff,
+    emissive: i === 0 ? 0xaa8800 : 0x006688,
+    metalness: 0.2,
+    roughness: 0.4
+  });
+  const postL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 7, 0.35), mat);
+  const postR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 7, 0.35), mat);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(8, 0.35, 0.35), mat);
+  postL.position.set(-4, 0, 0);
+  postR.position.set(4, 0, 0);
+  top.position.set(0, 3.5, 0);
+  g.add(postL, postR, top);
+  // 通過判定用リング（見た目）
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(3.2, 0.12, 8, 24),
+    new THREE.MeshBasicMaterial({ color: i === 0 ? 0xffeb3b : 0x80deea, transparent: true, opacity: 0.55 })
+  );
+  ring.rotation.y = Math.PI / 2;
+  g.add(ring);
+  g.position.set(pos.x, pos.y, pos.z);
+  // 次ゲート方向を向く
+  const next = GATE_PATH[(i + 1) % GATE_PATH.length];
+  g.lookAt(next.x, pos.y, next.z);
+  gateGroup.add(g);
+  return {
+    mesh: g,
+    ring,
+    pos: new THREE.Vector3(pos.x, pos.y, pos.z),
+    radius: 4.2,
+    activeMat: mat
+  };
+}
+GATE_PATH.forEach((p, i) => gates.push(makeGate(i, p)));
+
+/** 害虫ターゲット（バルーン） */
+const pestGroup = new THREE.Group();
+scene.add(pestGroup);
+const pests = [];
+const PEST_SPOTS = [
+  [-18, 8, 6], [-8, 9, -4], [12, 10, 8], [24, 8, -14],
+  [10, 11, -26], [-22, 9, -12], [0, 10, 0], [16, 9, 20]
+];
+
+function makePest(x, y, z) {
+  const g = new THREE.Group();
+  const balloon = new THREE.Mesh(
+    new THREE.SphereGeometry(1.1, 12, 12),
+    new THREE.MeshStandardMaterial({ color: 0x8e24aa, emissive: 0x4a148c, roughness: 0.55 })
+  );
+  balloon.castShadow = true;
+  const string = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.04, y - 0.5, 4),
+    new THREE.MeshStandardMaterial({ color: 0xeeeeee })
+  );
+  string.position.y = -y / 2;
+  const bug = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.35, 0.7),
+    new THREE.MeshStandardMaterial({ color: 0xffeb3b })
+  );
+  bug.position.set(0, 0.2, 0.2);
+  g.add(balloon, string, bug);
+  g.position.set(x, y, z);
+  pestGroup.add(g);
+  return {
+    mesh: g,
+    pos: new THREE.Vector3(x, y, z),
+    radius: 1.4,
+    alive: true,
+    bob: Math.random() * Math.PI * 2
+  };
+}
+PEST_SPOTS.forEach(([x, y, z]) => pests.push(makePest(x, y, z)));
+
+function setMissionWorldVisible(on) {
+  gateGroup.visible = on;
+  pestGroup.visible = on;
+}
+setMissionWorldVisible(false);
+
+function highlightGate(index) {
+  gates.forEach((g, i) => {
+    const active = i === index;
+    g.ring.material.color.setHex(active ? 0xffeb3b : 0x80deea);
+    g.ring.material.opacity = active ? 0.85 : 0.35;
+    g.mesh.scale.setScalar(active ? 1.08 : 1);
+  });
+}
+
+function createDrone(color, accent, skin) {
+  const root = new THREE.Group();
+  const metal = skin && skin.metal != null ? skin.metal : 0.35;
+  const rough = skin && skin.metal ? 0.25 : 0.45;
+  const opacity = skin && skin.opacity != null ? skin.opacity : 1;
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color,
+    metalness: metal,
+    roughness: rough,
+    emissive: skin && skin.emissive != null ? skin.emissive : 0x000000,
+    emissiveIntensity: skin && skin.emissive != null ? 0.45 : 0,
+    transparent: opacity < 1,
+    opacity
+  });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.28, 1.2), bodyMat);
   body.castShadow = true;
   root.add(body);
   const nose = new THREE.Mesh(
     new THREE.BoxGeometry(0.35, 0.22, 0.45),
-    new THREE.MeshStandardMaterial({ color: accent })
+    new THREE.MeshStandardMaterial({
+      color: accent,
+      metalness: metal,
+      roughness: rough,
+      emissive: skin && skin.emissive != null ? skin.emissive : 0x000000,
+      emissiveIntensity: skin && skin.emissive != null ? 0.25 : 0,
+      transparent: opacity < 1,
+      opacity
+    })
   );
   nose.position.set(0, 0, -0.7);
   root.add(nose);
   const arms = [];
   const props = [];
-  const armMat = new THREE.MeshStandardMaterial({ color: 0x263238 });
+  const armMat = new THREE.MeshStandardMaterial({ color: 0x263238, metalness: 0.5, roughness: 0.4 });
   const propMat = new THREE.MeshStandardMaterial({ color: 0xeceff1, transparent: true, opacity: 0.75 });
   [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]].forEach(([ax, az]) => {
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.9), armMat);
@@ -736,12 +1862,169 @@ function createDrone(color, accent) {
     root.add(prop);
     props.push(prop);
   });
-  root.userData = { props, body };
+  root.userData = { props, body, nose, arms, skinParts: [] };
+  applySkinDecor(root, skin || { style: 'default', body: color, accent });
   return root;
 }
 
+/** スキン専用の装飾メッシュを付与 */
+function applySkinDecor(root, skin) {
+  if (!root) return;
+  if (root.userData.skinParts && root.userData.skinParts.length) {
+    root.userData.skinParts.forEach((m) => {
+      root.remove(m);
+      if (m.geometry) m.geometry.dispose();
+      if (m.material) m.material.dispose();
+    });
+  }
+  const parts = [];
+  const style = (skin && skin.style) || 'default';
+  const accent = skin && skin.accent != null ? skin.accent : 0x00e5ff;
+  const bodyCol = skin && skin.body != null ? skin.body : 0x0277bd;
+  const emissive = skin && skin.emissive != null ? skin.emissive : 0x000000;
+  const add = (mesh) => { root.add(mesh); parts.push(mesh); return mesh; };
+
+  const accentMat = (extra) => new THREE.MeshStandardMaterial(Object.assign({
+    color: accent,
+    metalness: 0.4,
+    roughness: 0.35,
+    emissive,
+    emissiveIntensity: emissive ? 0.55 : 0
+  }, extra || {}));
+
+  if (style === 'racer' || style === 'legend' || style === 'ocean') {
+    const stripeCol = skin.stripe != null ? skin.stripe : 0xffeb3b;
+    const stripe = add(new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, 0.06, 1.35),
+      new THREE.MeshStandardMaterial({ color: stripeCol, metalness: 0.2, roughness: 0.5 })
+    ));
+    stripe.position.set(0, 0.18, 0);
+    const finL = add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.5), accentMat()));
+    finL.position.set(-0.55, 0.15, 0.35);
+    const finR = add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.5), accentMat()));
+    finR.position.set(0.55, 0.15, 0.35);
+  }
+
+  if (style === 'bee') {
+    [-0.25, 0, 0.25].forEach((z) => {
+      const band = add(new THREE.Mesh(
+        new THREE.BoxGeometry(1.25, 0.08, 0.18),
+        new THREE.MeshStandardMaterial({ color: 0x212121 })
+      ));
+      band.position.set(0, 0.16, z);
+    });
+  }
+
+  if (style === 'camo' || style === 'farm') {
+    [[-0.35, 0.2], [0.3, -0.15], [-0.1, 0.35]].forEach(([x, z]) => {
+      const patch = add(new THREE.Mesh(
+        new THREE.BoxGeometry(0.35, 0.05, 0.28),
+        new THREE.MeshStandardMaterial({ color: accent, roughness: 0.8 })
+      ));
+      patch.position.set(x, 0.17, z);
+    });
+    if (style === 'farm') {
+      const roof = add(new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 0.12, 0.5),
+        new THREE.MeshStandardMaterial({ color: 0xffeb3b })
+      ));
+      roof.position.set(0, 0.28, 0.1);
+    }
+  }
+
+  if (style === 'stealth' || style === 'ghost') {
+    const edge = add(new THREE.Mesh(
+      new THREE.TorusGeometry(0.85, 0.035, 6, 24),
+      accentMat({ transparent: true, opacity: style === 'ghost' ? 0.55 : 0.9 })
+    ));
+    edge.rotation.x = Math.PI / 2;
+    edge.position.y = 0.05;
+  }
+
+  if (style === 'ice' || style === 'sakura' || style === 'neon' || style === 'rainbow') {
+    const dome = add(new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      accentMat({ transparent: true, opacity: 0.75, metalness: 0.1 })
+    ));
+    dome.position.set(0, 0.22, -0.15);
+    if (style === 'neon' || style === 'rainbow') {
+      const ring = add(new THREE.Mesh(
+        new THREE.TorusGeometry(0.7, 0.04, 8, 32),
+        accentMat({ emissiveIntensity: 0.9 })
+      ));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.02;
+    }
+  }
+
+  if (style === 'dragon' || style === 'phoenix') {
+    const wingGeo = new THREE.BoxGeometry(1.1, 0.06, 0.45);
+    const wingMat = accentMat({ emissiveIntensity: 0.7 });
+    const wL = add(new THREE.Mesh(wingGeo, wingMat));
+    wL.position.set(-0.95, 0.12, 0);
+    wL.rotation.z = 0.35;
+    const wR = add(new THREE.Mesh(wingGeo, wingMat.clone()));
+    wR.position.set(0.95, 0.12, 0);
+    wR.rotation.z = -0.35;
+    if (style === 'phoenix') {
+      const flame = add(new THREE.Mesh(
+        new THREE.ConeGeometry(0.2, 0.55, 6),
+        accentMat({ color: 0xffea00, emissive: 0xff6d00, emissiveIntensity: 1 })
+      ));
+      flame.position.set(0, 0.05, 0.75);
+      flame.rotation.x = Math.PI / 2;
+    }
+  }
+
+  if (style === 'gold' || style === 'legend') {
+    const crown = add(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15, 0.28, 0.2, 6),
+      new THREE.MeshStandardMaterial({
+        color: skin.stripe != null ? skin.stripe : 0xffd54f,
+        metalness: 0.9,
+        roughness: 0.2,
+        emissive: 0xff8f00,
+        emissiveIntensity: 0.35
+      })
+    ));
+    crown.position.set(0, 0.32, 0);
+  }
+
+  // ボディ／ノーズ色をスキンに合わせる
+  if (root.userData.body && root.userData.body.material) {
+    root.userData.body.material.color.setHex(bodyCol);
+    if (skin && skin.emissive != null) {
+      root.userData.body.material.emissive.setHex(skin.emissive);
+      root.userData.body.material.emissiveIntensity = 0.4;
+    }
+    if (skin && skin.opacity != null) {
+      root.userData.body.material.transparent = true;
+      root.userData.body.material.opacity = skin.opacity;
+    }
+    if (skin && skin.metal != null) {
+      root.userData.body.material.metalness = skin.metal;
+      root.userData.body.material.roughness = 0.22;
+    }
+  }
+  if (root.userData.nose && root.userData.nose.material) {
+    root.userData.nose.material.color.setHex(accent);
+    if (skin && skin.emissive != null) {
+      root.userData.nose.material.emissive.setHex(skin.emissive);
+      root.userData.nose.material.emissiveIntensity = 0.3;
+    }
+  }
+
+  root.userData.skinParts = parts;
+  root.userData.skinId = skin && skin.id;
+}
+
 function createCraft(isPlayer) {
-  const mesh = createDrone(isPlayer ? 0x0277bd : 0xb71c1c, isPlayer ? 0x00e5ff : 0xffab40);
+  const st = isPlayer ? getPlayerLoadoutStats() : null;
+  const mesh = createDrone(
+    isPlayer ? st.color : 0xb71c1c,
+    isPlayer ? st.accent : 0xffab40,
+    isPlayer ? st.skin : null
+  );
   scene.add(mesh);
   return {
     mesh,
@@ -750,7 +2033,13 @@ function createCraft(isPlayer) {
     yaw: isPlayer ? Math.PI : 0,
     pitch: 0,
     roll: 0,
-    hp: MAX_HP,
+    hp: isPlayer ? st.maxHp : MAX_HP,
+    maxHp: isPlayer ? st.maxHp : MAX_HP,
+    atk: isPlayer ? st.atk : 10,
+    def: isPlayer ? st.def : 0,
+    maxSpd: isPlayer ? st.maxSpd : 28,
+    thrust: isPlayer ? st.thrust : 38,
+    weaponKind: isPlayer ? st.weaponKind : 'beam',
     radius: HIT_RADIUS,
     alive: true
   };
@@ -758,14 +2047,23 @@ function createCraft(isPlayer) {
 
 let player = createCraft(true);
 let enemy = createCraft(false);
+applyLoadoutToPlayerMesh();
 
 function resetCrafts() {
+  const st = getPlayerLoadoutStats();
+  applyLoadoutToPlayerMesh();
   player.pos.set(0, 12, 18);
   player.vel.set(0, 0, 0);
   player.yaw = Math.PI;
   player.pitch = 0;
   player.roll = 0;
-  player.hp = MAX_HP;
+  player.maxHp = st.maxHp;
+  player.hp = st.maxHp;
+  player.atk = st.atk;
+  player.def = st.def;
+  player.maxSpd = st.maxSpd;
+  player.thrust = st.thrust;
+  player.weaponKind = st.weaponKind;
   player.alive = true;
 
   enemy.pos.set(18, 14, -18);
@@ -774,24 +2072,64 @@ function resetCrafts() {
   enemy.pitch = 0;
   enemy.roll = 0;
   enemy.hp = MAX_HP;
+  enemy.maxHp = MAX_HP;
+  enemy.atk = 10;
+  enemy.def = 0;
+  enemy.maxSpd = 28;
+  enemy.thrust = 38;
   enemy.alive = true;
+  enemy.mesh.visible = state.gameType === 'dogfight' || state.gameType === 'online';
 
   state.bullets.forEach((b) => scene.remove(b.mesh));
   state.bullets = [];
   state.playerFireCd = 0;
   state.enemyFireCd = 0;
   state.over = false;
+  state.nextGate = 0;
+  state.laps = 0;
+  state.timeLeft = MISSION_TIME;
+
+  pests.forEach((p, i) => {
+    p.alive = true;
+    p.mesh.visible = true;
+    const spot = PEST_SPOTS[i];
+    p.pos.set(spot[0], spot[1], spot[2]);
+    p.mesh.position.copy(p.pos);
+  });
+  state.targetsLeft = pests.length;
+  highlightGate(0);
   updateHpUi();
+  updateMissionHud();
+}
+
+function updateMissionHud() {
+  const isM = state.gameType === 'mission';
+  missionPill.style.display = isM ? '' : 'none';
+  timePill.style.display = isM ? '' : 'none';
+  if (isM) {
+    hudRightLabel.textContent = 'TARGETS';
+    const done = pests.length - state.targetsLeft;
+    document.getElementById('enemyHpFill').style.width =
+      Math.max(0, (done / Math.max(1, pests.length)) * 100) + '%';
+    missionPill.textContent = 'GATE ' + (state.nextGate + 1) + '/' + gates.length + ' · LAP ' + state.laps + '/' + MISSION_LAPS;
+    timePill.textContent = 'TIME ' + Math.ceil(Math.max(0, state.timeLeft));
+  } else {
+    hudRightLabel.textContent = 'CPU';
+  }
 }
 
 function updateHpUi() {
-  document.getElementById('playerHpFill').style.width = Math.max(0, (player.hp / MAX_HP) * 100) + '%';
-  document.getElementById('enemyHpFill').style.width = Math.max(0, (enemy.hp / MAX_HP) * 100) + '%';
+  const pMax = player.maxHp || MAX_HP;
+  const eMax = enemy.maxHp || MAX_HP;
+  document.getElementById('playerHpFill').style.width = Math.max(0, (player.hp / pMax) * 100) + '%';
+  if (state.gameType === 'dogfight' || state.gameType === 'online') {
+    document.getElementById('enemyHpFill').style.width = Math.max(0, (enemy.hp / eMax) * 100) + '%';
+  }
 }
 
 function applyFlight(craft, ctrl, dt, isAi) {
-  const maxSpd = isAi ? 28 : 32;
-  const thrust = 38;
+  const maxSpd = craft.maxSpd != null ? craft.maxSpd : (isAi ? 28 : 32);
+  const thrust = craft.thrust != null ? craft.thrust : 38;
   const liftBias = 9.5;
 
   craft.yaw += ctrl.yaw * 2.4 * dt;
@@ -825,7 +2163,8 @@ function applyFlight(craft, ctrl, dt, isAi) {
   if (craft.pos.y < craft.radius + 0.2) {
     craft.pos.y = craft.radius + 0.2;
     if (craft.vel.y < 0) {
-      const impact = Math.min(35, Math.abs(craft.vel.y) * 2.2);
+      let impact = Math.min(35, Math.abs(craft.vel.y) * 2.2);
+      if (craft.def) impact *= (1 - craft.def);
       craft.vel.y = Math.abs(craft.vel.y) * 0.25;
       craft.hp -= impact;
       if (!isAi && impact > 4) showToast('地面接触 -' + Math.round(impact));
@@ -845,7 +2184,9 @@ function applyFlight(craft, ctrl, dt, isAi) {
       craft.pos.z += nz * push;
       craft.vel.x *= -0.4;
       craft.vel.z *= -0.4;
-      craft.hp -= 8 * dt;
+      let bump = 8 * dt;
+      if (craft.def) bump *= (1 - craft.def);
+      craft.hp -= bump;
     }
   });
 
@@ -857,41 +2198,210 @@ function applyFlight(craft, ctrl, dt, isAi) {
   });
 }
 
-function fireBullet(from, toward, owner) {
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.18, 8, 8),
-    new THREE.MeshBasicMaterial({ color: owner === 'player' ? 0x00e5ff : 0xff5252 })
-  );
-  mesh.position.copy(from);
-  scene.add(mesh);
-  const dir = toward.clone().normalize();
-  state.bullets.push({
-    mesh,
-    vel: dir.multiplyScalar(BULLET_SPEED),
-    life: BULLET_LIFE,
-    owner
-  });
+function makeProjectileMesh(profile, owner) {
+  const color = owner === 'player' ? profile.color : 0xff5252;
+  let mesh;
+  if (profile.shape === 'laser') {
+    mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(profile.size * 0.45, profile.size * 0.45, 2.4, 6),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 })
+    );
+    mesh.rotation.x = Math.PI / 2;
+  } else if (profile.shape === 'missile') {
+    mesh = new THREE.Mesh(
+      new THREE.ConeGeometry(profile.size, profile.size * 3.2, 6),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    mesh.rotation.x = Math.PI / 2;
+  } else if (profile.shape === 'sniper') {
+    mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(profile.size * 3.2, profile.size * 0.7, profile.size * 0.7),
+      new THREE.MeshBasicMaterial({ color })
+    );
+  } else {
+    mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(profile.size, 8, 8),
+      new THREE.MeshBasicMaterial({ color })
+    );
+  }
+  return mesh;
+}
+
+function fireBullet(from, toward, owner, profileOverride) {
+  const profile = profileOverride || (owner === 'player'
+    ? getWeaponProfile(player.weaponKind || 'beam', player.atk || 12)
+    : getWeaponProfile('beam', enemy.atk || 10));
+  const baseDir = toward.clone().normalize();
+  const count = Math.max(1, profile.pellets || 1);
+  for (let n = 0; n < count; n++) {
+    let dir = baseDir.clone();
+    if (profile.spread) {
+      const yawJ = (Math.random() - 0.5) * profile.spread * 2;
+      const pitchJ = (Math.random() - 0.5) * profile.spread * 2;
+      dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yawJ);
+      dir.applyAxisAngle(new THREE.Vector3(1, 0, 0), pitchJ);
+      dir.normalize();
+    }
+    const mesh = makeProjectileMesh(profile, owner);
+    mesh.position.copy(from);
+    scene.add(mesh);
+    // 向き合わせ
+    if (profile.shape === 'laser' || profile.shape === 'missile' || profile.shape === 'sniper') {
+      const look = from.clone().add(dir);
+      mesh.lookAt(look);
+      if (profile.shape === 'laser') mesh.rotateX(Math.PI / 2);
+      if (profile.shape === 'missile') mesh.rotateX(Math.PI / 2);
+    }
+    state.bullets.push({
+      mesh,
+      vel: dir.multiplyScalar(profile.speed),
+      life: profile.life,
+      owner,
+      kind: profile.kind,
+      radius: profile.radius,
+      dmgMul: profile.dmgMul,
+      pierce: profile.pierce || 0,
+      pierced: 0,
+      homing: profile.homing || 0,
+      speed: profile.speed
+    });
+  }
+}
+
+function getHomingTargetPos(owner) {
+  if (owner === 'player') {
+    if (state.gameType === 'mission') {
+      let best = null;
+      let bestD = 1e9;
+      pests.forEach((p) => {
+        if (!p.alive) return;
+        const d = player.pos.distanceTo(p.pos);
+        if (d < bestD) { bestD = d; best = p.pos; }
+      });
+      if (best) return best.clone();
+    }
+    if (enemy.alive && enemy.mesh.visible) return enemy.pos.clone();
+  } else if (player.alive) {
+    return player.pos.clone();
+  }
+  return null;
+}
+
+function applyBulletHit(b, target) {
+  let dmg = (b.owner === 'player' ? (player.atk || 12) : (enemy.atk || 10)) * (b.dmgMul || 1);
+  if (target.def) dmg *= (1 - target.def);
+  if (state.gameType === 'online') {
+    if (b.owner === 'player') {
+      netSend({ t: 'dmg', amount: dmg });
+      enemy.hp = Math.max(0, enemy.hp - dmg);
+      updateHpUi();
+      showToast('HIT!', 400);
+      if (enemy.hp <= 0) {
+        enemy.alive = false;
+        netSend({ t: 'die' });
+        endBattle(true);
+      }
+    }
+    return true;
+  }
+  target.hp -= dmg;
+  updateHpUi();
+  if (b.owner === 'player') showToast('HIT!', 500);
+  return true;
 }
 
 function updateBullets(dt) {
   for (let i = state.bullets.length - 1; i >= 0; i--) {
     const b = state.bullets[i];
     b.life -= dt;
+
+    // ミサイル追尾
+    if (b.homing > 0) {
+      const tgt = getHomingTargetPos(b.owner);
+      if (tgt) {
+        const desired = tgt.clone().sub(b.mesh.position).normalize();
+        const cur = b.vel.clone().normalize();
+        const mixed = cur.lerp(desired, Math.min(1, b.homing * dt)).normalize();
+        b.vel.copy(mixed.multiplyScalar(b.speed || BULLET_SPEED));
+        b.mesh.lookAt(b.mesh.position.clone().add(mixed));
+        if (b.kind === 'missile') b.mesh.rotateX(Math.PI / 2);
+      }
+    }
+
     b.mesh.position.addScaledVector(b.vel, dt);
-    if (b.life <= 0 || b.mesh.position.y < 0) {
+    if (b.life <= 0 || b.mesh.position.y < -2) {
       scene.remove(b.mesh);
       state.bullets.splice(i, 1);
       continue;
     }
-    const target = b.owner === 'player' ? enemy : player;
-    if (!target.alive) continue;
-    if (b.mesh.position.distanceTo(target.pos) < target.radius + 0.25) {
-      target.hp -= b.owner === 'player' ? 12 : 10;
-      scene.remove(b.mesh);
-      state.bullets.splice(i, 1);
-      updateHpUi();
-      if (b.owner === 'player') showToast('HIT!', 500);
+
+    const hitR = (b.radius != null ? b.radius : 0.25);
+
+    // 害虫ターゲット
+    if (b.owner === 'player' && state.gameType === 'mission') {
+      for (const p of pests) {
+        if (!p.alive) continue;
+        if (b.mesh.position.distanceTo(p.pos) < p.radius + hitR) {
+          p.alive = false;
+          p.mesh.visible = false;
+          state.targetsLeft = Math.max(0, state.targetsLeft - 1);
+          showToast('害虫撃破！ 残り' + state.targetsLeft, 700);
+          updateMissionHud();
+          b.pierced = (b.pierced || 0) + 1;
+          if (b.pierced > (b.pierce || 0)) {
+            scene.remove(b.mesh);
+            state.bullets.splice(i, 1);
+          }
+          break;
+        }
+      }
+      if (!b.mesh.parent) continue;
     }
+
+    const target = b.owner === 'player' ? enemy : player;
+    if (!target.alive || !target.mesh.visible) continue;
+    if (b.mesh.position.distanceTo(target.pos) < target.radius + hitR) {
+      applyBulletHit(b, target);
+      b.pierced = (b.pierced || 0) + 1;
+      if (b.pierced > (b.pierce || 0)) {
+        scene.remove(b.mesh);
+        state.bullets.splice(i, 1);
+      }
+    }
+  }
+}
+
+function updateGates() {
+  if (state.gameType !== 'mission') return;
+  const g = gates[state.nextGate];
+  if (!g) return;
+  if (player.pos.distanceTo(g.pos) < g.radius) {
+    state.nextGate++;
+    if (state.nextGate >= gates.length) {
+      state.nextGate = 0;
+      state.laps++;
+      showToast('周回完了！ LAP ' + state.laps + '/' + MISSION_LAPS, 1200);
+    } else {
+      showToast('ゲート通過 ' + state.nextGate + '/' + gates.length, 600);
+    }
+    highlightGate(state.nextGate);
+    updateMissionHud();
+  }
+}
+
+function updatePests(dt) {
+  pests.forEach((p) => {
+    if (!p.alive) return;
+    p.bob += dt * 1.6;
+    p.mesh.position.y = p.pos.y + Math.sin(p.bob) * 0.35;
+    p.mesh.rotation.y += dt * 0.8;
+  });
+}
+
+function checkMissionClear() {
+  if (state.gameType !== 'mission') return;
+  if (state.laps >= MISSION_LAPS && state.targetsLeft <= 0) {
+    endBattle(true);
   }
 }
 
@@ -946,81 +2456,189 @@ function updateCamera(dt) {
   }
 }
 
-function endBattle(win) {
+function endBattle(win, reason) {
   state.playing = false;
   state.over = true;
   hud.classList.remove('active');
-  resultScreen.classList.add('active');
+  showScreen('result');
   const title = document.getElementById('resultTitle');
   const msg = document.getElementById('resultMsg');
+  const isM = state.gameType === 'mission';
+  const isOnline = state.gameType === 'online';
   if (win) {
-    title.textContent = '勝利';
+    title.textContent = isM ? 'ミッション成功' : '勝利';
     title.className = 'result-title win';
-    msg.textContent = 'CPUドローンを撃墜しました。Mode ' + state.mode + ' でクリア。';
+    // 勝利コイン
+    try {
+      loadMeta();
+      const bonus = isM ? 25 : (isOnline ? 40 : 15);
+      meta.coins = (meta.coins || 0) + bonus;
+      meta.wins = (meta.wins || 0) + 1;
+      saveMeta();
+      refreshMetaUI();
+      if (reason === 'disconnect') {
+        msg.textContent = '相手が切断したため勝利扱いです（+' + bonus + 'コイン）。';
+      } else if (isM) {
+        msg.textContent = 'ゲート' + MISSION_LAPS + '周＋害虫全破壊を達成（Mode ' + state.mode + '）。+' + bonus + 'コイン / 残 ' + Math.ceil(state.timeLeft) + ' 秒。';
+      } else if (isOnline) {
+        msg.textContent = 'オンライン対戦に勝利（Mode ' + state.mode + '）。+' + bonus + 'コイン！';
+      } else {
+        msg.textContent = 'CPU撃破！ Mode ' + state.mode + ' / +' + bonus + 'コイン。';
+      }
+    } catch (e) {
+      msg.textContent = '勝利！';
+    }
   } else {
-    title.textContent = '敗北';
+    title.textContent = isM ? 'ミッション失敗' : '敗北';
     title.className = 'result-title lose';
-    msg.textContent = '機体が大破しました。操作モードを変えて再挑戦してみてください。';
+    if (reason === 'time') {
+      msg.textContent = '時間切れです。周回と害虫撃破を急いで再挑戦しましょう。';
+    } else if (isOnline) {
+      msg.textContent = 'オンライン対戦に敗北しました。再戦はロビーからルームを作り直してください。';
+    } else if (isM) {
+      msg.textContent = '機体が大破しました。低空の圃場や建物に注意して再挑戦してください。';
+    } else {
+      msg.textContent = '機体が大破しました。ガチャ装備を強化して再挑戦してみてください。';
+    }
   }
 }
 
 function startBattle() {
+  if (state.gameType === 'online') {
+    openSetup('online');
+    return;
+  }
+  lobbyScreen.classList.remove('active');
+  onlineScreen.classList.remove('active');
   titleScreen.classList.remove('active');
   resultScreen.classList.remove('active');
   hud.classList.add('active');
+  setMissionWorldVisible(state.gameType === 'mission');
   resetCrafts();
   state.playing = true;
   state.firstPerson = false;
   clock.getDelta();
-  showToast('対戦開始！ Mode ' + state.mode, 1400);
+  const label = state.gameType === 'mission' ? '圃場ミッション開始！' : 'ドッグファイト開始！';
+  showToast(label + ' Mode ' + state.mode, 1400);
 }
 
 document.getElementById('startBtn').addEventListener('click', startBattle);
-document.getElementById('retryBtn').addEventListener('click', startBattle);
-document.getElementById('toTitleBtn').addEventListener('click', () => {
-  resultScreen.classList.remove('active');
-  titleScreen.classList.add('active');
+document.getElementById('retryBtn').addEventListener('click', () => {
+  if (state.gameType === 'online') {
+    cleanupNet();
+    openSetup('online');
+  } else {
+    startBattle();
+  }
+});
+document.getElementById('toSetupBtn').addEventListener('click', () => {
   state.playing = false;
+  if (state.gameType === 'online') openSetup('online');
+  else openSetup(state.gameType);
+});
+document.getElementById('toLobbyBtn').addEventListener('click', () => {
+  state.playing = false;
+  cleanupNet();
+  setMissionWorldVisible(false);
+  enemy.mesh.visible = true;
+  showScreen('lobby');
 });
 document.getElementById('pauseBtn').addEventListener('click', () => {
   if (!state.playing) return;
   state.playing = false;
   hud.classList.remove('active');
-  titleScreen.classList.add('active');
+  if (state.gameType === 'online') {
+    cleanupNet();
+    openSetup('online');
+  } else {
+    openSetup(state.gameType);
+  }
   showToast('中断しました');
 });
 
 function tick() {
   requestAnimationFrame(tick);
   const dt = Math.min(0.05, clock.getDelta());
+  state.hitCooldown = Math.max(0, state.hitCooldown - dt);
 
   if (state.playing && !state.over) {
     const ctrl = readControls();
     applyFlight(player, ctrl, dt, false);
 
-    const ai = aiControl(dt);
-    applyFlight(enemy, ai, dt, true);
+    if (state.gameType === 'dogfight') {
+      const ai = aiControl(dt);
+      applyFlight(enemy, ai, dt, true);
+      state.enemyFireCd = Math.max(0, state.enemyFireCd - dt);
+      if (ai.fire && state.enemyFireCd <= 0 && enemy.alive) {
+        const q = enemy.mesh.quaternion;
+        const muzzle = enemy.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+        fireBullet(muzzle, dir, 'enemy');
+        state.enemyFireCd = FIRE_COOLDOWN * 1.15;
+      }
+    } else if (state.gameType === 'online') {
+      enemy.pos.lerp(state.remoteTarget, 1 - Math.pow(0.0008, dt));
+      enemy.yaw = THREE.MathUtils.lerp(enemy.yaw, state.remoteYaw, 0.2);
+      enemy.pitch = THREE.MathUtils.lerp(enemy.pitch, state.remotePitch, 0.2);
+      enemy.roll = THREE.MathUtils.lerp(enemy.roll, state.remoteRoll, 0.2);
+      const q = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(enemy.pitch, enemy.yaw, -enemy.roll, 'YXZ')
+      );
+      enemy.mesh.position.copy(enemy.pos);
+      enemy.mesh.quaternion.copy(q);
+
+      state.netSendAcc += dt;
+      if (state.netSendAcc >= 0.05) {
+        state.netSendAcc = 0;
+        netSend({
+          t: 'state',
+          x: player.pos.x,
+          y: player.pos.y,
+          z: player.pos.z,
+          yaw: player.yaw,
+          pitch: player.pitch,
+          roll: player.roll,
+          hp: player.hp
+        });
+      }
+    }
 
     state.playerFireCd = Math.max(0, state.playerFireCd - dt);
-    state.enemyFireCd = Math.max(0, state.enemyFireCd - dt);
-
     if (ctrl.fire && state.playerFireCd <= 0 && player.alive) {
+      const profile = getWeaponProfile(player.weaponKind || 'beam', player.atk || 12);
       const q = player.mesh.quaternion;
       const muzzle = player.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-      fireBullet(muzzle, dir, 'player');
-      state.playerFireCd = FIRE_COOLDOWN;
-    }
-    if (ai.fire && state.enemyFireCd <= 0 && enemy.alive) {
-      const q = enemy.mesh.quaternion;
-      const muzzle = enemy.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
-      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-      fireBullet(muzzle, dir, 'enemy');
-      state.enemyFireCd = FIRE_COOLDOWN * 1.15;
+      fireBullet(muzzle, dir, 'player', profile);
+      state.playerFireCd = profile.cooldown;
+      if (state.gameType === 'online') {
+        netSend({
+          t: 'shot',
+          x: muzzle.x,
+          y: muzzle.y,
+          z: muzzle.z,
+          dx: dir.x,
+          dy: dir.y,
+          dz: dir.z,
+          kind: profile.kind,
+          atk: player.atk || 12
+        });
+      }
     }
 
     updateBullets(dt);
     updateHpUi();
+
+    if (state.gameType === 'mission') {
+      state.timeLeft -= dt;
+      updateGates();
+      updatePests(dt);
+      updateMissionHud();
+      checkMissionClear();
+      if (state.timeLeft <= 0 && !state.over) {
+        endBattle(false, 'time');
+      }
+    }
 
     const spd = player.vel.length();
     document.getElementById('altPill').textContent = 'ALT ' + Math.max(0, player.pos.y).toFixed(0) + 'm';
@@ -1028,20 +2646,20 @@ function tick() {
 
     if (player.hp <= 0) {
       player.alive = false;
+      if (state.gameType === 'online') netSend({ t: 'die' });
       endBattle(false);
-    } else if (enemy.hp <= 0) {
+    } else if (state.gameType === 'dogfight' && enemy.hp <= 0) {
       enemy.alive = false;
       endBattle(true);
     }
 
     updateCamera(dt);
   } else if (!state.playing) {
-    // idle orbit camera on title
     const t = performance.now() * 0.00025;
     camera.position.set(Math.cos(t) * 28, 16, Math.sin(t) * 28);
     camera.lookAt(0, 8, 0);
     player.mesh.position.copy(player.pos);
-    enemy.mesh.position.copy(enemy.pos);
+    if (enemy.mesh.visible) enemy.mesh.position.copy(enemy.pos);
   }
 
   renderer.render(scene, camera);
