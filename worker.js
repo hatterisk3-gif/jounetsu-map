@@ -2891,8 +2891,11 @@ function createSignboardMarker(name, pos, icon, id) {
               if (isAuthorMatch) {
                 const phWorkDate = window.normalizeDateStr(ph.data && ph.data.workDate);
                 const phDate = window.normalizeDateStr(ph.date);
+                // 作業日を正とする（保存した日＝ph.date で別日の記録を混ぜない）
+                // 例: 昨日分を今朝まとめて登録しても、今日の開始候補に昨日の終了が入らない
+                const recordYmd = phWorkDate || phDate;
 
-                if (phWorkDate === normTarget || phDate === normTarget) {
+                if (recordYmd === normTarget) {
                   const endTime = window.normalizeTimeHm(ph.data && ph.data.endTime);
                   if (endTime && window.isTimeHmLater(endTime, latestEnd)) {
                     latestEnd = endTime;
@@ -2907,7 +2910,19 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         // ※12:00→13:00 の丸めは「次作業の開始候補」用。実終了時刻の参照では行わない
         //   （休憩セット時に「終了が今より未来」扱いになりエラーになるのを防ぐ）
-        if (latestEnd) window.saveCachedLatestWorkEnd(normTarget, latestEnd, { force: true });
+        if (latestEnd) {
+          window.saveCachedLatestWorkEnd(normTarget, latestEnd, { force: true });
+        } else {
+          // 当日分が無いのに別日終了がキャッシュに残っていると、出勤時刻より優先されてしまう
+          try {
+            const cache = window.loadCachedWorkTimeHints();
+            if (cache.ends && cache.ends[normTarget]) {
+              delete cache.ends[normTarget];
+              cache.updatedAt = Date.now();
+              localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache));
+            }
+          } catch (e) {}
+        }
         return { end: latestEnd, isRest: latestIsRest, workName: latestName };
       };
 
@@ -4489,7 +4504,8 @@ function createSignboardMarker(name, pos, icon, id) {
             const phDate = (typeof window.normalizeDateStr === 'function')
               ? window.normalizeDateStr(ph.date)
               : String(ph.date || '').slice(0, 10);
-            if (phWorkDate !== ymd && phDate !== ymd) return;
+            const recordYmd = phWorkDate || phDate;
+            if (recordYmd !== ymd) return;
             const start = (typeof window.normalizeTimeHm === 'function')
               ? (window.normalizeTimeHm(ph.data && ph.data.startTime) || '')
               : String((ph.data && ph.data.startTime) || '');
@@ -8413,21 +8429,6 @@ function createSignboardMarker(name, pos, icon, id) {
 
           const html = `
             <div class="rest-break-dedicated-container" style="padding:16px; background:#fff;">
-              <div style="background:#FFF3E0; border:2px solid #FF9800; border-radius:12px; padding:18px; margin-bottom:20px; text-align:center; box-shadow:0 4px 12px rgba(255,152,0,0.18);">
-                <div style="font-size:14px; color:#E65100; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:6px;">
-                  ☕ 前の作業終了 〜 現在時刻（ワンタップ登録）
-                </div>
-                <div style="font-size:26px; font-weight:bold; color:#D84315; margin:10px 0; text-align:center;">
-                  <span id="rec_simple_start_display">--:--</span> 〜 <span id="rec_simple_end_display">--:--</span>
-                </div>
-                <div id="rec_simple_total_display" style="font-size:14px; color:#795548; font-weight:bold; text-align:center; margin-bottom:16px;">
-                  （実時間: --分）
-                </div>
-                <button type="button" onclick="submitRecord()" style="background:#FF9800; color:#fff; border:none; width:100%; padding:15px; border-radius:10px; font-size:17px; font-weight:bold; cursor:pointer; box-shadow:0 4px 8px rgba(255,152,0,0.4); text-align:center;">
-                  ☕ この内容で休憩を登録する
-                </button>
-              </div>
-
               <label class="form-label">👤 ユーザー名</label>
               <input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666; margin-bottom:15px;">
 
@@ -8438,7 +8439,7 @@ function createSignboardMarker(name, pos, icon, id) {
               <input type="hidden" id="rec_work_category" value="管理/その他">
               <input type="hidden" id="rec_work_name" value="休憩">
 
-              <div class="rec-zone" style="background:#EFEBE9; padding:16px; border-radius:12px; border:1px solid #D7CCC8; margin-bottom:15px;">
+              <div class="rec-zone" style="background:#EFEBE9; padding:16px; border-radius:12px; border:1px solid #D7CCC8; margin-bottom:16px;">
                 <label class="form-label" style="margin-top:0; color:#4E342E; font-size:14px;">⏰ 休憩の時間設定</label>
                 <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
                   <div style="flex:1;">
@@ -8461,6 +8462,10 @@ function createSignboardMarker(name, pos, icon, id) {
                   </button>
                 </div>
               </div>
+
+              <button type="button" onclick="submitRecord()" style="background:#FF9800; color:#fff; border:none; width:100%; padding:15px; border-radius:10px; font-size:17px; font-weight:bold; cursor:pointer; box-shadow:0 4px 8px rgba(255,152,0,0.4); text-align:center;">
+                ☕ この内容で休憩を登録する
+              </button>
             </div>
           `;
 
@@ -8475,12 +8480,14 @@ function createSignboardMarker(name, pos, icon, id) {
           const typeModal = document.getElementById('recordTypeSelectModal');
           if (typeModal) typeModal.style.display = 'none';
 
-          // 時間の全自動セット＆表示同期
+          // 時間の初期セット（開始・終了欄へ直接入れる）
           setTimeout(() => {
             if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
               try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
             }
-            if (typeof window.updateRestNoticeCardUI === 'function') window.updateRestNoticeCardUI();
+            if (typeof window.calcTotalTime === 'function') {
+              try { window.calcTotalTime(); } catch (e) {}
+            }
             window._openingRestBreak = false;
           }, 30);
 

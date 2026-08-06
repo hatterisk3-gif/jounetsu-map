@@ -1502,15 +1502,16 @@ function readControls() {
   let pitch;
   let roll;
   if (state.mode === 2) {
-    // 左: スロットル / ヨー　右: ピッチ / ロール
+    // 左: スロットル / ヨー　右: ピッチ / ロール（実機 Mode2）
+    // スティック上=上昇、右=右ヨー（Three.jsの+Y回転は左回りなので符号反転）
     throttle = (Ly + 1) * 0.5;
-    yaw = Lx;
-    pitch = -Ry;
-    roll = Rx;
+    yaw = -Lx;
+    pitch = -Ry; // スティック上（前方）= 機首下げ＝前進
+    roll = Rx;   // スティック右=右バンク
   } else {
-    // 左: ピッチ / ヨー　右: スロットル / ロール
+    // 左: ピッチ / ヨー　右: スロットル / ロール（実機 Mode1）
     pitch = -Ly;
-    yaw = Lx;
+    yaw = -Lx;
     throttle = (Ry + 1) * 0.5;
     roll = Rx;
   }
@@ -1614,40 +1615,60 @@ scene.fog = new THREE.Fog(0x87b8d8, 60, 180);
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 400);
 const clock = new THREE.Clock();
 
-const hemi = new THREE.HemisphereLight(0xb3e5fc, 0x4e342e, 0.85);
+const hemi = new THREE.HemisphereLight(0xb3e5fc, 0x5d4037, 0.9);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff3e0, 1.05);
-sun.position.set(40, 80, 20);
+const sun = new THREE.DirectionalLight(0xfff3e0, 1.15);
+sun.position.set(48, 90, 28);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 10;
+sun.shadow.camera.far = 220;
+sun.shadow.camera.left = -110;
+sun.shadow.camera.right = 110;
+sun.shadow.camera.top = 110;
+sun.shadow.camera.bottom = -110;
+sun.shadow.bias = -0.0004;
 scene.add(sun);
 
+/** ベース地盤（草原） */
 const ground = new THREE.Mesh(
-  new THREE.CircleGeometry(ARENA + 20, 64),
-  new THREE.MeshStandardMaterial({ color: 0x4caf50, roughness: 0.85, metalness: 0.05 })
+  new THREE.CircleGeometry(ARENA + 24, 72),
+  new THREE.MeshStandardMaterial({ color: 0x3d8b40, roughness: 0.92, metalness: 0.02 })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-const grid = new THREE.GridHelper(ARENA * 2, 40, 0xffffff, 0xffffff);
-grid.material.opacity = 0.12;
+/** 外周の土リング（高度感・境界の手がかり） */
+const rim = new THREE.Mesh(
+  new THREE.RingGeometry(ARENA - 2, ARENA + 6, 72),
+  new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 0.95, metalness: 0.05, side: THREE.DoubleSide })
+);
+rim.rotation.x = -Math.PI / 2;
+rim.position.y = 0.03;
+rim.receiveShadow = true;
+scene.add(rim);
+
+const grid = new THREE.GridHelper(ARENA * 2, 36, 0xffffff, 0xffffff);
+grid.material.opacity = 0.07;
 grid.material.transparent = true;
+grid.position.y = 0.02;
 scene.add(grid);
 
-function makeTree(x, z) {
+function makeTree(x, z, scale) {
+  const s = scale || 1;
   const g = new THREE.Group();
   const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.25, 0.35, 2.2, 6),
+    new THREE.CylinderGeometry(0.25 * s, 0.35 * s, 2.2 * s, 6),
     new THREE.MeshStandardMaterial({ color: 0x6d4c41 })
   );
-  trunk.position.y = 1.1;
+  trunk.position.y = 1.1 * s;
   trunk.castShadow = true;
   const crown = new THREE.Mesh(
-    new THREE.ConeGeometry(1.4, 3.2, 7),
+    new THREE.ConeGeometry(1.4 * s, 3.2 * s, 7),
     new THREE.MeshStandardMaterial({ color: 0x2e7d32 })
   );
-  crown.position.y = 3.2;
+  crown.position.y = 3.2 * s;
   crown.castShadow = true;
   g.add(trunk, crown);
   g.position.set(x, 0, z);
@@ -1655,7 +1676,7 @@ function makeTree(x, z) {
   return g;
 }
 
-function makeBarn(x, z) {
+function makeBarn(x, z, rotY) {
   const g = new THREE.Group();
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(6, 3.2, 4.5),
@@ -1671,43 +1692,332 @@ function makeBarn(x, z) {
   roof.position.y = 4.2;
   roof.rotation.y = Math.PI / 4;
   roof.castShadow = true;
-  g.add(body, roof);
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 2.2, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x3e2723 })
+  );
+  door.position.set(0, 1.1, 2.28);
+  g.add(body, roof, door);
   g.position.set(x, 0, z);
+  g.rotation.y = rotY || 0;
   scene.add(g);
   return { mesh: g, radius: 4.5, yMax: 5.2 };
 }
 
-const obstacles = [];
-[[-25, -18], [30, 12], [-12, 28], [18, -30], [0, 40], [-35, 8]].forEach(([x, z], i) => {
-  if (i % 2 === 0) makeTree(x, z);
-  else obstacles.push(makeBarn(x, z));
-});
-makeTree(8, 8);
-makeTree(-8, -22);
-
-/** 圃場パッチ（見た目） */
-function makePaddy(x, z, w, d) {
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, d),
-    new THREE.MeshStandardMaterial({ color: 0x66bb6a, roughness: 0.9, metalness: 0.05 })
+function makeSilo(x, z) {
+  const g = new THREE.Group();
+  const tank = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.2, 2.4, 8, 12),
+    new THREE.MeshStandardMaterial({ color: 0xb0bec5, metalness: 0.45, roughness: 0.35 })
   );
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(x, 0.05, z);
+  tank.position.y = 4;
+  tank.castShadow = true;
+  tank.receiveShadow = true;
+  const cap = new THREE.Mesh(
+    new THREE.ConeGeometry(2.5, 1.6, 12),
+    new THREE.MeshStandardMaterial({ color: 0x546e7a, metalness: 0.3, roughness: 0.45 })
+  );
+  cap.position.y = 8.8;
+  cap.castShadow = true;
+  g.add(tank, cap);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return { mesh: g, radius: 3.2, yMax: 9.5 };
+}
+
+function makeHayBale(x, z, rotY) {
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.7, 0.7, 1.4, 10),
+    new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.9 })
+  );
+  mesh.rotation.z = Math.PI / 2;
+  mesh.rotation.y = rotY || 0;
+  mesh.position.set(x, 0.7, z);
+  mesh.castShadow = true;
   mesh.receiveShadow = true;
   scene.add(mesh);
-  // 畝ライン
-  for (let i = -Math.floor(d / 4); i <= Math.floor(d / 4); i++) {
+  return mesh;
+}
+
+/** 圃場パッチ（色・畝方向つき） */
+function makePaddy(x, z, w, d, opts) {
+  const o = opts || {};
+  const soil = o.soil != null ? o.soil : 0x66bb6a;
+  const ridgeCol = o.ridge != null ? o.ridge : 0x33691e;
+  const rot = o.rot || 0;
+  const g = new THREE.Group();
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshStandardMaterial({ color: soil, roughness: 0.92, metalness: 0.04 })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.04;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  const border = new THREE.Mesh(
+    new THREE.PlaneGeometry(w + 1.2, d + 1.2),
+    new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.95 })
+  );
+  border.rotation.x = -Math.PI / 2;
+  border.position.y = 0.025;
+  border.receiveShadow = true;
+  g.add(border);
+  const spacing = o.spacing || 2.1;
+  const ridgeH = o.ridgeH || 0.1;
+  for (let i = -Math.floor(d / (spacing * 2)); i <= Math.floor(d / (spacing * 2)); i++) {
     const ridge = new THREE.Mesh(
-      new THREE.BoxGeometry(w * 0.92, 0.08, 0.35),
-      new THREE.MeshStandardMaterial({ color: 0x33691e })
+      new THREE.BoxGeometry(w * 0.9, ridgeH, 0.32),
+      new THREE.MeshStandardMaterial({ color: ridgeCol, roughness: 0.95 })
     );
-    ridge.position.set(x, 0.1, z + i * 2.2);
-    scene.add(ridge);
+    ridge.position.set(0, 0.08, i * spacing);
+    ridge.castShadow = true;
+    ridge.receiveShadow = true;
+    g.add(ridge);
+  }
+  g.position.set(x, 0, z);
+  g.rotation.y = rot;
+  scene.add(g);
+  return g;
+}
+
+/** 農道 */
+function makeRoad(x1, z1, x2, z2, width) {
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  const len = Math.hypot(dx, dz);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width || 4.5, len),
+    new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.96, metalness: 0.05 })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set((x1 + x2) / 2, 0.06, (z1 + z2) / 2);
+  mesh.rotation.z = -Math.atan2(dx, dz);
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  // 白線
+  const line = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.18, len * 0.92),
+    new THREE.MeshBasicMaterial({ color: 0xf5f5f5, transparent: true, opacity: 0.45 })
+  );
+  line.rotation.x = -Math.PI / 2;
+  line.position.set((x1 + x2) / 2, 0.07, (z1 + z2) / 2);
+  line.rotation.z = -Math.atan2(dx, dz);
+  scene.add(line);
+}
+
+/** 用水路 */
+function makeCanal(x, z, w, d, rotY) {
+  const g = new THREE.Group();
+  const bed = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.35, metalness: 0.2 })
+  );
+  bed.rotation.x = -Math.PI / 2;
+  bed.position.y = 0.05;
+  bed.receiveShadow = true;
+  g.add(bed);
+  const bankMat = new THREE.MeshStandardMaterial({ color: 0x795548 });
+  const bankL = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, d), bankMat);
+  bankL.position.set(-w / 2, 0.15, 0);
+  bankL.castShadow = true;
+  const bankR = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, d), bankMat);
+  bankR.position.set(w / 2, 0.15, 0);
+  bankR.castShadow = true;
+  g.add(bankL, bankR);
+  g.position.set(x, 0, z);
+  g.rotation.y = rotY || 0;
+  scene.add(g);
+}
+
+/** フェンス（高さの目安） */
+function makeFenceLine(x1, z1, x2, z2, posts) {
+  const n = posts || 8;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const x = x1 + (x2 - x1) * t;
+    const z = z1 + (z2 - z1) * t;
+    const post = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 1.4, 0.18),
+      new THREE.MeshStandardMaterial({ color: 0x5d4037 })
+    );
+    post.position.set(x, 0.7, z);
+    post.castShadow = true;
+    scene.add(post);
+    if (i < n) {
+      const nx = x1 + (x2 - x1) * ((i + 1) / n);
+      const nz = z1 + (z2 - z1) * ((i + 1) / n);
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.1, Math.hypot(nx - x, nz - z)),
+        new THREE.MeshStandardMaterial({ color: 0x8d6e63 })
+      );
+      rail.position.set((x + nx) / 2, 1.05, (z + nz) / 2);
+      rail.lookAt(nx, 1.05, nz);
+      scene.add(rail);
+    }
   }
 }
-makePaddy(-20, 0, 28, 22);
-makePaddy(22, -8, 24, 26);
-makePaddy(5, 22, 30, 18);
+
+/** 高度ポール（5m / 10m の目盛り）— 地面接触・高度の基準 */
+function makeAltPole(x, z) {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.16, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x37474f, metalness: 0.4, roughness: 0.45 })
+  );
+  pole.position.y = 5;
+  pole.castShadow = true;
+  g.add(pole);
+  [2.5, 5, 7.5, 10].forEach((h, i) => {
+    const mark = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 0.18, 0.18),
+      new THREE.MeshStandardMaterial({
+        color: i % 2 === 0 ? 0xffeb3b : 0xffffff,
+        emissive: i % 2 === 0 ? 0x665500 : 0x333333,
+        emissiveIntensity: 0.25
+      })
+    );
+    mark.position.y = h;
+    mark.castShadow = true;
+    g.add(mark);
+  });
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.65, 0.25, 8),
+    new THREE.MeshStandardMaterial({ color: 0x455a64 })
+  );
+  base.position.y = 0.12;
+  base.receiveShadow = true;
+  g.add(base);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return g;
+}
+
+/** 機体の真下に落とす接地影（高度が低いほど濃く・大きく） */
+function makeGroundBlob() {
+  const mesh = new THREE.Mesh(
+    new THREE.CircleGeometry(1.8, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false
+    })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.08;
+  scene.add(mesh);
+  return mesh;
+}
+
+const playerGroundBlob = makeGroundBlob();
+const enemyGroundBlob = makeGroundBlob();
+
+function updateGroundBlob(blob, craft) {
+  if (!blob || !craft || !craft.alive) {
+    if (blob) blob.visible = false;
+    return;
+  }
+  blob.visible = true;
+  const alt = Math.max(0, craft.pos.y - craft.radius);
+  blob.position.x = craft.pos.x;
+  blob.position.z = craft.pos.z;
+  // 低いほど影が濃く大きく → 接地が直感的に分かる
+  const near = THREE.MathUtils.clamp(1 - alt / 18, 0.08, 1);
+  const scale = 0.55 + near * 1.35;
+  blob.scale.set(scale, scale, scale);
+  blob.material.opacity = 0.12 + near * 0.48;
+  if (alt < 1.2) blob.material.opacity = 0.72;
+}
+
+/** 接地時の土煙 */
+const dustPuffs = [];
+function spawnDust(x, z, strength) {
+  const n = Math.min(10, 4 + Math.floor(strength / 4));
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.25 + Math.random() * 0.35, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xa1887f, transparent: true, opacity: 0.55 })
+    );
+    m.position.set(x + (Math.random() - 0.5) * 1.2, 0.2, z + (Math.random() - 0.5) * 1.2);
+    m.userData = {
+      vx: (Math.random() - 0.5) * 3,
+      vy: 1.5 + Math.random() * 2.5,
+      vz: (Math.random() - 0.5) * 3,
+      life: 0.55 + Math.random() * 0.35
+    };
+    scene.add(m);
+    dustPuffs.push(m);
+  }
+}
+function updateDust(dt) {
+  for (let i = dustPuffs.length - 1; i >= 0; i--) {
+    const m = dustPuffs[i];
+    const u = m.userData;
+    u.life -= dt;
+    m.position.x += u.vx * dt;
+    m.position.y += u.vy * dt;
+    m.position.z += u.vz * dt;
+    u.vy -= 4 * dt;
+    m.scale.multiplyScalar(1 + 1.8 * dt);
+    m.material.opacity = Math.max(0, u.life * 0.9);
+    if (u.life <= 0) {
+      scene.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+      dustPuffs.splice(i, 1);
+    }
+  }
+}
+
+// --- マップ配置 ---
+const obstacles = [];
+
+// 圃場（色違いで区画がはっきり）
+makePaddy(-22, 4, 30, 24, { soil: 0x7cb342, ridge: 0x33691e, rot: 0.08 });
+makePaddy(24, -10, 26, 28, { soil: 0x9ccc65, ridge: 0x558b2f, rot: -0.2, spacing: 2.4 });
+makePaddy(6, 26, 32, 20, { soil: 0xcddc39, ridge: 0x9e9d24, rot: 0.12 }); // 刈り取り後の黄緑
+makePaddy(-8, -28, 22, 18, { soil: 0x8d6e63, ridge: 0x5d4037, spacing: 1.8, ridgeH: 0.14 }); // 耕起土
+makePaddy(38, 22, 18, 16, { soil: 0x66bb6a, ridge: 0x2e7d32, rot: 0.4 });
+makePaddy(-36, -6, 16, 20, { soil: 0xaed581, ridge: 0x689f38, rot: -0.35 });
+
+// 十字の農道
+makeRoad(-70, 0, 70, 0, 5.5);
+makeRoad(0, -70, 0, 70, 4.8);
+makeRoad(-40, -40, 40, 40, 3.6);
+makeRoad(-50, 30, 20, -50, 3.2);
+
+// 用水路
+makeCanal(-14, 12, 3.2, 48, 0);
+makeCanal(18, -20, 2.6, 36, Math.PI / 5);
+
+// フェンス区画
+makeFenceLine(-45, -45, 45, -45, 14);
+makeFenceLine(45, -45, 45, 45, 14);
+makeFenceLine(45, 45, -45, 45, 14);
+makeFenceLine(-45, 45, -45, -45, 14);
+makeFenceLine(-18, 8, 8, 8, 6);
+makeFenceLine(8, 8, 8, -10, 5);
+
+// 高度ポール（マップ内の高さ基準）
+[[-15, 15], [20, 18], [-25, -20], [32, -28], [0, -38], [42, 5]].forEach(([x, z]) => makeAltPole(x, z));
+
+// 建物・木・干し草
+obstacles.push(makeBarn(-28, -18, 0.3));
+obstacles.push(makeBarn(30, 12, -0.5));
+obstacles.push(makeBarn(18, -32, 0.9));
+obstacles.push(makeBarn(-38, 20, -0.2));
+obstacles.push(makeSilo(-32, 8));
+obstacles.push(makeSilo(36, -4));
+
+[
+  [-25, -18], [12, 28], [0, 42], [-35, -30], [8, 8], [-8, -22],
+  [40, 30], [-42, 35], [22, 40], [-18, 38], [48, -18], [-48, 0],
+  [15, -42], [-5, 5], [28, -22]
+].forEach(([x, z], i) => makeTree(x, z, 0.85 + (i % 3) * 0.15));
+
+[
+  [10, 6], [12, 7], [11, 5], [-6, -8], [-4, -9], [26, 2], [27, 3.5], [-20, 22]
+].forEach(([x, z], i) => makeHayBale(x, z, i * 0.4));
 
 /** 周回ゲート */
 const gateGroup = new THREE.Group();
@@ -2163,10 +2473,12 @@ function applyFlight(craft, ctrl, dt, isAi) {
   if (craft.pos.y < craft.radius + 0.2) {
     craft.pos.y = craft.radius + 0.2;
     if (craft.vel.y < 0) {
-      let impact = Math.min(35, Math.abs(craft.vel.y) * 2.2);
+      const impactSpeed = Math.abs(craft.vel.y);
+      let impact = Math.min(35, impactSpeed * 2.2);
       if (craft.def) impact *= (1 - craft.def);
-      craft.vel.y = Math.abs(craft.vel.y) * 0.25;
+      craft.vel.y = impactSpeed * 0.25;
       craft.hp -= impact;
+      if (impactSpeed > 2.5) spawnDust(craft.pos.x, craft.pos.z, impact);
       if (!isAi && impact > 4) showToast('地面接触 -' + Math.round(impact));
     }
   }
@@ -2641,8 +2953,25 @@ function tick() {
     }
 
     const spd = player.vel.length();
-    document.getElementById('altPill').textContent = 'ALT ' + Math.max(0, player.pos.y).toFixed(0) + 'm';
+    const alt = Math.max(0, player.pos.y - player.radius);
+    const altPill = document.getElementById('altPill');
+    altPill.textContent = 'ALT ' + alt.toFixed(1) + 'm';
+    if (alt < 1.5) {
+      altPill.style.color = '#ff5252';
+      altPill.style.borderColor = 'rgba(255,82,82,0.55)';
+      altPill.textContent = 'NEAR GROUND ' + alt.toFixed(1) + 'm';
+    } else if (alt < 5) {
+      altPill.style.color = '#ffab40';
+      altPill.style.borderColor = 'rgba(255,171,64,0.45)';
+    } else {
+      altPill.style.color = '';
+      altPill.style.borderColor = '';
+    }
     document.getElementById('spdPill').textContent = 'SPD ' + spd.toFixed(0);
+
+    updateGroundBlob(playerGroundBlob, player);
+    updateGroundBlob(enemyGroundBlob, enemy.mesh.visible ? enemy : null);
+    updateDust(dt);
 
     if (player.hp <= 0) {
       player.alive = false;
@@ -2655,6 +2984,8 @@ function tick() {
 
     updateCamera(dt);
   } else if (!state.playing) {
+    playerGroundBlob.visible = false;
+    enemyGroundBlob.visible = false;
     const t = performance.now() * 0.00025;
     camera.position.set(Math.cos(t) * 28, 16, Math.sin(t) * 28);
     camera.lookAt(0, 8, 0);
