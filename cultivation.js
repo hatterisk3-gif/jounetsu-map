@@ -1652,7 +1652,7 @@ function buildCpVarietySelectHtml(plan) {
         const sel = String(v) === cur ? ' selected' : '';
         return `<option value="${esc}"${sel}>${esc}</option>`;
     }).join('');
-    return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="flex:1; min-width:0; height:18px; font-size:10px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
+    return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="flex:1; min-width:52px; height:18px; font-size:10px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
 }
 
 /** 計画カードの品種セレクトを作り直す */
