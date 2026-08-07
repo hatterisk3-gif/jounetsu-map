@@ -458,9 +458,13 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
       }
 
-    // 🌟 2. データの取得とキャッシュ保存（超軽量化版！） 🌟
+    // 🌟 2. データの取得とキャッシュ保存（超軽量化＆SWRバックグラウンド更新版！） 🌟
       function loadInitData() {
-          if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
+          const hasCache = !!localStorage.getItem('passionMapInitData');
+          // キャッシュが無い初回のみローディングを表示、キャッシュがある場合はバックグラウンドで静かに更新
+          if (!hasCache && typeof beginMapDataLoad === 'function') {
+              beginMapDataLoad('圃場データを読み込み中...');
+          }
           callGAS('getInitData').then(data => {
               try {
                   const newDataStr = JSON.stringify(data);
@@ -470,6 +474,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   if (newDataStr === oldDataStr) {
                       console.log("変更なし：再描画をスキップしました");
                       if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                      if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
                       return; 
                   }
 
@@ -482,12 +487,32 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   console.error("renderInitData/Data processing Error:", err);
               } finally {
                   if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                  if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
               }
           }).catch(e => {
               console.log("InitData Error:", e);
               if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+              if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
           });
       }
+
+      // 🌟 作業記録の保存・更新時にキャッシュを破棄せず即最新化するヘルパー 🌟
+      window.updateInitDataCacheWithLocalRecords_ = () => {
+        try {
+          const raw = localStorage.getItem('passionMapInitData');
+          if (!raw) return;
+          const cache = JSON.parse(raw);
+          if (!cache || !cache.polygons) return;
+          cache.polygons.forEach(p => {
+            if (loadedPolygons && loadedPolygons[p.id]) {
+              p.photos = loadedPolygons[p.id].photos || [];
+              p.condition = loadedPolygons[p.id].condition || p.condition;
+              p.status = loadedPolygons[p.id].status || p.status;
+            }
+          });
+          localStorage.setItem('passionMapInitData', JSON.stringify(cache));
+        } catch (e) {}
+      };
 
       // 🌟 3. キャッシュからも呼ばれる描画専用処理 🌟
       function renderInitData(data) {
@@ -6825,25 +6850,29 @@ function createSignboardMarker(name, pos, icon, id) {
                const masterIdx = details.indexOf(d);
                const safeArg = window.escapeDetailWorkJsArg(d);
                const idSuffix = (cropAttr || (isPrep ? 'prep' : 'common')) + '_' + safeVal;
-               dHtml += `<label class="checkbox-label detail-work-item-row" style="padding:10px 12px; background:#f8fbff; border:1px solid #90caf9; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;">
-                  <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
-                     <input type="checkbox" name="detail_work_ids" value="${safeVal}" data-crop="${cropAttr}" onchange="toggleDetailWorkMinutes(this)" style="width:18px; height:18px; flex-shrink:0;">
-                     <span style="font-size:14px; color:#333; word-break:break-all;">${safeVal}</span>
-                     ${isExtra ? `<span style="background:#ede7f6; color:#5e35b1; font-size:10px; padding:2px 6px; border-radius:10px; flex-shrink:0;">作業名</span>` : ''}
-                  </div>
-                  <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-                     <button type="button" onclick="event.stopPropagation(); event.preventDefault(); stampDetailWorkStageUntilNow(this)" title="直前の区切り〜いまをこの工程に記録" style="background:#FF9800; color:#fff; border:none; border-radius:4px; padding:5px 8px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">⏱ ここまで</button>
-                     <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
-                        <input type="number" name="detail_work_min_${idSuffix}" class="detail-work-min-input" data-work="${safeVal}" data-crop="${cropAttr}" placeholder="分" min="0" style="width:64px; padding:4px 6px; border:1px solid #90caf9; border-radius:4px; font-size:13px; text-align:right;" onclick="event.stopPropagation()" oninput="onDetailWorkMinutesInput(this)" title="開始終了が不明でも分数だけ入力できます">
-                        <span style="font-size:12px; color:#666;">分</span>
-                     </div>
-                     ${isExtra ? `<button type="button" onclick="event.stopPropagation(); event.preventDefault(); removeRecordExtraDetailWork('${safeArg}')" title="この記録から外す" style="background:#fff; color:#6a1b9a; border:1px solid #d1c4e9; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">×</button>` : ''}
-                     ${isAdmin && masterIdx >= 0 ? `
-                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${masterIdx})" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">✏️</button>
-                        <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${masterIdx})" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:30px; height:30px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">🗑️</button>
-                     ` : ''}
-                  </div>
-               </label>`;
+                dHtml += `<label class="checkbox-label detail-work-item-row" style="padding:10px 12px; background:#f8fbff; border:1px solid #90caf9; border-radius:8px; display:flex; flex-direction:column; gap:8px; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+                   <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px;">
+                      <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0; flex-wrap:wrap;">
+                         <input type="checkbox" name="detail_work_ids" value="${safeVal}" data-crop="${cropAttr}" onchange="toggleDetailWorkMinutes(this)" style="width:20px; height:20px; flex-shrink:0;">
+                         <span style="font-size:15px; font-weight:bold; color:#1a237e; word-break:break-word; line-height:1.3;">${safeVal}</span>
+                         ${isExtra ? `<span style="background:#ede7f6; color:#5e35b1; font-size:10px; padding:2px 6px; border-radius:10px; flex-shrink:0;">作業名</span>` : ''}
+                      </div>
+                      <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                         ${isExtra ? `<button type="button" onclick="event.stopPropagation(); event.preventDefault(); removeRecordExtraDetailWork('${safeArg}')" title="この記録から外す" style="background:#fff; color:#6a1b9a; border:1px solid #d1c4e9; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">×</button>` : ''}
+                         ${isAdmin && masterIdx >= 0 ? `
+                            <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${masterIdx})" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">✏️</button>
+                            <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${masterIdx})" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">🗑️</button>
+                         ` : ''}
+                      </div>
+                   </div>
+                   <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px; width:100%; flex-wrap:wrap; padding-top:6px; border-top:1px dashed #d0e1fd;">
+                      <button type="button" onclick="event.stopPropagation(); event.preventDefault(); stampDetailWorkStageUntilNow(this)" title="直前の区切り〜いまをこの工程に記録" style="background:#FF9800; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap; box-shadow:0 1px 3px rgba(255,152,0,0.3);">⏱ ここまで</button>
+                      <div class="detail-work-min-wrapper" style="display:none; align-items:center; gap:4px;">
+                         <input type="number" name="detail_work_min_${idSuffix}" class="detail-work-min-input" data-work="${safeVal}" data-crop="${cropAttr}" placeholder="分" min="0" style="width:68px; padding:5px 8px; border:1px solid #90caf9; border-radius:6px; font-size:13px; text-align:right; font-weight:bold;" onclick="event.stopPropagation()" oninput="onDetailWorkMinutesInput(this)" title="開始終了が不明でも分数だけ入力できます">
+                         <span style="font-size:12px; font-weight:bold; color:#555;">分</span>
+                      </div>
+                   </div>
+                </label>`;
             });
             dHtml += `</div></div>`;
          });
@@ -10452,7 +10481,9 @@ function createSignboardMarker(name, pos, icon, id) {
           pendingFiles = [];
           existingUrlsInEdit = [];
           currentEditRecordId = null;
-          localStorage.removeItem('passionMapInitData');
+          if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+            window.updateInitDataCacheWithLocalRecords_();
+          }
           closeRightPanel();
 
           window.enqueueRecordSync_({
@@ -13826,27 +13857,26 @@ window.executeAutoRecord = async () => {
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
            
-              // キャッシュがあれば先に地図を描画（ロード表示はサーバー更新まで維持）
+              // ★爆速化・ロード画面即時撤去：キャッシュがあれば先に描画して0秒で操作可能に！
               const cachedData = localStorage.getItem('passionMapInitData');
               if (cachedData) {
-                  if (typeof setMapDataLoadingMessage === 'function') {
-                      setMapDataLoadingMessage('キャッシュを反映中...');
-                  }
-                  // オーバーレイを先に描画してから重い描画へ
                   requestAnimationFrame(() => {
                       try {
                           renderInitData(JSON.parse(cachedData));
-                          if (typeof setMapDataLoadingMessage === 'function') {
-                              setMapDataLoadingMessage('圃場データを更新中...');
-                          }
+                          // キャッシュ反映後、ロード画面を即時撤去してユーザーがすぐ圃場作業記録を取れる状態にする！
+                          if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
+                          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+
                           if (typeof window.prefetchWorkTimeHints === 'function') {
                               const now = new Date();
                               const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                               window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
                           }
+                          // バックグラウンドで非同期に最新サーバーデータを確認・更新（SWRパターン）
                           executeLogin(true);
                       } catch(e) {
                           if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
+                          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
                           executeLogin(true);
                       }
                   });
