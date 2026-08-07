@@ -10118,9 +10118,25 @@ function createSignboardMarker(name, pos, icon, id) {
               technicalFallbackParent = true;
             }
           } else {
-            // ★ユーザー様ご指定: 圃場未選択時に勝手に近くの看板の場所を検索・記録するのをストップ
-            targetIds = [];
-            technicalFallbackParent = false;
+            // GASの saveRecord は必ず親IDが必要。看板は技術上の保存先だけ借り、
+            // 場所名には出さない（technicalFallbackParent → カテゴリ名を placeLabel に使う）
+            const catHint = (document.getElementById('rec_work_category')?.value || '').trim();
+            const preferHints = [];
+            if (catHint.includes('倉庫')) preferHints.push('倉庫');
+            if (catHint.includes('事務')) preferHints.push('事務所', '事務');
+            if (catHint.includes('整備') || catHint.includes('保管')) preferHints.push('整備', '農機庫', '車両');
+            preferHints.push('倉庫', '事務所', 'パックセンター', '研究所');
+            let signId = findMarkerBySignHints_(preferHints);
+            if (!signId) {
+              signId = Object.keys(loadedPolygons).find(id => loadedPolygons[id] && loadedPolygons[id].isMarker);
+            }
+            if (signId) {
+              targetIds = [signId];
+              technicalFallbackParent = true;
+            } else {
+              customAlert("保存先となる看板が見つかりません。地図に看板を登録するか、拠点看板から記録を開いてください。");
+              return;
+            }
           }
         }
         selectedPolyIds = targetIds;
