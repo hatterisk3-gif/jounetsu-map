@@ -9884,6 +9884,7 @@ function createSignboardMarker(name, pos, icon, id) {
           _syncFailed: false,
           _localOptimistic: !isEdit || isLocalOnlyEdit
         };
+        let pushedAny = false;
         targetIds.forEach((pid) => {
           if (!loadedPolygons[pid]) return;
           if (!Array.isArray(loadedPolygons[pid].photos)) loadedPolygons[pid].photos = [];
@@ -9902,8 +9903,29 @@ function createSignboardMarker(name, pos, icon, id) {
           } else {
             loadedPolygons[pid].photos.push(item);
           }
+          pushedAny = true;
           if (typeof updatePolygonColor === 'function') updatePolygonColor(pid);
         });
+
+        // 🌟 場所非選択・出勤同時記録など、特定ポリゴンに紐付かない作業記録も全体コンテナ(__global__)に確実に保存！
+        if (!pushedAny) {
+          const globalKey = '__global__';
+          if (!loadedPolygons[globalKey]) {
+            loadedPolygons[globalKey] = { name: '共通・全体', isMarker: true, photos: [] };
+          }
+          if (!Array.isArray(loadedPolygons[globalKey].photos)) loadedPolygons[globalKey].photos = [];
+          if (isEdit && editId) {
+            const idx = loadedPolygons[globalKey].photos.findIndex(ph => ph && (ph.id === editId || ph.url === editId));
+            if (idx >= 0) {
+              const prev = loadedPolygons[globalKey].photos[idx] || {};
+              loadedPolygons[globalKey].photos[idx] = Object.assign({}, prev, item);
+            } else {
+              loadedPolygons[globalKey].photos.push(item);
+            }
+          } else {
+            loadedPolygons[globalKey].photos.push(item);
+          }
+        }
         return localId;
       };
 
@@ -13984,6 +14006,7 @@ window.collectMyWorkRecords = function(allowedYmds) {
     const list = [];
     const seenIds = new Set();
 
+    // 1) loadedPolygons 内の記録を収集
     for (let pid in loadedPolygons) {
         const p = loadedPolygons[pid];
         if (!p || !p.photos || !Array.isArray(p.photos)) continue;
@@ -14008,9 +14031,40 @@ window.collectMyWorkRecords = function(allowedYmds) {
             list.push({
                 ...ph,
                 polyId: pid,
-                polyName: p.name,
+                polyName: p.name || '全体・共通',
                 isMarker: p.isMarker,
                 recordYmd: recordYmd
+            });
+        });
+    }
+
+    // 2) 同期待ちキュー (_recordSyncQueue) 内の作業記録もマイページに即時合成
+    if (Array.isArray(window._recordSyncQueue)) {
+        window._recordSyncQueue.forEach(job => {
+            if (!job || !job.data || job.recordType !== 'work') return;
+            const recId = job.localId;
+            if (recId && seenIds.has(recId)) return;
+            if (recId) seenIds.add(recId);
+
+            const jobAuthor = String(job.userName || normUser || '').replace(/\s+/g, '');
+            const isAuthorMatch = !normUser || !jobAuthor || jobAuthor === normUser || normUser.includes(jobAuthor) || jobAuthor.includes(normUser) || normUser === 'システム';
+            if (!isAuthorMatch) return;
+
+            const workDateYmd = window.normalizeDateStr(job.data.workDate) || window.normalizeDateStr(new Date());
+            if (allowedYmds && !allowedYmds.has(workDateYmd)) return;
+
+            list.push({
+                id: recId,
+                type: 'work',
+                date: workDateYmd,
+                time: job.data.startTime || '00:00',
+                author: job.userName || normUser,
+                urls: job.previewUrls || [],
+                data: job.data,
+                polyId: job.activePolyId || '__global__',
+                polyName: (loadedPolygons[job.activePolyId] && loadedPolygons[job.activePolyId].name) || '全体・共通',
+                isMarker: true,
+                recordYmd: workDateYmd
             });
         });
     }
