@@ -5577,15 +5577,17 @@ function createSignboardMarker(name, pos, icon, id) {
          if(symptomSelect) symptomSelect.innerHTML = '<option value="">選択...</option>'; // ★追加
          
          if(!toolId) return;
-         const machine = pdlMachines.find(t => t.id === toolId);
+         const machine = (typeof window.findMaintenanceTargetById_ === 'function')
+           ? window.findMaintenanceTargetById_(toolId)
+           : (pdlMachines || []).find(t => t.id === toolId);
          
-         if(machine) {
+         if(machine && !machine.isVehicle) {
             if(machine.parts) {
-               const partsList = machine.parts.split(/[,、]/).map(s => s.trim()).filter(String);
+               const partsList = String(machine.parts).split(/[,、]/).map(s => s.trim()).filter(String);
                partsSelect.innerHTML += partsList.map(p => `<option value="${p}">${p}</option>`).join('');
             }
             if(machine.symptoms && symptomSelect) { // ★追加：農機ごとの症状リスト
-               const sympList = machine.symptoms.split(/[,、]/).map(s => s.trim()).filter(String);
+               const sympList = String(machine.symptoms).split(/[,、]/).map(s => s.trim()).filter(String);
                symptomSelect.innerHTML += sympList.map(s => `<option value="${s}">${s}</option>`).join('');
             }
          }
@@ -7713,7 +7715,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.isLotUseWorkName === 'function' && window.isLotUseWorkName(name)) {
           defs.push({ key: 'lotUse', label: 'ロット使用', emoji: '📦', color: '#43A047' });
         }
-        if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(name)) {
+        if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) {
+          defs.push({ key: 'fuel', label: '給油記録', emoji: '⛽', color: '#C2185B' });
+        } else if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(name)) {
           defs.push({ key: 'maintenance', label: '整備・修理詳細', emoji: '🔧', color: '#E65100' });
         }
         if (typeof window.isWaterValveWork === 'function' && window.isWaterValveWork(name)) {
@@ -7774,6 +7778,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshPlantingRecordSection === 'function') window.refreshPlantingRecordSection();
         if (typeof window.refreshPrepTargetWorkSection === 'function') window.refreshPrepTargetWorkSection();
         if (typeof window.refreshWorkHarvestQtySection === 'function') window.refreshWorkHarvestQtySection();
+        if (typeof window.refreshFuelRecordSection === 'function') window.refreshFuelRecordSection();
         if (typeof window.refreshMaintenanceSection === 'function') window.refreshMaintenanceSection(wName);
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
@@ -7799,6 +7804,7 @@ function createSignboardMarker(name, pos, icon, id) {
             harvest: 'work_harvest_qty_section',
             lotUse: 'lot_use_section',
             maintenance: 'maintenance_section',
+            fuel: 'work_fuel_record_section',
             ridge: 'ridge_progress_section',
             irrigation: 'irrigation_valve_section'
           };
@@ -7826,6 +7832,10 @@ function createSignboardMarker(name, pos, icon, id) {
         // 準備作業は対象指定が必須なので、パネルを必ず開く
         if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(name)) {
           window.setExtraRecordOpen_('prep', true);
+        }
+        // 給油は給油記録パネルを自動で開く
+        if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) {
+          window.setExtraRecordOpen_('fuel', true);
         }
         // 専用記録モード／復元時の自動オープン
         const session = window._specialWorkSession;
@@ -8594,8 +8604,16 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       /** 作業名・カテゴリ・詳細作業から「整備／修理」文脈かを判定 */
+      window.isFuelWorkName = (workName) => {
+        const n = String(workName || '').trim();
+        if (!n) return false;
+        return n === '給油' || n.indexOf('給油') >= 0;
+      };
+
       window.isMaintenanceRelatedWork = (workName) => {
         const name = String(workName || '').trim();
+        // 給油は整備パネルではなく給油パネルへ
+        if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) return false;
         const catEl = document.getElementById('rec_work_category');
         const cat = catEl ? String(catEl.value || '').trim() : '';
         const detailNames = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked'))
@@ -8607,7 +8625,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!t) return false;
           // 「圃場整備」など圃場作業は除外
           if (t.includes('圃場') && (t.includes('整備') || t.includes('修理'))) return false;
-          return t.includes('整備') || t.includes('修理');
+          return t.includes('整備') || t.includes('修理') || t.includes('点検');
         };
 
         if (looksLikeMaint(name)) return true;
@@ -8616,18 +8634,72 @@ function createSignboardMarker(name, pos, icon, id) {
         return false;
       };
 
+      /** 移動車両（軽トラ）マスタを必要時に読み込み */
+      window.ensureMobileVehiclesLoaded_ = async () => {
+        if (window._mobileVehiclesLoaded) return window.pdlMobileVehicles || [];
+        try {
+          const res = await callGAS('vehicle_loadAll');
+          const map = (res && res.vehicles) ? res.vehicles : {};
+          window.pdlMobileVehicles = Object.keys(map).map((k) => {
+            const v = map[k] || {};
+            return Object.assign({}, v, { id: v.id || k });
+          });
+        } catch (e) {
+          console.warn('vehicle_loadAll failed', e);
+          window.pdlMobileVehicles = window.pdlMobileVehicles || [];
+        }
+        window._mobileVehiclesLoaded = true;
+        return window.pdlMobileVehicles || [];
+      };
+
+      window.getMobileVehicleOptionId_ = (v) => 'veh:' + String((v && v.id) || '');
+
+      window.findMaintenanceTargetById_ = (rawId) => {
+        const tId = String(rawId || '').trim();
+        if (!tId) return null;
+        if (tId.indexOf('veh:') === 0) {
+          const vid = tId.slice(4);
+          const v = (window.pdlMobileVehicles || []).find(x => String(x.id) === String(vid));
+          if (!v) return null;
+          return {
+            id: tId,
+            name: v.plateNumber || v.id || '移動車両',
+            isVehicle: true,
+            isTool: false,
+            mileage: v.mileage,
+            driveType: v.driveType || '',
+            status: v.status || ''
+          };
+        }
+        const machine = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+          ? pdlMachines.find(t => String(t.id) === tId)
+          : null;
+        if (machine) return Object.assign({}, machine, { isVehicle: false, isTool: false });
+        const tool = (typeof pdlTools !== 'undefined' && Array.isArray(pdlTools))
+          ? pdlTools.find(t => String(t.id || ('tool_' + t.name)) === tId)
+          : null;
+        if (tool) {
+          return Object.assign({}, tool, {
+            id: tool.id || ('tool_' + tool.name),
+            isVehicle: false,
+            isTool: true
+          });
+        }
+        return null;
+      };
+
       window.formatMachineOptionLabel = (m) => {
         if (!m) return '';
-        const icon = m.isTool ? '🔧 [道具] ' : '🚜 [機械] ';
+        const icon = m.isVehicle ? '🛻 [車両] ' : (m.isTool ? '🔧 [道具] ' : '🚜 [機械] ');
         const num = m.machineNumber || m.serialNo || '';
-        const group = m.group || m.type || m.category || m.workTypes || '';
+        const group = m.group || m.type || m.category || m.workTypes || m.driveType || '';
         let label = icon + (String(m.name || '').trim() || '(無名)');
         if (num) label += ` [${num}]`;
         if (group) label += ` / ${group}`;
         return label;
       };
 
-      /** 機械マスタ＋道具マスタから整備・修理・点検対象セレクトを構築（検索フィルタ対応） */
+      /** 機械マスタ＋道具マスタ＋移動車両から整備・修理・点検対象セレクトを構築 */
       window.populateMaintenanceMachineSelect = (preserveId) => {
         const sel = document.getElementById('m_tool');
         if (!sel) return;
@@ -8637,26 +8709,38 @@ function createSignboardMarker(name, pos, icon, id) {
 
         // 機械マスタ (pdlMachines)
         const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-          ? pdlMachines.map(m => Object.assign({}, m, { isTool: false }))
+          ? pdlMachines.map(m => Object.assign({}, m, { isTool: false, isVehicle: false }))
           : [];
 
         // 道具マスタ (pdlTools)
         const tools = (typeof pdlTools !== 'undefined' && Array.isArray(pdlTools))
           ? pdlTools.map(t => Object.assign({}, t, {
               isTool: true,
+              isVehicle: false,
               id: t.id || `tool_${t.name}`,
               group: t.group || t.category || t.workTypes || '道具'
             }))
           : [];
 
-        // 両方を統合
-        const allItems = [...machines, ...tools];
+        // 移動車両マスタ（軽トラ等）
+        const vehicles = (window.pdlMobileVehicles || []).map(v => ({
+          id: window.getMobileVehicleOptionId_(v),
+          name: v.plateNumber || v.id || '移動車両',
+          isTool: false,
+          isVehicle: true,
+          driveType: v.driveType || '移動車両',
+          group: v.driveType || '移動車両',
+          status: v.status || '',
+          mileage: v.mileage
+        }));
+
+        const allItems = [...machines, ...tools, ...vehicles];
         allItems.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
 
         const filtered = q
           ? allItems.filter(m => {
               const hay = [
-                m.name, m.machineNumber, m.serialNo, m.group, m.type, m.category, m.model, m.modelType, m.location, m.workTypes
+                m.name, m.machineNumber, m.serialNo, m.group, m.type, m.category, m.model, m.modelType, m.location, m.workTypes, m.driveType, m.status
               ].map(x => String(x || '').toLowerCase()).join(' ');
               return hay.includes(q);
             })
@@ -8665,18 +8749,27 @@ function createSignboardMarker(name, pos, icon, id) {
         let html = '<option value="">選択してください</option>';
         if (filtered.length === 0) {
           html += q
-            ? '<option value="" disabled>検索に一致する機械・道具がありません</option>'
-            : '<option value="" disabled>機械・道具マスタに登録がありません</option>';
+            ? '<option value="" disabled>検索に一致する機械・道具・車両がありません</option>'
+            : '<option value="" disabled>機械・道具・車両マスタに登録がありません</option>';
         } else {
-          // 種類別にグループ分け (機械 / 道具)
-          const machineList = filtered.filter(x => !x.isTool);
+          const machineList = filtered.filter(x => !x.isTool && !x.isVehicle);
           const toolList = filtered.filter(x => x.isTool);
+          const vehicleList = filtered.filter(x => x.isVehicle);
 
           if (machineList.length > 0) {
             html += '<optgroup label="🚜 農業機械マスタ">';
             machineList.forEach(m => {
               const label = window.formatMachineOptionLabel(m).replace(/</g, '&lt;').replace(/"/g, '&quot;');
               html += `<option value="${String(m.id).replace(/"/g, '&quot;')}">${label}</option>`;
+            });
+            html += '</optgroup>';
+          }
+
+          if (vehicleList.length > 0) {
+            html += '<optgroup label="🛻 移動車両（軽トラ等）">';
+            vehicleList.forEach(v => {
+              const label = window.formatMachineOptionLabel(v).replace(/</g, '&lt;').replace(/"/g, '&quot;');
+              html += `<option value="${String(v.id).replace(/"/g, '&quot;')}">${label}</option>`;
             });
             html += '</optgroup>';
           }
@@ -8693,7 +8786,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
         // 選択中がフィルタ外でも選択肢に残す
         if (keep && !filtered.some(m => String(m.id) === keep)) {
-          const kept = allItems.find(m => String(m.id) === keep);
+          const kept = allItems.find(m => String(m.id) === keep) || window.findMaintenanceTargetById_(keep);
           if (kept) {
             const label = window.formatMachineOptionLabel(kept).replace(/</g, '&lt;').replace(/"/g, '&quot;');
             html += `<option value="${String(kept.id).replace(/"/g, '&quot;')}">${label}</option>`;
@@ -8755,7 +8848,7 @@ function createSignboardMarker(name, pos, icon, id) {
         window.populateMaintenanceMachineSelect();
       };
 
-      window.refreshMaintenanceSection = (workName) => {
+      window.refreshMaintenanceSection = async (workName) => {
         const mSection = document.getElementById('maintenance_section');
         if (!mSection) return;
         const name = workName != null
@@ -8772,6 +8865,8 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         mSection.style.display = 'block';
 
+        try { await window.ensureMobileVehiclesLoaded_(); } catch (e) {}
+
         const prevId = document.getElementById('m_tool')?.value || '';
         window.populateMaintenanceMachineSelect(prevId);
 
@@ -8785,8 +8880,170 @@ function createSignboardMarker(name, pos, icon, id) {
         const emptyHint = document.getElementById('m_tool_empty_hint');
         if (emptyHint) {
           const hasMachines = Array.isArray(pdlMachines) && pdlMachines.length > 0;
-          emptyHint.style.display = hasMachines ? 'none' : 'block';
+          const hasTools = Array.isArray(pdlTools) && pdlTools.length > 0;
+          const hasVehicles = Array.isArray(window.pdlMobileVehicles) && window.pdlMobileVehicles.length > 0;
+          emptyHint.style.display = (hasMachines || hasTools || hasVehicles) ? 'none' : 'block';
         }
+      };
+
+      window.buildFuelTargetOptionsHtml_ = (selectedId) => {
+        const keep = String(selectedId || '');
+        const dieselMachines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+          ? pdlMachines.filter(m => m && m.fuel && String(m.fuel).includes('軽油'))
+          : [];
+        const vehicles = window.pdlMobileVehicles || [];
+        let html = '<option value="">選択してください</option>';
+        if (dieselMachines.length) {
+          html += '<optgroup label="🚜 農業機械（軽油）">';
+          dieselMachines.forEach(m => {
+            const label = String(m.name || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+            html += `<option value="${String(m.id).replace(/"/g, '&quot;')}" data-kind="machine">${label}</option>`;
+          });
+          html += '</optgroup>';
+        }
+        if (vehicles.length) {
+          html += '<optgroup label="🛻 移動車両（軽トラ等）">';
+          vehicles.forEach(v => {
+            const oid = window.getMobileVehicleOptionId_(v);
+            const label = String(v.plateNumber || v.id || '移動車両').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+            html += `<option value="${String(oid).replace(/"/g, '&quot;')}" data-kind="vehicle">${label}</option>`;
+          });
+          html += '</optgroup>';
+        }
+        if (!dieselMachines.length && !vehicles.length) {
+          html += '<option value="" disabled>給油対象の機械・車両がありません</option>';
+        }
+        if (keep && !html.includes(`value="${keep.replace(/"/g, '&quot;')}"`)) {
+          const kept = window.findMaintenanceTargetById_(keep);
+          if (kept) {
+            const label = String(kept.name || keep).replace(/</g, '&lt;').replace(/"/g, '&quot;');
+            html += `<option value="${String(kept.id).replace(/"/g, '&quot;')}">${label}</option>`;
+          }
+        }
+        return html;
+      };
+
+      window.handleWorkFuelTargetChange = () => {
+        const sel = document.getElementById('wf_target');
+        const meterLabel = document.getElementById('wf_meter_label');
+        const meterHint = document.getElementById('wf_meter_hint');
+        const meterInput = document.getElementById('wf_meter');
+        if (!sel) return;
+        const opt = sel.options[sel.selectedIndex];
+        const kind = opt ? (opt.getAttribute('data-kind') || '') : '';
+        const isVehicle = kind === 'vehicle' || String(sel.value || '').indexOf('veh:') === 0;
+        if (meterLabel) meterLabel.textContent = isVehicle ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)';
+        if (meterInput) meterInput.placeholder = isVehicle ? '例: 12345' : '例: 150.5';
+        const id = sel.value;
+        let last = '';
+        if (id && window.lastHourMeters && window.lastHourMeters[id] != null && window.lastHourMeters[id] !== '') {
+          last = window.lastHourMeters[id];
+        } else if (isVehicle && id) {
+          const target = window.findMaintenanceTargetById_(id);
+          if (target && target.mileage != null && target.mileage !== '') last = target.mileage;
+        }
+        if (meterHint) {
+          meterHint.innerHTML = last !== '' && last != null
+            ? `(前回: <span style="color:#C2185B;">${String(last)}</span>)`
+            : '(前回: 記録なし)';
+        }
+      };
+
+      window.refreshFuelRecordSection = async (preset) => {
+        const box = document.getElementById('work_fuel_record_section');
+        if (!box) return;
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (typeof window.isFuelWorkName !== 'function' || !window.isFuelWorkName(wName)) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        if (!window.isExtraRecordOpen_('fuel')) {
+          box.style.display = 'none';
+          return;
+        }
+
+        const prev = preset || window._workFuelDraft || {};
+        const keepTarget = prev.targetId || document.getElementById('wf_target')?.value || '';
+        const keepAmount = prev.amount != null ? prev.amount : (document.getElementById('wf_amount')?.value || '');
+        const keepMeter = prev.meter != null ? prev.meter : (document.getElementById('wf_meter')?.value || '');
+        const keepDate = prev.date || document.getElementById('wf_date')?.value
+          || document.getElementById('rec_work_date')?.value
+          || new Date().toISOString().split('T')[0];
+        const keepCap = prev.cap != null ? !!prev.cap : !!document.getElementById('wf_chk_cap')?.checked;
+        const keepOil = prev.oil != null ? !!prev.oil : !!document.getElementById('wf_chk_oil')?.checked;
+        const keepNet = prev.net != null ? !!prev.net : !!document.getElementById('wf_chk_net')?.checked;
+        const keepWater = prev.water != null ? !!prev.water : !!document.getElementById('wf_chk_water')?.checked;
+
+        try { await window.ensureMobileVehiclesLoaded_(); } catch (e) {}
+        try {
+          if (!window.lastHourMeters) window.lastHourMeters = await callGAS('getMachineLastHourMeters');
+        } catch (e) { window.lastHourMeters = window.lastHourMeters || {}; }
+
+        box.style.display = 'block';
+        box.innerHTML = `
+          <div style="font-weight:bold; color:#C2185B; margin-bottom:8px; font-size:14px;">⛽ 給油記録</div>
+          <div style="font-size:11px; color:#880E4F; margin-bottom:10px;">作業記録と一緒に給油内容を残せます。農業機械（軽油）と移動車両（軽トラ等）から選べます。</div>
+          <label class="form-label">給油する機械・車両</label>
+          <select id="wf_target" class="form-input" onchange="handleWorkFuelTargetChange()">${window.buildFuelTargetOptionsHtml_(keepTarget)}</select>
+          <div style="display:flex; gap:10px;">
+            <div style="flex:1;">
+              <label class="form-label">📅 給油日</label>
+              <input type="date" id="wf_date" class="form-input" value="${String(keepDate).replace(/"/g, '&quot;')}">
+            </div>
+            <div style="flex:1;">
+              <label class="form-label">💧 給油量 (L)</label>
+              <input type="number" id="wf_amount" class="form-input" placeholder="例: 20" value="${String(keepAmount).replace(/"/g, '&quot;')}">
+            </div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:2px;">
+            <label class="form-label" id="wf_meter_label" style="margin-bottom:0;">⏱️ アワメーター (h)</label>
+            <span id="wf_meter_hint" style="font-size:12px; color:#888; font-weight:bold;">(前回: --)</span>
+          </div>
+          <input type="number" id="wf_meter" class="form-input" placeholder="例: 150.5" value="${String(keepMeter).replace(/"/g, '&quot;')}">
+          <div style="margin-top:10px; background:#fce4ec; padding:12px; border-radius:8px; border:1px solid #f8bbd0;">
+            <div style="font-size:12px; font-weight:bold; margin-bottom:8px; color:#ad1457;">✅ 作業前点検（任意）</div>
+            <label class="checkbox-label" style="margin-bottom:4px;"><input type="checkbox" id="wf_chk_cap" ${keepCap ? 'checked' : ''}> 給油キャップ確認</label>
+            <label class="checkbox-label" style="margin-bottom:4px;"><input type="checkbox" id="wf_chk_oil" ${keepOil ? 'checked' : ''}> エンジンオイル確認</label>
+            <label class="checkbox-label" style="margin-bottom:4px;"><input type="checkbox" id="wf_chk_net" ${keepNet ? 'checked' : ''}> 防虫網確認</label>
+            <label class="checkbox-label" style="margin-bottom:0;"><input type="checkbox" id="wf_chk_water" ${keepWater ? 'checked' : ''}> 冷却水確認</label>
+          </div>
+        `;
+        if (keepTarget) {
+          const sel = document.getElementById('wf_target');
+          if (sel && Array.from(sel.options).some(o => o.value === keepTarget)) sel.value = keepTarget;
+        }
+        if (typeof window.handleWorkFuelTargetChange === 'function') window.handleWorkFuelTargetChange();
+      };
+
+      window.collectWorkFuelRecordData = () => {
+        const box = document.getElementById('work_fuel_record_section');
+        if (!box || box.style.display === 'none') return null;
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (typeof window.isFuelWorkName === 'function' && !window.isFuelWorkName(wName)) return null;
+        const targetId = document.getElementById('wf_target')?.value || '';
+        const amount = document.getElementById('wf_amount')?.value || '';
+        const date = document.getElementById('wf_date')?.value || '';
+        if (!targetId && !amount) return null;
+        const target = window.findMaintenanceTargetById_(targetId);
+        const sel = document.getElementById('wf_target');
+        const nameFromSel = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].text : '';
+        return {
+          targetId: targetId,
+          machineId: targetId.indexOf('veh:') === 0 ? targetId.slice(4) : targetId,
+          machineName: (target && target.name) || nameFromSel || '',
+          isVehicle: !!(target && target.isVehicle) || targetId.indexOf('veh:') === 0,
+          date: date,
+          amount: amount,
+          hourMeter: document.getElementById('wf_meter')?.value || '',
+          attachment: '',
+          cap: !!document.getElementById('wf_chk_cap')?.checked,
+          oil: !!document.getElementById('wf_chk_oil')?.checked,
+          net: !!document.getElementById('wf_chk_net')?.checked,
+          water: !!document.getElementById('wf_chk_water')?.checked,
+          chainCover: false,
+          rotaryClaw: false
+        };
       };
 
       window.renderUsedItems = (workName) => {
@@ -9152,15 +9409,16 @@ function createSignboardMarker(name, pos, icon, id) {
                   </div>
                   <select id="rec_work_name" class="form-input" style="display:none;" onchange="handleWorkNameChange()">${wNames}</select>
                   </div>
-                  <div id="extra_record_buttons" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
+                  <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
+                  <div id="extra_record_buttons" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:6px; margin-bottom:15px; border:1px solid #ffcc80;">
-                    <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:13px;">🔧 整備・修理・点検の詳細（機械＆道具マスタ連動）</div>
-                    <div style="font-size:11px; color:#bf360c; margin-bottom:10px;">整備・点検対象を機械マスタ・道具マスタから選択できます。名前・番号・カテゴリで検索できます。</div>
-                    <label class="form-label">🔍 機械・道具を検索</label>
-                    <input type="search" id="m_tool_search" class="form-input" placeholder="名前・機械番号・道具カテゴリ等で絞り込み" oninput="filterMaintenanceMachineSelect()" style="margin-bottom:8px;">
+                    <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:13px;">🔧 整備・修理・点検の詳細（機械・車両・道具マスタ連動）</div>
+                    <div style="font-size:11px; color:#bf360c; margin-bottom:10px;">整備・点検対象を機械マスタ・移動車両（軽トラ等）・道具マスタから選択できます。名前・番号・カテゴリで検索できます。</div>
+                    <label class="form-label">🔍 機械・車両・道具を検索</label>
+                    <input type="search" id="m_tool_search" class="form-input" placeholder="名前・機械番号・ナンバー・道具カテゴリ等で絞り込み" oninput="filterMaintenanceMachineSelect()" style="margin-bottom:8px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                      <label class="form-label" style="margin-bottom:0;">対象（機械・道具マスタ）</label>
+                      <label class="form-label" style="margin-bottom:0;">対象（機械・車両・道具）</label>
                       ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `<button type="button" onclick="addNewMachineFromWorker()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:3px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:3px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">＋ 機械を登録</button>` : ''}
                     </div>
                     <select id="m_tool" class="form-input" onchange="updatePartsList()"><option value="">選択してください</option></select>
@@ -9185,14 +9443,14 @@ function createSignboardMarker(name, pos, icon, id) {
                   </div>
                   ${ridgeUI}
                   ${irrigationUI}
-                  <label class="form-label" style="margin-top:10px;">💬 コメント</label>
-                  <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="伝達事項・メモなど"></textarea>
-                  <div id="used_items_section"></div>
+                  <div id="work_fuel_record_section" style="display:none; background:#fce4ec; border:1px solid #f48fb1; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="work_harvest_qty_section" class="lot-section" style="display:none; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="sowing_record_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="planting_record_section" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
-                  <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
+                  <label class="form-label" style="margin-top:10px;">💬 コメント</label>
+                  <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="伝達事項・メモなど"></textarea>
+                  <div id="used_items_section"></div>
                    <div id="progress_status_section" style="display:none;">
                      <input type="hidden" id="rec_progress_status" value="">
                      <div id="progress_status_buttons_wrapper" style="display:none;"></div>
@@ -9490,6 +9748,27 @@ function createSignboardMarker(name, pos, icon, id) {
                   if(document.getElementById('m_content')) document.getElementById('m_content').value = d.maintenanceContent || "";
                   setTimeout(() => { if(document.getElementById('m_parts')) document.getElementById('m_parts').value = d.maintenanceParts || ""; }, 50);
                }, 100);
+            }
+            if (d.refuelRecord || (d.workName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(d.workName))) {
+              setTimeout(() => {
+                window.setExtraRecordOpen_('fuel', true);
+                const preset = d.refuelRecord ? {
+                  targetId: d.refuelRecord.targetId
+                    || (d.refuelRecord.isVehicle ? ('veh:' + d.refuelRecord.machineId) : d.refuelRecord.machineId)
+                    || '',
+                  amount: d.refuelRecord.amount || '',
+                  meter: d.refuelRecord.hourMeter || '',
+                  date: d.refuelRecord.date || '',
+                  cap: d.refuelRecord.cap,
+                  oil: d.refuelRecord.oil,
+                  net: d.refuelRecord.net,
+                  water: d.refuelRecord.water
+                } : null;
+                if (typeof window.refreshFuelRecordSection === 'function') {
+                  window.refreshFuelRecordSection(preset);
+                }
+                if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
+              }, 100);
             }
             if (d.selectedLots || d.lotAction === 'use') {
               setTimeout(() => {
@@ -10359,13 +10638,19 @@ function createSignboardMarker(name, pos, icon, id) {
                && document.getElementById('maintenance_section')
                && document.getElementById('maintenance_section').style.display !== 'none') {
                const tId = document.getElementById('m_tool')?.value || "";
-               const toolObj = (pdlMachines || []).find(t => t.id === tId); 
-               data.maintenanceToolId = tId; data.maintenanceTool = toolObj ? toolObj.name : "";
+               const toolObj = (typeof window.findMaintenanceTargetById_ === 'function')
+                 ? window.findMaintenanceTargetById_(tId)
+                 : (pdlMachines || []).find(t => t.id === tId);
+               data.maintenanceToolId = tId;
+               data.maintenanceTool = toolObj ? toolObj.name : "";
+               data.maintenanceTargetKind = toolObj
+                 ? (toolObj.isVehicle ? 'vehicle' : (toolObj.isTool ? 'tool' : 'machine'))
+                 : '';
                
                const inputSymptom = document.getElementById('m_symptom')?.value?.trim() || "";
                data.maintenanceSymptom = inputSymptom; 
                
-               if (toolObj && inputSymptom) {
+               if (toolObj && !toolObj.isVehicle && !toolObj.isTool && inputSymptom) {
                    const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,、]/).map(s => s.trim()) : [];
                    if (!currentSymp.includes(inputSymptom)) {
                        toolObj.symptoms = toolObj.symptoms ? toolObj.symptoms + "," + inputSymptom : inputSymptom;
@@ -10375,6 +10660,41 @@ function createSignboardMarker(name, pos, icon, id) {
 
                data.maintenanceContent = document.getElementById('m_content')?.value || ""; 
                data.maintenanceParts = document.getElementById('m_parts')?.value || "";
+            }
+
+            const fuelRec = (typeof window.collectWorkFuelRecordData === 'function')
+              ? window.collectWorkFuelRecordData()
+              : null;
+            if (fuelRec) {
+              if (!fuelRec.targetId) {
+                customAlert('給油記録では給油する機械・車両を選択してください。');
+                if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
+                return;
+              }
+              if (!fuelRec.amount) {
+                customAlert('給油記録では給油量を入力してください。');
+                if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
+                return;
+              }
+              data.refuelRecord = fuelRec;
+              sideEffects.push({
+                action: 'saveRefuelRecord',
+                params: {
+                  machineId: fuelRec.machineId || fuelRec.targetId,
+                  machineName: fuelRec.machineName || '',
+                  date: fuelRec.date || '',
+                  amount: fuelRec.amount,
+                  hourMeter: fuelRec.hourMeter || '',
+                  attachment: fuelRec.attachment || '',
+                  cap: !!fuelRec.cap,
+                  oil: !!fuelRec.oil,
+                  net: !!fuelRec.net,
+                  water: !!fuelRec.water,
+                  chainCover: !!fuelRec.chainCover,
+                  rotaryClaw: !!fuelRec.rotaryClaw,
+                  userName: currentUser
+                }
+              });
             }
             if ((typeof window.isLotUseWorkName === 'function' ? window.isLotUseWorkName(wName) : (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')))
                 && document.getElementById('lot_use_section')

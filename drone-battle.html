@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>ドローンバトル — ロビー / Mode1/2</title>
+  <title>ドローンフィールド — バトル / テクニック</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -107,6 +107,104 @@
       box-shadow: inset 0 0 0 1px rgba(0, 229, 255, 0.35);
     }
     .mode-btn:active { transform: scale(0.98); }
+    .cat-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .cat-btn {
+      border: 1px solid rgba(0, 229, 255, 0.22);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--ink);
+      border-radius: 12px;
+      padding: 12px 10px;
+      font-family: inherit;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+    }
+    .cat-btn small {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    .cat-btn.selected {
+      border-color: rgba(0, 229, 255, 0.75);
+      background: rgba(0, 229, 255, 0.16);
+      box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.2);
+    }
+    .lobby-section-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      margin: 4px 0 8px;
+    }
+    .online-tab-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .online-tab-btn {
+      appearance: none;
+      border: 1px solid rgba(0, 229, 255, 0.28);
+      border-radius: 10px;
+      padding: 10px 8px;
+      background: rgba(0, 0, 0, 0.28);
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .online-tab-btn.selected {
+      color: var(--ink);
+      border-color: rgba(0, 229, 255, 0.7);
+      background: rgba(0, 229, 255, 0.14);
+    }
+    .lobby-room-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+    .lobby-room-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 229, 255, 0.22);
+      background: rgba(0, 0, 0, 0.28);
+      text-align: left;
+      cursor: pointer;
+      color: var(--ink);
+    }
+    .lobby-room-item:active { opacity: 0.85; }
+    .lobby-room-meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .lobby-room-code {
+      font-family: Orbitron, sans-serif;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      font-size: 0.95rem;
+    }
+    .lobby-empty {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 14px 8px;
+    }
     .help {
       background: rgba(255, 255, 255, 0.04);
       border-radius: 10px;
@@ -386,6 +484,43 @@
       font-size: 0.72rem;
       color: var(--accent);
     }
+    .enemy-marker {
+      position: absolute;
+      z-index: 8;
+      pointer-events: none;
+      display: none;
+      width: 36px;
+      height: 36px;
+      margin: 0;
+    }
+    .enemy-marker-arrow {
+      width: 0;
+      height: 0;
+      margin: 0 auto;
+      border-left: 10px solid transparent;
+      border-right: 10px solid transparent;
+      border-bottom: 18px solid #ff5252;
+      filter: drop-shadow(0 0 6px rgba(255, 82, 82, 0.65));
+    }
+    .enemy-marker.onscreen .enemy-marker-arrow {
+      border-bottom-color: #ffab40;
+      border-left-width: 7px;
+      border-right-width: 7px;
+      border-bottom-width: 12px;
+      opacity: 0.9;
+    }
+    .enemy-marker-label {
+      margin-top: 2px;
+      text-align: center;
+      font-family: Orbitron, sans-serif;
+      font-size: 0.58rem;
+      letter-spacing: 0.06em;
+      color: #ff8a80;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+      white-space: nowrap;
+    }
+    .enemy-marker.onscreen .enemy-marker-label { color: #ffcc80; }
+    #hud.cam-ground .crosshair { opacity: 0.25; }
     .pause-btn {
       top: 10px;
       right: 10px;
@@ -537,8 +672,8 @@
 
   <div id="lobbyScreen" class="screen active">
     <div class="card" style="max-height:92vh; overflow-y:auto;">
-      <h1 class="brand">DRONE BATTLE</h1>
-      <p class="sub">ロビー — ガチャでパーツを集め、機体をカスタムして出撃しよう。</p>
+      <h1 class="brand">DRONE FIELD</h1>
+      <p class="sub">バトルで戦い、テクニックで腕を磨け。ガチャと格納庫で機体を強化しよう。</p>
 
       <div class="coin-bar">
         <span>🪙 ドローンコイン <b id="lobbyCoinCount">0</b></span>
@@ -553,27 +688,63 @@
         <button type="button" class="mode-btn" id="openGachaBtn">🎁 ガチャ<br><small>パーツ獲得</small></button>
       </div>
 
-      <div class="mode-row" style="grid-template-columns:1fr;">
-        <button type="button" class="mode-btn game-pick" id="pickDogfight" data-game="dogfight">
-          ⚔️ ドッグファイト（1-A）
-          <small>対CPUの空中撃ち合い。先に相手のHPを0にすれば勝利。</small>
+      <div class="cat-row">
+        <button type="button" class="cat-btn selected" id="catBattleBtn" data-cat="battle">
+          ⚔️ バトルモード
+          <small>対戦・防衛・乱闘</small>
         </button>
-        <button type="button" class="mode-btn game-pick" id="pickMusou" data-game="musou">
-          🔥 無双モード
-          <small>大量の敵ドローンを相手に乱射・撃墜。全滅させれば勝利。</small>
+        <button type="button" class="cat-btn" id="catTechniqueBtn" data-cat="technique">
+          🎯 テクニックモード
+          <small>レース・精密散布</small>
         </button>
-        <button type="button" class="mode-btn game-pick" id="pickDeathmatch" data-game="deathmatch">
-          💀 デスマッチ乱闘
-          <small>全員敵同士も撃ち合う大乱闘。最後の1機が勝ち残る。</small>
-        </button>
-        <button type="button" class="mode-btn game-pick" id="pickMission" data-game="mission">
-          🌾 圃場ミッション（1-B）
-          <small>ゲート周回＋害虫ターゲット破壊。農業フィールド上のタイムアタック。</small>
-        </button>
-        <button type="button" class="mode-btn game-pick" id="pickOnline" data-game="online">
-          🌐 オンライン対戦（1v1）
-          <small>ルームコードで友人とドッグファイト。サーバー不要（PeerJS）。</small>
-        </button>
+      </div>
+
+      <div id="battleModeList">
+        <div class="lobby-section-title">BATTLE — 戦いのモード</div>
+        <div class="mode-row" style="grid-template-columns:1fr;">
+          <button type="button" class="mode-btn game-pick" id="pickDogfight" data-game="dogfight">
+            ⚔️ ドッグファイト（1-A）
+            <small>対CPUの空中撃ち合い。先に相手のHPを0にすれば勝利。</small>
+          </button>
+          <button type="button" class="mode-btn game-pick" id="pickMusou" data-game="musou">
+            🔥 無双モード
+            <small>大量の敵ドローンを相手に乱射・撃墜。全滅させれば勝利。</small>
+          </button>
+          <button type="button" class="mode-btn game-pick" id="pickDeathmatch" data-game="deathmatch">
+            💀 デスマッチ乱闘
+            <small>全員敵同士も撃ち合う大乱闘。最後の1機が勝ち残る。</small>
+          </button>
+          <button type="button" class="mode-btn game-pick" id="pickDefense" data-game="defense">
+            🛡️ 防衛線モード
+            <small>拠点の防衛線を守れ。波状に迫る敵を撃墜し、突破を防げ。</small>
+          </button>
+          <button type="button" class="mode-btn game-pick" id="pickMission" data-game="mission">
+            🌾 圃場ミッション（1-B）
+            <small>ゲート周回＋害虫ターゲット破壊。農業フィールド上のタイムアタック。</small>
+          </button>
+          <button type="button" class="mode-btn game-pick" id="pickAirship" data-game="airship">
+            🛸 巨大飛行艇撃破
+            <small>巨大飛行艇の弱点を狙って撃墜。ソロでも挑戦可。</small>
+          </button>
+          <button type="button" class="mode-btn game-pick" id="pickOnline" data-game="online">
+            🌐 オンライン
+            <small>ロビーマッチング、またはルームコードで直接P2P接続。</small>
+          </button>
+        </div>
+      </div>
+
+      <div id="techniqueModeList" style="display:none;">
+        <div class="lobby-section-title">TECHNIQUE — 操縦テクニック</div>
+        <div class="mode-row" style="grid-template-columns:1fr;">
+          <button type="button" class="mode-btn game-pick" id="pickRace" data-game="race">
+            🏁 エアレース
+            <small>ゲートを順番に通過するタイムアタック。最速クリアを目指せ。</small>
+          </button>
+          <button type="button" class="mode-btn game-pick" id="pickFertilizer" data-game="fertilizer">
+            🌱 肥料散布
+            <small>適正高度を保ちながら畑へ均等に肥料をまけ。ムラなく散布で高得点。</small>
+          </button>
+        </div>
       </div>
 
       <div class="actions">
@@ -623,30 +794,66 @@
 
   <div id="onlineScreen" class="screen">
     <div class="card">
-      <h1 class="brand">ONLINE 1v1</h1>
-      <p class="sub">同じ Mode（操作）を選んでから、ホスト作成またはルーム参加してください。</p>
+      <h1 class="brand" id="onlineBrand">ONLINE</h1>
+      <p class="sub" id="onlineSub">ロビーで相手を探すか、ルームコードで直接P2P接続できます。</p>
 
+      <div class="lobby-section-title">プレイ種別</div>
+      <div class="mode-row" style="grid-template-columns:1fr 1fr; margin-bottom:12px;">
+        <button type="button" class="mode-btn selected" id="onlineKindPvpBtn" data-kind="pvp">
+          ⚔️ 1v1 対戦
+          <small>お互いを撃ち合う</small>
+        </button>
+        <button type="button" class="mode-btn" id="onlineKindCoopBtn" data-kind="coop">
+          🤝 飛行艇 協力
+          <small>巨大飛行艇を二人で撃破</small>
+        </button>
+      </div>
+
+      <div class="lobby-section-title">操作 Mode</div>
       <div class="mode-row">
         <button type="button" class="mode-btn" id="onlineMode1Btn" data-mode="1">Mode 1</button>
         <button type="button" class="mode-btn selected" id="onlineMode2Btn" data-mode="2">Mode 2</button>
       </div>
 
+      <div class="online-tab-row">
+        <button type="button" class="online-tab-btn selected" id="onlineTabLobbyBtn" data-tab="lobby">ロビーから探す</button>
+        <button type="button" class="online-tab-btn" id="onlineTabCodeBtn" data-tab="code">コードで直接</button>
+      </div>
+
       <div class="help" id="onlineStatus">接続待機中…</div>
 
-      <div id="onlineHostBox" style="margin-bottom:12px;">
-        <button type="button" class="btn" id="hostRoomBtn" style="width:100%;">ルームを作成（ホスト）</button>
-        <div id="roomCodeDisplay" style="display:none; margin-top:12px; text-align:center;">
-          <div style="font-size:0.75rem; color:var(--muted);">ルームコード（相手に伝えてください）</div>
-          <div id="roomCodeText" style="font-family:Orbitron,sans-serif; font-size:2rem; letter-spacing:0.2em; color:var(--accent); margin:8px 0;">----</div>
-          <button type="button" class="btn secondary" id="copyRoomBtn" style="width:100%;">コードをコピー</button>
+      <div id="onlineLobbyPanel">
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <button type="button" class="btn" id="lobbyPublishBtn" style="flex:1;">マッチング募集</button>
+          <button type="button" class="btn secondary" id="lobbyRefreshBtn" style="flex:0.55;">更新</button>
+        </div>
+        <div id="lobbyPublishInfo" style="display:none; margin-bottom:10px; text-align:center;">
+          <div style="font-size:0.75rem; color:var(--muted);">ロビー公開中（コード）</div>
+          <div id="lobbyPublishCode" style="font-family:Orbitron,sans-serif; font-size:1.6rem; letter-spacing:0.2em; color:var(--accent); margin:6px 0;">----</div>
+          <button type="button" class="btn secondary" id="lobbyUnpublishBtn" style="width:100%;">募集をやめる</button>
+        </div>
+        <div class="lobby-section-title">待機中のルーム</div>
+        <div id="lobbyRoomList" class="lobby-room-list">
+          <div class="lobby-empty">読み込み中…</div>
         </div>
       </div>
 
-      <div id="onlineJoinBox" style="margin-bottom:12px;">
-        <label style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:6px;">ルームコードで参加</label>
-        <input id="joinRoomInput" maxlength="6" placeholder="例: A3K9" autocomplete="off"
-          style="width:100%; padding:12px; border-radius:8px; border:1px solid rgba(0,229,255,0.3); background:rgba(0,0,0,0.35); color:#fff; font-size:1.2rem; letter-spacing:0.15em; text-align:center; text-transform:uppercase; margin-bottom:8px; box-sizing:border-box;" />
-        <button type="button" class="btn warn" id="joinRoomBtn" style="width:100%;">参加する</button>
+      <div id="onlineCodePanel" style="display:none;">
+        <div id="onlineHostBox" style="margin-bottom:12px;">
+          <button type="button" class="btn" id="hostRoomBtn" style="width:100%;">ルームを作成（ホスト）</button>
+          <div id="roomCodeDisplay" style="display:none; margin-top:12px; text-align:center;">
+            <div style="font-size:0.75rem; color:var(--muted);">ルームコード（相手に伝えてください）</div>
+            <div id="roomCodeText" style="font-family:Orbitron,sans-serif; font-size:2rem; letter-spacing:0.2em; color:var(--accent); margin:8px 0;">----</div>
+            <button type="button" class="btn secondary" id="copyRoomBtn" style="width:100%;">コードをコピー</button>
+          </div>
+        </div>
+
+        <div id="onlineJoinBox" style="margin-bottom:12px;">
+          <label style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:6px;">ルームコードで参加</label>
+          <input id="joinRoomInput" maxlength="6" placeholder="例: A3K9" autocomplete="off"
+            style="width:100%; padding:12px; border-radius:8px; border:1px solid rgba(0,229,255,0.3); background:rgba(0,0,0,0.35); color:#fff; font-size:1.2rem; letter-spacing:0.15em; text-align:center; text-transform:uppercase; margin-bottom:8px; box-sizing:border-box;" />
+          <button type="button" class="btn warn" id="joinRoomBtn" style="width:100%;">参加する</button>
+        </div>
       </div>
 
       <div class="actions">
@@ -688,10 +895,21 @@
         <p class="sens-hint">初期は「普通」。感度↑＝小さく動かしても反応。精密さ↑＝中央付近は細かく、端は急に効く。</p>
       </div>
 
+      <div class="sens-block" id="cpuDiffBlock" style="display:none;">
+        <label>相手ドローンの強さ <span id="cpuDiffLabel">普通</span></label>
+        <div class="sens-presets" id="cpuDiffPresets">
+          <button type="button" data-diff="easy">やさしい</button>
+          <button type="button" data-diff="normal" class="active">普通</button>
+          <button type="button" data-diff="hard">強い</button>
+          <button type="button" data-diff="extreme">最強</button>
+        </div>
+        <p class="sens-hint">対CPU時の相手のHP・攻撃・機動・射撃精度が変わります。</p>
+      </div>
+
       <div class="help" id="gameHelp">
         <strong>操作</strong><br>
         ・タッチ: 左右スティック＋赤／オレンジ射撃<br>
-        ・キー: WASD＋矢印／Space射撃／Cカメラ
+        ・キー: WASD＋矢印／Space射撃／Cカメラ（三人称→一人称→地上）
       </div>
 
       <div class="actions">
@@ -736,6 +954,10 @@
       <span class="pill" id="timePill" style="display:none;">TIME 150</span>
     </div>
     <div class="crosshair"></div>
+    <div id="enemyMarker" class="enemy-marker" aria-hidden="true">
+      <div class="enemy-marker-arrow"></div>
+      <div class="enemy-marker-label" id="enemyMarkerLabel">CPU</div>
+    </div>
     <div class="controls">
       <div class="stick-zone left" id="stickLeft">
         <div class="stick-label" id="leftStickLabel">スロットル / ヨー</div>
@@ -770,6 +992,7 @@ const SENS_KEY = 'passionMapDroneBattleSens';
 const EXPO_KEY = 'passionMapDroneBattleExpo';
 const FEEL_VER_KEY = 'passionMapDroneBattleFeelVer';
 const FEEL_VER = '3-normal';
+const CPU_DIFF_KEY = 'passionMapDroneCpuDiff';
 const MAX_HP = 100;
 const FIRE_COOLDOWN = 0.28;
 const BULLET_SPEED = 55;
@@ -780,6 +1003,28 @@ const MISSION_TIME = 150;
 const MISSION_LAPS = 2;
 const MUSOU_COUNT = 14;
 const DEATHMATCH_COUNT = 7;
+const DEFENSE_LINE_Z = 8;
+const DEFENSE_BASE_MAX_HP = 100;
+const DEFENSE_BREACH_DMG = 14;
+const DEFENSE_WAVES = [
+  { count: 4, hp: 42, atk: 7, spd: 22 },
+  { count: 6, hp: 48, atk: 8, spd: 24 },
+  { count: 8, hp: 55, atk: 9, spd: 26 },
+  { count: 10, hp: 62, atk: 10, spd: 28 }
+];
+const RACE_LAPS = 1;
+const RACE_BEST_KEY = 'passionMapDroneRaceBest';
+const FERT_COLS = 12;
+const FERT_ROWS = 10;
+const FERT_FIELD = { x: -22, z: 4, w: 28, d: 22 }; // makePaddy(-22,4,30,24) 付近
+const FERT_MIN_ALT = 3.5;
+const FERT_MAX_ALT = 11;
+const FERT_IDEAL_ALT = 7;
+const FERT_SPRAY_R = 2.4;
+const FERT_TIME = 90;
+const AIRSHIP_MAX_HP = 2200;
+const AIRSHIP_HIT_R = 11;
+const AIRSHIP_WEAK_R = 4.2;
 const AI_MIN_ALT = 9;
 const AI_SAFE_ALT = 14;
 
@@ -801,8 +1046,26 @@ const _feel = loadStickFeel();
 
 function normalizeGameType(raw) {
   const g = String(raw || 'dogfight');
-  if (g === 'mission' || g === 'online' || g === 'musou' || g === 'deathmatch') return g;
+  if (
+    g === 'mission' || g === 'online' || g === 'musou' || g === 'deathmatch' || g === 'defense'
+    || g === 'race' || g === 'fertilizer' || g === 'airship' || g === 'airship_coop'
+  ) return g;
   return 'dogfight';
+}
+
+function isTechniqueMode(g) {
+  const t = g != null ? g : state.gameType;
+  return t === 'race' || t === 'fertilizer';
+}
+
+function isAirshipMode(g) {
+  const t = g != null ? g : state.gameType;
+  return t === 'airship' || t === 'airship_coop';
+}
+
+function isCombatMode(g) {
+  const t = g != null ? g : state.gameType;
+  return !isTechniqueMode(t) && t !== 'mission';
 }
 
 const state = {
@@ -810,7 +1073,11 @@ const state = {
   gameType: normalizeGameType(localStorage.getItem(GAME_KEY)),
   playing: false,
   over: false,
-  firstPerson: false,
+  camMode: 'chase', // 'chase' | 'fpv' | 'ground'
+  cpuDiff: (function () {
+    const d = localStorage.getItem(CPU_DIFF_KEY) || 'normal';
+    return (d === 'easy' || d === 'hard' || d === 'extreme') ? d : 'normal';
+  })(),
   stickSens: _feel.stickSens,
   stickExpo: _feel.stickExpo,
   leftStick: { x: 0, y: 0 },
@@ -822,6 +1089,15 @@ const state = {
   bullets: [],
   toastTimer: 0,
   kills: 0,
+  // defense line
+  baseHp: DEFENSE_BASE_MAX_HP,
+  waveIndex: 0,
+  // race / fertilizer (technique)
+  raceTime: 0,
+  fertCovered: 0,
+  fertOverspray: 0,
+  fertSprayCd: 0,
+  onlineKind: 'pvp', // 'pvp' | 'coop'
   // mission
   nextGate: 0,
   laps: 0,
@@ -1393,6 +1669,18 @@ function refreshMetaUI() {
 }
 
 function refreshFireButtonLabel() {
+  const btn = document.getElementById('fireBtn');
+  const alt = document.getElementById('fireBtnAlt');
+  if (state.gameType === 'fertilizer') {
+    if (btn) btn.textContent = '散布';
+    if (alt) alt.textContent = '散布';
+    return;
+  }
+  if (state.gameType === 'race') {
+    if (btn) btn.textContent = '—';
+    if (alt) alt.textContent = '—';
+    return;
+  }
   const map = {
     beam: '射撃',
     cannon: 'キャノン',
@@ -1403,8 +1691,6 @@ function refreshFireButtonLabel() {
   };
   const kind = (player && player.weaponKind) || (getPlayerLoadoutStats().weaponKind) || 'beam';
   const label = map[kind] || '射撃';
-  const btn = document.getElementById('fireBtn');
-  const alt = document.getElementById('fireBtnAlt');
   if (btn) btn.textContent = label;
   if (alt) alt.textContent = label.length > 4 ? 'FIRE' : label;
 }
@@ -1437,12 +1723,42 @@ function syncSensUI() {
   expoSlider.value = String(Math.round(state.stickExpo * 100));
   if (sensLabel) sensLabel.textContent = state.stickSens.toFixed(2) + '×';
   if (expoLabel) expoLabel.textContent = Math.round(state.stickExpo * 100) + '%';
-  document.querySelectorAll('.sens-presets button').forEach((b) => {
+  document.querySelectorAll('.sens-block:not(#cpuDiffBlock) .sens-presets button').forEach((b) => {
     const s = Number(b.dataset.sens) / 100;
     const e = Number(b.dataset.expo) / 100;
     const match = Math.abs(s - state.stickSens) < 0.03 && Math.abs(e - state.stickExpo) < 0.03;
     b.classList.toggle('active', match);
   });
+}
+
+function getCpuDiffProfile(level) {
+  const lv = level || state.cpuDiff || 'normal';
+  if (lv === 'easy') {
+    return { label: 'やさしい', hpBonus: -25, atk: 8, def: 0.04, maxSpd: 24, thrust: 36, fireMul: 1.45, aimNeed: 0.9, turnMul: 0.72, yawMul: 0.75 };
+  }
+  if (lv === 'hard') {
+    return { label: '強い', hpBonus: 40, atk: 14, def: 0.18, maxSpd: 32, thrust: 46, fireMul: 0.92, aimNeed: 0.72, turnMul: 1.15, yawMul: 1.15 };
+  }
+  if (lv === 'extreme') {
+    return { label: '最強', hpBonus: 80, atk: 18, def: 0.26, maxSpd: 37, thrust: 54, fireMul: 0.72, aimNeed: 0.62, turnMul: 1.4, yawMul: 1.35 };
+  }
+  return { label: '普通', hpBonus: 0, atk: 11, def: 0.1, maxSpd: 28, thrust: 40, fireMul: 1.05, aimNeed: 0.8, turnMul: 1, yawMul: 1 };
+}
+
+function syncCpuDiffUI() {
+  const label = document.getElementById('cpuDiffLabel');
+  const p = getCpuDiffProfile(state.cpuDiff);
+  if (label) label.textContent = p.label;
+  document.querySelectorAll('#cpuDiffPresets button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.diff === state.cpuDiff);
+  });
+}
+
+function setCpuDiff(level) {
+  if (level !== 'easy' && level !== 'normal' && level !== 'hard' && level !== 'extreme') return;
+  state.cpuDiff = level;
+  localStorage.setItem(CPU_DIFF_KEY, level);
+  syncCpuDiffUI();
 }
 
 function setStickFeel(sens, expo) {
@@ -1511,23 +1827,32 @@ setStickMode(state.mode);
     saveStickFeel();
     syncSensUI();
   });
-  document.querySelectorAll('.sens-presets button').forEach((b) => {
+  document.querySelectorAll('.sens-block:not(#cpuDiffBlock) .sens-presets button').forEach((b) => {
     b.addEventListener('click', () => {
       setStickFeel(Number(b.dataset.sens) / 100, Number(b.dataset.expo) / 100);
     });
   });
+  document.querySelectorAll('#cpuDiffPresets button').forEach((b) => {
+    b.addEventListener('click', () => setCpuDiff(b.dataset.diff));
+  });
   syncSensUI();
+  syncCpuDiffUI();
 })();
 
 function openSetup(gameType) {
   if (gameType === 'online') {
     state.gameType = 'online';
     localStorage.setItem(GAME_KEY, 'online');
-    onlineStatus.textContent = 'ホスト作成、またはルームコードで参加してください。';
+    onlineStatus.textContent = 'ロビーで相手を探すか、コードで直接接続してください。';
     document.getElementById('roomCodeDisplay').style.display = 'none';
     document.getElementById('joinRoomInput').value = '';
+    document.getElementById('lobbyPublishInfo').style.display = 'none';
     syncOnlineModeButtons();
+    syncOnlineKindButtons();
+    setOnlineTab('lobby');
     showScreen('online');
+    refreshLobbyList();
+    startLobbyListPoll();
     return;
   }
   state.gameType = normalizeGameType(gameType);
@@ -1536,40 +1861,77 @@ function openSetup(gameType) {
     mission: '圃場ミッション',
     musou: '無双モード',
     deathmatch: 'デスマッチ乱闘',
+    defense: '防衛線モード',
+    airship: '巨大飛行艇撃破',
+    race: 'エアレース',
+    fertilizer: '肥料散布',
     dogfight: 'ドッグファイト'
   };
   const subs = {
     mission: 'ゲートを周回しながら害虫ターゲットを全破壊。制限時間あり。',
     musou: '大量の敵ドローンを撃墜していく無双バトル。全滅で勝利。',
     deathmatch: '全員が敵同士でも撃ち合う乱闘。最後の1機が勝ち残る。',
+    defense: '拠点の防衛線を守れ。波状に襲来する敵の突破を防ぎ、全ウェーブ撃退で勝利。',
+    airship: '巨大飛行艇の船体とゴンドラ弱点を狙い、撃破せよ。',
+    race: 'ゲートを順番に通過するタイムアタック。最速クリアを目指せ。',
+    fertilizer: '適正高度を保ち、畑へムラなく肥料を散布せよ。',
     dogfight: '対CPUの空中ドッグファイト。先にHPを0にした方が勝ち。'
   };
   const helps = {
     mission: '<strong>クリア条件</strong><br>・チェックポイントを順に通過して ' + MISSION_LAPS + ' 周<br>・害虫バルーンを全て撃墜<br>・制限時間 ' + MISSION_TIME + ' 秒／HP0で失敗',
     musou: '<strong>無双モード</strong><br>・敵ドローンが群れて襲来<br>・すべて撃墜すれば勝利／自分のHP0で敗北<br>・低空接触に注意しつつ撃ちまくれ',
     deathmatch: '<strong>デスマッチ</strong><br>・AI同士も撃ち合う大乱闘<br>・最後の1機が勝利<br>・接近戦・横槍に注意',
-    dogfight: '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。'
+    defense: '<strong>防衛線モード</strong><br>・拠点の防衛線（光る柵）を突破されると拠点HPが減る<br>・全 ' + DEFENSE_WAVES.length + ' ウェーブを撃退すれば勝利<br>・拠点HP0 または 自機撃破で敗北',
+    airship: '<strong>巨大飛行艇撃破</strong><br>・橙色のゴンドラが弱点（ダメージ2.5倍）<br>・飛行艇からも反撃あり<br>・オンライン協力プレイも可（ONLINE → 飛行艇協力）',
+    race: '<strong>エアレース</strong><br>・光るゲートを番号順に通過<br>・' + RACE_LAPS + ' 周でゴール／タイム計測<br>・墜落で失敗。低空に注意',
+    fertilizer: '<strong>肥料散布</strong><br>・高度 約' + FERT_MIN_ALT + '〜' + FERT_MAX_ALT + 'm で散布ボタン<br>・畑のマスをムラなく緑に変えよ<br>・制限時間 ' + FERT_TIME + ' 秒／被覆率で評価',
+    dogfight: '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ（三人称→一人称→地上）<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。<br>・相手の強さはセットアップで変更可。赤矢印が相手方向を示します。'
   };
   const startLabels = {
     mission: 'ミッション開始',
     musou: '無双開始',
     deathmatch: '乱闘開始',
+    defense: '防衛開始',
+    airship: '出撃（飛行艇）',
+    race: 'レース開始',
+    fertilizer: '散布開始',
     dogfight: '対戦開始（対CPU）'
   };
   document.getElementById('setupTitle').textContent = titles[state.gameType] || titles.dogfight;
   document.getElementById('setupSub').textContent = subs[state.gameType] || subs.dogfight;
   gameHelp.innerHTML = helps[state.gameType] || helps.dogfight;
   document.getElementById('startBtn').textContent = startLabels[state.gameType] || startLabels.dogfight;
+  const cpuBlock = document.getElementById('cpuDiffBlock');
+  if (cpuBlock) cpuBlock.style.display = state.gameType === 'dogfight' ? '' : 'none';
+  syncCpuDiffUI();
   showScreen('setup');
 }
 
 document.getElementById('pickDogfight').addEventListener('click', () => openSetup('dogfight'));
 document.getElementById('pickMusou').addEventListener('click', () => openSetup('musou'));
 document.getElementById('pickDeathmatch').addEventListener('click', () => openSetup('deathmatch'));
+document.getElementById('pickDefense').addEventListener('click', () => openSetup('defense'));
+document.getElementById('pickAirship').addEventListener('click', () => openSetup('airship'));
 document.getElementById('pickMission').addEventListener('click', () => openSetup('mission'));
+document.getElementById('pickRace').addEventListener('click', () => openSetup('race'));
+document.getElementById('pickFertilizer').addEventListener('click', () => openSetup('fertilizer'));
 document.getElementById('pickOnline').addEventListener('click', () => openSetup('online'));
+
+function setLobbyCategory(cat) {
+  const isBattle = cat !== 'technique';
+  document.getElementById('catBattleBtn').classList.toggle('selected', isBattle);
+  document.getElementById('catTechniqueBtn').classList.toggle('selected', !isBattle);
+  document.getElementById('battleModeList').style.display = isBattle ? '' : 'none';
+  document.getElementById('techniqueModeList').style.display = isBattle ? 'none' : '';
+}
+document.getElementById('catBattleBtn').addEventListener('click', () => setLobbyCategory('battle'));
+document.getElementById('catTechniqueBtn').addEventListener('click', () => setLobbyCategory('technique'));
+// 前回がテクニックならテクニックタブを開く
+if (isTechniqueMode(state.gameType)) setLobbyCategory('technique');
+else setLobbyCategory('battle');
 document.getElementById('backLobbyBtn').addEventListener('click', () => {
   state.playing = false;
+  stopLobbyListPoll();
   cleanupNet();
   showScreen('lobby');
 });
@@ -1578,6 +1940,22 @@ function syncOnlineModeButtons() {
   document.getElementById('onlineMode1Btn').classList.toggle('selected', state.mode === 1);
   document.getElementById('onlineMode2Btn').classList.toggle('selected', state.mode === 2);
 }
+function syncOnlineKindButtons() {
+  const kind = state.onlineKind === 'coop' ? 'coop' : 'pvp';
+  state.onlineKind = kind;
+  const pvp = document.getElementById('onlineKindPvpBtn');
+  const coop = document.getElementById('onlineKindCoopBtn');
+  if (pvp) pvp.classList.toggle('selected', kind === 'pvp');
+  if (coop) coop.classList.toggle('selected', kind === 'coop');
+  const brand = document.getElementById('onlineBrand');
+  const sub = document.getElementById('onlineSub');
+  if (brand) brand.textContent = kind === 'coop' ? 'CO-OP AIRSHIP' : 'ONLINE 1v1';
+  if (sub) {
+    sub.textContent = kind === 'coop'
+      ? '飛行艇協力。ロビーで相手を探すか、コードで直接接続できます。'
+      : '1v1対戦。ロビーで相手を探すか、コードで直接接続できます。';
+  }
+}
 document.getElementById('onlineMode1Btn').addEventListener('click', () => {
   setStickMode(1);
   syncOnlineModeButtons();
@@ -1585,6 +1963,170 @@ document.getElementById('onlineMode1Btn').addEventListener('click', () => {
 document.getElementById('onlineMode2Btn').addEventListener('click', () => {
   setStickMode(2);
   syncOnlineModeButtons();
+});
+document.getElementById('onlineKindPvpBtn').addEventListener('click', () => {
+  state.onlineKind = 'pvp';
+  syncOnlineKindButtons();
+  if (onlineTab === 'lobby') refreshLobbyList();
+});
+document.getElementById('onlineKindCoopBtn').addEventListener('click', () => {
+  state.onlineKind = 'coop';
+  syncOnlineKindButtons();
+  if (onlineTab === 'lobby') refreshLobbyList();
+});
+syncOnlineKindButtons();
+
+const DRONE_GAS_URL = 'https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec';
+let onlineTab = 'lobby';
+let lobbyListTimer = null;
+let lobbyHeartbeatTimer = null;
+let lobbyPublished = false;
+
+async function callDroneGAS(action, params) {
+  const body = Object.assign({}, params || {}, { action: action });
+  const res = await fetch(DRONE_GAS_URL, { method: 'POST', body: JSON.stringify(body) });
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch (e) {
+    throw new Error('サーバー応答が不正です');
+  }
+  if (json.status !== 'success') throw new Error(json.message || 'エラー');
+  return json.data;
+}
+
+function droneHostName() {
+  try {
+    const n = localStorage.getItem('currentUser') || localStorage.getItem('userName') || '';
+    if (n && n !== 'undefined' && n !== 'null') return String(n).slice(0, 24);
+  } catch (e) {}
+  return 'Player';
+}
+
+function setOnlineTab(tab) {
+  onlineTab = tab === 'code' ? 'code' : 'lobby';
+  document.getElementById('onlineTabLobbyBtn').classList.toggle('selected', onlineTab === 'lobby');
+  document.getElementById('onlineTabCodeBtn').classList.toggle('selected', onlineTab === 'code');
+  document.getElementById('onlineLobbyPanel').style.display = onlineTab === 'lobby' ? 'block' : 'none';
+  document.getElementById('onlineCodePanel').style.display = onlineTab === 'code' ? 'block' : 'none';
+  if (onlineTab === 'lobby') {
+    startLobbyListPoll();
+    refreshLobbyList();
+  } else {
+    stopLobbyListPoll();
+  }
+}
+
+document.getElementById('onlineTabLobbyBtn').addEventListener('click', () => setOnlineTab('lobby'));
+document.getElementById('onlineTabCodeBtn').addEventListener('click', () => setOnlineTab('code'));
+
+function stopLobbyListPoll() {
+  if (lobbyListTimer) {
+    clearInterval(lobbyListTimer);
+    lobbyListTimer = null;
+  }
+}
+
+function startLobbyListPoll() {
+  stopLobbyListPoll();
+  lobbyListTimer = setInterval(() => {
+    if (onlineScreen.classList.contains('active') && onlineTab === 'lobby' && !state.playing) {
+      refreshLobbyList(true);
+    }
+  }, 5000);
+}
+
+function stopLobbyHeartbeat() {
+  if (lobbyHeartbeatTimer) {
+    clearInterval(lobbyHeartbeatTimer);
+    lobbyHeartbeatTimer = null;
+  }
+}
+
+async function unpublishLobbyRoom() {
+  stopLobbyHeartbeat();
+  const code = state.roomCode;
+  lobbyPublished = false;
+  const info = document.getElementById('lobbyPublishInfo');
+  if (info) info.style.display = 'none';
+  if (!code) return;
+  try {
+    await callDroneGAS('droneLobby_close', { code: code });
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+async function publishLobbyRoom(code) {
+  await callDroneGAS('droneLobby_create', {
+    code: code,
+    kind: state.onlineKind === 'coop' ? 'coop' : 'pvp',
+    mode: state.mode,
+    hostName: droneHostName()
+  });
+  lobbyPublished = true;
+  document.getElementById('lobbyPublishCode').textContent = code;
+  document.getElementById('lobbyPublishInfo').style.display = 'block';
+  stopLobbyHeartbeat();
+  lobbyHeartbeatTimer = setInterval(() => {
+    if (!lobbyPublished || !state.roomCode) return;
+    callDroneGAS('droneLobby_heartbeat', {
+      code: state.roomCode,
+      kind: state.onlineKind === 'coop' ? 'coop' : 'pvp',
+      mode: state.mode
+    }).catch((e) => console.warn(e));
+  }, 8000);
+}
+
+function renderLobbyRooms(rooms) {
+  const list = document.getElementById('lobbyRoomList');
+  if (!list) return;
+  const mine = lobbyPublished ? state.roomCode : '';
+  const filtered = (rooms || []).filter((r) => r && r.code && r.code !== mine);
+  if (!filtered.length) {
+    list.innerHTML = '<div class="lobby-empty">待機中のルームはありません。<br>「マッチング募集」で公開できます。</div>';
+    return;
+  }
+  list.innerHTML = '';
+  filtered.forEach((r) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'lobby-room-item';
+    const kindLabel = r.kind === 'coop' ? '飛行艇協力' : '1v1対戦';
+    btn.innerHTML =
+      '<div><div class="lobby-room-code">' + r.code + '</div>' +
+      '<div class="lobby-room-meta">' + kindLabel + ' · Mode ' + r.mode + ' · ' + (r.hostName || 'Player') + '</div></div>' +
+      '<span style="font-size:0.8rem;font-weight:700;color:var(--accent);">参加</span>';
+    btn.addEventListener('click', () => joinRoomByCode(r.code, { kind: r.kind, mode: r.mode, fromLobby: true }));
+    list.appendChild(btn);
+  });
+}
+
+async function refreshLobbyList(silent) {
+  const list = document.getElementById('lobbyRoomList');
+  if (!silent && list) list.innerHTML = '<div class="lobby-empty">読み込み中…</div>';
+  try {
+    const data = await callDroneGAS('droneLobby_list', {
+      kind: state.onlineKind === 'coop' ? 'coop' : 'pvp'
+    });
+    renderLobbyRooms(data && data.rooms);
+  } catch (e) {
+    console.warn(e);
+    if (list) {
+      list.innerHTML = '<div class="lobby-empty">ロビー取得に失敗しました。<br>GASの再デプロイが必要な場合があります。</div>';
+    }
+    if (!silent) onlineStatus.textContent = 'ロビー取得失敗: ' + (e.message || e);
+  }
+}
+
+document.getElementById('lobbyRefreshBtn').addEventListener('click', () => refreshLobbyList());
+document.getElementById('lobbyUnpublishBtn').addEventListener('click', async () => {
+  await unpublishLobbyRoom();
+  cleanupNet();
+  onlineStatus.textContent = '募集をやめました。';
+  refreshLobbyList();
+});
+document.getElementById('lobbyPublishBtn').addEventListener('click', () => {
+  startHostRoom({ publish: true });
 });
 
 function genRoomCode() {
@@ -1605,6 +2147,13 @@ function netSend(msg) {
 }
 
 function cleanupNet() {
+  stopLobbyHeartbeat();
+  if (lobbyPublished && state.roomCode) {
+    callDroneGAS('droneLobby_close', { code: state.roomCode }).catch(() => {});
+  }
+  lobbyPublished = false;
+  const info = document.getElementById('lobbyPublishInfo');
+  if (info) info.style.display = 'none';
   try { if (conn) conn.close(); } catch (e) {}
   try { if (peer) peer.destroy(); } catch (e) {}
   conn = null;
@@ -1619,10 +2168,16 @@ function bindConnection(c) {
   conn.on('close', () => {
     onlineStatus.textContent = '相手が切断しました。';
     showToast('相手が切断しました');
-    if (state.playing) endBattle(true, 'disconnect');
-    else {
+    if (state.playing) {
+      if (state.gameType === 'airship_coop') endBattle(false, 'disconnect');
+      else endBattle(true, 'disconnect');
+    } else {
       cleanupNet();
       showScreen('online');
+      if (onlineTab === 'lobby') {
+        startLobbyListPoll();
+        refreshLobbyList();
+      }
     }
   });
   conn.on('error', (err) => {
@@ -1634,30 +2189,78 @@ function bindConnection(c) {
 function onNetData(msg) {
   if (!msg || !msg.t) return;
   if (msg.t === 'hello') {
-    onlineStatus.textContent = '相手と接続しました。対戦を開始します…';
+    if (msg.kind && msg.kind !== state.onlineKind) {
+      onlineStatus.textContent = '相手とプレイ種別が違います（1v1 / 飛行艇協力を揃えてください）。';
+      return;
+    }
+    onlineStatus.textContent = state.onlineKind === 'coop'
+      ? '協力接続完了。飛行艇戦を開始します…'
+      : '相手と接続しました。対戦を開始します…';
+    if (lobbyPublished) {
+      callDroneGAS('droneLobby_close', { code: state.roomCode }).catch(() => {});
+      lobbyPublished = false;
+      stopLobbyHeartbeat();
+    }
+    stopLobbyListPoll();
     if (state.isHost) {
-      netSend({ t: 'start', mode: state.mode });
-      startOnlineBattle(true);
+      netSend({ t: 'start', mode: state.mode, kind: state.onlineKind });
+      if (state.onlineKind === 'coop') startOnlineCoopAirship(true);
+      else startOnlineBattle(true);
     }
   } else if (msg.t === 'start') {
     if (msg.mode === 1 || msg.mode === 2) setStickMode(msg.mode);
+    if (msg.kind === 'coop' || msg.kind === 'pvp') state.onlineKind = msg.kind;
     syncOnlineModeButtons();
-    startOnlineBattle(false);
+    syncOnlineKindButtons();
+    stopLobbyListPoll();
+    if (state.onlineKind === 'coop') startOnlineCoopAirship(false);
+    else startOnlineBattle(false);
   } else if (msg.t === 'state') {
     state.remoteTarget.set(msg.x, msg.y, msg.z);
     state.remoteYaw = msg.yaw;
     state.remotePitch = msg.pitch;
     state.remoteRoll = msg.roll;
     state.remoteHp = msg.hp;
-    enemy.hp = msg.hp;
-    updateHpUi();
+    if (state.gameType === 'online') {
+      enemy.hp = msg.hp;
+      updateHpUi();
+    } else if (state.gameType === 'airship_coop') {
+      // 味方のHP表示用（任意）
+      enemy.hp = msg.hp != null ? msg.hp : enemy.hp;
+    }
   } else if (msg.t === 'shot') {
     const from = new THREE.Vector3(msg.x, msg.y, msg.z);
     const dir = new THREE.Vector3(msg.dx, msg.dy, msg.dz);
     const profile = getWeaponProfile(msg.kind || 'beam', msg.atk || 10);
-    const enemyProfile = Object.assign({}, profile, { color: 0xff5252 });
-    fireBullet(from, dir, 'enemy', enemyProfile);
+    if (state.gameType === 'airship_coop') {
+      const allyProfile = Object.assign({}, profile, { color: 0x69f0ae });
+      fireBullet(from, dir, 'ally', allyProfile, { atk: msg.atk || 10 });
+    } else {
+      const enemyProfile = Object.assign({}, profile, { color: 0xff5252 });
+      fireBullet(from, dir, 'enemy', enemyProfile);
+    }
+  } else if (msg.t === 'ship') {
+    airship.pos.set(msg.x, msg.y, msg.z);
+    airship.yaw = msg.yaw;
+    if (msg.hp != null) airship.hp = msg.hp;
+    airship.alive = airship.hp > 0;
+    airship.mesh.visible = airship.alive;
+    updateHpUi();
+  } else if (msg.t === 'ship_dmg') {
+    if (state.isHost && airship.alive) {
+      damageAirship(msg.amount || 10, false, !!msg.weak);
+    }
+  } else if (msg.t === 'ship_shot') {
+    const from = new THREE.Vector3(msg.x, msg.y, msg.z);
+    const dir = new THREE.Vector3(msg.dx, msg.dy, msg.dz);
+    const profile = Object.assign({}, getWeaponProfile('cannon', 16), { color: 0xff6d00, speed: 42, life: 2.2 });
+    fireBullet(from, dir, 'ship', profile, { atk: 16 });
+  } else if (msg.t === 'ship_down') {
+    airship.alive = false;
+    airship.mesh.visible = false;
+    if (state.playing) endBattle(true);
   } else if (msg.t === 'dmg') {
+    if (state.gameType === 'airship_coop') return; // 味方撃ちなし
     if (state.hitCooldown > 0) return;
     state.hitCooldown = 0.15;
     let dmg = msg.amount || 10;
@@ -1671,6 +2274,10 @@ function onNetData(msg) {
       endBattle(false);
     }
   } else if (msg.t === 'die') {
+    if (state.gameType === 'airship_coop') {
+      showToast('味方が撃墜された…', 1200);
+      return;
+    }
     enemy.hp = 0;
     enemy.alive = false;
     updateHpUi();
@@ -1678,9 +2285,54 @@ function onNetData(msg) {
   }
 }
 
+function tintAllyCraft() {
+  if (!enemy.mesh || !enemy.mesh.userData || !enemy.mesh.userData.body) return;
+  enemy.mesh.userData.body.material.color.setHex(0x00e676);
+  enemy.mesh.userData.body.material.emissive.setHex(0x1b5e20);
+  enemy.mesh.userData.body.material.emissiveIntensity = 0.25;
+}
+
+function startOnlineCoopAirship(asHost) {
+  state.gameType = 'airship_coop';
+  state.isHost = !!asHost;
+  state.onlineKind = 'coop';
+  showScreen('');
+  lobbyScreen.classList.remove('active');
+  onlineScreen.classList.remove('active');
+  titleScreen.classList.remove('active');
+  resultScreen.classList.remove('active');
+  hud.classList.add('active');
+  hudRightLabel.textContent = 'SHIP';
+  setModeWorldVisible();
+  hideAirship();
+  resetCrafts();
+  resetAirship();
+  // 味方スポーン（並列）
+  player.pos.set(asHost ? -10 : 10, 14, 28);
+  player.yaw = Math.PI;
+  enemy.pos.set(asHost ? 10 : -10, 14, 28);
+  enemy.yaw = Math.PI;
+  enemy.alive = true;
+  enemy.mesh.visible = true;
+  enemy.hp = MAX_HP;
+  enemy.maxHp = MAX_HP;
+  tintAllyCraft();
+  state.remoteTarget.copy(enemy.pos);
+  state.remoteYaw = enemy.yaw;
+  state.remoteHp = MAX_HP;
+  state.playing = true;
+  state.over = false;
+  state.camMode = 'chase';
+  syncCamModeUI();
+  refreshFireButtonLabel();
+  clock.getDelta();
+  showToast('協力プレイ開始！飛行艇を撃破せよ', 1600);
+}
+
 function startOnlineBattle(asHost) {
   state.gameType = 'online';
   state.isHost = !!asHost;
+  state.onlineKind = 'pvp';
   showScreen('');
   lobbyScreen.classList.remove('active');
   onlineScreen.classList.remove('active');
@@ -1688,7 +2340,8 @@ function startOnlineBattle(asHost) {
   resultScreen.classList.remove('active');
   hud.classList.add('active');
   hudRightLabel.textContent = 'RIVAL';
-  setMissionWorldVisible(false);
+  setModeWorldVisible();
+  hideAirship();
   resetCrafts();
   // ホストとゲストで対面スポーン
   if (state.isHost) {
@@ -1708,12 +2361,14 @@ function startOnlineBattle(asHost) {
   enemy.mesh.visible = true;
   state.playing = true;
   state.over = false;
-  state.firstPerson = false;
+  state.camMode = 'chase';
+  syncCamModeUI();
   clock.getDelta();
   showToast('オンライン対戦開始！ Mode ' + state.mode, 1400);
 }
 
-document.getElementById('hostRoomBtn').addEventListener('click', () => {
+function startHostRoom(opts) {
+  const publish = !!(opts && opts.publish);
   if (typeof Peer === 'undefined') {
     onlineStatus.textContent = 'PeerJS の読み込みに失敗しました。通信環境を確認してください。';
     return;
@@ -1722,24 +2377,76 @@ document.getElementById('hostRoomBtn').addEventListener('click', () => {
   const code = genRoomCode();
   state.roomCode = code;
   state.isHost = true;
-  onlineStatus.textContent = 'ルーム作成中…';
+  onlineStatus.textContent = publish ? 'マッチング募集を作成中…' : 'ルーム作成中…';
   peer = new Peer(peerIdFromCode(code), { debug: 1 });
-  peer.on('open', () => {
+  peer.on('open', async () => {
     document.getElementById('roomCodeText').textContent = code;
     document.getElementById('roomCodeDisplay').style.display = 'block';
-    onlineStatus.textContent = '相手の参加を待っています…（コード: ' + code + '）';
+    if (publish) {
+      try {
+        await publishLobbyRoom(code);
+        onlineStatus.textContent = 'ロビー公開中。相手の参加を待っています…（コード: ' + code + '）';
+        refreshLobbyList(true);
+      } catch (e) {
+        console.warn(e);
+        onlineStatus.textContent = 'ルームは作成済みですがロビー公開に失敗: ' + (e.message || e);
+      }
+    } else {
+      onlineStatus.textContent = '相手の参加を待っています…（コード: ' + code + '）';
+    }
   });
   peer.on('connection', (c) => {
     bindConnection(c);
     onlineStatus.textContent = '接続確立。相手の準備待ち…';
     c.on('open', () => {
-      netSend({ t: 'hello', role: 'host' });
+      netSend({ t: 'hello', role: 'host', kind: state.onlineKind });
     });
   });
   peer.on('error', (err) => {
     console.warn(err);
     onlineStatus.textContent = 'エラー: 別のコードで再作成してください（' + (err.type || 'error') + '）';
   });
+}
+
+function joinRoomByCode(code, opts) {
+  if (typeof Peer === 'undefined') {
+    onlineStatus.textContent = 'PeerJS の読み込みに失敗しました。';
+    return;
+  }
+  code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length < 4) {
+    onlineStatus.textContent = '4文字のルームコードを入力してください。';
+    return;
+  }
+  if (opts && (opts.kind === 'coop' || opts.kind === 'pvp')) {
+    state.onlineKind = opts.kind;
+    syncOnlineKindButtons();
+  }
+  if (opts && (opts.mode === 1 || opts.mode === 2)) {
+    setStickMode(opts.mode);
+    syncOnlineModeButtons();
+  }
+  cleanupNet();
+  state.isHost = false;
+  state.roomCode = code;
+  onlineStatus.textContent = (opts && opts.fromLobby) ? 'ロビーから接続中…' : '接続中…';
+  peer = new Peer({ debug: 1 });
+  peer.on('open', () => {
+    const c = peer.connect(peerIdFromCode(code), { reliable: true });
+    bindConnection(c);
+    c.on('open', () => {
+      onlineStatus.textContent = 'ホストに接続しました。';
+      netSend({ t: 'hello', role: 'guest', kind: state.onlineKind });
+    });
+  });
+  peer.on('error', (err) => {
+    console.warn(err);
+    onlineStatus.textContent = '接続失敗（コードやホストの状態を確認）: ' + (err.type || 'error');
+  });
+}
+
+document.getElementById('hostRoomBtn').addEventListener('click', () => {
+  startHostRoom({ publish: false });
 });
 
 document.getElementById('copyRoomBtn').addEventListener('click', async () => {
@@ -1753,37 +2460,11 @@ document.getElementById('copyRoomBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('joinRoomBtn').addEventListener('click', () => {
-  if (typeof Peer === 'undefined') {
-    onlineStatus.textContent = 'PeerJS の読み込みに失敗しました。';
-    return;
-  }
-  const code = String(document.getElementById('joinRoomInput').value || '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
-  if (code.length < 4) {
-    onlineStatus.textContent = '4文字のルームコードを入力してください。';
-    return;
-  }
-  cleanupNet();
-  state.isHost = false;
-  state.roomCode = code;
-  onlineStatus.textContent = '接続中…';
-  peer = new Peer({ debug: 1 });
-  peer.on('open', () => {
-    const c = peer.connect(peerIdFromCode(code), { reliable: true });
-    bindConnection(c);
-    c.on('open', () => {
-      onlineStatus.textContent = 'ホストに接続しました。';
-      netSend({ t: 'hello', role: 'guest' });
-    });
-  });
-  peer.on('error', (err) => {
-    console.warn(err);
-    onlineStatus.textContent = '接続失敗（コードやホストの状態を確認）: ' + (err.type || 'error');
-  });
+  joinRoomByCode(document.getElementById('joinRoomInput').value, { fromLobby: false });
 });
 
 document.getElementById('onlineCancelBtn').addEventListener('click', () => {
+  stopLobbyListPoll();
   cleanupNet();
   showScreen('lobby');
 });
@@ -1931,17 +2612,44 @@ function bindFireButton(btn) {
 bindFireButton(fireBtn);
 bindFireButton(fireBtnAlt);
 
+const CAM_MODE_ORDER = ['chase', 'fpv', 'ground'];
+const CAM_MODE_LABELS = {
+  chase: '三人称カメラ',
+  fpv: '一人称カメラ',
+  ground: '地上視点'
+};
+
+function syncCamModeUI() {
+  const btn = document.getElementById('camBtn');
+  const mode = state.camMode || 'chase';
+  if (btn) {
+    btn.textContent = mode === 'fpv' ? 'FPV' : (mode === 'ground' ? 'GND' : 'CAM');
+  }
+  if (hud) {
+    hud.classList.toggle('cam-ground', mode === 'ground');
+    hud.classList.toggle('cam-fpv', mode === 'fpv');
+  }
+  if (typeof player !== 'undefined' && player && player.mesh) {
+    player.mesh.visible = mode !== 'fpv';
+  }
+}
+
+function cycleCamMode() {
+  if (typeof player === 'undefined' || !player) return;
+  const cur = state.camMode || 'chase';
+  const idx = CAM_MODE_ORDER.indexOf(cur);
+  state.camMode = CAM_MODE_ORDER[(idx + 1) % CAM_MODE_ORDER.length];
+  syncCamModeUI();
+  showToast(CAM_MODE_LABELS[state.camMode] || 'カメラ');
+}
+
 document.getElementById('camBtn').addEventListener('click', () => {
-  state.firstPerson = !state.firstPerson;
-  showToast(state.firstPerson ? '一人称カメラ' : '三人称カメラ');
+  cycleCamMode();
 });
 
 window.addEventListener('keydown', (e) => {
   state.keys[e.code] = true;
-  if (e.code === 'KeyC') {
-    state.firstPerson = !state.firstPerson;
-    showToast(state.firstPerson ? '一人称カメラ' : '三人称カメラ');
-  }
+  if (e.code === 'KeyC') cycleCamMode();
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', (e) => { state.keys[e.code] = false; });
@@ -2459,6 +3167,430 @@ function setMissionWorldVisible(on) {
 }
 setMissionWorldVisible(false);
 
+/** 肥料散布用マス（畑グリッド） */
+const fertGroup = new THREE.Group();
+fertGroup.visible = false;
+scene.add(fertGroup);
+const fertCells = [];
+
+(function buildFertilizerField() {
+  const { x, z, w, d } = FERT_FIELD;
+  const cellW = w / FERT_COLS;
+  const cellD = d / FERT_ROWS;
+  const frame = new THREE.Mesh(
+    new THREE.PlaneGeometry(w + 1.5, d + 1.5),
+    new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.95 })
+  );
+  frame.rotation.x = -Math.PI / 2;
+  frame.position.set(x, 0.03, z);
+  fertGroup.add(frame);
+  for (let r = 0; r < FERT_ROWS; r++) {
+    for (let c = 0; c < FERT_COLS; c++) {
+      const cx = x - w / 2 + cellW * (c + 0.5);
+      const cz = z - d / 2 + cellD * (r + 0.5);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x8d6e63,
+        roughness: 0.92,
+        metalness: 0.02,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+      });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(cellW * 0.92, cellD * 0.92), mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(cx, 0.08, cz);
+      mesh.receiveShadow = true;
+      fertGroup.add(mesh);
+      fertCells.push({
+        mesh,
+        mat,
+        x: cx,
+        z: cz,
+        hits: 0,
+        covered: false
+      });
+    }
+  }
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(0.2, 3.2, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0xffeb3b })
+  );
+  sign.position.set(x - w / 2 - 1.5, 1.6, z);
+  fertGroup.add(sign);
+})();
+
+function resetFertilizerField() {
+  fertCells.forEach((cell) => {
+    cell.hits = 0;
+    cell.covered = false;
+    cell.mat.color.setHex(0x8d6e63);
+    cell.mat.emissive.setHex(0x000000);
+    cell.mat.emissiveIntensity = 0;
+  });
+  state.fertCovered = 0;
+  state.fertOverspray = 0;
+  state.fertSprayCd = 0;
+}
+
+function fertCoverageRatio() {
+  if (!fertCells.length) return 0;
+  const n = fertCells.filter((c) => c.covered).length;
+  return n / fertCells.length;
+}
+
+function updateFertCellVisual(cell) {
+  if (cell.hits <= 0) {
+    cell.mat.color.setHex(0x8d6e63);
+    cell.mat.emissive.setHex(0x000000);
+    cell.mat.emissiveIntensity = 0;
+  } else if (cell.hits === 1) {
+    cell.mat.color.setHex(0x66bb6a);
+    cell.mat.emissive.setHex(0x1b5e20);
+    cell.mat.emissiveIntensity = 0.25;
+  } else if (cell.hits === 2) {
+    cell.mat.color.setHex(0x43a047);
+    cell.mat.emissive.setHex(0x2e7d32);
+    cell.mat.emissiveIntensity = 0.35;
+  } else {
+    // 過剰散布
+    cell.mat.color.setHex(0x1b5e20);
+    cell.mat.emissive.setHex(0xff6f00);
+    cell.mat.emissiveIntensity = 0.2;
+  }
+}
+
+function sprayFertilizer(dt) {
+  if (state.gameType !== 'fertilizer' || !player.alive) return;
+  const alt = Math.max(0, player.pos.y - player.radius);
+  state.fertSprayCd = Math.max(0, (state.fertSprayCd || 0) - dt);
+  if (alt < FERT_MIN_ALT || alt > FERT_MAX_ALT) {
+    if (state.fertSprayCd <= 0) {
+      showToast(alt < FERT_MIN_ALT ? '低すぎ！高度を上げて' : '高すぎ！高度を下げて', 500);
+      state.fertSprayCd = 0.55;
+    }
+    return;
+  }
+  // 連射しすぎ防止（約0.2秒ごとにマスへ反映）
+  state._fertAcc = (state._fertAcc || 0) + dt;
+  if (state._fertAcc < 0.2) {
+    // 見た目の粒子だけ薄く出す
+    if (Math.random() < 0.2) {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 5, 5),
+        new THREE.MeshBasicMaterial({ color: 0xc8e6c9, transparent: true, opacity: 0.55 })
+      );
+      m.position.set(player.pos.x, Math.max(0.3, alt * 0.4), player.pos.z);
+      m.userData = { vx: 0, vy: -1.5, vz: 0, life: 0.3 };
+      scene.add(m);
+      dustPuffs.push(m);
+    }
+    return;
+  }
+  state._fertAcc = 0;
+
+  const ideal = 1 - Math.min(1, Math.abs(alt - FERT_IDEAL_ALT) / 5);
+  const radius = FERT_SPRAY_R * (0.7 + ideal * 0.55);
+  let sprayed = false;
+  fertCells.forEach((cell) => {
+    const dx = cell.x - player.pos.x;
+    const dz = cell.z - player.pos.z;
+    if (dx * dx + dz * dz > radius * radius) return;
+    sprayed = true;
+    const was = cell.hits;
+    cell.hits += 1;
+    if (cell.hits === 1) {
+      cell.covered = true;
+      state.fertCovered += 1;
+    } else if (was >= 1) {
+      state.fertOverspray += 1;
+    }
+    updateFertCellVisual(cell);
+  });
+  if (sprayed && Math.random() < 0.55) {
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12 + Math.random() * 0.12, 5, 5),
+      new THREE.MeshBasicMaterial({ color: 0xa5d6a7, transparent: true, opacity: 0.7 })
+    );
+    m.position.set(
+      player.pos.x + (Math.random() - 0.5) * radius,
+      Math.max(0.3, alt * 0.35),
+      player.pos.z + (Math.random() - 0.5) * radius
+    );
+    m.userData = { vx: (Math.random() - 0.5), vy: -1.2, vz: (Math.random() - 0.5), life: 0.45 };
+    scene.add(m);
+    dustPuffs.push(m);
+  }
+  updateTechniqueHud();
+  if (fertCoverageRatio() >= 0.92) {
+    endBattle(true);
+  }
+}
+
+function setFertilizerWorldVisible(on) {
+  fertGroup.visible = !!on;
+}
+
+function setModeWorldVisible() {
+  const g = state.gameType;
+  setDefenseWorldVisible(g === 'defense');
+  setFertilizerWorldVisible(g === 'fertilizer');
+  if (g === 'mission') {
+    gateGroup.visible = true;
+    pestGroup.visible = true;
+  } else if (g === 'race') {
+    gateGroup.visible = true;
+    pestGroup.visible = false;
+  } else {
+    gateGroup.visible = false;
+    pestGroup.visible = false;
+  }
+}
+
+/** 防衛線（拠点柵）のビジュアル */
+const defenseGroup = new THREE.Group();
+defenseGroup.visible = false;
+scene.add(defenseGroup);
+(function buildDefenseLine() {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x00e5ff,
+    emissive: 0x00bcd4,
+    emissiveIntensity: 0.65,
+    transparent: true,
+    opacity: 0.55,
+    metalness: 0.4,
+    roughness: 0.35
+  });
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x37474f, metalness: 0.5, roughness: 0.4 });
+  for (let i = -5; i <= 5; i++) {
+    const x = i * 7;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 5.5, 8), postMat);
+    post.position.set(x, 2.75, DEFENSE_LINE_Z);
+    post.castShadow = true;
+    defenseGroup.add(post);
+    if (i < 5) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.35, 0.35), mat);
+      beam.position.set(x + 3.5, 4.2, DEFENSE_LINE_Z);
+      defenseGroup.add(beam);
+      const beam2 = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.25, 0.25), mat);
+      beam2.position.set(x + 3.5, 2.2, DEFENSE_LINE_Z);
+      defenseGroup.add(beam2);
+    }
+  }
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(4.5, 5, 0.4, 24),
+    new THREE.MeshStandardMaterial({ color: 0x1b5e20, emissive: 0x004d40, emissiveIntensity: 0.25 })
+  );
+  pad.position.set(0, 0.2, DEFENSE_LINE_Z + 6);
+  pad.receiveShadow = true;
+  defenseGroup.add(pad);
+  const flag = new THREE.Mesh(
+    new THREE.BoxGeometry(0.2, 6, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0xffeb3b })
+  );
+  flag.position.set(0, 3.2, DEFENSE_LINE_Z + 6);
+  defenseGroup.add(flag);
+  const banner = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, 1.2),
+    new THREE.MeshStandardMaterial({ color: 0x00e676, side: THREE.DoubleSide, emissive: 0x1b5e20, emissiveIntensity: 0.3 })
+  );
+  banner.position.set(1.1, 5.2, DEFENSE_LINE_Z + 6);
+  defenseGroup.add(banner);
+})();
+
+function setDefenseWorldVisible(on) {
+  defenseGroup.visible = !!on;
+}
+
+/** 巨大飛行艇ボス */
+function createAirshipMesh() {
+  const root = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({
+    color: 0x455a64, metalness: 0.45, roughness: 0.4, emissive: 0x102027, emissiveIntensity: 0.2
+  });
+  const accentMat = new THREE.MeshStandardMaterial({
+    color: 0xff6d00, metalness: 0.3, roughness: 0.45, emissive: 0xff3d00, emissiveIntensity: 0.55
+  });
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(5.2, 20, 14), hullMat);
+  hull.scale.set(1.15, 0.72, 2.55);
+  hull.castShadow = true;
+  root.add(hull);
+  const mid = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 14, 16), hullMat);
+  mid.rotation.x = Math.PI / 2;
+  mid.castShadow = true;
+  root.add(mid);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.35, 4.5, 3.2), hullMat);
+  fin.position.set(0, 2.2, 10.5);
+  root.add(fin);
+  const finH = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.3, 2.2), hullMat);
+  finH.position.set(0, 0.5, 11);
+  root.add(finH);
+  // 弱点ゴンドラ
+  const gondola = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.2, 5.5), accentMat);
+  gondola.position.set(0, -4.2, 0);
+  gondola.castShadow = true;
+  root.add(gondola);
+  const weakGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(1.6, 12, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffab40, transparent: true, opacity: 0.35 })
+  );
+  weakGlow.position.copy(gondola.position);
+  root.add(weakGlow);
+  // エンジン
+  [-1, 1].forEach((s) => {
+    const eng = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.9, 1.1, 2.4, 10),
+      new THREE.MeshStandardMaterial({ color: 0x263238, metalness: 0.6, roughness: 0.3 })
+    );
+    eng.rotation.z = Math.PI / 2;
+    eng.position.set(s * 5.5, -1.2, 2);
+    root.add(eng);
+  });
+  // 砲塔っぽい出っ張り
+  [[-3, -2, 4], [3, -2, 4], [0, -2.5, -6]].forEach(([x, y, z]) => {
+    const gun = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.45, 1.8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x37474f, metalness: 0.5, roughness: 0.4 })
+    );
+    gun.rotation.x = Math.PI / 2;
+    gun.position.set(x, y, z);
+    root.add(gun);
+  });
+  root.userData.gondola = gondola;
+  root.userData.weakGlow = weakGlow;
+  root.visible = false;
+  scene.add(root);
+  return root;
+}
+
+const airshipMesh = createAirshipMesh();
+const airship = {
+  mesh: airshipMesh,
+  pos: new THREE.Vector3(0, 32, -40),
+  yaw: 0,
+  hp: AIRSHIP_MAX_HP,
+  maxHp: AIRSHIP_MAX_HP,
+  alive: false,
+  fireCd: 0,
+  phase: 0,
+  hitRadius: AIRSHIP_HIT_R,
+  weakLocal: new THREE.Vector3(0, -4.2, 0)
+};
+
+function resetAirship() {
+  airship.hp = AIRSHIP_MAX_HP;
+  airship.maxHp = AIRSHIP_MAX_HP;
+  airship.alive = true;
+  airship.fireCd = 1.2;
+  airship.phase = 0;
+  airship.yaw = 0;
+  airship.pos.set(0, 32, -38);
+  airship.mesh.visible = true;
+  airship.mesh.position.copy(airship.pos);
+  airship.mesh.rotation.set(0, airship.yaw, 0);
+  if (airship.mesh.userData.weakGlow) {
+    airship.mesh.userData.weakGlow.material.opacity = 0.4;
+  }
+}
+
+function hideAirship() {
+  airship.alive = false;
+  airship.mesh.visible = false;
+}
+
+function getAirshipWeakWorld() {
+  const v = airship.weakLocal.clone();
+  v.applyAxisAngle(new THREE.Vector3(0, 1, 0), airship.yaw);
+  return airship.pos.clone().add(v);
+}
+
+function damageAirship(rawDmg, fromPlayer, isWeak) {
+  if (!airship.alive || state.over) return;
+  // 協力時ゲストはダメージ要求をホストへ
+  if (state.gameType === 'airship_coop' && !state.isHost) {
+    netSend({ t: 'ship_dmg', amount: rawDmg, weak: !!isWeak });
+    showToast(isWeak ? 'WEAK HIT!' : 'HIT!', 350);
+    return;
+  }
+  let dmg = rawDmg * (isWeak ? 2.5 : 1);
+  airship.hp = Math.max(0, airship.hp - dmg);
+  updateHpUi();
+  showToast(isWeak ? '弱点ヒット！' : 'HIT!', 400);
+  if (state.gameType === 'airship_coop' && state.isHost) {
+    netSend({ t: 'ship', x: airship.pos.x, y: airship.pos.y, z: airship.pos.z, yaw: airship.yaw, hp: airship.hp });
+  }
+  if (airship.hp <= 0) {
+    airship.alive = false;
+    airship.mesh.visible = false;
+    if (state.gameType === 'airship_coop') netSend({ t: 'ship_down' });
+    endBattle(true);
+  }
+}
+
+function updateAirship(dt) {
+  if (!isAirshipMode() || !airship.alive || state.over) return;
+  // ゲストはホストの補間のみ
+  if (state.gameType === 'airship_coop' && !state.isHost) {
+    airship.mesh.position.lerp(airship.pos, 1 - Math.pow(0.001, dt));
+    airship.mesh.rotation.y = THREE.MathUtils.lerp(airship.mesh.rotation.y, airship.yaw, 0.12);
+    return;
+  }
+
+  airship.phase += dt;
+  const radius = 36 + Math.sin(airship.phase * 0.15) * 6;
+  const ang = airship.phase * 0.22;
+  const target = new THREE.Vector3(
+    Math.cos(ang) * radius,
+    28 + Math.sin(airship.phase * 0.4) * 4,
+    Math.sin(ang) * radius
+  );
+  airship.pos.lerp(target, 1 - Math.pow(0.15, dt));
+  const face = target.clone().sub(airship.pos);
+  if (face.lengthSq() > 0.01) {
+    const desiredYaw = Math.atan2(-face.x, -face.z);
+    let dy = desiredYaw - airship.yaw;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    airship.yaw += dy * Math.min(1, dt * 1.2);
+  }
+  airship.mesh.position.copy(airship.pos);
+  airship.mesh.rotation.y = airship.yaw;
+  if (airship.mesh.userData.weakGlow) {
+    airship.mesh.userData.weakGlow.material.opacity = 0.28 + Math.sin(airship.phase * 4) * 0.12;
+  }
+
+  // 反撃
+  airship.fireCd = Math.max(0, airship.fireCd - dt);
+  if (airship.fireCd <= 0) {
+    const targets = [];
+    if (player.alive) targets.push(player);
+    if (state.gameType === 'airship_coop' && enemy.alive && enemy.mesh.visible) targets.push(enemy);
+    if (!targets.length) return;
+    const tgt = targets.reduce((best, t) => {
+      if (!best) return t;
+      return airship.pos.distanceTo(t.pos) < airship.pos.distanceTo(best.pos) ? t : best;
+    }, null);
+    const from = airship.pos.clone().add(new THREE.Vector3(0, -2, 0));
+    const dir = tgt.pos.clone().sub(from).normalize();
+    const profile = Object.assign({}, getWeaponProfile('cannon', 16), { color: 0xff6d00, speed: 42, life: 2.2 });
+    fireBullet(from, dir, 'ship', profile, { atk: 16 });
+    if (state.gameType === 'airship_coop' && state.isHost) {
+      netSend({
+        t: 'ship_shot',
+        x: from.x, y: from.y, z: from.z,
+        dx: dir.x, dy: dir.y, dz: dir.z
+      });
+    }
+    airship.fireCd = 1.15 + Math.random() * 0.55;
+  }
+
+  if (state.gameType === 'airship_coop' && state.isHost) {
+    state.shipNetAcc = (state.shipNetAcc || 0) + dt;
+    if (state.shipNetAcc >= 0.08) {
+      state.shipNetAcc = 0;
+      netSend({ t: 'ship', x: airship.pos.x, y: airship.pos.y, z: airship.pos.z, yaw: airship.yaw, hp: airship.hp });
+    }
+  }
+}
+
 function highlightGate(index) {
   gates.forEach((g, i) => {
     const active = i === index;
@@ -2706,7 +3838,11 @@ let swarm = [];
 applyLoadoutToPlayerMesh();
 
 function isSwarmMode() {
-  return state.gameType === 'musou' || state.gameType === 'deathmatch';
+  return state.gameType === 'musou' || state.gameType === 'deathmatch' || state.gameType === 'defense';
+}
+
+function isDefenseMode() {
+  return state.gameType === 'defense';
 }
 
 function clearSwarm() {
@@ -2719,7 +3855,9 @@ function clearSwarm() {
 function tintSwarmCraft(craft, idx, mode) {
   const colors = mode === 'deathmatch'
     ? [0xc62828, 0x6a1b9a, 0xef6c00, 0x00897b, 0x3949ab, 0xad1457, 0x558b2f]
-    : [0xb71c1c, 0xd32f2f, 0xe53935, 0xc62828, 0xff5252];
+    : mode === 'defense'
+      ? [0xff6f00, 0xe65100, 0xbf360c, 0xff8f00, 0xd84315, 0xff3d00]
+      : [0xb71c1c, 0xd32f2f, 0xe53935, 0xc62828, 0xff5252];
   const col = colors[idx % colors.length];
   if (craft.mesh && craft.mesh.userData && craft.mesh.userData.body && craft.mesh.userData.body.material) {
     craft.mesh.userData.body.material.color.setHex(col);
@@ -2750,6 +3888,73 @@ function spawnSwarm(count, mode) {
   }
 }
 
+function spawnDefenseWave(waveIndex) {
+  const wave = DEFENSE_WAVES[Math.max(0, Math.min(DEFENSE_WAVES.length - 1, waveIndex))] || DEFENSE_WAVES[0];
+  clearSwarm();
+  for (let i = 0; i < wave.count; i++) {
+    const c = createCraft(false);
+    const spread = (i - (wave.count - 1) / 2) * 5.5;
+    const zFar = -42 - (i % 3) * 4 - Math.random() * 3;
+    c.pos.set(spread + (Math.random() - 0.5) * 2, AI_SAFE_ALT + (i % 4) * 1.8, zFar);
+    c.yaw = 0; // 防衛線（+Z）へ向かう
+    c.hp = wave.hp;
+    c.maxHp = wave.hp;
+    c.atk = wave.atk;
+    c.def = 0.1;
+    c.maxSpd = wave.spd;
+    c.thrust = 44;
+    c.fireCd = 0.5 + Math.random() * 0.7;
+    c.aiPhase = Math.random() * Math.PI * 2;
+    c.id = 'def_' + waveIndex + '_' + i;
+    c.breachTarget = new THREE.Vector3(
+      THREE.MathUtils.clamp(spread * 0.85, -28, 28),
+      AI_SAFE_ALT + (i % 3),
+      DEFENSE_LINE_Z
+    );
+    tintSwarmCraft(c, i, 'defense');
+    c.mesh.visible = true;
+    c.mesh.position.copy(c.pos);
+    swarm.push(c);
+  }
+  updateKillHud();
+  updateHpUi();
+}
+
+function tryAdvanceDefenseWave() {
+  if (!isDefenseMode() || state.over) return;
+  if (aliveSwarmCount() > 0) return;
+  if (state.waveIndex >= DEFENSE_WAVES.length - 1) {
+    endBattle(true);
+    return;
+  }
+  state.waveIndex += 1;
+  showToast('WAVE ' + (state.waveIndex + 1) + ' / ' + DEFENSE_WAVES.length + ' 襲来！', 1400);
+  spawnDefenseWave(state.waveIndex);
+}
+
+function checkDefenseBreaches() {
+  if (!isDefenseMode() || state.over) return;
+  let breached = false;
+  swarm.forEach((c) => {
+    if (!c.alive) return;
+    if (c.pos.z >= DEFENSE_LINE_Z) {
+      c.alive = false;
+      c.mesh.visible = false;
+      state.baseHp = Math.max(0, state.baseHp - DEFENSE_BREACH_DMG);
+      breached = true;
+      showToast('防衛線突破！ 拠点 −' + DEFENSE_BREACH_DMG, 900);
+    }
+  });
+  if (breached) {
+    updateHpUi();
+    if (state.baseHp <= 0) {
+      endBattle(false, 'base');
+      return;
+    }
+    tryAdvanceDefenseWave();
+  }
+}
+
 function aliveSwarmCount() {
   return swarm.filter((c) => c.alive).length;
 }
@@ -2762,6 +3967,9 @@ function updateKillHud() {
   } else if (state.gameType === 'deathmatch') {
     killPill.style.display = '';
     killPill.textContent = 'SURVIVORS ' + (aliveSwarmCount() + (player.alive ? 1 : 0));
+  } else if (state.gameType === 'defense') {
+    killPill.style.display = '';
+    killPill.textContent = 'WAVE ' + (state.waveIndex + 1) + '/' + DEFENSE_WAVES.length + ' · 残' + aliveSwarmCount();
   } else {
     killPill.style.display = 'none';
   }
@@ -2787,23 +3995,70 @@ function resetCrafts() {
 
   clearSwarm();
   state.kills = 0;
+  state.baseHp = DEFENSE_BASE_MAX_HP;
+  state.waveIndex = 0;
+  state.raceTime = 0;
+  state.fertCovered = 0;
+  state.fertOverspray = 0;
+  state.fertSprayCd = 0;
 
-  if (isSwarmMode()) {
+  hideAirship();
+
+  if (state.gameType === 'airship') {
+    enemy.mesh.visible = false;
+    enemy.alive = false;
+    player.pos.set(0, 14, 30);
+    player.yaw = Math.PI;
+    player.mesh.position.copy(player.pos);
+    resetAirship();
+  } else if (state.gameType === 'airship_coop') {
+    enemy.alive = true;
+    enemy.mesh.visible = true;
+    resetAirship();
+  } else if (state.gameType === 'race') {
+    enemy.mesh.visible = false;
+    enemy.alive = false;
+    const g0 = GATE_PATH[0];
+    const g1 = GATE_PATH[1] || g0;
+    player.pos.set(g0.x * 0.15, 11, g0.z + 14);
+    player.yaw = Math.atan2(-(g1.x - player.pos.x), -(g1.z - player.pos.z));
+    player.mesh.position.copy(player.pos);
+  } else if (state.gameType === 'fertilizer') {
+    enemy.mesh.visible = false;
+    enemy.alive = false;
+    resetFertilizerField();
+    player.pos.set(FERT_FIELD.x, FERT_IDEAL_ALT, FERT_FIELD.z + FERT_FIELD.d * 0.35);
+    player.yaw = Math.PI;
+    player.mesh.position.copy(player.pos);
+    state.timeLeft = FERT_TIME;
+  } else if (isDefenseMode()) {
+    enemy.mesh.visible = false;
+    enemy.alive = false;
+    player.pos.set(0, 12, DEFENSE_LINE_Z + 12);
+    player.yaw = Math.PI; // 敵襲来方向（−Z）を向く
+    player.mesh.position.copy(player.pos);
+    spawnDefenseWave(0);
+  } else if (isSwarmMode()) {
     enemy.mesh.visible = false;
     enemy.alive = false;
     spawnSwarm(state.gameType === 'musou' ? MUSOU_COUNT : DEATHMATCH_COUNT, state.gameType);
   } else {
+    const diff = getCpuDiffProfile(state.cpuDiff);
     enemy.pos.set(18, AI_SAFE_ALT, -18);
     enemy.vel.set(0, 0, 0);
     enemy.yaw = 0;
     enemy.pitch = 0;
     enemy.roll = 0;
-    enemy.hp = MAX_HP + 40; // CPU強化
+    enemy.hp = Math.max(40, MAX_HP + diff.hpBonus);
     enemy.maxHp = enemy.hp;
-    enemy.atk = 14;
-    enemy.def = 0.18;
-    enemy.maxSpd = 32;
-    enemy.thrust = 46;
+    enemy.atk = diff.atk;
+    enemy.def = diff.def;
+    enemy.maxSpd = diff.maxSpd;
+    enemy.thrust = diff.thrust;
+    enemy.aiAimNeed = diff.aimNeed;
+    enemy.aiTurnMul = diff.turnMul;
+    enemy.aiYawMul = diff.yawMul;
+    enemy.aiFireMul = diff.fireMul;
     enemy.alive = true;
     enemy.fireCd = 0;
     enemy.aiPhase = 0;
@@ -2832,8 +4087,37 @@ function resetCrafts() {
   updateKillHud();
 }
 
+function updateTechniqueHud() {
+  if (state.gameType === 'race') {
+    missionPill.style.display = '';
+    timePill.style.display = '';
+    killPill.style.display = 'none';
+    hudRightLabel.textContent = 'GATE';
+    missionPill.textContent = 'GATE ' + (state.nextGate + 1) + '/' + gates.length + ' · LAP ' + state.laps + '/' + RACE_LAPS;
+    timePill.textContent = 'TIME ' + state.raceTime.toFixed(1) + 's';
+    const done = state.laps * gates.length + state.nextGate;
+    const total = RACE_LAPS * gates.length;
+    document.getElementById('enemyHpFill').style.width =
+      Math.max(0, Math.min(100, (done / Math.max(1, total)) * 100)) + '%';
+  } else if (state.gameType === 'fertilizer') {
+    missionPill.style.display = '';
+    timePill.style.display = '';
+    killPill.style.display = '';
+    hudRightLabel.textContent = 'COVER';
+    const pct = Math.round(fertCoverageRatio() * 100);
+    missionPill.textContent = '散布 ' + pct + '%';
+    timePill.textContent = 'TIME ' + Math.ceil(Math.max(0, state.timeLeft));
+    killPill.textContent = 'ムラ ' + state.fertOverspray;
+    document.getElementById('enemyHpFill').style.width = Math.max(0, Math.min(100, pct)) + '%';
+  }
+}
+
 function updateMissionHud() {
   const isM = state.gameType === 'mission';
+  if (state.gameType === 'race' || state.gameType === 'fertilizer') {
+    updateTechniqueHud();
+    return;
+  }
   missionPill.style.display = isM ? '' : 'none';
   timePill.style.display = isM ? '' : 'none';
   if (isM) {
@@ -2847,6 +4131,12 @@ function updateMissionHud() {
     hudRightLabel.textContent = 'SWARM';
   } else if (state.gameType === 'deathmatch') {
     hudRightLabel.textContent = 'FFA';
+  } else if (state.gameType === 'defense') {
+    hudRightLabel.textContent = 'BASE';
+  } else if (isAirshipMode()) {
+    hudRightLabel.textContent = 'SHIP';
+  } else if (state.gameType === 'dogfight') {
+    hudRightLabel.textContent = 'CPU·' + getCpuDiffProfile(state.cpuDiff).label;
   } else {
     hudRightLabel.textContent = 'CPU';
   }
@@ -2858,6 +4148,14 @@ function updateHpUi() {
   if (state.gameType === 'dogfight' || state.gameType === 'online') {
     const eMax = enemy.maxHp || MAX_HP;
     document.getElementById('enemyHpFill').style.width = Math.max(0, (enemy.hp / eMax) * 100) + '%';
+  } else if (state.gameType === 'defense') {
+    document.getElementById('enemyHpFill').style.width =
+      Math.max(0, (state.baseHp / DEFENSE_BASE_MAX_HP) * 100) + '%';
+  } else if (isAirshipMode()) {
+    document.getElementById('enemyHpFill').style.width =
+      Math.max(0, (airship.hp / Math.max(1, airship.maxHp)) * 100) + '%';
+  } else if (state.gameType === 'race' || state.gameType === 'fertilizer') {
+    updateTechniqueHud();
   } else if (isSwarmMode()) {
     const total = Math.max(1, swarm.length);
     const left = aliveSwarmCount();
@@ -2883,9 +4181,9 @@ function applyFlight(craft, ctrl, dt, isAi) {
     }
   }
 
-  craft.yaw += ctrl.yaw * (isAi ? 2.0 : 2.4) * dt;
-  craft.pitch = THREE.MathUtils.clamp(craft.pitch + ctrl.pitch * (isAi ? 1.45 : 1.8) * dt, -0.85, 0.85);
-  craft.roll = THREE.MathUtils.clamp(craft.roll + ctrl.roll * (isAi ? 1.8 : 2.2) * dt, -0.9, 0.9);
+  craft.yaw += ctrl.yaw * (isAi ? 2.0 * (craft.aiYawMul || 1) : 2.4) * dt;
+  craft.pitch = THREE.MathUtils.clamp(craft.pitch + ctrl.pitch * (isAi ? 1.45 * (craft.aiTurnMul || 1) : 1.8) * dt, -0.85, 0.85);
+  craft.roll = THREE.MathUtils.clamp(craft.roll + ctrl.roll * (isAi ? 1.8 * (craft.aiTurnMul || 1) : 2.2) * dt, -0.9, 0.9);
   // auto-level slightly
   craft.pitch *= (1 - 0.55 * dt);
   craft.roll *= (1 - 0.7 * dt);
@@ -2963,7 +4261,9 @@ function applyFlight(craft, ctrl, dt, isAi) {
 }
 
 function makeProjectileMesh(profile, owner) {
-  const color = owner === 'player' ? profile.color : 0xff5252;
+  const color = owner === 'player' || owner === 'ally'
+    ? (owner === 'ally' ? 0x69f0ae : profile.color)
+    : (owner === 'ship' ? 0xff6d00 : 0xff5252);
   let mesh;
   if (profile.shape === 'laser') {
     mesh = new THREE.Mesh(
@@ -3009,7 +4309,7 @@ function fireBullet(from, toward, owner, profileOverride, sourceCraft) {
       dir.applyAxisAngle(new THREE.Vector3(1, 0, 0), pitchJ);
       dir.normalize();
     }
-    const mesh = makeProjectileMesh(profile, owner === 'player' ? 'player' : 'enemy');
+    const mesh = makeProjectileMesh(profile, owner);
     mesh.position.copy(from);
     scene.add(mesh);
     // 向き合わせ
@@ -3045,7 +4345,10 @@ function getCombatTargets() {
 }
 
 function getHomingTargetPos(owner, source) {
-  if (owner === 'player') {
+  if (owner === 'player' || owner === 'ally') {
+    if (isAirshipMode() && airship.alive) {
+      return getAirshipWeakWorld();
+    }
     if (state.gameType === 'mission') {
       let best = null;
       let bestD = 1e9;
@@ -3070,6 +4373,7 @@ function getHomingTargetPos(owner, source) {
     getCombatTargets().forEach((t) => {
       if (t === source) return;
       if (state.gameType === 'musou' && t !== player) return;
+      if (state.gameType === 'defense' && t !== player) return;
       const d = source.pos.distanceTo(t.pos);
       if (d < bestD) { bestD = d; best = t.pos; }
     });
@@ -3091,6 +4395,8 @@ function onCraftDestroyed(victim, byPlayer) {
   updateHpUi();
   if (state.gameType === 'musou' && aliveSwarmCount() <= 0) {
     endBattle(true);
+  } else if (state.gameType === 'defense') {
+    tryAdvanceDefenseWave();
   } else if (state.gameType === 'deathmatch') {
     const left = aliveSwarmCount() + (player.alive ? 1 : 0);
     if (player.alive && left <= 1) endBattle(true);
@@ -3174,11 +4480,49 @@ function updateBullets(dt) {
       if (!b.mesh.parent) continue;
     }
 
+    // 飛行艇ヒット（プレイヤー／味方弾）
+    if (isAirshipMode() && airship.alive && (b.owner === 'player' || b.owner === 'ally')) {
+      const weak = getAirshipWeakWorld();
+      const toShip = b.mesh.position.distanceTo(airship.pos);
+      const toWeak = b.mesh.position.distanceTo(weak);
+      if (toWeak < AIRSHIP_WEAK_R + hitR || toShip < airship.hitRadius + hitR) {
+        const srcAtk = (b.source && b.source.atk) || (b.owner === 'player' ? (player.atk || 12) : 10);
+        const raw = srcAtk * (b.dmgMul || 1);
+        damageAirship(raw, b.owner === 'player', toWeak < AIRSHIP_WEAK_R + hitR);
+        b.pierced = (b.pierced || 0) + 1;
+        if (b.pierced > (b.pierce || 0)) {
+          scene.remove(b.mesh);
+          state.bullets.splice(i, 1);
+        }
+        continue;
+      }
+    }
+
+    // 飛行艇の弾 → 自機
+    if (b.owner === 'ship' && player.alive) {
+      if (b.mesh.position.distanceTo(player.pos) < player.radius + hitR + 0.4) {
+        let dmg = 16 * (b.dmgMul || 1);
+        if (player.def) dmg *= (1 - player.def);
+        player.hp -= dmg;
+        updateHpUi();
+        showToast('飛行艇の砲撃！', 500);
+        scene.remove(b.mesh);
+        state.bullets.splice(i, 1);
+        if (player.hp <= 0) {
+          player.alive = false;
+          endBattle(false);
+        }
+        continue;
+      }
+    }
+
     const targets = getCombatTargets();
     for (let ti = 0; ti < targets.length; ti++) {
       const target = targets[ti];
       if (target === b.source) continue;
+      if (state.gameType === 'airship_coop') continue;
       if (state.gameType === 'musou' && b.owner !== 'player' && target !== player) continue;
+      if (state.gameType === 'defense' && b.owner !== 'player' && target !== player) continue;
       if (!target.alive || !target.mesh.visible) continue;
       if (b.mesh.position.distanceTo(target.pos) < target.radius + hitR) {
         applyBulletHit(b, target);
@@ -3194,7 +4538,7 @@ function updateBullets(dt) {
 }
 
 function updateGates() {
-  if (state.gameType !== 'mission') return;
+  if (state.gameType !== 'mission' && state.gameType !== 'race') return;
   const g = gates[state.nextGate];
   if (!g) return;
   if (player.pos.distanceTo(g.pos) < g.radius) {
@@ -3202,7 +4546,14 @@ function updateGates() {
     if (state.nextGate >= gates.length) {
       state.nextGate = 0;
       state.laps++;
-      showToast('周回完了！ LAP ' + state.laps + '/' + MISSION_LAPS, 1200);
+      const need = state.gameType === 'race' ? RACE_LAPS : MISSION_LAPS;
+      showToast('周回完了！ LAP ' + state.laps + '/' + need, 1200);
+      if (state.gameType === 'race' && state.laps >= RACE_LAPS) {
+        highlightGate(0);
+        updateMissionHud();
+        endBattle(true);
+        return;
+      }
     } else {
       showToast('ゲート通過 ' + state.nextGate + '/' + gates.length, 600);
     }
@@ -3284,9 +4635,64 @@ function aiControlCraft(craft, targetCraft, dt, style) {
 
   const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
   const aim = desiredDir.dot(forward);
-  const fireDistMax = style === 'musou' ? 48 : 52;
-  if (aim > 0.78 && dist < fireDistMax && dist > 5 && craft.pos.y > AI_MIN_ALT) {
+  const fireDistMax = style === 'musou' || style === 'defense' ? 48 : 52;
+  const aimNeed = craft.aiAimNeed != null ? craft.aiAimNeed : (style === 'dogfight' ? 0.78 : 0.78);
+  if (aim > aimNeed && dist < fireDistMax && dist > 5 && craft.pos.y > AI_MIN_ALT) {
     ctrl.fire = true;
+  }
+  return ctrl;
+}
+
+function aiControlDefense(craft, dt) {
+  if (!craft || !craft.alive) {
+    return { throttle: 0.65, yaw: 0, pitch: -0.15, roll: 0, fire: false };
+  }
+  craft.aiPhase = (craft.aiPhase || 0) + dt;
+  const breach = craft.breachTarget || new THREE.Vector3(0, AI_SAFE_ALT, DEFENSE_LINE_Z);
+  const toBreach = breach.clone().sub(craft.pos);
+  const distBreach = Math.max(0.1, toBreach.length());
+  const desiredDir = toBreach.clone().normalize();
+
+  // プレイヤーが前方にいれば少し回避しつつ進む
+  let dodge = new THREE.Vector3();
+  if (player.alive) {
+    const toP = player.pos.clone().sub(craft.pos);
+    if (toP.length() < 16) {
+      dodge.set(-toP.z, 0, toP.x).normalize().multiplyScalar(Math.sin(craft.aiPhase * 2.4) * 0.35);
+    }
+  }
+  const aimPoint = breach.clone().add(dodge.multiplyScalar(8));
+  const toAim = aimPoint.clone().sub(craft.pos).normalize();
+  const desiredYaw = Math.atan2(-toAim.x, -toAim.z);
+  let yawErr = desiredYaw - craft.yaw;
+  while (yawErr > Math.PI) yawErr -= Math.PI * 2;
+  while (yawErr < -Math.PI) yawErr += Math.PI * 2;
+
+  const targetAlt = Math.max(AI_SAFE_ALT, breach.y);
+  const altErr = targetAlt - craft.pos.y;
+  let throttle = 0.72 + THREE.MathUtils.clamp(altErr * 0.05, -0.2, 0.3);
+  if (distBreach > 20) throttle += 0.18;
+
+  let pitchCmd = THREE.MathUtils.clamp(-toAim.y * 0.85, -0.5, 0.4);
+  if (craft.pos.y < AI_SAFE_ALT + 2) pitchCmd = Math.min(pitchCmd, -0.2);
+
+  const ctrl = {
+    throttle: THREE.MathUtils.clamp(throttle, 0.4, 1),
+    yaw: THREE.MathUtils.clamp(yawErr * 1.55, -1, 1),
+    pitch: pitchCmd,
+    roll: THREE.MathUtils.clamp(yawErr * 0.35 + Math.sin(craft.aiPhase * 1.8) * 0.15, -0.8, 0.8),
+    fire: false
+  };
+
+  // プレイヤーを狙えるときだけ射撃（防衛線突破が主目的）
+  if (player.alive) {
+    const toP = player.pos.clone().sub(craft.pos);
+    const distP = toP.length();
+    const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
+    const aim = toP.clone().normalize().dot(forward);
+    if (aim > 0.72 && distP < 42 && distP > 6 && craft.pos.y > AI_MIN_ALT) {
+      ctrl.fire = true;
+    }
   }
   return ctrl;
 }
@@ -3307,18 +4713,136 @@ function pickDeathmatchTarget(craft) {
 }
 
 function updateCamera(dt) {
-  if (state.firstPerson) {
+  const mode = state.camMode || 'chase';
+  if (mode === 'fpv') {
     const q = player.mesh.quaternion;
     const offset = new THREE.Vector3(0, 0.25, -0.1).applyQuaternion(q);
     camera.position.copy(player.pos).add(offset);
     const look = player.pos.clone().add(new THREE.Vector3(0, 0, -8).applyQuaternion(q));
     camera.lookAt(look);
+    if (camera.fov !== 65) {
+      camera.fov = 65;
+      camera.updateProjectionMatrix();
+    }
+  } else if (mode === 'ground') {
+    // 地上オペレーター視点：目線高さから自機を追う
+    const eyeH = 1.65;
+    const flat = new THREE.Vector3(0, 0, -1).applyQuaternion(player.mesh.quaternion);
+    flat.y = 0;
+    if (flat.lengthSq() < 0.0001) flat.set(0, 0, 1);
+    else flat.normalize();
+    const desired = player.pos.clone().addScaledVector(flat, 18);
+    desired.y = eyeH;
+    // 距離が近すぎ／遠すぎないよう水平距離を確保
+    const dx = desired.x - player.pos.x;
+    const dz = desired.z - player.pos.z;
+    const horiz = Math.hypot(dx, dz);
+    if (horiz < 12) {
+      const s = 14 / Math.max(0.01, horiz);
+      desired.x = player.pos.x + dx * s;
+      desired.z = player.pos.z + dz * s;
+    } else if (horiz > 28) {
+      const s = 22 / horiz;
+      desired.x = player.pos.x + dx * s;
+      desired.z = player.pos.z + dz * s;
+    }
+    desired.y = eyeH;
+    camera.position.lerp(desired, 1 - Math.pow(0.004, dt));
+    camera.position.y = eyeH;
+    camera.lookAt(player.pos.x, player.pos.y + 0.4, player.pos.z);
+    if (camera.fov !== 58) {
+      camera.fov = 58;
+      camera.updateProjectionMatrix();
+    }
   } else {
     const back = new THREE.Vector3(0, 4.5, 10).applyQuaternion(player.mesh.quaternion);
     const desired = player.pos.clone().add(back);
     camera.position.lerp(desired, 1 - Math.pow(0.001, dt));
     const lookAt = player.pos.clone().add(new THREE.Vector3(0, 1.2, -6).applyQuaternion(player.mesh.quaternion));
     camera.lookAt(lookAt);
+    if (camera.fov !== 65) {
+      camera.fov = 65;
+      camera.updateProjectionMatrix();
+    }
+  }
+}
+
+function getRivalMarkerTarget() {
+  if (state.gameType === 'dogfight' || state.gameType === 'online' || state.gameType === 'airship_coop') {
+    if (enemy && enemy.alive && enemy.mesh && enemy.mesh.visible) return { pos: enemy.pos, label: state.gameType === 'airship_coop' ? 'ALLY' : (state.gameType === 'online' ? 'RIVAL' : 'CPU') };
+  }
+  if (isAirshipMode() && airship && airship.alive && airship.mesh && airship.mesh.visible) {
+    return { pos: airship.pos, label: 'SHIP' };
+  }
+  if (isSwarmMode() && swarm && swarm.length) {
+    let best = null;
+    let bestD = Infinity;
+    for (let i = 0; i < swarm.length; i++) {
+      const c = swarm[i];
+      if (!c || !c.alive) continue;
+      const d = c.pos.distanceToSquared(player.pos);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    if (best) return { pos: best.pos, label: 'ENEMY' };
+  }
+  return null;
+}
+
+function updateEnemyMarker() {
+  const el = document.getElementById('enemyMarker');
+  const labelEl = document.getElementById('enemyMarkerLabel');
+  if (!el) return;
+  if (!state.playing || state.over) {
+    el.style.display = 'none';
+    return;
+  }
+  const target = getRivalMarkerTarget();
+  if (!target || !target.pos) {
+    el.style.display = 'none';
+    return;
+  }
+  if (labelEl) labelEl.textContent = target.label || 'CPU';
+
+  const ndc = target.pos.clone().project(camera);
+  const behind = ndc.z > 1;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let sx = (ndc.x * 0.5 + 0.5) * vw;
+  let sy = (-ndc.y * 0.5 + 0.5) * vh;
+  const margin = 34;
+  const onScreen = !behind && ndc.x > -0.92 && ndc.x < 0.92 && ndc.y > -0.85 && ndc.y < 0.88;
+
+  el.style.display = 'block';
+  if (onScreen) {
+    el.classList.add('onscreen');
+    el.style.left = sx + 'px';
+    el.style.top = Math.max(margin, sy - 30) + 'px';
+    el.style.transform = 'translate(-50%, -50%) rotate(0deg)';
+  } else {
+    el.classList.remove('onscreen');
+    let dx = ndc.x;
+    let dy = -ndc.y;
+    if (behind) {
+      dx = -dx;
+      dy = -dy;
+    }
+    const ang = Math.atan2(dy, dx);
+    const cx = vw * 0.5;
+    const cy = vh * 0.48;
+    const rx = cx - margin;
+    const ry = cy - margin;
+    const cos = Math.cos(ang);
+    const sin = Math.sin(ang);
+    const t = 1 / Math.sqrt((cos * cos) / (rx * rx) + (sin * sin) / (ry * ry));
+    sx = cx + cos * t;
+    sy = cy + sin * t;
+    el.style.left = sx + 'px';
+    el.style.top = sy + 'px';
+    // 矢印デフォルトは上向き → 画面外方向へ回転
+    el.style.transform = 'translate(-50%, -50%) rotate(' + (ang + Math.PI / 2) + 'rad)';
   }
 }
 
@@ -3327,6 +4851,9 @@ function endBattle(win, reason) {
   state.playing = false;
   state.over = true;
   hud.classList.remove('active');
+  const em = document.getElementById('enemyMarker');
+  if (em) em.style.display = 'none';
+  if (player && player.mesh) player.mesh.visible = true;
   showScreen('result');
   const title = document.getElementById('resultTitle');
   const msg = document.getElementById('resultMsg');
@@ -3334,18 +4861,47 @@ function endBattle(win, reason) {
   const isOnline = state.gameType === 'online';
   const isMusou = state.gameType === 'musou';
   const isDm = state.gameType === 'deathmatch';
+  const isDef = state.gameType === 'defense';
+  const isRace = state.gameType === 'race';
+  const isFert = state.gameType === 'fertilizer';
+  const isShip = isAirshipMode();
   if (win) {
-    title.textContent = isM ? 'ミッション成功' : (isMusou ? '無双クリア' : (isDm ? 'サバイバル勝利' : '勝利'));
+    title.textContent = isM ? 'ミッション成功'
+      : (isMusou ? '無双クリア'
+        : (isDm ? 'サバイバル勝利'
+          : (isDef ? '防衛成功'
+            : (isRace ? 'レースクリア'
+              : (isFert ? '散布完了'
+                : (isShip ? '飛行艇撃破' : '勝利'))))));
     title.className = 'result-title win';
     try {
       loadMeta();
-      const bonus = isM ? 25 : (isOnline ? 40 : (isMusou ? 35 : (isDm ? 40 : 15)));
+      let bonus = 15;
+      if (isM) bonus = 25;
+      else if (isOnline) bonus = 40;
+      else if (isMusou) bonus = 35;
+      else if (isDm) bonus = 40;
+      else if (isDef) bonus = 38;
+      else if (isShip) bonus = state.gameType === 'airship_coop' ? 55 : 45;
+      else if (isRace) {
+        bonus = state.raceTime < 45 ? 35 : (state.raceTime < 70 ? 25 : 18);
+        const prev = Number(localStorage.getItem(RACE_BEST_KEY) || '0');
+        if (!prev || state.raceTime < prev) {
+          localStorage.setItem(RACE_BEST_KEY, String(state.raceTime.toFixed(2)));
+        }
+      } else if (isFert) {
+        const cov = fertCoverageRatio();
+        const neat = Math.max(0, 1 - state.fertOverspray / Math.max(1, fertCells.length * 2));
+        bonus = Math.round(12 + cov * 22 + neat * 10);
+      }
       meta.coins = (meta.coins || 0) + bonus;
       meta.wins = (meta.wins || 0) + 1;
       saveMeta();
       refreshMetaUI();
       if (reason === 'disconnect') {
-        msg.textContent = '相手が切断したため勝利扱いです（+' + bonus + 'コイン）。';
+        msg.textContent = state.gameType === 'airship_coop'
+          ? '協力相手が切断しました（+' + bonus + 'コイン）。'
+          : '相手が切断したため勝利扱いです（+' + bonus + 'コイン）。';
       } else if (isM) {
         msg.textContent = 'ゲート' + MISSION_LAPS + '周＋害虫全破壊を達成（Mode ' + state.mode + '）。+' + bonus + 'コイン / 残 ' + Math.ceil(state.timeLeft) + ' 秒。';
       } else if (isOnline) {
@@ -3354,25 +4910,54 @@ function endBattle(win, reason) {
         msg.textContent = '敵ドローン全滅！ 撃墜 ' + state.kills + ' 機 / +' + bonus + 'コイン。';
       } else if (isDm) {
         msg.textContent = 'デスマッチ生き残り！ 最後の1機 / +' + bonus + 'コイン。';
+      } else if (isDef) {
+        msg.textContent = '防衛線を守り切った！ 撃墜 ' + state.kills + ' 機 / 拠点残 ' + Math.ceil(state.baseHp) + ' / +' + bonus + 'コイン。';
+      } else if (isShip) {
+        msg.textContent = (state.gameType === 'airship_coop' ? '協力成功！' : '') + '巨大飛行艇を撃墜！ +' + bonus + 'コイン。';
+      } else if (isRace) {
+        const best = localStorage.getItem(RACE_BEST_KEY) || state.raceTime.toFixed(2);
+        msg.textContent = 'ゴール！ ' + state.raceTime.toFixed(2) + ' 秒（ベスト ' + best + 's）/ +' + bonus + 'コイン。';
+      } else if (isFert) {
+        const pct = Math.round(fertCoverageRatio() * 100);
+        msg.textContent = '畑をカバー ' + pct + '%（過剰散布 ' + state.fertOverspray + '）/ +' + bonus + 'コイン。';
       } else {
-        msg.textContent = 'CPU撃破！ Mode ' + state.mode + ' / +' + bonus + 'コイン。';
+        msg.textContent = 'CPU撃破！（' + getCpuDiffProfile(state.cpuDiff).label + '） Mode ' + state.mode + ' / +' + bonus + 'コイン。';
       }
     } catch (e) {
       msg.textContent = '勝利！';
     }
   } else {
-    title.textContent = isM ? 'ミッション失敗' : (isMusou || isDm ? '撃破' : '敗北');
+    title.textContent = isM ? 'ミッション失敗'
+      : (isDef ? '防衛失敗'
+        : (isRace ? 'リタイア'
+          : (isFert ? '散布失敗'
+            : (isShip ? '出撃失敗' : (isMusou || isDm ? '撃破' : '敗北')))));
     title.className = 'result-title lose';
-    if (reason === 'time') {
+    if (reason === 'time' && isFert) {
+      const pct = Math.round(fertCoverageRatio() * 100);
+      msg.textContent = '時間切れ。被覆率 ' + pct + '%。ムラを減らし適正高度で再挑戦しよう。';
+    } else if (reason === 'disconnect' && isShip) {
+      msg.textContent = '協力相手が切断したため作戦中止。ルームを作り直して再挑戦してください。';
+    } else if (reason === 'time') {
       msg.textContent = '時間切れです。周回と害虫撃破を急いで再挑戦しましょう。';
+    } else if (reason === 'base') {
+      msg.textContent = '拠点が陥落しました。防衛線の手前で敵を落とそう。撃墜 ' + state.kills + ' 機。';
     } else if (isOnline) {
       msg.textContent = 'オンライン対戦に敗北しました。再戦はロビーからルームを作り直してください。';
+    } else if (isShip) {
+      msg.textContent = '飛行艇の反撃に敗れた。ゴンドラ弱点を集中攻撃しよう。';
     } else if (isM) {
       msg.textContent = '機体が大破しました。低空の圃場や建物に注意して再挑戦してください。';
     } else if (isMusou) {
       msg.textContent = '群れに飲み込まれました。撃墜 ' + state.kills + ' 機。再挑戦して無双しよう！';
     } else if (isDm) {
       msg.textContent = '乱闘の渦に散りました。生き残れるまで再挑戦！';
+    } else if (isDef) {
+      msg.textContent = '防衛中に機体が大破。拠点残 ' + Math.ceil(state.baseHp) + ' / 撃墜 ' + state.kills + '。再防衛しよう！';
+    } else if (isRace) {
+      msg.textContent = 'レース中に墜落。通過ゲートを意識して再挑戦！（経過 ' + state.raceTime.toFixed(1) + 's）';
+    } else if (isFert) {
+      msg.textContent = '散布中に機体大破。被覆率 ' + Math.round(fertCoverageRatio() * 100) + '%。高度管理を意識しよう。';
     } else {
       msg.textContent = '機体が大破しました。ガチャ装備を強化して再挑戦してみてください。';
     }
@@ -3389,18 +4974,24 @@ function startBattle() {
   titleScreen.classList.remove('active');
   resultScreen.classList.remove('active');
   hud.classList.add('active');
-  setMissionWorldVisible(state.gameType === 'mission');
+  setModeWorldVisible();
   resetCrafts();
+  refreshFireButtonLabel();
   firePointers.clear();
   syncFireHeld();
   state.playing = true;
-  state.firstPerson = false;
+  state.camMode = 'chase';
+  syncCamModeUI();
   clock.getDelta();
   const labels = {
     mission: '圃場ミッション開始！',
     musou: '無双モード開始！敵 ' + MUSOU_COUNT + ' 機',
     deathmatch: 'デスマッチ乱闘開始！',
-    dogfight: 'ドッグファイト開始！'
+    defense: '防衛線モード開始！ WAVE 1/' + DEFENSE_WAVES.length,
+    airship: '巨大飛行艇撃破！弱点（ゴンドラ）を狙え',
+    race: 'エアレース開始！ゲートを走れ',
+    fertilizer: '肥料散布開始！適正高度でムラなく',
+    dogfight: 'ドッグファイト開始！（' + getCpuDiffProfile(state.cpuDiff).label + '）'
   };
   showToast((labels[state.gameType] || labels.dogfight) + ' Mode ' + state.mode, 1400);
 }
@@ -3423,9 +5014,16 @@ document.getElementById('toLobbyBtn').addEventListener('click', () => {
   state.playing = false;
   cleanupNet();
   clearSwarm();
-  setMissionWorldVisible(false);
+  hideAirship();
+  setModeWorldVisible();
+  setDefenseWorldVisible(false);
+  setFertilizerWorldVisible(false);
+  gateGroup.visible = false;
+  pestGroup.visible = false;
   enemy.mesh.visible = true;
   showScreen('lobby');
+  if (isTechniqueMode(state.gameType)) setLobbyCategory('technique');
+  else setLobbyCategory('battle');
 });
 document.getElementById('pauseBtn').addEventListener('click', () => {
   if (!state.playing) return;
@@ -3458,13 +5056,14 @@ function tick() {
         const muzzle = enemy.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
         fireBullet(muzzle, dir, 'enemy', getWeaponProfile('beam', enemy.atk || 14), enemy);
-        state.enemyFireCd = FIRE_COOLDOWN * 0.95;
+        state.enemyFireCd = FIRE_COOLDOWN * (enemy.aiFireMul != null ? enemy.aiFireMul : 0.95);
       }
     } else if (isSwarmMode()) {
       swarm.forEach((c) => {
         if (!c.alive) return;
-        const tgt = state.gameType === 'deathmatch' ? pickDeathmatchTarget(c) : player;
-        const ai = aiControlCraft(c, tgt, dt, state.gameType);
+        const ai = state.gameType === 'defense'
+          ? aiControlDefense(c, dt)
+          : aiControlCraft(c, state.gameType === 'deathmatch' ? pickDeathmatchTarget(c) : player, dt, state.gameType);
         applyFlight(c, ai, dt, true);
         c.fireCd = Math.max(0, (c.fireCd || 0) - dt);
         if (ai.fire && c.fireCd <= 0) {
@@ -3472,11 +5071,12 @@ function tick() {
           const muzzle = c.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
           const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
           fireBullet(muzzle, dir, 'enemy', getWeaponProfile('beam', c.atk || 10), c);
-          c.fireCd = FIRE_COOLDOWN * (state.gameType === 'musou' ? 1.35 : 1.05);
+          c.fireCd = FIRE_COOLDOWN * (state.gameType === 'musou' ? 1.35 : (state.gameType === 'defense' ? 1.25 : 1.05));
         }
         if (c.hp <= 0 && c.alive) onCraftDestroyed(c, false);
       });
-    } else if (state.gameType === 'online') {
+      if (state.gameType === 'defense') checkDefenseBreaches();
+    } else if (state.gameType === 'online' || state.gameType === 'airship_coop') {
       enemy.pos.lerp(state.remoteTarget, 1 - Math.pow(0.0008, dt));
       enemy.yaw = THREE.MathUtils.lerp(enemy.yaw, state.remoteYaw, 0.2);
       enemy.pitch = THREE.MathUtils.lerp(enemy.pitch, state.remotePitch, 0.2);
@@ -3503,15 +5103,19 @@ function tick() {
       }
     }
 
+    if (isAirshipMode()) updateAirship(dt);
+
     state.playerFireCd = Math.max(0, state.playerFireCd - dt);
-    if (ctrl.fire && state.playerFireCd <= 0 && player.alive) {
+    if (state.gameType === 'fertilizer') {
+      if (ctrl.fire && player.alive) sprayFertilizer(dt);
+    } else if (state.gameType !== 'race' && ctrl.fire && state.playerFireCd <= 0 && player.alive) {
       const profile = getWeaponProfile(player.weaponKind || 'beam', player.atk || 12);
       const q = player.mesh.quaternion;
       const muzzle = player.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
       fireBullet(muzzle, dir, 'player', profile);
       state.playerFireCd = profile.cooldown;
-      if (state.gameType === 'online') {
+      if (state.gameType === 'online' || state.gameType === 'airship_coop') {
         netSend({
           t: 'shot',
           x: muzzle.x,
@@ -3537,6 +5141,25 @@ function tick() {
       checkMissionClear();
       if (state.timeLeft <= 0 && !state.over) {
         endBattle(false, 'time');
+      }
+    } else if (state.gameType === 'airship') {
+    enemy.mesh.visible = false;
+    enemy.alive = false;
+    player.pos.set(0, 14, 30);
+    player.yaw = Math.PI;
+    player.mesh.position.copy(player.pos);
+    resetAirship();
+  } else if (state.gameType === 'race') {
+      state.raceTime += dt;
+      updateGates();
+      updateTechniqueHud();
+    } else if (state.gameType === 'fertilizer') {
+      state.timeLeft -= dt;
+      updateTechniqueHud();
+      if (state.timeLeft <= 0 && !state.over) {
+        // 時間切れでも被覆が高ければ成功寄り
+        if (fertCoverageRatio() >= 0.75) endBattle(true);
+        else endBattle(false, 'time');
       }
     }
 
@@ -3575,7 +5198,10 @@ function tick() {
     }
 
     updateCamera(dt);
+    updateEnemyMarker();
   } else if (!state.playing) {
+    const em = document.getElementById('enemyMarker');
+    if (em) em.style.display = 'none';
     playerGroundBlob.visible = false;
     enemyGroundBlob.visible = false;
     const t = performance.now() * 0.00025;

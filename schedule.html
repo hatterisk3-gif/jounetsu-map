@@ -264,10 +264,27 @@
       <div style="font-size:20px;">🏃‍♂️</div>
       <div style="font-weight:bold;">軌跡表示</div>
     </button>
+    <button type="button" onclick="openAttendanceCalendar()">
+      <div style="font-size:20px;">🗓️</div>
+      <div style="font-weight:bold;">出勤暦</div>
+    </button>
     <button type="button" onclick="openMyPage()">
       <div style="font-size:20px;">👤</div>
       <div style="font-weight:bold;">マイページ</div>
     </button>
+  </div>
+
+  <!-- 出勤カレンダー -->
+  <div id="attendanceCalendarModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10020; align-items:center; justify-content:center;">
+    <div style="background:#fff; width:min(720px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:linear-gradient(135deg,#1B5E20,#2E7D32); color:#fff;">
+        <span style="font-weight:bold; font-size:16px;">🗓️ 出勤カレンダー</span>
+        <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="closeAttendanceCalendar()">×</span>
+      </div>
+      <div style="padding:12px 16px; overflow:auto; flex:1;" id="attendanceCalendarBody">
+        <div style="color:#888;">読み込み中...</div>
+      </div>
+    </div>
   </div>
 
   <!-- アクションシート: 栽培計画 -->
@@ -360,6 +377,7 @@
     appendScript('map-loading.js?v=1785312000001')
       .then(() => appendScript('weather-agri.js?v=1785489000100'))
       .then(() => appendScript('schedule.js?v=' + cacheBust))
+      .then(() => appendScript('attendance-calendar.js?v=' + cacheBust))
       .then(() => appendScript('market.js?v=' + cacheBust))
       .then(() => appendScript('tracking.js?v=1784615000015'))
       .then(() => appendScript('cultivation.js?v=' + cacheBust))

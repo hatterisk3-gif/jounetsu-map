@@ -161,8 +161,17 @@ function doPost(e) {
     else if (action === "getScriptAuthorizationInfo") result = getScriptAuthorizationInfo(params);
     else if (action === "getLotList") result = getLotList(params);
     else if (action === "updateLotRecord") result = updateLotRecord(params);
-
-
+    else if (action === "droneLobby_list") result = droneLobby_list(params);
+    else if (action === "droneLobby_create") result = droneLobby_create(params);
+    else if (action === "droneLobby_heartbeat") result = droneLobby_heartbeat(params);
+    else if (action === "droneLobby_close") result = droneLobby_close(params);
+    else if (action === "getAttendanceCalendar") result = getAttendanceCalendar(params);
+    else if (action === "setLeaveDay") result = setLeaveDay(params);
+    else if (action === "clearLeaveDay") result = clearLeaveDay(params);
+    else if (action === "getAttendanceSettings") result = getAttendanceSettings(params);
+    else if (action === "saveAttendanceSettings") result = saveAttendanceSettings(params);
+    else if (action === "updateStaffHireDate") result = updateStaffHireDate(params);
+    else if (action === "getAttendanceStaffList") result = getAttendanceStaffList(params);
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
@@ -10178,7 +10187,683 @@ function deleteManualData(manualId) {
   }
 }
 
+/** ドローン対戦：オンラインロビー（マッチング）→ PeerJS 接続用 */
+const DRONE_LOBBY_SHEET = 'ドローン対戦ロビー';
+const DRONE_LOBBY_STALE_MS = 90 * 1000;
 
+function droneLobby_getSheet_() {
+  const ss = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(DRONE_LOBBY_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(DRONE_LOBBY_SHEET);
+    sheet.appendRow(['code', 'kind', 'mode', 'hostName', 'createdAt', 'lastBeat', 'status']);
+    sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+  }
+  return sheet;
+}
 
+function droneLobby_normalizeCode_(code) {
+  return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+}
+
+function droneLobby_findRow_(sheet, code) {
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (droneLobby_normalizeCode_(data[i][0]) === code) return i + 1;
+  }
+  return -1;
+}
+
+function droneLobby_purgeStale_(sheet) {
+  const data = sheet.getDataRange().getValues();
+  const now = Date.now();
+  for (let i = data.length - 1; i >= 1; i--) {
+    const status = String(data[i][6] || '');
+    if (status !== 'waiting') continue;
+    const beat = data[i][5] instanceof Date ? data[i][5].getTime() : new Date(data[i][5]).getTime();
+    if (!beat || isNaN(beat) || (now - beat) > DRONE_LOBBY_STALE_MS) {
+      sheet.getRange(i + 1, 7).setValue('closed');
+    }
+  }
+}
+
+function droneLobby_list(params) {
+  const sheet = droneLobby_getSheet_();
+  droneLobby_purgeStale_(sheet);
+  const kindFilter = params && params.kind ? String(params.kind) : '';
+  const data = sheet.getDataRange().getValues();
+  const rooms = [];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][6] || '') !== 'waiting') continue;
+    const kind = String(data[i][1] || 'pvp');
+    if (kindFilter && kind !== kindFilter) continue;
+    rooms.push({
+      code: droneLobby_normalizeCode_(data[i][0]),
+      kind: kind,
+      mode: Number(data[i][2]) === 1 ? 1 : 2,
+      hostName: String(data[i][3] || 'Player'),
+      createdAt: data[i][4] instanceof Date ? data[i][4].toISOString() : String(data[i][4] || '')
+    });
+  }
+  rooms.sort(function (a, b) {
+    return String(b.createdAt).localeCompare(String(a.createdAt));
+  });
+  return { rooms: rooms };
+}
+
+function droneLobby_create(params) {
+  const code = droneLobby_normalizeCode_(params && params.code);
+  if (code.length < 4) throw new Error('ルームコードが不正です');
+  const kind = (params && params.kind) === 'coop' ? 'coop' : 'pvp';
+  const mode = Number(params && params.mode) === 1 ? 1 : 2;
+  const hostName = String((params && params.hostName) || 'Player').slice(0, 24);
+  const sheet = droneLobby_getSheet_();
+  const now = new Date();
+  const row = droneLobby_findRow_(sheet, code);
+  if (row > 0) {
+    sheet.getRange(row, 1, row, 7).setValues([[code, kind, mode, hostName, now, now, 'waiting']]);
+  } else {
+    sheet.appendRow([code, kind, mode, hostName, now, now, 'waiting']);
+  }
+  return { ok: true, code: code };
+}
+
+function droneLobby_heartbeat(params) {
+  const code = droneLobby_normalizeCode_(params && params.code);
+  if (code.length < 4) throw new Error('ルームコードが不正です');
+  const sheet = droneLobby_getSheet_();
+  const row = droneLobby_findRow_(sheet, code);
+  if (row < 0) throw new Error('ルームが見つかりません');
+  const status = String(sheet.getRange(row, 7).getValue() || '');
+  if (status !== 'waiting') throw new Error('このルームは募集終了しています');
+  const kind = (params && params.kind) === 'coop' ? 'coop' : ((params && params.kind) === 'pvp' ? 'pvp' : null);
+  const mode = params && (params.mode === 1 || params.mode === 2 || params.mode === '1' || params.mode === '2')
+    ? (Number(params.mode) === 1 ? 1 : 2) : null;
+  sheet.getRange(row, 6).setValue(new Date());
+  if (kind) sheet.getRange(row, 2).setValue(kind);
+  if (mode) sheet.getRange(row, 3).setValue(mode);
+  return { ok: true };
+}
+
+function droneLobby_close(params) {
+  const code = droneLobby_normalizeCode_(params && params.code);
+  if (code.length < 4) return { ok: true };
+  const sheet = droneLobby_getSheet_();
+  const row = droneLobby_findRow_(sheet, code);
+  if (row > 0) sheet.getRange(row, 7).setValue('closed');
+  return { ok: true };
+}
+
+// ==========================================
+// 📅 出勤カレンダー / 休暇・有給
+// ==========================================
+
+function attPad2_(n) {
+  return String(n).padStart(2, '0');
+}
+
+function attFormatYmd_(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  return d.getFullYear() + '-' + attPad2_(d.getMonth() + 1) + '-' + attPad2_(d.getDate());
+}
+
+function attParseYmd_(s) {
+  const str = String(s || '').trim();
+  const m = str.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function attAddMonths_(d, months) {
+  const out = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = out.getDate();
+  out.setMonth(out.getMonth() + months);
+  if (out.getDate() < day) out.setDate(0);
+  return out;
+}
+
+function attDiffDays_(from, to) {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate()).getTime();
+  return Math.floor((b - a) / 86400000);
+}
+
+function attIsAdminRole_(role) {
+  const r = String(role || '');
+  return r.indexOf('管理') >= 0 || r === 'admin' || r === 'Admin';
+}
+
+function ensureAttendanceLeaveSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('休暇記録');
+  if (!sheet) {
+    sheet = ss.insertSheet('休暇記録');
+    sheet.appendRow(['スタッフID', 'ユーザー名', '日付', '休暇種別', 'メモ', '登録者', '登録日時']);
+  }
+  return sheet;
+}
+
+function ensureAttendanceSettingsSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('出勤カレンダー設定');
+  if (!sheet) {
+    sheet = ss.insertSheet('出勤カレンダー設定');
+    sheet.appendRow(['キー', '値']);
+    sheet.appendRow(['monthlyLeaveLimit', '8']);
+    sheet.appendRow(['unpaidYearlyLimit', '0']);
+  }
+  return sheet;
+}
+
+function ensureMeiboHireDateColumns_() {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('名簿');
+  if (!sheet) throw new Error('名簿シートが見つかりません');
+  const lastCol = Math.max(sheet.getLastColumn(), 4);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let hireCol = -1;
+  let overrideCol = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').trim();
+    if (h === '入社日' || h === 'hireDate') hireCol = c;
+    if (h === '有給付与上書き' || h === 'paidLeaveOverride') overrideCol = c;
+  }
+  let nextCol = lastCol;
+  if (hireCol < 0) {
+    hireCol = nextCol;
+    sheet.getRange(1, hireCol + 1).setValue('入社日');
+    nextCol++;
+  }
+  if (overrideCol < 0) {
+    overrideCol = Math.max(sheet.getLastColumn(), nextCol);
+    sheet.getRange(1, overrideCol + 1).setValue('有給付与上書き');
+  }
+  return { sheet: sheet, hireCol: hireCol, overrideCol: overrideCol };
+}
+
+function getAttendanceSettingsMap_() {
+  const sheet = ensureAttendanceSettingsSheet_();
+  const data = sheet.getDataRange().getValues();
+  const map = { monthlyLeaveLimit: 8, unpaidYearlyLimit: 0 };
+  for (let i = 1; i < data.length; i++) {
+    const key = String(data[i][0] || '').trim();
+    const val = data[i][1];
+    if (!key) continue;
+    if (key === 'monthlyLeaveLimit' || key === 'unpaidYearlyLimit') {
+      const n = parseInt(val, 10);
+      map[key] = isNaN(n) ? map[key] : Math.max(0, n);
+    } else {
+      map[key] = val;
+    }
+  }
+  return map;
+}
+
+function setAttendanceSettingValue_(key, value) {
+  const sheet = ensureAttendanceSettingsSheet_();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0] || '').trim() === key) {
+      sheet.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+  sheet.appendRow([key, value]);
+}
+
+/** 労基法の年次有給付与日数（週5日以上想定） */
+function calcStatutoryPaidLeaveDays_(hireDate, asOfDate) {
+  if (!hireDate || !asOfDate) return 0;
+  const firstGrant = attAddMonths_(hireDate, 6);
+  if (asOfDate < firstGrant) return 0;
+  let grantYears = 0;
+  let cursor = firstGrant;
+  while (true) {
+    const next = attAddMonths_(cursor, 12);
+    if (next > asOfDate) break;
+    cursor = next;
+    grantYears++;
+  }
+  // grantYears=0 → 勤続0.5年で10日, 1→1.5年で11日 ...
+  const table = [10, 11, 12, 14, 16, 18, 20];
+  if (grantYears >= table.length - 1) return 20;
+  return table[grantYears];
+}
+
+function getCurrentGrantPeriod_(hireDate, asOfDate) {
+  if (!hireDate) return { start: null, end: null, granted: 0 };
+  const firstGrant = attAddMonths_(hireDate, 6);
+  if (asOfDate < firstGrant) {
+    return { start: null, end: firstGrant, granted: 0 };
+  }
+  let start = firstGrant;
+  while (true) {
+    const next = attAddMonths_(start, 12);
+    if (next > asOfDate) break;
+    start = next;
+  }
+  const end = attAddMonths_(start, 12);
+  const granted = calcStatutoryPaidLeaveDays_(hireDate, asOfDate);
+  return { start: start, end: end, granted: granted };
+}
+
+function findMeiboUser_(userId, userName) {
+  const info = ensureMeiboHireDateColumns_();
+  const data = info.sheet.getDataRange().getValues();
+  const uid = String(userId || '').trim();
+  const uname = String(userName || '').trim();
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][0] || '').trim();
+    const name = String(data[i][2] || '').trim();
+    if ((uid && id === uid) || (uname && name === uname)) {
+      let hireRaw = data[i][info.hireCol];
+      let hireDate = null;
+      if (hireRaw instanceof Date && !isNaN(hireRaw.getTime())) {
+        hireDate = new Date(hireRaw.getFullYear(), hireRaw.getMonth(), hireRaw.getDate());
+      } else {
+        hireDate = attParseYmd_(hireRaw);
+      }
+      const overrideRaw = data[i][info.overrideCol];
+      const overrideNum = (overrideRaw === '' || overrideRaw == null) ? null : parseInt(overrideRaw, 10);
+      return {
+        row: i + 1,
+        userId: id,
+        password: String(data[i][1] || ''),
+        userName: name,
+        role: String(data[i][3] || '作業員'),
+        hireDate: hireDate,
+        hireDateYmd: hireDate ? attFormatYmd_(hireDate) : '',
+        paidLeaveOverride: (overrideNum != null && !isNaN(overrideNum)) ? overrideNum : null,
+        sheet: info.sheet,
+        hireCol: info.hireCol,
+        overrideCol: info.overrideCol
+      };
+    }
+  }
+  return null;
+}
+
+function getRequesterRole_(requesterId) {
+  const u = findMeiboUser_(requesterId, '');
+  return u ? u.role : '';
+}
+
+function buildTenureInfo_(hireDate, asOfDate) {
+  if (!hireDate) {
+    return { years: 0, days: 0, totalDays: 0, label: '入社日未登録', hireDateYmd: '' };
+  }
+  const totalDays = Math.max(0, attDiffDays_(hireDate, asOfDate));
+  let years = asOfDate.getFullYear() - hireDate.getFullYear();
+  let anniversary = new Date(asOfDate.getFullYear(), hireDate.getMonth(), hireDate.getDate());
+  if (anniversary > asOfDate) {
+    years--;
+    anniversary = new Date(asOfDate.getFullYear() - 1, hireDate.getMonth(), hireDate.getDate());
+  }
+  if (years < 0) years = 0;
+  const days = Math.max(0, attDiffDays_(anniversary, asOfDate));
+  return {
+    years: years,
+    days: days,
+    totalDays: totalDays,
+    label: years + '年' + days + '日（累計' + totalDays + '日）',
+    hireDateYmd: attFormatYmd_(hireDate)
+  };
+}
+
+function loadLeaveRows_(userId, userName) {
+  const sheet = ensureAttendanceLeaveSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  const values = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  const uid = String(userId || '').trim();
+  const uname = String(userName || '').trim();
+  const rows = [];
+  for (let i = 0; i < values.length; i++) {
+    const rowUid = String(values[i][0] || '').trim();
+    const rowName = String(values[i][1] || '').trim();
+    if (uid) {
+      if (rowUid) {
+        if (rowUid !== uid) continue;
+      } else if (uname) {
+        if (rowName !== uname) continue;
+      } else {
+        continue;
+      }
+    } else if (uname) {
+      if (rowName !== uname) continue;
+    } else {
+      continue;
+    }
+    let dateYmd = '';
+    const raw = values[i][2];
+    if (raw instanceof Date && !isNaN(raw.getTime())) dateYmd = attFormatYmd_(raw);
+    else dateYmd = attFormatYmd_(attParseYmd_(raw)) || String(raw || '').trim();
+    if (!dateYmd) continue;
+    rows.push({
+      sheetRow: i + 2,
+      userId: rowUid,
+      userName: rowName,
+      date: dateYmd,
+      leaveType: String(values[i][3] || 'その他'),
+      note: String(values[i][4] || ''),
+      createdBy: String(values[i][5] || ''),
+      createdAt: values[i][6]
+    });
+  }
+  return rows;
+}
+
+function loadAttendanceDaysFromTracking_(userName, year, month) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('トラッキング');
+  const days = {};
+  if (!sheet || !userName) return days;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return days;
+  const startRow = Math.max(2, lastRow - 14999);
+  const values = sheet.getRange(startRow, 1, lastRow - startRow + 1, 5).getValues();
+  const uname = String(userName).replace(/\s+/g, '');
+  const y = Number(year);
+  const m = Number(month);
+  for (let i = 0; i < values.length; i++) {
+    const type = String(values[i][4] || '');
+    if (type !== '出勤' && type !== 'アプリ起動') continue;
+    const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
+    if (!rowUser) continue;
+    if (rowUser !== uname && uname.indexOf(rowUser) < 0 && rowUser.indexOf(uname) < 0) continue;
+    const tObj = new Date(values[i][0]);
+    if (isNaN(tObj.getTime())) continue;
+    if (tObj.getFullYear() !== y || (tObj.getMonth() + 1) !== m) continue;
+    const ymd = attFormatYmd_(tObj);
+    if (!days[ymd]) {
+      days[ymd] = {
+        date: ymd,
+        clockInTime: attPad2_(tObj.getHours()) + ':' + attPad2_(tObj.getMinutes()),
+        types: [type]
+      };
+    }
+  }
+  return days;
+}
+
+function countLeavesInMonth_(leaveRows, year, month) {
+  const prefix = year + '-' + attPad2_(month);
+  let total = 0;
+  let unpaid = 0;
+  let paid = 0;
+  leaveRows.forEach(function (r) {
+    if (String(r.date).indexOf(prefix) !== 0) return;
+    total++;
+    if (r.leaveType === '有給') paid++;
+    else unpaid++;
+  });
+  return { total: total, unpaid: unpaid, paid: paid };
+}
+
+function countPaidUsedInPeriod_(leaveRows, start, end) {
+  if (!start || !end) return 0;
+  const s = attFormatYmd_(start);
+  const e = attFormatYmd_(end);
+  let n = 0;
+  leaveRows.forEach(function (r) {
+    if (r.leaveType !== '有給') return;
+    if (r.date >= s && r.date < e) n++;
+  });
+  return n;
+}
+
+function countUnpaidInYear_(leaveRows, year) {
+  const prefix = String(year) + '-';
+  let n = 0;
+  leaveRows.forEach(function (r) {
+    if (r.leaveType === '有給') return;
+    if (String(r.date).indexOf(prefix) === 0) n++;
+  });
+  return n;
+}
+
+function buildPaidLeaveSummary_(user, leaveRows, asOfDate) {
+  const tenure = buildTenureInfo_(user.hireDate, asOfDate);
+  const period = getCurrentGrantPeriod_(user.hireDate, asOfDate);
+  let granted = period.granted;
+  if (user.paidLeaveOverride != null) granted = user.paidLeaveOverride;
+  const used = countPaidUsedInPeriod_(leaveRows, period.start, period.end);
+  const remaining = Math.max(0, granted - used);
+  return {
+    hireDateYmd: user.hireDateYmd,
+    tenure: tenure,
+    grantStart: period.start ? attFormatYmd_(period.start) : '',
+    grantEnd: period.end ? attFormatYmd_(period.end) : '',
+    granted: granted,
+    used: used,
+    remaining: remaining,
+    override: user.paidLeaveOverride,
+    autoGranted: period.granted
+  };
+}
+
+function getAttendanceCalendar(params) {
+  const requesterId = String((params && params.requesterId) || (params && params.userId) || '').trim();
+  const targetUserId = String((params && params.targetUserId) || requesterId).trim();
+  const targetUserName = String((params && params.targetUserName) || '').trim();
+  const year = parseInt(params && params.year, 10) || new Date().getFullYear();
+  const month = parseInt(params && params.month, 10) || (new Date().getMonth() + 1);
+  const requester = findMeiboUser_(requesterId, '');
+  const target = findMeiboUser_(targetUserId, targetUserName);
+  if (!target) return { success: false, message: '対象ユーザーが見つかりません' };
+  if (requester && requester.userId !== target.userId && !attIsAdminRole_(requester.role)) {
+    return { success: false, message: '他のスタッフのカレンダーを見る権限がありません' };
+  }
+  const asOf = new Date();
+  const leaveRows = loadLeaveRows_(target.userId, target.userName);
+  const attendanceDays = loadAttendanceDaysFromTracking_(target.userName, year, month);
+  const settings = getAttendanceSettingsMap_();
+  const monthCounts = countLeavesInMonth_(leaveRows, year, month);
+  const paid = buildPaidLeaveSummary_(target, leaveRows, asOf);
+  const monthLeaves = leaveRows.filter(function (r) {
+    return String(r.date).indexOf(year + '-' + attPad2_(month)) === 0;
+  });
+  return {
+    success: true,
+    year: year,
+    month: month,
+    user: {
+      userId: target.userId,
+      userName: target.userName,
+      role: target.role,
+      hireDateYmd: target.hireDateYmd
+    },
+    isAdmin: requester ? attIsAdminRole_(requester.role) : false,
+    settings: settings,
+    paidLeave: paid,
+    monthLeaveCount: monthCounts.total,
+    monthLeaveLimit: settings.monthlyLeaveLimit,
+    unpaidYearCount: countUnpaidInYear_(leaveRows, year),
+    unpaidYearlyLimit: settings.unpaidYearlyLimit,
+    attendanceDays: attendanceDays,
+    leaveDays: monthLeaves,
+    allLeaveDays: leaveRows
+  };
+}
+
+function setLeaveDay(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const targetUserId = String((params && params.targetUserId) || requesterId).trim();
+  const dateYmd = attFormatYmd_(attParseYmd_(params && params.date));
+  const leaveType = String((params && params.leaveType) || '有給').trim();
+  const note = String((params && params.note) || '').trim();
+  const force = !!(params && params.force);
+  if (!dateYmd) return { success: false, message: '日付が不正です' };
+  if (['有給', '公休', 'その他'].indexOf(leaveType) < 0) {
+    return { success: false, message: '休暇種別が不正です' };
+  }
+  const requester = findMeiboUser_(requesterId, '');
+  const target = findMeiboUser_(targetUserId, params && params.targetUserName);
+  if (!target) return { success: false, message: '対象ユーザーが見つかりません' };
+  const isAdmin = requester && attIsAdminRole_(requester.role);
+  if (!requester || (requester.userId !== target.userId && !isAdmin)) {
+    return { success: false, message: '休みを設定する権限がありません' };
+  }
+  const leaveRows = loadLeaveRows_(target.userId, target.userName);
+  const existing = leaveRows.filter(function (r) { return r.date === dateYmd; })[0];
+  const settings = getAttendanceSettingsMap_();
+  const d = attParseYmd_(dateYmd);
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1;
+  const monthCounts = countLeavesInMonth_(leaveRows, year, month);
+  const wouldAdd = existing ? 0 : 1;
+  if (!force && settings.monthlyLeaveLimit > 0 && (monthCounts.total + wouldAdd) > settings.monthlyLeaveLimit) {
+    return {
+      success: false,
+      message: '月の休み上限（' + settings.monthlyLeaveLimit + '日）を超えます',
+      code: 'MONTHLY_LIMIT'
+    };
+  }
+  if (leaveType !== '有給') {
+    const unpaidYear = countUnpaidInYear_(leaveRows, year);
+    const unpaidAdd = (!existing || existing.leaveType === '有給') ? 1 : 0;
+    if (!force && settings.unpaidYearlyLimit > 0 && (unpaidYear + unpaidAdd) > settings.unpaidYearlyLimit) {
+      return {
+        success: false,
+        message: '年間の公休・その他の上限（' + settings.unpaidYearlyLimit + '日）を超えます',
+        code: 'YEARLY_UNPAID_LIMIT'
+      };
+    }
+  } else {
+    const paid = buildPaidLeaveSummary_(target, leaveRows, new Date());
+    const paidAdd = (!existing || existing.leaveType !== '有給') ? 1 : 0;
+    if (!force && paid.remaining < paidAdd) {
+      return {
+        success: false,
+        message: '有給残日数（' + paid.remaining + '日）が不足しています',
+        code: 'PAID_LEAVE_SHORT'
+      };
+    }
+  }
+  const sheet = ensureAttendanceLeaveSheet_();
+  const actor = requester.userName || requesterId;
+  if (existing) {
+    sheet.getRange(existing.sheetRow, 1, existing.sheetRow, 7).setValues([[
+      target.userId, target.userName, dateYmd, leaveType, note, actor, new Date()
+    ]]);
+  } else {
+    sheet.appendRow([target.userId, target.userName, dateYmd, leaveType, note, actor, new Date()]);
+  }
+  writeLog(actor, '休暇設定', target.userName, dateYmd + ' ' + leaveType);
+  return { success: true, message: '休みを設定しました' };
+}
+
+function clearLeaveDay(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const targetUserId = String((params && params.targetUserId) || requesterId).trim();
+  const dateYmd = attFormatYmd_(attParseYmd_(params && params.date));
+  if (!dateYmd) return { success: false, message: '日付が不正です' };
+  const requester = findMeiboUser_(requesterId, '');
+  const target = findMeiboUser_(targetUserId, params && params.targetUserName);
+  if (!target) return { success: false, message: '対象ユーザーが見つかりません' };
+  const isAdmin = requester && attIsAdminRole_(requester.role);
+  if (!requester || (requester.userId !== target.userId && !isAdmin)) {
+    return { success: false, message: '休みを削除する権限がありません' };
+  }
+  const leaveRows = loadLeaveRows_(target.userId, target.userName);
+  const existing = leaveRows.filter(function (r) { return r.date === dateYmd; })[0];
+  if (!existing) return { success: true, message: '該当する休みはありません' };
+  ensureAttendanceLeaveSheet_().deleteRow(existing.sheetRow);
+  writeLog(requester.userName || requesterId, '休暇削除', target.userName, dateYmd);
+  return { success: true, message: '休みを解除しました' };
+}
+
+function getAttendanceSettings(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const requester = findMeiboUser_(requesterId, '');
+  if (!requester || !attIsAdminRole_(requester.role)) {
+    return { success: false, message: '管理者のみ閲覧できます' };
+  }
+  return { success: true, settings: getAttendanceSettingsMap_() };
+}
+
+function saveAttendanceSettings(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const requester = findMeiboUser_(requesterId, '');
+  if (!requester || !attIsAdminRole_(requester.role)) {
+    return { success: false, message: '管理者のみ変更できます' };
+  }
+  const monthly = parseInt(params && params.monthlyLeaveLimit, 10);
+  const unpaid = parseInt(params && params.unpaidYearlyLimit, 10);
+  if (!isNaN(monthly) && monthly >= 0) setAttendanceSettingValue_('monthlyLeaveLimit', monthly);
+  if (!isNaN(unpaid) && unpaid >= 0) setAttendanceSettingValue_('unpaidYearlyLimit', unpaid);
+  writeLog(requester.userName || requesterId, '出勤カレンダー設定', 'システム',
+    '月上限=' + monthly + ' 年公休上限=' + unpaid);
+  return { success: true, settings: getAttendanceSettingsMap_(), message: '設定を保存しました' };
+}
+
+function updateStaffHireDate(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const requester = findMeiboUser_(requesterId, '');
+  if (!requester || !attIsAdminRole_(requester.role)) {
+    return { success: false, message: '管理者のみ変更できます' };
+  }
+  const targetUserId = String((params && params.targetUserId) || '').trim();
+  const target = findMeiboUser_(targetUserId, params && params.targetUserName);
+  if (!target) return { success: false, message: '対象ユーザーが見つかりません' };
+  const hireYmd = String((params && params.hireDate) || '').trim();
+  const hireDate = hireYmd ? attParseYmd_(hireYmd) : null;
+  if (hireYmd && !hireDate) return { success: false, message: '入社日が不正です' };
+  target.sheet.getRange(target.row, target.hireCol + 1).setValue(hireDate ? attFormatYmd_(hireDate) : '');
+  if (params && params.paidLeaveOverride !== undefined) {
+    const ov = String(params.paidLeaveOverride).trim();
+    if (ov === '') {
+      target.sheet.getRange(target.row, target.overrideCol + 1).setValue('');
+    } else {
+      const n = parseInt(ov, 10);
+      if (isNaN(n) || n < 0) return { success: false, message: '有給付与上書きが不正です' };
+      target.sheet.getRange(target.row, target.overrideCol + 1).setValue(n);
+    }
+  }
+  const updated = findMeiboUser_(target.userId, '');
+  const leaveRows = loadLeaveRows_(updated.userId, updated.userName);
+  const paid = buildPaidLeaveSummary_(updated, leaveRows, new Date());
+  writeLog(requester.userName || requesterId, '入社日更新', updated.userName, updated.hireDateYmd || '(クリア)');
+  return { success: true, message: '入社日を更新しました', paidLeave: paid, user: {
+    userId: updated.userId,
+    userName: updated.userName,
+    hireDateYmd: updated.hireDateYmd,
+    paidLeaveOverride: updated.paidLeaveOverride
+  }};
+}
+
+function getAttendanceStaffList(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const requester = findMeiboUser_(requesterId, '');
+  if (!requester || !attIsAdminRole_(requester.role)) {
+    return { success: false, message: '管理者のみ閲覧できます' };
+  }
+  const info = ensureMeiboHireDateColumns_();
+  const data = info.sheet.getDataRange().getValues();
+  const asOf = new Date();
+  const list = [];
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][0] || '').trim();
+    const name = String(data[i][2] || '').trim();
+    if (!id && !name) continue;
+    const user = findMeiboUser_(id, name);
+    if (!user) continue;
+    const leaveRows = loadLeaveRows_(user.userId, user.userName);
+    const paid = buildPaidLeaveSummary_(user, leaveRows, asOf);
+    list.push({
+      userId: user.userId,
+      userName: user.userName,
+      role: user.role,
+      hireDateYmd: user.hireDateYmd,
+      paidLeaveOverride: user.paidLeaveOverride,
+      tenureLabel: paid.tenure.label,
+      granted: paid.granted,
+      remaining: paid.remaining,
+      used: paid.used
+    });
+  }
+  return { success: true, staff: list, settings: getAttendanceSettingsMap_() };
+}
 
 
