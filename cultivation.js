@@ -1652,7 +1652,7 @@ function buildCpVarietySelectHtml(plan) {
         const sel = String(v) === cur ? ' selected' : '';
         return `<option value="${esc}"${sel}>${esc}</option>`;
     }).join('');
-    return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="flex:1; min-width:52px; height:18px; font-size:10px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
+    return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="display:block; width:100%; min-width:0; height:20px; font-size:11px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
 }
 
 /** 計画カードの品種セレクトを作り直す */
@@ -2674,10 +2674,12 @@ function renderCpPlanRow(plan) {
     card.innerHTML = `
         <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
             <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0; font-weight:bold;">${escapeCpHtmlAttr(plan.crop)}</span>
-            ${buildCpVarietySelectHtml(plan)}
             ${fileLinkHtml}
-            <span id="tagDisplay_${plan.id}" style="color:#e91e63; font-size:9px; font-weight:bold; flex-shrink:0;">${plan.tag || ''}</span>
+            <span id="tagDisplay_${plan.id}" style="color:#e91e63; font-size:9px; font-weight:bold; flex-shrink:0; margin-left:auto;">${plan.tag || ''}</span>
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:13px; line-height:1; padding:0; width:14px; flex-shrink:0; font-weight:bold;">×</button>
+        </div>
+        <div style="margin-top:2px; min-width:0;">
+            ${buildCpVarietySelectHtml(plan)}
         </div>
         <div style="display:flex; flex-direction:column; gap:2px; margin-top:2px; font-size:10px;">
             <label style="display:flex; align-items:center; gap:3px; cursor:pointer; min-width:0;">
