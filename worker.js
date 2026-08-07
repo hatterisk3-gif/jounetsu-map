@@ -4671,18 +4671,30 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.getDetailWorksForWorkAndCrop = (wObj, cropKey) => {
         if (!wObj) return [];
+        const crop = window.normalizeWorkCropKey(cropKey);
         let detailsStr = '';
 
         if (wObj.cropDetails && typeof wObj.cropDetails === 'object') {
-          if (cropKey && wObj.cropDetails[cropKey] != null) {
-            detailsStr = wObj.cropDetails[cropKey];
-          } else if (wObj.cropDetails['__common__'] != null) {
+          if (crop && wObj.cropDetails[crop] != null) {
+            detailsStr = wObj.cropDetails[crop];
+          } else if (crop && crop !== '__common__') {
+            const label = window.getWorkCropLabel(crop);
+            if (label && wObj.cropDetails[label] != null) detailsStr = wObj.cropDetails[label];
+          }
+          // 共通キーは「共通」選択時のみ（他作物へ漏らさない）
+          if (!detailsStr && crop === '__common__' && wObj.cropDetails['__common__'] != null) {
             detailsStr = wObj.cropDetails['__common__'];
           }
         }
 
+        // 共有 detailWorks は、このマスタ行の作物が指定作物と一致するときだけ使う
         if (!detailsStr && wObj.detailWorks) {
-          detailsStr = wObj.detailWorks;
+          const wCrop = window.normalizeWorkCropKey(wObj.cropName || wObj.crop || '');
+          if (wCrop === crop) {
+            detailsStr = wObj.detailWorks;
+          } else if (crop === '__common__' && (wCrop === '__common__' || !String(wObj.cropName || '').trim())) {
+            detailsStr = wObj.detailWorks;
+          }
         }
 
         if (!detailsStr) return [];
@@ -6722,31 +6734,60 @@ function createSignboardMarker(name, pos, icon, id) {
           return [];
         }
 
-        const wObj = window.findWorkMasterForNameAndCrop_(wName, cropKey);
-        let details = [];
-        if (typeof window.getDetailWorksForWorkAndCrop === 'function' && wObj) {
-          details = window.getDetailWorksForWorkAndCrop(wObj, cropKey) || [];
-        }
-        if (!details.length && wObj && wObj.detailWorks) {
-          details = window.parseDetailWorksList(wObj.detailWorks);
-        }
-        // 同名作業の別作物マスタ行から detailWorks を補完（cropDetailsが無い場合）
-        if (!details.length) {
-          const sameName = (pdlWorkMaster || []).filter(w => String(w.name || '').trim() === String(wName || '').trim());
-          const cropNorm = window.normalizeWorkCropKey(cropKey);
-          const cropHit = sameName.find(w => window.normalizeWorkCropKey(w.cropName || w.crop || '') === cropNorm);
-          if (cropHit && cropHit.detailWorks) {
-            details = window.parseDetailWorksList(cropHit.detailWorks);
+        const cropNorm = window.normalizeWorkCropKey(cropKey);
+        const sameName = (pdlWorkMaster || []).filter(w => String(w.name || '').trim() === String(wName || '').trim());
+
+        // 1) 作物別詳細（cropDetails）を優先
+        for (let i = 0; i < sameName.length; i++) {
+          const w = sameName[i];
+          if (!w || !w.cropDetails || typeof w.cropDetails !== 'object') continue;
+          let raw = null;
+          if (w.cropDetails[cropNorm] != null) raw = w.cropDetails[cropNorm];
+          else if (cropNorm !== '__common__') {
+            const label = window.getWorkCropLabel(cropNorm);
+            if (label && w.cropDetails[label] != null) raw = w.cropDetails[label];
+          }
+          if (raw != null && String(raw).trim()) {
+            return window.parseDetailWorksList(raw);
           }
         }
-        if (!details.length) {
-          const chip = Array.from(document.querySelectorAll('.work-chip')).find(c => c.dataset.wname === wName);
-          if (chip && chip.dataset.details) {
-            try { details = window.parseDetailWorksList(decodeURIComponent(chip.dataset.details)); }
-            catch (e) { details = window.parseDetailWorksList(chip.dataset.details); }
+
+        // 2) 指定作物専用のマスタ行の detailWorks のみ（他作物行へフォールバックしない）
+        const cropHit = sameName.find(w => {
+          if (!w) return false;
+          const wCrop = window.normalizeWorkCropKey(w.cropName || w.crop || '');
+          if (wCrop === cropNorm) return true;
+          let cropList = [];
+          if (w.crops && Array.isArray(w.crops)) cropList = w.crops;
+          else if (w.cropName) cropList = String(w.cropName).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+          // 複数作物行は cropDetails 側で持つ想定。単一一致のみ detailWorks を使う
+          if (cropList.length === 1) {
+            return window.normalizeWorkCropKey(cropList[0]) === cropNorm;
+          }
+          return false;
+        });
+        if (cropHit && cropHit.detailWorks) {
+          return window.parseDetailWorksList(cropHit.detailWorks);
+        }
+
+        // 3) 「共通」選択時のみ、共通行／空作物行の detailWorks を使う
+        if (cropNorm === '__common__') {
+          const commonHit = sameName.find(w => {
+            const wCrop = window.normalizeWorkCropKey(w.cropName || w.crop || '');
+            return wCrop === '__common__' || !String(w.cropName || '').trim();
+          });
+          if (commonHit && commonHit.detailWorks) {
+            return window.parseDetailWorksList(commonHit.detailWorks);
+          }
+          for (let i = 0; i < sameName.length; i++) {
+            const w = sameName[i];
+            if (w && w.cropDetails && w.cropDetails['__common__'] != null && String(w.cropDetails['__common__']).trim()) {
+              return window.parseDetailWorksList(w.cropDetails['__common__']);
+            }
           }
         }
-        return details;
+
+        return [];
       };
 
       window.getPrepTargetWorkName_ = () => {
@@ -6794,7 +6835,6 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="font-size:13px; font-weight:bold; color:#1a73e8;">${headerTitle}</div>
             <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
               <button type="button" onclick="openDetailWorkFromMasterPicker()" style="background:#ede7f6; color:#5e35b1; border:1px solid #d1c4e9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業名から追加</button>
-              ${isAdmin ? `<button type="button" onclick="adminAddDetailWork('${safeWName}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px;">＋ 詳細を追加</button>` : ''}
             </div>
          </div>
          <div id="detail_stage_panel" style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:10px 12px; margin-bottom:10px;">
@@ -6820,7 +6860,7 @@ function createSignboardMarker(name, pos, icon, id) {
          <div style="font-size:11px; color:#546e7a; background:#e8eaf6; border:1px solid #c5cae9; border-radius:6px; padding:8px 10px; margin-bottom:10px; line-height:1.45;">
            ${isPrep
              ? `詳細作業は<strong>準備 − ${String(prepTarget).replace(/</g,'&lt;')}</strong> の組み合わせ専用です。対象作業の詳細はここに出ません。<br>`
-             : `作業1件に複数作物を選べます。詳細作業は<strong>作物ごと</strong>に選択してください。<br>`}
+             : `作業1件に複数作物を選べます。詳細作業は<strong>作物ごと</strong>に選択してください（他作物で登録した詳細は表示されません）。<br>`}
            <b>開始・終了が分からないとき</b>は、チェック後に右の「分」だけ手入力すれば時間を記録できます。
          </div>`;
 
@@ -6828,6 +6868,7 @@ function createSignboardMarker(name, pos, icon, id) {
          crops.forEach((cropInfo) => {
             const cropKey = cropInfo.key;
             const cropLabel = cropInfo.label || '共通';
+            const safeCropKey = String(cropKey || '__common__').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const details = isPrep
               ? (window.getPrepComboDetailNames_(wName, prepTarget) || [])
               : window.getDetailNamesForWorkCrop_(wName, cropKey);
@@ -6839,7 +6880,10 @@ function createSignboardMarker(name, pos, icon, id) {
 
             const cropAttr = isPrep ? '' : String(cropLabel === '共通' ? '' : cropLabel).replace(/"/g, '&quot;');
             dHtml += `<div class="detail-work-crop-block" data-crop="${cropAttr}" style="margin-bottom:12px; background:#fff; border:1px solid #c5cae9; border-radius:8px; padding:10px 12px;">`;
-            dHtml += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin-bottom:8px;">${isPrep ? '📋' : '🌱'} ${String(cropLabel).replace(/</g,'&lt;')} <span style="font-weight:normal; color:#888;">／ ${safeWName}</span></div>`;
+            dHtml += `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+              <div style="font-size:12px; font-weight:bold; color:#2e7d32;">${isPrep ? '📋' : '🌱'} ${String(cropLabel).replace(/</g,'&lt;')} <span style="font-weight:normal; color:#888;">／ ${safeWName}</span></div>
+              ${isAdmin ? `<button type="button" onclick="adminAddDetailWork('${safeWName}', '${isPrep ? '' : safeCropKey}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 詳細を追加</button>` : ''}
+            </div>`;
             dHtml += `<div style="display:flex; flex-direction:column; gap:8px;">`;
 
             if (mergedDetails.length === 0) {
@@ -6862,8 +6906,8 @@ function createSignboardMarker(name, pos, icon, id) {
                       <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                          ${isExtra ? `<button type="button" onclick="event.stopPropagation(); event.preventDefault(); removeRecordExtraDetailWork('${safeArg}')" title="この記録から外す" style="background:#fff; color:#6a1b9a; border:1px solid #d1c4e9; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">×</button>` : ''}
                          ${isAdmin && masterIdx >= 0 ? `
-                            <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${masterIdx})" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">✏️</button>
-                            <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${masterIdx})" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">🗑️</button>
+                            <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminEditDetailWork('${safeWName}', ${masterIdx}, '${isPrep ? '' : safeCropKey}')" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">✏️</button>
+                            <button type="button" onclick="event.stopPropagation(); event.preventDefault(); adminDeleteDetailWork('${safeWName}', ${masterIdx}, '${isPrep ? '' : safeCropKey}')" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">🗑️</button>
                          ` : ''}
                       </div>
                    </div>
@@ -8391,8 +8435,8 @@ function createSignboardMarker(name, pos, icon, id) {
           if (m) m.remove();
       };
 
-      /** 管理者編集用に、いま画面で編集対象の詳細リストを取得（準備×対象なら組み合わせ別） */
-      window.getAdminEditableDetailNames_ = (wName) => {
+      /** 管理者編集用に、いま画面で編集対象の詳細リストを取得（準備×対象／作物別） */
+      window.getAdminEditableDetailNames_ = (wName, cropKey) => {
           const name = String(wName || '').trim();
           if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(name)) {
               const target = typeof window.getPrepTargetWorkName_ === 'function' ? window.getPrepTargetWorkName_() : '';
@@ -8416,11 +8460,29 @@ function createSignboardMarker(name, pos, icon, id) {
               }
               return [];
           }
-          const workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === name);
-          return window.parseDetailWorksList(workData ? workData.detailWorks : '');
+          const crop = (typeof window.resolveDetailWorkCropKey_ === 'function')
+            ? window.resolveDetailWorkCropKey_(cropKey)
+            : window.normalizeWorkCropKey(cropKey || '__common__');
+          return (typeof window.getDetailNamesForWorkCrop_ === 'function')
+            ? (window.getDetailNamesForWorkCrop_(name, crop) || [])
+            : [];
       };
 
-      window.openDetailWorkEditorModal = (mode, wName, index = -1) => {
+      /** 詳細作業の登録先作物キーを解決 */
+      window.resolveDetailWorkCropKey_ = (cropKey) => {
+          if (cropKey != null && String(cropKey).trim() !== '') {
+            return window.normalizeWorkCropKey(cropKey);
+          }
+          const crops = (typeof window.getCropsForDetailWorks === 'function')
+            ? window.getCropsForDetailWorks()
+            : [];
+          if (crops && crops.length === 1) return crops[0].key;
+          const real = (crops || []).find(c => c && c.key && c.key !== '__common__');
+          if (real) return real.key;
+          return (crops && crops[0] && crops[0].key) || '__common__';
+      };
+
+      window.openDetailWorkEditorModal = (mode, wName, index = -1, cropKey = '') => {
           const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
           if (userRole !== '管理者') {
               if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
@@ -8433,26 +8495,29 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof customAlert === 'function') customAlert('準備対象の作業を選んでから、詳細作業を追加してください。');
               return;
           }
-          let details = window.getAdminEditableDetailNames_(wName);
+          const resolvedCrop = isPrep ? '' : window.resolveDetailWorkCropKey_(cropKey);
+          let details = window.getAdminEditableDetailNames_(wName, resolvedCrop);
           const isEdit = (mode === 'edit');
           const targetVal = isEdit && index >= 0 && index < details.length ? details[index] : '';
           const title = isEdit ? '詳細作業名を編集' : '新しい詳細作業を追加';
           const safeNameAttr = String(wName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const safeCropAttr = String(resolvedCrop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           const scopeLabel = isPrep
               ? `準備 − ${prepTarget}`
-              : String(wName || '');
+              : `${window.getWorkCropLabel(resolvedCrop)} ／ ${String(wName || '')}`;
 
           const modal = document.createElement('div');
           modal.id = 'detailWorkEditorModal';
+          modal.dataset.cropKey = resolvedCrop || '';
           modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12200; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
           modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:400px; border-radius:10px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
               <h3 style="margin:0 0 8px; font-size:16px; color:#1565c0;">${title}</h3>
-              <div style="font-size:12px; color:#666; margin-bottom:12px;">登録先: <b>${String(scopeLabel).replace(/</g, '&lt;')}</b>${isPrep ? `<div style="margin-top:4px; color:#2E7D32;">（準備作業「${String(wName || '').replace(/</g,'&lt;')}」の組み合わせ別）</div>` : ''}</div>
+              <div style="font-size:12px; color:#666; margin-bottom:12px;">登録先: <b>${String(scopeLabel).replace(/</g, '&lt;')}</b>${isPrep ? `<div style="margin-top:4px; color:#2E7D32;">（準備作業「${String(wName || '').replace(/</g,'&lt;')}」の組み合わせ別）</div>` : `<div style="margin-top:4px; color:#2E7D32;">この作物でのみ表示されます</div>`}</div>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業名</label>
-              <input type="text" id="dw_edit_name_input" value="${String(targetVal).replace(/"/g, '&quot;')}" placeholder="例: 苗の選別" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:14px; font-size:15px;" onkeydown="if(event.key==='Enter') submitDetailWorkEditor('${mode}', '${safeNameAttr}', ${index})">
+              <input type="text" id="dw_edit_name_input" value="${String(targetVal).replace(/"/g, '&quot;')}" placeholder="例: 苗の選別" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:14px; font-size:15px;" onkeydown="if(event.key==='Enter') submitDetailWorkEditor('${mode}', '${safeNameAttr}', ${index}, '${safeCropAttr}')">
               <div style="display:flex; gap:8px;">
                 <button type="button" onclick="closeDetailWorkEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
-                <button type="button" onclick="submitDetailWorkEditor('${mode}', '${safeNameAttr}', ${index})" style="flex:1; background:#1565c0; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${isEdit ? '更新する' : '追加する'}</button>
+                <button type="button" onclick="submitDetailWorkEditor('${mode}', '${safeNameAttr}', ${index}, '${safeCropAttr}')" style="flex:1; background:#1565c0; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${isEdit ? '更新する' : '追加する'}</button>
               </div>
             </div>`;
           document.body.appendChild(modal);
@@ -8462,7 +8527,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }, 50);
       };
 
-      window.submitDetailWorkEditor = async (mode, wName, index) => {
+      window.submitDetailWorkEditor = async (mode, wName, index, cropKey) => {
           const input = document.getElementById('dw_edit_name_input');
           if (!input) return;
           let newVal = String(input.value || '').trim();
@@ -8470,7 +8535,11 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof customAlert === 'function') customAlert('詳細作業名を入力してください。');
               return;
           }
-          let details = window.getAdminEditableDetailNames_(wName);
+          const modal = document.getElementById('detailWorkEditorModal');
+          const resolvedCrop = (cropKey != null && String(cropKey).trim() !== '')
+            ? cropKey
+            : (modal && modal.dataset ? modal.dataset.cropKey : '');
+          let details = window.getAdminEditableDetailNames_(wName, resolvedCrop);
 
           if (mode === 'add') {
               if (details.includes(newVal)) {
@@ -8479,7 +8548,7 @@ function createSignboardMarker(name, pos, icon, id) {
               }
               details.push(newVal);
               window.closeDetailWorkEditorModal();
-              await window.saveAdminDetailWorks(wName, details, '追加');
+              await window.saveAdminDetailWorks(wName, details, '追加', resolvedCrop);
           } else if (mode === 'edit') {
               if (index < 0 || index >= details.length) return;
               const oldVal = details[index];
@@ -8489,41 +8558,43 @@ function createSignboardMarker(name, pos, icon, id) {
               }
               details[index] = newVal;
               window.closeDetailWorkEditorModal();
-              await window.saveAdminDetailWorks(wName, details, '更新');
+              await window.saveAdminDetailWorks(wName, details, '更新', resolvedCrop);
           }
       };
 
-      window.adminAddDetailWork = async function(wName) {
-          window.openDetailWorkEditorModal('add', wName);
+      window.adminAddDetailWork = async function(wName, cropKey) {
+          window.openDetailWorkEditorModal('add', wName, -1, cropKey);
       };
 
-      window.adminEditDetailWork = async function(wName, index) {
-          window.openDetailWorkEditorModal('edit', wName, index);
+      window.adminEditDetailWork = async function(wName, index, cropKey) {
+          window.openDetailWorkEditorModal('edit', wName, index, cropKey);
       };
 
-      window.adminDeleteDetailWork = async function(wName, index) {
+      window.adminDeleteDetailWork = async function(wName, index, cropKey) {
           const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
           if (userRole !== '管理者') {
               if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
               return;
           }
 
-          let details = window.getAdminEditableDetailNames_(wName);
+          let details = window.getAdminEditableDetailNames_(wName, cropKey);
           if (index < 0 || index >= details.length) return;
 
           const targetVal = details[index];
-          if (!await customConfirm(`詳細作業「${targetVal}」を削除しますか？`)) return;
+          const cropLabel = window.getWorkCropLabel(window.resolveDetailWorkCropKey_(cropKey));
+          if (!await customConfirm(`詳細作業「${targetVal}」を削除しますか？\n（${cropLabel}）`)) return;
 
           details.splice(index, 1);
-          await window.saveAdminDetailWorks(wName, details, '削除');
+          await window.saveAdminDetailWorks(wName, details, '削除', cropKey);
       };
 
-      window.saveAdminDetailWorks = async function(wName, newDetailsArray, actionLabel) {
+      window.saveAdminDetailWorks = async function(wName, newDetailsArray, actionLabel, cropKey) {
           const newDetailWorksStr = (newDetailsArray || []).join(', ');
           let workData = (pdlWorkMaster || []).find(w => String(w.name || '').trim() === wName);
           const isPrep = typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName);
           const prepTarget = isPrep && typeof window.getPrepTargetWorkName_ === 'function'
               ? window.getPrepTargetWorkName_() : '';
+          const resolvedCrop = isPrep ? '' : window.resolveDetailWorkCropKey_(cropKey);
 
           if (isPrep && !prepTarget) {
               if (typeof customAlert === 'function') customAlert('準備対象の作業を選んでから詳細作業を保存してください。');
@@ -8534,9 +8605,11 @@ function createSignboardMarker(name, pos, icon, id) {
               workData = {
                   name: wName,
                   category: isPrep ? '準備作業' : '圃場作業',
-                  cropName: '',
-                  detailWorks: isPrep ? '' : newDetailWorksStr,
-                  cropDetails: isPrep ? { [prepTarget]: newDetailWorksStr } : null
+                  cropName: isPrep ? '' : (resolvedCrop === '__common__' ? '共通' : window.getWorkCropLabel(resolvedCrop)),
+                  detailWorks: '',
+                  cropDetails: isPrep
+                    ? { [prepTarget]: newDetailWorksStr }
+                    : { [resolvedCrop]: newDetailWorksStr }
               };
               if (!Array.isArray(pdlWorkMaster)) pdlWorkMaster = [];
               pdlWorkMaster.push(workData);
@@ -8552,7 +8625,27 @@ function createSignboardMarker(name, pos, icon, id) {
               cd[prepTarget] = newDetailWorksStr;
               workData.cropDetails = cd;
           } else {
-              workData.detailWorks = newDetailWorksStr;
+              // 通常作業: 作物別に cropDetails へ保存（他作物へ漏らさない）
+              const cd = (workData.cropDetails && typeof workData.cropDetails === 'object')
+                  ? { ...workData.cropDetails } : {};
+              const label = window.getWorkCropLabel(resolvedCrop);
+              // 旧キー（ラベル表記）があれば正規キーへ寄せる
+              if (resolvedCrop !== '__common__' && label && cd[label] != null && cd[resolvedCrop] == null) {
+                  cd[resolvedCrop] = cd[label];
+                  delete cd[label];
+              }
+              cd[resolvedCrop] = newDetailWorksStr;
+              workData.cropDetails = cd;
+              // 共有 detailWorks に残っていると他作物表示に混ざるため、作物別運用時は空にする
+              // （旧データ移行: いま編集中の作物と一致する内容だけ残していた場合も cropDetails へ寄せ済み）
+              if (String(workData.detailWorks || '').trim()) {
+                  const legacyList = window.parseDetailWorksList(workData.detailWorks);
+                  const sameAsCurrent = legacyList.join('\u0001') === (newDetailsArray || []).join('\u0001');
+                  const wCrop = window.normalizeWorkCropKey(workData.cropName || '');
+                  if (sameAsCurrent || wCrop === resolvedCrop || wCrop === '__common__' || !String(workData.cropName || '').trim()) {
+                      workData.detailWorks = '';
+                  }
+              }
           }
 
           try {
@@ -8560,16 +8653,12 @@ function createSignboardMarker(name, pos, icon, id) {
                   name: workData.name,
                   category: workData.category || (isPrep ? '準備作業' : '圃場作業'),
                   cropName: workData.cropName || '',
-                  // 準備の組み合わせ編集では detailWorks（共通列）は触らない
-                  detailWorks: isPrep
-                      ? String(workData.detailWorks || '')
-                      : newDetailWorksStr
+                  // 準備の組み合わせ編集／作物別詳細では共有 detailWorks は触らない（空文字で消す場合あり）
+                  detailWorks: String(workData.detailWorks || '')
               };
               // 作物別/組み合わせ別詳細は、存在するときだけ送る（未指定でサーバが消さないよう GAS 側も対応済）
               if (workData.cropDetails && typeof workData.cropDetails === 'object') {
                   newData.cropDetails = workData.cropDetails;
-              } else if (!isPrep) {
-                  // 非準備で cropDetails 無し → 送らない
               }
 
               const valueObj = {
@@ -8593,7 +8682,9 @@ function createSignboardMarker(name, pos, icon, id) {
 
               window.renderDetailWorksSection(wName);
               if (typeof customAlert === 'function') {
-                  const scope = isPrep ? `（準備 − ${prepTarget}）` : '';
+                  const scope = isPrep
+                    ? `（準備 − ${prepTarget}）`
+                    : `（${window.getWorkCropLabel(resolvedCrop)}）`;
                   customAlert(`✅ 詳細作業を${actionLabel}しました！${scope}`);
               }
           } catch (e) {

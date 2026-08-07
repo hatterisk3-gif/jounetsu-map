@@ -543,16 +543,26 @@ function getInitData() {
       // 実シートの列名は「担当部署」。過去互換でカテゴリ系ヘッダーも許容する
       const idxCategory = findWorkCategoryColumnIndex_(headers);
 
+      const idxCropDetails = headers.indexOf('作物別詳細作業');
       for (let i = 1; i < data.length; i++) {
         let wName = idxName >= 0 ? String(data[i][idxName] || "").trim() : "";
         if (wName) {
           let cat = idxCategory >= 0 && data[i][idxCategory] ? String(data[i][idxCategory]).trim() : "";
           if (!cat) cat = "圃場作業"; // デフォルト
 
+          const cropStr = idxCrop >= 0 ? String(data[i][idxCrop] || "").trim() : "";
+          let cropDetails = null;
+          if (idxCropDetails >= 0 && data[i][idxCropDetails]) {
+            try { cropDetails = JSON.parse(String(data[i][idxCropDetails])); }
+            catch (e) { cropDetails = null; }
+          }
+
           workMaster.push({ 
             category: cat, 
             name: wName,
-            cropName: idxCrop >= 0 ? String(data[i][idxCrop] || "").trim() : "",
+            cropName: cropStr,
+            crops: cropStr ? cropStr.split(/[,、]/).map(s => String(s).trim()).filter(Boolean) : [],
+            cropDetails: cropDetails,
             detailWorks: idxDetail >= 0 && data[i][idxDetail] ? String(data[i][idxDetail]).trim() : ""
           });
         }
