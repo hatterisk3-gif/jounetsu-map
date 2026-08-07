@@ -2,1652 +2,1680 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <title>農技バトル v1.04 — 情熱MAPログイン連動</title>
-  
-  <script>
-    window.addEventListener('beforeunload', function (e) {
-      var msg = 'アプリを閉じますか？';
-      e.preventDefault();
-      e.returnValue = msg;
-      return msg;
-    });
-  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>農地王 — 武将を従えて農地王を目指せ！</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --soil: #3e2723;
-      --leaf: #2e7d32;
-      --leaf-deep: #1b5e20;
-      --sun: #f9a825;
-      --clay: #efebe9;
-      --mist: #f5f0e8;
-      --ink: #2c2118;
-      --muted: #6d5c4d;
-      --danger: #c62828;
-      --sky: #81d4fa;
-      --card: rgba(255, 252, 247, 0.92);
+      --soil: #4a3428;
+      --soil-deep: #2e1f18;
+      --leaf: #3d7a3e;
+      --leaf-deep: #1f5a28;
+      --leaf-bright: #6bb06e;
+      --sun: #e8a838;
+      --sun-soft: #f5d08a;
+      --clay: #f3ebe1;
+      --mist: #efe6d8;
+      --ink: #2a1f18;
+      --muted: #7a6554;
+      --danger: #a63d2e;
+      --rival: #8b4518;
+      --rival-bg: #c4784a;
+      --wild: #8a9a7a;
+      --card: rgba(255, 250, 242, 0.94);
+      --shadow: 0 4px 18px rgba(46, 31, 24, 0.12);
+      --radius: 12px;
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
     body {
-      margin: 0;
       min-height: 100vh;
       font-family: "Zen Kaku Gothic New", sans-serif;
       color: var(--ink);
       background:
-        radial-gradient(ellipse 80% 50% at 10% 0%, rgba(129, 212, 250, 0.35), transparent 55%),
-        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(249, 168, 37, 0.22), transparent 50%),
-        linear-gradient(180deg, #e8f5e9 0%, var(--mist) 38%, #d7ccc8 100%);
+        radial-gradient(ellipse 90% 55% at 15% -5%, rgba(232, 168, 56, 0.28), transparent 55%),
+        radial-gradient(ellipse 70% 45% at 95% 5%, rgba(107, 176, 110, 0.22), transparent 50%),
+        linear-gradient(165deg, #d4e8c8 0%, var(--mist) 42%, #d2c4b0 100%);
     }
-    h1, h2, .brand {
-      font-family: "Shippori Mincho", serif;
+    h1, h2, h3, .brand { font-family: "Shippori Mincho", serif; font-weight: 700; letter-spacing: 0.04em; }
+    .hidden { display: none !important; }
+
+    /* —— Login —— */
+    #loginScreen {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .login-box {
+      width: 100%;
+      max-width: 380px;
+      background: var(--card);
+      border: 1px solid rgba(74, 52, 40, 0.14);
+      border-radius: 18px;
+      padding: 28px 24px 22px;
+      box-shadow: var(--shadow);
+      text-align: center;
+      animation: rise 0.55s ease both;
+    }
+    .login-box h1 {
+      margin: 0 0 4px;
+      font-size: 1.85rem;
+      color: var(--leaf-deep);
+    }
+    .login-tag {
+      margin: 0 0 16px;
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .login-input {
+      width: 100%;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      border: 1px solid rgba(74, 52, 40, 0.22);
+      border-radius: 10px;
+      font-size: 1rem;
+      font-family: inherit;
+      background: #fffefb;
+    }
+    .login-btn {
+      width: 100%;
+      padding: 13px;
+      margin-top: 4px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(160deg, var(--leaf) 0%, var(--leaf-deep) 100%);
+      color: #fff;
+      font-size: 1.05rem;
       font-weight: 700;
-      letter-spacing: 0.04em;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 3px 10px rgba(31, 90, 40, 0.28);
     }
+    .login-btn:disabled { opacity: 0.65; cursor: wait; }
+    #loginError { color: var(--danger); font-size: 0.85rem; min-height: 1.25em; margin-bottom: 8px; }
+    .login-box a { color: var(--leaf-deep); font-weight: 700; }
+
+    /* —— App shell —— */
     .wrap {
-      max-width: 1080px;
+      max-width: 720px;
       margin: 0 auto;
-      padding: 18px 14px 40px;
+      padding: 12px 12px 36px;
     }
-    header.hero {
-      display: grid;
-      gap: 8px;
-      margin-bottom: 16px;
-      animation: rise 0.6s ease both;
+    header.top {
       position: relative;
+      margin-bottom: 10px;
+      padding-top: 4px;
+      animation: rise 0.5s ease both;
     }
     .back-portal {
       position: absolute;
-      top: 0;
-      right: 0;
+      top: 2px; right: 0;
       text-decoration: none;
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: var(--leaf-deep);
-      background: var(--card);
-      border: 1px solid rgba(62, 39, 35, 0.12);
-      border-radius: 999px;
-      padding: 6px 12px;
-      box-shadow: 0 2px 8px rgba(62, 39, 35, 0.06);
-    }
-    .back-portal:active { opacity: 0.75; }
-    header.hero h1 {
-      margin: 0;
-      font-size: clamp(1.6rem, 4vw, 2.2rem);
-      color: var(--leaf-deep);
-    }
-    header.hero p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.95rem;
-      max-width: 36em;
-      line-height: 1.5;
-    }
-    .badge-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 6px;
-    }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: var(--card);
-      border: 1px solid rgba(62, 39, 35, 0.12);
-      font-size: 0.85rem;
-      font-weight: 700;
-      box-shadow: 0 2px 8px rgba(62, 39, 35, 0.06);
-    }
-    .pill b { color: var(--leaf-deep); }
-    .grid {
-      display: grid;
-      grid-template-columns: 1.05fr 0.95fr;
-      gap: 14px;
-      align-items: start;
-    }
-    @media (max-width: 860px) {
-      .grid { grid-template-columns: 1fr; }
-    }
-    .panel {
-      background: var(--card);
-      border: 1px solid rgba(62, 39, 35, 0.1);
-      border-radius: 16px;
-      padding: 14px;
-      box-shadow: 0 10px 28px rgba(62, 39, 35, 0.08);
-      animation: rise 0.7s ease both;
-    }
-    .panel:nth-child(2) { animation-delay: 0.08s; }
-    .panel h2 {
-      margin: 0 0 10px;
-      font-size: 1.15rem;
-      color: var(--soil);
-    }
-    .sub {
-      font-size: 0.8rem;
-      color: var(--muted);
-      margin: -4px 0 12px;
-      line-height: 1.4;
-    }
-    .work-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-      gap: 8px;
-    }
-    .work-btn {
-      appearance: none;
-      border: 1px solid rgba(62, 39, 35, 0.14);
-      background: #fff;
-      border-radius: 12px;
-      padding: 12px 8px;
-      cursor: pointer;
-      text-align: center;
-      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s;
-      font: inherit;
-      color: inherit;
-    }
-    .work-btn:hover {
-      transform: translateY(-2px);
-      border-color: var(--leaf);
-      box-shadow: 0 6px 14px rgba(46, 125, 50, 0.15);
-    }
-    .work-btn:active { transform: translateY(0) scale(0.98); }
-    .work-btn .icon { font-size: 1.4rem; display: block; margin-bottom: 4px; }
-    .work-btn .name { font-weight: 700; font-size: 0.9rem; }
-    .work-btn .exp { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
-    .log {
-      margin-top: 12px;
-      max-height: 120px;
-      overflow: auto;
-      font-size: 0.8rem;
-      color: var(--muted);
-      border-top: 1px dashed rgba(62, 39, 35, 0.15);
-      padding-top: 8px;
-    }
-    .log div { padding: 2px 0; }
-    .tree {
-      display: grid;
-      gap: 10px;
-    }
-    .skill {
-      display: grid;
-      grid-template-columns: 48px 1fr auto;
-      gap: 10px;
-      align-items: center;
-      padding: 10px;
-      border-radius: 12px;
-      border: 1px solid rgba(62, 39, 35, 0.1);
-      background: #fff;
-      transition: opacity 0.2s, filter 0.2s;
-    }
-    .skill.locked {
-      opacity: 0.45;
-      filter: grayscale(0.6);
-    }
-    .skill .emoji {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      display: grid;
-      place-items: center;
-      font-size: 1.45rem;
-      background: linear-gradient(145deg, #e8f5e9, #fff8e1);
-    }
-    .skill .meta .title { font-weight: 700; font-size: 0.95rem; }
-    .skill .meta .desc { font-size: 0.75rem; color: var(--muted); margin-top: 2px; line-height: 1.35; }
-    .skill .lv {
-      text-align: right;
       font-size: 0.78rem;
       font-weight: 700;
       color: var(--leaf-deep);
-      white-space: nowrap;
+      background: var(--card);
+      border: 1px solid rgba(74, 52, 40, 0.12);
+      border-radius: 999px;
+      padding: 5px 11px;
     }
-    .bar {
-      height: 7px;
-      background: #ece7df;
-      border-radius: 99px;
-      overflow: hidden;
-      margin-top: 6px;
+    header.top h1 {
+      margin: 0 60px 2px 0;
+      font-size: clamp(1.45rem, 5vw, 1.9rem);
+      color: var(--leaf-deep);
     }
-    .bar > i {
-      display: block;
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--leaf), var(--sun));
-      border-radius: inherit;
-      transition: width 0.45s ease;
-    }
-    .battle {
-      margin-top: 14px;
-      animation: rise 0.75s ease both;
-      animation-delay: 0.12s;
-    }
-    .arena {
-      position: relative;
-      border-radius: 16px;
-      overflow: hidden;
-      min-height: 220px;
-      background:
-        linear-gradient(180deg, rgba(129, 212, 250, 0.45) 0%, transparent 42%),
-        linear-gradient(180deg, transparent 55%, rgba(76, 175, 80, 0.35) 100%),
-        #c8e6c9;
-      border: 1px solid rgba(62, 39, 35, 0.12);
+    .tagline { margin: 0; font-size: 0.82rem; color: var(--muted); }
+
+    .hud {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      align-items: end;
-      padding: 16px;
-      gap: 8px;
+      gap: 6px 10px;
+      background: var(--card);
+      border: 1px solid rgba(74, 52, 40, 0.12);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      font-size: 0.82rem;
+      box-shadow: var(--shadow);
     }
-    .fighter {
-      text-align: center;
-      transition: transform 0.2s ease;
+    .hud .full { grid-column: 1 / -1; }
+    .hud b { color: var(--soil-deep); }
+    .hud .gold { color: #b8860b; font-weight: 700; }
+    .hud .ap { color: var(--leaf-deep); font-weight: 700; }
+    .yield-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
     }
-    .fighter.hit { animation: shake 0.35s ease; }
-    .fighter.attack { animation: lunge 0.35s ease; }
-    .fighter .avatar {
-      font-size: 3.2rem;
-      filter: drop-shadow(0 8px 10px rgba(0,0,0,0.18));
-      line-height: 1;
-      margin-bottom: 6px;
+    .yield-bar .me { color: var(--leaf-deep); font-weight: 700; }
+    .yield-bar .them { color: var(--danger); font-weight: 700; }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid rgba(74, 52, 40, 0.12);
+      border-radius: var(--radius);
+      padding: 12px;
+      margin-bottom: 10px;
+      box-shadow: var(--shadow);
     }
-    .fighter .fname {
-      font-family: "Shippori Mincho", serif;
-      font-weight: 700;
-      font-size: 0.95rem;
+    .panel h2 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      color: var(--soil);
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    .hpwrap {
-      margin-top: 6px;
-      background: rgba(255,255,255,0.75);
-      border-radius: 8px;
-      padding: 4px 6px;
+
+    /* —— Map —— */
+    .map-wrap {
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 10px;
+      border: 2px solid rgba(74, 52, 40, 0.2);
+      background: #5c4a3a;
+      padding: 4px;
     }
-    .hpbar {
-      height: 10px;
-      background: #efebe9;
-      border-radius: 99px;
-      overflow: hidden;
-    }
-    .hpbar > i {
-      display: block;
-      height: 100%;
-      background: linear-gradient(90deg, #43a047, #fdd835);
+    #mapGrid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 2px;
+      min-width: 300px;
+      aspect-ratio: 1;
       width: 100%;
-      transition: width 0.35s ease;
     }
-    .hpbar.enemy > i { background: linear-gradient(90deg, #e53935, #fb8c00); }
-    .hptext { font-size: 0.72rem; font-weight: 700; margin-top: 2px; }
-    .float-dmg {
-      position: absolute;
+    .tile {
+      position: relative;
+      aspect-ratio: 1;
+      border: none;
+      border-radius: 3px;
+      padding: 0;
+      cursor: pointer;
+      font-size: clamp(0.55rem, 2.2vw, 0.75rem);
+      font-family: inherit;
       font-weight: 700;
-      font-size: 1.1rem;
-      color: var(--danger);
-      pointer-events: none;
-      animation: floatUp 0.8s ease forwards;
-      text-shadow: 0 1px 0 #fff;
+      color: rgba(0,0,0,0.55);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.1;
+      transition: transform 0.12s, box-shadow 0.12s;
     }
-    .float-dmg.heal { color: var(--leaf-deep); }
+    .tile:active { transform: scale(0.94); }
+    .tile.wild { background: linear-gradient(145deg, #9aab88, #7d8f6c); }
+    .tile.player { background: linear-gradient(145deg, #7bc47e, #3d8a42); color: #0d2e12; }
+    .tile.rival { background: linear-gradient(145deg, #d4895c, #a0522d); color: #2a1208; }
+    .tile.selected {
+      box-shadow: inset 0 0 0 2.5px var(--sun), 0 0 0 1px var(--sun-soft);
+      z-index: 2;
+    }
+    .tile.claimable::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border: 1.5px dashed rgba(232, 168, 56, 0.7);
+      border-radius: 3px;
+      pointer-events: none;
+    }
+    .tile .bld { font-size: clamp(0.7rem, 2.8vw, 0.95rem); line-height: 1; }
+    .tile .gen-dot {
+      position: absolute;
+      top: 1px; right: 1px;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--sun);
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.25);
+    }
+    .tile .gen-dot.rival { background: #ff6b4a; }
+
+    .tile-info {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 8px;
+      min-height: 1.4em;
+      line-height: 1.45;
+    }
+
     .actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
+      gap: 6px;
     }
-    .actions button {
-      flex: 1 1 120px;
-      appearance: none;
+    .btn {
       border: none;
-      border-radius: 10px;
-      padding: 12px 10px;
-      font: inherit;
+      border-radius: 9px;
+      padding: 9px 12px;
+      font-family: inherit;
+      font-size: 0.82rem;
       font-weight: 700;
       cursor: pointer;
-      background: var(--leaf);
-      color: #fff;
-      box-shadow: 0 4px 0 var(--leaf-deep);
-      transition: transform 0.12s ease;
-    }
-    .actions button:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--leaf-deep); }
-    .actions button:disabled {
-      background: #bdbdbd;
-      box-shadow: none;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .actions button.secondary {
-      background: #fff;
-      color: var(--soil);
-      border: 1px solid rgba(62, 39, 35, 0.2);
-      box-shadow: 0 3px 0 rgba(62, 39, 35, 0.15);
-    }
-    .actions button.sun {
-      background: var(--sun);
-      color: var(--soil);
-      box-shadow: 0 4px 0 #f57f17;
-    }
-    .battle-log {
-      margin-top: 10px;
-      min-height: 52px;
-      font-size: 0.88rem;
-      line-height: 1.45;
+      background: #e8ddd0;
       color: var(--ink);
-      background: rgba(255,255,255,0.65);
-      border-radius: 10px;
-      padding: 10px 12px;
-      border: 1px solid rgba(62, 39, 35, 0.08);
+      transition: opacity 0.15s, transform 0.1s;
     }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.primary {
+      background: linear-gradient(160deg, var(--leaf-bright), var(--leaf-deep));
+      color: #fff;
+    }
+    .btn.gold {
+      background: linear-gradient(160deg, var(--sun-soft), var(--sun));
+      color: var(--soil-deep);
+    }
+    .btn.danger {
+      background: linear-gradient(160deg, #c4784a, var(--danger));
+      color: #fff;
+    }
+    .btn.ghost {
+      background: transparent;
+      border: 1px solid rgba(74, 52, 40, 0.25);
+    }
+    .btn.sm { padding: 6px 10px; font-size: 0.75rem; }
+
+    .gen-list, .shop-list, .gacha-results {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .gen-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.55);
+      border: 1px solid rgba(74, 52, 40, 0.1);
+      border-radius: 10px;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      color: inherit;
+      width: 100%;
+    }
+    .gen-card.selected { border-color: var(--sun); box-shadow: 0 0 0 2px rgba(232,168,56,0.35); }
+    .gen-card .avatar { font-size: 1.5rem; }
+    .gen-card .meta { font-size: 0.78rem; color: var(--muted); }
+    .gen-card .name { font-weight: 700; font-size: 0.9rem; }
+    .rarity {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fff;
+    }
+    .rarity.N { background: #78909c; }
+    .rarity.R { background: #43a047; }
+    .rarity.SR { background: #1e88e5; }
+    .rarity.SSR { background: #8e24aa; }
+    .rarity.UR { background: linear-gradient(120deg, #e8a838, #c4784a); color: #2a1f18; }
+
     .toolbar {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
+      gap: 6px;
+      margin-bottom: 10px;
     }
-    .toolbar button {
-      appearance: none;
-      border: 1px solid rgba(62, 39, 35, 0.18);
-      background: #fff;
-      border-radius: 8px;
-      padding: 8px 12px;
-      font: inherit;
-      font-size: 0.8rem;
-      font-weight: 700;
-      cursor: pointer;
+    footer.note {
+      text-align: center;
+      font-size: 0.72rem;
       color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.5;
     }
+
+    /* —— Modal —— */
+    #modalOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(30, 20, 12, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    .modal {
+      background: var(--clay);
+      border-radius: 16px;
+      padding: 22px 18px;
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+      animation: rise 0.35s ease both;
+    }
+    .modal h2 { margin: 0 0 8px; color: var(--leaf-deep); font-size: 1.4rem; }
+    .modal p { margin: 0 0 14px; font-size: 0.9rem; line-height: 1.55; color: var(--soil); }
+    .modal .score { font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
+
+    #syncOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(46, 31, 24, 0.4);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 90;
+      color: #fff;
+      font-weight: 700;
+      font-size: 1rem;
+    }
+    #syncOverlay.show { display: flex; }
+
     .toast {
       position: fixed;
-      left: 50%;
       bottom: 24px;
+      left: 50%;
       transform: translateX(-50%) translateY(20px);
-      background: var(--soil);
+      background: var(--soil-deep);
       color: #fff;
-      padding: 10px 16px;
+      padding: 10px 18px;
       border-radius: 999px;
       font-size: 0.85rem;
       font-weight: 700;
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.25s, transform 0.25s;
-      z-index: 20;
+      z-index: 200;
       max-width: 90vw;
       text-align: center;
     }
-    .toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+      overflow-x: auto;
     }
+    .tab {
+      flex: 0 0 auto;
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(74, 52, 40, 0.15);
+      background: rgba(255,255,255,0.4);
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: var(--muted);
+    }
+    .tab.active {
+      background: var(--leaf);
+      color: #fff;
+      border-color: var(--leaf-deep);
+    }
+    .tab-pane.hidden { display: none; }
+
     @keyframes rise {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes shake {
-      0%, 100% { transform: translateX(0); }
-      25% { transform: translateX(-8px); }
-      75% { transform: translateX(8px); }
-    }
-    @keyframes lunge {
-      0%, 100% { transform: translateX(0); }
-      40% { transform: translateX(18px) scale(1.05); }
-    }
-    .fighter.enemy.attack { animation-name: lungeEnemy; }
-    @keyframes lungeEnemy {
-      0%, 100% { transform: translateX(0); }
-      40% { transform: translateX(-18px) scale(1.05); }
-    }
-    @keyframes floatUp {
-      from { opacity: 1; transform: translateY(0); }
-      to { opacity: 0; transform: translateY(-40px); }
-    }
-    footer.note {
-      margin-top: 18px;
-      font-size: 0.75rem;
-      color: var(--muted);
-      text-align: center;
-      line-height: 1.5;
-    }
-    #loginScreen {
-      position: fixed; inset: 0; z-index: 5000;
-      display: flex; align-items: center; justify-content: center;
-      background:
-        radial-gradient(ellipse 70% 50% at 20% 10%, rgba(129, 212, 250, 0.4), transparent 55%),
-        radial-gradient(ellipse 50% 40% at 90% 20%, rgba(249, 168, 37, 0.25), transparent 50%),
-        linear-gradient(180deg, #e8f5e9 0%, var(--mist) 45%, #d7ccc8 100%);
-      padding: 20px;
-    }
-    #loginScreen.hidden { display: none; }
-    .login-box {
-      width: 100%; max-width: 360px;
-      background: var(--card);
-      border: 1px solid rgba(62, 39, 35, 0.12);
-      border-radius: 18px;
-      padding: 28px 22px 24px;
-      box-shadow: 0 16px 40px rgba(62, 39, 35, 0.14);
-      text-align: center;
-    }
-    .login-box h2 {
-      margin: 0 0 6px;
-      font-family: "Shippori Mincho", serif;
-      color: var(--leaf-deep);
-      font-size: 1.45rem;
-    }
-    .login-box .login-sub {
-      margin: 0 0 18px;
-      color: var(--muted);
-      font-size: 0.85rem;
-      line-height: 1.45;
-    }
-    .login-input {
-      width: 100%;
-      box-sizing: border-box;
-      margin: 0 0 10px;
-      padding: 12px 14px;
-      border-radius: 10px;
-      border: 1px solid rgba(62, 39, 35, 0.2);
-      font-size: 1rem;
-      font-family: inherit;
-      background: #fff;
-    }
-    .login-btn {
-      width: 100%;
-      margin-top: 6px;
-      padding: 13px;
-      border: none;
-      border-radius: 10px;
-      background: linear-gradient(135deg, var(--leaf), var(--leaf-deep));
-      color: #fff;
-      font-size: 1.05rem;
-      font-weight: 700;
-      cursor: pointer;
-      font-family: inherit;
-      box-shadow: 0 4px 14px rgba(46, 125, 50, 0.35);
-    }
-    .login-btn:disabled { opacity: 0.65; cursor: wait; }
-    .login-btn:active:not(:disabled) { opacity: 0.85; }
-    #loginError { color: var(--danger); font-size: 0.85rem; margin-bottom: 10px; min-height: 1.2em; }
-    .logout-btn {
-      border: 1px solid rgba(62, 39, 35, 0.18);
-      background: #fff;
-      color: var(--muted);
-      border-radius: 999px;
-      padding: 4px 10px;
-      font-size: 0.75rem;
-      font-weight: 700;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    .logout-btn:active { opacity: 0.75; }
-    #appMain.hidden { display: none; }
-    #syncOverlay {
-      display: none;
-      position: fixed; inset: 0; z-index: 4000;
-      background: rgba(44, 33, 24, 0.35);
-      align-items: center; justify-content: center;
-    }
-    #syncOverlay.show { display: flex; }
-    #syncOverlay .sync-card {
-      background: var(--card);
-      padding: 22px 28px;
-      border-radius: 14px;
-      font-weight: 700;
-      color: var(--leaf-deep);
-      box-shadow: 0 10px 28px rgba(0,0,0,0.2);
-    }
   </style>
 </head>
 <body>
-  <div id="loginScreen">
-    <div class="login-box">
-      <h2>⚔️ 農技バトル</h2>
-      <p class="login-sub">情熱MAPと同じIDでログインすると、<br>あなたの作業記録が経験値に連動します。</p>
-      <div id="loginError"></div>
-      <input type="text" id="loginId" class="login-input" placeholder="スタッフID" autocomplete="username" />
-      <input type="password" id="loginPw" class="login-input" placeholder="パスワード" autocomplete="current-password" />
-      <button type="button" class="login-btn" id="loginBtn" onclick="executeBattleLogin(false)">ログイン</button>
-      <p class="login-sub" style="margin-top:14px; margin-bottom:0;">ポータルへ戻る場合は <a href="battle-portal.html" style="color:var(--leaf-deep); font-weight:700;">こちら</a></p>
+
+<!-- Login -->
+<div id="loginScreen">
+  <div class="login-box">
+    <h1>農地王</h1>
+    <p class="login-tag">武将を従えて農地王を目指せ！<br>情熱MAPと同じIDでログイン</p>
+    <div id="loginError"></div>
+    <input type="text" id="loginId" class="login-input" placeholder="スタッフID" autocomplete="username" />
+    <input type="password" id="loginPw" class="login-input" placeholder="パスワード" autocomplete="current-password" />
+    <button type="button" class="login-btn" id="loginBtn" onclick="executeBattleLogin(false)">ログイン</button>
+    <p class="login-tag" style="margin-top:14px;margin-bottom:0;">
+      <a href="battle-portal.html">← バトルポータルへ戻る</a>
+    </p>
+  </div>
+</div>
+
+<!-- Main -->
+<div id="appMain" class="wrap hidden">
+  <header class="top">
+    <a class="back-portal" href="battle-portal.html">ポータル</a>
+    <h1>農地王</h1>
+    <p class="tagline">武将を従えて農地王を目指せ！</p>
+  </header>
+
+  <div class="hud" id="hud">
+    <div><b id="hudUser">—</b></div>
+    <div class="gold">🪙 <span id="hudCoins">0</span></div>
+    <div>季節ターン <b id="hudTurn">1</b> / 24</div>
+    <div class="ap">AP <span id="hudAp">3</span> / <span id="hudApMax">3</span></div>
+    <div>肥料 <b id="hudFert">0</b>　農薬 <b id="hudPest">0</b></div>
+    <div>領地 <b id="hudTiles">0</b>　武将 <b id="hudGens">0</b></div>
+    <div class="full yield-bar">
+      <span class="me">予測収穫 🌾 <span id="hudYield">0</span></span>
+      <span class="them">敵 🌾 <span id="hudRivalYield">0</span></span>
     </div>
   </div>
 
-  <div id="syncOverlay"><div class="sync-card">🌾 作業記録を同期中…</div></div>
-
-  <div class="wrap hidden" id="appMain">
-    <header class="hero">
-      <a class="back-portal" href="battle-portal.html">← バトルポータル</a>
-      <div class="brand">農技バトル</div>
-      <h1>作業が、技になる。</h1>
-      <p>情熱MAPにログインした作業記録がスキル経験値に反映されます。覚えた農技で雑草ボスと戦いましょう。</p>
-      <div class="badge-row">
-        <span class="pill" style="background:#e8f5e9; color:#1b5e20; border-color:#a5d6a7;">👤 <span id="currentUserPill">読込中...</span></span>
-        <button type="button" class="logout-btn" onclick="logoutBattle()">ログアウト</button>
-        <span class="pill">Lv <b id="playerLevel">1</b></span>
-        <span class="pill">総EXP <b id="totalExp">0</b></span>
-        <span class="pill" style="background:#fff8e1; color:#f57f17; border-color:#ffe082;">🪙 <b id="coinCount">0</b> 枚</span>
-        <span class="pill" style="background:#e3f2fd; color:#1565c0; border-color:#90caf9;">⚔️ 補正: <b id="equipStatsBonus">+0 ATK / +0 HP</b></span>
-        <span class="pill">連勝 <b id="winStreak">0</b></span>
-        <span class="pill">解放技 <b id="unlockedCount">0</b></span>
-      </div>
-      <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85rem;">
-        <label for="userSelect" style="font-weight: bold; color: var(--soil);">データ連動ユーザー:</label>
-        <select id="userSelect" onchange="switchUser(this.value)" style="padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(62,39,35,0.2); font-size: 0.85rem; background: #fff; font-family: inherit; font-weight: bold; color: var(--leaf-deep); cursor: pointer;">
-          <option value="">(ログイン中のユーザー)</option>
-        </select>
-        <span id="syncStatusHint" style="color: var(--muted); font-size: 0.8rem;">🔄 同期待機</span>
-        <button type="button" class="logout-btn" onclick="resyncBattleRecords()" style="color:var(--leaf-deep);">記録を再同期</button>
-      </div>
-    </header>
-
-    <!-- 🎁 農業道具ガチャ & 🎒 装備枠セクション -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
-      <section class="panel" style="background: linear-gradient(135deg, #fffde7 0%, #fff8e1 100%); border: 1px solid #ffe082;">
-        <h2 style="color: #f57f17; display: flex; align-items: center; justify-content: space-between;">
-          <span>🎁 農業道具ガチャ</span>
-          <span style="font-size: 0.85rem; background: #fff; padding: 2px 10px; border-radius: 12px; border: 1px solid #ffecb3;">1回 10 コイン</span>
-        </h2>
-        <p class="sub">作業記録や敵撃破でコインを獲得！ガチャを回して伝説の農機具や作業着をゲットしよう。</p>
-        <div style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
-          <button type="button" onclick="playGacha(1)" style="flex: 1; padding: 10px; background: linear-gradient(135deg, #ffb300, #ff8f00); color: #fff; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 3px 8px rgba(255,143,0,0.3); font-size: 0.95rem;">🎰 1回ガチャ (10枚)</button>
-          <button type="button" onclick="playGacha(10)" style="flex: 1; padding: 10px; background: linear-gradient(135deg, #e65100, #bf360c); color: #fff; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 3px 8px rgba(191,54,12,0.3); font-size: 0.95rem;">🔥 10連ガチャ (100枚)</button>
-        </div>
-        <div id="gachaResult" style="min-height: 48px; background: #fff; border: 1px dashed #ffe082; border-radius: 8px; padding: 8px; font-size: 0.85rem; color: #5d4037; display: flex; align-items: center; justify-content: center; text-align: center;">
-          ガチャを回すとここに結果が表示されます！
-        </div>
-      </section>
-
-      <section class="panel" style="background: linear-gradient(135deg, #e8eaf6 0%, #e3f2fd 100%); border: 1px solid #90caf9;">
-        <h2 style="color: #1565c0;">🎒 現在の装備スロット</h2>
-        <p class="sub">タップで装備を着脱できます。レア装備でステータスが大幅UP！</p>
-        <div id="equippedSlots" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px;">
-          <!-- 装備スロット -->
-        </div>
-        <div style="font-size: 0.8rem; font-weight: bold; color: #1565c0; margin-bottom: 4px;">所持装備一覧 (タップで装備):</div>
-        <div id="inventoryList" style="display: flex; flex-wrap: wrap; gap: 6px; max-height: 90px; overflow-y: auto; background: #fff; padding: 6px; border-radius: 8px; border: 1px solid #bbdefb; min-height: 40px;">
-          <!-- インベントリ -->
-        </div>
-      </section>
-    </div>
-
-    <div class="grid">
-      <section class="panel">
-        <h2>📝 今日の作業を記録 (EXP ＆ コイン獲得)</h2>
-        <p class="sub">作業を記録するとリアルタイムでレベルが上がります。連続で記録するとコンボボーナス！</p>
-        <div class="work-grid" id="workGrid"></div>
-        <div class="log" id="workLog"></div>
-        <div class="toolbar">
-          <button type="button" onclick="resetProgress()">進捗リセット</button>
-          <button type="button" onclick="grantDemoDay()">デモ：忙しい一日</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>🌳 農技スキルツリー</h2>
-        <p class="sub">作業種ごとに育ちます。必要Lvに達するとバトルで使えるようになります。</p>
-        <div class="tree" id="skillTree"></div>
-      </section>
-    </div>
-
-    <section class="panel battle">
-      <h2>⚔️ 畑の防衛戦</h2>
-      <p class="sub">解放した技で攻撃。HPが尽きた方が負け。勝てば称号EXP、負けると雑草が増える（気持ちの問題）。</p>
-      <div class="arena" id="arena">
-        <div class="fighter" id="heroFighter">
-          <div class="avatar">🧑‍🌾</div>
-          <div class="fname" id="heroName">あなた</div>
-          <div class="hpwrap">
-            <div class="hpbar"><i id="heroHpBar"></i></div>
-            <div class="hptext" id="heroHpText">100 / 100</div>
-          </div>
-        </div>
-        <div class="fighter enemy" id="enemyFighter">
-          <div class="avatar" id="enemyAvatar">🌿</div>
-          <div class="fname" id="enemyName">暴れるスギナ</div>
-          <div class="hpwrap">
-            <div class="hpbar enemy"><i id="enemyHpBar"></i></div>
-            <div class="hptext" id="enemyHpText">80 / 80</div>
-          </div>
-        </div>
-      </div>
-      <div class="actions" id="battleActions"></div>
-      <div class="battle-log" id="battleLog">「作業を記録して技を覚え、挑戦せよ。」</div>
-      <div class="toolbar">
-        <button type="button" onclick="startBattle()">新しい敵と戦う</button>
-      </div>
-    </section>
-
-    <footer class="note">
-      情熱MAPと同じアカウントでログインし、作業記録を経験値に連動します。<br />
-      ガチャ・装備・連勝などのゲーム進捗は、ユーザーごとにこの端末へ保存されます。
-    </footer>
+  <div class="toolbar">
+    <button type="button" class="btn primary" id="btnEndTurn" onclick="endTurn()">ターン終了</button>
+    <button type="button" class="btn gold" id="btnHarvest" onclick="confirmHarvest()" disabled>収穫確定</button>
+    <button type="button" class="btn ghost sm" onclick="claimWorkCoins()">作業コイン受取</button>
+    <button type="button" class="btn ghost sm" onclick="newSeason()">新季節</button>
+    <button type="button" class="btn ghost sm" onclick="logoutBattle()">ログアウト</button>
   </div>
-  <div class="toast" id="toast"></div>
+  <p id="workCoinHint" style="font-size:0.75rem;color:var(--muted);margin:-4px 0 10px;"></p>
 
-  <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
-    const STORAGE_KEY = 'jonetsuFarmSkillBattle_v1';
-    let battleLoggedIn = false;
+  <div class="panel">
+    <h2>🗺️ 農地マップ</h2>
+    <div class="map-wrap">
+      <div id="mapGrid"></div>
+    </div>
+    <p class="tile-info" id="tileInfo">タイルを選択してください</p>
+    <div class="actions" id="actionPanel"></div>
+  </div>
 
-    const WORKS = [
-      { id: 'sowing', name: '播種', icon: '🌱', exp: 12, skill: 'sowing' },
-      { id: 'planting', name: '定植', icon: '🥬', exp: 14, skill: 'planting' },
-      { id: 'harvest', name: '収穫', icon: '🧺', exp: 16, skill: 'harvest' },
-      { id: 'weeding', name: '草刈り', icon: '✂️', exp: 10, skill: 'weeding' },
-      { id: 'water', name: '灌水', icon: '💧', exp: 8, skill: 'water' },
-      { id: 'pest', name: '防除', icon: '🛡️', exp: 13, skill: 'pest' },
-      { id: 'ridge', name: '畝立て', icon: '🧱', exp: 11, skill: 'ridge' },
-      { id: 'pack', name: '調整出荷', icon: '📦', exp: 9, skill: 'pack' }
-    ];
+  <div class="panel">
+    <div class="tabs">
+      <button type="button" class="tab active" data-tab="generals" onclick="switchTab('generals')">武将</button>
+      <button type="button" class="tab" data-tab="gacha" onclick="switchTab('gacha')">ガチャ</button>
+      <button type="button" class="tab" data-tab="shop" onclick="switchTab('shop')">商店</button>
+      <button type="button" class="tab" data-tab="help" onclick="switchTab('help')">遊び方</button>
+    </div>
 
-    const SKILLS = [
-      {
-        id: 'sowing', name: '種まき連撃', icon: '🌱',
-        desc: '播種の手数で連続ヒット。基礎ダメージ中。',
-        needLv: 1, power: 18, type: 'atk'
-      },
-      {
-        id: 'planting', name: '定植の構え', icon: '🥬',
-        desc: 'しっかり根を張る。次の被ダメ軽減。',
-        needLv: 2, power: 0, type: 'guard'
-      },
-      {
-        id: 'harvest', name: '収穫一閃', icon: '🧺',
-        desc: '一気に刈り取る強攻撃。',
-        needLv: 3, power: 32, type: 'atk'
-      },
-      {
-        id: 'weeding', name: '草刈り回転刃', icon: '✂️',
-        desc: '雑草系の敵に特効。',
-        needLv: 2, power: 22, type: 'weed'
-      },
-      {
-        id: 'water', name: '慈雨ヒール', icon: '💧',
-        desc: 'HPを回復する。',
-        needLv: 2, power: 20, type: 'heal'
-      },
-      {
-        id: 'pest', name: '防除バリア', icon: '🛡️',
-        desc: 'ダメージを大きく軽減（1ターン）。',
-        needLv: 3, power: 0, type: 'barrier'
-      },
-      {
-        id: 'ridge', name: '畝の壁', icon: '🧱',
-        desc: '土の壁で反撃ダメージ。',
-        needLv: 2, power: 14, type: 'counter'
-      },
-      {
-        id: 'pack', name: '出荷プレッシャー', icon: '📦',
-        desc: '締切の圧で敵の気力を削る。',
-        needLv: 1, power: 15, type: 'atk'
+    <div id="tab-generals" class="tab-pane">
+      <h2>⚔️ 武将一覧</h2>
+      <p style="font-size:0.78rem;color:var(--muted);margin:0 0 8px;">選択中の武将で占領・移動します。AP上限 = 3 + ⌊武将数/2⌋（最大6）</p>
+      <div class="gen-list" id="genList"></div>
+    </div>
+
+    <div id="tab-gacha" class="tab-pane hidden">
+      <h2>🎰 武将ガチャ</h2>
+      <p style="font-size:0.78rem;color:var(--muted);margin:0 0 8px;">1回 15🪙 / 10連 140🪙　レア度 N→UR</p>
+      <div class="actions" style="margin-bottom:10px;">
+        <button type="button" class="btn gold" onclick="playGacha(1)">1回引く (15)</button>
+        <button type="button" class="btn primary" onclick="playGacha(10)">10連 (140)</button>
+      </div>
+      <div class="gacha-results" id="gachaResults"></div>
+    </div>
+
+    <div id="tab-shop" class="tab-pane hidden">
+      <h2>🏪 商店・物資</h2>
+      <p style="font-size:0.78rem;color:var(--muted);margin:0 0 8px;" id="shopHint">売店があると安く買えます</p>
+      <div class="shop-list" id="shopList"></div>
+    </div>
+
+    <div id="tab-help" class="tab-pane hidden">
+      <h2>📜 遊び方</h2>
+      <p style="font-size:0.82rem;line-height:1.65;color:var(--soil);margin:0;">
+        24ターンの季節で<strong>最終収穫量</strong>を競います。<br>
+        ① 武将で隣接タイルを占領して領地を広げる<br>
+        ② 肥料・防除で土地を改良し、設備で生産力UP<br>
+        敵AIも同時に拡大・改良します。収穫量が上回れば「農地王」！
+      </p>
+    </div>
+  </div>
+
+  <footer class="note">
+    進捗は端末の localStorage にユーザー別に保存されます。<br>
+    農地王 v2.00 — PassionMAP 連動
+  </footer>
+</div>
+
+<div id="modalOverlay" class="hidden">
+  <div class="modal" id="resultModal">
+    <h2 id="resultTitle">収穫結果</h2>
+    <div class="score" id="resultScore"></div>
+    <p id="resultBody"></p>
+    <button type="button" class="btn primary" onclick="closeModal()">閉じる</button>
+    <button type="button" class="btn gold" style="margin-top:8px;" onclick="closeModal(); newSeason();">新季節を始める</button>
+  </div>
+</div>
+
+<div id="syncOverlay">🔄 同期中…</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+  const STORAGE_KEY = 'passionMapFarmKing_v1';
+  const MAP_SIZE = 10;
+  const SEASON_TURNS = 24;
+  const DIRS = [[0,1],[0,-1],[1,0],[-1,0]];
+
+  const BUILDINGS = {
+    hq:        { name: '本陣', emoji: '🏯', bonus: 0.25 },
+    fertShop:  { name: '肥料売店', emoji: '🛒', bonus: 0.05 },
+    pestShop:  { name: '農薬売店', emoji: '🏪', bonus: 0.05 },
+    fertPlant: { name: '肥料工場', emoji: '🏭', bonus: 0.15 },
+    pestDepot: { name: '農薬倉庫', emoji: '🏚️', bonus: 0.15 }
+  };
+
+  const GENERAL_POOL = [
+    { id: 'g_ashigaru', name: '足軽太郎', rarity: 'N', atk: 8, farm: 6, move: 2, emoji: '🥷' },
+    { id: 'g_hyakusho', name: '百姓衛門', rarity: 'N', atk: 5, farm: 10, move: 2, emoji: '👨‍🌾' },
+    { id: 'g_komusou', name: '虚無僧', rarity: 'N', atk: 7, farm: 7, move: 3, emoji: '🧘' },
+    { id: 'g_yumi', name: '弓の里美', rarity: 'R', atk: 12, farm: 8, move: 3, emoji: '🏹' },
+    { id: 'g_kunoichi', name: 'くノ一・葵', rarity: 'R', atk: 14, farm: 6, move: 4, emoji: '🗡️' },
+    { id: 'g_noufu', name: '農夫の弁慶', rarity: 'R', atk: 9, farm: 14, move: 2, emoji: '💪' },
+    { id: 'g_samurai', name: '侍・鎌足', rarity: 'SR', atk: 18, farm: 12, move: 3, emoji: '⚔️' },
+    { id: 'g_miko', name: '巫女・稲穂', rarity: 'SR', atk: 11, farm: 20, move: 3, emoji: '⛩️' },
+    { id: 'g_hatamoto', name: '旗本・剛造', rarity: 'SR', atk: 20, farm: 10, move: 3, emoji: '🛡️' },
+    { id: 'g_daimyo', name: '大名・豊作', rarity: 'SSR', atk: 26, farm: 22, move: 4, emoji: '👑' },
+    { id: 'g_onmyo', name: '陰陽師・霧', rarity: 'SSR', atk: 22, farm: 26, move: 4, emoji: '🔮' },
+    { id: 'g_shinobi', name: '影・朧月', rarity: 'SSR', atk: 30, farm: 14, move: 5, emoji: '🌑' },
+    { id: 'g_nobunaga', name: '農地の信長', rarity: 'UR', atk: 38, farm: 28, move: 5, emoji: '🔥' },
+    { id: 'g_hideyoshi', name: '百姓太閤', rarity: 'UR', atk: 32, farm: 40, move: 4, emoji: '🌾' },
+    { id: 'g_ieyasu', name: '忍耐の家康', rarity: 'UR', atk: 34, farm: 34, move: 4, emoji: '🐢' }
+  ];
+
+  const PRICES = {
+    fertGlobal: 12, pestGlobal: 12,
+    fertShop: 6, pestShop: 6,
+    buildFertShop: 40, buildPestShop: 40,
+    buildFertPlant: 70, buildPestDepot: 70,
+    improveCoin: 18, sprayCoin: 15
+  };
+
+  let activeUser = localStorage.getItem('passionMapUserName') || '';
+  let battleLoggedIn = false;
+  let state = null;
+  let selectedTile = null; // {r,c}
+  let selectedGenId = null;
+  let toastTimer = null;
+
+  // ——— Helpers ———
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+  }
+
+  function showSyncOverlay(on) {
+    document.getElementById('syncOverlay').classList.toggle('show', !!on);
+  }
+
+  function uid() {
+    return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function inBounds(r, c) {
+    return r >= 0 && r < MAP_SIZE && c >= 0 && c < MAP_SIZE;
+  }
+
+  function idx(r, c) { return r * MAP_SIZE + c; }
+
+  function tileAt(r, c) {
+    return state.tiles[idx(r, c)];
+  }
+
+  function storageKey(user) {
+    const u = String(user || activeUser || 'guest').trim() || 'guest';
+    return STORAGE_KEY + ':' + u;
+  }
+
+  function rarityWeight(r) {
+    return { N: 45, R: 30, SR: 15, SSR: 7, UR: 3 }[r] || 10;
+  }
+
+  function pickGachaRarity() {
+    const roll = Math.random() * 100;
+    if (roll < 3) return 'UR';
+    if (roll < 10) return 'SSR';
+    if (roll < 25) return 'SR';
+    if (roll < 55) return 'R';
+    return 'N';
+  }
+
+  function cloneGeneralTemplate(tmpl) {
+    return {
+      instanceId: uid(),
+      templateId: tmpl.id,
+      name: tmpl.name,
+      rarity: tmpl.rarity,
+      atk: tmpl.atk,
+      farm: tmpl.farm,
+      move: tmpl.move,
+      emoji: tmpl.emoji,
+      r: -1,
+      c: -1,
+      owner: 'player'
+    };
+  }
+
+  // ——— Map generation ———
+  function makeTile(r, c) {
+    return {
+      owner: null,
+      fertility: 1 + Math.floor(Math.random() * 3), // 1-3 start
+      pest: Math.random() < 0.25 ? 1 : 0,
+      building: null,
+      cared: false
+    };
+  }
+
+  function createMap() {
+    const tiles = [];
+    for (let r = 0; r < MAP_SIZE; r++) {
+      for (let c = 0; c < MAP_SIZE; c++) {
+        tiles.push(makeTile(r, c));
       }
-    ];
-
-    const ENEMIES = [
-      { name: '暴れるスギナ', avatar: '🌿', hp: 70, atk: 12, weed: true },
-      { name: '頑固なカタバミ', avatar: '☘️', hp: 90, atk: 14, weed: true },
-      { name: '雨乞いナメクジ', avatar: '🐌', hp: 85, atk: 16, weed: false },
-      { name: 'カラスの略奪隊', avatar: '🐦‍⬛', hp: 100, atk: 18, weed: false },
-      { name: '干ばつスピリット', avatar: '☀️', hp: 110, atk: 20, weed: false },
-      { name: '巨大イノシシ', avatar: '🐗', hp: 140, atk: 22, weed: false }
-    ];
-
-    const EQUIPMENTS = [
-      // 道具 (tool)
-      { id: 'eq_sickle_n', name: '普及型鎌', icon: '🪓', type: 'tool', rarity: 'N', atk: 4, hp: 0, desc: 'どこにでもある普通の鎌。' },
-      { id: 'eq_hoe_r', name: '鍛造クワ', icon: '⛏️', type: 'tool', rarity: 'R', atk: 10, hp: 5, desc: '職人が打ったしっかりしたクワ。' },
-      { id: 'eq_cutter_sr', name: '黄金の刈払機', icon: '⚙️', type: 'tool', rarity: 'SR', atk: 22, hp: 10, desc: '草を高速で刈り倒す強力エンジン。' },
-      { id: 'eq_tractor_ssr', name: 'クボタ・赤トラクター', icon: '🚜', type: 'tool', rarity: 'SSR', atk: 42, hp: 30, desc: '圧倒的馬力で畑を開墾する重農機。' },
-      { id: 'eq_god_sickle_ur', name: '神農の宝鎌', icon: '✨', type: 'tool', rarity: 'UR', atk: 68, hp: 50, desc: '豊作の神が宿る伝説の神器。' },
-
-      // 頭 (head)
-      { id: 'eq_straw_n', name: '麦わら帽子', icon: '👒', type: 'head', rarity: 'N', atk: 0, hp: 12, desc: '日差しを防ぐ基本装備。' },
-      { id: 'eq_towel_r', name: '職人手ぬぐい', icon: '🧣', type: 'head', rarity: 'R', atk: 3, hp: 22, desc: '汗を抑え集中力を高める。' },
-      { id: 'eq_visor_sr', name: '太陽のサンバイザー', icon: '🧢', type: 'head', rarity: 'SR', atk: 6, hp: 40, desc: '眩しさを完全にカットするバイザー。' },
-      { id: 'eq_helm_ssr', name: '豊作の黄金兜', icon: '🪖', type: 'head', rarity: 'SSR', atk: 12, hp: 75, desc: '黄金に輝く威厳ある兜。' },
-
-      // 手袋 (hand)
-      { id: 'eq_glove_n', name: 'イボ付き軍手', icon: '🧤', type: 'hand', rarity: 'N', atk: 2, hp: 5, desc: 'グリップ力のある軍手。' },
-      { id: 'eq_rubber_r', name: '耐油ゴム手袋', icon: '🧤', type: 'hand', rarity: 'R', atk: 6, hp: 12, desc: '水や薬品に強い丈夫な手袋。' },
-      { id: 'eq_leather_sr', name: '革製プロ手袋', icon: '🥊', type: 'hand', rarity: 'SR', atk: 14, hp: 25, desc: '怪我を防ぐ本格革手袋。' },
-      { id: 'eq_gauntlet_ssr', name: '精霊のグローブ', icon: '🔮', type: 'hand', rarity: 'SSR', atk: 25, hp: 45, desc: '大地の力を宿した神秘のグローブ。' },
-
-      // 靴/アクセ (feet)
-      { id: 'eq_boots_n', name: '田んぼ長靴', icon: '👢', type: 'feet', rarity: 'N', atk: 0, hp: 15, desc: '泥の中でも歩きやすい長靴。' },
-      { id: 'eq_tabi_r', name: '軽量地下足袋', icon: '👟', type: 'feet', rarity: 'R', atk: 4, hp: 25, desc: '踏ん張りが効く伝統の足袋。' },
-      { id: 'eq_amulet_sr', name: '豊作祈願の御守り', icon: '⛩️', type: 'feet', rarity: 'SR', atk: 10, hp: 40, desc: '神社の御加護がある御守り。' },
-      { id: 'eq_boots_ssr', name: '疾風のスパイクブーツ', icon: '🥾', type: 'feet', rarity: 'SSR', atk: 20, hp: 65, desc: '軽やかに畑を疾走できる特殊ブーツ。' }
-    ];
-
-    let activeUser = localStorage.getItem('passionMapUserName') || '';
-    let state = null;
-    let battle = null;
-    let combo = 0;
-    let comboTimer = null;
-
-    async function callGAS(action, params = {}, retries = 2) {
-      params.action = action;
-      if (action !== 'login') {
-        const spreadsheetId = localStorage.getItem('spreadsheetId');
-        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || !String(spreadsheetId).trim()) {
-          throw new Error('ログインセッションが無効です。再ログインしてください。');
-        }
-        params.spreadsheetId = spreadsheetId;
-      }
-      let lastError = null;
-      for (let i = 0; i <= retries; i++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 45000);
-        try {
-          const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
-          clearTimeout(timeoutId);
-          const text = await res.text();
-          let json;
-          try { json = JSON.parse(text); }
-          catch (e) {
-            if (text.includes('<!DOCTYPE') || text.includes('<html')) {
-              throw new Error('Googleサーバーの一時エラーです。再試行中…');
-            }
-            throw new Error('サーバー応答が不正です');
-          }
-          if (json.status !== 'success') throw new Error(json.message || '通信エラー');
-          return json.data;
-        } catch (err) {
-          clearTimeout(timeoutId);
-          lastError = err;
-          if (i < retries) await new Promise(r => setTimeout(r, 1200));
-        }
-      }
-      if (lastError && lastError.name === 'AbortError') {
-        throw new Error('通信がタイムアウトしました');
-      }
-      throw lastError;
     }
+    // Player HQ bottom-leftish
+    const pr = MAP_SIZE - 2, pc = 1;
+    tiles[idx(pr, pc)].owner = 'player';
+    tiles[idx(pr, pc)].building = 'hq';
+    tiles[idx(pr, pc)].fertility = 3;
+    tiles[idx(pr, pc)].pest = 0;
+    // Rival HQ top-rightish
+    const rr = 1, rc = MAP_SIZE - 2;
+    tiles[idx(rr, rc)].owner = 'rival';
+    tiles[idx(rr, rc)].building = 'hq';
+    tiles[idx(rr, rc)].fertility = 3;
+    tiles[idx(rr, rc)].pest = 0;
+    return { tiles, playerHq: { r: pr, c: pc }, rivalHq: { r: rr, c: rc } };
+  }
 
-    function showSyncOverlay(on) {
-      const el = document.getElementById('syncOverlay');
-      if (!el) return;
-      el.classList.toggle('show', !!on);
-    }
+  function defaultState() {
+    const map = createMap();
+    const starter = cloneGeneralTemplate(GENERAL_POOL.find(g => g.id === 'g_hyakusho') || GENERAL_POOL[0]);
+    starter.r = map.playerHq.r;
+    starter.c = map.playerHq.c;
+    const rivalGen = cloneGeneralTemplate(GENERAL_POOL.find(g => g.id === 'g_ashigaru') || GENERAL_POOL[0]);
+    rivalGen.owner = 'rival';
+    rivalGen.name = '敵・足軽';
+    rivalGen.r = map.rivalHq.r;
+    rivalGen.c = map.rivalHq.c;
+    return {
+      tiles: map.tiles,
+      generals: [starter, rivalGen],
+      coins: 40,
+      claimedWorkMins: 0,
+      fertilizer: 3,
+      pesticide: 2,
+      turn: 1,
+      ap: 3,
+      apMax: 3,
+      seasonEnded: false,
+      harvestBonusClaimed: false,
+      log: []
+    };
+  }
 
-    function battleStorageKey(user) {
-      const u = String(user || activeUser || 'guest').trim() || 'guest';
-      return STORAGE_KEY + ':' + u;
-    }
-
-    function defaultState() {
-      const skills = {};
-      SKILLS.forEach(s => { skills[s.id] = { exp: 0, lv: 1 }; });
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(storageKey());
+      if (!raw) return defaultState();
+      const parsed = JSON.parse(raw);
+      const base = defaultState();
       return {
-        totalExp: 0,
-        coins: 50,
-        wins: 0,
-        streak: 0,
-        log: [],
-        skills,
-        inventory: ['eq_sickle_n', 'eq_straw_n', 'eq_glove_n', 'eq_boots_n'],
-        equipped: { tool: 'eq_sickle_n', head: 'eq_straw_n', hand: 'eq_glove_n', feet: 'eq_boots_n' }
+        tiles: Array.isArray(parsed.tiles) && parsed.tiles.length === MAP_SIZE * MAP_SIZE ? parsed.tiles : base.tiles,
+        generals: Array.isArray(parsed.generals) && parsed.generals.length ? parsed.generals : base.generals,
+        coins: parsed.coins != null ? parsed.coins : base.coins,
+        claimedWorkMins: parsed.claimedWorkMins || 0,
+        fertilizer: parsed.fertilizer != null ? parsed.fertilizer : base.fertilizer,
+        pesticide: parsed.pesticide != null ? parsed.pesticide : base.pesticide,
+        turn: parsed.turn || 1,
+        ap: parsed.ap != null ? parsed.ap : base.ap,
+        apMax: parsed.apMax || base.apMax,
+        seasonEnded: !!parsed.seasonEnded,
+        harvestBonusClaimed: !!parsed.harvestBonusClaimed,
+        log: parsed.log || []
       };
+    } catch (e) {
+      return defaultState();
     }
+  }
 
-    function parseWorkMinutes_(ph) {
-      const d = (ph && ph.data) || {};
-      let mins = parseInt(d.workMinutes || ph.workMinutes || 0, 10) || 0;
-      if (mins > 0) return mins;
-      const t = String(d.totalTime || '').trim();
-      if (t) {
-        const hm = t.match(/(\d+)\s*時間/);
-        const mm = t.match(/(\d+)\s*分/);
-        mins = (hm ? parseInt(hm[1], 10) * 60 : 0) + (mm ? parseInt(mm[1], 10) : 0);
-        if (mins > 0) return mins;
-      }
-      const st = String(d.startTime || '').trim();
-      const et = String(d.endTime || '').trim();
-      if (st && et && /^\d{1,2}:\d{2}$/.test(st) && /^\d{1,2}:\d{2}$/.test(et)) {
-        const [sh, sm] = st.split(':').map(Number);
-        const [eh, em] = et.split(':').map(Number);
-        let diff = (eh * 60 + em) - (sh * 60 + sm);
-        if (diff < 0) diff += 24 * 60;
-        const br = Math.max(0, parseInt(d.breakMins, 10) || 0);
-        return Math.max(0, diff - br);
-      }
-      return 0;
-    }
-
-    function collectPolygonsFromInit_(initData) {
-      if (!initData) return [];
-      if (initData.loadedPolygons && typeof initData.loadedPolygons === 'object') {
-        return Object.values(initData.loadedPolygons);
-      }
-      if (Array.isArray(initData.polygons)) return initData.polygons;
-      return [];
-    }
-
-    function calculateRealUserSkills(targetUser) {
-      const user = targetUser || activeUser;
-      const skills = {};
-      SKILLS.forEach(s => { skills[s.id] = { exp: 0, lv: 1, count: 0 }; });
-      let recordCount = 0;
-      const usersFound = new Set();
-      try {
-        const initDataRaw = localStorage.getItem('passionMapInitData') || localStorage.getItem('pMapAdminInitData');
-        if (initDataRaw) {
-          const initData = JSON.parse(initDataRaw);
-          const polys = collectPolygonsFromInit_(initData);
-          polys.forEach(poly => {
-            if (!poly || !Array.isArray(poly.photos)) return;
-            poly.photos.forEach(ph => {
-              if (!ph) return;
-              const author = String(ph.author || ph.userName || (ph.data && ph.data.userName) || '').trim();
-              if (author) usersFound.add(author);
-              if (user && user !== '全員' && author && author !== user) return;
-              const wName = String((ph.data && ph.data.workName) || ph.workName || ph.comment || '').trim();
-              const details = String((ph.data && ph.data.detailedWorks) || ph.detailedWorks || '').trim();
-              const combinedText = (wName + ' ' + details).toLowerCase();
-              const mins = parseWorkMinutes_(ph);
-              if (!combinedText && mins === 0) return;
-              const typ = String(ph.type || ph.recordType || 'work');
-              if (typ && typ !== 'work' && typ !== '作業') return;
-              recordCount++;
-              if (combinedText.includes('播種') || combinedText.includes('種まき') || combinedText.includes('接ぎ木') || combinedText.includes('苗')) {
-                skills.sowing.exp += 15 + Math.floor(mins * 0.5); skills.sowing.count++;
-              }
-              if (combinedText.includes('定植') || combinedText.includes('植え付け') || combinedText.includes('苗植え')) {
-                skills.planting.exp += 20 + Math.floor(mins * 0.6); skills.planting.count++;
-              }
-              if (combinedText.includes('収穫') || combinedText.includes('穫り')) {
-                skills.harvest.exp += 25 + Math.floor(mins * 0.8); skills.harvest.count++;
-              }
-              if (combinedText.includes('草刈り') || combinedText.includes('草むしり') || combinedText.includes('草抜き') || combinedText.includes('除草') || combinedText.includes('刈り')) {
-                skills.weeding.exp += 18 + Math.floor(mins * 0.5); skills.weeding.count++;
-              }
-              if (combinedText.includes('潅水') || combinedText.includes('灌水') || combinedText.includes('水まき') || combinedText.includes('水やり') || combinedText.includes('田まわり')) {
-                skills.water.exp += 15 + Math.floor(mins * 0.4); skills.water.count++;
-              }
-              if (combinedText.includes('防除') || combinedText.includes('消毒') || combinedText.includes('農薬') || combinedText.includes('散布')) {
-                skills.pest.exp += 20 + Math.floor(mins * 0.6); skills.pest.count++;
-              }
-              if (combinedText.includes('畝') || combinedText.includes('畝立て') || combinedText.includes('マルチャー') || combinedText.includes('耕起') || combinedText.includes('代かき')) {
-                skills.ridge.exp += 20 + Math.floor(mins * 0.6); skills.ridge.count++;
-              }
-              if (combinedText.includes('パック') || combinedText.includes('選別') || combinedText.includes('調整') || combinedText.includes('出荷') || combinedText.includes('パッキング')) {
-                skills.pack.exp += 15 + Math.floor(mins * 0.5); skills.pack.count++;
-              }
-            });
-          });
-        }
-      } catch (e) { console.warn('リアル作業データの集計中にエラー:', e); }
-      Object.keys(skills).forEach(id => { skills[id].lv = skillLevelFromExp(skills[id].exp); });
-      const totalExp = Object.values(skills).reduce((a, sk) => a + sk.exp, 0);
-      return { skills, totalExp, recordCount, usersFound: Array.from(usersFound).filter(Boolean) };
-    }
-
-    function loadState() {
-      try {
-        const raw = localStorage.getItem(battleStorageKey()) || localStorage.getItem(STORAGE_KEY);
-        const base = defaultState();
-        const real = calculateRealUserSkills(activeUser);
-        let parsed = {};
-        if (raw) { try { parsed = JSON.parse(raw); } catch (e) {} }
-        const mergedSkills = {};
-        SKILLS.forEach(s => {
-          const rExp = (real.skills[s.id] ? real.skills[s.id].exp : 0);
-          let manual = 0;
-          if (parsed.skills && parsed.skills[s.id]) {
-            if (parsed.skills[s.id].manualExp != null) manual = parsed.skills[s.id].manualExp;
-            else manual = Math.max(0, (parsed.skills[s.id].exp || 0) - (parsed.skills[s.id].realExp || 0));
-          }
-          const total = rExp + Math.max(0, manual);
-          mergedSkills[s.id] = { exp: total, lv: skillLevelFromExp(total), realExp: rExp, manualExp: Math.max(0, manual) };
-        });
-        const totalMergedExp = Object.values(mergedSkills).reduce((acc, cur) => acc + cur.exp, 0);
-        const extraExp = parsed.extraExp || 0;
-        return {
-          totalExp: totalMergedExp + extraExp,
-          extraExp: extraExp,
-          coins: parsed.coins != null ? parsed.coins : (base.coins + (real.recordCount * 5)),
-          wins: parsed.wins || 0,
-          streak: parsed.streak || 0,
-          log: parsed.log || [],
-          skills: mergedSkills,
-          inventory: Array.isArray(parsed.inventory) ? parsed.inventory : base.inventory,
-          equipped: Object.assign({}, base.equipped, parsed.equipped || {}),
-          recordCount: real.recordCount,
-          usersFound: real.usersFound
-        };
-      } catch (e) { return defaultState(); }
-    }
-
-    function saveState() {
-      if (!activeUser || !state) return;
-      const toSave = {
+  function saveState() {
+    if (!activeUser || !state) return;
+    try {
+      localStorage.setItem(storageKey(), JSON.stringify({
+        tiles: state.tiles,
+        generals: state.generals,
         coins: state.coins,
-        wins: state.wins,
-        streak: state.streak,
-        log: state.log,
-        inventory: state.inventory,
-        equipped: state.equipped,
-        extraExp: state.extraExp || 0,
-        skills: {}
-      };
-      SKILLS.forEach(s => {
-        const sk = (state.skills && state.skills[s.id]) || {};
-        toSave.skills[s.id] = { manualExp: sk.manualExp != null ? sk.manualExp : 0 };
+        claimedWorkMins: state.claimedWorkMins,
+        fertilizer: state.fertilizer,
+        pesticide: state.pesticide,
+        turn: state.turn,
+        ap: state.ap,
+        apMax: state.apMax,
+        seasonEnded: state.seasonEnded,
+        harvestBonusClaimed: state.harvestBonusClaimed,
+        log: (state.log || []).slice(-30)
+      }));
+    } catch (e) {}
+  }
+
+  // ——— Combat / adjacency ———
+  function neighbors(r, c) {
+    return DIRS.map(([dr, dc]) => [r + dr, c + dc]).filter(([nr, nc]) => inBounds(nr, nc));
+  }
+
+  function isAdjacentOwned(r, c, owner) {
+    return neighbors(r, c).some(([nr, nc]) => tileAt(nr, nc).owner === owner);
+  }
+
+  function generalsAt(r, c, owner) {
+    return state.generals.filter(g => g.r === r && g.c === c && (!owner || g.owner === owner));
+  }
+
+  function playerGenerals() {
+    return state.generals.filter(g => g.owner === 'player');
+  }
+
+  function rivalGenerals() {
+    return state.generals.filter(g => g.owner === 'rival');
+  }
+
+  function getSelectedGeneral() {
+    return state.generals.find(g => g.instanceId === selectedGenId && g.owner === 'player') || null;
+  }
+
+  function calcApMax() {
+    return Math.min(6, 3 + Math.floor(playerGenerals().length / 2));
+  }
+
+  function refreshApMax() {
+    state.apMax = calcApMax();
+    if (state.ap > state.apMax) state.ap = state.apMax;
+  }
+
+  function manhattan(r1, c1, r2, c2) {
+    return Math.abs(r1 - r2) + Math.abs(c1 - c2);
+  }
+
+  function buildingBonus(building) {
+    if (!building || !BUILDINGS[building]) return 0;
+    return BUILDINGS[building].bonus || 0;
+  }
+
+  function tileYield(t) {
+    if (!t || !t.owner) return 0;
+    const fert = Math.max(1, Math.min(5, t.fertility | 0));
+    const pest = Math.max(0, Math.min(3, t.pest | 0));
+    return fert * 10 * (1 + buildingBonus(t.building)) * (1 - pest * 0.15);
+  }
+
+  function calcHarvest(owner) {
+    let sum = 0;
+    state.tiles.forEach(t => {
+      if (t.owner === owner) sum += tileYield(t);
+    });
+    return Math.round(sum);
+  }
+
+  function countTiles(owner) {
+    return state.tiles.filter(t => t.owner === owner).length;
+  }
+
+  function hasBuilding(owner, type) {
+    return state.tiles.some(t => t.owner === owner && t.building === type);
+  }
+
+  function spendAp(n) {
+    if (state.ap < n) { toast('APが足りません'); return false; }
+    state.ap -= n;
+    return true;
+  }
+
+  function spendCoins(n) {
+    if (state.coins < n) { toast('コインが足りません'); return false; }
+    state.coins -= n;
+    return true;
+  }
+
+  // ——— Actions ———
+  function claimTile(r, c) {
+    if (state.seasonEnded) { toast('季節終了済み。収穫確定してください'); return; }
+    const gen = getSelectedGeneral();
+    if (!gen) { toast('武将を選択してください'); switchTab('generals'); return; }
+    if (gen.r < 0) { toast('武将がマップにいません'); return; }
+    const t = tileAt(r, c);
+    if (t.owner === 'player') { toast('既に自領地です'); return; }
+    if (!isAdjacentOwned(r, c, 'player')) { toast('自領地に隣接していません'); return; }
+    // General must be adjacent to target or on adjacent owned tile
+    const genAdj = manhattan(gen.r, gen.c, r, c) <= 1 ||
+      neighbors(r, c).some(([nr, nc]) => tileAt(nr, nc).owner === 'player' && gen.r === nr && gen.c === nc);
+    if (manhattan(gen.r, gen.c, r, c) > Math.max(1, gen.move)) {
+      toast('武将が遠すぎます（移動してから占領）');
+      return;
+    }
+    if (!spendAp(1)) return;
+
+    if (t.owner === 'rival') {
+      const defenders = generalsAt(r, c, 'rival');
+      const defAtk = defenders.reduce((s, g) => s + g.atk, 0) + 5;
+      const atkRoll = gen.atk + Math.floor(Math.random() * 8);
+      const defRoll = defAtk + Math.floor(Math.random() * 6);
+      if (atkRoll <= defRoll) {
+        toast(`⚔️ 占領失敗… ATK ${atkRoll} vs ${defRoll}`);
+        saveState(); renderAll();
+        return;
+      }
+      toast(`⚔️ 占領成功！ ATK ${atkRoll} > ${defRoll}`);
+      // Kick rival generals to nearest rival tile
+      defenders.forEach(g => {
+        const safe = findOwnedTile(g, 'rival');
+        if (safe) { g.r = safe.r; g.c = safe.c; }
+        else { g.r = -1; g.c = -1; }
       });
-      localStorage.setItem(battleStorageKey(), JSON.stringify(toSave));
+      if (t.building === 'hq') t.building = null;
+    } else {
+      toast('🏴 領地を占領した！');
     }
+    t.owner = 'player';
+    t.cared = true;
+    gen.r = r;
+    gen.c = c;
+    selectedTile = { r, c };
+    saveState();
+    renderAll();
+  }
 
-    async function syncWorkRecordsFromServer() {
-      showSyncOverlay(true);
-      const hint = document.getElementById('syncStatusHint');
-      if (hint) hint.textContent = '🔄 サーバーから作業記録を取得中…';
-      try {
-        const data = await callGAS('getInitData');
-        localStorage.setItem('passionMapInitData', JSON.stringify(data));
-        state = loadState();
-        if (hint) hint.textContent = '🔄 実記録 ' + (state.recordCount || 0) + ' 件から同期済み';
-        return data;
-      } finally { showSyncOverlay(false); }
-    }
-
-    function showApp() {
-      document.getElementById('loginScreen').classList.add('hidden');
-      document.getElementById('appMain').classList.remove('hidden');
-      battleLoggedIn = true;
-      activeUser = localStorage.getItem('passionMapUserName') || activeUser || '作業員';
-      state = loadState();
-      const heroName = document.getElementById('heroName');
-      if (heroName) heroName.textContent = activeUser;
-      renderAll();
-      if (!battle) startBattle();
-    }
-
-    function showLogin() {
-      document.getElementById('loginScreen').classList.remove('hidden');
-      document.getElementById('appMain').classList.add('hidden');
-      battleLoggedIn = false;
-      const savedId = localStorage.getItem('passionMapUserId') || '';
-      const idEl = document.getElementById('loginId');
-      if (idEl && savedId) idEl.value = savedId;
-    }
-
-    async function executeBattleLogin(isAuto) {
-      isAuto = isAuto === true;
-      const idEl = document.getElementById('loginId');
-      const pwEl = document.getElementById('loginPw');
-      const errEl = document.getElementById('loginError');
-      const btn = document.getElementById('loginBtn');
-      const id = ((idEl && idEl.value) || '').trim() || localStorage.getItem('passionMapUserId') || '';
-      const pw = (pwEl && pwEl.value) || localStorage.getItem('passionMapUserPw') || '';
-      if (errEl) errEl.textContent = '';
-      if (!id || !pw) {
-        if (!isAuto && errEl) errEl.textContent = 'スタッフIDとパスワードを入力してください';
-        if (!isAuto) showLogin();
-        return false;
-      }
-      if (!isAuto && btn) { btn.disabled = true; btn.textContent = '通信中...'; }
-      try {
-        const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
-        if (!result || !result.success) throw new Error((result && result.message) || 'ログインに失敗しました');
-        localStorage.setItem('passionMapUserId', id);
-        localStorage.setItem('passionMapUserPw', pw);
-        localStorage.setItem('passionMapUserName', result.name);
-        localStorage.setItem('passionMapUserRole', result.role || '作業員');
-        localStorage.setItem('spreadsheetId', result.spreadsheetId);
-        activeUser = result.name;
-        await syncWorkRecordsFromServer();
-        showApp();
-        toast('👤 ' + activeUser + ' さんでログイン・連動しました');
-        return true;
-      } catch (e) {
-        console.warn('battle login failed', e);
-        if (errEl) errEl.textContent = e.message || String(e);
-        if (!isAuto) showLogin();
-        return false;
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'ログイン'; }
+  function findOwnedTile(gen, owner) {
+    // Prefer HQ, else any owned
+    for (let i = 0; i < state.tiles.length; i++) {
+      if (state.tiles[i].owner === owner && state.tiles[i].building === 'hq') {
+        return { r: Math.floor(i / MAP_SIZE), c: i % MAP_SIZE };
       }
     }
-
-    async function logoutBattle() {
-      if (!confirm('ログアウトしますか？（ゲーム進捗はこの端末に残ります）')) return;
-      localStorage.removeItem('passionMapUserPw');
-      localStorage.removeItem('spreadsheetId');
-      battle = null;
-      showLogin();
-      toast('ログアウトしました');
+    for (let i = 0; i < state.tiles.length; i++) {
+      if (state.tiles[i].owner === owner) {
+        return { r: Math.floor(i / MAP_SIZE), c: i % MAP_SIZE };
+      }
     }
+    return null;
+  }
 
-    async function resyncBattleRecords() {
-      try {
-        await syncWorkRecordsFromServer();
-        const select = document.getElementById('userSelect');
-        if (select) select.innerHTML = '<option value="">(ログイン中のユーザー)</option>';
-        renderAll();
-        toast('作業記録を再同期しました（' + (state.recordCount || 0) + '件）');
-      } catch (e) {
-        toast('再同期に失敗: ' + (e.message || e));
+  function improveLand(r, c) {
+    if (state.seasonEnded) return;
+    const t = tileAt(r, c);
+    if (t.owner !== 'player') { toast('自領地のみ改良できます'); return; }
+    if (t.fertility >= 5) { toast('肥沃度は最大です'); return; }
+    const gen = getSelectedGeneral();
+    const farmBonus = gen && manhattan(gen.r, gen.c, r, c) <= 1 ? Math.floor(gen.farm / 10) : 0;
+    const useItem = state.fertilizer > 0;
+    if (!spendAp(1)) return;
+    if (useItem) {
+      state.fertilizer--;
+    } else {
+      const cost = Math.max(8, PRICES.improveCoin - farmBonus * 2);
+      if (!spendCoins(cost)) { state.ap++; return; }
+    }
+    t.fertility = Math.min(5, t.fertility + 1);
+    t.cared = true;
+    toast(useItem ? '🌿 肥料で土地改良！' : '🌿 コインで土地改良！');
+    saveState();
+    renderAll();
+  }
+
+  function sprayPest(r, c) {
+    if (state.seasonEnded) return;
+    const t = tileAt(r, c);
+    if (t.owner !== 'player') { toast('自領地のみ防除できます'); return; }
+    if (t.pest <= 0) { toast('害虫はいません'); return; }
+    const useItem = state.pesticide > 0;
+    if (!spendAp(1)) return;
+    if (useItem) {
+      state.pesticide--;
+    } else {
+      if (!spendCoins(PRICES.sprayCoin)) { state.ap++; return; }
+    }
+    t.pest = Math.max(0, t.pest - 1);
+    t.cared = true;
+    toast(useItem ? '🛡️ 農薬で防除！' : '🛡️ コインで防除！');
+    saveState();
+    renderAll();
+  }
+
+  function buildOnTile(r, c, type) {
+    if (state.seasonEnded) return;
+    const t = tileAt(r, c);
+    if (t.owner !== 'player') { toast('自領地にのみ建設できます'); return; }
+    if (t.building) { toast('既に建物があります（撤去不可）'); return; }
+    const costs = {
+      fertShop: PRICES.buildFertShop,
+      pestShop: PRICES.buildPestShop,
+      fertPlant: PRICES.buildFertPlant,
+      pestDepot: PRICES.buildPestDepot
+    };
+    const cost = costs[type];
+    if (cost == null) return;
+    if (!spendAp(2)) return;
+    if (!spendCoins(cost)) { state.ap += 2; return; }
+    t.building = type;
+    t.cared = true;
+    toast('🏗️ ' + BUILDINGS[type].name + 'を建設！');
+    saveState();
+    renderAll();
+  }
+
+  function moveGeneral(r, c) {
+    if (state.seasonEnded) return;
+    const gen = getSelectedGeneral();
+    if (!gen) { toast('武将を選択してください'); return; }
+    const t = tileAt(r, c);
+    if (t.owner !== 'player') { toast('自領地にのみ移動できます'); return; }
+    if (gen.r === r && gen.c === c) { toast('すでにそこにいます'); return; }
+    const dist = manhattan(gen.r, gen.c, r, c);
+    if (dist > gen.move) { toast('移動力不足（移動力 ' + gen.move + '）'); return; }
+    if (!spendAp(1)) return;
+    gen.r = r;
+    gen.c = c;
+    toast(gen.emoji + ' ' + gen.name + ' が移動');
+    saveState();
+    renderAll();
+  }
+
+  // ——— End turn / AI / harvest ———
+  function produceFacilities(owner) {
+    let fert = 0, pest = 0;
+    state.tiles.forEach(t => {
+      if (t.owner !== owner) return;
+      if (t.building === 'fertPlant') fert += 2;
+      if (t.building === 'pestDepot') pest += 2;
+    });
+    if (owner === 'player') {
+      state.fertilizer += fert;
+      state.pesticide += pest;
+      if (fert || pest) toast(`🏭 生産 +肥料${fert} +農薬${pest}`);
+    }
+    return { fert, pest };
+  }
+
+  function pestEvents() {
+    state.tiles.forEach(t => {
+      if (!t.owner) return;
+      if (t.cared) { t.cared = false; return; }
+      if (Math.random() < 0.22) {
+        t.pest = Math.min(3, (t.pest || 0) + 1);
+      }
+      if (t.pest >= 2 && Math.random() < 0.15) {
+        t.fertility = Math.max(1, t.fertility - 1);
+      }
+    });
+  }
+
+  function rivalAI() {
+    const gens = rivalGenerals().filter(g => g.r >= 0);
+    if (!gens.length) return;
+    let ap = Math.min(5, 3 + Math.floor(gens.length / 2));
+    const tileCount = countTiles('rival');
+
+    const emptyAdj = [];
+    const playerAdj = [];
+    const owned = [];
+    for (let r = 0; r < MAP_SIZE; r++) {
+      for (let c = 0; c < MAP_SIZE; c++) {
+        const t = tileAt(r, c);
+        if (t.owner === 'rival') owned.push({ r, c, t });
+        if (!isAdjacentOwned(r, c, 'rival')) continue;
+        if (!t.owner) emptyAdj.push({ r, c, t });
+        else if (t.owner === 'player' && t.building !== 'hq') playerAdj.push({ r, c, t });
       }
     }
 
-    async function tryAutoLogin() {
-      const id = localStorage.getItem('passionMapUserId');
-      const pw = localStorage.getItem('passionMapUserPw');
-      const sid = localStorage.getItem('spreadsheetId');
-      const name = localStorage.getItem('passionMapUserName');
-      if (id && pw) {
-        const ok = await executeBattleLogin(true);
-        if (ok) return;
-      }
-      if (sid && name) {
-        activeUser = name;
-        try {
-          await syncWorkRecordsFromServer();
-          showApp();
-          toast('👤 ' + activeUser + ' さんの作業記録と連動しました');
-          return;
-        } catch (e) { console.warn('session sync failed', e); }
-      }
-      showLogin();
-      if (id) {
-        const idEl = document.getElementById('loginId');
-        if (idEl) idEl.value = id;
-      }
-    }
+    const preferExpand = tileCount < 12;
 
-    function skillLevelFromExp(exp) {
-      // 0-29:1, 30-69:2, 70-119:3, 120+:4
-      if (exp >= 120) return 4;
-      if (exp >= 70) return 3;
-      if (exp >= 30) return 2;
-      return 1;
-    }
-
-    function expToNext(exp) {
-      const thresholds = [0, 30, 70, 120, 200];
-      const lv = skillLevelFromExp(exp);
-      if (lv >= 4) return { cur: exp - 120, need: 80, pct: 100 };
-      const prev = thresholds[lv - 1];
-      const next = thresholds[lv];
-      return { cur: exp - prev, need: next - prev, pct: Math.min(100, ((exp - prev) / (next - prev)) * 100) };
-    }
-
-    function playerLevel() {
-      return Math.max(1, Math.floor(state.totalExp / 40) + 1);
-    }
-
-    function unlockedSkills() {
-      return SKILLS.filter(s => {
-        const st = state.skills[s.id] || { exp: 0 };
-        return skillLevelFromExp(st.exp) >= s.needLv;
-      });
-    }
-
-    function toast(msg) {
-      const el = document.getElementById('toast');
-      el.textContent = msg;
-      el.classList.add('show');
-      clearTimeout(toast._t);
-      toast._t = setTimeout(() => el.classList.remove('show'), 1800);
-    }
-
-    function switchUser(userName) {
-      activeUser = userName || localStorage.getItem('passionMapUserName') || '作業員';
-      state = loadState();
-      const select = document.getElementById('userSelect');
-      if (select) select.innerHTML = '<option value="">(ログイン中のユーザー)</option>';
-      const heroName = document.getElementById('heroName');
-      if (heroName) heroName.textContent = activeUser;
-      renderAll();
-      toast(`👤 ${activeUser} さんの作業データに切り替えました！`);
-    }
-
-    // ===== ⚔️ 装備補正計算 =====
-    function getEquippedStats() {
-      let atk = 0;
-      let hp = 0;
-      if (state.equipped) {
-        Object.values(state.equipped).forEach(eqId => {
-          const item = EQUIPMENTS.find(e => e.id === eqId);
-          if (item) {
-            atk += item.atk || 0;
-            hp += item.hp || 0;
+    while (ap > 0) {
+      let acted = false;
+      if (preferExpand && emptyAdj.length && ap >= 1) {
+        const pick = emptyAdj.splice(Math.floor(Math.random() * emptyAdj.length), 1)[0];
+        if (pick) {
+          pick.t.owner = 'rival';
+          pick.t.cared = true;
+          const g = gens[Math.floor(Math.random() * gens.length)];
+          if (manhattan(g.r, g.c, pick.r, pick.c) <= g.move + 1) {
+            g.r = pick.r; g.c = pick.c;
           }
+          ap--;
+          acted = true;
+        }
+      } else if (owned.length) {
+        // Improve or build
+        const needy = owned.filter(o => o.t.fertility < 4 || o.t.pest > 0).sort((a, b) => a.t.fertility - b.t.fertility);
+        if (needy.length && ap >= 1) {
+          const o = needy[0];
+          if (o.t.pest > 0) o.t.pest--;
+          else if (o.t.fertility < 5) o.t.fertility++;
+          o.t.cared = true;
+          ap--;
+          acted = true;
+        } else {
+          const bare = owned.filter(o => !o.t.building);
+          if (bare.length && ap >= 2 && Math.random() < 0.4) {
+            const o = bare[Math.floor(Math.random() * bare.length)];
+            const types = ['fertPlant', 'pestDepot', 'fertShop', 'pestShop'];
+            o.t.building = types[Math.floor(Math.random() * types.length)];
+            o.t.cared = true;
+            ap -= 2;
+            acted = true;
+          } else if (playerAdj.length && ap >= 1) {
+            const pick = playerAdj.splice(Math.floor(Math.random() * playerAdj.length), 1)[0];
+            const g = gens.reduce((best, x) => (!best || x.atk > best.atk) ? x : best, null);
+            const atkRoll = (g ? g.atk : 8) + Math.floor(Math.random() * 8);
+            const defGens = generalsAt(pick.r, pick.c, 'player');
+            const defRoll = defGens.reduce((s, x) => s + x.atk, 0) + 5 + Math.floor(Math.random() * 6);
+            if (atkRoll > defRoll) {
+              pick.t.owner = 'rival';
+              if (pick.t.building === 'hq') pick.t.building = null;
+              pick.t.cared = true;
+              defGens.forEach(dg => {
+                const safe = findOwnedTile(dg, 'player');
+                if (safe) { dg.r = safe.r; dg.c = safe.c; }
+              });
+              if (g) { g.r = pick.r; g.c = pick.c; }
+            }
+            ap--;
+            acted = true;
+          } else if (emptyAdj.length && ap >= 1) {
+            const pick = emptyAdj.splice(Math.floor(Math.random() * emptyAdj.length), 1)[0];
+            pick.t.owner = 'rival';
+            pick.t.cared = true;
+            ap--;
+            acted = true;
+          }
+        }
+      }
+      if (!acted) break;
+    }
+    produceFacilities('rival');
+  }
+
+  function endTurn() {
+    if (state.seasonEnded) { toast('季節は終了しています'); return; }
+    if (state.turn >= SEASON_TURNS) {
+      state.seasonEnded = true;
+      toast('🍂 季節終了！収穫確定をしてください');
+      saveState();
+      renderAll();
+      return;
+    }
+    produceFacilities('player');
+    pestEvents();
+    rivalAI();
+    state.turn++;
+    state.coins += 3 + Math.floor(countTiles('player') / 4);
+    refreshApMax();
+    state.ap = state.apMax;
+    if (state.turn > SEASON_TURNS) {
+      state.turn = SEASON_TURNS;
+      state.seasonEnded = true;
+      toast('🍂 最終ターン終了！収穫確定を');
+    } else {
+      toast('⏭️ ターン ' + state.turn + ' 開始（AP ' + state.ap + '）');
+    }
+    saveState();
+    renderAll();
+  }
+
+  function confirmHarvest() {
+    if (!state.seasonEnded && state.turn < SEASON_TURNS) {
+      toast('まだ季節の途中です（24ターン後）');
+      return;
+    }
+    state.seasonEnded = true;
+    const myY = calcHarvest('player');
+    const rivY = calcHarvest('rival');
+    const win = myY >= rivY;
+    let bonus = 0;
+    if (!state.harvestBonusClaimed) {
+      bonus = Math.floor(myY / 20) + (win ? 25 : 5);
+      state.coins += bonus;
+      state.harvestBonusClaimed = true;
+    }
+    saveState();
+    document.getElementById('resultTitle').textContent = win ? '🏆 農地王！' : '惜敗…';
+    document.getElementById('resultScore').innerHTML =
+      `<span style="color:var(--leaf-deep)">あなた ${myY}</span>　vs　<span style="color:var(--danger)">敵 ${rivY}</span>`;
+    document.getElementById('resultBody').textContent =
+      (win
+        ? '領地と改良の両輪で豊作を勝ち取りました！'
+        : '敵の方が収穫が上回りました。次の季節で広げ・高めましょう。') +
+      (bonus ? ` 収穫ボーナス +${bonus}🪙` : '');
+    document.getElementById('modalOverlay').classList.remove('hidden');
+    renderAll();
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.add('hidden');
+  }
+
+  function newSeason() {
+    if (!confirm('新しい季節を始めますか？（現在のマップ進行はリセット、武将・コイン・物資は引き継ぎ）')) return;
+    const keepGens = playerGenerals().map(g => Object.assign({}, g, { r: -1, c: -1 }));
+    const coins = state.coins;
+    const fert = state.fertilizer;
+    const pest = state.pesticide;
+    const claimed = state.claimedWorkMins;
+    const map = createMap();
+    const rivalGen = cloneGeneralTemplate(GENERAL_POOL[0]);
+    rivalGen.owner = 'rival';
+    rivalGen.name = '敵・足軽';
+    rivalGen.r = map.rivalHq.r;
+    rivalGen.c = map.rivalHq.c;
+    if (!keepGens.length) {
+      const s = cloneGeneralTemplate(GENERAL_POOL.find(g => g.id === 'g_hyakusho') || GENERAL_POOL[0]);
+      keepGens.push(s);
+    }
+    keepGens[0].r = map.playerHq.r;
+    keepGens[0].c = map.playerHq.c;
+    // Extra rival gens based on player power
+    const extraRivals = Math.min(2, Math.floor(keepGens.length / 3));
+    const rivals = [rivalGen];
+    for (let i = 0; i < extraRivals; i++) {
+      const tmpl = GENERAL_POOL[1 + (i % 3)];
+      const rg = cloneGeneralTemplate(tmpl);
+      rg.owner = 'rival';
+      rg.name = '敵・' + tmpl.name;
+      rg.r = map.rivalHq.r;
+      rg.c = map.rivalHq.c;
+      rivals.push(rg);
+    }
+    state = {
+      tiles: map.tiles,
+      generals: keepGens.concat(rivals),
+      coins,
+      claimedWorkMins: claimed,
+      fertilizer: fert,
+      pesticide: pest,
+      turn: 1,
+      ap: 3,
+      apMax: 3,
+      seasonEnded: false,
+      harvestBonusClaimed: false,
+      log: []
+    };
+    refreshApMax();
+    state.ap = state.apMax;
+    selectedTile = null;
+    selectedGenId = keepGens[0].instanceId;
+    closeModal();
+    saveState();
+    renderAll();
+    toast('🌱 新季節スタート！');
+  }
+
+  // ——— Gacha ———
+  function playGacha(times) {
+    const cost = times === 10 ? 140 : 15 * times;
+    if (state.coins < cost) { toast('コイン不足（必要 ' + cost + '）'); return; }
+    state.coins -= cost;
+    const results = [];
+    for (let i = 0; i < times; i++) {
+      const rarity = pickGachaRarity();
+      const pool = GENERAL_POOL.filter(g => g.rarity === rarity);
+      const tmpl = pool[Math.floor(Math.random() * pool.length)] || GENERAL_POOL[0];
+      const gen = cloneGeneralTemplate(tmpl);
+      // Place on HQ if free space conceptually — sit on HQ
+      const hq = state.tiles.findIndex(t => t.owner === 'player' && t.building === 'hq');
+      if (hq >= 0) {
+        gen.r = Math.floor(hq / MAP_SIZE);
+        gen.c = hq % MAP_SIZE;
+      }
+      state.generals.push(gen);
+      results.push(gen);
+    }
+    refreshApMax();
+    saveState();
+    const box = document.getElementById('gachaResults');
+    box.innerHTML = results.map(g =>
+      `<div class="gen-card" style="cursor:default">
+        <span class="avatar">${g.emoji}</span>
+        <div><div class="name">${g.name}</div>
+        <div class="meta">ATK ${g.atk} / 農 ${g.farm} / 移動 ${g.move}</div></div>
+        <span class="rarity ${g.rarity}">${g.rarity}</span>
+      </div>`
+    ).join('');
+    toast('🎰 ' + times + '回ガチャ完了！');
+    switchTab('gacha');
+    renderAll();
+  }
+
+  // ——— Shop ———
+  function buyItem(kind) {
+    const hasFertShop = hasBuilding('player', 'fertShop');
+    const hasPestShop = hasBuilding('player', 'pestShop');
+    let cost, stockKey, label;
+    if (kind === 'fert') {
+      cost = hasFertShop ? PRICES.fertShop : PRICES.fertGlobal;
+      stockKey = 'fertilizer';
+      label = '肥料';
+    } else {
+      cost = hasPestShop ? PRICES.pestShop : PRICES.pestGlobal;
+      stockKey = 'pesticide';
+      label = '農薬';
+    }
+    if (!spendCoins(cost)) return;
+    state[stockKey]++;
+    toast('🛒 ' + label + ' +1（' + cost + '🪙）');
+    saveState();
+    renderAll();
+  }
+
+  // ——— Work coins ———
+  function parseWorkMinutesFromPhoto(ph) {
+    const d = (ph && ph.data) || {};
+    let mins = parseInt(d.workMinutes || ph.workMinutes || 0, 10) || 0;
+    if (mins > 0) return mins;
+    const t = String(d.totalTime || '').trim();
+    if (t) {
+      const hm = t.match(/(\d+)\s*時間/);
+      const mm = t.match(/(\d+)\s*分/);
+      mins = (hm ? parseInt(hm[1], 10) * 60 : 0) + (mm ? parseInt(mm[1], 10) : 0);
+      if (mins > 0) return mins;
+    }
+    const st = String(d.startTime || '').trim();
+    const et = String(d.endTime || '').trim();
+    if (st && et && /^\d{1,2}:\d{2}$/.test(st) && /^\d{1,2}:\d{2}$/.test(et)) {
+      const [sh, sm] = st.split(':').map(Number);
+      const [eh, em] = et.split(':').map(Number);
+      let diff = (eh * 60 + em) - (sh * 60 + sm);
+      if (diff < 0) diff += 24 * 60;
+      const br = Math.max(0, parseInt(d.breakMins, 10) || 0);
+      return Math.max(0, diff - br);
+    }
+    return 0;
+  }
+
+  function collectUserWorkMinutes() {
+    const user = String(activeUser || '').replace(/\s+/g, '');
+    let total = 0;
+    let records = 0;
+    try {
+      const raw = localStorage.getItem('passionMapInitData') || localStorage.getItem('pMapAdminInitData');
+      if (!raw) return { total: 0, records: 0 };
+      const initData = JSON.parse(raw);
+      const polys = initData.loadedPolygons
+        ? Object.values(initData.loadedPolygons)
+        : (Array.isArray(initData.polygons) ? initData.polygons : []);
+      const seen = new Set();
+      polys.forEach(poly => {
+        if (!poly || !Array.isArray(poly.photos)) return;
+        poly.photos.forEach(ph => {
+          if (!ph) return;
+          const typ = String(ph.type || ph.recordType || 'work');
+          if (typ && typ !== 'work' && typ !== '作業') return;
+          const author = String(ph.author || ph.userName || (ph.data && ph.data.userName) || '').replace(/\s+/g, '');
+          if (user && user !== 'guest' && author && author !== user && !user.includes(author) && !author.includes(user)) return;
+          const id = ph.id || (ph.data && ph.data.recordId) || '';
+          if (id && seen.has(id)) return;
+          if (id) seen.add(id);
+          const mins = parseWorkMinutesFromPhoto(ph);
+          if (mins <= 0) return;
+          total += mins;
+          records++;
         });
-      }
-      return { atk, hp };
-    }
-
-    function renderHeader() {
-      document.getElementById('playerLevel').textContent = String(playerLevel());
-      document.getElementById('totalExp').textContent = String(state.totalExp);
-      document.getElementById('winStreak').textContent = String(state.streak);
-      document.getElementById('unlockedCount').textContent = String(unlockedSkills().length);
-
-      const coinEl = document.getElementById('coinCount');
-      if (coinEl) coinEl.textContent = String(state.coins || 0);
-
-      const bonusStats = getEquippedStats();
-      const bonusEl = document.getElementById('equipStatsBonus');
-      if (bonusEl) bonusEl.textContent = `+${bonusStats.atk} ATK / +${bonusStats.hp} HP`;
-
-      const pill = document.getElementById('currentUserPill');
-      if (pill) pill.textContent = activeUser;
-
-      const hint = document.getElementById('syncStatusHint');
-      if (hint) {
-        hint.textContent = `🔄 実記録 ${state.recordCount || 0} 件から同期中`;
-      }
-
-      // ユーザー選択肢の動的生成
-      const select = document.getElementById('userSelect');
-      if (select && select.children.length <= 1) {
-        const found = state.usersFound || [];
-        if (!found.includes(activeUser) && activeUser !== '全員') found.push(activeUser);
-        const options = ['(ログイン中のユーザー)', '全員', ...found.filter(u => u !== '(ログイン中のユーザー)')];
-        select.innerHTML = options.map(u => {
-          const val = u === '(ログイン中のユーザー)' ? (localStorage.getItem('passionMapUserName') || '作業員') : u;
-          const selected = (val === activeUser) ? 'selected' : '';
-          return `<option value="${val}" ${selected}>${u}</option>`;
-        }).join('');
-      }
-    }
-
-    // ===== 🎒 装備 ＆ ガチャUIの描画 =====
-    function renderEquipmentSection() {
-      const slotContainer = document.getElementById('equippedSlots');
-      const invContainer = document.getElementById('inventoryList');
-      if (!slotContainer || !invContainer) return;
-
-      const slotTypes = [
-        { type: 'tool', label: '道具', icon: '🪓' },
-        { type: 'head', label: '頭', icon: '👒' },
-        { type: 'hand', label: '手', icon: '🧤' },
-        { type: 'feet', label: '靴', icon: '👢' }
-      ];
-
-      // 装備スロット表示
-      slotContainer.innerHTML = slotTypes.map(s => {
-        const eqId = state.equipped[s.type];
-        const item = EQUIPMENTS.find(e => e.id === eqId);
-        if (item) {
-          const rBg = item.rarity === 'UR' ? '#ffe082' : (item.rarity === 'SSR' ? '#f8bbd0' : (item.rarity === 'SR' ? '#e1bee7' : '#e3f2fd'));
-          return `
-            <div onclick="unequipSlot('${s.type}')" title="クリックで解除: ${item.desc}" style="background:${rBg}; border:1.5px solid #ab47bc; border-radius:8px; padding:6px 4px; text-align:center; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.08);">
-              <div style="font-size:10px; color:#555;">${s.label} [<b style="color:#7b1fa2;">${item.rarity}</b>]</div>
-              <div style="font-size:1.2rem;">${item.icon}</div>
-              <div style="font-size:11px; font-weight:bold; color:#2c2118; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</div>
-              <div style="font-size:10px; color:#2e7d32;">+${item.atk}ATK +${item.hp}HP</div>
-            </div>`;
-        } else {
-          return `
-            <div style="background:#fafafa; border:1px dashed #ccc; border-radius:8px; padding:6px 4px; text-align:center; color:#aaa;">
-              <div style="font-size:10px;">${s.label}</div>
-              <div style="font-size:1.2rem;">${s.icon}</div>
-              <div style="font-size:10px;">未装備</div>
-            </div>`;
-        }
-      }).join('');
-
-      // 所持インベントリ表示
-      const uniqueInv = Array.from(new Set(state.inventory || []));
-      if (!uniqueInv.length) {
-        invContainer.innerHTML = '<div style="font-size:11px; color:#999; width:100%; text-align:center; padding:10px;">ガチャで装備を獲得しよう！</div>';
-      } else {
-        invContainer.innerHTML = uniqueInv.map(id => {
-          const item = EQUIPMENTS.find(e => e.id === id);
-          if (!item) return '';
-          const isEquipped = Object.values(state.equipped).includes(id);
-          const bg = isEquipped ? '#d1c4e9' : '#fff';
-          const border = isEquipped ? '#7b1fa2' : '#ddd';
-          return `
-            <button type="button" onclick="equipItem('${item.id}')" title="${item.desc} (+${item.atk}ATK / +${item.hp}HP)" style="background:${bg}; border:1px solid ${border}; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:4px;">
-              <span>${item.icon}</span>
-              <span><b>${item.name}</b> (${item.rarity})</span>
-              ${isEquipped ? '<span style="font-size:9px; background:#7b1fa2; color:#fff; padding:1px 4px; border-radius:4px;">装備中</span>' : ''}
-            </button>`;
-        }).join('');
-      }
-    }
-
-    function equipItem(id) {
-      const item = EQUIPMENTS.find(e => e.id === id);
-      if (!item) return;
-      state.equipped[item.type] = id;
-      saveState();
-      render();
-      toast(`🎒 ${item.name} (${item.rarity}) を装備しました！`);
-    }
-
-    function unequipSlot(type) {
-      if (state.equipped[type]) {
-        state.equipped[type] = null;
-        saveState();
-        render();
-        toast(`🎒 装備を外しました。`);
-      }
-    }
-
-    // ===== 🎰 ガチャ処理 =====
-    function playGacha(times) {
-      const cost = times * 10;
-      if ((state.coins || 0) < cost) {
-        toast(`⚠️ ガチャコインが足りません！(必要: ${cost}枚 / 所持: ${state.coins || 0}枚)\n作業記録やバトルでコインを獲得しましょう。`);
-        return;
-      }
-      state.coins -= cost;
-
-      const results = [];
-      for (let i = 0; i < times; i++) {
-        const rand = Math.random() * 100;
-        let pool = [];
-        if (rand < 3) pool = EQUIPMENTS.filter(e => e.rarity === 'UR');
-        else if (rand < 15) pool = EQUIPMENTS.filter(e => e.rarity === 'SSR');
-        else if (rand < 40) pool = EQUIPMENTS.filter(e => e.rarity === 'SR');
-        else if (rand < 75) pool = EQUIPMENTS.filter(e => e.rarity === 'R');
-        else pool = EQUIPMENTS.filter(e => e.rarity === 'N');
-
-        if (!pool.length) pool = EQUIPMENTS;
-        const picked = pool[Math.floor(Math.random() * pool.length)];
-
-        if (!state.inventory.includes(picked.id)) {
-          state.inventory.push(picked.id);
-        }
-        // 自動で強力な装備へ装備
-        if (!state.equipped[picked.type]) {
-          state.equipped[picked.type] = picked.id;
-        } else {
-          const currentEq = EQUIPMENTS.find(e => e.id === state.equipped[picked.type]);
-          if (!currentEq || picked.atk + picked.hp > currentEq.atk + currentEq.hp) {
-            state.equipped[picked.type] = picked.id;
-          }
-        }
-        results.push(picked);
-      }
-
-      saveState();
-      render();
-
-      const resBox = document.getElementById('gachaResult');
-      if (resBox) {
-        if (times === 1) {
-          const item = results[0];
-          const color = item.rarity === 'UR' ? '#d50000' : (item.rarity === 'SSR' ? '#c2185b' : (item.rarity === 'SR' ? '#7b1fa2' : '#1976d2'));
-          resBox.innerHTML = `
-            <div>
-              <div style="font-size:1.1rem; font-weight:bold; color:${color};">✨ ガチャ獲得: ${item.icon} ${item.name} (${item.rarity}) ✨</div>
-              <div style="font-size:0.8rem; color:#666; margin-top:2px;">+${item.atk} ATK / +${item.hp} HP — ${item.desc}</div>
-            </div>`;
-        } else {
-          resBox.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:center;">` +
-            results.map(item => {
-              const color = item.rarity === 'UR' ? '#d50000' : (item.rarity === 'SSR' ? '#c2185b' : (item.rarity === 'SR' ? '#7b1fa2' : '#1976d2'));
-              return `<span style="font-size:0.8rem; background:#fff3e0; border:1px solid #ffe0b2; padding:2px 6px; border-radius:4px; color:${color};"><b>${item.icon} ${item.name}</b>(${item.rarity})</span>`;
-            }).join('') + `</div>`;
-        }
-      }
-      toast(`🎰 ガチャ結果: ${results.length}個の装備を獲得！`);
-    }
-
-    function renderWorks() {
-      const grid = document.getElementById('workGrid');
-      grid.innerHTML = WORKS.map(w => `
-        <button type="button" class="work-btn" onclick="recordWork('${w.id}')">
-          <span class="icon">${w.icon}</span>
-          <span class="name">${w.name}</span>
-          <div class="exp">+${w.exp} EXP</div>
-        </button>
-      `).join('');
-    }
-
-    function renderLog() {
-      const el = document.getElementById('workLog');
-      if (!state.log.length) {
-        el.innerHTML = '<div>まだ記録がありません。上の作業をタップしてみてください。</div>';
-        return;
-      }
-      el.innerHTML = state.log.slice(0, 8).map(line => `<div>${line}</div>`).join('');
-    }
-
-    function renderSkills() {
-      const tree = document.getElementById('skillTree');
-      tree.innerHTML = SKILLS.map(s => {
-        const st = state.skills[s.id] || { exp: 0 };
-        const lv = skillLevelFromExp(st.exp);
-        const unlocked = lv >= s.needLv;
-        const prog = expToNext(st.exp);
-        return `
-          <div class="skill ${unlocked ? '' : 'locked'}">
-            <div class="emoji">${s.icon}</div>
-            <div class="meta">
-              <div class="title">${s.name}</div>
-              <div class="desc">${s.desc}（解放Lv${s.needLv}）</div>
-              <div class="bar"><i style="width:${prog.pct}%"></i></div>
-            </div>
-            <div class="lv">${unlocked ? '使用可' : '未解放'}<br>Lv ${lv}<br><span style="font-weight:500;color:#6d5c4d">${st.exp}exp</span></div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    function recordWork(workId) {
-      const w = WORKS.find(x => x.id === workId);
-      if (!w) return;
-
-      clearTimeout(comboTimer);
-      combo += 1;
-      comboTimer = setTimeout(() => { combo = 0; }, 4000);
-
-      const bonus = combo >= 3 ? Math.round(w.exp * 0.3) : 0;
-      const gained = w.exp + bonus;
-
-      const sk = state.skills[w.skill] || { exp: 0, manualExp: 0, realExp: 0 };
-      const beforeLv = skillLevelFromExp(sk.exp);
-      sk.manualExp = (sk.manualExp || 0) + gained;
-      sk.exp = (sk.realExp || 0) + sk.manualExp;
-      const afterLv = skillLevelFromExp(sk.exp);
-      state.skills[w.skill] = sk;
-      state.totalExp += gained;
-      state.coins = (state.coins || 0) + Math.max(1, Math.floor(gained / 4));
-
-      const now = new Date();
-      const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      let line = `${hm} ${w.icon}${w.name} +${gained}EXP`;
-      if (bonus) line += `（コンボ×${combo}）`;
-      state.log.unshift(line);
-      state.log = state.log.slice(0, 40);
-
-      saveState();
-      renderAll();
-      renderBattleActions();
-
-      if (afterLv > beforeLv) {
-        toast(`${w.name}スキルが Lv${afterLv} に！`);
-      } else if (bonus) {
-        toast(`${w.name} +${gained}（コンボ！）`);
-      } else {
-        toast(`${w.name} を記録 +${gained}EXP`);
-      }
-
-      // 解放直後ならバトル導線
-      const skill = SKILLS.find(s => s.id === w.skill);
-      if (skill && beforeLv < skill.needLv && afterLv >= skill.needLv) {
-        setTimeout(() => toast(`技「${skill.name}」を覚えた！`), 900);
-      }
-    }
-
-    function grantDemoDay() {
-      ['sowing', 'planting', 'weeding', 'water', 'harvest', 'planting', 'pack'].forEach((id, i) => {
-        setTimeout(() => recordWork(id), i * 180);
       });
+    } catch (e) { console.warn(e); }
+    return { total, records };
+  }
+
+  function claimWorkCoins() {
+    const { total, records } = collectUserWorkMinutes();
+    const unclaimed = Math.max(0, total - (state.claimedWorkMins || 0));
+    const gain = Math.floor(unclaimed / 5);
+    const hint = document.getElementById('workCoinHint');
+    if (gain <= 0) {
+      if (hint) hint.textContent = records
+        ? `作業時間合計 ${total} 分（受取済）。新しい作業記録でコインになります（5分＝1枚）。`
+        : '作業記録が見つかりません。MAPでログイン・同期後に再試行してください。';
+      toast('獲得できるコインはありません');
+      return;
     }
+    state.coins += gain;
+    state.claimedWorkMins = total;
+    saveState();
+    if (hint) hint.textContent = `+${gain} 枚獲得（未受取 ${unclaimed} 分 ÷ 5）。累計 ${total} 分 / ${records} 件。`;
+    toast('🪙 +' + gain + ' コイン獲得！');
+    renderAll();
+  }
 
-    function resetProgress() {
-      if (!confirm('ガチャ進捗・手動EXP・連勝をリセットしますか？\n（情熱MAPの作業記録から来る経験値は残ります）')) return;
-      localStorage.removeItem(battleStorageKey());
-      localStorage.removeItem(STORAGE_KEY);
-      state = loadState();
-      battle = null;
-      renderAll();
-      document.getElementById('battleLog').textContent = '進捗をリセットしました。もう一度、畑から始めよう。';
-      renderBattleActions();
-      toast('リセットしました（実記録EXPは維持）');
-    }
-
-    function heroMaxHp() {
-      const eqStats = getEquippedStats();
-      return 90 + playerLevel() * 12 + unlockedSkills().length * 4 + eqStats.hp;
-    }
-
-    function startBattle() {
-      const pool = ENEMIES.slice();
-      const boost = Math.min(state.streak, 5);
-      const enemyBase = pool[Math.floor(Math.random() * pool.length)];
-      const enemy = Object.assign({}, enemyBase, {
-        maxHp: enemyBase.hp + boost * 8 + Math.floor(playerLevel() * 3),
-        atk: enemyBase.atk + Math.floor(boost * 1.5)
-      });
-      enemy.hp = enemy.maxHp;
-
-      battle = {
-        heroHp: heroMaxHp(),
-        heroMax: heroMaxHp(),
-        enemy,
-        guard: 0,
-        barrier: 0,
-        counter: 0,
-        over: false,
-        turn: 'hero'
-      };
-      document.getElementById('enemyAvatar').textContent = enemy.avatar;
-      document.getElementById('enemyName').textContent = enemy.name;
-      document.getElementById('heroName').textContent = `あなた（Lv${playerLevel()}）`;
-      setBattleLog(`${enemy.name} が畑に現れた！`);
-      updateHpUi();
-      renderBattleActions();
-    }
-
-    function updateHpUi() {
-      if (!battle) return;
-      const hb = document.getElementById('heroHpBar');
-      const eb = document.getElementById('enemyHpBar');
-      hb.style.width = Math.max(0, (battle.heroHp / battle.heroMax) * 100) + '%';
-      eb.style.width = Math.max(0, (battle.enemy.hp / battle.enemy.maxHp) * 100) + '%';
-      document.getElementById('heroHpText').textContent = `${Math.max(0, Math.ceil(battle.heroHp))} / ${battle.heroMax}`;
-      document.getElementById('enemyHpText').textContent = `${Math.max(0, Math.ceil(battle.enemy.hp))} / ${battle.enemy.maxHp}`;
-    }
-
-    function setBattleLog(msg) {
-      document.getElementById('battleLog').textContent = msg;
-    }
-
-    function floatText(targetEl, text, heal) {
-      const arena = document.getElementById('arena');
-      const rect = targetEl.getBoundingClientRect();
-      const aRect = arena.getBoundingClientRect();
-      const span = document.createElement('div');
-      span.className = 'float-dmg' + (heal ? ' heal' : '');
-      span.textContent = text;
-      span.style.left = (rect.left - aRect.left + rect.width / 2 - 10) + 'px';
-      span.style.top = (rect.top - aRect.top + 20) + 'px';
-      arena.appendChild(span);
-      setTimeout(() => span.remove(), 800);
-    }
-
-    function renderBattleActions() {
-      const box = document.getElementById('battleActions');
-      const unlocked = unlockedSkills();
-      if (!battle || battle.over) {
-        box.innerHTML = `<button type="button" class="sun" onclick="startBattle()">次なる敵とたたかう</button>`;
-        return;
+  // ——— GAS / Login ———
+  async function callGAS(action, params, retries) {
+    params = params || {};
+    retries = retries == null ? 2 : retries;
+    params.action = action;
+    if (action !== 'login') {
+      const spreadsheetId = localStorage.getItem('spreadsheetId');
+      if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || !String(spreadsheetId).trim()) {
+        throw new Error('ログインセッションが無効です。再ログインしてください。');
       }
-      if (!unlocked.length) {
-        box.innerHTML = `<button type="button" disabled>技がまだない（作業を記録しよう）</button>
-          <button type="button" class="secondary" onclick="startBattle()">敵を変える</button>`;
-        return;
-      }
-      box.innerHTML = unlocked.map(s =>
-        `<button type="button" ${battle.turn !== 'hero' ? 'disabled' : ''} onclick="useSkill('${s.id}')">${s.icon} ${s.name}</button>`
-      ).join('') + `<button type="button" class="secondary" ${battle.turn !== 'hero' ? 'disabled' : ''} onclick="useSkill('basic')">たたかう</button>`;
+      params.spreadsheetId = spreadsheetId;
     }
-
-    function useSkill(skillId) {
-      if (!battle || battle.over || battle.turn !== 'hero') return;
-
-      const heroEl = document.getElementById('heroFighter');
-      const enemyEl = document.getElementById('enemyFighter');
-      const eqStats = getEquippedStats();
-
-      if (skillId === 'basic') {
-        const dmg = 10 + Math.floor(playerLevel() * 1.5) + eqStats.atk + Math.floor(Math.random() * 5);
-        dealToEnemy(dmg, '基本の農作業');
-        return;
-      }
-
-      const skill = SKILLS.find(s => s.id === skillId);
-      if (!skill) return;
-      const st = state.skills[skill.id];
-      const lv = skillLevelFromExp(st.exp);
-      const scale = 1 + (lv - 1) * 0.15;
-
-      heroEl.classList.remove('attack');
-      void heroEl.offsetWidth;
-      heroEl.classList.add('attack');
-
-      if (skill.type === 'heal') {
-        const heal = Math.round(skill.power * scale + (eqStats.hp * 0.2));
-        battle.heroHp = Math.min(battle.heroMax, battle.heroHp + heal);
-        floatText(heroEl, '+' + heal, true);
-        setBattleLog(`${skill.name}！ HPが ${heal} 回復した。`);
-        updateHpUi();
-        endHeroTurn();
-        return;
-      }
-      if (skill.type === 'guard') {
-        battle.guard = 0.45;
-        setBattleLog(`${skill.name}！ 次の攻撃を受け止めやすい。`);
-        endHeroTurn();
-        return;
-      }
-      if (skill.type === 'barrier') {
-        battle.barrier = 0.65;
-        setBattleLog(`${skill.name}！ 防除バリアを展開。`);
-        endHeroTurn();
-        return;
-      }
-      if (skill.type === 'counter') {
-        battle.counter = Math.round(skill.power * scale + eqStats.atk);
-        setBattleLog(`${skill.name}！ 畝の壁が反撃を構えた。`);
-        endHeroTurn();
-        return;
-      }
-
-      let dmg = Math.round(skill.power * scale + eqStats.atk + Math.random() * 6);
-      if (skill.type === 'weed' && battle.enemy.weed) dmg = Math.round(dmg * 1.45);
-      dealToEnemy(dmg, skill.name);
-    }
-
-    function dealToEnemy(dmg, label) {
-      const enemyEl = document.getElementById('enemyFighter');
-      battle.enemy.hp -= dmg;
-      enemyEl.classList.remove('hit');
-      void enemyEl.offsetWidth;
-      enemyEl.classList.add('hit');
-      floatText(enemyEl, '-' + dmg, false);
-      setBattleLog(`${label}！ ${battle.enemy.name} に ${dmg} ダメージ。`);
-      updateHpUi();
-      if (battle.enemy.hp <= 0) {
-        winBattle();
-        return;
-      }
-      endHeroTurn();
-    }
-
-    function endHeroTurn() {
-      battle.turn = 'enemy';
-      renderBattleActions();
-      setTimeout(enemyTurn, 650);
-    }
-
-    function enemyTurn() {
-      if (!battle || battle.over) return;
-      const heroEl = document.getElementById('heroFighter');
-      const enemyEl = document.getElementById('enemyFighter');
-      enemyEl.classList.remove('attack');
-      void enemyEl.offsetWidth;
-      enemyEl.classList.add('attack');
-
-      let dmg = battle.enemy.atk + Math.floor(Math.random() * 6);
-      if (battle.barrier) dmg = Math.round(dmg * (1 - battle.barrier));
-      else if (battle.guard) dmg = Math.round(dmg * (1 - battle.guard));
-      battle.barrier = 0;
-      battle.guard = 0;
-
-      battle.heroHp -= dmg;
-      heroEl.classList.remove('hit');
-      void heroEl.offsetWidth;
-      heroEl.classList.add('hit');
-      floatText(heroEl, '-' + dmg, false);
-
-      let msg = `${battle.enemy.name} の攻撃！ ${dmg} ダメージ。`;
-      if (battle.counter > 0) {
-        const c = battle.counter;
-        battle.enemy.hp -= c;
-        floatText(enemyEl, '-' + c, false);
-        msg += ` 畝の壁が ${c} の反撃！`;
-        battle.counter = 0;
-      }
-      setBattleLog(msg);
-      updateHpUi();
-
-      if (battle.enemy.hp <= 0) {
-        winBattle();
-        return;
-      }
-      if (battle.heroHp <= 0) {
-        loseBattle();
-        return;
-      }
-      battle.turn = 'hero';
-      renderBattleActions();
-    }
-
-    // ===== 🏆 防衛勝利＆装備宝箱ドロップ処理 =====
-    function winBattle() {
-      battle.over = true;
-      const gainExp = 20 + playerLevel() * 3;
-      const gainCoins = 15 + Math.floor(Math.random() * 10);
-      state.extraExp = (state.extraExp || 0) + gainExp;
-      state.totalExp += gainExp;
-      state.coins = (state.coins || 0) + gainCoins;
-      state.wins += 1;
-      state.streak += 1;
-
-      // 40% の確率で敵から装備ドロップ
-      let dropMsg = '';
-      if (Math.random() < 0.40) {
-        const dropPool = EQUIPMENTS.filter(e => e.rarity !== 'UR');
-        const dropItem = dropPool[Math.floor(Math.random() * dropPool.length)];
-        if (!state.inventory.includes(dropItem.id)) {
-          state.inventory.push(dropItem.id);
+    let lastError = null;
+    for (let i = 0; i <= retries; i++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      try {
+        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
+        clearTimeout(timeoutId);
+        const text = await res.text();
+        let json;
+        try { json = JSON.parse(text); }
+        catch (e) {
+          if (text.includes('<!DOCTYPE') || text.includes('<html')) throw new Error('Googleサーバーの一時エラーです。再試行中…');
+          throw new Error('サーバー応答が不正です');
         }
-        dropMsg = ` 🎁 宝箱から 【${dropItem.icon} ${dropItem.name}(${dropItem.rarity})】 をドロップ！`;
+        if (json.status !== 'success') throw new Error(json.message || '通信エラー');
+        return json.data;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        lastError = err;
+        if (i < retries) await new Promise(r => setTimeout(r, 1200));
       }
-
-      state.log.unshift(`🏆 ${battle.enemy.name} を撃退！ +${gainExp}EXP +${gainCoins}コイン${dropMsg}`);
-      saveState();
-      setBattleLog(`勝利！ ${battle.enemy.name} を畑から追い払った。（+${gainExp}EXP / +${gainCoins}コイン / 連勝${state.streak}）${dropMsg}`);
-      renderAll();
-      renderBattleActions();
-      toast(`防衛成功！ +${gainCoins}コイン獲得！`);
     }
+    if (lastError && lastError.name === 'AbortError') throw new Error('通信がタイムアウトしました');
+    throw lastError;
+  }
 
-    function loseBattle() {
-      battle.over = true;
-      battle.heroHp = 0;
-      state.streak = 0;
-      saveState();
-      setBattleLog(`敗北… ${battle.enemy.name} に畑を荒らされた。作業を積んで再戦しよう。`);
-      updateHpUi();
-      renderHeader();
-      renderBattleActions();
-      toast('また挑戦しよう');
+  async function syncWorkRecordsFromServer() {
+    showSyncOverlay(true);
+    try {
+      const data = await callGAS('getInitData');
+      localStorage.setItem('passionMapInitData', JSON.stringify(data));
+      return data;
+    } finally {
+      showSyncOverlay(false);
     }
+  }
 
-    function renderAll() {
-      renderHeader();
-      renderEquipmentSection();
-      renderWorks();
-      renderLog();
-      renderSkills();
+  function showApp() {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('appMain').classList.remove('hidden');
+    battleLoggedIn = true;
+    activeUser = localStorage.getItem('passionMapUserName') || activeUser || '作業員';
+    state = loadState();
+    refreshApMax();
+    if (!selectedGenId) {
+      const pg = playerGenerals()[0];
+      if (pg) selectedGenId = pg.instanceId;
     }
+    renderAll();
+  }
 
-    // Enterキーでログイン
-    document.getElementById('loginPw')?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') executeBattleLogin(false);
+  function showLogin() {
+    document.getElementById('loginScreen').classList.remove('hidden');
+    document.getElementById('appMain').classList.add('hidden');
+    battleLoggedIn = false;
+    const savedId = localStorage.getItem('passionMapUserId') || '';
+    const idEl = document.getElementById('loginId');
+    if (idEl && savedId) idEl.value = savedId;
+  }
+
+  async function executeBattleLogin(isAuto) {
+    isAuto = isAuto === true;
+    const idEl = document.getElementById('loginId');
+    const pwEl = document.getElementById('loginPw');
+    const errEl = document.getElementById('loginError');
+    const btn = document.getElementById('loginBtn');
+    const id = ((idEl && idEl.value) || '').trim() || localStorage.getItem('passionMapUserId') || '';
+    const pw = (pwEl && pwEl.value) || localStorage.getItem('passionMapUserPw') || '';
+    if (errEl) errEl.textContent = '';
+    if (!id || !pw) {
+      if (!isAuto && errEl) errEl.textContent = 'スタッフIDとパスワードを入力してください';
+      if (!isAuto) showLogin();
+      return false;
+    }
+    if (!isAuto && btn) { btn.disabled = true; btn.textContent = '通信中...'; }
+    try {
+      const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
+      if (!result || !result.success) throw new Error((result && result.message) || 'ログインに失敗しました');
+      localStorage.setItem('passionMapUserId', id);
+      localStorage.setItem('passionMapUserPw', pw);
+      localStorage.setItem('passionMapUserName', result.name);
+      localStorage.setItem('passionMapUserRole', result.role || '作業員');
+      localStorage.setItem('spreadsheetId', result.spreadsheetId);
+      activeUser = result.name;
+      try { await syncWorkRecordsFromServer(); } catch (e) { console.warn(e); }
+      showApp();
+      toast('👤 ' + activeUser + ' さんでログイン');
+      return true;
+    } catch (e) {
+      console.warn('login failed', e);
+      if (errEl) errEl.textContent = e.message || String(e);
+      if (!isAuto) showLogin();
+      return false;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'ログイン'; }
+    }
+  }
+
+  async function logoutBattle() {
+    if (!confirm('ログアウトしますか？（進捗はこの端末に残ります）')) return;
+    localStorage.removeItem('passionMapUserPw');
+    localStorage.removeItem('spreadsheetId');
+    showLogin();
+    toast('ログアウトしました');
+  }
+
+  async function tryAutoLogin() {
+    const id = localStorage.getItem('passionMapUserId');
+    const pw = localStorage.getItem('passionMapUserPw');
+    const sid = localStorage.getItem('spreadsheetId');
+    const name = localStorage.getItem('passionMapUserName');
+    if (id && pw) {
+      const ok = await executeBattleLogin(true);
+      if (ok) return;
+    }
+    if (sid && name) {
+      activeUser = name;
+      try {
+        await syncWorkRecordsFromServer();
+      } catch (e) { console.warn(e); }
+      showApp();
+      toast('👤 ' + activeUser + ' さんのセッションで開始');
+      return;
+    }
+    showLogin();
+    if (id) {
+      const idEl = document.getElementById('loginId');
+      if (idEl) idEl.value = id;
+    }
+  }
+
+  // ——— UI ———
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    ['generals', 'gacha', 'shop', 'help'].forEach(n => {
+      document.getElementById('tab-' + n).classList.toggle('hidden', n !== name);
     });
-    document.getElementById('loginId')?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') document.getElementById('loginPw')?.focus();
+  }
+
+  function selectTile(r, c) {
+    selectedTile = { r, c };
+    renderAll();
+  }
+
+  function selectGeneral(instanceId) {
+    selectedGenId = instanceId;
+    renderAll();
+  }
+
+  function renderMap() {
+    const grid = document.getElementById('mapGrid');
+    const frag = document.createDocumentFragment();
+    grid.innerHTML = '';
+    for (let r = 0; r < MAP_SIZE; r++) {
+      for (let c = 0; c < MAP_SIZE; c++) {
+        const t = tileAt(r, c);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tile ' + (t.owner || 'wild');
+        if (selectedTile && selectedTile.r === r && selectedTile.c === c) btn.classList.add('selected');
+        if (!t.owner && isAdjacentOwned(r, c, 'player')) btn.classList.add('claimable');
+        if (t.owner === 'rival' && isAdjacentOwned(r, c, 'player')) btn.classList.add('claimable');
+        let html = '';
+        if (t.building && BUILDINGS[t.building]) {
+          html += '<span class="bld">' + BUILDINGS[t.building].emoji + '</span>';
+        }
+        html += '<span>' + t.fertility + (t.pest ? '🐛' + t.pest : '') + '</span>';
+        btn.innerHTML = html;
+        const pG = generalsAt(r, c, 'player');
+        const rG = generalsAt(r, c, 'rival');
+        if (pG.length) {
+          const d = document.createElement('span');
+          d.className = 'gen-dot';
+          d.title = pG.map(g => g.name).join(',');
+          btn.appendChild(d);
+        }
+        if (rG.length) {
+          const d = document.createElement('span');
+          d.className = 'gen-dot rival';
+          btn.appendChild(d);
+        }
+        btn.addEventListener('click', () => selectTile(r, c));
+        frag.appendChild(btn);
+      }
+    }
+    grid.appendChild(frag);
+  }
+
+  function renderActionPanel() {
+    const info = document.getElementById('tileInfo');
+    const panel = document.getElementById('actionPanel');
+    panel.innerHTML = '';
+    if (!selectedTile) {
+      info.textContent = 'タイルを選択してください';
+      return;
+    }
+    const { r, c } = selectedTile;
+    const t = tileAt(r, c);
+    const ownerLabel = t.owner === 'player' ? '自領地' : t.owner === 'rival' ? '敵領地' : '未開墾';
+    const bld = t.building && BUILDINGS[t.building] ? BUILDINGS[t.building].name + BUILDINGS[t.building].emoji : 'なし';
+    const gensHere = generalsAt(r, c);
+    info.innerHTML = `(${r},${c}) <b>${ownerLabel}</b>　肥沃度 ${t.fertility}/5　害虫 ${t.pest}/3　建物 ${bld}` +
+      (gensHere.length ? '　武将: ' + gensHere.map(g => g.emoji + g.name).join(', ') : '') +
+      `　予測 ${Math.round(tileYield(t))}`;
+
+    const disabled = state.seasonEnded;
+    const add = (label, fn, cls, dis) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ' + (cls || '');
+      b.textContent = label;
+      b.disabled = !!(dis || disabled);
+      b.onclick = fn;
+      panel.appendChild(b);
+    };
+
+    if (t.owner !== 'player' && isAdjacentOwned(r, c, 'player')) {
+      add('武将で占領 (AP1)', () => claimTile(r, c), 'primary');
+    }
+    if (t.owner === 'player') {
+      add('土地改良 (AP1)', () => improveLand(r, c), '');
+      add('防除 (AP1)', () => sprayPest(r, c), '');
+      add('武将移動 (AP1)', () => moveGeneral(r, c), '');
+      if (!t.building) {
+        add('肥料売店 (40🪙 AP2)', () => buildOnTile(r, c, 'fertShop'), 'gold');
+        add('農薬売店 (40🪙 AP2)', () => buildOnTile(r, c, 'pestShop'), 'gold');
+        add('肥料工場 (70🪙 AP2)', () => buildOnTile(r, c, 'fertPlant'), 'gold');
+        add('農薬倉庫 (70🪙 AP2)', () => buildOnTile(r, c, 'pestDepot'), 'gold');
+      }
+    }
+  }
+
+  function renderGenerals() {
+    const list = document.getElementById('genList');
+    list.innerHTML = '';
+    playerGenerals().forEach(g => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'gen-card' + (g.instanceId === selectedGenId ? ' selected' : '');
+      const pos = g.r >= 0 ? `(${g.r},${g.c})` : '待機';
+      btn.innerHTML = `
+        <span class="avatar">${g.emoji}</span>
+        <div>
+          <div class="name">${g.name}</div>
+          <div class="meta">ATK ${g.atk} / 農 ${g.farm} / 移動 ${g.move}　位置 ${pos}</div>
+        </div>
+        <span class="rarity ${g.rarity}">${g.rarity}</span>`;
+      btn.onclick = () => selectGeneral(g.instanceId);
+      list.appendChild(btn);
     });
-    tryAutoLogin();
-  </script>
+  }
+
+  function renderShop() {
+    const hasF = hasBuilding('player', 'fertShop');
+    const hasP = hasBuilding('player', 'pestShop');
+    document.getElementById('shopHint').textContent = hasF || hasP
+      ? '売店価格で購入できます' + (hasF ? '（肥料安）' : '') + (hasP ? '（農薬安）' : '')
+      : '売店未建設のためグローバル価格です。領地に売店を建てると半額近くに。';
+    const fertCost = hasF ? PRICES.fertShop : PRICES.fertGlobal;
+    const pestCost = hasP ? PRICES.pestShop : PRICES.pestGlobal;
+    document.getElementById('shopList').innerHTML = `
+      <button type="button" class="gen-card" onclick="buyItem('fert')">
+        <span class="avatar">🌿</span>
+        <div><div class="name">肥料 ×1</div><div class="meta">土地改良に使用</div></div>
+        <span class="gold">${fertCost}🪙</span>
+      </button>
+      <button type="button" class="gen-card" onclick="buyItem('pest')">
+        <span class="avatar">🧴</span>
+        <div><div class="name">農薬 ×1</div><div class="meta">防除に使用</div></div>
+        <span class="gold">${pestCost}🪙</span>
+      </button>`;
+  }
+
+  function renderHud() {
+    document.getElementById('hudUser').textContent = activeUser || '—';
+    document.getElementById('hudCoins').textContent = state.coins;
+    document.getElementById('hudTurn').textContent = state.turn;
+    document.getElementById('hudAp').textContent = state.ap;
+    document.getElementById('hudApMax').textContent = state.apMax;
+    document.getElementById('hudFert').textContent = state.fertilizer;
+    document.getElementById('hudPest').textContent = state.pesticide;
+    document.getElementById('hudTiles').textContent = countTiles('player');
+    document.getElementById('hudGens').textContent = playerGenerals().length;
+    document.getElementById('hudYield').textContent = calcHarvest('player');
+    document.getElementById('hudRivalYield').textContent = calcHarvest('rival');
+    const canHarvest = state.seasonEnded || state.turn >= SEASON_TURNS;
+    document.getElementById('btnHarvest').disabled = !canHarvest;
+    document.getElementById('btnEndTurn').disabled = !!state.seasonEnded;
+  }
+
+  function renderAll() {
+    if (!state) return;
+    renderHud();
+    renderMap();
+    renderActionPanel();
+    renderGenerals();
+    renderShop();
+  }
+
+  // Expose for inline handlers
+  window.executeBattleLogin = executeBattleLogin;
+  window.logoutBattle = logoutBattle;
+  window.endTurn = endTurn;
+  window.confirmHarvest = confirmHarvest;
+  window.newSeason = newSeason;
+  window.playGacha = playGacha;
+  window.claimWorkCoins = claimWorkCoins;
+  window.buyItem = buyItem;
+  window.switchTab = switchTab;
+  window.closeModal = closeModal;
+  // Structural verification aliases
+  window.claimTile = claimTile;
+  window.improveLand = improveLand;
+  window.sprayPest = sprayPest;
+  window.buildOnTile = buildOnTile;
+  window.moveGeneral = moveGeneral;
+
+  document.getElementById('loginPw').addEventListener('keydown', e => {
+    if (e.key === 'Enter') executeBattleLogin(false);
+  });
+  document.getElementById('loginId').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('loginPw').focus();
+  });
+
+  tryAutoLogin();
+})();
+</script>
 </body>
 </html>

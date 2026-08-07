@@ -1320,6 +1320,441 @@ async function fetchWeatherAndUpdateUI() {
         }
       };
 
+      // ========== 作業分析（その人の働きを可視化） ==========
+      window._workAnalysisState = window._workAnalysisState || {
+        tab: 'overview',
+        fromYmd: '',
+        toYmd: '',
+        author: '',
+        workName: '',
+        data: null,
+        teamData: null,
+        view: 'people' // people | person
+      };
+
+      window.formatAnalysisMinutes_ = (mins) => {
+        const m = Math.max(0, Math.round(Number(mins) || 0));
+        const h = Math.floor(m / 60);
+        const mm = m % 60;
+        if (h <= 0) return mm + '分';
+        if (mm === 0) return h + '時間';
+        return h + '時間' + mm + '分';
+      };
+
+      window.getAnalysisDefaultRange_ = () => {
+        const now = new Date();
+        const y = now.getFullYear();
+        const mo = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return { fromYmd: `${y}-${mo}-01`, toYmd: `${y}-${mo}-${d}` };
+      };
+
+      window.setWorkAnalysisPreset_ = (preset) => {
+        const st = window._workAnalysisState;
+        const now = new Date();
+        const ymd = (dt) => {
+          const y = dt.getFullYear();
+          const m = String(dt.getMonth() + 1).padStart(2, '0');
+          const d = String(dt.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        };
+        const to = ymd(now);
+        if (preset === '7') {
+          const from = new Date(now.getTime() - 6 * 86400000);
+          st.fromYmd = ymd(from); st.toYmd = to;
+        } else if (preset === '30') {
+          const from = new Date(now.getTime() - 29 * 86400000);
+          st.fromYmd = ymd(from); st.toYmd = to;
+        } else if (preset === 'month') {
+          const def = window.getAnalysisDefaultRange_();
+          st.fromYmd = def.fromYmd; st.toYmd = def.toYmd;
+        } else if (preset === 'lastMonth') {
+          const firstThis = new Date(now.getFullYear(), now.getMonth(), 1);
+          const lastPrev = new Date(firstThis.getTime() - 86400000);
+          const firstPrev = new Date(lastPrev.getFullYear(), lastPrev.getMonth(), 1);
+          st.fromYmd = ymd(firstPrev); st.toYmd = ymd(lastPrev);
+        }
+        window.loadWorkRecordAnalysis();
+      };
+
+      window.openWorkRecordAnalysisModal = () => {
+        const modal = document.getElementById('workRecordAnalysisModal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+        const st = window._workAnalysisState;
+        if (!st.fromYmd || !st.toYmd) {
+          const def = window.getAnalysisDefaultRange_();
+          st.fromYmd = def.fromYmd;
+          st.toYmd = def.toYmd;
+        }
+        // ログインユーザーを初期選択候補に
+        if (!st.author) {
+          const me = localStorage.getItem('passionMapUserName') || '';
+          if (me) st.author = me;
+        }
+        st.view = st.author ? 'person' : 'people';
+        window.loadWorkRecordAnalysis();
+      };
+
+      window.selectWorkAnalysisPerson_ = (name) => {
+        const st = window._workAnalysisState;
+        st.author = String(name || '').trim();
+        st.view = st.author ? 'person' : 'people';
+        st.tab = 'overview';
+        window.loadWorkRecordAnalysis();
+      };
+
+      window.clearWorkAnalysisPerson_ = () => {
+        window.selectWorkAnalysisPerson_('');
+      };
+
+      window.switchWorkAnalysisTab_ = (tab) => {
+        window._workAnalysisState.tab = tab || 'overview';
+        window.renderWorkRecordAnalysis_();
+      };
+
+      window.loadWorkRecordAnalysis = async () => {
+        const body = document.getElementById('workRecordAnalysisBody');
+        if (!body) return;
+        const st = window._workAnalysisState;
+        const fromEl = document.getElementById('wa_from');
+        const toEl = document.getElementById('wa_to');
+        if (fromEl) st.fromYmd = fromEl.value || st.fromYmd;
+        if (toEl) st.toYmd = toEl.value || st.toYmd;
+
+        body.innerHTML = '<div style="color:#666; padding:20px; text-align:center;">働き方を集計中...</div>';
+        try {
+          // チーム全体（人一覧用）と、選択中の人を並行取得
+          const teamPromise = callGAS('getWorkRecordAnalysis', {
+            fromYmd: st.fromYmd,
+            toYmd: st.toYmd,
+            author: '',
+            workName: ''
+          });
+          let personPromise = Promise.resolve(null);
+          if (st.author) {
+            personPromise = callGAS('getWorkRecordAnalysis', {
+              fromYmd: st.fromYmd,
+              toYmd: st.toYmd,
+              author: st.author,
+              workName: ''
+            });
+          }
+          const [teamRes, personRes] = await Promise.all([teamPromise, personPromise]);
+          st.teamData = teamRes || null;
+          st.data = st.author ? (personRes || null) : (teamRes || null);
+          if (teamRes) {
+            st.allAuthors = teamRes.authors || [];
+            st.allWorkNames = teamRes.workNames || [];
+            // ログイン名が候補に無い場合は全員ビューへ
+            if (st.author && st.allAuthors.length && !st.allAuthors.some(a => a === st.author || a.replace(/\s+/g,'') === st.author.replace(/\s+/g,''))) {
+              // 部分一致で拾う
+              const hit = st.allAuthors.find(a => a.replace(/\s+/g,'').indexOf(st.author.replace(/\s+/g,'')) >= 0
+                || st.author.replace(/\s+/g,'').indexOf(a.replace(/\s+/g,'')) >= 0);
+              if (hit) {
+                st.author = hit;
+                const again = await callGAS('getWorkRecordAnalysis', {
+                  fromYmd: st.fromYmd, toYmd: st.toYmd, author: hit, workName: ''
+                });
+                st.data = again;
+              } else {
+                st.author = '';
+                st.view = 'people';
+                st.data = teamRes;
+              }
+            }
+          }
+          st.view = st.author ? 'person' : 'people';
+          window.renderWorkRecordAnalysis_();
+        } catch (e) {
+          body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g,'&lt;')}<br><span style="font-size:12px; color:#666;">GASに getWorkRecordAnalysis を再デプロイ済みか確認してください。</span></div>`;
+        }
+      };
+
+      window.renderWorkAnalysisHourBars_ = (rows) => {
+        const list = (rows || []).filter(r => (r.count || 0) > 0 || (r.minutes || 0) > 0);
+        if (!list.length) {
+          // 全時間帯を薄く出す
+          const all = rows || [];
+          if (!all.length) return '<div style="color:#888; text-align:center; padding:12px;">時間帯データなし</div>';
+        }
+        const src = rows || [];
+        const maxM = Math.max(1, ...src.map(r => r.minutes || 0));
+        // 作業時間帯らしい 5〜20時を強調、それ以外も出す
+        return `<div style="display:flex; align-items:flex-end; gap:2px; height:110px; overflow-x:auto; padding-bottom:4px;">` +
+          src.map(r => {
+            const h = Math.max(r.minutes ? 4 : 2, Math.round(((r.minutes || 0) / maxM) * 90));
+            const active = (r.minutes || 0) > 0;
+            return `<div title="${r.name}時: ${window.formatAnalysisMinutes_(r.minutes)} / ${r.count}件" style="flex:1; min-width:10px; max-width:22px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;">
+              <div style="width:100%; height:${h}px; background:${active ? '#42A5F5' : '#ECEFF1'}; border-radius:3px 3px 0 0;"></div>
+              <div style="font-size:9px; color:#78909C; margin-top:2px;">${String(r.name).replace(/^0/, '')}</div>
+            </div>`;
+          }).join('') + `</div>`;
+      };
+
+      window.renderWorkAnalysisWeekday_ = (rows) => {
+        const src = rows || [];
+        if (!src.length) return '<div style="color:#888; text-align:center; padding:12px;">曜日データなし</div>';
+        const maxM = Math.max(1, ...src.map(r => r.minutes || 0));
+        return `<div style="display:flex; gap:6px; align-items:flex-end; height:100px;">` +
+          src.map(r => {
+            const h = Math.max(r.minutes ? 6 : 3, Math.round(((r.minutes || 0) / maxM) * 80));
+            const isWeekend = r.weekday === 0 || r.weekday === 6;
+            return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="${r.name}: ${window.formatAnalysisMinutes_(r.minutes)}">
+              <div style="width:100%; max-width:36px; height:${h}px; background:${isWeekend ? '#FF8A65' : '#66BB6A'}; border-radius:4px 4px 0 0;"></div>
+              <div style="font-size:11px; font-weight:bold; color:${isWeekend ? '#E64A19' : '#2E7D32'}; margin-top:4px;">${r.name}</div>
+              <div style="font-size:10px; color:#666;">${window.formatAnalysisMinutes_(r.minutes)}</div>
+            </div>`;
+          }).join('') + `</div>`;
+      };
+
+      window.renderWorkAnalysisDayHeat_ = (byDay, fromYmd, toYmd) => {
+        const map = {};
+        (byDay || []).forEach(d => { map[d.name] = d; });
+        const maxM = Math.max(1, ...(byDay || []).map(d => d.minutes || 0));
+        // from〜to を埋める（最大62日）
+        const days = [];
+        try {
+          const [fy, fm, fd] = String(fromYmd).split('-').map(Number);
+          const [ty, tm, td] = String(toYmd).split('-').map(Number);
+          let cur = new Date(fy, fm - 1, fd);
+          const end = new Date(ty, tm - 1, td);
+          let guard = 0;
+          while (cur <= end && guard < 93) {
+            const y = cur.getFullYear();
+            const m = String(cur.getMonth() + 1).padStart(2, '0');
+            const d = String(cur.getDate()).padStart(2, '0');
+            days.push(`${y}-${m}-${d}`);
+            cur.setDate(cur.getDate() + 1);
+            guard++;
+          }
+        } catch (e) {
+          return '<div style="color:#888;">カレンダーを表示できません</div>';
+        }
+        const colorFor = (mins) => {
+          if (!mins) return '#F5F5F5';
+          const r = mins / maxM;
+          if (r < 0.25) return '#BBDEFB';
+          if (r < 0.5) return '#64B5F6';
+          if (r < 0.75) return '#1E88E5';
+          return '#0D47A1';
+        };
+        return `<div style="display:flex; flex-wrap:wrap; gap:4px;">` +
+          days.map(ymd => {
+            const hit = map[ymd];
+            const mins = hit ? hit.minutes : 0;
+            const cnt = hit ? hit.count : 0;
+            const label = ymd.slice(5);
+            return `<div title="${ymd}: ${window.formatAnalysisMinutes_(mins)} / ${cnt}件" style="width:36px; height:36px; border-radius:6px; background:${colorFor(mins)}; display:flex; flex-direction:column; align-items:center; justify-content:center; border:1px solid #E0E0E0;">
+              <span style="font-size:9px; color:${mins ? '#fff' : '#9E9E9E'}; font-weight:bold;">${label}</span>
+            </div>`;
+          }).join('') + `</div>
+          <div style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:11px; color:#666;">
+            <span>少</span>
+            <span style="width:14px; height:14px; background:#F5F5F5; border:1px solid #ddd; border-radius:3px;"></span>
+            <span style="width:14px; height:14px; background:#BBDEFB; border-radius:3px;"></span>
+            <span style="width:14px; height:14px; background:#64B5F6; border-radius:3px;"></span>
+            <span style="width:14px; height:14px; background:#1E88E5; border-radius:3px;"></span>
+            <span style="width:14px; height:14px; background:#0D47A1; border-radius:3px;"></span>
+            <span>多</span>
+          </div>`;
+      };
+
+      window.renderWorkAnalysisMixBars_ = (rows, color) => {
+        const list = (rows || []).slice(0, 12);
+        if (!list.length) return '<div style="color:#888; text-align:center; padding:12px;">データなし</div>';
+        const total = Math.max(1, list.reduce((s, r) => s + (r.minutes || 0), 0));
+        const maxM = Math.max(1, ...list.map(r => r.minutes || 0));
+        return list.map(r => {
+          const pct = Math.round(((r.minutes || 0) / total) * 100);
+          const bar = Math.round(((r.minutes || 0) / maxM) * 100);
+          return `<div style="margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; font-size:12px; gap:8px;">
+              <span style="font-weight:bold; word-break:break-all;">${String(r.name).replace(/</g,'&lt;')}</span>
+              <span style="color:#555; white-space:nowrap;">${pct}%　${window.formatAnalysisMinutes_(r.minutes)}</span>
+            </div>
+            <div style="background:#eee; border-radius:6px; height:8px; overflow:hidden; margin-top:3px;">
+              <div style="width:${bar}%; height:100%; background:${color}; border-radius:6px;"></div>
+            </div>
+          </div>`;
+        }).join('');
+      };
+
+      window.renderWorkRecordAnalysis_ = () => {
+        const body = document.getElementById('workRecordAnalysisBody');
+        const st = window._workAnalysisState;
+        if (!body) return;
+        const team = st.teamData;
+        const data = st.data;
+        if (!team && !data) {
+          body.innerHTML = '<div style="color:#888; padding:12px;">データがありません</div>';
+          return;
+        }
+
+        const esc = (s) => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+        const filterBar = `
+          <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px;">
+            <div>
+              <label style="display:block; font-size:11px; color:#666; font-weight:bold; margin-bottom:2px;">開始</label>
+              <input type="date" id="wa_from" value="${esc(st.fromYmd)}" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+            </div>
+            <div>
+              <label style="display:block; font-size:11px; color:#666; font-weight:bold; margin-bottom:2px;">終了</label>
+              <input type="date" id="wa_to" value="${esc(st.toYmd)}" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+            </div>
+            <button type="button" onclick="loadWorkRecordAnalysis()" style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:10px 14px; font-weight:bold; font-size:13px; cursor:pointer;">更新</button>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px;">
+            <button type="button" onclick="setWorkAnalysisPreset_('7')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:16px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">直近7日</button>
+            <button type="button" onclick="setWorkAnalysisPreset_('30')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:16px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">直近30日</button>
+            <button type="button" onclick="setWorkAnalysisPreset_('month')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:16px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">今月</button>
+            <button type="button" onclick="setWorkAnalysisPreset_('lastMonth')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:16px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">先月</button>
+          </div>`;
+
+        // ---- 全員（人を選ぶ）ビュー ----
+        if (st.view !== 'person' || !st.author) {
+          const people = (team && team.byPerson) || [];
+          const tsum = (team && team.summary) || {};
+          const maxP = Math.max(1, ...people.map(p => p.minutes || 0));
+          body.innerHTML = `
+            ${filterBar}
+            <div style="background:linear-gradient(135deg,#E3F2FD,#F3E5F5); border-radius:12px; padding:14px; margin-bottom:14px;">
+              <div style="font-size:15px; font-weight:bold; color:#0D47A1; margin-bottom:6px;">👥 誰の働きを見る？</div>
+              <div style="font-size:12px; color:#455A64; line-height:1.5;">人をタップすると、時間帯・曜日・作業の偏り・日々の稼働を可視化します。</div>
+              <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
+                <div style="font-size:12px; color:#1565C0;"><b>${tsum.people || 0}</b> 人</div>
+                <div style="font-size:12px; color:#2E7D32;"><b>${window.formatAnalysisMinutes_(tsum.totalMinutes)}</b> 合計</div>
+                <div style="font-size:12px; color:#EF6C00;"><b>${tsum.count || 0}</b> 件</div>
+              </div>
+            </div>
+            ${!people.length ? '<div style="color:#888; text-align:center; padding:24px;">この期間の作業記録がありません</div>' : `
+            <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px;">
+              ${people.map(p => {
+                const pct = Math.round(((p.minutes || 0) / maxP) * 100);
+                const safe = String(p.name).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+                return `<button type="button" onclick="selectWorkAnalysisPerson_('${safe}')" style="text-align:left; background:#fff; border:2px solid #BBDEFB; border-radius:12px; padding:12px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+                  <div style="font-size:15px; font-weight:bold; color:#0D47A1; margin-bottom:6px;">👤 ${esc(p.name)}</div>
+                  <div style="font-size:18px; font-weight:bold; color:#1565C0;">${window.formatAnalysisMinutes_(p.minutes)}</div>
+                  <div style="font-size:11px; color:#666; margin:4px 0 8px;">${p.count || 0}件　／　${p.workDays || '-'}日稼働</div>
+                  <div style="background:#E3F2FD; border-radius:6px; height:6px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:#1976D2;"></div></div>
+                  <div style="font-size:10px; color:#90A4AE; margin-top:6px;">1日平均 ${window.formatAnalysisMinutes_(p.avgMinutesPerDay || 0)}</div>
+                </button>`;
+              }).join('')}
+            </div>`}
+          `;
+          return;
+        }
+
+        // ---- 個人プロフィールビュー ----
+        const sum = (data && data.summary) || {};
+        const teamSum = (team && team.summary) || {};
+        const teamPeople = Math.max(1, teamSum.people || 1);
+        const teamAvgMin = Math.round((teamSum.totalMinutes || 0) / teamPeople);
+        const myMin = sum.totalMinutes || 0;
+        const vsTeam = teamAvgMin ? Math.round((myMin / teamAvgMin) * 100) : 0;
+        const tab = st.tab || 'overview';
+        const tabBtn = (key, label) => {
+          const on = tab === key;
+          return `<button type="button" onclick="switchWorkAnalysisTab_('${key}')" style="padding:8px 12px; border:none; border-bottom:3px solid ${on ? '#1565C0' : 'transparent'}; background:transparent; color:${on ? '#1565C0' : '#666'}; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">${label}</button>`;
+        };
+
+        let main = '';
+        if (tab === 'overview') {
+          main = `
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
+              <div style="background:#E8F5E9; border-radius:10px; padding:12px;">
+                <div style="font-size:11px; color:#2E7D32; font-weight:bold;">⏱ 実作業時間</div>
+                <div style="font-size:22px; font-weight:bold; color:#1B5E20;">${window.formatAnalysisMinutes_(sum.totalMinutes)}</div>
+                <div style="font-size:11px; color:#558B2F; margin-top:4px;">チーム平均比 ${vsTeam || '-'}%</div>
+              </div>
+              <div style="background:#E3F2FD; border-radius:10px; padding:12px;">
+                <div style="font-size:11px; color:#1565C0; font-weight:bold;">📅 稼働日</div>
+                <div style="font-size:22px; font-weight:bold; color:#0D47A1;">${sum.workDays || 0}<span style="font-size:13px;"> 日</span></div>
+                <div style="font-size:11px; color:#5472d2; margin-top:4px;">1日平均 ${window.formatAnalysisMinutes_(sum.avgMinutesPerDay)}</div>
+              </div>
+              <div style="background:#FFF3E0; border-radius:10px; padding:12px;">
+                <div style="font-size:11px; color:#EF6C00; font-weight:bold;">📝 記録件数</div>
+                <div style="font-size:22px; font-weight:bold; color:#E65100;">${sum.count || 0}</div>
+                <div style="font-size:11px; color:#F57C00; margin-top:4px;">1件平均 ${window.formatAnalysisMinutes_(sum.avgMinutesPerRecord)}</div>
+              </div>
+              <div style="background:#F3E5F5; border-radius:10px; padding:12px;">
+                <div style="font-size:11px; color:#6A1B9A; font-weight:bold;">🕐 活動帯</div>
+                <div style="font-size:16px; font-weight:bold; color:#4A148C; margin-top:4px;">${esc(sum.earliestStart || '--:--')} 〜 ${esc(sum.latestEnd || '--:--')}</div>
+                <div style="font-size:11px; color:#7B1FA2; margin-top:4px;">作業 ${sum.works || 0}種 / 圃場 ${sum.fields || 0}</div>
+              </div>
+            </div>
+            <div style="background:#fff; border:1px solid #E0E0E0; border-radius:10px; padding:12px; margin-bottom:12px;">
+              <div style="font-weight:bold; color:#1565C0; margin-bottom:8px; font-size:13px;">⏰ 何時に動き始めているか（開始時刻）</div>
+              ${window.renderWorkAnalysisHourBars_(data.byHour)}
+            </div>
+            <div style="background:#fff; border:1px solid #E0E0E0; border-radius:10px; padding:12px; margin-bottom:12px;">
+              <div style="font-weight:bold; color:#2E7D32; margin-bottom:8px; font-size:13px;">📆 曜日ごとの働き方</div>
+              ${window.renderWorkAnalysisWeekday_(data.byWeekday)}
+            </div>
+            <div style="background:#fff; border:1px solid #E0E0E0; border-radius:10px; padding:12px;">
+              <div style="font-weight:bold; color:#0D47A1; margin-bottom:8px; font-size:13px;">🔥 日々の稼働ヒートマップ</div>
+              ${window.renderWorkAnalysisDayHeat_(data.byDay, data.fromYmd || st.fromYmd, data.toYmd || st.toYmd)}
+            </div>`;
+        } else if (tab === 'work') {
+          main = `<div style="font-weight:bold; color:#2E7D32; margin-bottom:10px;">得意・多い作業（時間シェア）</div>${window.renderWorkAnalysisMixBars_(data.byWork, '#43A047')}`;
+        } else if (tab === 'field') {
+          main = `<div style="font-weight:bold; color:#EF6C00; margin-bottom:10px;">どこで働いたか</div>${window.renderWorkAnalysisMixBars_(data.byField, '#FB8C00')}`;
+        } else if (tab === 'crop') {
+          main = `<div style="font-weight:bold; color:#6A1B9A; margin-bottom:10px;">どの作物に時間を使ったか</div>${window.renderWorkAnalysisMixBars_(data.byCrop, '#8E24AA')}`;
+        } else if (tab === 'day') {
+          const list = data.byDay || [];
+          const maxM = Math.max(1, ...list.map(r => r.minutes || 0));
+          main = !list.length ? '<div style="color:#888; text-align:center;">日別データなし</div>' :
+            `<div style="display:flex; align-items:flex-end; gap:3px; height:150px; overflow-x:auto; padding-bottom:8px;">` +
+            list.map(r => {
+              const h = Math.max(4, Math.round(((r.minutes || 0) / maxM) * 120));
+              return `<div title="${esc(r.name)}: ${window.formatAnalysisMinutes_(r.minutes)}" style="flex:0 0 16px; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center;">
+                <div style="width:12px; height:${h}px; background:#42A5F5; border-radius:3px 3px 0 0;"></div>
+                <div style="font-size:8px; color:#888; margin-top:2px;">${esc(String(r.name).slice(8))}</div>
+              </div>`;
+            }).join('') + `</div>`;
+        } else if (tab === 'list') {
+          const recs = data.records || [];
+          main = !recs.length ? '<div style="color:#888; text-align:center;">記録なし</div>' :
+            `<div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
+              <thead><tr style="background:#E3F2FD; text-align:left;">
+                <th style="padding:8px; border-bottom:1px solid #90CAF9;">日</th>
+                <th style="padding:8px; border-bottom:1px solid #90CAF9;">作業</th>
+                <th style="padding:8px; border-bottom:1px solid #90CAF9;">場所</th>
+                <th style="padding:8px; border-bottom:1px solid #90CAF9;">時間</th>
+                <th style="padding:8px; border-bottom:1px solid #90CAF9;">実働</th>
+              </tr></thead><tbody>` +
+            recs.map(r => `<tr>
+              <td style="padding:7px 8px; border-bottom:1px solid #eee; white-space:nowrap;">${esc(r.workDate)}</td>
+              <td style="padding:7px 8px; border-bottom:1px solid #eee; font-weight:bold;">${esc(r.workName)}</td>
+              <td style="padding:7px 8px; border-bottom:1px solid #eee;">${esc(r.fieldName)}</td>
+              <td style="padding:7px 8px; border-bottom:1px solid #eee; white-space:nowrap;">${esc(r.startTime)}〜${esc(r.endTime)}</td>
+              <td style="padding:7px 8px; border-bottom:1px solid #eee;">${window.formatAnalysisMinutes_(r.minutes)}</td>
+            </tr>`).join('') + `</tbody></table></div>`;
+        }
+
+        body.innerHTML = `
+          ${filterBar}
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; background:#0D47A1; color:#fff; border-radius:12px; padding:12px 14px;">
+            <div style="font-size:28px; line-height:1;">👤</div>
+            <div style="flex:1; min-width:120px;">
+              <div style="font-size:18px; font-weight:bold;">${esc(st.author)}</div>
+              <div style="font-size:12px; opacity:0.9;">${esc(st.fromYmd)} 〜 ${esc(st.toYmd)} の働きぶり</div>
+            </div>
+            <button type="button" onclick="clearWorkAnalysisPerson_()" style="background:rgba(255,255,255,0.2); color:#fff; border:1px solid rgba(255,255,255,0.5); border-radius:8px; padding:8px 12px; font-weight:bold; font-size:12px; cursor:pointer;">← 別の人を選ぶ</button>
+          </div>
+          <div style="display:flex; gap:2px; overflow-x:auto; border-bottom:1px solid #e0e0e0; margin-bottom:12px;">
+            ${tabBtn('overview', '概要')}
+            ${tabBtn('work', '作業の偏り')}
+            ${tabBtn('field', '場所')}
+            ${tabBtn('crop', '作物')}
+            ${tabBtn('day', '日別')}
+            ${tabBtn('list', '記録')}
+          </div>
+          <div>${main}</div>
+        `;
+      };
+
       window.getScheduleCropNames = () => {
         const names = new Set();
         (globalSchedules || []).forEach(t => {

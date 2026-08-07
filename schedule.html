@@ -134,6 +134,19 @@
     </div>
   </div>
 
+  <!-- 📊 作業分析（人の働き可視化） -->
+  <div id="workRecordAnalysisModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10020; align-items:center; justify-content:center;">
+    <div style="background:#fff; width:min(980px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:linear-gradient(135deg,#0D47A1,#1565C0); color:#fff;">
+        <span style="font-weight:bold; font-size:16px;">📊 作業分析</span>
+        <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="document.getElementById('workRecordAnalysisModal').style.display='none'">×</span>
+      </div>
+      <div style="padding:12px 16px; overflow:auto; flex:1;" id="workRecordAnalysisBody">
+        <div style="color:#888;">読み込み中...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- 🌳 スキルツリー ＆ 免許・資格 モーダル -->
   <div id="skillTreeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
@@ -177,7 +190,7 @@
     </div>
   </div>
 
-  <!-- 市況情報（農水省 日別単価グラフ・チンゲンサイ等） -->
+  <!-- 市況情報（東京都・大阪府） -->
   <div id="cropMarketModal"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;">
     <div
@@ -188,26 +201,30 @@
       </div>
 
       <p style="margin: 0 0 12px 0; font-size: 13px; color: #555; line-height: 1.5;">
-        農林水産省・東京都中央卸売市場等の最新市況価格を開きます。
+        東京都・大阪府の中央卸売市場の市況を開きます。
       </p>
 
-      <!-- 🥬 チンゲンサイ特設ボタン -->
-      <button type="button" id="marketOpenChingensai"
-        style="width:100%; background:linear-gradient(135deg, #2e7d32, #1b5e20); color:#fff; border:none; padding:14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px; text-align:left; margin-bottom:10px; box-shadow:0 3px 8px rgba(46,125,50,0.3);">
-        🥬 チンゲンサイ（青梗菜）の市況・単価グラフを見る
-        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:4px;">農水省青果物価格・卸売市場データ直行</div>
+      <button type="button" id="marketOpenTokyo"
+        style="width:100%; background:#e65100; color:#fff; border:none; padding:14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px; text-align:left; margin-bottom:10px;">
+        🏙️ 東京都中央卸売市場 市況
+        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:4px;">大田・豊洲など都の市場統計・市況日報</div>
+      </button>
+
+      <button type="button" id="marketOpenOsaka"
+        style="width:100%; background:#1565C0; color:#fff; border:none; padding:14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px; text-align:left; margin-bottom:10px;">
+        🏯 大阪府・大阪市中央卸売市場 市況
+        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:4px;">大阪市市場の品目別日報・取扱量</div>
+      </button>
+
+      <button type="button" id="marketOpenOsakaPref"
+        style="width:100%; background:#fff; color:#37474F; border:1px solid #B0BEC5; padding:12px 14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px; text-align:left; margin-bottom:8px;">
+        📋 大阪府中央卸売市場（茨木）統計・日報
+        <div style="font-size:11px; font-weight:normal; color:#78909C; margin-top:2px;">青果・水産の日報・月報・年報</div>
       </button>
 
       <button type="button" id="marketOpenMaffGraph"
-        style="width:100%; background:#1565C0; color:#fff; border:none; padding:12px 14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:14px; text-align:left; margin-bottom:8px;">
-        📊 農水省 全品目 日別単価グラフ
-        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:2px;">青果物全般の卸売価格推移（公式）</div>
-      </button>
-
-      <button type="button" id="marketOpenTokyo"
-        style="width:100%; background:#e65100; color:#fff; border:none; padding:12px 14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:14px; text-align:left;">
-        🏙️ 東京都中央卸売市場 市況日報
-        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:2px;">大田市場・豊洲市場等の当日入荷・価格情報</div>
+        style="width:100%; background:#fff; color:#546E7A; border:1px solid #CFD8DC; padding:10px 14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:12px; text-align:left;">
+        📊 農水省 全品目 日別単価グラフ（全国）
       </button>
     </div>
   </div>
@@ -226,6 +243,10 @@
     <button type="button" onclick="openScheduleTable()">
       <div style="font-size:20px;">📋</div>
       <div style="font-weight:bold;">作業一覧</div>
+    </button>
+    <button type="button" onclick="openWorkRecordAnalysisModal()">
+      <div style="font-size:20px;">📊</div>
+      <div style="font-weight:bold;">作業分析</div>
     </button>
     <button type="button" onclick="openSowingProgressModal()">
       <div style="font-size:20px;">🌱</div>

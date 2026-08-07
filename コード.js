@@ -57,6 +57,7 @@ function doPost(e) {
     else if (action === "deleteCropWorkPlan") result = deleteCropWorkPlan(params);
     else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
     else if (action === "getSowingProgress") result = getSowingProgress(params);
+    else if (action === "getWorkRecordAnalysis") result = getWorkRecordAnalysis(params);
     else if (action === "saveManualData") result = saveManualData(params.manual);
     else if (action === "getManualList") result = getManualList();
     else if (action === "deleteManualData") result = deleteManualData(params.manualId);
@@ -6244,6 +6245,258 @@ function getWorkRecordTimeHints(params) {
   } catch (e) {
     throw new Error('作業時間ヒント取得エラー: ' + e.message);
   }
+}
+
+/** 合計時間文字列や開始・終了から実作業分を求める */
+function parseWorkRecordMinutes_(totalTime, startTime, endTime, breakMins) {
+  let mins = 0;
+  const t = String(totalTime || '').trim();
+  if (t) {
+    const hm = t.match(/(\d+)\s*時間/);
+    const mm = t.match(/(\d+)\s*分/);
+    mins = (hm ? parseInt(hm[1], 10) * 60 : 0) + (mm ? parseInt(mm[1], 10) : 0);
+    if (mins > 0) return mins;
+    const asNum = parseInt(t, 10);
+    if (!isNaN(asNum) && String(asNum) === t) return Math.max(0, asNum);
+  }
+  const normTime = (v) => {
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      return Utilities.formatDate(v, 'JST', 'HH:mm');
+    }
+    const s = String(v || '').trim();
+    const m = s.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return '';
+    return ('0' + m[1]).slice(-2) + ':' + m[2];
+  };
+  const st = normTime(startTime);
+  const et = normTime(endTime);
+  if (st && et) {
+    const [sh, sm] = st.split(':').map(Number);
+    const [eh, em] = et.split(':').map(Number);
+    let diff = (eh * 60 + em) - (sh * 60 + sm);
+    if (diff < 0) diff += 24 * 60;
+    const br = Math.max(0, parseInt(breakMins, 10) || 0);
+    return Math.max(0, diff - br);
+  }
+  return 0;
+}
+
+/**
+ * 作業記録シートの期間集計（Schedule画面の分析用）
+ * params: fromYmd, toYmd, author（任意・部分一致）
+ */
+function getWorkRecordAnalysis(params) {
+  const todayYmd = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+  let toYmd = String((params && params.toYmd) || todayYmd).trim() || todayYmd;
+  let fromYmd = String((params && params.fromYmd) || '').trim();
+  if (!fromYmd) {
+    fromYmd = toYmd.slice(0, 8) + '01';
+  }
+  const authorFilter = String((params && params.author) || '').replace(/\s+/g, '');
+  const workFilter = String((params && params.workName) || '').trim();
+  const includeRecords = !(params && params.includeRecords === false);
+
+  const emptyHour = [];
+  for (let h = 0; h < 24; h++) {
+    emptyHour.push({ name: ('0' + h).slice(-2), hour: h, count: 0, minutes: 0 });
+  }
+  const weekdayNames = ['日', '月', '火', '水', '木', '金', '土'];
+  const emptyWeekday = weekdayNames.map(function(n, i) {
+    return { name: n, weekday: i, count: 0, minutes: 0 };
+  });
+
+  const empty = {
+    fromYmd: fromYmd,
+    toYmd: toYmd,
+    summary: {
+      count: 0, totalMinutes: 0, people: 0, fields: 0, works: 0,
+      workDays: 0, avgMinutesPerDay: 0, avgMinutesPerRecord: 0,
+      earliestStart: '', latestEnd: ''
+    },
+    byPerson: [],
+    byWork: [],
+    byField: [],
+    byCrop: [],
+    byDay: [],
+    byHour: emptyHour,
+    byWeekday: emptyWeekday,
+    authors: [],
+    workNames: [],
+    records: []
+  };
+
+  const sheet = TENANT_SS.getSheetByName('作業記録');
+  if (!sheet || sheet.getLastRow() <= 1) return empty;
+
+  const lastRow = sheet.getLastRow();
+  const startRow = Math.max(2, lastRow - 7999);
+  const numRows = lastRow - startRow + 1;
+  const values = sheet.getRange(startRow, 1, numRows, 13).getValues();
+
+  const byPerson = {};
+  const byPersonDays = {};
+  const byWork = {};
+  const byField = {};
+  const byCrop = {};
+  const byDay = {};
+  const byHour = {};
+  const byWeekday = {};
+  for (let h = 0; h < 24; h++) byHour[h] = { name: ('0' + h).slice(-2), hour: h, count: 0, minutes: 0 };
+  for (let w = 0; w < 7; w++) byWeekday[w] = { name: weekdayNames[w], weekday: w, count: 0, minutes: 0 };
+
+  const authorSet = {};
+  const workNameSet = {};
+  const fieldSet = {};
+  const cropSet = {};
+  const daySet = {};
+  const records = [];
+  let totalMinutes = 0;
+  let count = 0;
+  let earliestStart = '';
+  let latestEnd = '';
+
+  const bump = (map, key, mins) => {
+    const k = key || '（未設定）';
+    if (!map[k]) map[k] = { name: k, count: 0, minutes: 0 };
+    map[k].count += 1;
+    map[k].minutes += mins;
+  };
+
+  const normTimeHm = (v) => {
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      return Utilities.formatDate(v, 'JST', 'HH:mm');
+    }
+    const s = String(v || '').trim();
+    const m = s.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return '';
+    return ('0' + m[1]).slice(-2) + ':' + m[2];
+  };
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const workName = String(row[4] || '').trim();
+    if (!workName) continue;
+
+    const workDateYmd = formatWorkDateYmd_(row[3]);
+    if (!workDateYmd) continue;
+    if (workDateYmd < fromYmd || workDateYmd > toYmd) continue;
+
+    const author = String(row[2] || '').trim() || '（不明）';
+    const authorKey = author.replace(/\s+/g, '');
+    if (authorFilter && authorKey.indexOf(authorFilter) < 0 && authorFilter.indexOf(authorKey) < 0) continue;
+    if (workFilter && workName.indexOf(workFilter) < 0) continue;
+
+    const fieldRaw = String(row[1] || '').trim();
+    const fieldName = fieldRaw.split(',')[0].trim() || '（場所なし）';
+    const cropName = String(row[5] || '').trim() || '（作物なし）';
+    const mins = parseWorkRecordMinutes_(row[9], row[6], row[7], 0);
+    const progress = String(row[10] || '').trim();
+    const recordId = String(row[12] || '').trim();
+    const startHm = normTimeHm(row[6]);
+    const endHm = normTimeHm(row[7]);
+
+    count += 1;
+    totalMinutes += mins;
+    authorSet[author] = true;
+    workNameSet[workName] = true;
+    fieldSet[fieldName] = true;
+    cropSet[cropName] = true;
+    daySet[workDateYmd] = true;
+
+    bump(byPerson, author, mins);
+    if (!byPersonDays[author]) byPersonDays[author] = {};
+    byPersonDays[author][workDateYmd] = true;
+    bump(byWork, workName, mins);
+    bump(byField, fieldName, mins);
+    bump(byCrop, cropName, mins);
+    bump(byDay, workDateYmd, mins);
+
+    if (startHm) {
+      const hour = parseInt(startHm.slice(0, 2), 10);
+      if (!isNaN(hour) && byHour[hour]) {
+        byHour[hour].count += 1;
+        byHour[hour].minutes += mins;
+      }
+      if (!earliestStart || startHm < earliestStart) earliestStart = startHm;
+    }
+    if (endHm && (!latestEnd || endHm > latestEnd)) latestEnd = endHm;
+
+    try {
+      const parts = workDateYmd.split('-');
+      const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const wd = dt.getDay();
+      if (byWeekday[wd]) {
+        byWeekday[wd].count += 1;
+        byWeekday[wd].minutes += mins;
+      }
+    } catch (eWd) {}
+
+    if (includeRecords && records.length < 300) {
+      records.push({
+        workDate: workDateYmd,
+        author: author,
+        workName: workName,
+        crop: cropName,
+        fieldName: fieldName,
+        startTime: startHm,
+        endTime: endHm,
+        totalTime: String(row[9] || ''),
+        minutes: mins,
+        progress: progress,
+        recordId: recordId
+      });
+    }
+  }
+
+  const sortDesc = (map) => Object.keys(map).map(k => map[k])
+    .sort((a, b) => b.minutes - a.minutes || b.count - a.count || String(a.name).localeCompare(String(b.name), 'ja'));
+
+  const byDayArr = Object.keys(byDay).sort().map(k => byDay[k]);
+  const workDays = Object.keys(daySet).length;
+  const avgMinutesPerDay = workDays ? Math.round(totalMinutes / workDays) : 0;
+  const avgMinutesPerRecord = count ? Math.round(totalMinutes / count) : 0;
+
+  // byPerson に稼働日数・1日平均を付与
+  const personList = sortDesc(byPerson).map(function(p) {
+    const days = byPersonDays[p.name] ? Object.keys(byPersonDays[p.name]).length : 0;
+    return {
+      name: p.name,
+      count: p.count,
+      minutes: p.minutes,
+      workDays: days,
+      avgMinutesPerDay: days ? Math.round(p.minutes / days) : 0
+    };
+  });
+
+  records.sort((a, b) => String(b.workDate).localeCompare(String(a.workDate))
+    || String(b.endTime).localeCompare(String(a.endTime)));
+
+  return {
+    fromYmd: fromYmd,
+    toYmd: toYmd,
+    summary: {
+      count: count,
+      totalMinutes: totalMinutes,
+      people: Object.keys(authorSet).length,
+      fields: Object.keys(fieldSet).length,
+      works: Object.keys(workNameSet).length,
+      workDays: workDays,
+      avgMinutesPerDay: avgMinutesPerDay,
+      avgMinutesPerRecord: avgMinutesPerRecord,
+      earliestStart: earliestStart,
+      latestEnd: latestEnd
+    },
+    byPerson: personList,
+    byWork: sortDesc(byWork),
+    byField: sortDesc(byField),
+    byCrop: sortDesc(byCrop),
+    byDay: byDayArr,
+    byHour: Object.keys(byHour).sort(function(a, b) { return Number(a) - Number(b); }).map(function(k) { return byHour[k]; }),
+    byWeekday: [0, 1, 2, 3, 4, 5, 6].map(function(k) { return byWeekday[k]; }),
+    authors: Object.keys(authorSet).sort((a, b) => a.localeCompare(b, 'ja')),
+    workNames: Object.keys(workNameSet).sort((a, b) => a.localeCompare(b, 'ja')),
+    records: records
+  };
 }
 
 // ==========================================

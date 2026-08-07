@@ -1,13 +1,14 @@
 /**
  * 市況情報モジュール
- * 農水省「青果物 日別卸売価格グラフ」および品目別（チンゲンサイ等）市況への導線。
+ * 東京都・大阪府（大阪市／府）中央卸売市場の市況への導線。
  */
 (function () {
   'use strict';
 
   const MAFF_DAILY_GRAPH = 'https://www.maff.go.jp/j/tokei/syohi/oroshi_kakaku/seika.html';
   const TOKYO_SHIJOU_URL = 'https://www.shijou-tokei.metro.tokyo.lg.jp/';
-  const AGRINEWS_URL = 'https://www.agrinews.co.jp/market';
+  const OSAKA_CITY_SHIJOU_URL = 'https://www.shijou.city.osaka.jp/sikyomap/sikyo';
+  const OSAKA_PREF_SHIJOU_URL = 'https://osakafu-ichiba.jp/statistics/';
 
   function openUrl(url) {
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -17,14 +18,17 @@
     const closeBtn = document.getElementById('marketModalClose');
     if (closeBtn) closeBtn.onclick = () => MarketInfo.close();
 
-    const openBtn = document.getElementById('marketOpenMaffGraph');
-    if (openBtn) openBtn.onclick = () => openUrl(MAFF_DAILY_GRAPH);
-
-    const openChingensaiBtn = document.getElementById('marketOpenChingensai');
-    if (openChingensaiBtn) openChingensaiBtn.onclick = () => openUrl(MAFF_DAILY_GRAPH);
-
     const openTokyoBtn = document.getElementById('marketOpenTokyo');
     if (openTokyoBtn) openTokyoBtn.onclick = () => openUrl(TOKYO_SHIJOU_URL);
+
+    const openOsakaBtn = document.getElementById('marketOpenOsaka');
+    if (openOsakaBtn) openOsakaBtn.onclick = () => openUrl(OSAKA_CITY_SHIJOU_URL);
+
+    const openOsakaPrefBtn = document.getElementById('marketOpenOsakaPref');
+    if (openOsakaPrefBtn) openOsakaPrefBtn.onclick = () => openUrl(OSAKA_PREF_SHIJOU_URL);
+
+    const openMaffBtn = document.getElementById('marketOpenMaffGraph');
+    if (openMaffBtn) openMaffBtn.onclick = () => openUrl(MAFF_DAILY_GRAPH);
 
     const backdrop = document.getElementById('cropMarketModal');
     if (backdrop && !backdrop.dataset.marketBound) {
@@ -48,8 +52,7 @@
       if (modal) modal.style.display = 'none';
     },
 
-    openItem(itemName) {
-      // 特定品目の市況グラフを開く
+    openItem() {
       openUrl(MAFF_DAILY_GRAPH);
     }
   };

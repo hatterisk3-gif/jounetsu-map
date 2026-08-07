@@ -453,11 +453,38 @@
     .slot-card .name { color: var(--ink); font-weight: 700; font-size: 0.78rem; }
     .inv-wrap {
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      max-height: 120px;
+      flex-direction: column;
+      gap: 10px;
+      max-height: min(42vh, 320px);
       overflow-y: auto;
       margin-bottom: 10px;
+      padding-right: 2px;
+    }
+    .inv-cat {
+      border: 1px solid rgba(0, 229, 255, 0.18);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px;
+    }
+    .inv-cat-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .inv-cat-head .count {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.7rem;
+    }
+    .inv-cat-items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
     }
     .inv-item {
       appearance: none;
@@ -468,10 +495,25 @@
       padding: 6px 8px;
       font-size: 0.72rem;
       cursor: pointer;
+      text-align: left;
+      line-height: 1.25;
+    }
+    .inv-item small {
+      display: block;
+      color: var(--muted);
+      font-size: 0.62rem;
+      margin-top: 2px;
     }
     .inv-item.on {
       border-color: var(--accent);
       background: rgba(0,229,255,0.16);
+    }
+    .inv-empty {
+      width: 100%;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+      padding: 6px;
     }
     .rarity-UR { color: #ff1744; }
     .rarity-SSR { color: #f50057; }
@@ -516,6 +558,14 @@
           ⚔️ ドッグファイト（1-A）
           <small>対CPUの空中撃ち合い。先に相手のHPを0にすれば勝利。</small>
         </button>
+        <button type="button" class="mode-btn game-pick" id="pickMusou" data-game="musou">
+          🔥 無双モード
+          <small>大量の敵ドローンを相手に乱射・撃墜。全滅させれば勝利。</small>
+        </button>
+        <button type="button" class="mode-btn game-pick" id="pickDeathmatch" data-game="deathmatch">
+          💀 デスマッチ乱闘
+          <small>全員敵同士も撃ち合う大乱闘。最後の1機が勝ち残る。</small>
+        </button>
         <button type="button" class="mode-btn game-pick" id="pickMission" data-game="mission">
           🌾 圃場ミッション（1-B）
           <small>ゲート周回＋害虫ターゲット破壊。農業フィールド上のタイムアタック。</small>
@@ -541,7 +591,7 @@
         <span id="hangarStatSummary" style="font-size:0.75rem; color:var(--muted);">HP -- / SPD -- / ATK --</span>
       </div>
       <div class="hangar-grid" id="equipSlots"></div>
-      <div class="help"><strong>所持パーツ</strong>（タップで装着／同スロットは上書き）</div>
+      <div class="help"><strong>所持パーツ</strong>（分類ごとに表示／タップで装着）</div>
       <div class="inv-wrap" id="inventoryList"></div>
       <div class="actions">
         <button type="button" class="btn secondary" id="hangarToGachaBtn">ガチャへ</button>
@@ -632,10 +682,10 @@
         <input type="range" id="expoSlider" min="0" max="85" value="25" step="5" />
         <div class="sens-presets">
           <button type="button" data-sens="70" data-expo="45" id="sensPresetSoft">ゆるめ</button>
-          <button type="button" data-sens="100" data-expo="25" id="sensPresetNormal" class="active">標準</button>
+          <button type="button" data-sens="100" data-expo="25" id="sensPresetNormal" class="active">普通</button>
           <button type="button" data-sens="145" data-expo="10" id="sensPresetSharp">きつめ</button>
         </div>
-        <p class="sens-hint">感度↑＝小さく動かしても反応。精密さ↑＝中央付近は細かく、端は急に効く。</p>
+        <p class="sens-hint">初期は「普通」。感度↑＝小さく動かしても反応。精密さ↑＝中央付近は細かく、端は急に効く。</p>
       </div>
 
       <div class="help" id="gameHelp">
@@ -681,6 +731,7 @@
       <span class="pill" id="modePill">MODE 2</span>
       <span class="pill" id="altPill">ALT 10m</span>
       <span class="pill" id="spdPill">SPD 0</span>
+      <span class="pill" id="killPill" style="display:none;">KILL 0</span>
       <span class="pill" id="missionPill" style="display:none;">LAP 0/2</span>
       <span class="pill" id="timePill" style="display:none;">TIME 150</span>
     </div>
@@ -717,6 +768,8 @@ const MODE_KEY = 'passionMapDroneBattleMode';
 const GAME_KEY = 'passionMapDroneBattleGame';
 const SENS_KEY = 'passionMapDroneBattleSens';
 const EXPO_KEY = 'passionMapDroneBattleExpo';
+const FEEL_VER_KEY = 'passionMapDroneBattleFeelVer';
+const FEEL_VER = '3-normal';
 const MAX_HP = 100;
 const FIRE_COOLDOWN = 0.28;
 const BULLET_SPEED = 55;
@@ -725,8 +778,18 @@ const HIT_RADIUS = 1.35;
 const ARENA = 90;
 const MISSION_TIME = 150;
 const MISSION_LAPS = 2;
+const MUSOU_COUNT = 14;
+const DEATHMATCH_COUNT = 7;
+const AI_MIN_ALT = 9;
+const AI_SAFE_ALT = 14;
 
 function loadStickFeel() {
+  // 一度だけ「普通」に合わせて初期化（既存の極端な感度をリセット）
+  if (localStorage.getItem(FEEL_VER_KEY) !== FEEL_VER) {
+    localStorage.setItem(FEEL_VER_KEY, FEEL_VER);
+    localStorage.setItem(SENS_KEY, '1');
+    localStorage.setItem(EXPO_KEY, '0.25');
+  }
   const s = Number(localStorage.getItem(SENS_KEY));
   const e = Number(localStorage.getItem(EXPO_KEY));
   return {
@@ -736,9 +799,15 @@ function loadStickFeel() {
 }
 const _feel = loadStickFeel();
 
+function normalizeGameType(raw) {
+  const g = String(raw || 'dogfight');
+  if (g === 'mission' || g === 'online' || g === 'musou' || g === 'deathmatch') return g;
+  return 'dogfight';
+}
+
 const state = {
   mode: Number(localStorage.getItem(MODE_KEY) || '2') === 1 ? 1 : 2,
-  gameType: localStorage.getItem(GAME_KEY) === 'mission' ? 'mission' : 'dogfight',
+  gameType: normalizeGameType(localStorage.getItem(GAME_KEY)),
   playing: false,
   over: false,
   firstPerson: false,
@@ -752,6 +821,7 @@ const state = {
   enemyFireCd: 0,
   bullets: [],
   toastTimer: 0,
+  kills: 0,
   // mission
   nextGate: 0,
   laps: 0,
@@ -786,6 +856,7 @@ const leftStickLabel = document.getElementById('leftStickLabel');
 const rightStickLabel = document.getElementById('rightStickLabel');
 const missionPill = document.getElementById('missionPill');
 const timePill = document.getElementById('timePill');
+const killPill = document.getElementById('killPill');
 const hudRightLabel = document.getElementById('hudRightLabel');
 const onlineStatus = document.getElementById('onlineStatus');
 
@@ -1265,15 +1336,54 @@ function refreshMetaUI() {
   }
   const inv = document.getElementById('inventoryList');
   if (inv) {
+    const rarityRank = { UR: 5, SSR: 4, SR: 3, R: 2, N: 1 };
+    const weaponKindLabel = {
+      beam: 'ビーム', cannon: 'キャノン', laser: 'レーザー',
+      missile: 'ミサイル', gatling: 'ガトリング', sniper: 'スナイパー'
+    };
     const unique = Array.from(new Set(meta.inventory || []));
-    if (!unique.length) {
-      inv.innerHTML = '<div style="width:100%;text-align:center;color:var(--muted);font-size:0.8rem;">ガチャでパーツを獲得しよう</div>';
+    const parts = unique.map(findPart).filter(Boolean);
+    // 旧 pt_* はスキン扱い（表示はスキン欄）
+    const byType = {};
+    SLOT_DEFS.forEach((s) => { byType[s.key] = []; });
+    parts.forEach((part) => {
+      const t = part.type === 'paint' ? 'skin' : part.type;
+      if (!byType[t]) byType[t] = [];
+      byType[t].push(part);
+    });
+    Object.keys(byType).forEach((k) => {
+      byType[k].sort((a, b) => {
+        const rr = (rarityRank[b.rarity] || 0) - (rarityRank[a.rarity] || 0);
+        if (rr) return rr;
+        return String(a.name).localeCompare(String(b.name), 'ja');
+      });
+    });
+
+    if (!parts.length) {
+      inv.innerHTML = '<div class="inv-empty">ガチャでパーツを獲得しよう</div>';
     } else {
-      inv.innerHTML = unique.map((id) => {
-        const part = findPart(id);
-        if (!part) return '';
-        const on = meta.equipped[part.type] === id;
-        return `<button type="button" class="inv-item ${on ? 'on' : ''}" data-part="${part.id}"><span class="rarity-${part.rarity}">${part.icon} ${part.name}</span> (${part.rarity})${on ? ' ✓' : ''}</button>`;
+      inv.innerHTML = SLOT_DEFS.map((s) => {
+        const list = byType[s.key] || [];
+        const items = list.length
+          ? list.map((part) => {
+              const on = meta.equipped[part.type] === part.id
+                || (part.type === 'skin' && meta.equipped.skin === part.id);
+              const sub = part.type === 'weapon' && part.kind
+                ? (weaponKindLabel[part.kind] || part.kind)
+                : (part.desc || '');
+              return `<button type="button" class="inv-item ${on ? 'on' : ''}" data-part="${part.id}">
+                <span class="rarity-${part.rarity}">${part.icon} ${part.name}</span>
+                <small>${part.rarity}${sub ? ' · ' + sub : ''}${on ? ' · 装着中' : ''}</small>
+              </button>`;
+            }).join('')
+          : '<div class="inv-empty">未所持</div>';
+        return `<div class="inv-cat" data-cat="${s.key}">
+          <div class="inv-cat-head">
+            <span>${s.icon} ${s.label}</span>
+            <span class="count">${list.length} 種</span>
+          </div>
+          <div class="inv-cat-items">${items}</div>
+        </div>`;
       }).join('');
       inv.querySelectorAll('[data-part]').forEach((btn) => {
         btn.addEventListener('click', () => equipDronePart(btn.getAttribute('data-part')));
@@ -1420,21 +1530,42 @@ function openSetup(gameType) {
     showScreen('online');
     return;
   }
-  state.gameType = gameType === 'mission' ? 'mission' : 'dogfight';
+  state.gameType = normalizeGameType(gameType);
   localStorage.setItem(GAME_KEY, state.gameType);
-  const isM = state.gameType === 'mission';
-  document.getElementById('setupTitle').textContent = isM ? '圃場ミッション' : 'ドッグファイト';
-  document.getElementById('setupSub').textContent = isM
-    ? 'ゲートを周回しながら害虫ターゲットを全破壊。制限時間あり。'
-    : '対CPUの空中ドッグファイト。先にHPを0にした方が勝ち。';
-  gameHelp.innerHTML = isM
-    ? '<strong>クリア条件</strong><br>・チェックポイントを順に通過して ' + MISSION_LAPS + ' 周<br>・害虫バルーンを全て撃墜<br>・制限時間 ' + MISSION_TIME + ' 秒／HP0で失敗'
-    : '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。';
-  document.getElementById('startBtn').textContent = isM ? 'ミッション開始' : '対戦開始（対CPU）';
+  const titles = {
+    mission: '圃場ミッション',
+    musou: '無双モード',
+    deathmatch: 'デスマッチ乱闘',
+    dogfight: 'ドッグファイト'
+  };
+  const subs = {
+    mission: 'ゲートを周回しながら害虫ターゲットを全破壊。制限時間あり。',
+    musou: '大量の敵ドローンを撃墜していく無双バトル。全滅で勝利。',
+    deathmatch: '全員が敵同士でも撃ち合う乱闘。最後の1機が勝ち残る。',
+    dogfight: '対CPUの空中ドッグファイト。先にHPを0にした方が勝ち。'
+  };
+  const helps = {
+    mission: '<strong>クリア条件</strong><br>・チェックポイントを順に通過して ' + MISSION_LAPS + ' 周<br>・害虫バルーンを全て撃墜<br>・制限時間 ' + MISSION_TIME + ' 秒／HP0で失敗',
+    musou: '<strong>無双モード</strong><br>・敵ドローンが群れて襲来<br>・すべて撃墜すれば勝利／自分のHP0で敗北<br>・低空接触に注意しつつ撃ちまくれ',
+    deathmatch: '<strong>デスマッチ</strong><br>・AI同士も撃ち合う大乱闘<br>・最後の1機が勝利<br>・接近戦・横槍に注意',
+    dogfight: '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。'
+  };
+  const startLabels = {
+    mission: 'ミッション開始',
+    musou: '無双開始',
+    deathmatch: '乱闘開始',
+    dogfight: '対戦開始（対CPU）'
+  };
+  document.getElementById('setupTitle').textContent = titles[state.gameType] || titles.dogfight;
+  document.getElementById('setupSub').textContent = subs[state.gameType] || subs.dogfight;
+  gameHelp.innerHTML = helps[state.gameType] || helps.dogfight;
+  document.getElementById('startBtn').textContent = startLabels[state.gameType] || startLabels.dogfight;
   showScreen('setup');
 }
 
 document.getElementById('pickDogfight').addEventListener('click', () => openSetup('dogfight'));
+document.getElementById('pickMusou').addEventListener('click', () => openSetup('musou'));
+document.getElementById('pickDeathmatch').addEventListener('click', () => openSetup('deathmatch'));
 document.getElementById('pickMission').addEventListener('click', () => openSetup('mission'));
 document.getElementById('pickOnline').addEventListener('click', () => openSetup('online'));
 document.getElementById('backLobbyBtn').addEventListener('click', () => {
@@ -2571,7 +2702,70 @@ function createCraft(isPlayer) {
 
 let player = createCraft(true);
 let enemy = createCraft(false);
+let swarm = [];
 applyLoadoutToPlayerMesh();
+
+function isSwarmMode() {
+  return state.gameType === 'musou' || state.gameType === 'deathmatch';
+}
+
+function clearSwarm() {
+  swarm.forEach((c) => {
+    if (c && c.mesh) scene.remove(c.mesh);
+  });
+  swarm = [];
+}
+
+function tintSwarmCraft(craft, idx, mode) {
+  const colors = mode === 'deathmatch'
+    ? [0xc62828, 0x6a1b9a, 0xef6c00, 0x00897b, 0x3949ab, 0xad1457, 0x558b2f]
+    : [0xb71c1c, 0xd32f2f, 0xe53935, 0xc62828, 0xff5252];
+  const col = colors[idx % colors.length];
+  if (craft.mesh && craft.mesh.userData && craft.mesh.userData.body && craft.mesh.userData.body.material) {
+    craft.mesh.userData.body.material.color.setHex(col);
+  }
+}
+
+function spawnSwarm(count, mode) {
+  clearSwarm();
+  for (let i = 0; i < count; i++) {
+    const c = createCraft(false);
+    const ang = (i / count) * Math.PI * 2;
+    const r = mode === 'musou' ? (22 + (i % 3) * 6) : (16 + (i % 4) * 5);
+    c.pos.set(Math.cos(ang) * r, AI_SAFE_ALT + (i % 3) * 2.5, Math.sin(ang) * r);
+    c.yaw = ang + Math.PI;
+    c.hp = mode === 'musou' ? 55 : 70;
+    c.maxHp = c.hp;
+    c.atk = mode === 'musou' ? 8 : 11;
+    c.def = 0.12;
+    c.maxSpd = mode === 'musou' ? 26 : 30;
+    c.thrust = 42;
+    c.fireCd = 0.4 + Math.random() * 0.6;
+    c.aiPhase = Math.random() * Math.PI * 2;
+    c.id = 'swarm_' + i;
+    tintSwarmCraft(c, i, mode);
+    c.mesh.visible = true;
+    c.mesh.position.copy(c.pos);
+    swarm.push(c);
+  }
+}
+
+function aliveSwarmCount() {
+  return swarm.filter((c) => c.alive).length;
+}
+
+function updateKillHud() {
+  if (!killPill) return;
+  if (state.gameType === 'musou') {
+    killPill.style.display = '';
+    killPill.textContent = 'KILL ' + state.kills + ' / 残' + aliveSwarmCount();
+  } else if (state.gameType === 'deathmatch') {
+    killPill.style.display = '';
+    killPill.textContent = 'SURVIVORS ' + (aliveSwarmCount() + (player.alive ? 1 : 0));
+  } else {
+    killPill.style.display = 'none';
+  }
+}
 
 function resetCrafts() {
   const st = getPlayerLoadoutStats();
@@ -2581,28 +2775,40 @@ function resetCrafts() {
   player.yaw = Math.PI;
   player.pitch = 0;
   player.roll = 0;
-  player.maxHp = st.maxHp;
   player.hp = st.maxHp;
+  player.maxHp = st.maxHp;
   player.atk = st.atk;
   player.def = st.def;
   player.maxSpd = st.maxSpd;
   player.thrust = st.thrust;
   player.weaponKind = st.weaponKind;
   player.alive = true;
+  player.mesh.visible = true;
 
-  enemy.pos.set(18, 14, -18);
-  enemy.vel.set(0, 0, 0);
-  enemy.yaw = 0;
-  enemy.pitch = 0;
-  enemy.roll = 0;
-  enemy.hp = MAX_HP;
-  enemy.maxHp = MAX_HP;
-  enemy.atk = 10;
-  enemy.def = 0;
-  enemy.maxSpd = 28;
-  enemy.thrust = 38;
-  enemy.alive = true;
-  enemy.mesh.visible = state.gameType === 'dogfight' || state.gameType === 'online';
+  clearSwarm();
+  state.kills = 0;
+
+  if (isSwarmMode()) {
+    enemy.mesh.visible = false;
+    enemy.alive = false;
+    spawnSwarm(state.gameType === 'musou' ? MUSOU_COUNT : DEATHMATCH_COUNT, state.gameType);
+  } else {
+    enemy.pos.set(18, AI_SAFE_ALT, -18);
+    enemy.vel.set(0, 0, 0);
+    enemy.yaw = 0;
+    enemy.pitch = 0;
+    enemy.roll = 0;
+    enemy.hp = MAX_HP + 40; // CPU強化
+    enemy.maxHp = enemy.hp;
+    enemy.atk = 14;
+    enemy.def = 0.18;
+    enemy.maxSpd = 32;
+    enemy.thrust = 46;
+    enemy.alive = true;
+    enemy.fireCd = 0;
+    enemy.aiPhase = 0;
+    enemy.mesh.visible = state.gameType === 'dogfight' || state.gameType === 'online';
+  }
 
   state.bullets.forEach((b) => scene.remove(b.mesh));
   state.bullets = [];
@@ -2612,11 +2818,10 @@ function resetCrafts() {
   state.nextGate = 0;
   state.laps = 0;
   state.timeLeft = MISSION_TIME;
-
   pests.forEach((p, i) => {
     p.alive = true;
     p.mesh.visible = true;
-    const spot = PEST_SPOTS[i];
+    const spot = PEST_SPOTS[i] || PEST_SPOTS[0];
     p.pos.set(spot[0], spot[1], spot[2]);
     p.mesh.position.copy(p.pos);
   });
@@ -2624,6 +2829,7 @@ function resetCrafts() {
   highlightGate(0);
   updateHpUi();
   updateMissionHud();
+  updateKillHud();
 }
 
 function updateMissionHud() {
@@ -2637,6 +2843,10 @@ function updateMissionHud() {
       Math.max(0, (done / Math.max(1, pests.length)) * 100) + '%';
     missionPill.textContent = 'GATE ' + (state.nextGate + 1) + '/' + gates.length + ' · LAP ' + state.laps + '/' + MISSION_LAPS;
     timePill.textContent = 'TIME ' + Math.ceil(Math.max(0, state.timeLeft));
+  } else if (state.gameType === 'musou') {
+    hudRightLabel.textContent = 'SWARM';
+  } else if (state.gameType === 'deathmatch') {
+    hudRightLabel.textContent = 'FFA';
   } else {
     hudRightLabel.textContent = 'CPU';
   }
@@ -2644,11 +2854,16 @@ function updateMissionHud() {
 
 function updateHpUi() {
   const pMax = player.maxHp || MAX_HP;
-  const eMax = enemy.maxHp || MAX_HP;
   document.getElementById('playerHpFill').style.width = Math.max(0, (player.hp / pMax) * 100) + '%';
   if (state.gameType === 'dogfight' || state.gameType === 'online') {
+    const eMax = enemy.maxHp || MAX_HP;
     document.getElementById('enemyHpFill').style.width = Math.max(0, (enemy.hp / eMax) * 100) + '%';
+  } else if (isSwarmMode()) {
+    const total = Math.max(1, swarm.length);
+    const left = aliveSwarmCount();
+    document.getElementById('enemyHpFill').style.width = Math.max(0, (left / total) * 100) + '%';
   }
+  updateKillHud();
 }
 
 function applyFlight(craft, ctrl, dt, isAi) {
@@ -2656,9 +2871,21 @@ function applyFlight(craft, ctrl, dt, isAi) {
   const thrust = craft.thrust != null ? craft.thrust : 38;
   const liftBias = 9.5;
 
-  craft.yaw += ctrl.yaw * 2.4 * dt;
-  craft.pitch = THREE.MathUtils.clamp(craft.pitch + ctrl.pitch * 1.8 * dt, -0.85, 0.85);
-  craft.roll = THREE.MathUtils.clamp(craft.roll + ctrl.roll * 2.2 * dt, -0.9, 0.9);
+  // AI: 低空なら強制引き上げ（自爆防止）
+  if (isAi) {
+    const alt = craft.pos.y - craft.radius;
+    if (alt < AI_MIN_ALT) {
+      ctrl.throttle = Math.max(ctrl.throttle, 0.92);
+      ctrl.pitch = Math.min(ctrl.pitch, -0.85);
+    } else if (alt < AI_SAFE_ALT) {
+      ctrl.throttle = Math.max(ctrl.throttle, 0.7);
+      ctrl.pitch = Math.min(ctrl.pitch, -0.35);
+    }
+  }
+
+  craft.yaw += ctrl.yaw * (isAi ? 2.0 : 2.4) * dt;
+  craft.pitch = THREE.MathUtils.clamp(craft.pitch + ctrl.pitch * (isAi ? 1.45 : 1.8) * dt, -0.85, 0.85);
+  craft.roll = THREE.MathUtils.clamp(craft.roll + ctrl.roll * (isAi ? 1.8 : 2.2) * dt, -0.9, 0.9);
   // auto-level slightly
   craft.pitch *= (1 - 0.55 * dt);
   craft.roll *= (1 - 0.7 * dt);
@@ -2689,12 +2916,19 @@ function applyFlight(craft, ctrl, dt, isAi) {
     if (craft.vel.y < 0) {
       const impactSpeed = Math.abs(craft.vel.y);
       let impact = Math.min(35, impactSpeed * 2.2);
+      if (isAi) impact *= 0.22; // CPUは地面接触ダメージを大幅軽減
       if (craft.def) impact *= (1 - craft.def);
-      craft.vel.y = impactSpeed * 0.25;
+      craft.vel.y = impactSpeed * (isAi ? 0.55 : 0.25);
+      if (isAi) craft.vel.y = Math.max(craft.vel.y, 6);
       craft.hp -= impact;
       if (impactSpeed > 2.5) spawnDust(craft.pos.x, craft.pos.z, impact);
       if (!isAi && impact > 4) showToast('地面接触 -' + Math.round(impact));
     }
+  }
+  // AI最低高度のソフトフロア
+  if (isAi && craft.pos.y < AI_MIN_ALT) {
+    craft.pos.y = THREE.MathUtils.lerp(craft.pos.y, AI_MIN_ALT + 1.5, Math.min(1, dt * 3));
+    if (craft.vel.y < 2) craft.vel.y = 2 + Math.abs(craft.vel.y) * 0.3;
   }
   craft.pos.y = Math.min(craft.pos.y, 55);
 
@@ -2710,7 +2944,11 @@ function applyFlight(craft, ctrl, dt, isAi) {
       craft.pos.z += nz * push;
       craft.vel.x *= -0.4;
       craft.vel.z *= -0.4;
-      let bump = 8 * dt;
+      if (isAi) {
+        craft.pos.y = Math.max(craft.pos.y, ob.yMax + craft.radius + 1.2);
+        craft.vel.y = Math.max(craft.vel.y, 4);
+      }
+      let bump = (isAi ? 2.2 : 8) * dt;
       if (craft.def) bump *= (1 - craft.def);
       craft.hp -= bump;
     }
@@ -2753,10 +2991,13 @@ function makeProjectileMesh(profile, owner) {
   return mesh;
 }
 
-function fireBullet(from, toward, owner, profileOverride) {
+function fireBullet(from, toward, owner, profileOverride, sourceCraft) {
+  const atk = sourceCraft
+    ? (sourceCraft.atk || 10)
+    : (owner === 'player' ? (player.atk || 12) : (enemy.atk || 10));
   const profile = profileOverride || (owner === 'player'
-    ? getWeaponProfile(player.weaponKind || 'beam', player.atk || 12)
-    : getWeaponProfile('beam', enemy.atk || 10));
+    ? getWeaponProfile(player.weaponKind || 'beam', atk)
+    : getWeaponProfile('beam', atk));
   const baseDir = toward.clone().normalize();
   const count = Math.max(1, profile.pellets || 1);
   for (let n = 0; n < count; n++) {
@@ -2768,7 +3009,7 @@ function fireBullet(from, toward, owner, profileOverride) {
       dir.applyAxisAngle(new THREE.Vector3(1, 0, 0), pitchJ);
       dir.normalize();
     }
-    const mesh = makeProjectileMesh(profile, owner);
+    const mesh = makeProjectileMesh(profile, owner === 'player' ? 'player' : 'enemy');
     mesh.position.copy(from);
     scene.add(mesh);
     // 向き合わせ
@@ -2783,6 +3024,7 @@ function fireBullet(from, toward, owner, profileOverride) {
       vel: dir.multiplyScalar(profile.speed),
       life: profile.life,
       owner,
+      source: sourceCraft || (owner === 'player' ? player : enemy),
       kind: profile.kind,
       radius: profile.radius,
       dmgMul: profile.dmgMul,
@@ -2794,7 +3036,15 @@ function fireBullet(from, toward, owner, profileOverride) {
   }
 }
 
-function getHomingTargetPos(owner) {
+function getCombatTargets() {
+  const list = [];
+  if (player.alive) list.push(player);
+  if (enemy.alive && enemy.mesh.visible) list.push(enemy);
+  swarm.forEach((c) => { if (c.alive) list.push(c); });
+  return list;
+}
+
+function getHomingTargetPos(owner, source) {
   if (owner === 'player') {
     if (state.gameType === 'mission') {
       let best = null;
@@ -2806,15 +3056,52 @@ function getHomingTargetPos(owner) {
       });
       if (best) return best.clone();
     }
-    if (enemy.alive && enemy.mesh.visible) return enemy.pos.clone();
+    let best = null;
+    let bestD = 1e9;
+    getCombatTargets().forEach((t) => {
+      if (t === player) return;
+      const d = player.pos.distanceTo(t.pos);
+      if (d < bestD) { bestD = d; best = t.pos; }
+    });
+    if (best) return best.clone();
+  } else if (source) {
+    let best = null;
+    let bestD = 1e9;
+    getCombatTargets().forEach((t) => {
+      if (t === source) return;
+      if (state.gameType === 'musou' && t !== player) return;
+      const d = source.pos.distanceTo(t.pos);
+      if (d < bestD) { bestD = d; best = t.pos; }
+    });
+    if (best) return best.clone();
   } else if (player.alive) {
     return player.pos.clone();
   }
   return null;
 }
 
+function onCraftDestroyed(victim, byPlayer) {
+  if (!victim || victim === player) return;
+  victim.alive = false;
+  victim.mesh.visible = false;
+  if (byPlayer) {
+    state.kills += 1;
+    showToast('撃墜！ ×' + state.kills, 700);
+  }
+  updateHpUi();
+  if (state.gameType === 'musou' && aliveSwarmCount() <= 0) {
+    endBattle(true);
+  } else if (state.gameType === 'deathmatch') {
+    const left = aliveSwarmCount() + (player.alive ? 1 : 0);
+    if (player.alive && left <= 1) endBattle(true);
+  } else if (state.gameType === 'dogfight' && victim === enemy) {
+    endBattle(true);
+  }
+}
+
 function applyBulletHit(b, target) {
-  let dmg = (b.owner === 'player' ? (player.atk || 12) : (enemy.atk || 10)) * (b.dmgMul || 1);
+  const src = b.source || (b.owner === 'player' ? player : enemy);
+  let dmg = (src.atk || 10) * (b.dmgMul || 1);
   if (target.def) dmg *= (1 - target.def);
   if (state.gameType === 'online') {
     if (b.owner === 'player') {
@@ -2832,7 +3119,10 @@ function applyBulletHit(b, target) {
   }
   target.hp -= dmg;
   updateHpUi();
-  if (b.owner === 'player') showToast('HIT!', 500);
+  if (b.owner === 'player') showToast('HIT!', 400);
+  if (target.hp <= 0) {
+    onCraftDestroyed(target, b.owner === 'player' || (b.source === player));
+  }
   return true;
 }
 
@@ -2843,7 +3133,7 @@ function updateBullets(dt) {
 
     // ミサイル追尾
     if (b.homing > 0) {
-      const tgt = getHomingTargetPos(b.owner);
+      const tgt = getHomingTargetPos(b.owner, b.source);
       if (tgt) {
         const desired = tgt.clone().sub(b.mesh.position).normalize();
         const cur = b.vel.clone().normalize();
@@ -2884,14 +3174,20 @@ function updateBullets(dt) {
       if (!b.mesh.parent) continue;
     }
 
-    const target = b.owner === 'player' ? enemy : player;
-    if (!target.alive || !target.mesh.visible) continue;
-    if (b.mesh.position.distanceTo(target.pos) < target.radius + hitR) {
-      applyBulletHit(b, target);
-      b.pierced = (b.pierced || 0) + 1;
-      if (b.pierced > (b.pierce || 0)) {
-        scene.remove(b.mesh);
-        state.bullets.splice(i, 1);
+    const targets = getCombatTargets();
+    for (let ti = 0; ti < targets.length; ti++) {
+      const target = targets[ti];
+      if (target === b.source) continue;
+      if (state.gameType === 'musou' && b.owner !== 'player' && target !== player) continue;
+      if (!target.alive || !target.mesh.visible) continue;
+      if (b.mesh.position.distanceTo(target.pos) < target.radius + hitR) {
+        applyBulletHit(b, target);
+        b.pierced = (b.pierced || 0) + 1;
+        if (b.pierced > (b.pierce || 0)) {
+          scene.remove(b.mesh);
+          state.bullets.splice(i, 1);
+        }
+        break;
       }
     }
   }
@@ -2931,39 +3227,83 @@ function checkMissionClear() {
   }
 }
 
-function aiControl(dt) {
-  const toPlayer = player.pos.clone().sub(enemy.pos);
-  const dist = toPlayer.length();
-  const desiredDir = toPlayer.clone().normalize();
+/** 強化CPU / 群れAI：高度維持・周回・障害物回避 */
+function aiControlCraft(craft, targetCraft, dt, style) {
+  if (!craft || !craft.alive || !targetCraft || !targetCraft.alive) {
+    return { throttle: 0.65, yaw: 0, pitch: -0.15, roll: 0, fire: false };
+  }
+  craft.aiPhase = (craft.aiPhase || 0) + dt;
+  const toTarget = targetCraft.pos.clone().sub(craft.pos);
+  const dist = Math.max(0.1, toTarget.length());
+  const desiredDir = toTarget.clone().normalize();
 
-  // Desired yaw toward player
-  const desiredYaw = Math.atan2(-desiredDir.x, -desiredDir.z);
-  let yawErr = desiredYaw - enemy.yaw;
+  const orbit = style === 'dogfight' ? 14 : (style === 'deathmatch' ? 10 : 12);
+  const side = new THREE.Vector3(-desiredDir.z, 0, desiredDir.x).normalize();
+  const orbitBias = side.multiplyScalar(Math.sin(craft.aiPhase * 1.1) * orbit * 0.08);
+  const aimPoint = targetCraft.pos.clone()
+    .add(new THREE.Vector3(0, 2.5, 0))
+    .add(orbitBias);
+  if (dist < orbit) {
+    aimPoint.add(desiredDir.clone().multiplyScalar(-8));
+    aimPoint.y += 5;
+  }
+
+  const toAim = aimPoint.clone().sub(craft.pos).normalize();
+  const desiredYaw = Math.atan2(-toAim.x, -toAim.z);
+  let yawErr = desiredYaw - craft.yaw;
   while (yawErr > Math.PI) yawErr -= Math.PI * 2;
   while (yawErr < -Math.PI) yawErr += Math.PI * 2;
 
-  const altErr = (player.pos.y + 2) - enemy.pos.y;
-  let throttle = 0.5 + THREE.MathUtils.clamp(altErr * 0.04, -0.35, 0.4);
-  if (dist > 28) throttle += 0.12;
-  if (dist < 10) throttle -= 0.08;
+  const targetAlt = Math.max(AI_SAFE_ALT, targetCraft.pos.y + (style === 'dogfight' ? 3 : 1.5));
+  const altErr = targetAlt - craft.pos.y;
+  let throttle = 0.62 + THREE.MathUtils.clamp(altErr * 0.05, -0.25, 0.35);
+  if (dist > 30) throttle += 0.15;
+  if (dist < 8) throttle += 0.05;
+
+  let avoidYaw = 0;
+  obstacles.forEach((ob) => {
+    const dx = craft.pos.x - ob.mesh.position.x;
+    const dz = craft.pos.z - ob.mesh.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < ob.radius + 6 && craft.pos.y < ob.yMax + 4) {
+      avoidYaw += Math.atan2(dx, dz) * 0.35;
+      throttle = Math.max(throttle, 0.85);
+    }
+  });
+
+  let pitchCmd = THREE.MathUtils.clamp(-toAim.y * 0.9, -0.55, 0.45);
+  if (craft.pos.y < AI_SAFE_ALT + 2) pitchCmd = Math.min(pitchCmd, -0.2);
 
   const ctrl = {
-    throttle: THREE.MathUtils.clamp(throttle, 0.15, 1),
-    yaw: THREE.MathUtils.clamp(yawErr * 1.4, -1, 1),
-    pitch: THREE.MathUtils.clamp(-desiredDir.y * 1.2 + (dist > 20 ? 0.35 : 0.1), -1, 1),
-    roll: THREE.MathUtils.clamp(yawErr * 0.55, -1, 1),
+    throttle: THREE.MathUtils.clamp(throttle, 0.35, 1),
+    yaw: THREE.MathUtils.clamp(yawErr * 1.65 + avoidYaw, -1, 1),
+    pitch: pitchCmd,
+    roll: THREE.MathUtils.clamp(yawErr * 0.4 + Math.sin(craft.aiPhase * 2.2) * 0.2, -0.85, 0.85),
     fire: false
   };
 
-  // Fire when roughly facing player
-  const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(enemy.pitch, enemy.yaw, -enemy.roll, 'YXZ'));
+  const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
   const aim = desiredDir.dot(forward);
-  if (aim > 0.88 && dist < 42 && dist > 6) ctrl.fire = true;
-
-  // Occasional weave
-  ctrl.roll += Math.sin(performance.now() * 0.002) * 0.25;
-
+  const fireDistMax = style === 'musou' ? 48 : 52;
+  if (aim > 0.78 && dist < fireDistMax && dist > 5 && craft.pos.y > AI_MIN_ALT) {
+    ctrl.fire = true;
+  }
   return ctrl;
+}
+
+function aiControl(dt) {
+  return aiControlCraft(enemy, player, dt, 'dogfight');
+}
+
+function pickDeathmatchTarget(craft) {
+  let best = null;
+  let bestD = 1e9;
+  getCombatTargets().forEach((t) => {
+    if (t === craft || !t.alive) return;
+    const d = craft.pos.distanceTo(t.pos);
+    if (d < bestD) { bestD = d; best = t; }
+  });
+  return best || player;
 }
 
 function updateCamera(dt) {
@@ -2983,6 +3323,7 @@ function updateCamera(dt) {
 }
 
 function endBattle(win, reason) {
+  if (state.over) return;
   state.playing = false;
   state.over = true;
   hud.classList.remove('active');
@@ -2991,13 +3332,14 @@ function endBattle(win, reason) {
   const msg = document.getElementById('resultMsg');
   const isM = state.gameType === 'mission';
   const isOnline = state.gameType === 'online';
+  const isMusou = state.gameType === 'musou';
+  const isDm = state.gameType === 'deathmatch';
   if (win) {
-    title.textContent = isM ? 'ミッション成功' : '勝利';
+    title.textContent = isM ? 'ミッション成功' : (isMusou ? '無双クリア' : (isDm ? 'サバイバル勝利' : '勝利'));
     title.className = 'result-title win';
-    // 勝利コイン
     try {
       loadMeta();
-      const bonus = isM ? 25 : (isOnline ? 40 : 15);
+      const bonus = isM ? 25 : (isOnline ? 40 : (isMusou ? 35 : (isDm ? 40 : 15)));
       meta.coins = (meta.coins || 0) + bonus;
       meta.wins = (meta.wins || 0) + 1;
       saveMeta();
@@ -3008,6 +3350,10 @@ function endBattle(win, reason) {
         msg.textContent = 'ゲート' + MISSION_LAPS + '周＋害虫全破壊を達成（Mode ' + state.mode + '）。+' + bonus + 'コイン / 残 ' + Math.ceil(state.timeLeft) + ' 秒。';
       } else if (isOnline) {
         msg.textContent = 'オンライン対戦に勝利（Mode ' + state.mode + '）。+' + bonus + 'コイン！';
+      } else if (isMusou) {
+        msg.textContent = '敵ドローン全滅！ 撃墜 ' + state.kills + ' 機 / +' + bonus + 'コイン。';
+      } else if (isDm) {
+        msg.textContent = 'デスマッチ生き残り！ 最後の1機 / +' + bonus + 'コイン。';
       } else {
         msg.textContent = 'CPU撃破！ Mode ' + state.mode + ' / +' + bonus + 'コイン。';
       }
@@ -3015,7 +3361,7 @@ function endBattle(win, reason) {
       msg.textContent = '勝利！';
     }
   } else {
-    title.textContent = isM ? 'ミッション失敗' : '敗北';
+    title.textContent = isM ? 'ミッション失敗' : (isMusou || isDm ? '撃破' : '敗北');
     title.className = 'result-title lose';
     if (reason === 'time') {
       msg.textContent = '時間切れです。周回と害虫撃破を急いで再挑戦しましょう。';
@@ -3023,6 +3369,10 @@ function endBattle(win, reason) {
       msg.textContent = 'オンライン対戦に敗北しました。再戦はロビーからルームを作り直してください。';
     } else if (isM) {
       msg.textContent = '機体が大破しました。低空の圃場や建物に注意して再挑戦してください。';
+    } else if (isMusou) {
+      msg.textContent = '群れに飲み込まれました。撃墜 ' + state.kills + ' 機。再挑戦して無双しよう！';
+    } else if (isDm) {
+      msg.textContent = '乱闘の渦に散りました。生き残れるまで再挑戦！';
     } else {
       msg.textContent = '機体が大破しました。ガチャ装備を強化して再挑戦してみてください。';
     }
@@ -3046,8 +3396,13 @@ function startBattle() {
   state.playing = true;
   state.firstPerson = false;
   clock.getDelta();
-  const label = state.gameType === 'mission' ? '圃場ミッション開始！' : 'ドッグファイト開始！';
-  showToast(label + ' Mode ' + state.mode, 1400);
+  const labels = {
+    mission: '圃場ミッション開始！',
+    musou: '無双モード開始！敵 ' + MUSOU_COUNT + ' 機',
+    deathmatch: 'デスマッチ乱闘開始！',
+    dogfight: 'ドッグファイト開始！'
+  };
+  showToast((labels[state.gameType] || labels.dogfight) + ' Mode ' + state.mode, 1400);
 }
 
 document.getElementById('startBtn').addEventListener('click', startBattle);
@@ -3067,6 +3422,7 @@ document.getElementById('toSetupBtn').addEventListener('click', () => {
 document.getElementById('toLobbyBtn').addEventListener('click', () => {
   state.playing = false;
   cleanupNet();
+  clearSwarm();
   setMissionWorldVisible(false);
   enemy.mesh.visible = true;
   showScreen('lobby');
@@ -3101,9 +3457,25 @@ function tick() {
         const q = enemy.mesh.quaternion;
         const muzzle = enemy.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-        fireBullet(muzzle, dir, 'enemy');
-        state.enemyFireCd = FIRE_COOLDOWN * 1.15;
+        fireBullet(muzzle, dir, 'enemy', getWeaponProfile('beam', enemy.atk || 14), enemy);
+        state.enemyFireCd = FIRE_COOLDOWN * 0.95;
       }
+    } else if (isSwarmMode()) {
+      swarm.forEach((c) => {
+        if (!c.alive) return;
+        const tgt = state.gameType === 'deathmatch' ? pickDeathmatchTarget(c) : player;
+        const ai = aiControlCraft(c, tgt, dt, state.gameType);
+        applyFlight(c, ai, dt, true);
+        c.fireCd = Math.max(0, (c.fireCd || 0) - dt);
+        if (ai.fire && c.fireCd <= 0) {
+          const q = c.mesh.quaternion;
+          const muzzle = c.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
+          const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+          fireBullet(muzzle, dir, 'enemy', getWeaponProfile('beam', c.atk || 10), c);
+          c.fireCd = FIRE_COOLDOWN * (state.gameType === 'musou' ? 1.35 : 1.05);
+        }
+        if (c.hp <= 0 && c.alive) onCraftDestroyed(c, false);
+      });
     } else if (state.gameType === 'online') {
       enemy.pos.lerp(state.remoteTarget, 1 - Math.pow(0.0008, dt));
       enemy.yaw = THREE.MathUtils.lerp(enemy.yaw, state.remoteYaw, 0.2);
@@ -3186,7 +3558,7 @@ function tick() {
     document.getElementById('spdPill').textContent = 'SPD ' + spd.toFixed(0);
 
     updateGroundBlob(playerGroundBlob, player);
-    updateGroundBlob(enemyGroundBlob, enemy.mesh.visible ? enemy : null);
+    updateGroundBlob(enemyGroundBlob, (!isSwarmMode() && enemy.mesh.visible) ? enemy : null);
     updateDust(dt);
 
     if (player.hp <= 0) {
@@ -3195,6 +3567,10 @@ function tick() {
       endBattle(false);
     } else if (state.gameType === 'dogfight' && enemy.hp <= 0) {
       enemy.alive = false;
+      endBattle(true);
+    } else if (state.gameType === 'musou' && aliveSwarmCount() <= 0) {
+      endBattle(true);
+    } else if (state.gameType === 'deathmatch' && player.alive && aliveSwarmCount() <= 0) {
       endBattle(true);
     }
 
