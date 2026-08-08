@@ -3821,6 +3821,10 @@ async function saveCultivationPlan(options) {
             return false;
         }
     }
+
+    const btn = document.getElementById('btnCpSavePlan') || document.querySelector('#cultivationPlanModal button[onclick*="saveCultivationPlan"]');
+    let orgText = btn ? btn.innerHTML : '計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span>';
+
     try {
         const year = getCpVal('cpYear', true) || new Date().getFullYear();
         const crop = getCpVal('cpCrop');
@@ -3860,40 +3864,38 @@ async function saveCultivationPlan(options) {
                 return false;
             }
         }
-    
-    // 手入力作物・品種をローカルに記憶（作物＋産地に紐づけて候補化）
-    const climatesForSave = resolveCpClimatesForSave();
-    payloadPlans.forEach(plan => {
-        if (plan.crop) rememberCustomCrop(plan.crop);
-        if (plan.crop && plan.variety) {
-            registerVarietyCandidateLocal(plan.crop, plan.variety, climatesForSave, {
-                sowing: plan.tasks.sowing || [],
-                planting: plan.tasks.planting || [],
-                harvesting: plan.tasks.harvesting || [],
-                fileUrl: plan.fileUrl || ''
-            });
-        }
-    });
 
-    // 品種マスタ（栽培計画マスタ）へ明示的に追記
-    for (const plan of payloadPlans) {
-        if (!plan.crop || !plan.variety) continue;
-        await syncVarietyToMasterDB(plan.crop, plan.variety, {
-            holes: plan.holes,
-            rows: plan.rows,
-            pSpace: plan.pSpace,
-            rSpace: plan.rSpace,
-            yieldPerSeedling: plan.yieldPerPlant || plan.yieldPerSeedling || '',
-            itemsPerPack: plan.itemsPerPack || ''
-        });
-    }
-    
-    const btn = document.querySelector('#cultivationPlanModal button[onclick="saveCultivationPlan()"]');
-        let orgText = btn ? btn.innerHTML : '計画を保存';
         if (btn && !opts.silent) {
             btn.innerHTML = '送信中...';
             btn.disabled = true;
         }
+
+        // 手入力作物・品種をローカルに記憶（作物＋産地に紐づけて候補化）
+        const climatesForSave = resolveCpClimatesForSave();
+        payloadPlans.forEach(plan => {
+            if (plan.crop) rememberCustomCrop(plan.crop);
+            if (plan.crop && plan.variety) {
+                registerVarietyCandidateLocal(plan.crop, plan.variety, climatesForSave, {
+                    sowing: plan.tasks.sowing || [],
+                    planting: plan.tasks.planting || [],
+                    harvesting: plan.tasks.harvesting || [],
+                    fileUrl: plan.fileUrl || ''
+                });
+            }
+        });
+
+        // 品種マスタ追記（非同期・並列）
+        Promise.all(payloadPlans.map(plan => {
+            if (!plan.crop || !plan.variety) return Promise.resolve();
+            return syncVarietyToMasterDB(plan.crop, plan.variety, {
+                holes: plan.holes,
+                rows: plan.rows,
+                pSpace: plan.pSpace,
+                rSpace: plan.rSpace,
+                yieldPerSeedling: plan.yieldPerPlant || plan.yieldPerSeedling || '',
+                itemsPerPack: plan.itemsPerPack || ''
+            }).catch(e => console.warn('品種マスタ同期スキップ:', e));
+        }));
         
         await callGAS('saveCultivationPlans', { year: year, crop: crop, planDataArray: payloadPlans });
         
@@ -3950,14 +3952,10 @@ async function saveCultivationPlan(options) {
             const tagDisplay = document.getElementById('tagDisplay_' + p.id);
             if (tagDisplay) tagDisplay.innerText = '';
         });
-        
-        if (btn && !opts.silent) {
-            btn.innerHTML = orgText;
-            btn.disabled = false;
-        }
 
         if (!opts.keepOpen) {
-            document.getElementById('cultivationPlanModal').style.display = 'none';
+            const modal = document.getElementById('cultivationPlanModal');
+            if (modal) modal.style.display = 'none';
         }
 
         if (!opts.silent) {
@@ -3973,15 +3971,17 @@ async function saveCultivationPlan(options) {
         return true;
         
     } catch(e) {
-        alert("保存エラー: " + e.message);
-        const btn = document.querySelector('#cultivationPlanModal button[onclick="saveCultivationPlan()"]');
-        if (btn) {
-            btn.innerHTML = '計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span>';
+        console.error("栽培計画保存エラー:", e);
+        alert("保存エラー: " + (e.message || e));
+        return false;
+    } finally {
+        if (btn && !opts.silent) {
+            btn.innerHTML = orgText;
             btn.disabled = false;
         }
-        return false;
     }
 }
+window.saveCultivationPlan = saveCultivationPlan;
 
 /** モーダル内からの直接実行は廃止。計画一覧へ誘導 */
 async function executeCultivationPlanFromModal() {

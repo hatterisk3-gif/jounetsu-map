@@ -12,6 +12,36 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let trackingWatchId = null;
       let lastTrackingTime = 0;
 
+      // ℹ️ インフォポップオーバーの開閉制御
+      window.toggleInfoPopover = function(evt, popoverId) {
+          if (evt) {
+              evt.stopPropagation();
+              evt.preventDefault();
+          }
+          const popover = document.getElementById(popoverId);
+          if (!popover) return;
+          
+          const isVis = popover.classList.contains('active');
+          document.querySelectorAll('.info-popover-box.active').forEach(el => {
+              if (el !== popover) el.classList.remove('active');
+          });
+          
+          if (!isVis) {
+              popover.classList.add('active');
+          } else {
+              popover.classList.remove('active');
+          }
+      };
+
+      document.addEventListener('click', function(e) {
+          if (!e.target.closest('.info-icon-btn') && !e.target.closest('.info-popover-box')) {
+              document.querySelectorAll('.info-popover-box.active').forEach(el => {
+                  el.classList.remove('active');
+              });
+          }
+      });
+
+
       window.confirmClockOut = () => {
           const dateInput = document.getElementById('clockOutDate') ? document.getElementById('clockOutDate').value : '';
           const timeInput = document.getElementById('clockOutTime').value;
@@ -9281,8 +9311,17 @@ function createSignboardMarker(name, pos, icon, id) {
               <input type="hidden" id="rec_work_name" value="休憩">
 
               <div class="rec-zone" style="background:#EFEBE9; padding:16px; border-radius:12px; border:1px solid #D7CCC8; margin-bottom:16px;">
-                <label class="form-label" style="margin-top:0; color:#4E342E; font-size:14px;">⏰ 休憩の時間設定</label>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                  <label class="form-label" style="margin:0; color:#4E342E; font-size:14px;">⏰ 休憩の時間設定</label>
+                  <button type="button" class="info-icon-btn" onclick="toggleInfoPopover(event, 'popover-rest-info')">ℹ️</button>
+                </div>
+                <div id="popover-rest-info" class="info-popover-box" style="margin-bottom:10px; background:#4E342E; max-width:100%;">
+                  💡 <b>休憩登録のヘルプ</b><br>
+                  ・休憩時間は全体作業時間から自動的に差し引かれます。<br>
+                  ・午前休憩、昼休憩、午後休憩など、1日に何度でも追加登録できます。
+                </div>
                 <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
+
                   <div style="flex:1;">
                     <label style="font-size:11px; color:#666;">開始時刻</label>
                     <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" value="" onclick="if(window.openAppTimePicker) openAppTimePicker('rec_start_time', '開始時間')" style="margin:0; text-align:center; font-weight:bold; font-size:16px;">
@@ -9360,14 +9399,19 @@ function createSignboardMarker(name, pos, icon, id) {
           <div id="new_photos_preview" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:5px; min-height:10px;"></div>`;
         
         let targetSection = '';
+        const placeInfoText = (p && p.name !== "未選択")
+          ? `📍 <b>${p.name}</b><br>${p.memo || p.notes || p.linkedSigns || (p.area ? `面積: ${p.area}㎡` : '特記事項なし')}`
+          : '📍 <b>場所未選択</b><br>マップから作業対象の場所を選択してください。';
+        const placeInfoBtn = `<button type="button" class="info-icon-btn" onclick="toggleInfoPopover(event, 'popover-place-detail')">ℹ️</button><div id="popover-place-detail" class="info-popover-box" style="margin-top:6px; background:#1B5E20; max-width:100%; display:none;">${placeInfoText}</div>`;
+
         const lastFieldBtn = `<button type="button" id="btn_select_last_fields" onclick="selectLastWorkFields()" style="display:none; background:#FFF8E1; color:#F57F17; border:1px solid #FFB74D; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">↩️ 前回の圃場</button>`;
         if (currentRecordType === 'work' && !p.isMarker) {
-           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:block; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32;">📍 圃場記録対象 <span style="font-size:11px; color:#66BB6A; font-weight:normal;">（開いた圃場は自動選択）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:block; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 圃場記録対象 ${placeInfoBtn} <span style="font-size:11px; color:#66BB6A; font-weight:normal; margin-left:4px;">（自動選択）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
         } else if (currentRecordType === 'work') {
            // 看板起点でも圃場を追加選択できる
-           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:none; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32;">📍 圃場記録対象 <span style="font-size:11px; color:#66BB6A; font-weight:normal;">（任意・複数可）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:none; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 圃場記録対象 ${placeInfoBtn} <span style="font-size:11px; color:#66BB6A; font-weight:normal; margin-left:4px;">（任意・複数可）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
         } else if (!p.isMarker) {
-           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32;">📍 記録対象 (複数選択可)</label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">＋ 追加</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 記録対象 (複数選択可) ${placeInfoBtn}</label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">＋ 追加</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
         }
         
         const now = new Date(); const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -9399,10 +9443,18 @@ function createSignboardMarker(name, pos, icon, id) {
             <div>
               <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
               <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${(!isEdit && resolvedStart.isFallback) ? 'data-autofill="1"' : ''} data-start-source="${(!isEdit && resolvedStart.source) ? String(resolvedStart.source).replace(/"/g, '') : ''}" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime()">
-              <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
-                <input type="checkbox" id="sync_clockin" ${(!isEdit && resolvedStart.syncClockIn) ? 'checked' : ''}>出勤時間と同期
-              </label>
+              <div style="display:flex; align-items:center; gap:3px;">
+                <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
+                  <input type="checkbox" id="sync_clockin" ${(!isEdit && resolvedStart.syncClockIn) ? 'checked' : ''}>出勤時間と同期
+                </label>
+                <button type="button" class="info-icon-btn" style="width:16px; height:16px; font-size:9px;" onclick="toggleInfoPopover(event, 'popover-sync-info')">ℹ️</button>
+              </div>
+              <div id="popover-sync-info" class="info-popover-box" style="margin-top:4px; background:#0D47A1; max-width:100%; display:none;">
+                💡 <b>出勤時間同期のヘルプ</b><br>
+                チェックをオンにすると、打刻した出勤時刻が作業の開始時刻に自動セットされます。
+              </div>
             </div>
+
             <div>
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
                 <label class="form-label" style="font-size:11px; margin:0;">⏹️ 終了</label>
@@ -15658,7 +15710,15 @@ window.toggleTracking = () => {
         const defaultDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const defaultTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         
-        let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 退勤処理</h3>`;
+        let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h3 style="margin:0; color:#4CAF50;">🏃‍♂️ 退勤処理</h3>
+          <button type="button" class="info-icon-btn" onclick="toggleInfoPopover(event, 'popover-clockout-help')">ℹ️</button>
+        </div>
+        <div id="popover-clockout-help" class="info-popover-box" style="margin-bottom:12px; background:#2E7D32; max-width:100%; display:none;">
+          💡 <b>退勤処理のヘルプ</b><br>
+          ・退勤打刻を保存すると本日のトラッキング記録が完了します。<br>
+          ・本日の作業記録のつけ忘れがないか確認してから退勤を行ってください。
+        </div>`;
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤日</label>`;
         html += `<input type="date" id="clockOutDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">退勤時間</label>`;
@@ -15698,7 +15758,16 @@ window.toggleTracking = () => {
         const defaultDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const defaultTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         
-        let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>`;
+        let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h3 style="margin:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>
+          <button type="button" class="info-icon-btn" onclick="toggleInfoPopover(event, 'popover-clockin-help')">ℹ️</button>
+        </div>
+        <div id="popover-clockin-help" class="info-popover-box" style="margin-bottom:12px; background:#2E7D32; max-width:100%; display:none;">
+          💡 <b>出勤処理のヘルプ</b><br>
+          ・出勤処理を行うと現在地のGPSが記録され、トラッキングを開始します。<br>
+          ・打刻された出勤時刻は、本日の作業記録の開始時間の自動入力と同期されます。
+        </div>`;
+
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
         html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;

@@ -138,3 +138,54 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   color: #d32f2f;
   border: 2px solid #d32f2f;
 }
+
+/* インフォアイコンボタン & ポップオーバー */
+.info-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #E3F2FD;
+  color: #1976D2;
+  border: 1px solid #90CAF9;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-left: 6px;
+  vertical-align: middle;
+  transition: all 0.2s ease;
+  padding: 0;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.info-icon-btn:hover, .info-icon-btn:active {
+  background: #1976D2;
+  color: #ffffff;
+}
+
+.info-popover-box {
+  position: absolute;
+  background: #212121;
+  color: #ffffff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  z-index: 99999;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+  max-width: 280px;
+  display: none;
+  word-break: break-word;
+  border: 1px solid #424242;
+}
+.info-popover-box.active {
+  display: block;
+  animation: fadeInPopover 0.2s ease;
+}
+@keyframes fadeInPopover {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
