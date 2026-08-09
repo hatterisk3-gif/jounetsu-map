@@ -3617,19 +3617,8 @@ function toggleCpCell(td, planId) {
         const cellKey = { monthIndex: td.dataset.monthIndex, period: td.dataset.period };
         const last = cpSemiAutoLastPaint[planId];
 
-        // 直前に塗った同じマスを再クリック → 消して順序を戻す
-        if (last && isSameSemiAutoCell(last, cellKey) && td.dataset.task === last.tool) {
-            clearCpCellPaint(td);
-            delete cpSemiAutoLastPaint[planId];
-            syncCpSemiAutoStepForPlan(planId);
-            updateCpCellsText(planId);
-            updateCpSemiAutoHint(planId);
-            if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
-            return;
-        }
-
-        // 今の順序と同じ種類が既にあるセル → 消して順序を塗り状態から再判定
-        if (td.dataset.task === tool) {
+        // 塗りつぶし済みのマスは、工程や操作順に関係なくクリックで消す
+        if (td.dataset.task) {
             clearCpCellPaint(td);
             if (last && isSameSemiAutoCell(last, cellKey)) delete cpSemiAutoLastPaint[planId];
             syncCpSemiAutoStepForPlan(planId);
