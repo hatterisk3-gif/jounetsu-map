@@ -2244,6 +2244,18 @@
   }
   window._toggleClockLunchFields = toggleLunchFields;
 
+  function buildLunchShortcutsHtml() {
+    let h = `<div style="margin-top:10px; border-top:1px dashed #ffe082; padding-top:8px;">`;
+    h += `<div style="font-size:11px; color:#e65100; font-weight:bold; margin-bottom:6px;">⚡ ワンタップで自動入力</div>`;
+    h += `<button type="button" onclick="setLunchFromLastWorkToNow()" style="width:100%; background:#FF9800; color:#fff; border:none; padding:9px 8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; box-shadow:0 1px 3px rgba(255,152,0,0.3); margin-bottom:6px;">✨ 前作業終了 〜 いまの時間にセット</button>`;
+    h += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">`;
+    h += `<button type="button" onclick="setLunchFromWorkGaps()" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; padding:7px 4px; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">📋 作業間の空き時間</button>`;
+    h += `<button type="button" onclick="setLunchStartToLastWorkEnd()" style="background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; padding:7px 4px; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">▶️ 開始=前作業終了</button>`;
+    h += `</div>`;
+    h += `</div>`;
+    return h;
+  }
+
   /** 昼休憩登録モーダル（出勤後・退勤前） */
   function openLunchBreakModal() {
     const pref = loadBreakDefaults();
@@ -2274,26 +2286,27 @@
 
     let html = `<h3 style="margin-top:0; color:#E65100;">🍱 昼休憩登録</h3>`;
     html += buildClockInEditHtml(clockInTime, workDate);
-    html += `<div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:12px; margin-bottom:12px;">`;
-    html += `<div style="font-size:12px; color:#666; margin-bottom:8px;">登録後、次の作業開始時間は昼休憩の終了時刻に合わせます。</div>`;
-    html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center;">`;
-    html += `<input type="hidden" id="clockLunchEnabled" value="1">`;
-    html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${startVal}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
-    html += `<span style="color:#666;">〜</span>`;
-    html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${endVal}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
+    html += `<div style="background:#fff8e1; border:1px solid #ffe082; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.04);">`;
+    html += `<div style="font-weight:bold; color:#e65100; font-size:13px; margin-bottom:4px; display:flex; align-items:center; justify-content:space-between;">`;
+    html += `<span>🍱 昼休憩の時間設定</span>`;
+    html += `<span style="font-size:10px; color:#888; font-weight:normal;">※終了が次作業の開始になります</span>`;
     html += `</div>`;
-    html += `<div id="lunchGapHint" style="font-size:11px; color:${autoHint ? '#2E7D32' : '#888'}; margin-top:8px; line-height:1.4;">${autoHint || '午前と午後の作業記録があると、そのあいだの時間を自動で入れられます。'}</div>`;
-    html += `<div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">`;
-    html += `<button type="button" onclick="setLunchFromLastWorkToNow()" style="width:100%; background:#FF9800; color:#fff; border:1px solid #F57C00; padding:10px 10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">⏱️ 前の作業終了〜今の時間にセット</button>`;
-    html += `<button type="button" onclick="setLunchFromWorkGaps()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1E88E5; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">📋 作業記録の間時間に合わせる</button>`;
-    html += `<button type="button" onclick="setLunchStartToLastWorkEnd()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 開始を最後の作業記録の終了時間に合わせる</button>`;
-    html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
-    html += `</div></div>`;
-    html += `<div style="display:flex; flex-direction:column; gap:10px;">`;
-    html += `  <button onclick="confirmLunchBreak()" style="background:#FF9800; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">昼休憩を登録する</button>`;
-    html += `  <button onclick="skipLunchBreak()" style="background:#fff; color:#555; width:100%; padding:12px; border-radius:4px; border:1px solid #bbb; font-weight:bold; cursor:pointer;">昼休憩なし（退勤へ進む）</button>`;
-    html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取り消す</button>`;
-    html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#eee; color:#333; width:100%; padding:10px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">閉じる</button>`;
+    html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center; margin-top:8px;">`;
+    html += `<input type="hidden" id="clockLunchEnabled" value="1">`;
+    html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:10px 8px; text-align:center; font-weight:bold; font-size:16px; border:1px solid #ffb74d; border-radius:6px; background:#fff;" value="${startVal}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
+    html += `<span style="color:#e65100; font-weight:bold; font-size:16px;">〜</span>`;
+    html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:10px 8px; text-align:center; font-weight:bold; font-size:16px; border:1px solid #ffb74d; border-radius:6px; background:#fff;" value="${endVal}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
+    html += `</div>`;
+    html += `<div id="lunchGapHint" style="font-size:11px; color:${autoHint ? '#2E7D32' : '#795548'}; margin-top:8px; line-height:1.4; text-align:center; font-weight:bold;">${autoHint || '※枠をタップして時間を直接変更できます'}</div>`;
+    html += buildLunchShortcutsHtml();
+    html += `</div>`;
+    html += `<div style="display:flex; flex-direction:column; gap:8px;">`;
+    html += `  <button onclick="confirmLunchBreak()" style="background:#FF9800; color:white; width:100%; padding:12px; border-radius:6px; border:none; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(255,152,0,0.3);">昼休憩を登録する</button>`;
+    html += `  <button onclick="skipLunchBreak()" style="background:#fff; color:#555; width:100%; padding:10px; border-radius:6px; border:1px solid #bbb; font-weight:bold; font-size:13px; cursor:pointer;">昼休憩なし（退勤へ進む）</button>`;
+    html += `  <div style="display:flex; gap:8px; margin-top:4px;">`;
+    html += `    <button onclick="cancelClockIn()" style="background:#FFEEEF; color:#C62828; border:1px solid #FFCDD2; flex:1; padding:8px; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">間違えて出勤したので取り消す</button>`;
+    html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#eee; color:#333; width:80px; padding:8px; border-radius:6px; border:none; font-weight:bold; font-size:12px; cursor:pointer;">閉じる</button>`;
+    html += `  </div>`;
     html += `</div>`;
     showClockModal(html);
   }
@@ -2472,18 +2485,13 @@
       html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
       html += `<input type="checkbox" id="clockLunchEnabled" ${lunchOn ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
       html += `</label>`;
-      html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center; opacity:${lunchOn ? '1' : '0.45'};">`;
-      html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${ls}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
-      html += `<span style="color:#666;">〜</span>`;
-      html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:8px;" value="${le}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
+      html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center; opacity:${lunchOn ? '1' : '0.45'}; margin-top:6px;">`;
+      html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:10px 8px; text-align:center; font-weight:bold; font-size:16px; border:1px solid #c5e1a5; border-radius:6px; background:#fff;" value="${ls}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
+      html += `<span style="color:#558b2f; font-weight:bold; font-size:16px;">〜</span>`;
+      html += `<input type="text" id="clockLunchEnd" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:10px 8px; text-align:center; font-weight:bold; font-size:16px; border:1px solid #c5e1a5; border-radius:6px; background:#fff;" value="${le}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchEnd', '昼休憩 終了')">`;
       html += `</div>`;
-      html += `<div id="lunchGapHint" style="font-size:11px; color:${gapSugClock ? '#2E7D32' : '#888'}; margin-top:6px;">${gapSugClock ? `間時間候補: ${gapSugClock.start}〜${gapSugClock.end}` : '作業のあいだが分かれていると自動セットできます'}</div>`;
-      html += `<div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">`;
-      html += `<button type="button" onclick="setLunchFromLastWorkToNow()" style="width:100%; background:#FF9800; color:#fff; border:1px solid #F57C00; padding:10px 10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">⏱️ 前の作業終了〜今の時間にセット</button>`;
-      html += `<button type="button" onclick="setLunchFromWorkGaps()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1E88E5; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">📋 作業記録の間時間に合わせる</button>`;
-      html += `<button type="button" onclick="setLunchStartToLastWorkEnd()" style="width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">⏱️ 開始を最後の作業記録の終了時間に合わせる</button>`;
-      html += `<button type="button" onclick="setLunchEndToNow()" style="width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">🕒 終了を今の時間に合わせる</button>`;
-      html += `</div>`;
+      html += `<div id="lunchGapHint" style="font-size:11px; color:${gapSugClock ? '#2E7D32' : '#795548'}; margin-top:6px; text-align:center; font-weight:bold;">${gapSugClock ? `間時間候補: ${gapSugClock.start}〜${gapSugClock.end}` : '※枠をタップして時間を直接変更できます'}</div>`;
+      html += buildLunchShortcutsHtml();
     }
     const breakTotal = sumWorkRecordBreakMins(
       (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '',
@@ -2498,16 +2506,16 @@
     }
     html += `</div>`;
 
-    html += `<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">`;
-    html += `  <div style="display:flex; gap:10px;">`;
-    html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">次へ（時間確認）</button>`;
+    html += `<div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">`;
+    html += `  <div style="display:flex; gap:8px;">`;
+    html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:6px; border:none; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 4px rgba(76,175,80,0.3);">次へ（時間確認）</button>`;
     if (!isForgot) {
-      html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
+      html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; width:90px; padding:12px; border-radius:6px; border:none; font-weight:bold; font-size:12px; cursor:pointer;">キャンセル</button>`;
     } else {
-      html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">後で</button>`;
+      html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; width:90px; padding:12px; border-radius:6px; border:none; font-weight:bold; font-size:12px; cursor:pointer;">後で</button>`;
     }
     html += `  </div>`;
-    html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取り消す</button>`;
+    html += `  <button onclick="cancelClockIn()" style="background:#FFEEEF; color:#C62828; border:1px solid #FFCDD2; width:100%; padding:8px; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">間違えて出勤したので取り消す</button>`;
     html += `</div>`;
     showClockModal(html);
     // 作業中休憩の入力UIは撤去済み（作業記録の合計のみ参照）
