@@ -809,8 +809,15 @@
           </div>
           <div>
             <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:2px;">メーカー</label>
-            <input type="text" id="vmdMaker" list="vmdMakerList" placeholder="例: サカタのタネ" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
-            <datalist id="vmdMakerList"></datalist>
+            <select id="vmdMaker" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box; background:#fff;">
+              <option value="">メーカーを選択...</option>
+            </select>
+            <div style="display:flex; gap:5px; margin-top:6px;">
+              <button type="button" onclick="addVmdMakerOption()" style="flex:1; padding:5px 6px; background:#E8F5E9; color:#2E7D32; border:1px solid #81C784; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold;">＋ 追加</button>
+              <button type="button" onclick="editVmdMakerOption()" style="flex:1; padding:5px 6px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold;">✎ 編集</button>
+              <button type="button" onclick="deleteVmdMakerOption()" style="flex:1; padding:5px 6px; background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold;">🗑 削除</button>
+            </div>
+            <div style="font-size:10px; color:#999; margin-top:4px;">編集・削除はメーカーの選択肢にのみ反映され、登録済み品種の情報は変更しません。</div>
           </div>
           <div>
             <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">粒数 <span style="font-weight:normal; color:#888;">(コート／生種ごとに複数登録→選択)</span></label>

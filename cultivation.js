@@ -637,6 +637,63 @@ window.renameVarietyFromChoices = renameVarietyFromChoices;
  * 旧形式互換: 「コート」「生種」「5000」「コート:5000」
  */
 const GRAIN_TYPE_OPTIONS = ['コート', '生種'];
+const CROP_GRAIN_CANDIDATES_KEY = 'cropGrainCountCandidates';
+
+function loadCropGrainCandidates() {
+    try {
+        const data = JSON.parse(localStorage.getItem(CROP_GRAIN_CANDIDATES_KEY) || '{}');
+        return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveCropGrainCandidates(data) {
+    localStorage.setItem(CROP_GRAIN_CANDIDATES_KEY, JSON.stringify(data || {}));
+}
+
+function registerCropGrainCandidates(crop, value) {
+    const cropName = String(crop || '').trim();
+    if (!cropName || cropName === 'custom') return;
+    const meta = parseGrainMeta(value);
+    const master = loadCropGrainCandidates();
+    const current = master[cropName] && typeof master[cropName] === 'object'
+        ? master[cropName]
+        : { 'コート': [], '生種': [] };
+
+    GRAIN_TYPE_OPTIONS.forEach(type => {
+        current[type] = uniqSortedCounts(
+            (current[type] || []).concat(meta.options[type] || [])
+        );
+    });
+    master[cropName] = current;
+    saveCropGrainCandidates(master);
+}
+
+function mergeCropGrainCandidates(crop, value) {
+    const cropName = String(crop || '').trim();
+    const meta = parseGrainMeta(value);
+    if (!cropName || cropName === 'custom') return serializeGrainMeta(meta);
+    const current = loadCropGrainCandidates()[cropName] || {};
+    GRAIN_TYPE_OPTIONS.forEach(type => {
+        meta.options[type] = uniqSortedCounts(
+            (meta.options[type] || []).concat(current[type] || [])
+        );
+    });
+    // 既存品種に登録済みの粒数も、同じ作物の候補としてすぐ利用する
+    if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
+        cpMasterData.croptypesDB.forEach(item => {
+            if (!item || String(item.crop || '').trim() !== cropName) return;
+            const saved = parseGrainMeta(item.grainCount || '');
+            GRAIN_TYPE_OPTIONS.forEach(type => {
+                meta.options[type] = uniqSortedCounts(
+                    (meta.options[type] || []).concat(saved.options[type] || [])
+                );
+            });
+        });
+    }
+    return serializeGrainMeta(meta);
+}
 
 function emptyGrainMeta() {
     return { options: { 'コート': [], '生種': [] }, type: '', count: null };
@@ -1004,20 +1061,81 @@ function clearCpVarietyMetaFields() {
 /** 品種＋メーカー＋粒数ダイアログ */
 let _vmdState = { mode: 'add', target: 'cp', oldVariety: '', planId: null, crop: '' };
 
-function fillVmdMakerDatalist() {
-    const list = document.getElementById('vmdMakerList');
-    if (!list) return;
+function fillVmdMakerDatalist(selectedValue) {
+    const select = document.getElementById('vmdMaker');
+    if (!select) return;
+    const selected = selectedValue !== undefined
+        ? String(selectedValue || '').trim()
+        : String(select.value || '').trim();
     const makers = new Set();
-    try { loadMakerMaster().forEach(m => { if (m) makers.add(String(m)); }); } catch (e) {}
-    if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
-        cpMasterData.croptypesDB.forEach(db => {
-            if (db && db.maker) makers.add(String(db.maker).trim());
-        });
-    }
-    list.innerHTML = Array.from(makers).filter(Boolean)
+    try { loadMakerMaster().forEach(m => { if (m) makers.add(String(m).trim()); }); } catch (e) {}
+    // 登録済み品種にだけ残っているメーカーも、その品種の編集中は選択値として表示する
+    if (selected) makers.add(selected);
+
+    select.innerHTML = '';
+    const emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = 'メーカーを選択...';
+    select.appendChild(emptyOption);
+    Array.from(makers).filter(Boolean)
         .sort((a, b) => a.localeCompare(b, 'ja'))
-        .map(m => `<option value="${escapeCpHtmlAttr(m)}"></option>`)
-        .join('');
+        .forEach(maker => {
+            const option = document.createElement('option');
+            option.value = maker;
+            option.textContent = maker;
+            select.appendChild(option);
+        });
+    select.value = selected;
+}
+
+function refreshMakerMasterUi(selectedValue) {
+    fillVmdMakerDatalist(selectedValue);
+    if (typeof renderMakerButtons === 'function') renderMakerButtons();
+    if (typeof refreshCpVarietyMakerDatalist === 'function') refreshCpVarietyMakerDatalist();
+    if (typeof populateRegCtMakerFilter === 'function') populateRegCtMakerFilter();
+}
+
+function addVmdMakerOption() {
+    const input = prompt('追加するメーカー名を入力してください（例: サカタのタネ）');
+    const name = String(input || '').trim();
+    if (!name) return;
+    registerMaker(name);
+    refreshMakerMasterUi(name);
+}
+
+function editVmdMakerOption() {
+    const select = document.getElementById('vmdMaker');
+    const oldName = select ? String(select.value || '').trim() : '';
+    if (!oldName) {
+        alert('編集するメーカーをプルダウンから選択してください。');
+        return;
+    }
+    const input = prompt('メーカー名を編集してください。', oldName);
+    const newName = String(input || '').trim();
+    if (!newName || newName === oldName) return;
+
+    const list = loadMakerMaster();
+    if (list.includes(newName)) {
+        alert(`メーカー「${newName}」は既に登録されています。`);
+        refreshMakerMasterUi(newName);
+        return;
+    }
+    const renamed = list.map(name => name === oldName ? newName : name);
+    if (!renamed.includes(newName)) renamed.push(newName);
+    saveMakerMaster(Array.from(new Set(renamed)));
+    refreshMakerMasterUi(newName);
+}
+
+function deleteVmdMakerOption() {
+    const select = document.getElementById('vmdMaker');
+    const name = select ? String(select.value || '').trim() : '';
+    if (!name) {
+        alert('削除するメーカーをプルダウンから選択してください。');
+        return;
+    }
+    if (!confirm(`メーカー「${name}」を選択肢から削除しますか？\n登録済み品種のメーカー情報は変更されません。`)) return;
+    removeMakerFromMaster(name);
+    refreshMakerMasterUi('');
 }
 
 function openVarietyMetaDialog(opts) {
@@ -1051,13 +1169,12 @@ function openVarietyMetaDialog(opts) {
         return;
     }
 
-    fillVmdMakerDatalist();
-
     if (mode === 'edit' && variety) {
         if (title) title.textContent = '品種を編集';
         if (btn) btn.textContent = '保存する';
         vEl.value = variety;
         const meta = lookupVarietyMeta(crop, variety);
+        fillVmdMakerDatalist(meta.maker || '');
         if (mEl) mEl.value = meta.maker || '';
         let grainVal = meta.grainCount || '';
         if (target === 'cr') {
@@ -1066,13 +1183,16 @@ function openVarietyMetaDialog(opts) {
             if (crMaker && mEl) mEl.value = crMaker;
             if (crGrain) grainVal = crGrain;
         }
+        grainVal = mergeCropGrainCandidates(crop, grainVal);
         setGrainTypeValue('vmdGrainCount', 'vmdGrainCountBtns', grainVal, { accent: '#FF9800', accentDark: '#EF6C00' });
     } else {
         if (title) title.textContent = '＋ 品種を新規追加';
         if (btn) btn.textContent = '追加する';
         vEl.value = '';
-        if (mEl) mEl.value = '';
-        setGrainTypeValue('vmdGrainCount', 'vmdGrainCountBtns', '', { accent: '#FF9800', accentDark: '#EF6C00' });
+        fillVmdMakerDatalist('');
+        setGrainTypeValue('vmdGrainCount', 'vmdGrainCountBtns',
+            mergeCropGrainCandidates(crop, ''),
+            { accent: '#FF9800', accentDark: '#EF6C00' });
     }
 
     dlg.style.display = 'flex';
@@ -1122,6 +1242,7 @@ async function confirmVarietyMetaDialog() {
     }
 
     try {
+        registerCropGrainCandidates(crop, grainCount);
         // 改名が必要なら先にリネーム
         if (mode === 'edit' && oldVariety && oldVariety !== variety) {
             // 重複チェック
@@ -1289,6 +1410,7 @@ async function saveCpVarietyMeta(opts) {
 
     rememberCustomVariety(crop, variety);
     if (maker) registerMaker(maker);
+    registerCropGrainCandidates(crop, grainCount);
 
     // ローカル反映
     if (!cpMasterData) cpMasterData = { crops: {}, croptypesDB: [] };
@@ -6225,7 +6347,9 @@ function setCrVariety(name) {
         const crop = document.getElementById('crCrop') ? document.getElementById('crCrop').value : '';
         const meta = lookupVarietyMeta(crop, v);
         if (meta.maker) setSelectedMaker(meta.maker);
-        setGrainTypeValue('crGrainCount', 'crGrainCountBtns', meta.grainCount || '', { accent: '#FF9800', accentDark: '#EF6C00' });
+        setGrainTypeValue('crGrainCount', 'crGrainCountBtns',
+            mergeCropGrainCandidates(crop, meta.grainCount || ''),
+            { accent: '#FF9800', accentDark: '#EF6C00' });
         const hint = document.getElementById('crVarietyHint');
         if (hint) {
             const bits = [];
@@ -6236,6 +6360,10 @@ function setCrVariety(name) {
                 : `選択中「${v}」`;
         }
     } else {
+        const crop = document.getElementById('crCrop') ? document.getElementById('crCrop').value : '';
+        setGrainTypeValue('crGrainCount', 'crGrainCountBtns',
+            mergeCropGrainCandidates(crop, ''),
+            { accent: '#FF9800', accentDark: '#EF6C00' });
         const hint = document.getElementById('crVarietyHint');
         if (hint) hint.textContent = '「＋ 新規追加」で品種名・メーカー・粒数（コート/生種）をまとめて登録できます。';
     }
@@ -6436,7 +6564,7 @@ const DEFAULT_MAKERS = ['サカタのタネ', 'タキイ種苗', 'カネコ種�
 function loadMakerMaster() {
     try {
         const raw = JSON.parse(localStorage.getItem(MAKER_STORAGE_KEY) || 'null');
-        if (Array.isArray(raw) && raw.length > 0) return raw;
+        if (Array.isArray(raw)) return raw;
     } catch (e) {}
     // 初回は代表メーカーを入れておく
     saveMakerMaster(DEFAULT_MAKERS.slice());
@@ -6564,6 +6692,7 @@ function addCroptypeToList() {
         registerCharacteristicsForCrop(crop, parseCharacteristicsList(characteristics));
     }
     if (maker) registerMaker(maker);
+    registerCropGrainCandidates(crop, grainCount);
     
     const tr = document.querySelector('#crTable tr:last-child');
     const tds = tr.querySelectorAll('td[data-month-index]');
@@ -6650,7 +6779,10 @@ function addCroptypeToList() {
 function resetCrInputArea() {
     setCrVariety('');
     document.getElementById('crFile').value = '';
-    setGrainTypeValue('crGrainCount', 'crGrainCountBtns', '', { accent: '#FF9800', accentDark: '#EF6C00' });
+    const crop = document.getElementById('crCrop') ? document.getElementById('crCrop').value : '';
+    setGrainTypeValue('crGrainCount', 'crGrainCountBtns',
+        mergeCropGrainCandidates(crop, ''),
+        { accent: '#FF9800', accentDark: '#EF6C00' });
     setSelectedCharacteristics('');
     setSelectedMaker('');
     
