@@ -79,7 +79,7 @@
           </div>
           <div style="text-align: center; margin-top: 10px; padding: 8px; background: #e8f5e9; border-radius: 6px; border: 1px dashed #4CAF50;">
             <p style="font-size: 11px; color: #2e7d32; margin: 0 0 5px 0; font-weight: bold;">※ 過去の計画を呼び出したい場合はこちら</p>
-            <button type="button" onclick="showPlanListModal()" style="padding: 8px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📂 計画一覧から選んで読み込む</button>
+            <button type="button" onclick="showPlanListModal({ mode: 'load' })" style="padding: 8px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📂 計画一覧から選んで読み込む</button>
           </div>
           <div style="text-align: right; margin-top: 8px;">
             <button type="button" onclick="nextCpStep(2)" style="padding: 6px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (栽培パラメーター)</button>

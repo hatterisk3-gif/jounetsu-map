@@ -24,6 +24,7 @@ function doPost(e) {
     else if (action === "saveRecord") result = saveRecord(params.id, params.name, params.author, params.recordType, params.data, params.photos);
     else if (action === "updateRecordItem") result = updateRecordItem(params.id, params.recordId, params.recordType, params.data, params.photos, params.keptUrls, params.userName);
     else if (action === "deleteRecordItem") result = deleteRecordItem(params.id, params.recordId, params.userName);
+    else if (action === "cancelClockInAndDeleteTodayWorkRecords") result = cancelClockInAndDeleteTodayWorkRecords(params);
     else if (action === "addFieldStatus") result = addFieldStatusToMaster(params.statusName);
     else if (action === "editFieldStatus") result = editFieldStatusInMaster(params.oldStatusName, params.newStatusName);
     else if (action === "deleteFieldStatus") result = deleteFieldStatusFromMaster(params.statusName);
@@ -4284,6 +4285,136 @@ function deleteRecordItem(polyId, recordId, user) {
 
   writeLog(user, "記録削除", found.rowData[1], `対象ID: ${recordId}` + (listDeleted ? ' / 一覧シート削除済' : ' / 一覧シート該当なし'));
   return updated;
+}
+
+/**
+ * 誤出勤の取消と、その日の本人の作業記録削除をまとめて行う。
+ * 作業記録一覧と、圃場・看板に埋め込まれた履歴の両方を同期して削除する。
+ */
+function cancelClockInAndDeleteTodayWorkRecords(params) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const userName = String((params && params.userName) || '').trim();
+    const normUser = userName.replace(/\s+/g, '');
+    if (!normUser) throw new Error('ユーザー名がありません');
+
+    function normalizeYmd_(value) {
+      if (!value) return '';
+      if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+        return Utilities.formatDate(value, 'JST', 'yyyy-MM-dd');
+      }
+      const s = String(value).trim();
+      const m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+      if (m) {
+        return m[1] + '-' + String(parseInt(m[2], 10)).padStart(2, '0') + '-' + String(parseInt(m[3], 10)).padStart(2, '0');
+      }
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? '' : Utilities.formatDate(d, 'JST', 'yyyy-MM-dd');
+    }
+
+    const targetYmd = normalizeYmd_(params && params.dateYmd)
+      || Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    const recordIds = {};
+    const workRowsToDelete = [];
+
+    // 一覧シートから、対象日の本人の作業記録を特定する。
+    const workSheet = TENANT_SS.getSheetByName('作業記録');
+    if (workSheet && workSheet.getLastRow() >= 2) {
+      const workValues = workSheet.getDataRange().getValues();
+      for (let i = 1; i < workValues.length; i++) {
+        const rowUser = String(workValues[i][2] || '').replace(/\s+/g, '');
+        const rowYmd = normalizeYmd_(workValues[i][3]);
+        if (rowUser === normUser && rowYmd === targetYmd) {
+          const recordId = String(workValues[i][12] || '').trim();
+          if (recordId) recordIds[recordId] = true;
+          workRowsToDelete.push(i + 1);
+        }
+      }
+    }
+
+    const deletedKeys = {};
+    const deletedUrls = {};
+    const parentSheets = ['圃場', '看板'];
+
+    // 同じ記録が複数圃場へ入っている場合も、全コピーから削除する。
+    parentSheets.forEach(function(sheetName) {
+      const sheet = TENANT_SS.getSheetByName(sheetName);
+      if (!sheet || sheet.getLastRow() < 2) return;
+      const values = sheet.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        let records = [];
+        try {
+          if (values[i][9]) records = JSON.parse(values[i][9]);
+          else if (values[i][6]) records = JSON.parse(values[i][6]);
+        } catch (e) {
+          records = [];
+        }
+        if (!Array.isArray(records) || !records.length) continue;
+
+        let changed = false;
+        const kept = records.filter(function(item, itemIndex) {
+          if (!item) return true;
+          const recordId = String(item.id || item.url || '').trim();
+          const itemType = String(item.type || '').trim();
+          const itemUser = String(item.author || '').replace(/\s+/g, '');
+          const itemYmd = normalizeYmd_((item.data && item.data.workDate) || item.date);
+          const matchesEmbedded = (itemType === 'work' || itemType === '作業')
+            && itemUser === normUser
+            && itemYmd === targetYmd;
+          const shouldDelete = (recordId && recordIds[recordId]) || matchesEmbedded;
+          if (!shouldDelete) return true;
+
+          changed = true;
+          const uniqueKey = recordId || (sheetName + ':' + (i + 1) + ':' + itemIndex);
+          deletedKeys[uniqueKey] = true;
+          if (recordId) recordIds[recordId] = true;
+          if (Array.isArray(item.urls)) {
+            item.urls.forEach(function(url) { if (url) deletedUrls[String(url)] = true; });
+          }
+          return false;
+        });
+
+        if (changed) {
+          sheet.getRange(i + 1, 10).setValue(JSON.stringify(kept));
+        }
+      }
+    });
+
+    // 一覧側は行番号がずれないよう下から削除する。
+    for (let i = workRowsToDelete.length - 1; i >= 0; i--) {
+      workSheet.deleteRow(workRowsToDelete[i]);
+    }
+
+    // 添付写真も既存の個別削除と同様にゴミ箱へ移す。
+    Object.keys(deletedUrls).forEach(function(url) {
+      const m1 = url.match(/[?&]id=([^&]+)/);
+      const m2 = url.match(/\/d\/([^/]+)/);
+      const fileId = m1 ? m1[1] : (m2 ? m2[1] : '');
+      if (!fileId) return;
+      try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
+    });
+
+    // 作業記録削除が完了してから出勤取消を記録する。
+    saveTrackingData({
+      userName: userName,
+      lat: 0,
+      lng: 0,
+      type: '出勤取消',
+      time: (params && params.time) || Date.now()
+    });
+
+    const deletedCount = Math.max(workRowsToDelete.length, Object.keys(deletedKeys).length);
+    writeLog(userName, '誤出勤取消', targetYmd, '当日作業記録削除: ' + deletedCount + '件');
+    return {
+      success: true,
+      dateYmd: targetYmd,
+      deletedCount: deletedCount,
+      deletedRecordIds: Object.keys(recordIds)
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ==========================================

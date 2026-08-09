@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>ドローンフィールド — バトル / テクニック</title>
+  <title>ドローンフィールド — バトル / テクニック v1.01</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -4008,7 +4008,7 @@ function resetCrafts() {
     enemy.mesh.visible = false;
     enemy.alive = false;
     player.pos.set(0, 14, 30);
-    player.yaw = Math.PI;
+    player.yaw = 0;
     player.mesh.position.copy(player.pos);
     resetAirship();
   } else if (state.gameType === 'airship_coop') {
@@ -5142,14 +5142,9 @@ function tick() {
       if (state.timeLeft <= 0 && !state.over) {
         endBattle(false, 'time');
       }
-    } else if (state.gameType === 'airship') {
-    enemy.mesh.visible = false;
-    enemy.alive = false;
-    player.pos.set(0, 14, 30);
-    player.yaw = Math.PI;
-    player.mesh.position.copy(player.pos);
-    resetAirship();
-  } else if (state.gameType === 'race') {
+    } else if (isAirshipMode()) {
+      // 巨大飛行艇モード（位置・砲撃等の更新は updateAirship(dt) で実施）
+    } else if (state.gameType === 'race') {
       state.raceTime += dt;
       updateGates();
       updateTechniqueHud();

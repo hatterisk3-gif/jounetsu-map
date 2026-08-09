@@ -1989,17 +1989,72 @@
     return count;
   };
 
-  window.cancelClockIn = function () {
+  window.cancelClockIn = async function () {
     const user = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
     const workRecordCount = window.getUserTodayWorkRecordsCount(user);
-    if (workRecordCount > 0) {
-      const msg = `本日の作業記録（${workRecordCount}件）が存在するため、出勤を取り消せません。\n出勤を取り消すには、まず本日の作業記録を削除してください。`;
-      if (typeof window.customAlert === 'function') {
-        window.customAlert(msg);
-      } else {
-        alert(msg);
+    const targetYmd = getActiveClockInDateYmd() || toYmd(new Date());
+    const recordNotice = workRecordCount > 0
+      ? `当日の作業記録（${workRecordCount}件）も削除されます。`
+      : '当日の作業記録も削除されます。';
+    const confirmed = await confirmMsg(
+      `間違えて登録した出勤を取り消すと、${recordNotice}\nこの操作は元に戻せません。\n取り消しますか？`
+    );
+    if (!confirmed) return;
+
+    const cancelButtons = Array.from(document.querySelectorAll('button[onclick="cancelClockIn()"]'));
+    cancelButtons.forEach((button) => {
+      button.disabled = true;
+      button.dataset.originalText = button.textContent;
+      button.textContent = '作業記録を削除・取消中…';
+      button.style.opacity = '0.65';
+    });
+
+    let result;
+    try {
+      result = await callGAS('cancelClockInAndDeleteTodayWorkRecords', {
+        userName: user,
+        dateYmd: targetYmd,
+        time: Date.now()
+      });
+      if (!result || result.success !== true) {
+        throw new Error((result && result.message) || '取消処理に失敗しました');
       }
+    } catch (e) {
+      cancelButtons.forEach((button) => {
+        button.disabled = false;
+        button.textContent = button.dataset.originalText || '間違えて出勤したので取り消す';
+        button.style.opacity = '1';
+      });
+      alertMsg(`出勤取消処理を完了できませんでした。\n通信状況を確認して、出退勤画面を開き直してください。\n${e.message || e}`);
       return;
+    }
+
+    // サーバーで削除済みの当日作業記録を、表示中データからも除去する。
+    const deletedIds = new Set((result.deletedRecordIds || []).map((id) => String(id)));
+    const normUser = String(user || '').replace(/\s+/g, '');
+    const normalizeDate = (value) => {
+      if (typeof window.normalizeDateStr === 'function') return window.normalizeDateStr(value);
+      return String(value || '').replace(/\//g, '-').slice(0, 10);
+    };
+    const polygons = (typeof loadedPolygons !== 'undefined' && loadedPolygons)
+      ? loadedPolygons
+      : (window.loadedPolygons || {});
+    Object.keys(polygons).forEach((polyId) => {
+      const polygon = polygons[polyId];
+      if (!polygon || !Array.isArray(polygon.photos)) return;
+      polygon.photos = polygon.photos.filter((item) => {
+        if (!item) return true;
+        const recordId = String(item.id || item.url || '');
+        if (recordId && deletedIds.has(recordId)) return false;
+        const isWork = item.type === 'work' || item.type === '作業' || !!(item.data && item.data.workName);
+        const itemUser = String(item.author || '').replace(/\s+/g, '');
+        const itemYmd = normalizeDate((item.data && item.data.workDate) || item.date);
+        return !(isWork && itemUser === normUser && itemYmd === targetYmd);
+      });
+    });
+    localStorage.removeItem('passionMapInitData');
+    if (typeof window.getWorkTimeHintsCacheKey === 'function') {
+      localStorage.removeItem(window.getWorkTimeHintsCacheKey());
     }
 
     hideClockModal();
@@ -2015,16 +2070,7 @@
     }
     if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
     else refreshTrackingModeUI();
-
-    if (user && typeof callGAS === 'function') {
-      callGAS('saveTrackingData', {
-        userName: user,
-        lat: 0,
-        lng: 0,
-        type: '出勤取消',
-        time: Date.now()
-      }).catch((e) => console.warn('出勤取消送信エラー', e));
-    }
+    alertMsg(`出勤を取り消しました。\n当日の作業記録を${result.deletedCount || 0}件削除しました。`);
   };
 
   window.confirmClockIn = function () {
@@ -2165,6 +2211,7 @@
     html += `<div style="display:flex; flex-direction:column; gap:10px;">`;
     html += `  <button onclick="confirmLunchBreak()" style="background:#FF9800; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">昼休憩を登録する</button>`;
     html += `  <button onclick="skipLunchBreak()" style="background:#fff; color:#555; width:100%; padding:12px; border-radius:4px; border:1px solid #bbb; font-weight:bold; cursor:pointer;">昼休憩なし（退勤へ進む）</button>`;
+    html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取り消す</button>`;
     html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#eee; color:#333; width:100%; padding:10px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">閉じる</button>`;
     html += `</div>`;
     showClockModal(html);
@@ -2379,11 +2426,7 @@
       html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">後で</button>`;
     }
     html += `  </div>`;
-    const curUser = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
-    const hasWorkRecs = (typeof window.getUserTodayWorkRecordsCount === 'function' ? window.getUserTodayWorkRecordsCount(curUser) : 0) > 0;
-    if (!hasWorkRecs) {
-      html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
-    }
+    html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取り消す</button>`;
     html += `</div>`;
     showClockModal(html);
     // 作業中休憩の入力UIは撤去済み（作業記録の合計のみ参照）

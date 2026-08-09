@@ -3288,6 +3288,34 @@ function paintCpCellRange(planId, colA, colB, tool) {
     }
 }
 
+function captureCpPaintRow(planId) {
+    const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
+    if (!tr) return [];
+    return Array.from(tr.querySelectorAll('td[data-col-idx]')).map(td => {
+        const div = td.querySelector('div');
+        return {
+            td: td,
+            task: td.dataset.task || '',
+            amount: td.dataset.amount || '',
+            backgroundColor: div ? div.style.backgroundColor : '',
+            html: div ? div.innerHTML : ''
+        };
+    });
+}
+
+function restoreCpPaintRow(snapshot) {
+    (snapshot || []).forEach(cell => {
+        if (!cell.td || !cell.td.isConnected) return;
+        const div = cell.td.querySelector('div');
+        cell.td.dataset.task = cell.task;
+        cell.td.dataset.amount = cell.amount;
+        if (div) {
+            div.style.backgroundColor = cell.backgroundColor;
+            div.innerHTML = cell.html;
+        }
+    });
+}
+
 // ドラッグ塗り状態
 let cpPaintDrag = null;
 
@@ -3318,6 +3346,7 @@ function bindCpCellPaintEvents(td, planId) {
             pointerId: e.pointerId,
             mode: resolved.mode,
             tool: resolved.tool,
+            rowSnapshot: captureCpPaintRow(planId),
             dragged: false
         };
     };
@@ -3339,6 +3368,7 @@ function bindCpCellPaintEvents(td, planId) {
             if (col === cpPaintDrag.startCol) return;
             // 隣の枠へ動いたらドラッグ塗り開始（始点も強制塗り）
             cpPaintDrag.dragged = true;
+            restoreCpPaintRow(cpPaintDrag.rowSnapshot);
             paintCpCellRange(planId, cpPaintDrag.startCol, col, cpPaintDrag.tool);
             cpPaintDrag.lastCol = col;
             if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
@@ -3346,6 +3376,9 @@ function bindCpCellPaintEvents(td, planId) {
         }
 
         if (col === cpPaintDrag.lastCol) return;
+        // 毎回ドラッグ開始時の状態へ戻してから現在範囲を描く。
+        // これにより、伸ばしすぎた後にカーソルを戻すと余分なセルが消える。
+        restoreCpPaintRow(cpPaintDrag.rowSnapshot);
         paintCpCellRange(planId, cpPaintDrag.startCol, col, cpPaintDrag.tool);
         cpPaintDrag.lastCol = col;
         if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
@@ -3986,7 +4019,7 @@ window.saveCultivationPlan = saveCultivationPlan;
 /** モーダル内からの直接実行は廃止。計画一覧へ誘導 */
 async function executeCultivationPlanFromModal() {
     alert('計画の実行は「計画一覧」から行います。\n先に「計画を保存」してから、メニューの「計画一覧」で実行してください。');
-    if (typeof showPlanListModal === 'function') showPlanListModal();
+    if (typeof showPlanListModal === 'function') showPlanListModal({ mode: 'manage' });
 }
 
 async function runExecuteCultivationPlans(year, crop, planIds) {
@@ -4013,14 +4046,21 @@ async function runExecuteCultivationPlans(year, crop, planIds) {
 }
 
 async function showExecutePlanListModal() {
-    return showPlanListModal();
+    return showPlanListModal({ mode: 'manage' });
 }
 
 async function showHistoryListModal() {
-    return showPlanListModal();
+    return showPlanListModal({ mode: 'manage' });
 }
 
-async function showPlanListModal() {
+let currentPlanListMode = 'manage';
+
+async function showPlanListModal(options) {
+    const requestedMode = options && options.mode;
+    if (requestedMode === 'load' || requestedMode === 'manage') {
+        currentPlanListMode = requestedMode;
+    }
+    const isLoadMode = currentPlanListMode === 'load';
     const modal = document.getElementById('historyListModal');
     if (!modal) {
         alert('計画一覧の読み込み中です。数秒待ってから再度お試しください。');
@@ -4098,8 +4138,9 @@ async function showPlanListModal() {
                     agg[key].planCount += 1;
                 });
                 const rows = Object.values(agg);
-                varietyHtml = '<div style="margin-top:10px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:8px;">' +
-                    '<div style="font-size:11px; font-weight:bold; color:#e65100; margin-bottom:6px;">🌱 品種・メーカー・種個数（調達確認）</div>' +
+                varietyHtml = '<details style="margin-top:6px; font-size:11px;">' +
+                    '<summary style="color:#795548; cursor:pointer; font-weight:bold;">🌱 品種・メーカー等（' + rows.length + '件／種 ' + (Number(item.seedTotal) || 0).toLocaleString('ja-JP') + '粒）</summary>' +
+                    '<div style="margin-top:5px; background:#fff8e1; border:1px solid #ffe082; border-radius:5px; padding:6px;">' +
                     rows.map(p => {
                         const statusLabel = p.status === 'executed'
                             ? '<span style="background:#e8f5e9;color:#2e7d32;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">実行済</span>'
@@ -4118,13 +4159,13 @@ async function showPlanListModal() {
                             formatSeedLine(p) +
                             '</div></div>';
                     }).join('') +
-                    '<div style="display:flex; justify-content:space-between; margin-top:6px; padding-top:6px; border-top:1px dashed #ffb74d; font-size:12px; font-weight:bold; color:#e65100;">' +
+                    '<div style="display:flex; justify-content:space-between; margin-top:5px; padding-top:5px; border-top:1px dashed #ffb74d; font-size:11px; font-weight:bold; color:#e65100;">' +
                     '<span>種 合計</span>' +
                     '<span>' + (Number(item.seedTotal) || 0).toLocaleString('ja-JP') + '粒' +
                     (item.seedPlannedTotal != null && item.seedPlannedTotal !== item.seedTotal
                         ? ' <span style="font-weight:normal; color:#888; font-size:11px;">（未実行 ' + (Number(item.seedPlannedTotal) || 0).toLocaleString('ja-JP') + '粒）</span>'
                         : '') +
-                    '</span></div></div>';
+                    '</span></div></div></details>';
             }
 
             html += `
@@ -4134,14 +4175,14 @@ async function showPlanListModal() {
                     <div style="font-size: 16px; font-weight: bold; color: #333; margin-bottom: 4px;">${item.year}年 ${esc(item.crop)}</div>
                     <div style="font-size: 12px; color: #777;">作型: ${item.count}件（未実行 ${planned} / 実行済 ${executed}）</div>
                     <div style="font-size: 11px; color: #999; margin-top:2px;">最終更新 ${dateStr}</div>
+                    ${varietyHtml}
                   </div>
                   <div style="display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end;">
                     <button type="button" onclick="event.stopPropagation(); selectHistoryPlan('${y}', '${c}')" style="background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer;">📂 読込</button>
-                    <button type="button" onclick="event.stopPropagation(); executeSavedCultivationGroup('${y}', '${c}')" ${canExec ? '' : 'disabled'} title="${canExec ? '未実行計画を作業予定へ' : '未実行がありません'}" style="background:${canExec ? '#4CAF50' : '#bbb'}; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:${canExec ? 'pointer' : 'not-allowed'};">▶️ 実行</button>
+                    ${isLoadMode ? '' : `<button type="button" onclick="event.stopPropagation(); executeSavedCultivationGroup('${y}', '${c}')" ${canExec ? '' : 'disabled'} title="${canExec ? '未実行計画を作業予定へ' : '未実行がありません'}" style="background:${canExec ? '#4CAF50' : '#bbb'}; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:${canExec ? 'pointer' : 'not-allowed'};">▶️ 実行</button>`}
                     <button type="button" onclick="event.stopPropagation(); deleteSavedCultivationGroup('${y}', '${c}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗑 削除</button>
                   </div>
                 </div>
-                ${varietyHtml}
             </div>`;
         });
         html += '</div>';
@@ -4172,7 +4213,7 @@ async function executeSavedCultivationGroup(year, crop) {
     const ok = await runExecuteCultivationPlans(year, crop);
     if (ok) {
         cpCropHarvestSummaryCache = null;
-        await showPlanListModal();
+        await showPlanListModal({ mode: 'manage' });
     }
 }
 
@@ -6890,15 +6931,15 @@ async function deleteSavedCultivationGroup(year, crop) {
         const res = await callGAS('deleteSavedCultivationPlans', { year: y, crop: c });
         if (!res || res.success === false) {
             alert((res && res.message) ? res.message : '削除に失敗しました');
-            await showPlanListModal();
+            await showPlanListModal({ mode: currentPlanListMode });
             return;
         }
         alert(res.message || '削除しました');
         cpCropHarvestSummaryCache = null;
-        await showPlanListModal();
+        await showPlanListModal({ mode: currentPlanListMode });
     } catch (e) {
         alert('削除エラー: ' + (e && e.message ? e.message : e));
-        await showPlanListModal();
+        await showPlanListModal({ mode: currentPlanListMode });
     }
 }
 

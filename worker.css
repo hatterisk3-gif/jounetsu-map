@@ -181,7 +181,8 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   border: 1px solid #424242;
 }
 .info-popover-box.active {
-  display: block;
+  /* 動的HTMLの inline display:none より開閉クラスを優先する */
+  display: block !important;
   animation: fadeInPopover 0.2s ease;
 }
 @keyframes fadeInPopover {

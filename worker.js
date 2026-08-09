@@ -93,26 +93,38 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
           }
       };
 
-      window.cancelClockIn = () => {
+      window.cancelClockIn = async () => {
           const user = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
           const workRecordCount = (typeof window.getUserTodayWorkRecordsCount === 'function')
               ? window.getUserTodayWorkRecordsCount(user)
               : 0;
+          const now = new Date();
+          const targetYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+          const recordNotice = workRecordCount > 0
+              ? `当日の作業記録（${workRecordCount}件）も削除されます。`
+              : '当日の作業記録も削除されます。';
+          const confirmed = (typeof customConfirm === 'function')
+              ? await customConfirm(`間違えて登録した出勤を取り消すと、${recordNotice}\nこの操作は元に戻せません。\n取り消しますか？`)
+              : window.confirm(`間違えて登録した出勤を取り消すと、${recordNotice}\nこの操作は元に戻せません。\n取り消しますか？`);
+          if (!confirmed) return;
 
-          if (workRecordCount > 0) {
-              const msg = `本日の作業記録（${workRecordCount}件）が存在するため、出勤を取り消せません。\n出勤を取り消すには、まず本日の作業記録を削除してください。`;
-              if (typeof customAlert === 'function') {
-                  customAlert(msg);
-              } else {
-                  alert(msg);
-              }
+          let result;
+          try {
+              result = await callGAS('cancelClockInAndDeleteTodayWorkRecords', {
+                  userName: user,
+                  dateYmd: targetYmd,
+                  time: Date.now()
+              });
+              if (!result || result.success !== true) throw new Error('取消処理に失敗しました');
+          } catch (e) {
+              if (typeof customAlert === 'function') customAlert(`出勤を取り消せませんでした。\n${e.message || e}`);
               return;
           }
 
           document.getElementById('modal').style.display = 'none';
-          
           localStorage.removeItem('passionMapClockIn');
           localStorage.removeItem('passionMapClockInToday');
+          localStorage.removeItem('passionMapInitData');
           
           if (window.clockInMarker) {
               window.clockInMarker.setMap(null);
@@ -120,15 +132,8 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
           }
           
           if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
-
-          if (user && typeof callGAS === 'function') {
-              callGAS('saveTrackingData', {
-                  userName: user,
-                  lat: 0,
-                  lng: 0,
-                  type: '出勤取消',
-                  time: Date.now()
-              }).catch(e => console.warn("出勤取消送信エラー", e));
+          if (typeof customAlert === 'function') {
+              customAlert(`出勤を取り消しました。\n当日の作業記録を${result.deletedCount || 0}件削除しました。`);
           }
       };
 
@@ -3137,7 +3142,24 @@ function createSignboardMarker(name, pos, icon, id) {
         const ymd = window.normalizeDateStr(dateYmd) || todayStr;
         const fallback = (now.getHours() < 13) ? '08:00' : '13:00';
         const nowMins = now.getHours() * 60 + now.getMinutes();
+        const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const forBreak = !!opts.forBreak || (typeof window.isRestWorkNameSelected === 'function' && window.isRestWorkNameSelected());
+        const finalizeStart = (result) => {
+          if (!result || ymd !== todayStr) return result;
+          const startMins = window.timeHmToMinutes
+            ? window.timeHmToMinutes(result.start)
+            : window._timeToMinsSafe(result.start);
+          // 当日の新規作業で、自動候補が8:00以前なら古い開始候補を使わず現在時刻にする。
+          if (startMins != null && startMins <= 8 * 60) {
+            return {
+              start: nowHm,
+              source: 'currentTime',
+              syncClockIn: false,
+              isFallback: false
+            };
+          }
+          return result;
+        };
 
         let latestEnd = '';
         let latestIsRest = false;
@@ -3196,22 +3218,22 @@ function createSignboardMarker(name, pos, icon, id) {
           // 休憩登録では昼休憩終了へのジャンプをしない（実終了〜いまを使う）
           // 直前が休憩記録のときも、その終了時刻を次の開始にする
           if (!forBreak && !latestIsRest && ymd === todayStr && lunchEndM != null && latestM < lunchEndM && nowMins >= lunchEndM) {
-            return { start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false };
+            return finalizeStart({ start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false });
           }
           const source = latestIsRest ? 'restEnd' : 'latestEnd';
-          return { start: latestEnd, source: source, syncClockIn: false, isFallback: false };
+          return finalizeStart({ start: latestEnd, source: source, syncClockIn: false, isFallback: false });
         }
 
         if (!forBreak && lunchEnd) {
-          return { start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false };
+          return finalizeStart({ start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false });
         }
 
         const clockIn = window.getLocalClockInTimeForDate(ymd);
         if (clockIn) {
-          return { start: clockIn, source: 'clockIn', syncClockIn: true, isFallback: false };
+          return finalizeStart({ start: clockIn, source: 'clockIn', syncClockIn: true, isFallback: false });
         }
 
-        return { start: fallback, source: 'fallback', syncClockIn: true, isFallback: true };
+        return finalizeStart({ start: fallback, source: 'fallback', syncClockIn: true, isFallback: true });
       };
 
       window.getStartTimeSourceLabel = (source, start) => {
@@ -3220,6 +3242,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (source === 'latestEnd') return t ? `作業終了（${t}）に合わせました` : '作業終了に合わせました';
         if (source === 'lunchEnd') return t ? `昼休憩終了（${t}）に合わせました` : '昼休憩終了に合わせました';
         if (source === 'clockIn') return t ? `出勤時刻（${t}）に合わせました` : '出勤時刻に合わせました';
+        if (source === 'currentTime') return t ? `開始候補が8:00以前のため現在時刻（${t}）にしました` : '現在時刻にしました';
         if (source === 'fallback') return '初期値です。必要なら変更してください';
         return '';
       };
@@ -4664,11 +4687,8 @@ function createSignboardMarker(name, pos, icon, id) {
               : '圃場作業').trim();
             return wCat === catNorm;
           });
-          if (inCat.length) {
-            works = inCat;
-          } else if (works.length) {
-            console.warn('[work] category mismatch, fallback without category filter:', catNorm);
-          }
+          // 一致しないときに全カテゴリへ戻すと「すべて」と同じ表示になるため、空配列を維持する。
+          works = inCat;
         }
         let cropKeys = [];
         if (Array.isArray(cropKeyOrKeys)) {
@@ -4741,8 +4761,7 @@ function createSignboardMarker(name, pos, icon, id) {
               : '圃場作業').trim();
             return wCat === catNorm;
           });
-          if (inCat.length) works = inCat;
-          // 不一致時は全件から作物候補を出す（作業名と同じフォールバック）
+          works = inCat;
         }
         const keys = new Set();
         works.forEach(w => keys.add(window.normalizeWorkCropKey(w && w.cropName)));
@@ -5744,6 +5763,139 @@ function createSignboardMarker(name, pos, icon, id) {
           return `<button type="button" class="${chipClass}" data-recent="${isRecent ? 'true' : 'false'}" data-category="${String(wCat).replace(/"/g, '&quot;')}" data-crop-key="${String(wCrop).replace(/"/g, '&quot;')}" data-wname="${safeAttr}" data-work-color="${(styles.hex || '').replace(/"/g, '')}" data-details="${encodeURIComponent(details)}" onclick="selectWorkChip('${safeName}')" style="background:${styles.background}; color:${styles.color}; border:${styles.border}; padding:8px 12px; border-radius:20px; font-size:13px; cursor:pointer;">${recentDot}${wName}</button>`;
       };
 
+      /** 選択カテゴリ内にある、選択作物以外の作業を登録候補として返す */
+      window.getOtherCropWorkCandidates_ = (category, cropKeyOrKeys, p) => {
+          const cat = String(category || '').trim();
+          if (!cat || cat === 'すべて') return [];
+          const selectedKeys = window.normalizeCropFilterKeys_(
+            Array.isArray(cropKeyOrKeys)
+              ? cropKeyOrKeys
+              : String(cropKeyOrKeys || '').split(/[,、]/).map(s => s.trim()).filter(Boolean)
+          );
+          if (!selectedKeys.length) return [];
+
+          const categoryWorks = window.getWorksByCategoryAndCrop(cat, [], p) || [];
+          const seen = new Set();
+          return categoryWorks.filter((work) => {
+            const name = String((work && work.name) || '').trim();
+            if (!name || seen.has(name)) return false;
+            seen.add(name);
+
+            let workCrops = [];
+            if (work.crops && Array.isArray(work.crops) && work.crops.length) {
+              workCrops = work.crops;
+            } else if (work.cropName) {
+              workCrops = String(work.cropName).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+            }
+            if (!workCrops.length || workCrops.some(c => window.normalizeWorkCropKey(c) === '__common__')) {
+              return false;
+            }
+            return !selectedKeys.some(key =>
+              workCrops.some(c => window.normalizeWorkCropKey(c) === window.normalizeWorkCropKey(key))
+            );
+          });
+      };
+
+      /** 他作物の候補を、現在選択中の作物へ作業マスタ登録する */
+      window.registerSuggestedWorkForSelectedCrops = async (workName, button) => {
+          const name = String(workName || '').trim();
+          const category = String(document.getElementById('rec_work_category')?.value || '').trim();
+          const selectedKeys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
+            ? window.getSelectedWorkCropFilterKeys()
+            : [];
+          const targetKeys = window.normalizeCropFilterKeys_(selectedKeys)
+            .filter(key => key && key !== '__common__');
+          if (!name || !category || !targetKeys.length) {
+            if (typeof customAlert === 'function') customAlert('カテゴリと登録先の作物を選択してください。');
+            return;
+          }
+
+          const work = (pdlWorkMaster || []).find(w =>
+            String((w && w.name) || '').trim() === name
+            && String((w && w.category) || '圃場作業').trim() === category
+          );
+          if (!work) {
+            if (typeof customAlert === 'function') customAlert('登録元の作業が見つかりません。');
+            return;
+          }
+
+          const targetLabels = targetKeys.map(key => window.getWorkCropLabel(key));
+          const confirmed = (typeof customConfirm === 'function')
+            ? await customConfirm(`作業「${name}」を「${targetLabels.join('、')}」の候補として登録しますか？`)
+            : window.confirm(`作業「${name}」を「${targetLabels.join('、')}」の候補として登録しますか？`);
+          if (!confirmed) return;
+
+          if (button) {
+            button.disabled = true;
+            button.textContent = '登録中…';
+            button.style.opacity = '0.65';
+          }
+
+          let sourceCrops = [];
+          if (work.crops && Array.isArray(work.crops) && work.crops.length) {
+            sourceCrops = work.crops.map(c => String(c || '').trim()).filter(Boolean);
+          } else if (work.cropName) {
+            sourceCrops = String(work.cropName).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+          }
+          const mergedCrops = sourceCrops.slice();
+          targetLabels.forEach(label => {
+            if (!mergedCrops.some(c => window.normalizeWorkCropKey(c) === window.normalizeWorkCropKey(label))) {
+              mergedCrops.push(label);
+            }
+          });
+
+          // 単一作物時代の詳細作業は元作物用として退避し、新しい作物へは混ぜない。
+          const cropDetails = (work.cropDetails && typeof work.cropDetails === 'object')
+            ? { ...work.cropDetails }
+            : {};
+          let detailWorks = String(work.detailWorks || '').trim();
+          if (detailWorks && sourceCrops.length === 1) {
+            const sourceKey = window.normalizeWorkCropKey(sourceCrops[0]);
+            if (cropDetails[sourceKey] == null) cropDetails[sourceKey] = detailWorks;
+            detailWorks = '';
+          }
+
+          try {
+            const updated = await callGAS('manageMaster', {
+              masterType: 'work',
+              manageAction: 'edit',
+              value: {
+                originalName: name,
+                newData: {
+                  name: name,
+                  category: category,
+                  cropName: mergedCrops.join(', '),
+                  detailWorks: detailWorks,
+                  cropDetails: cropDetails,
+                  aliasNames: String(work.aliasNames || (Array.isArray(work.aliases) ? work.aliases.join(', ') : '')).trim()
+                }
+              },
+              userName: localStorage.getItem('passionMapUserName') || currentUser
+            });
+            if (Array.isArray(updated)) pdlWorkMaster = updated;
+            else {
+              work.cropName = mergedCrops.join(', ');
+              work.crops = mergedCrops;
+              work.detailWorks = detailWorks;
+              work.cropDetails = cropDetails;
+            }
+            localStorage.removeItem('passionMapInitData');
+            localStorage.removeItem('pMapAdminInitData');
+            window.renderWorkOptions(category, targetKeys);
+            if (typeof window.selectWorkChip === 'function') window.selectWorkChip(name);
+            if (typeof customAlert === 'function') {
+              customAlert(`✅ 「${name}」を「${targetLabels.join('、')}」へ登録しました。`);
+            }
+          } catch (e) {
+            if (button) {
+              button.disabled = false;
+              button.textContent = '登録する';
+              button.style.opacity = '1';
+            }
+            if (typeof customAlert === 'function') customAlert(e.message || '登録に失敗しました。');
+          }
+      };
+
       window.renderWorkOptions = (category, cropKey) => {
           // 圃場未選択（activePolyId なし）でも作業マスタは表示する
           const p = (activePolyId && loadedPolygons[activePolyId]) ? loadedPolygons[activePolyId] : null;
@@ -5758,10 +5910,38 @@ function createSignboardMarker(name, pos, icon, id) {
             ? window.isWorkNameSelectionReady()
             : true;
           const filteredWorks = ready ? window.getWorksByCategoryAndCrop(cat, crop, p) : [];
+          const otherCropCandidates = (ready && !filteredWorks.length)
+            ? window.getOtherCropWorkCandidates_(cat, crop, p)
+            : [];
 
           let allChipsHTML = '';
           if (!ready) {
             allChipsHTML = `<div id="all_chips_container" style="padding:12px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px; color:#888; font-size:13px; text-align:center;">カテゴリと作物を選んでください</div>`;
+          } else if (!filteredWorks.length && otherCropCandidates.length) {
+            const targetKeys = window.normalizeCropFilterKeys_(
+              Array.isArray(crop)
+                ? crop
+                : String(crop || '').split(/[,、]/).map(s => s.trim()).filter(Boolean)
+            ).filter(key => key && key !== '__common__');
+            const targetLabel = targetKeys.map(key => window.getWorkCropLabel(key)).join('、');
+            const rows = otherCropCandidates.map((work) => {
+              const name = String((work && work.name) || '').trim();
+              const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              const safeHtmlName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+              const sourceCrop = window.getWorkCropLabel(work.cropName || '');
+              return `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; background:#fff; border:1px solid #ffe0b2; border-radius:7px;">
+                <div style="min-width:0;">
+                  <div style="font-size:13px; font-weight:bold; color:#333; word-break:break-word;">${safeHtmlName}</div>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">登録元: ${String(sourceCrop).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>
+                </div>
+                <button type="button" onclick="registerSuggestedWorkForSelectedCrops('${safeName}', this)" style="flex-shrink:0; background:#FF9800; color:#fff; border:none; border-radius:5px; padding:7px 10px; font-size:12px; font-weight:bold; cursor:pointer;">登録する</button>
+              </div>`;
+            }).join('');
+            allChipsHTML = `<div id="all_chips_container" style="padding:10px; border:1px solid #ffcc80; border-radius:8px; background:#fff8e1; margin-bottom:10px;">
+              <div style="font-size:12px; font-weight:bold; color:#e65100; margin-bottom:4px;">「${String(targetLabel).replace(/&/g, '&amp;').replace(/</g, '&lt;')}」には該当する作業がありません</div>
+              <div style="font-size:11px; color:#666; margin-bottom:8px;">同じカテゴリで他の作物に登録されている作業です。必要なものを登録してください。</div>
+              <div style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">${rows}</div>
+            </div>`;
           } else if (!filteredWorks.length) {
             const masterCount = (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) ? pdlWorkMaster.length : 0;
             const tip = masterCount === 0
@@ -15728,11 +15908,7 @@ window.toggleTracking = () => {
         html += `    <button onclick="confirmClockOut()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤する</button>`;
         html += `    <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
         html += `  </div>`;
-        const curUser = (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || '';
-        const hasWorkRecs = (typeof window.getUserTodayWorkRecordsCount === 'function' ? window.getUserTodayWorkRecordsCount(curUser) : 0) > 0;
-        if (!hasWorkRecs) {
-            html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取消す</button>`;
-        }
+        html += `  <button onclick="cancelClockIn()" style="background:#f44336; color:white; width:100%; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">間違えて出勤したので取り消す</button>`;
         html += `</div>`;
         
         if (typeof window.showClockModal === 'function') {
