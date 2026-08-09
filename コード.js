@@ -5565,7 +5565,7 @@ function editMaterial(params) {
   return false;
 }
 // ==========================================
-// 農機の部品を新規追加する
+// 農機の部品を新規追加/編集/削除する
 // ==========================================
 function addMachinePart(params) {
   const ss = TENANT_SS;
@@ -5573,18 +5573,43 @@ function addMachinePart(params) {
   if(!sheet) throw new Error("農機マスタシートがありません");
   
   const data = sheet.getDataRange().getValues();
+  let updatedCount = 0;
   for(let i=1; i<data.length; i++) {
-    if(data[i][0] === params.machineId) {
-      const currentParts = String(data[i][11] || ""); // L列: 部品名
-      const newParts = currentParts ? currentParts + "," + params.newPart : params.newPart;
-      sheet.getRange(i+1, 12).setValue(newParts);
-      return newParts; 
+    const rowId = String(data[i][0] || "");
+    const rowCat = String(data[i][2] || "");
+    const matchId = params.machineId && rowId === String(params.machineId);
+    const matchCat = params.category && rowCat === String(params.category);
+    
+    if (matchId || matchCat || (!params.machineId && !params.category)) {
+      if (params.fullParts != null) {
+        sheet.getRange(i+1, 12).setValue(String(params.fullParts || ""));
+        updatedCount++;
+      } else if (params.oldPart && params.newPart) {
+        let parts = String(data[i][11] || "").split(/[,、]/).map(p => p.trim()).filter(Boolean);
+        const idx = parts.indexOf(params.oldPart);
+        if (idx !== -1) {
+          parts[idx] = params.newPart;
+          sheet.getRange(i+1, 12).setValue(parts.join(','));
+          updatedCount++;
+        }
+      } else if (params.deletePart) {
+        let parts = String(data[i][11] || "").split(/[,、]/).map(p => p.trim()).filter(p => p && p !== params.deletePart);
+        sheet.getRange(i+1, 12).setValue(parts.join(','));
+        updatedCount++;
+      } else if (params.newPart) {
+        let parts = String(data[i][11] || "").split(/[,、]/).map(p => p.trim()).filter(Boolean);
+        if (!parts.includes(params.newPart)) {
+          parts.push(params.newPart);
+          sheet.getRange(i+1, 12).setValue(parts.join(','));
+          updatedCount++;
+        }
+      }
     }
   }
-  throw new Error("指定された農機が見つかりません");
+  return updatedCount;
 }
 // ==========================================
-// 農機の症状を自動追加する
+// 農機の症状を自動追加/編集/削除する
 // ==========================================
 function addMachineSymptom(params) {
   const ss = TENANT_SS;
@@ -5592,15 +5617,40 @@ function addMachineSymptom(params) {
   if(!sheet) throw new Error("農機マスタシートがありません");
   
   const data = sheet.getDataRange().getValues();
+  let updatedCount = 0;
   for(let i=1; i<data.length; i++) {
-    if(data[i][0] === params.machineId) {
-      const currentSymptoms = String(data[i][14] || ""); // O列(インデックス14)
-      const newSymptoms = currentSymptoms ? currentSymptoms + "," + params.newSymptom : params.newSymptom;
-      sheet.getRange(i+1, 15).setValue(newSymptoms); // スプレッドシートのO列は15番目
-      return newSymptoms; 
+    const rowId = String(data[i][0] || "");
+    const rowCat = String(data[i][2] || "");
+    const matchId = params.machineId && rowId === String(params.machineId);
+    const matchCat = params.category && rowCat === String(params.category);
+    
+    if (matchId || matchCat || (!params.machineId && !params.category)) {
+      if (params.fullSymptoms != null) {
+        sheet.getRange(i+1, 15).setValue(String(params.fullSymptoms || ""));
+        updatedCount++;
+      } else if (params.oldSymptom && params.newSymptom) {
+        let symps = String(data[i][14] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        const idx = symps.indexOf(params.oldSymptom);
+        if (idx !== -1) {
+          symps[idx] = params.newSymptom;
+          sheet.getRange(i+1, 15).setValue(symps.join(','));
+          updatedCount++;
+        }
+      } else if (params.deleteSymptom) {
+        let symps = String(data[i][14] || "").split(/[,、]/).map(s => s.trim()).filter(s => s && s !== params.deleteSymptom);
+        sheet.getRange(i+1, 15).setValue(symps.join(','));
+        updatedCount++;
+      } else if (params.newSymptom) {
+        let symps = String(data[i][14] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        if (!symps.includes(params.newSymptom)) {
+          symps.push(params.newSymptom);
+          sheet.getRange(i+1, 15).setValue(symps.join(','));
+          updatedCount++;
+        }
+      }
     }
   }
-  throw new Error("指定された農機が見つかりません");
+  return updatedCount;
 }
 // ==========================================
 // 給油記録の保存と履歴取得

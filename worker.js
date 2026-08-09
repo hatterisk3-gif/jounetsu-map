@@ -371,10 +371,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         params.action = action;
         if (action !== 'login') {
           const spreadsheetId = localStorage.getItem('spreadsheetId');
-          if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
-            throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
+          if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null' && spreadsheetId.trim() !== '') {
+            params.spreadsheetId = spreadsheetId;
           }
-          params.spreadsheetId = spreadsheetId;
         }
 
         // マスタ編集（カテゴリ名変更など）は作業マスタ一括更新があり重いので長めに待つ
@@ -5556,21 +5555,54 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
+      async function safeCallGAS(action, params = {}) {
+        if (typeof window.callGAS === 'function') {
+          try { return await window.callGAS(action, params); } catch (e) { console.warn(`callGAS [${action}] failed:`, e); }
+        }
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          return new Promise((resolve) => {
+            google.script.run
+              .withSuccessHandler(res => resolve(res))
+              .withFailureHandler(err => { console.warn(`google.script.run [${action}] failed:`, err); resolve(null); })
+              [action](params);
+          });
+        }
+        return null;
+      }
+
       window.editSymptomMaster = async (oldName, newName, machine, cat) => {
         if (!newName) return;
+        const targetCat = cat || (machine ? (machine.category || machine.type || '') : '');
         if (machine && machine.symptoms) {
           const list = machine.symptoms.split(/[,、]/).map(s => s.trim());
           const idx = list.indexOf(oldName);
           if (idx !== -1) {
             list[idx] = newName;
             machine.symptoms = list.join(',');
-            try { await callGAS('addMachineSymptom', { machineId: machine.id, newSymptom: list.join(',') }); } catch (e) {}
           }
+        }
+        if (targetCat && Array.isArray(pdlMachines)) {
+          pdlMachines.filter(m => (m.category === targetCat || m.type === targetCat) && m.symptoms).forEach(m => {
+            const list = m.symptoms.split(/[,、]/).map(s => s.trim());
+            const idx = list.indexOf(oldName);
+            if (idx !== -1) {
+              list[idx] = newName;
+              m.symptoms = list.join(',');
+            }
+          });
         }
         if (Array.isArray(window.pdlSymptoms)) {
           const idx = window.pdlSymptoms.indexOf(oldName);
           if (idx !== -1) window.pdlSymptoms[idx] = newName;
         }
+
+        safeCallGAS('addMachineSymptom', {
+          oldSymptom: oldName,
+          newSymptom: newName,
+          machineId: machine?.id || '',
+          category: targetCat
+        });
+
         if (typeof window.updatePartsList === 'function') window.updatePartsList();
         if (document.getElementById('maintenanceMasterManageModal')) {
           document.getElementById('maintenanceMasterManageModal').style.display = 'none';
@@ -5579,13 +5611,27 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.deleteSymptomMaster = async (targetName, machine, cat) => {
+        const targetCat = cat || (machine ? (machine.category || machine.type || '') : '');
         if (machine && machine.symptoms) {
           const list = machine.symptoms.split(/[,、]/).map(s => s.trim()).filter(s => s !== targetName);
           machine.symptoms = list.join(',');
         }
+        if (targetCat && Array.isArray(pdlMachines)) {
+          pdlMachines.filter(m => (m.category === targetCat || m.type === targetCat) && m.symptoms).forEach(m => {
+            const list = m.symptoms.split(/[,、]/).map(s => s.trim()).filter(s => s !== targetName);
+            m.symptoms = list.join(',');
+          });
+        }
         if (Array.isArray(window.pdlSymptoms)) {
           window.pdlSymptoms = window.pdlSymptoms.filter(s => s !== targetName);
         }
+
+        safeCallGAS('addMachineSymptom', {
+          deleteSymptom: targetName,
+          machineId: machine?.id || '',
+          category: targetCat
+        });
+
         if (typeof window.updatePartsList === 'function') window.updatePartsList();
         if (document.getElementById('maintenanceMasterManageModal')) {
           document.getElementById('maintenanceMasterManageModal').style.display = 'none';
@@ -5707,6 +5753,7 @@ function createSignboardMarker(name, pos, icon, id) {
       // --- 交換部品名マスタ追加・編集・削除 ---
       window.editMachinePartMaster = async (oldName, newName, machine, cat) => {
         if (!newName) return;
+        const targetCat = cat || (machine ? (machine.category || machine.type || '') : '');
         if (machine && machine.parts) {
           const list = machine.parts.split(/[,、]/).map(p => p.trim());
           const idx = list.indexOf(oldName);
@@ -5715,10 +5762,28 @@ function createSignboardMarker(name, pos, icon, id) {
             machine.parts = list.join(',');
           }
         }
+        if (targetCat && Array.isArray(pdlMachines)) {
+          pdlMachines.filter(m => (m.category === targetCat || m.type === targetCat) && m.parts).forEach(m => {
+            const list = m.parts.split(/[,、]/).map(p => p.trim());
+            const idx = list.indexOf(oldName);
+            if (idx !== -1) {
+              list[idx] = newName;
+              m.parts = list.join(',');
+            }
+          });
+        }
         if (Array.isArray(window.pdlMaintenanceParts)) {
           const idx = window.pdlMaintenanceParts.indexOf(oldName);
           if (idx !== -1) window.pdlMaintenanceParts[idx] = newName;
         }
+
+        safeCallGAS('addMachinePart', {
+          oldPart: oldName,
+          newPart: newName,
+          machineId: machine?.id || '',
+          category: targetCat
+        });
+
         if (typeof window.updatePartsList === 'function') window.updatePartsList();
         if (document.getElementById('maintenanceMasterManageModal')) {
           document.getElementById('maintenanceMasterManageModal').style.display = 'none';
@@ -5727,18 +5792,74 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.deleteMachinePartMaster = async (targetName, machine, cat) => {
+        const targetCat = cat || (machine ? (machine.category || machine.type || '') : '');
         if (machine && machine.parts) {
           const list = machine.parts.split(/[,、]/).map(p => p.trim()).filter(p => p !== targetName);
           machine.parts = list.join(',');
         }
+        if (targetCat && Array.isArray(pdlMachines)) {
+          pdlMachines.filter(m => (m.category === targetCat || m.type === targetCat) && m.parts).forEach(m => {
+            const list = m.parts.split(/[,、]/).map(p => p.trim()).filter(p => p !== targetName);
+            m.parts = list.join(',');
+          });
+        }
         if (Array.isArray(window.pdlMaintenanceParts)) {
           window.pdlMaintenanceParts = window.pdlMaintenanceParts.filter(p => p !== targetName);
         }
+
+        safeCallGAS('addMachinePart', {
+          deletePart: targetName,
+          machineId: machine?.id || '',
+          category: targetCat
+        });
+
         if (typeof window.updatePartsList === 'function') window.updatePartsList();
         if (document.getElementById('maintenanceMasterManageModal')) {
           document.getElementById('maintenanceMasterManageModal').style.display = 'none';
         }
         if (typeof customAlert === 'function') customAlert(`✅ 交換部品「${targetName}」を削除しました。`);
+      };
+
+      window.addNewMachinePart = async (machine, cat) => {
+        const inputName = await customPrompt('新しい「交換部品名」を入力してください (例: Vベルト A-32):', '');
+        if (!inputName || !String(inputName).trim()) return;
+        const name = String(inputName).trim();
+        const targetCat = cat || (machine ? (machine.category || machine.type || '') : '');
+
+        try {
+          safeCallGAS('addMachinePart', {
+            newPart: name,
+            machineId: machine?.id || '',
+            category: targetCat
+          });
+
+          if (machine && machine.parts) {
+            const currentParts = machine.parts.split(/[,、]/).map(p => p.trim());
+            if (!currentParts.includes(name)) {
+              machine.parts = machine.parts ? machine.parts + ',' + name : name;
+            }
+          }
+          if (targetCat && Array.isArray(pdlMachines)) {
+            pdlMachines.filter(m => (m.category === targetCat || m.type === targetCat)).forEach(m => {
+              const currentParts = m.parts ? m.parts.split(/[,、]/).map(p => p.trim()) : [];
+              if (!currentParts.includes(name)) {
+                m.parts = m.parts ? m.parts + ',' + name : name;
+              }
+            });
+          }
+          if (Array.isArray(window.pdlMaintenanceParts)) {
+            if (!window.pdlMaintenanceParts.includes(name)) window.pdlMaintenanceParts.push(name);
+          } else {
+            window.pdlMaintenanceParts = [name];
+          }
+
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
+          const sel = document.getElementById('m_parts');
+          if (sel) sel.value = name;
+          if (typeof customAlert === 'function') customAlert(`✅ 交換部品「${name}」を追加しました！`);
+        } catch (e) {
+          if (typeof customAlert === 'function') customAlert('追加に失敗しました: ' + e.message);
+        }
       };
 
       window.openMachinePartManagerModal = (action) => {
@@ -5751,7 +5872,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const cat = machine ? (machine.category || machine.type || '') : '';
 
         if (action === 'add') {
-          window.addNewMachinePart();
+          window.addNewMachinePart(machine, cat);
           return;
         }
 
@@ -5769,7 +5890,7 @@ function createSignboardMarker(name, pos, icon, id) {
         window.showMaintenanceMasterManageModal({
           title: '交換部品名マスタの編集・削除',
           items: Array.from(partsSet),
-          onAdd: () => window.addNewMachinePart(),
+          onAdd: () => window.addNewMachinePart(machine, cat),
           onEdit: async (oldName) => {
             const newName = await customPrompt('交換部品名の名称を編集:', oldName);
             if (!newName || !newName.trim() || newName.trim() === oldName) return;
@@ -9582,30 +9703,47 @@ function createSignboardMarker(name, pos, icon, id) {
         const name = String(inputName).trim();
 
         try {
-          const res = await callGAS('addMachineToSign', {
+          const res = await safeCallGAS('addMachineToSign', {
             name: name,
             userName: localStorage.getItem('passionMapUserName') || currentUser || '管理者'
           });
 
-          const newId = res && res.id ? res.id : `m_${Date.now()}`;
-          const newMachine = {
+          const newId = (res && res.id) ? res.id : `MAC_${Date.now()}`;
+          const newMachine = (res && typeof res === 'object' && res.id) ? res : {
             id: newId,
-            name: res && res.name ? res.name : name,
+            name: name,
             machineNumber: '',
             workCategory: '',
-            parts: ''
+            category: '',
+            type: '',
+            group: '',
+            status: '使用可能',
+            parts: '',
+            symptoms: ''
           };
 
           if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
-          pdlMachines.push(newMachine);
+          const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newId) || m.name === name);
+          if (existingIdx !== -1) {
+            pdlMachines[existingIdx] = Object.assign({}, pdlMachines[existingIdx], newMachine);
+          } else {
+            pdlMachines.push(newMachine);
+          }
+
           localStorage.removeItem('passionMapInitData');
           localStorage.removeItem('pMapAdminInitData');
 
           if (typeof window.populateMaintenanceMachineSelect === 'function') {
             window.populateMaintenanceMachineSelect(newId);
           }
+          const sel = document.getElementById('m_tool');
+          if (sel) sel.value = newId;
+
           if (typeof window.updatePartsList === 'function') {
             window.updatePartsList();
+          }
+          if (typeof window.updateMaintenanceTargetInfoBadge === 'function') {
+            window.updateMaintenanceTargetInfoBadge();
           }
 
           const emptyHint = document.getElementById('m_tool_empty_hint');
@@ -13470,17 +13608,26 @@ function createSignboardMarker(name, pos, icon, id) {
             let photos = [];
             for(let f of window.newMachinePendingFiles) { const b64 = await resizeImg(f); photos.push({filename: f.name, base64: b64}); }
             
-           const newMac = await callGAS('addMachineToSign', {
+           const newMac = await safeCallGAS('addMachineToSign', {
             name, machineNumber: number, model, type, group, location, fuel, workCategory, purchaseDate, parts: "", photos, signId, signName, userName: currentUser
         });
 
+        const newId = (newMac && newMac.id) ? newMac.id : `MAC_${Date.now()}`;
         pdlMachines.push({
-            id: newMac.id, name: newMac.name, machineNumber: newMac.machineNumber, workCategory: newMac.workCategory,
-            model: newMac.model || model, type: newMac.type || type, group: newMac.group || group,
-            location: newMac.location || location, fuel: newMac.fuel || fuel,
-            signName: newMac.signName, signId: newMac.signId, parts: newMac.parts,
-            currentLocName: newMac.signName,
-            currentLocId: newMac.signId
+            id: newId,
+            name: (newMac && newMac.name) ? newMac.name : name,
+            machineNumber: (newMac && newMac.machineNumber) ? newMac.machineNumber : number,
+            workCategory: (newMac && newMac.workCategory) ? newMac.workCategory : workCategory,
+            model: (newMac && newMac.model) ? newMac.model : model,
+            type: (newMac && newMac.type) ? newMac.type : type,
+            group: (newMac && newMac.group) ? newMac.group : group,
+            location: (newMac && newMac.location) ? newMac.location : location,
+            fuel: (newMac && newMac.fuel) ? newMac.fuel : fuel,
+            signName: (newMac && newMac.signName) ? newMac.signName : signName,
+            signId: (newMac && newMac.signId) ? newMac.signId : signId,
+            parts: (newMac && newMac.parts) ? newMac.parts : '',
+            currentLocName: signName,
+            currentLocId: signId
         });
             document.getElementById('modal').style.display = 'none'; 
             customAlert(`「${name}」をマスタに登録し、定位置を\n【${signName}】に設定しました！`);
