@@ -1777,6 +1777,170 @@ function buildCpVarietySelectHtml(plan) {
     return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="display:block; width:100%; min-width:0; height:20px; font-size:11px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
 }
 
+const CP_AREA_CANDIDATES_KEY = 'cpAreaSelectCandidates';
+const CP_TRAYS_CANDIDATES_KEY = 'cpTraysSelectCandidates';
+const DEFAULT_CP_AREA_OPTIONS = [
+    0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1,
+    1.5, 2, 2.5, 3, 4, 5, 10, 15, 20, 30, 50, 100
+];
+const DEFAULT_CP_TRAYS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 50, 100, 150, 200, 300, 500, 1000];
+
+function loadCpNumericCandidates(key) {
+    try {
+        const raw = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(raw) ? raw : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function rememberCpNumericCandidate(key, value) {
+    const num = Number(value);
+    if (!isFinite(num) || num <= 0) return;
+    const list = loadCpNumericCandidates(key);
+    const exists = list.some(v => Number(v) === num);
+    if (!exists) {
+        list.push(num);
+        list.sort((a, b) => Number(a) - Number(b));
+        localStorage.setItem(key, JSON.stringify(list.slice(-40)));
+    }
+}
+
+function normalizeCpSelectNumber(value, decimals) {
+    const num = Number(value);
+    if (!isFinite(num) || num < 0) return null;
+    if (decimals === 0) return Math.round(num);
+    const factor = Math.pow(10, decimals);
+    return Math.round(num * factor) / factor;
+}
+
+function getCpAreaSelectOptions(currentVal) {
+    const merged = [];
+    const push = (v) => {
+        const n = normalizeCpSelectNumber(v, 1);
+        if (n == null || n <= 0) return;
+        if (!merged.some(x => Number(x) === n)) merged.push(n);
+    };
+    DEFAULT_CP_AREA_OPTIONS.forEach(push);
+    if (cpMasterData && Array.isArray(cpMasterData.areas)) cpMasterData.areas.forEach(push);
+    loadCpNumericCandidates(CP_AREA_CANDIDATES_KEY).forEach(push);
+    if (Array.isArray(cpPlans)) {
+        cpPlans.forEach(p => { if (p) push(p.areaA); });
+    }
+    push(currentVal);
+    merged.sort((a, b) => a - b);
+    return merged;
+}
+
+function getCpTraysSelectOptions(currentVal) {
+    const merged = [];
+    const push = (v) => {
+        const n = normalizeCpSelectNumber(v, 0);
+        if (n == null || n <= 0) return;
+        if (!merged.some(x => Number(x) === n)) merged.push(n);
+    };
+    DEFAULT_CP_TRAYS_OPTIONS.forEach(push);
+    loadCpNumericCandidates(CP_TRAYS_CANDIDATES_KEY).forEach(push);
+    if (Array.isArray(cpPlans)) {
+        cpPlans.forEach(p => { if (p) push(p.trays); });
+    }
+    push(currentVal);
+    merged.sort((a, b) => a - b);
+    return merged;
+}
+
+function buildCpNumericSelectOptionsHtml(options, selectedVal) {
+    const selected = (selectedVal === '' || selectedVal == null || selectedVal === undefined)
+        ? null
+        : Number(selectedVal);
+    let html = '<option value="">-</option>';
+    (options || []).forEach(v => {
+        const num = Number(v);
+        const sel = (selected != null && isFinite(selected) && num === selected) ? ' selected' : '';
+        html += `<option value="${num}"${sel}>${num}</option>`;
+    });
+    html += '<option value="__custom__">手入力…</option>';
+    return html;
+}
+
+function buildCpAreaSelectHtml(plan, disabled) {
+    const opts = getCpAreaSelectOptions(plan.areaA);
+    const bg = disabled ? '#f0f0f0' : '#fff';
+    return `<select id="area_${plan.id}" title="定植面積(a)" onchange="onCpPlanQtySelectChange('${plan.id}', 'area', this)" ${disabled ? 'disabled' : ''} style="flex:1; min-width:40px; width:0; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; background:${bg};">${buildCpNumericSelectOptionsHtml(opts, plan.areaA)}</select>`;
+}
+
+function buildCpTraysSelectHtml(plan, disabled) {
+    const opts = getCpTraysSelectOptions(plan.trays);
+    const bg = disabled ? '#f0f0f0' : '#fff';
+    return `<select id="trays_${plan.id}" title="枚数/株数" onchange="onCpPlanQtySelectChange('${plan.id}', 'trays', this)" ${disabled ? 'disabled' : ''} style="flex:1; min-width:40px; width:0; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; background:${bg};">${buildCpNumericSelectOptionsHtml(opts, plan.trays)}</select>`;
+}
+
+function ensureCpNumericSelectValue(selectEl, value, decimals) {
+    if (!selectEl) return;
+    const n = normalizeCpSelectNumber(value, decimals);
+    if (n == null) {
+        selectEl.value = '';
+        return;
+    }
+    const key = String(n);
+    if (!Array.from(selectEl.options).some(opt => opt.value === key)) {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = key;
+        const customOpt = Array.from(selectEl.options).find(o => o.value === '__custom__');
+        if (customOpt) selectEl.insertBefore(opt, customOpt);
+        else selectEl.appendChild(opt);
+        // 数値順に並び替え（手入力オプションは末尾）
+        const values = Array.from(selectEl.options)
+            .filter(o => o.value && o.value !== '__custom__')
+            .map(o => Number(o.value))
+            .filter(v => isFinite(v))
+            .sort((a, b) => a - b);
+        const keepSelected = key;
+        const html = buildCpNumericSelectOptionsHtml(values, keepSelected);
+        selectEl.innerHTML = html;
+    }
+    selectEl.value = key;
+}
+
+function onCpPlanQtySelectChange(planId, kind, selectEl) {
+    const sel = selectEl || document.getElementById((kind === 'trays' ? 'trays_' : 'area_') + planId);
+    if (!sel) return;
+    const prev = kind === 'trays'
+        ? (cpPlans.find(p => p.id === planId) || {}).trays
+        : (cpPlans.find(p => p.id === planId) || {}).areaA;
+
+    if (sel.value === '__custom__') {
+        const label = kind === 'trays' ? '枚数/株数' : '面積(a)';
+        const input = prompt(`${label}を入力してください`, prev != null ? String(prev) : '');
+        if (input == null || String(input).trim() === '') {
+            ensureCpNumericSelectValue(sel, prev, kind === 'trays' ? 0 : 1);
+            return;
+        }
+        const parsed = normalizeCpSelectNumber(input, kind === 'trays' ? 0 : 1);
+        if (parsed == null || parsed <= 0) {
+            alert('0より大きい数値を入力してください。');
+            ensureCpNumericSelectValue(sel, prev, kind === 'trays' ? 0 : 1);
+            return;
+        }
+        rememberCpNumericCandidate(
+            kind === 'trays' ? CP_TRAYS_CANDIDATES_KEY : CP_AREA_CANDIDATES_KEY,
+            parsed
+        );
+        ensureCpNumericSelectValue(sel, parsed, kind === 'trays' ? 0 : 1);
+    } else if (sel.value) {
+        rememberCpNumericCandidate(
+            kind === 'trays' ? CP_TRAYS_CANDIDATES_KEY : CP_AREA_CANDIDATES_KEY,
+            sel.value
+        );
+    }
+
+    if (typeof updateRowParams === 'function') updateRowParams(planId, kind);
+    else if (typeof window.updateRowParams === 'function') window.updateRowParams(planId, kind);
+}
+window.onCpPlanQtySelectChange = onCpPlanQtySelectChange;
+window.ensureCpNumericSelectValue = ensureCpNumericSelectValue;
+
 /** 計画カードの品種セレクトを作り直す */
 function refreshCpPlanVarietySelect(planId) {
     const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
@@ -2832,7 +2996,6 @@ function renderCpPlanRow(plan, options) {
     const qtyWord = (plan.holes === 1) ? '株' : '枚';
     const modeArea = plan.inputMode !== 'trays';
     card.style.cssText = 'padding:3px 3px 2px; background:#e3f2fd; border-bottom:1px solid #bbdefb; box-sizing:border-box;';
-    const numInputCss = 'flex:1; min-width:32px; width:0; height:18px; font-size:11px; padding:0 3px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; -moz-appearance:textfield;';
     card.innerHTML = `
         <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
             <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0; font-weight:bold;">${escapeCpHtmlAttr(plan.crop)}</span>
@@ -2847,13 +3010,13 @@ function renderCpPlanRow(plan, options) {
             <label style="display:flex; align-items:center; gap:3px; cursor:pointer; min-width:0;">
               <input type="radio" name="cpInputMode_${plan.id}" id="inputModeArea_${plan.id}" value="area" ${modeArea ? 'checked' : ''} onchange="setCpPlanInputMode('${plan.id}', 'area')" style="margin:0; flex-shrink:0;">
               <span style="flex-shrink:0; width:2em;">面積</span>
-              <input type="number" id="area_${plan.id}" value="${plan.areaA != null ? plan.areaA : ''}" min="0" step="0.1" oninput="updateRowParams('${plan.id}', 'area')" ${modeArea ? '' : 'disabled'} title="定植面積(a)" style="${numInputCss} background:${modeArea ? '#fff' : '#f0f0f0'};">
+              ${buildCpAreaSelectHtml(plan, !modeArea)}
               <span style="flex-shrink:0;">a</span>
             </label>
             <label style="display:flex; align-items:center; gap:3px; cursor:pointer; min-width:0;">
               <input type="radio" name="cpInputMode_${plan.id}" id="inputModeTrays_${plan.id}" value="trays" ${modeArea ? '' : 'checked'} onchange="setCpPlanInputMode('${plan.id}', 'trays')" style="margin:0; flex-shrink:0;">
               <span id="qtyLabel_${plan.id}" style="flex-shrink:0; width:2em;">${qtyWord}</span>
-              <input type="number" id="trays_${plan.id}" value="${plan.trays != null ? plan.trays : ''}" min="0" step="1" oninput="updateRowParams('${plan.id}', 'trays')" ${modeArea ? 'disabled' : ''} title="枚数/株数" style="${numInputCss} background:${modeArea ? '#f0f0f0' : '#fff'};">
+              ${buildCpTraysSelectHtml(plan, modeArea)}
               <span id="unitTraysInput_${plan.id}" style="flex-shrink:0;">${qtyWord}</span>
             </label>
         </div>
@@ -4252,6 +4415,8 @@ async function saveCultivationPlan(options) {
                     fileUrl: plan.fileUrl || ''
                 });
             }
+            if (plan.areaA) rememberCpNumericCandidate(CP_AREA_CANDIDATES_KEY, plan.areaA);
+            if (plan.trays) rememberCpNumericCandidate(CP_TRAYS_CANDIDATES_KEY, plan.trays);
         });
 
         // 品種マスタは saveCultivationPlans 内で一括同期する。

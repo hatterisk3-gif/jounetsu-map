@@ -586,6 +586,32 @@
     }
     .slot-card .ico { font-size: 1.35rem; display: block; margin-bottom: 4px; }
     .slot-card .name { color: var(--ink); font-weight: 700; font-size: 0.78rem; }
+    .slot-card .lv { color: #ffd54f; font-weight: 700; font-size: 0.7rem; margin-top: 2px; }
+    .slot-card .enhance-meta {
+      font-size: 0.62rem;
+      color: var(--muted);
+      margin: 4px 0 6px;
+      line-height: 1.3;
+    }
+    .slot-card .enhance-btn {
+      appearance: none;
+      width: 100%;
+      border: 1px solid rgba(255, 213, 79, 0.45);
+      background: rgba(255, 193, 7, 0.14);
+      color: #ffe082;
+      border-radius: 8px;
+      padding: 6px 4px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .slot-card .enhance-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+      border-color: rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      color: var(--muted);
+    }
     .inv-wrap {
       display: flex;
       flex-direction: column;
@@ -684,7 +710,7 @@
       </div>
 
       <div class="mode-row" style="grid-template-columns:1fr 1fr; margin-bottom:10px;">
-        <button type="button" class="mode-btn" id="openHangarBtn">🛠️ 格納庫<br><small>装備・カスタム</small></button>
+        <button type="button" class="mode-btn" id="openHangarBtn">🛠️ 格納庫<br><small>装備・機体強化</small></button>
         <button type="button" class="mode-btn" id="openGachaBtn">🎁 ガチャ<br><small>パーツ獲得</small></button>
       </div>
 
@@ -756,11 +782,12 @@
   <div id="hangarScreen" class="screen">
     <div class="card" style="max-height:92vh; overflow-y:auto;">
       <h1 class="brand">HANGAR</h1>
-      <p class="sub">獲得パーツを装着して機体をカスタマイズ。性能は出撃時に反映されます。</p>
+      <p class="sub">装備の差し替えと、重複パーツ＋コインでの機体強化。強化は出撃時に反映されます。</p>
       <div class="coin-bar">
         <span>🪙 <b id="hangarCoinCount">0</b></span>
         <span id="hangarStatSummary" style="font-size:0.75rem; color:var(--muted);">HP -- / SPD -- / ATK --</span>
       </div>
+      <div class="help" style="margin-top:-4px;">装着中パーツを<strong>強化</strong>できます（最大Lv5）。ガチャの重複が素材になります。スキンは見た目専用のため強化不可。</div>
       <div class="hangar-grid" id="equipSlots"></div>
       <div class="help"><strong>所持パーツ</strong>（分類ごとに表示／タップで装着）</div>
       <div class="inv-wrap" id="inventoryList"></div>
@@ -774,7 +801,7 @@
   <div id="gachaScreen" class="screen">
     <div class="card" style="max-height:92vh; overflow-y:auto;">
       <h1 class="brand">GACHA</h1>
-      <p class="sub">ドローンパーツ＆スキンガチャ。作業時間コインやバトル報酬で回せます。</p>
+      <p class="sub">ドローンパーツ＆スキンガチャ。重複は格納庫の機体強化素材になります。</p>
       <div class="coin-bar">
         <span>🪙 所持 <b id="gachaCoinCount">0</b></span>
       </div>
@@ -1245,11 +1272,18 @@ function metaUser() {
 function metaStorageKey() {
   return META_KEY + ':' + metaUser();
 }
+const PART_MAX_LEVEL = 5;
+const PART_ENHANCE_COIN = { N: 5, R: 10, SR: 20, SSR: 40, UR: 80 };
+
 function defaultMeta() {
   return {
     coins: 30,
     claimedWorkMins: 0,
     inventory: ['fr_basic', 'mo_basic', 'ar_basic', 'wp_basic', 'sk_basic'],
+    partCounts: {
+      fr_basic: 1, mo_basic: 1, ar_basic: 1, wp_basic: 1, sk_basic: 1
+    },
+    partLevels: {},
     equipped: {
       frame: 'fr_basic',
       motor: 'mo_basic',
@@ -1262,6 +1296,23 @@ function defaultMeta() {
 }
 let meta = defaultMeta();
 
+function normalizePartMeta() {
+  if (!meta.partCounts || typeof meta.partCounts !== 'object') meta.partCounts = {};
+  if (!meta.partLevels || typeof meta.partLevels !== 'object') meta.partLevels = {};
+  if (!Array.isArray(meta.inventory)) meta.inventory = [];
+  // inventory と counts を同期（所持は最低1）
+  meta.inventory = Array.from(new Set(meta.inventory.filter(Boolean)));
+  meta.inventory.forEach((id) => {
+    const n = parseInt(meta.partCounts[id], 10);
+    meta.partCounts[id] = Number.isFinite(n) && n > 0 ? n : 1;
+    const lv = parseInt(meta.partLevels[id], 10);
+    meta.partLevels[id] = Number.isFinite(lv) ? Math.max(0, Math.min(PART_MAX_LEVEL, lv)) : 0;
+  });
+  Object.keys(meta.partCounts).forEach((id) => {
+    if (!meta.inventory.includes(id)) delete meta.partCounts[id];
+  });
+}
+
 function loadMeta() {
   try {
     const raw = localStorage.getItem(metaStorageKey());
@@ -1272,6 +1323,8 @@ function loadMeta() {
       coins: parsed.coins != null ? parsed.coins : base.coins,
       claimedWorkMins: parsed.claimedWorkMins || 0,
       inventory: Array.isArray(parsed.inventory) ? parsed.inventory : base.inventory,
+      partCounts: parsed.partCounts && typeof parsed.partCounts === 'object' ? parsed.partCounts : {},
+      partLevels: parsed.partLevels && typeof parsed.partLevels === 'object' ? parsed.partLevels : {},
       equipped: Object.assign({}, base.equipped, parsed.equipped || {}),
       wins: parsed.wins || 0
     };
@@ -1288,6 +1341,7 @@ function loadMeta() {
       if (!meta.inventory.includes(id)) meta.inventory.push(id);
     });
     if (!meta.equipped.skin) meta.equipped.skin = 'sk_basic';
+    normalizePartMeta();
   } catch (e) {
     meta = defaultMeta();
   }
@@ -1295,10 +1349,13 @@ function loadMeta() {
 }
 function saveMeta() {
   try {
+    normalizePartMeta();
     localStorage.setItem(metaStorageKey(), JSON.stringify({
       coins: meta.coins,
       claimedWorkMins: meta.claimedWorkMins,
       inventory: meta.inventory,
+      partCounts: meta.partCounts,
+      partLevels: meta.partLevels,
       equipped: meta.equipped,
       wins: meta.wins
     }));
@@ -1307,6 +1364,95 @@ function saveMeta() {
 
 function findPart(id) {
   return DRONE_PARTS.find((p) => p.id === id) || null;
+}
+
+function getPartCount(id) {
+  return Math.max(0, parseInt((meta.partCounts && meta.partCounts[id]) || 0, 10) || 0);
+}
+
+function getPartLevel(id) {
+  return Math.max(0, Math.min(PART_MAX_LEVEL, parseInt((meta.partLevels && meta.partLevels[id]) || 0, 10) || 0));
+}
+
+function canEnhancePartType(type) {
+  return type && type !== 'skin' && type !== 'paint';
+}
+
+function enhanceCoinCost(part, nextLevel) {
+  const base = PART_ENHANCE_COIN[part.rarity] || 10;
+  return base * nextLevel;
+}
+
+function enhanceBonusForPart(part, level) {
+  const lv = Math.max(0, Math.min(PART_MAX_LEVEL, level || 0));
+  if (!part || !lv || !canEnhancePartType(part.type)) {
+    return { hp: 0, spd: 0, thrust: 0, atk: 0, def: 0 };
+  }
+  if (part.type === 'frame') return { hp: 8 * lv, spd: 0, thrust: 0, atk: 0, def: 0 };
+  if (part.type === 'motor') return { hp: 0, spd: lv, thrust: lv, atk: 0, def: 0 };
+  if (part.type === 'armor') return { hp: 6 * lv, spd: 0, thrust: 0, atk: 0, def: 0.015 * lv };
+  if (part.type === 'weapon') return { hp: 0, spd: 0, thrust: 0, atk: 2 * lv, def: 0 };
+  return { hp: 0, spd: 0, thrust: 0, atk: 0, def: 0 };
+}
+
+function getEnhancePreviewText(part, level) {
+  const b = enhanceBonusForPart(part, level);
+  const bits = [];
+  if (b.hp) bits.push('HP+' + b.hp);
+  if (b.spd) bits.push('SPD+' + b.spd);
+  if (b.thrust) bits.push('推力+' + b.thrust);
+  if (b.atk) bits.push('ATK+' + b.atk);
+  if (b.def) bits.push('DEF+' + Math.round(b.def * 100) + '%');
+  return bits.length ? bits.join(' / ') : '強化ボーナスなし';
+}
+
+function gainPartCopy(partId) {
+  if (!meta.partCounts) meta.partCounts = {};
+  if (!meta.partLevels) meta.partLevels = {};
+  const owned = meta.inventory.includes(partId);
+  if (!owned) meta.inventory.push(partId);
+  const prev = getPartCount(partId);
+  meta.partCounts[partId] = owned && prev > 0 ? prev + 1 : Math.max(1, prev);
+  if (meta.partLevels[partId] == null) meta.partLevels[partId] = 0;
+  return { count: meta.partCounts[partId], duplicate: owned };
+}
+
+function upgradeEquippedPart(slotKey) {
+  loadMeta();
+  const id = meta.equipped[slotKey];
+  const part = findPart(id);
+  if (!part) {
+    showToast('パーツが見つかりません');
+    return;
+  }
+  if (!canEnhancePartType(part.type)) {
+    showToast('スキンは強化できません');
+    return;
+  }
+  const lv = getPartLevel(id);
+  if (lv >= PART_MAX_LEVEL) {
+    showToast('最大レベルです（Lv' + PART_MAX_LEVEL + '）');
+    return;
+  }
+  const next = lv + 1;
+  const cost = enhanceCoinCost(part, next);
+  const count = getPartCount(id);
+  const dup = Math.max(0, count - 1);
+  if (dup < 1) {
+    showToast('強化には重複パーツが必要です（ガチャで入手）');
+    return;
+  }
+  if ((meta.coins || 0) < cost) {
+    showToast('コイン不足（必要 ' + cost + ' / 所持 ' + (meta.coins || 0) + '）');
+    return;
+  }
+  meta.coins -= cost;
+  meta.partCounts[id] = count - 1;
+  meta.partLevels[id] = next;
+  saveMeta();
+  showToast(part.icon + ' ' + part.name + ' → Lv' + next + '！');
+  refreshMetaUI();
+  applyLoadoutToPlayerMesh();
 }
 
 function getPlayerLoadoutStats() {
@@ -1319,6 +1465,7 @@ function getPlayerLoadoutStats() {
   let accent = 0x00e5ff;
   let weaponKind = 'beam';
   let skin = findPart('sk_basic');
+  let enhanceLvTotal = 0;
   SLOT_DEFS.forEach((s) => {
     const part = findPart(meta.equipped[s.key]);
     if (!part) return;
@@ -1327,6 +1474,14 @@ function getPlayerLoadoutStats() {
     thrust += part.thrust || 0;
     atk += part.atk || 0;
     def += part.def || 0;
+    const lv = getPartLevel(part.id);
+    enhanceLvTotal += lv;
+    const bonus = enhanceBonusForPart(part, lv);
+    hp += bonus.hp;
+    maxSpd += bonus.spd;
+    thrust += bonus.thrust;
+    atk += bonus.atk;
+    def += bonus.def;
     if (part.type === 'frame' && part.color != null) color = part.color;
     if (part.type === 'weapon' && part.kind) weaponKind = part.kind;
     if (part.type === 'skin') {
@@ -1340,11 +1495,12 @@ function getPlayerLoadoutStats() {
     maxSpd: Math.max(22, maxSpd),
     thrust: Math.max(28, thrust),
     atk: Math.max(8, atk),
-    def: Math.min(0.4, Math.max(0, def)),
+    def: Math.min(0.45, Math.max(0, def)),
     color,
     accent,
     weaponKind,
-    skin
+    skin,
+    enhanceLvTotal
   };
 }
 
@@ -1545,7 +1701,8 @@ function playDroneGacha(times) {
     else pool = DRONE_PARTS.filter((e) => e.rarity === 'N' && !String(e.id).startsWith('pt_'));
     if (!pool.length) pool = DRONE_PARTS.filter((e) => !String(e.id).startsWith('pt_'));
     const picked = pool[Math.floor(Math.random() * pool.length)];
-    if (!meta.inventory.includes(picked.id)) meta.inventory.push(picked.id);
+    const gained = gainPartCopy(picked.id);
+    const wasOwned = gained.duplicate;
     // より強い物を自動装備（同スロット）
     const cur = findPart(meta.equipped[picked.type]);
     const score = (p) => {
@@ -1553,24 +1710,29 @@ function playDroneGacha(times) {
       if (p.type === 'skin') {
         return ({ N: 1, R: 2, SR: 3, SSR: 4, UR: 5 }[p.rarity] || 0) * 100;
       }
-      return (p.hp || 0) + (p.atk || 0) * 2 + (p.spd || 0) + (p.thrust || 0) + (p.def || 0) * 50;
+      return (p.hp || 0) + (p.atk || 0) * 2 + (p.spd || 0) + (p.thrust || 0) + (p.def || 0) * 50
+        + getPartLevel(p.id) * 3;
     };
     if (!cur || score(picked) >= score(cur)) meta.equipped[picked.type] = picked.id;
-    results.push(picked);
+    results.push({ part: picked, duplicate: wasOwned });
   }
   saveMeta();
   const box = document.getElementById('gachaResult');
   if (box) {
     if (times === 1) {
-      const item = results[0];
-      box.innerHTML = `<div><b class="rarity-${item.rarity}">${item.icon} ${item.name} (${item.rarity})</b><div style="font-size:0.75rem;margin-top:4px;color:var(--muted)">${item.desc}</div></div>`;
+      const item = results[0].part;
+      const dupNote = results[0].duplicate
+        ? '<div style="font-size:0.72rem;margin-top:4px;color:#ffd54f;">重複獲得 → 格納庫の強化素材になります</div>'
+        : '<div style="font-size:0.72rem;margin-top:4px;color:var(--ok);">NEW!</div>';
+      box.innerHTML = `<div><b class="rarity-${item.rarity}">${item.icon} ${item.name} (${item.rarity})</b><div style="font-size:0.75rem;margin-top:4px;color:var(--muted)">${item.desc}</div>${dupNote}</div>`;
     } else {
-      box.innerHTML = results.map((item) =>
-        `<span class="rarity-${item.rarity}" style="margin:2px;display:inline-block;">${item.icon}${item.name}(${item.rarity})</span>`
+      box.innerHTML = results.map((r) =>
+        `<span class="rarity-${r.part.rarity}" style="margin:2px;display:inline-block;">${r.part.icon}${r.part.name}(${r.part.rarity}${r.duplicate ? '×' : ''})</span>`
       ).join(' ');
     }
   }
-  showToast('ガチャ ' + results.length + ' 件獲得！');
+  const dupN = results.filter((r) => r.duplicate).length;
+  showToast('ガチャ ' + results.length + ' 件獲得！' + (dupN ? '（重複 ' + dupN + '）' : ''));
   refreshMetaUI();
   applyLoadoutToPlayerMesh();
 }
@@ -1600,15 +1762,41 @@ function refreshMetaUI() {
       missile: 'ミサイル', gatling: 'ガトリング', sniper: 'スナイパー'
     })[st.weaponKind] || st.weaponKind;
     const skinName = st.skin ? st.skin.icon + st.skin.name : '標準';
-    sum.textContent = `HP ${st.maxHp} / SPD ${st.maxSpd} / ATK ${st.atk} / ${kindLabel} / ${skinName}`;
+    const defPct = Math.round((st.def || 0) * 100);
+    sum.textContent = `機体強化Lv合計 ${st.enhanceLvTotal || 0} ｜ HP ${st.maxHp} / SPD ${st.maxSpd} / ATK ${st.atk} / DEF ${defPct}% / ${kindLabel} / ${skinName}`;
   }
 
   const slots = document.getElementById('equipSlots');
   if (slots) {
     slots.innerHTML = SLOT_DEFS.map((s) => {
       const part = findPart(meta.equipped[s.key]);
-      return `<div class="slot-card"><span class="ico">${s.icon}</span>${s.label}<div class="name">${part ? part.icon + ' ' + part.name : '未装備'}</div><div class="rarity-${part ? part.rarity : 'N'}">${part ? part.rarity : '-'}</div></div>`;
+      if (!part) {
+        return `<div class="slot-card"><span class="ico">${s.icon}</span>${s.label}<div class="name">未装備</div></div>`;
+      }
+      const lv = getPartLevel(part.id);
+      const count = getPartCount(part.id);
+      const dup = Math.max(0, count - 1);
+      const enhanceable = canEnhancePartType(part.type);
+      let enhanceHtml = '';
+      if (!enhanceable) {
+        enhanceHtml = `<div class="enhance-meta">見た目専用</div><button type="button" class="enhance-btn" disabled>強化不可</button>`;
+      } else if (lv >= PART_MAX_LEVEL) {
+        enhanceHtml = `<div class="lv">Lv${lv} MAX</div><div class="enhance-meta">${getEnhancePreviewText(part, lv)}</div><button type="button" class="enhance-btn" disabled>最大強化</button>`;
+      } else {
+        const next = lv + 1;
+        const cost = enhanceCoinCost(part, next);
+        const nextBonus = getEnhancePreviewText(part, next);
+        const ok = dup >= 1 && (meta.coins || 0) >= cost;
+        const reason = dup < 1 ? '重複不足' : ((meta.coins || 0) < cost ? 'コイン不足' : '強化する');
+        enhanceHtml = `<div class="lv">Lv${lv} → ${next}</div>
+          <div class="enhance-meta">${nextBonus}<br>素材 重複×1 ＋ 🪙${cost}（余剰 ${dup}）</div>
+          <button type="button" class="enhance-btn" data-enhance-slot="${s.key}" ${ok ? '' : 'disabled'}>⚡ ${reason}</button>`;
+      }
+      return `<div class="slot-card"><span class="ico">${s.icon}</span>${s.label}<div class="name">${part.icon} ${part.name}</div><div class="rarity-${part.rarity}">${part.rarity} · 所持×${count}</div>${enhanceHtml}</div>`;
     }).join('');
+    slots.querySelectorAll('[data-enhance-slot]').forEach((btn) => {
+      btn.addEventListener('click', () => upgradeEquippedPart(btn.getAttribute('data-enhance-slot')));
+    });
   }
   const inv = document.getElementById('inventoryList');
   if (inv) {
@@ -1631,6 +1819,8 @@ function refreshMetaUI() {
       byType[k].sort((a, b) => {
         const rr = (rarityRank[b.rarity] || 0) - (rarityRank[a.rarity] || 0);
         if (rr) return rr;
+        const lvDiff = getPartLevel(b.id) - getPartLevel(a.id);
+        if (lvDiff) return lvDiff;
         return String(a.name).localeCompare(String(b.name), 'ja');
       });
     });
@@ -1647,9 +1837,12 @@ function refreshMetaUI() {
               const sub = part.type === 'weapon' && part.kind
                 ? (weaponKindLabel[part.kind] || part.kind)
                 : (part.desc || '');
+              const lv = getPartLevel(part.id);
+              const count = getPartCount(part.id);
+              const lvTxt = canEnhancePartType(part.type) ? `Lv${lv}` : '見た目';
               return `<button type="button" class="inv-item ${on ? 'on' : ''}" data-part="${part.id}">
                 <span class="rarity-${part.rarity}">${part.icon} ${part.name}</span>
-                <small>${part.rarity}${sub ? ' · ' + sub : ''}${on ? ' · 装着中' : ''}</small>
+                <small>${part.rarity} · ${lvTxt} · ×${count}${sub ? ' · ' + sub : ''}${on ? ' · 装着中' : ''}</small>
               </button>`;
             }).join('')
           : '<div class="inv-empty">未所持</div>';

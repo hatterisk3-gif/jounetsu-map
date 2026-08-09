@@ -2043,19 +2043,27 @@ window.updateRowCalculations = function(planId) {
     if (areaRadio) areaRadio.checked = inputMode === 'area';
     if (traysRadio) traysRadio.checked = inputMode === 'trays';
 
-    // 選択中のみ編集可。もう一方は自動計算で上書き
+    // 選択中のみ編集可。もう一方は自動計算で上書き（プルダウンに計算値も載せる）
     if (areaInput) {
         areaInput.disabled = inputMode !== 'area';
         areaInput.style.background = inputMode === 'area' ? '#fff' : '#f0f0f0';
         if (inputMode !== 'area' || document.activeElement !== areaInput) {
-            areaInput.value = plan.areaA != null ? plan.areaA : '';
+            if (typeof window.ensureCpNumericSelectValue === 'function') {
+                window.ensureCpNumericSelectValue(areaInput, plan.areaA, 1);
+            } else {
+                areaInput.value = plan.areaA != null ? plan.areaA : '';
+            }
         }
     }
     if (traysInput) {
         traysInput.disabled = inputMode !== 'trays';
         traysInput.style.background = inputMode === 'trays' ? '#fff' : '#f0f0f0';
         if (inputMode !== 'trays' || document.activeElement !== traysInput) {
-            traysInput.value = plan.trays != null ? plan.trays : '';
+            if (typeof window.ensureCpNumericSelectValue === 'function') {
+                window.ensureCpNumericSelectValue(traysInput, plan.trays, 0);
+            } else {
+                traysInput.value = plan.trays != null ? plan.trays : '';
+            }
         }
     }
     if (traysLabel) traysLabel.innerText = (plan.trays || 0).toLocaleString();
