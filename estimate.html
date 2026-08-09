@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>情熱MAP 見積登録</title>
+  <link rel="icon" href="icon.png">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f6f7; color: #263238; }
+    header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; background: #ef6c00; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+    header h1 { margin: 0; font-size: 20px; }
+    .header-actions { display: flex; gap: 7px; }
+    button, .back { border: 0; border-radius: 6px; padding: 9px 13px; font-weight: 700; cursor: pointer; text-decoration: none; }
+    .back { color: #fff; border: 1px solid rgba(255,255,255,.6); font-size: 12px; }
+    .btn-light { background: #fff; color: #e65100; }
+    .btn-primary { background: #ef6c00; color: #fff; }
+    .btn-green { background: #2e7d32; color: #fff; }
+    main { width: min(1050px, 100%); margin: 0 auto; padding: 20px 14px 50px; }
+    .toolbar, .sheet { background: #fff; border: 1px solid #ddd; border-radius: 10px; box-shadow: 0 3px 14px rgba(0,0,0,.07); }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px; margin-bottom: 14px; }
+    .toolbar select { min-width: 230px; }
+    .sheet { padding: clamp(16px, 4vw, 38px); }
+    .document-title { margin: 0 0 24px; text-align: center; font-size: 28px; letter-spacing: .25em; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
+    label { display: block; color: #546e7a; font-size: 12px; font-weight: 700; }
+    input, select, textarea { width: 100%; margin-top: 4px; padding: 9px 10px; border: 1px solid #b0bec5; border-radius: 5px; background: #fff; font: inherit; }
+    textarea { resize: vertical; min-height: 75px; }
+    .full { grid-column: 1 / -1; }
+    .items-wrap { margin-top: 24px; overflow-x: auto; }
+    table { width: 100%; min-width: 720px; border-collapse: collapse; }
+    th, td { border: 1px solid #cfd8dc; padding: 7px; }
+    th { background: #fff3e0; color: #bf360c; font-size: 12px; }
+    td input { margin: 0; border-color: transparent; border-radius: 0; padding: 7px; }
+    td input:focus { border-color: #ff9800; outline: none; }
+    .num { text-align: right; }
+    .remove { width: 34px; padding: 6px; background: #ffebee; color: #c62828; }
+    .item-actions { margin-top: 9px; }
+    .totals { width: min(380px, 100%); margin: 18px 0 0 auto; }
+    .total-row { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #ddd; }
+    .total-row.grand { background: #fff3e0; color: #bf360c; font-size: 20px; font-weight: 800; border: 2px solid #ffb74d; }
+    .footer-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+    .status { min-height: 20px; margin-top: 10px; color: #2e7d32; font-size: 12px; font-weight: 700; text-align: right; }
+    @media (max-width: 650px) {
+      header { align-items: flex-start; }
+      header h1 { font-size: 17px; }
+      .grid { grid-template-columns: 1fr; }
+      .full { grid-column: auto; }
+      .sheet { padding: 16px 10px; }
+      .document-title { font-size: 23px; }
+      .footer-actions { flex-direction: column; }
+      .footer-actions button { width: 100%; }
+    }
+    @media print {
+      body { background: #fff; }
+      header, .toolbar, .item-actions, .footer-actions, .remove-col, .status { display: none !important; }
+      main { width: 100%; padding: 0; }
+      .sheet { border: 0; box-shadow: none; padding: 8mm; }
+      input, textarea, select { border: 0; padding: 2px; appearance: none; }
+      td input { padding: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🧾 見積登録</h1>
+    <div class="header-actions">
+      <a class="back" href="registration-portal.html">← 登録ポータル</a>
+      <button class="btn-light" type="button" onclick="window.print()">印刷</button>
+    </div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <select id="savedEstimateSelect" onchange="loadSelectedEstimate()">
+        <option value="">保存済み見積を選択...</option>
+      </select>
+      <button type="button" onclick="newEstimate()">＋ 新規</button>
+      <button type="button" class="btn-primary" onclick="saveEstimate()">保存</button>
+      <button type="button" onclick="deleteEstimate()">削除</button>
+    </div>
+    <section class="sheet">
+      <h2 class="document-title">御 見 積 書</h2>
+      <input type="hidden" id="estimateId">
+      <div class="grid">
+        <label>見積番号<input id="estimateNo" placeholder="例: EST-20260809-001"></label>
+        <label>発行日<input id="issueDate" type="date"></label>
+        <label>宛名<input id="customer" placeholder="例: 株式会社〇〇 御中"></label>
+        <label>有効期限<input id="validUntil" type="date"></label>
+        <label class="full">件名<input id="subject" placeholder="例: 農作業受託のお見積"></label>
+        <label>発行者<input id="issuer" placeholder="会社・農園名"></label>
+        <label>担当者<input id="person" placeholder="担当者名"></label>
+      </div>
+
+      <div class="items-wrap">
+        <table>
+          <thead><tr><th>品名・作業内容</th><th style="width:90px;">数量</th><th style="width:90px;">単位</th><th style="width:130px;">単価</th><th style="width:140px;">金額</th><th class="remove-col" style="width:42px;"></th></tr></thead>
+          <tbody id="estimateItems"></tbody>
+        </table>
+      </div>
+      <div class="item-actions"><button type="button" onclick="addEstimateRow()">＋ 明細を追加</button></div>
+
+      <div class="totals">
+        <div class="total-row"><span>小計</span><strong id="subtotal">¥0</strong></div>
+        <div class="total-row"><span>消費税 <select id="taxRate" onchange="calculateEstimate()" style="display:inline-block;width:75px;margin:0 0 0 5px;padding:3px;"><option value="10">10%</option><option value="8">8%</option><option value="0">0%</option></select></span><strong id="taxAmount">¥0</strong></div>
+        <div class="total-row grand"><span>合計</span><span id="grandTotal">¥0</span></div>
+      </div>
+
+      <div class="grid" style="margin-top:22px;">
+        <label class="full">備考<textarea id="notes" placeholder="支払条件、納期、注意事項など"></textarea></label>
+      </div>
+      <div class="footer-actions">
+        <button type="button" class="btn-primary" onclick="saveEstimate()">この見積を保存</button>
+        <button type="button" class="btn-green" onclick="window.print()">見積書を印刷</button>
+      </div>
+      <div id="saveStatus" class="status"></div>
+    </section>
+  </main>
+  <script>
+    const ESTIMATE_STORAGE_KEY = 'passionMapEstimates';
+    let estimates = [];
+
+    function yen(value) {
+      return '¥' + Math.round(Number(value) || 0).toLocaleString('ja-JP');
+    }
+    function todayYmd() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function makeEstimateNo() {
+      return 'EST-' + todayYmd().replace(/-/g, '') + '-' + String(estimates.length + 1).padStart(3, '0');
+    }
+    function addEstimateRow(item = {}) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><input class="item-name" value="' + escapeAttr(item.name || '') + '" placeholder="品名・作業内容"></td>' +
+        '<td><input class="item-qty num" type="number" min="0" step="any" value="' + escapeAttr(item.qty == null ? 1 : item.qty) + '" oninput="calculateEstimate()"></td>' +
+        '<td><input class="item-unit" value="' + escapeAttr(item.unit || '') + '" placeholder="式・時間"></td>' +
+        '<td><input class="item-price num" type="number" min="0" step="any" value="' + escapeAttr(item.price || '') + '" oninput="calculateEstimate()"></td>' +
+        '<td class="num item-amount">¥0</td>' +
+        '<td class="remove-col"><button class="remove" type="button" onclick="this.closest(&quot;tr&quot;).remove();calculateEstimate()">×</button></td>';
+      document.getElementById('estimateItems').appendChild(tr);
+      calculateEstimate();
+    }
+    function escapeAttr(value) {
+      return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+    function calculateEstimate() {
+      let subtotal = 0;
+      document.querySelectorAll('#estimateItems tr').forEach(tr => {
+        const qty = Number(tr.querySelector('.item-qty').value) || 0;
+        const price = Number(tr.querySelector('.item-price').value) || 0;
+        const amount = qty * price;
+        subtotal += amount;
+        tr.querySelector('.item-amount').textContent = yen(amount);
+      });
+      const tax = Math.floor(subtotal * (Number(document.getElementById('taxRate').value) || 0) / 100);
+      document.getElementById('subtotal').textContent = yen(subtotal);
+      document.getElementById('taxAmount').textContent = yen(tax);
+      document.getElementById('grandTotal').textContent = yen(subtotal + tax);
+    }
+    function collectEstimate() {
+      const items = Array.from(document.querySelectorAll('#estimateItems tr')).map(tr => ({
+        name: tr.querySelector('.item-name').value.trim(),
+        qty: tr.querySelector('.item-qty').value,
+        unit: tr.querySelector('.item-unit').value.trim(),
+        price: tr.querySelector('.item-price').value
+      })).filter(item => item.name || Number(item.price));
+      return {
+        id: document.getElementById('estimateId').value || ('estimate-' + Date.now()),
+        estimateNo: document.getElementById('estimateNo').value.trim(),
+        issueDate: document.getElementById('issueDate').value,
+        customer: document.getElementById('customer').value.trim(),
+        validUntil: document.getElementById('validUntil').value,
+        subject: document.getElementById('subject').value.trim(),
+        issuer: document.getElementById('issuer').value.trim(),
+        person: document.getElementById('person').value.trim(),
+        taxRate: document.getElementById('taxRate').value,
+        notes: document.getElementById('notes').value,
+        items,
+        updatedAt: new Date().toISOString()
+      };
+    }
+    function saveEstimate() {
+      const data = collectEstimate();
+      if (!data.customer && !data.subject) {
+        alert('宛名または件名を入力してください。');
+        return;
+      }
+      const idx = estimates.findIndex(item => item.id === data.id);
+      if (idx >= 0) estimates[idx] = data; else estimates.unshift(data);
+      localStorage.setItem(ESTIMATE_STORAGE_KEY, JSON.stringify(estimates));
+      document.getElementById('estimateId').value = data.id;
+      refreshSavedEstimateSelect(data.id);
+      const status = document.getElementById('saveStatus');
+      status.textContent = '保存しました';
+      setTimeout(() => { status.textContent = ''; }, 1800);
+    }
+    function deleteEstimate() {
+      const id = document.getElementById('estimateId').value;
+      if (!id || !confirm('この見積を削除しますか？')) return;
+      estimates = estimates.filter(item => item.id !== id);
+      localStorage.setItem(ESTIMATE_STORAGE_KEY, JSON.stringify(estimates));
+      newEstimate();
+    }
+    function refreshSavedEstimateSelect(selectedId = '') {
+      const select = document.getElementById('savedEstimateSelect');
+      select.innerHTML = '<option value="">保存済み見積を選択...</option>' + estimates.map(item => {
+        const label = [item.estimateNo, item.customer, item.subject].filter(Boolean).join(' ／ ');
+        return '<option value="' + escapeAttr(item.id) + '">' + escapeAttr(label || '名称未設定') + '</option>';
+      }).join('');
+      select.value = selectedId;
+    }
+    function loadSelectedEstimate() {
+      const id = document.getElementById('savedEstimateSelect').value;
+      const data = estimates.find(item => item.id === id);
+      if (!data) return;
+      ['estimateNo','issueDate','customer','validUntil','subject','issuer','person','notes'].forEach(key => {
+        document.getElementById(key).value = data[key] || '';
+      });
+      document.getElementById('estimateId').value = data.id;
+      document.getElementById('taxRate').value = data.taxRate == null ? '10' : String(data.taxRate);
+      document.getElementById('estimateItems').innerHTML = '';
+      (data.items && data.items.length ? data.items : [{}]).forEach(addEstimateRow);
+      calculateEstimate();
+    }
+    function newEstimate() {
+      document.getElementById('estimateId').value = '';
+      document.getElementById('savedEstimateSelect').value = '';
+      ['customer','validUntil','subject','issuer','person','notes'].forEach(id => { document.getElementById(id).value = ''; });
+      document.getElementById('issueDate').value = todayYmd();
+      document.getElementById('estimateNo').value = makeEstimateNo();
+      document.getElementById('taxRate').value = '10';
+      document.getElementById('estimateItems').innerHTML = '';
+      addEstimateRow();
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      try { estimates = JSON.parse(localStorage.getItem(ESTIMATE_STORAGE_KEY) || '[]'); } catch (e) { estimates = []; }
+      refreshSavedEstimateSelect();
+      newEstimate();
+    });
+  </script>
+</body>
+</html>

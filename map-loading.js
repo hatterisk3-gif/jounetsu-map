@@ -273,7 +273,8 @@
       target: target || null,
       shown: false,
       timer: null,
-      timeoutTimer: null
+      timeoutTimer: null,
+      completionSeq: 0
     };
     activeLoads[id] = load;
     var delay = Math.max(0, Number(opts.delay == null ? 180 : opts.delay) || 0);
@@ -293,6 +294,7 @@
     }
     function close() {
       if (!activeLoads[id]) return;
+      load.completionSeq += 1;
       if (load.timer) clearTimeout(load.timer);
       if (load.timeoutTimer) clearTimeout(load.timeoutTimer);
       if (load.target && load.target.isConnected && load.restoreHtml !== undefined) {
@@ -301,11 +303,36 @@
       delete activeLoads[id];
       renderActiveLoads();
     }
+    function done() {
+      if (!activeLoads[id]) return;
+      if (load.timeoutTimer) {
+        clearTimeout(load.timeoutTimer);
+        load.timeoutTimer = null;
+      }
+      var total = Number(load.total);
+      var determinate = Number.isFinite(total) && total > 0;
+      if (!load.shown || !determinate) {
+        close();
+        return;
+      }
+
+      load.current = total;
+      load.status = 'success';
+      renderActiveLoads();
+      var completionToken = ++load.completionSeq;
+      var finishAfterPaint = function () {
+        if (!activeLoads[id] || load.completionSeq !== completionToken) return;
+        close();
+      };
+      // 100%のDOM更新が実際に1回描画されてから閉じる
+      setTimeout(finishAfterPaint, 80);
+    }
     var handle = {
       id: id,
       update: update,
-      done: close,
+      done: done,
       fail: function (message) {
+        load.completionSeq += 1;
         if (load.timer) clearTimeout(load.timer);
         if (load.timeoutTimer) {
           clearTimeout(load.timeoutTimer);

@@ -7177,10 +7177,19 @@ function finishCpLoadProgress(success, label) {
     labelEl.style.color = success ? '#2e7d32' : '#c62828';
     labelEl.textContent = label || (success ? '読み込みが完了しました' : '読み込みに失敗しました');
     percentEl.textContent = success ? '100%' : 'エラー';
-    setTimeout(() => {
-        overlay.style.display = 'none';
-        bar.style.width = '0%';
-    }, success ? 500 : 1800);
+    if (success) {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                overlay.style.display = 'none';
+                bar.style.width = '0%';
+            });
+        });
+    } else {
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            bar.style.width = '0%';
+        }, 1800);
+    }
 }
 
 function yieldCpLoadRender() {
@@ -7247,9 +7256,9 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
                     `計算結果を反映しています（${i + 1}/${cpPlans.length}件）`);
                 if (i % 4 === 3 || i === cpPlans.length - 1) await yieldCpLoadRender();
             }
-            if (typeof syncAllRowHeights === 'function') {
-                setTimeout(() => syncAllRowHeights(), 50);
-            }
+            setCpLoadProgress(96, '画面レイアウトを調整しています...');
+            await yieldCpLoadRender();
+            if (typeof syncAllRowHeights === 'function') syncAllRowHeights();
             if (typeof syncCpSemiAutoStepsFromPlans === 'function') {
                 syncCpSemiAutoStepsFromPlans();
             }
@@ -7263,6 +7272,7 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
                 crop: crop
             });
             updateCpSaveButtonLabel();
+            await yieldCpLoadRender();
             finishCpLoadProgress(true, `${plans.length}件の計画を読み込みました`);
         } else {
             finishCpLoadProgress(false, '保存済みの計画が見つかりませんでした');

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>情熱MAP データ登録ポータル</title>
+  <link rel="icon" href="icon_index.png">
+  <link rel="apple-touch-icon" href="icon_index.png">
+  <link rel="manifest" href="manifest_portal.json">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f3f7f5; color: #263238; }
+    .header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px max(16px, calc((100vw - 980px) / 2)); background: #00695c; color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+    .header h1 { margin: 0; font-size: clamp(18px, 4vw, 24px); }
+    .back { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.55); border-radius: 7px; padding: 7px 10px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    main { width: min(980px, 100%); margin: 0 auto; padding: 24px 16px 40px; }
+    .lead { margin: 0 0 20px; color: #546e7a; line-height: 1.65; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+    .card { display: flex; flex-direction: column; min-height: 145px; padding: 18px; border-radius: 12px; background: #fff; border: 1px solid #dce7e2; box-shadow: 0 3px 12px rgba(0,0,0,.07); color: inherit; text-decoration: none; transition: transform .15s, box-shadow .15s; }
+    .card:active { transform: scale(.98); }
+    .icon { font-size: 30px; margin-bottom: 10px; }
+    .title { font-size: 17px; font-weight: 800; color: #00695c; }
+    .desc { margin-top: 6px; font-size: 12px; color: #607d8b; line-height: 1.5; }
+    .go { margin-top: auto; padding-top: 10px; color: #00897b; font-size: 12px; font-weight: 800; text-align: right; }
+    .card.estimate .title, .card.estimate .go { color: #ef6c00; }
+    .card.manual .title, .card.manual .go { color: #7b1fa2; }
+    .subhead { margin: 28px 0 12px; font-size: 15px; color: #455a64; }
+    @media (hover:hover) { .card:hover { transform: translateY(-2px); box-shadow: 0 7px 20px rgba(0,0,0,.12); } }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>📝 データ登録ポータル</h1>
+    <a class="back" href="index.html">← 総合案内所</a>
+  </header>
+  <main>
+    <p class="lead">登録したいデータを選ぶと、各アプリの新規登録画面へ直接移動します。</p>
+    <div class="grid">
+      <a class="card" href="machine.html?register=machine">
+        <span class="icon">🚜</span><span class="title">農機を登録</span>
+        <span class="desc">トラクター・作業機・農業機械を新規登録します。</span><span class="go">登録画面へ →</span>
+      </a>
+      <a class="card" href="machine.html?register=vehicle">
+        <span class="icon">🚚</span><span class="title">車両を登録</span>
+        <span class="desc">移動車両・運搬車両を新規登録します。</span><span class="go">登録画面へ →</span>
+      </a>
+      <a class="card estimate" href="estimate.html">
+        <span class="icon">🧾</span><span class="title">見積を作成</span>
+        <span class="desc">明細・数量・単価・税率を入力して見積書を作成します。</span><span class="go">作成画面へ →</span>
+      </a>
+      <a class="card" href="admin.html?master=fertilizer&tab=new">
+        <span class="icon">🌿</span><span class="title">肥料を登録</span>
+        <span class="desc">肥料の新規登録、公式カタログ検索を行います。</span><span class="go">肥料マスタへ →</span>
+      </a>
+      <a class="card" href="admin.html?master=pesticide&tab=new">
+        <span class="icon">🧪</span><span class="title">農薬を登録</span>
+        <span class="desc">農薬の新規登録、公式カタログ検索を行います。</span><span class="go">農薬マスタへ →</span>
+      </a>
+      <a class="card" href="admin.html?startDraw=1">
+        <span class="icon">🗺️</span><span class="title">圃場を登録</span>
+        <span class="desc">管理者用MAPを開き、圃場の作図を開始します。</span><span class="go">圃場作図へ →</span>
+      </a>
+      <a class="card manual" href="manual.html?tab=create">
+        <span class="icon">📖</span><span class="title">マニュアルを登録</span>
+        <span class="desc">作業手順書・画像・注意点を新規作成します。</span><span class="go">新規作成へ →</span>
+      </a>
+    </div>
+    <h2 class="subhead">その他の登録</h2>
+    <div class="grid">
+      <a class="card" href="admin.html?master=menu">
+        <span class="icon">⚙️</span><span class="title">その他のマスタ</span>
+        <span class="desc">作物、作業、資材、道具、拠点、原価などを登録します。</span><span class="go">マスタ一覧へ →</span>
+      </a>
+      <a class="card manual" href="manual.html">
+        <span class="icon">🔎</span><span class="title">マニュアルを確認</span>
+        <span class="desc">登録済みの作業マニュアルを検索・閲覧します。</span><span class="go">一覧へ →</span>
+      </a>
+    </div>
+  </main>
+</body>
+</html>

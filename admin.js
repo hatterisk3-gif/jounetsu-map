@@ -418,6 +418,31 @@ function startLocationWatch() {
     }
 }
 
+function openMasterFromQuery_() {
+    if (window._adminMasterQueryHandled) return;
+    const params = new URLSearchParams(window.location.search);
+    const masterType = params.get('master');
+    if (!masterType) return;
+    const allowed = [
+        'menu', 'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan',
+        'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit',
+        'sign', 'location', 'workCategory', 'machineType', 'machineGroup',
+        'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
+    ];
+    if (!allowed.includes(masterType)) return;
+    window._adminMasterQueryHandled = true;
+
+    const requestedTab = params.get('tab');
+    if (masterType === 'fertilizer' || masterType === 'pesticide') {
+        window['_' + masterType + 'MasterActiveTab'] =
+            ['new', 'search', 'registered'].includes(requestedTab) ? requestedTab : 'registered';
+    }
+    setTimeout(() => {
+        openMasterModal();
+        if (masterType !== 'menu') openMasterDetail(masterType);
+    }, 0);
+}
+
 function loadInitData() {
     initDataLoadStarted = true;
     if (window._adminInitLoading) window._adminInitLoading.done();
@@ -551,6 +576,7 @@ function renderInitData(data, opts) {
         && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
         pdlMachineGroups = data.pdl.machineCategories;
     }
+    openMasterFromQuery_();
 
     const html = (list) => list.map(l => `<option value="${l}">${l}</option>`).join('');
     const locEl = document.getElementById('fieldLocation');
@@ -846,6 +872,25 @@ window.renderMasterMenu = () => {
     document.getElementById('masterSections').innerHTML = html;
 };
 
+window.switchCatalogMasterTab = (type, tab) => {
+    if (type !== 'fertilizer' && type !== 'pesticide') return;
+    const activeTab = ['new', 'search', 'registered'].includes(tab) ? tab : 'registered';
+    window['_' + type + 'MasterActiveTab'] = activeTab;
+    ['new', 'search', 'registered'].forEach(key => {
+        const panel = document.getElementById(type + 'Panel_' + key);
+        const btn = document.getElementById(type + 'Tab_' + key);
+        const active = key === activeTab;
+        if (panel) panel.style.display = active ? (key === 'registered' ? 'flex' : 'block') : 'none';
+        if (btn) {
+            btn.style.background = active ? '#558b2f' : '#f1f8e9';
+            btn.style.color = active ? '#fff' : '#33691e';
+            btn.style.borderColor = active ? '#558b2f' : '#aed581';
+        }
+    });
+};
+window.switchFertilizerMasterTab = tab => switchCatalogMasterTab('fertilizer', tab);
+window.switchPesticideMasterTab = tab => switchCatalogMasterTab('pesticide', tab);
+
 window.openMasterDetail = (type, customEditHtml = null) => {
     currentActiveMasterType = type;
     const btnBack = document.getElementById('btnMasterBack');
@@ -882,7 +927,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     if (customEditHtml) {
         formHtml = customEditHtml;
     } else {
-        formHtml = `<div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+        const catalogNewPanelAttr = (type === 'fertilizer' || type === 'pesticide') ? ` id="${type}Panel_new"` : '';
+        formHtml = `<div${catalogNewPanelAttr} style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; margin-bottom:10px; color:#4CAF50; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px;">➕ 新規登録</h4>`;
         
         if (type === 'crop') {
@@ -1074,7 +1120,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="text" id="add_pest_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="任意">
                 <button onclick="execMaster('pesticide', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">手入力で追加</button>
             </div>
-            <div style="margin-top:14px; background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px;">
+            </div>
+            <div id="pesticidePanel_search" style="display:none; background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; margin-bottom:10px; color:#2e7d32; font-size:15px; border-bottom:2px solid #66bb6a; padding-bottom:5px;">🔍 カタログ検索・登録</h4>
+            <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px;">
                 <div style="font-weight:bold; color:#1565c0; margin-bottom:6px; font-size:14px;">① 公式CSVをカタログへ取込</div>
                 <div style="font-size:11px; color:#555; line-height:1.45; margin-bottom:8px;">
                   一度カタログに入れておけば、あとは情熱MAP内で検索してマスタ登録できます。<br>
@@ -1126,7 +1175,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="text" id="add_fert_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="任意">
                 <button onclick="execMaster('fertilizer', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">手入力で追加</button>
             </div>
-            <div style="margin-top:14px; background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px;">
+            </div>
+            <div id="fertilizerPanel_search" style="display:none; background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; margin-bottom:10px; color:#2e7d32; font-size:15px; border-bottom:2px solid #66bb6a; padding-bottom:5px;">🔍 カタログ検索・登録</h4>
+            <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px;">
                 <div style="font-weight:bold; color:#1565c0; margin-bottom:6px; font-size:14px;">① 公式CSVをカタログへ取込</div>
                 <div style="font-size:11px; color:#555; line-height:1.45; margin-bottom:8px;">
                   一度カタログに入れておけば、あとは情熱MAP内で検索してマスタ登録できます。<br>
@@ -1206,8 +1258,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     }
 
     // データ一覧テーブルの生成
+    const catalogMasterType = (type === 'fertilizer' || type === 'pesticide') ? type : '';
     let listHtml = `
-      <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
+      <div${catalogMasterType ? ` id="${catalogMasterType}Panel_registered"` : ''} style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; height:100%; ${catalogMasterType ? 'display:none;' : 'display:flex;'} flex-direction:column; box-sizing:border-box;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid #e0e0e0;">
           <div style="font-weight:bold; font-size:15px; color:#333;">登録済みデータ一覧 (${list.length}件)</div>
           <input type="text" id="masterSearchFilter" oninput="filterMasterListTable(this.value)" placeholder="🔍 一覧から検索..." style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; width:180px;">
@@ -1350,19 +1403,31 @@ window.openMasterDetail = (type, customEditHtml = null) => {
 
     listHtml += `</tbody></table></div></div>`;
 
-    const containerHtml = `
-      <div style="display:flex; gap:20px; height:100%; flex-wrap:wrap; box-sizing:border-box;">
-        <div style="flex:1; min-width:320px; max-width:420px;">
-          ${formHtml}
-        </div>
-        <div style="flex:1.5; min-width:320px; height:100%;">
-          ${listHtml}
-        </div>
-      </div>
-    `;
+    const catalogTabbedLayout = !!catalogMasterType && !customEditHtml;
+    const containerHtml = catalogTabbedLayout
+      ? `<div style="height:100%; display:flex; flex-direction:column; min-height:0;">
+          <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:14px; flex-shrink:0;">
+            <button type="button" id="${catalogMasterType}Tab_new" onclick="switchCatalogMasterTab('${catalogMasterType}','new')" style="border:1px solid #aed581; border-radius:8px; padding:11px 6px; background:#f1f8e9; color:#33691e; font-weight:bold; cursor:pointer;">➕ 新規登録</button>
+            <button type="button" id="${catalogMasterType}Tab_search" onclick="switchCatalogMasterTab('${catalogMasterType}','search')" style="border:1px solid #aed581; border-radius:8px; padding:11px 6px; background:#f1f8e9; color:#33691e; font-weight:bold; cursor:pointer;">🔍 カタログ検索</button>
+            <button type="button" id="${catalogMasterType}Tab_registered" onclick="switchCatalogMasterTab('${catalogMasterType}','registered')" style="border:1px solid #aed581; border-radius:8px; padding:11px 6px; background:#f1f8e9; color:#33691e; font-weight:bold; cursor:pointer;">📋 登録済み (${list.length})</button>
+          </div>
+          <div style="flex:1; min-height:0; overflow-y:auto;">
+            ${formHtml}
+            ${listHtml}
+          </div>
+        </div>`
+      : `<div style="display:flex; gap:20px; height:100%; flex-wrap:wrap; box-sizing:border-box;">
+          <div style="flex:1; min-width:320px; max-width:420px;">
+            ${formHtml}
+          </div>
+          <div style="flex:1.5; min-width:320px; height:100%;">
+            ${listHtml}
+          </div>
+      </div>`;
 
     document.getElementById('masterSections').innerHTML = containerHtml;
     if (type === 'fertilizer' && !customEditHtml) {
+        switchFertilizerMasterTab(window._fertilizerMasterActiveTab || 'registered');
         refreshFertilizerCatalogStats();
         window.syncCatalogUploadButtons_();
         const j = window._catalogJobs.fertilizer;
@@ -1370,6 +1435,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         if (statusEl && j && j.text) statusEl.textContent = j.text;
     }
     if (type === 'pesticide' && !customEditHtml) {
+        switchPesticideMasterTab(window._pesticideMasterActiveTab || 'registered');
         refreshPesticideCatalogStats();
         window.syncCatalogUploadButtons_();
         const j = window._catalogJobs.pesticide;
@@ -2716,6 +2782,7 @@ window.addSelectedFertilizerFromCatalog = async function() {
         localStorage.removeItem('pMapAdminInitData');
         localStorage.removeItem('passionMapInitData');
         customAlert(`登録完了: ${res.added || 0} 件追加 / ${res.skipped || 0} 件スキップ`);
+        window._fertilizerMasterActiveTab = 'registered';
         openMasterDetail('fertilizer');
     } catch (e) {
         customAlert('登録に失敗しました: ' + (e.message || e));
@@ -2890,6 +2957,7 @@ window.addSelectedPesticideFromCatalog = async function() {
         localStorage.removeItem('pMapAdminInitData');
         localStorage.removeItem('passionMapInitData');
         customAlert(`登録完了: ${res.added || 0} 件追加 / ${res.skipped || 0} 件スキップ`);
+        window._pesticideMasterActiveTab = 'registered';
         openMasterDetail('pesticide');
     } catch (e) {
         customAlert('登録に失敗しました: ' + (e.message || e));
@@ -3699,6 +3767,9 @@ window.execMaster = async (type, act, val) => {
         // 再読み込み時に古い値が表示されないよう、初期データキャッシュを破棄して次回は最新を取得させる
         localStorage.removeItem('pMapAdminInitData');
         localStorage.removeItem('passionMapInitData');
+        if ((type === 'fertilizer' || type === 'pesticide') && act === 'add') {
+            window['_' + type + 'MasterActiveTab'] = 'registered';
+        }
         renderMasterSection();
         customAlert(act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！"));
     } catch (e) { customAlert(e.message || "エラーが発生しました。再度お試しください。"); renderMasterSection(); }

@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <script src="exit-guard.js?v=1786240000001"></script>
-  <script src="map-loading.js?v=1786240000002"></script>
+  <script src="map-loading.js?v=1786243000000"></script>
   <link rel="stylesheet" href="schedule.css">
 </head>
 
@@ -344,34 +344,59 @@
 
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
-    const cacheBust = '1786240000002';
+    const cacheBust = '1786241820000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
       'cultivation.js', 'cost_calc.js', 'crop_work.js'
     ];
+    const bootstrapTotalSteps = bootstrapFiles.length + 3;
     const bootstrapLoading = window.AppLoading
       ? AppLoading.start({
           label: '予定確認アプリを読み込み中...',
-          detail: '0 / ' + bootstrapFiles.length + ' ファイル',
+          detail: '0 / ' + bootstrapTotalSteps + ' 工程',
           current: 0,
-          total: bootstrapFiles.length,
+          total: bootstrapTotalSteps,
           delay: 0,
           lockMap: false
         })
       : null;
     let loadedBootstrapFiles = 0;
+    let bootstrapFinished = false;
+
+    window.scheduleBootstrapLoading = bootstrapLoading;
+
+    function finishScheduleBootstrapIfReady() {
+      if (bootstrapFinished || loadedBootstrapFiles < bootstrapTotalSteps) return;
+      bootstrapFinished = true;
+      if (bootstrapLoading) {
+        bootstrapLoading.update({
+          detail: bootstrapTotalSteps + ' / ' + bootstrapTotalSteps + ' — 読み込み完了',
+          current: bootstrapTotalSteps,
+          total: bootstrapTotalSteps
+        });
+        requestAnimationFrame(() => requestAnimationFrame(() => bootstrapLoading.done()));
+      }
+    }
 
     function markBootstrapFileLoaded(name) {
+      if (bootstrapFinished) return;
       loadedBootstrapFiles += 1;
       if (bootstrapLoading) {
         bootstrapLoading.update({
-          detail: loadedBootstrapFiles + ' / ' + bootstrapFiles.length + ' — ' + name,
+          detail: loadedBootstrapFiles + ' / ' + bootstrapTotalSteps + ' — ' + name,
           current: loadedBootstrapFiles,
-          total: bootstrapFiles.length
+          total: bootstrapTotalSteps
         });
       }
+      finishScheduleBootstrapIfReady();
     }
+
+    window.markScheduleInitialLoadStep = markBootstrapFileLoaded;
+    window.failScheduleInitialLoad = function(message) {
+      bootstrapFinished = true;
+      if (bootstrapLoading) bootstrapLoading.fail(message || 'アプリの読み込みに失敗しました');
+    };
 
     function appendScript(src) {
       return new Promise((resolve, reject) => {
@@ -400,12 +425,10 @@
       .then(() => appendScript('cultivation.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cultivation.js')))
       .then(() => appendScript('cost_calc.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cost_calc.js')))
       .then(() => appendScript('crop_work.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('crop_work.js')))
-      .then(() => {
-        if (bootstrapLoading) bootstrapLoading.done();
-      })
+      .then(() => finishScheduleBootstrapIfReady())
       .catch(err => {
         console.error('予定確認アプリの読み込み失敗', err);
-        if (bootstrapLoading) bootstrapLoading.fail('アプリの読み込みに失敗しました');
+        window.failScheduleInitialLoad('アプリの読み込みに失敗しました');
       });
   </script>
 

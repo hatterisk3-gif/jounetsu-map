@@ -232,11 +232,23 @@ async function loadAllData() {
         if (load) load.update({ label: '機械管理の準備が完了しました', detail: '4/4 地図表示を更新しました', current: 4, total: 4 });
         showToast("読み込み完了");
         if (load) load.done();
+        openRegistrationFromQuery_();
     } catch (e) {
         console.error("Data load error:", e);
         if (load) load.fail('機械データの読み込みに失敗しました');
         alert("データの読み込みに失敗しました: " + e.message);
     }
+}
+
+function openRegistrationFromQuery_() {
+    if (window._machineRegistrationQueryHandled) return;
+    const registerType = new URLSearchParams(window.location.search).get('register');
+    if (registerType !== 'machine' && registerType !== 'vehicle') return;
+    window._machineRegistrationQueryHandled = true;
+    setTimeout(() => {
+        if (registerType === 'vehicle') openVehicleRegisterModal();
+        else openMachineRegisterModal();
+    }, 100);
 }
 
 // ======================

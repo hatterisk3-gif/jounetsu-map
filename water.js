@@ -49,6 +49,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw;
     if (id && pw) {
         document.getElementById('loginScreen').style.display = 'none';
+        window._waterStartupLoading = window.AppLoading
+            ? AppLoading.start({
+                label: '給水管理アプリを読み込み中...',
+                detail: 'ログイン状態を確認しています',
+                current: 0,
+                total: 4,
+                blocking: true,
+                lockMap: true,
+                delay: 0
+            })
+            : null;
         initMap();
         executeLogin(true);
     }
@@ -59,6 +70,7 @@ async function executeLogin(isAuto = false) {
     const pw = document.getElementById('loginPw').value;
     const btn = document.querySelector('.login-btn');
     const errObj = document.getElementById('loginError');
+    const startupLoad = isAuto ? window._waterStartupLoading : null;
 
     if (!id || !pw) {
         if (errObj) errObj.innerText = 'スタッフIDとパスワードを入力してください';
@@ -69,6 +81,7 @@ async function executeLogin(isAuto = false) {
     try {
         const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
         if (result.success) {
+            if (startupLoad) startupLoad.update({ detail: 'ログイン確認完了', current: 1, total: 4 });
             currentUserName = result.name;
             currentUserRole = result.role || '作業員';
             currentStaffId = id;
@@ -85,31 +98,29 @@ async function executeLogin(isAuto = false) {
             // キャッシュで即座に地図描画
             const cached = localStorage.getItem('waterMapData');
             if (cached) {
-                const cacheLoad = window.AppLoading
-                    ? AppLoading.start({
-                        label: '圃場データを読み込み中...',
-                        detail: 'キャッシュを反映しています',
-                        current: 1,
-                        total: 2,
-                        blocking: true,
-                        lockMap: true,
-                        delay: 0
-                    })
-                    : null;
-                if (!cacheLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
+                const cacheLoad = startupLoad;
+                if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを反映しています', current: 2, total: 4 });
                 try {
                     drawPolygons(JSON.parse(cached));
-                    if (cacheLoad) cacheLoad.update({ detail: '地図の準備が完了しました', current: 2 });
                 } catch(ex) {}
-                if (cacheLoad) cacheLoad.done();
-                else if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+            } else if (startupLoad) {
+                startupLoad.update({ detail: '保存データを確認しました', current: 2, total: 4 });
             }
 
-            loadInitData();
+            const loaded = await loadInitData({ loadingHandle: startupLoad });
+            if (startupLoad) {
+                if (loaded) startupLoad.done();
+                else startupLoad.fail('圃場データの読み込みに失敗しました');
+                window._waterStartupLoading = null;
+            }
         } else {
             document.getElementById('loginScreen').style.display = 'flex';
             if (errObj) errObj.innerText = result.message || 'ログイン失敗';
             if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+            if (startupLoad) {
+                startupLoad.done();
+                window._waterStartupLoading = null;
+            }
         }
     } catch (e) {
         if (isAuto) {
@@ -117,6 +128,11 @@ async function executeLogin(isAuto = false) {
             const cached = localStorage.getItem('waterMapData');
             if (cached) {
                 try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
+            }
+            if (startupLoad) {
+                if (cached) startupLoad.done();
+                else startupLoad.fail('圃場データの読み込みに失敗しました');
+                window._waterStartupLoading = null;
             }
         } else {
             document.getElementById('loginScreen').style.display = 'flex';
@@ -154,8 +170,9 @@ function initMap() {
 }
 
 // ====== データ読み込み ======
-async function loadInitData() {
-    const appLoad = window.AppLoading
+async function loadInitData(options = {}) {
+    const externalLoad = options.loadingHandle || null;
+    const appLoad = externalLoad || (window.AppLoading
         ? AppLoading.start({
             label: '圃場データを読み込み中...',
             detail: 'サーバーから取得しています',
@@ -163,41 +180,54 @@ async function loadInitData() {
             total: 3,
             blocking: true,
             lockMap: true,
-            delay: 120
+            delay: 0
         })
-        : null;
+        : null);
+    const ownsLoad = !!appLoad && !externalLoad;
+    if (externalLoad) externalLoad.update({ detail: '最新データを取得しています', current: 2, total: 4 });
     if (!appLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
     try {
         const data = await callGAS('getInitData');
-        if (appLoad) appLoad.update({ detail: 'データを確認しています', current: 2 });
+        if (appLoad) {
+            appLoad.update(externalLoad
+                ? { detail: '取得データを確認しています', current: 3, total: 4 }
+                : { detail: 'データを確認しています', current: 2, total: 3 });
+        }
         if (data && data.polygons) {
             const newDataStr = JSON.stringify(data.polygons);
             const oldDataStr = localStorage.getItem('waterMapData');
             if (newDataStr === oldDataStr) {
                 console.log("変更なし：再描画をスキップしました");
-                if (appLoad) appLoad.done();
-                else if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
-                return;
+                if (externalLoad) externalLoad.update({ detail: '地図表示の準備が完了しました', current: 4, total: 4 });
+                else if (ownsLoad) appLoad.done();
+                else if (!appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                return true;
             }
             // キャッシュに保存
             localStorage.setItem('waterMapData', newDataStr);
-            if (appLoad) appLoad.update({ detail: '地図を描画しています', current: 3 });
+            if (appLoad) {
+                appLoad.update(externalLoad
+                    ? { detail: '地図を描画しています', current: 4, total: 4 }
+                    : { detail: '地図を描画しています', current: 3, total: 3 });
+            }
             drawPolygons(data.polygons);
         }
-        if (appLoad) appLoad.done();
-        else if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (ownsLoad) appLoad.done();
+        else if (!appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        return true;
     } catch (e) {
         console.error("InitData Error:", e);
         // キャッシュから読む
         const cached = localStorage.getItem('waterMapData');
         if (cached) {
-            if (appLoad) appLoad.update({ detail: 'キャッシュから復元しています', current: 3 });
+            if (appLoad) appLoad.update({ detail: 'キャッシュから復元しています', current: externalLoad ? 4 : 3, total: externalLoad ? 4 : 3 });
             try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
         }
-        if (appLoad) {
+        if (ownsLoad) {
             if (cached) appLoad.done();
             else appLoad.fail('圃場データの読み込みに失敗しました');
-        } else if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        } else if (!appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        return !!cached;
     }
 }
 

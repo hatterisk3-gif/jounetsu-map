@@ -64,6 +64,8 @@
   document.addEventListener('DOMContentLoaded', () => {
     window.loadManualList();
     window.initManualWorkChips();
+    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    if (requestedTab === 'create') window.switchManualTab('create');
   });
 
   // ==========================================

@@ -935,7 +935,14 @@ async function fetchWeatherAndUpdateUI() {
       }
 
       function initMap() {
-        if (!checkLoginStatus()) return;
+        if (!checkLoginStatus()) {
+          if (typeof window.markScheduleInitialLoadStep === 'function') {
+            window.markScheduleInitialLoadStep('ログイン確認');
+            window.markScheduleInitialLoadStep('データ取得省略');
+            window.markScheduleInitialLoadStep('画面準備完了');
+          }
+          return;
+        }
         let savedLat = localStorage.getItem('lastLat');
         let savedLng = localStorage.getItem('lastLng');
         let savedZoom = localStorage.getItem('lastZoom');
@@ -979,7 +986,10 @@ async function fetchWeatherAndUpdateUI() {
 
       function loadData() {
         if (!checkLoginStatus()) return;
-        const initialLoad = window.AppLoading
+        const coordinatedLoad = !!(window.scheduleBootstrapLoading && window.markScheduleInitialLoadStep);
+        const initialLoad = coordinatedLoad
+          ? window.scheduleBootstrapLoading
+          : (window.AppLoading
           ? AppLoading.start({
               label: 'スケジュールデータを読み込み中...',
               detail: 'キャッシュを確認しています',
@@ -987,7 +997,7 @@ async function fetchWeatherAndUpdateUI() {
               total: 3,
               delay: 0
             })
-          : null;
+          : null);
         if (!initialLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('スケジュールデータを読み込み中...');
         const btn = document.querySelector('.btn-primary') || document.querySelector('.btn-reload');
         const orgTxt = btn ? btn.innerText : '';
@@ -1014,17 +1024,23 @@ async function fetchWeatherAndUpdateUI() {
             applyScheduleData(JSON.parse(cachedStr));
           } catch(e) { console.error("Cache parse error", e); }
         }
-        if (initialLoad) {
+        if (coordinatedLoad) {
+          window.markScheduleInitialLoadStep('保存データを確認');
+        } else if (initialLoad) {
           initialLoad.update({ detail: '最新データを取得しています', current: 1, total: 3 });
         }
   
         callGAS('getScheduleData').then(data => {
-          if (initialLoad) {
+          if (coordinatedLoad) {
+            window.markScheduleInitialLoadStep('最新データを取得');
+          } else if (initialLoad) {
             initialLoad.update({ detail: '地図表示を更新しています', current: 2, total: 3 });
           }
           localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
           applyScheduleData(data);
-          if (initialLoad) {
+          if (coordinatedLoad) {
+            window.markScheduleInitialLoadStep('地図表示を更新');
+          } else if (initialLoad) {
             initialLoad.update({ detail: '読み込み完了', current: 3, total: 3 });
             initialLoad.done();
           }
@@ -1040,7 +1056,9 @@ async function fetchWeatherAndUpdateUI() {
             btn.innerText = orgTxt;
             btn.disabled = false;
           }
-          if (initialLoad) initialLoad.fail('スケジュールの読み込みに失敗しました');
+          if (coordinatedLoad && typeof window.failScheduleInitialLoad === 'function') {
+            window.failScheduleInitialLoad('スケジュールの読み込みに失敗しました');
+          } else if (initialLoad) initialLoad.fail('スケジュールの読み込みに失敗しました');
           else if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
         });
       }
