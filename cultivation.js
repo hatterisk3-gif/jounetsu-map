@@ -3847,8 +3847,78 @@ window.openCropHarvestChartModal = openCropHarvestChartModal;
 window.closeCropHarvestChartModal = closeCropHarvestChartModal;
 window.refreshCropHarvestChartModal = refreshCropHarvestChartModal;
 
+let cpLoadedPlanKey = null;
+let cpSaveProgressTimer = null;
+let cpSaveProgressHideTimer = null;
+
+function updateCpSaveButtonLabel() {
+    const btn = document.getElementById('btnCpSavePlan');
+    if (!btn || btn.disabled) return;
+    btn.innerHTML = cpLoadedPlanKey
+        ? '計画を上書き保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span>'
+        : '計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span>';
+}
+
+function setCpSaveProgress(percent, label, autoAdvanceTo) {
+    const box = document.getElementById('cpSaveProgress');
+    const bar = document.getElementById('cpSaveProgressBar');
+    const labelEl = document.getElementById('cpSaveProgressLabel');
+    if (!box || !bar || !labelEl) return;
+
+    if (cpSaveProgressHideTimer) {
+        clearTimeout(cpSaveProgressHideTimer);
+        cpSaveProgressHideTimer = null;
+    }
+    if (cpSaveProgressTimer) {
+        clearInterval(cpSaveProgressTimer);
+        cpSaveProgressTimer = null;
+    }
+
+    box.style.display = 'block';
+    bar.style.background = '#FF9800';
+    bar.style.width = Math.max(0, Math.min(100, percent)) + '%';
+    labelEl.style.color = '#795548';
+    labelEl.textContent = label;
+
+    const cap = Number(autoAdvanceTo) || 0;
+    if (cap > percent) {
+        let current = percent;
+        cpSaveProgressTimer = setInterval(() => {
+            current = Math.min(cap, current + 1);
+            bar.style.width = current + '%';
+            if (current >= cap) {
+                clearInterval(cpSaveProgressTimer);
+                cpSaveProgressTimer = null;
+            }
+        }, 700);
+    }
+}
+
+function finishCpSaveProgress(success) {
+    if (cpSaveProgressTimer) {
+        clearInterval(cpSaveProgressTimer);
+        cpSaveProgressTimer = null;
+    }
+    const box = document.getElementById('cpSaveProgress');
+    const bar = document.getElementById('cpSaveProgressBar');
+    const labelEl = document.getElementById('cpSaveProgressLabel');
+    if (!box || !bar || !labelEl) return;
+
+    box.style.display = 'block';
+    bar.style.width = '100%';
+    bar.style.background = success ? '#4CAF50' : '#d32f2f';
+    labelEl.style.color = success ? '#2e7d32' : '#c62828';
+    labelEl.textContent = success ? '保存が完了しました' : '保存に失敗しました';
+    cpSaveProgressHideTimer = setTimeout(() => {
+        box.style.display = 'none';
+        bar.style.width = '0%';
+        cpSaveProgressHideTimer = null;
+    }, success ? 1200 : 3000);
+}
+
 async function saveCultivationPlan(options) {
     const opts = options || {};
+    const wasOverwrite = !!cpLoadedPlanKey;
     if (cpPlans.length === 0) {
         if (!confirm("この年度の作型がすべて削除されます。保存してよろしいですか？")) {
             return false;
@@ -3856,7 +3926,6 @@ async function saveCultivationPlan(options) {
     }
 
     const btn = document.getElementById('btnCpSavePlan') || document.querySelector('#cultivationPlanModal button[onclick*="saveCultivationPlan"]');
-    let orgText = btn ? btn.innerHTML : '計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span>';
 
     try {
         const year = getCpVal('cpYear', true) || new Date().getFullYear();
@@ -3901,6 +3970,7 @@ async function saveCultivationPlan(options) {
         if (btn && !opts.silent) {
             btn.innerHTML = '送信中...';
             btn.disabled = true;
+            setCpSaveProgress(8, '保存データを準備しています...', 18);
         }
 
         // 手入力作物・品種をローカルに記憶（作物＋産地に紐づけて候補化）
@@ -3930,7 +4000,9 @@ async function saveCultivationPlan(options) {
             }).catch(e => console.warn('品種マスタ同期スキップ:', e));
         }));
         
+        if (!opts.silent) setCpSaveProgress(25, '計画データを送信しています...', 55);
         await callGAS('saveCultivationPlans', { year: year, crop: crop, planDataArray: payloadPlans });
+        if (!opts.silent) setCpSaveProgress(60, '品種情報を整理しています...', 65);
         
         // 作型DBへ作物・品種・産地付きで保存（産地未選択時は拠点の各産地へ紐づけ）
         const croptypeParamsArray = [];
@@ -3954,9 +4026,11 @@ async function saveCultivationPlan(options) {
         });
         
         if (croptypeParamsArray.length > 0) {
+            if (!opts.silent) setCpSaveProgress(68, '品種データベースを更新しています...', 82);
             await callGAS('saveCroptypeDBBatch', { croptypes: croptypeParamsArray });
         }
         
+        if (!opts.silent) setCpSaveProgress(86, '最新データを確認しています...', 95);
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         // 次回の「3. 品種登録」候補へ即反映（実行フローでは入力を維持）
@@ -3985,6 +4059,8 @@ async function saveCultivationPlan(options) {
             const tagDisplay = document.getElementById('tagDisplay_' + p.id);
             if (tagDisplay) tagDisplay.innerText = '';
         });
+        cpLoadedPlanKey = String(year) + '\t' + String(crop);
+        if (!opts.silent) finishCpSaveProgress(true);
 
         if (!opts.keepOpen) {
             const modal = document.getElementById('cultivationPlanModal');
@@ -3992,7 +4068,8 @@ async function saveCultivationPlan(options) {
         }
 
         if (!opts.silent) {
-            alert('未実行の栽培計画として保存しました。\n「計画一覧」から実行すると、作業予定に播種が出ます。');
+            alert((wasOverwrite ? '栽培計画を上書き保存しました。' : '未実行の栽培計画として保存しました。') +
+                '\n「計画一覧」から実行すると、作業予定に播種が出ます。');
         }
 
         if (typeof loadData === 'function') loadData();
@@ -4005,12 +4082,13 @@ async function saveCultivationPlan(options) {
         
     } catch(e) {
         console.error("栽培計画保存エラー:", e);
+        if (!opts.silent) finishCpSaveProgress(false);
         alert("保存エラー: " + (e.message || e));
         return false;
     } finally {
         if (btn && !opts.silent) {
-            btn.innerHTML = orgText;
             btn.disabled = false;
+            updateCpSaveButtonLabel();
         }
     }
 }
@@ -4820,6 +4898,8 @@ function openCultivationPlanModal(options) {
     cpSemiAutoSteps = {};
     cpSemiAutoLastPaint = {};
     cpSemiAutoActivePlanId = null;
+    cpLoadedPlanKey = null;
+    updateCpSaveButtonLabel();
     if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
     
     // デフォルトを半自動に合わせ、ヒント表示を更新
@@ -6839,6 +6919,71 @@ function updateVarietyCardFieldsDisplay(planId) {
     setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
 }
 
+let cpLoadProgressTimer = null;
+
+function setCpLoadProgress(percent, label, autoAdvanceTo) {
+    const overlay = document.getElementById('cpLoadProgressOverlay');
+    const bar = document.getElementById('cpLoadProgressBar');
+    const labelEl = document.getElementById('cpLoadProgressLabel');
+    const percentEl = document.getElementById('cpLoadProgressPercent');
+    if (!overlay || !bar || !labelEl || !percentEl) return;
+
+    if (cpLoadProgressTimer) {
+        clearInterval(cpLoadProgressTimer);
+        cpLoadProgressTimer = null;
+    }
+
+    let current = Math.max(0, Math.min(100, Math.round(percent)));
+    overlay.style.display = 'flex';
+    bar.style.background = '#4CAF50';
+    bar.style.width = current + '%';
+    labelEl.style.color = '#555';
+    labelEl.textContent = label;
+    percentEl.textContent = current + '%';
+
+    const cap = Number(autoAdvanceTo) || 0;
+    if (cap > current) {
+        cpLoadProgressTimer = setInterval(() => {
+            current = Math.min(cap, current + 1);
+            bar.style.width = current + '%';
+            percentEl.textContent = current + '%';
+            if (current >= cap) {
+                clearInterval(cpLoadProgressTimer);
+                cpLoadProgressTimer = null;
+            }
+        }, 650);
+    }
+}
+
+function finishCpLoadProgress(success, label) {
+    if (cpLoadProgressTimer) {
+        clearInterval(cpLoadProgressTimer);
+        cpLoadProgressTimer = null;
+    }
+    const overlay = document.getElementById('cpLoadProgressOverlay');
+    const bar = document.getElementById('cpLoadProgressBar');
+    const labelEl = document.getElementById('cpLoadProgressLabel');
+    const percentEl = document.getElementById('cpLoadProgressPercent');
+    if (!overlay || !bar || !labelEl || !percentEl) return;
+
+    bar.style.width = '100%';
+    bar.style.background = success ? '#4CAF50' : '#d32f2f';
+    labelEl.style.color = success ? '#2e7d32' : '#c62828';
+    labelEl.textContent = label || (success ? '読み込みが完了しました' : '読み込みに失敗しました');
+    percentEl.textContent = success ? '100%' : 'エラー';
+    setTimeout(() => {
+        overlay.style.display = 'none';
+        bar.style.width = '0%';
+    }, success ? 500 : 1800);
+}
+
+function yieldCpLoadRender() {
+    return new Promise(resolve => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+    });
+}
+
 async function loadHistoryPlans(yearOverride, cropOverride) {
     const year = (yearOverride != null && yearOverride !== '')
         ? yearOverride
@@ -6859,31 +7004,43 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
     if (leftBody) leftBody.innerHTML = '';
     cpPlans = [];
 
+    const btn = document.querySelector('button[onclick="loadHistoryPlans()"]');
+    let orgText = '📂 この条件で保存済み計画を読み込む';
     try {
-        const btn = document.querySelector('button[onclick="loadHistoryPlans()"]');
-        let orgText = '📂 この条件で保存済み計画を読み込む';
         if (btn) {
             orgText = btn.innerHTML;
             btn.innerHTML = '読み込み中...';
             btn.disabled = true;
         }
 
+        setCpLoadProgress(8, 'サーバーから計画を取得しています...', 45);
         const plans = await callGAS('getCultivationPlans', { year: year, crop: crop });
         if (plans && Array.isArray(plans) && plans.length > 0) {
-            plans.forEach(plan => {
+            setCpLoadProgress(50, `計画を画面へ展開しています（0/${plans.length}件）`);
+            for (let i = 0; i < plans.length; i++) {
+                const plan = plans[i];
                 // IDがない場合は新規生成
                 if (!plan.id) plan.id = 'cp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 cpPlans.push(plan);
                 renderCpPlanRow(plan);
-            });
+                setCpLoadProgress(50 + ((i + 1) / plans.length) * 28,
+                    `計画を画面へ展開しています（${i + 1}/${plans.length}件）`);
+                if (i % 4 === 3 || i === plans.length - 1) await yieldCpLoadRender();
+            }
+
             // 各種数値を再計算・表示
-            cpPlans.forEach(plan => {
+            setCpLoadProgress(80, `計算結果を反映しています（0/${cpPlans.length}件）`);
+            for (let i = 0; i < cpPlans.length; i++) {
+                const plan = cpPlans[i];
                 if (typeof window.updateRowParams === 'function') window.updateRowParams(plan.id);
                 else if (typeof updateRowParams === 'function') updateRowParams(plan.id);
                 
                 if (typeof window.updateRowCalculations === 'function') window.updateRowCalculations(plan.id);
                 else if (typeof updateRowCalculations === 'function') updateRowCalculations(plan.id);
-            });
+                setCpLoadProgress(80 + ((i + 1) / cpPlans.length) * 15,
+                    `計算結果を反映しています（${i + 1}/${cpPlans.length}件）`);
+                if (i % 4 === 3 || i === cpPlans.length - 1) await yieldCpLoadRender();
+            }
             if (typeof syncAllRowHeights === 'function') {
                 setTimeout(() => syncAllRowHeights(), 50);
             }
@@ -6892,20 +7049,20 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
             }
             if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
             if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
+            cpLoadedPlanKey = String(year) + '\t' + String(crop);
+            updateCpSaveButtonLabel();
+            finishCpLoadProgress(true, `${plans.length}件の計画を読み込みました`);
         } else {
+            finishCpLoadProgress(false, '保存済みの計画が見つかりませんでした');
             alert(`${year}年「${crop}」の保存済み計画は見つかりませんでした。`);
-        }
-        
-        if (btn) {
-            btn.innerHTML = orgText;
-            btn.disabled = false;
         }
     } catch (e) {
         console.error("計画読み込みエラー", e);
+        finishCpLoadProgress(false, '計画の読み込みに失敗しました');
         alert("計画の読み込みに失敗しました。");
-        const btn = document.querySelector('button[onclick="loadHistoryPlans()"]');
+    } finally {
         if (btn) {
-            btn.innerHTML = '📂 保存済みの計画一覧から選んで読み込む';
+            btn.innerHTML = orgText;
             btn.disabled = false;
         }
     }

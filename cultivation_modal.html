@@ -1,4 +1,14 @@
     <div id="cultivationPlanModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+      <div id="cpLoadProgressOverlay" style="display:none; position:fixed; inset:0; z-index:12050; background:rgba(0,0,0,0.58); align-items:center; justify-content:center; padding:20px; box-sizing:border-box;">
+        <div style="width:min(92vw,460px); background:#fff; border-radius:12px; padding:20px; box-shadow:0 8px 30px rgba(0,0,0,.35);">
+          <div style="font-size:16px; font-weight:bold; color:#2e7d32; margin-bottom:8px;">📂 栽培計画を読み込み中</div>
+          <div id="cpLoadProgressLabel" style="font-size:12px; color:#555; margin-bottom:8px;">サーバーから計画を取得しています...</div>
+          <div style="height:10px; overflow:hidden; background:#e0e0e0; border-radius:999px;">
+            <div id="cpLoadProgressBar" style="width:0%; height:100%; background:#4CAF50; border-radius:999px; transition:width .3s ease;"></div>
+          </div>
+          <div id="cpLoadProgressPercent" style="margin-top:6px; text-align:right; font-size:11px; font-weight:bold; color:#388e3c;">0%</div>
+        </div>
+      </div>
       <div style="background: #fff; color: #333; padding: 10px; border-radius: 0; width: 100%; max-width: 100%; box-shadow: none; height: 100%; max-height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
           <h3 style="margin: 0; color: #4CAF50;">🌱 栽培計画作成</h3>
@@ -443,6 +453,12 @@
                   <button type="button" id="btnCpDraftSave" onclick="saveCultivationPlanDraft()" style="padding: 10px 24px; background: #607D8B; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">一時保存</button>
                   <button type="button" id="btnCpDraftLoad" onclick="loadCultivationPlanDraft()" style="padding: 10px 16px; background: #fff; color: #455A64; border: 2px solid #607D8B; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: none;">📂 下書きを読込</button>
                   <button type="button" id="btnCpSavePlan" onclick="saveCultivationPlan()" style="padding: 10px 28px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">計画を保存<br><span style="font-size:10px;font-weight:normal;">(未実行)</span></button>
+                  <div id="cpSaveProgress" style="display:none; width:min(100%, 420px); text-align:left;">
+                    <div id="cpSaveProgressLabel" style="font-size:11px; color:#795548; margin-bottom:4px;">保存の準備中...</div>
+                    <div style="height:8px; overflow:hidden; background:#ffe0b2; border-radius:999px;">
+                      <div id="cpSaveProgressBar" style="width:0%; height:100%; background:#FF9800; border-radius:999px; transition:width .35s ease;"></div>
+                    </div>
+                  </div>
                   <div id="cpDraftStatus" style="width: 100%; font-size: 11px; color: #607D8B; margin-top: 2px;"></div>
                 </div>
               </div>

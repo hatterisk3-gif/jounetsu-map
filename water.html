@@ -11,14 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-    <script>
-      window.addEventListener('beforeunload', function (e) {
-        var msg = 'アプリを閉じますか？';
-        e.preventDefault();
-        e.returnValue = msg;
-        return msg;
-      });
-    </script>
+    <script src="exit-guard.js?v=1786240000001"></script>
 
     <link rel="stylesheet" href="water.css">
 </head>
