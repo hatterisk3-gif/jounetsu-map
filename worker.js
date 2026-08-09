@@ -7111,16 +7111,27 @@ function createSignboardMarker(name, pos, icon, id) {
            : `✅ 詳細作業を選択${isMulti ? ' <span style="font-size:11px; color:#2e7d32;">（作物別）</span>' : ''}`;
 
          let dHtml = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
-            <div style="font-size:13px; font-weight:bold; color:#1a73e8;">${headerTitle}</div>
+            <div style="font-size:13px; font-weight:bold; color:#1a73e8; display:flex; align-items:center; gap:6px;">
+              ${headerTitle}
+              <button type="button" class="info-icon-btn" onclick="toggleInfoPopover(event, 'popover-detail-work-help')" title="詳細作業のヘルプを表示" style="font-size:12px; width:20px; height:20px;">ℹ️</button>
+            </div>
             <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
               <button type="button" onclick="openDetailWorkFromMasterPicker()" style="background:#ede7f6; color:#5e35b1; border:1px solid #d1c4e9; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業名から追加</button>
             </div>
          </div>
+         <div id="popover-detail-work-help" class="info-popover-box" style="margin-bottom:10px; background:#1A237E; color:#fff; border:1px solid #3F51B5; max-width:100%; display:none;">
+           💡 <b>詳細作業ガイド</b><br>
+           ${isPrep
+             ? `・詳細作業は<strong>準備 − ${String(prepTarget).replace(/</g,'&lt;')}</strong> の組み合わせ専用です。対象作業の詳細はここに出ません。<br>`
+             : `・作業1件に複数作物を選べます。詳細作業は<strong>作物ごと</strong>に選択してください（他作物で登録した詳細は表示されません）。<br>`}
+           ・<b>開始・終了が分からないとき</b>は、チェック後に右の「分」だけ手入力すれば時間を記録できます。<br>
+           ・工程完了時に<b>「⏱️ ここまで」</b>を押すと、「直前の区切り〜いま」が分数として入り、自動で一時保存します。
+         </div>
          <div id="detail_stage_panel" style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:10px 12px; margin-bottom:10px;">
-           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
              <div style="min-width:0;">
                <div style="font-size:13px; font-weight:bold; color:#F57F17;">⏱ 段階計測</div>
-               <div style="font-size:12px; color:#6D4C41; margin-top:4px; line-height:1.4;">
+               <div style="font-size:12px; color:#6D4C41; margin-top:2px; line-height:1.4;">
                  次の開始: <b id="detail_stage_cursor_label">--:--</b>
                  <div id="detail_stage_last_label" style="display:none; margin-top:2px; color:#5D4037;"></div>
                </div>
@@ -7130,17 +7141,7 @@ function createSignboardMarker(name, pos, icon, id) {
                <button type="button" onclick="setDetailStageCursorToNow()" style="background:#FF9800; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">起点＝いま</button>
              </div>
            </div>
-           <div style="font-size:11px; color:#795548; margin-top:8px; line-height:1.45;">
-             工程が終わったら、その詳細作業の <b>⏱ ここまで</b> を押すと<br>
-             「直前の区切り〜いま」が分数として入り、自動で一時保存します。
-           </div>
            <input type="hidden" id="rec_detail_stage_cursor" value="">
-         </div>
-         <div style="font-size:11px; color:#546e7a; background:#e8eaf6; border:1px solid #c5cae9; border-radius:6px; padding:8px 10px; margin-bottom:10px; line-height:1.45;">
-           ${isPrep
-             ? `詳細作業は<strong>準備 − ${String(prepTarget).replace(/</g,'&lt;')}</strong> の組み合わせ専用です。対象作業の詳細はここに出ません。<br>`
-             : `作業1件に複数作物を選べます。詳細作業は<strong>作物ごと</strong>に選択してください（他作物で登録した詳細は表示されません）。<br>`}
-           <b>開始・終了が分からないとき</b>は、チェック後に右の「分」だけ手入力すれば時間を記録できます。
          </div>`;
 
          let anyDetails = false;
