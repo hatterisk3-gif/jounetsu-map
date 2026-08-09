@@ -11846,11 +11846,6 @@ function createSignboardMarker(name, pos, icon, id) {
               document.getElementById('customAlertModal').style.display = 'none';
               window.resumeClockOutAfterWorkSave();
             };
-          } else if (savedWasRest && typeof customConfirm === 'function') {
-            const again = await customConfirm("休憩を保存しました。\n続けて別の休憩も登録しますか？\n（1日に何度でも登録できます）");
-            if (again && typeof window.openRestBreakRecord === 'function') {
-              window.openRestBreakRecord();
-            }
           } else if (!isEditBtn && recordTypeSnap === 'work' && specialSessionSnap && specialSessionSnap.askContinueAfterSave && typeof customConfirm === 'function') {
             const label = specialSessionSnap.label || '専用記録';
             const cont = await customConfirm(label + "を保存しました。\n続けて作業記録を登録しますか？\n（" + label + "の内容はセット済みのまま引き継ぎます）");
