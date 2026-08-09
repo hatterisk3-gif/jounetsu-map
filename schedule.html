@@ -344,7 +344,7 @@
 
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
-    const cacheBust = '1786241820000';
+    const cacheBust = '1786244100000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
@@ -363,6 +363,7 @@
       : null;
     let loadedBootstrapFiles = 0;
     let bootstrapFinished = false;
+    let cultivationRegistrationOpened = false;
 
     window.scheduleBootstrapLoading = bootstrapLoading;
 
@@ -376,6 +377,13 @@
           total: bootstrapTotalSteps
         });
         requestAnimationFrame(() => requestAnimationFrame(() => bootstrapLoading.done()));
+      }
+      const params = new URLSearchParams(window.location.search);
+      if (!cultivationRegistrationOpened
+          && params.get('register') === 'cultivation'
+          && typeof window.openCultivationPlanModal === 'function') {
+        cultivationRegistrationOpened = true;
+        requestAnimationFrame(() => requestAnimationFrame(() => window.openCultivationPlanModal()));
       }
     }
 

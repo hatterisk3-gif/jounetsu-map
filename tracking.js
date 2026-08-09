@@ -49,6 +49,87 @@
   }
   window.hideClockModal = hideClockModal;
 
+  /** 全ページ共通の時刻選択モーダル（各画面に独自実装がある場合はそちらを優先） */
+  function installCommonTimePicker() {
+    if (typeof window.openAppTimePicker === 'function') return;
+    let targetId = null;
+
+    function ensureTimePickerModal() {
+      let modal = document.getElementById('timePickerModal');
+      if (modal) return modal;
+
+      modal = document.createElement('div');
+      modal.id = 'timePickerModal';
+      modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:12000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+      modal.innerHTML = `
+        <div style="background:#fff;width:min(92vw,360px);border-radius:10px;padding:18px;box-shadow:0 8px 28px rgba(0,0,0,.3);" onclick="event.stopPropagation()">
+          <h3 id="timePickerTitle" style="margin:0 0 14px;color:#2e7d32;font-size:17px;">時間を設定</h3>
+          <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px;">
+            <select id="timePickerHour" aria-label="時" style="width:100px;padding:12px 8px;font-size:20px;border:1px solid #aaa;border-radius:6px;background:#fff;"></select>
+            <b style="font-size:22px;">:</b>
+            <select id="timePickerMinute" aria-label="分" style="width:100px;padding:12px 8px;font-size:20px;border:1px solid #aaa;border-radius:6px;background:#fff;"></select>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button type="button" onclick="closeAppTimePicker()" style="flex:1;padding:11px;border:1px solid #bbb;border-radius:6px;background:#fff;color:#555;font-weight:bold;cursor:pointer;">キャンセル</button>
+            <button type="button" onclick="applyAppTimePicker()" style="flex:1;padding:11px;border:0;border-radius:6px;background:#2e7d32;color:#fff;font-weight:bold;cursor:pointer;">設定</button>
+          </div>
+        </div>`;
+      modal.addEventListener('click', () => window.closeAppTimePicker());
+      document.body.appendChild(modal);
+      return modal;
+    }
+
+    window.openAppTimePicker = function (inputId, title) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      targetId = inputId;
+      const modal = ensureTimePickerModal();
+      const hourSel = document.getElementById('timePickerHour');
+      const minSel = document.getElementById('timePickerMinute');
+      const titleEl = document.getElementById('timePickerTitle');
+      if (!hourSel || !minSel) return;
+
+      if (!hourSel.options.length) {
+        for (let hour = 0; hour < 24; hour++) {
+          const value = String(hour).padStart(2, '0');
+          hourSel.add(new Option(value, value));
+        }
+        for (let minute = 0; minute < 60; minute++) {
+          const value = String(minute).padStart(2, '0');
+          minSel.add(new Option(value, value));
+        }
+      }
+
+      const now = new Date();
+      const fallback = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const current = /^\d{1,2}:\d{2}$/.test(String(input.value || '')) ? input.value : fallback;
+      const parts = current.split(':');
+      hourSel.value = String(parseInt(parts[0], 10)).padStart(2, '0');
+      minSel.value = String(parseInt(parts[1], 10)).padStart(2, '0');
+      if (titleEl) titleEl.textContent = title || '時間を設定';
+      modal.style.display = 'flex';
+    };
+
+    window.closeAppTimePicker = function () {
+      const modal = document.getElementById('timePickerModal');
+      if (modal) modal.style.display = 'none';
+      targetId = null;
+    };
+
+    window.applyAppTimePicker = function () {
+      const input = targetId ? document.getElementById(targetId) : null;
+      const hourSel = document.getElementById('timePickerHour');
+      const minSel = document.getElementById('timePickerMinute');
+      if (input && hourSel && minSel) {
+        input.value = `${hourSel.value}:${minSel.value}`;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      window.closeAppTimePicker();
+    };
+  }
+
+  installCommonTimePicker();
+
   function alertMsg(msg) {
     if (typeof customAlert === 'function') customAlert(msg);
     else if (window.customAlert) window.customAlert(msg);
