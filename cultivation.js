@@ -2990,8 +2990,9 @@ function addCpPlanRow() {
     updateVarietyList();
     setChoiceValue('cpVariety', variety, true);
     
-    // UI改善: 作型を追加後、ペイント領域を広くするために設定項目を自動で閉じる
-    if (typeof openCpStep === 'function') openCpStep(0);
+    // UI改善: 作型を追加後、ペイント領域を広くするために初期設定を格納
+    if (typeof setCpInitialSettingsOpen === 'function') setCpInitialSettingsOpen(false);
+    else if (typeof openCpStep === 'function') openCpStep(0);
     else {
         for (let i = 1; i <= 3; i++) {
             const el = document.getElementById('cpStep' + i);
@@ -5969,11 +5970,58 @@ async function sendVarietyToGAS(params, btn, originalText) {
     }
 }
 
+/** 初期設定（ステップ1〜3タブ）の展開／格納 */
+function setCpInitialSettingsOpen(open, options) {
+    const opts = options || {};
+    const row = document.getElementById('cpStepsRow');
+    const btn = document.getElementById('cpInitialSettingsBtn');
+    const willOpen = !!open;
+    if (row) row.classList.toggle('is-collapsed', !willOpen);
+    if (btn) {
+        btn.classList.toggle('is-open', willOpen);
+        btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    }
+    if (!willOpen) {
+        // 格納時はパネルも閉じる（ペイント領域を広く）
+        if (opts.keepPanels !== true) {
+            openCpStep(0, { skipExpand: true });
+        }
+    } else if (opts.openStep != null) {
+        openCpStep(opts.openStep, { skipExpand: true });
+    } else if (opts.openDefaultStep) {
+        // 展開時に開いているパネルがなければステップ1を開く
+        let anyOpen = false;
+        for (let i = 1; i <= 3; i++) {
+            const p = document.getElementById('cpStep' + i);
+            if (p && p.classList.contains('is-open')) { anyOpen = true; break; }
+        }
+        if (!anyOpen) openCpStep(1, { skipExpand: true });
+    }
+}
+window.setCpInitialSettingsOpen = setCpInitialSettingsOpen;
+
+function toggleCpInitialSettings() {
+    const row = document.getElementById('cpStepsRow');
+    const isCollapsed = !row || row.classList.contains('is-collapsed');
+    setCpInitialSettingsOpen(isCollapsed, { openDefaultStep: true });
+}
+window.toggleCpInitialSettings = toggleCpInitialSettings;
+
 /** ステップを開く（0で全閉じ）。同じタブ再クリックで閉じる */
-function openCpStep(step) {
+function openCpStep(step, options) {
+    const opts = options || {};
     const n = Number(step) || 0;
     const panelsWrap = document.getElementById('cpStepPanels');
     let anyOpen = false;
+
+    // ステップを開くときは初期設定バーを自動展開
+    if (n > 0 && !opts.skipExpand) {
+        setCpInitialSettingsOpen(true, { keepPanels: true });
+    }
+    // 全閉じのときは初期設定バーも格納（明示指定時のみ）
+    if (n === 0 && opts.collapseBar) {
+        setCpInitialSettingsOpen(false, { keepPanels: true });
+    }
 
     for (let i = 1; i <= 3; i++) {
         const panel = document.getElementById('cpStep' + i);
@@ -6023,9 +6071,15 @@ function initCpStepsAccordion() {
         // inline onclick を外して二重発火を防ぐ
         tab.removeAttribute('onclick');
     }
-    // 初期表示: ステップ1が開いていればパネル状態を同期
-    const s1 = document.getElementById('cpStep1');
-    if (s1 && s1.classList.contains('is-open')) openCpStep(1);
+    // 初期表示: 格納状態に同期（タイトル横の「初期設定」にまとめる）
+    const row = document.getElementById('cpStepsRow');
+    if (row && row.classList.contains('is-collapsed')) {
+        setCpInitialSettingsOpen(false, { keepPanels: true });
+        openCpStep(0, { skipExpand: true });
+    } else {
+        const s1 = document.getElementById('cpStep1');
+        if (s1 && s1.classList.contains('is-open')) openCpStep(1);
+    }
 }
 
 if (document.readyState === 'loading') {

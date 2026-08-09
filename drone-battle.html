@@ -372,7 +372,7 @@
       color: rgba(255, 255, 255, 0.55);
       pointer-events: none;
     }
-    .fire-btn, .cam-btn, .pause-btn {
+    .fire-btn, .cam-btn, .hover-btn, .pause-btn {
       pointer-events: auto;
       position: absolute;
       border: none;
@@ -483,6 +483,29 @@
       border: 1px solid rgba(0, 229, 255, 0.35);
       font-size: 0.72rem;
       color: var(--accent);
+    }
+    .hover-btn {
+      left: calc(50% + 64px);
+      transform: translateX(-50%);
+      bottom: max(18px, env(safe-area-inset-bottom));
+      width: 56px;
+      height: 56px;
+      background: rgba(8, 18, 32, 0.85);
+      border: 1px solid rgba(129, 199, 132, 0.45);
+      font-size: 0.68rem;
+      color: #a5d6a7;
+      letter-spacing: 0.02em;
+    }
+    .hover-btn.on {
+      background: rgba(46, 125, 50, 0.55);
+      border-color: #69f0ae;
+      color: #e8f5e9;
+      box-shadow: 0 0 0 3px rgba(105, 240, 174, 0.25);
+    }
+    .pill.hover-on {
+      border-color: rgba(105, 240, 174, 0.55);
+      color: #b9f6ca;
+      background: rgba(46, 125, 50, 0.28);
     }
     .enemy-marker {
       position: absolute;
@@ -974,6 +997,7 @@
     </div>
     <div class="hud-meta">
       <span class="pill" id="modePill">MODE 2</span>
+      <span class="pill" id="hoverPill" style="display:none;">HOVER</span>
       <span class="pill" id="altPill">ALT 10m</span>
       <span class="pill" id="spdPill">SPD 0</span>
       <span class="pill" id="killPill" style="display:none;">KILL 0</span>
@@ -997,6 +1021,7 @@
       <button type="button" class="fire-btn" id="fireBtn" aria-label="射撃">射撃</button>
       <button type="button" class="fire-btn fire-btn-alt" id="fireBtnAlt" aria-label="射撃（左）">FIRE</button>
       <button type="button" class="cam-btn" id="camBtn">CAM</button>
+      <button type="button" class="hover-btn" id="hoverBtn" title="ホバリング切替 (H)">HOV</button>
     </div>
   </div>
 
@@ -1014,6 +1039,7 @@
 import * as THREE from 'three';
 
 const MODE_KEY = 'passionMapDroneBattleMode';
+const HOVER_KEY = 'passionMapDroneBattleHover';
 const GAME_KEY = 'passionMapDroneBattleGame';
 const SENS_KEY = 'passionMapDroneBattleSens';
 const EXPO_KEY = 'passionMapDroneBattleExpo';
@@ -1101,6 +1127,7 @@ const state = {
   playing: false,
   over: false,
   camMode: 'chase', // 'chase' | 'fpv' | 'ground'
+  hoverMode: localStorage.getItem(HOVER_KEY) === '1',
   cpuDiff: (function () {
     const d = localStorage.getItem(CPU_DIFF_KEY) || 'normal';
     return (d === 'easy' || d === 'hard' || d === 'extreme') ? d : 'normal';
@@ -2094,7 +2121,7 @@ function openSetup(gameType) {
     airship: '<strong>巨大飛行艇撃破</strong><br>・ギガント級の超巨大翼付き飛行要塞<br>・橙色のゴンドラが弱点（ダメージ2.5倍）<br>・飛行艇からも反撃あり<br>・オンライン協力プレイも可（ONLINE → 飛行艇協力）',
     race: '<strong>エアレース</strong><br>・光るゲートを番号順に通過<br>・' + RACE_LAPS + ' 周でゴール／タイム計測<br>・墜落で失敗。低空に注意',
     fertilizer: '<strong>肥料散布</strong><br>・高度 約' + FERT_MIN_ALT + '〜' + FERT_MAX_ALT + 'm で散布ボタン<br>・畑のマスをムラなく緑に変えよ<br>・制限時間 ' + FERT_TIME + ' 秒／被覆率で評価',
-    dogfight: '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ（三人称→一人称→地上）<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。<br>・相手の強さはセットアップで変更可。赤矢印が相手方向を示します。'
+    dogfight: '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ／Hホバー<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。<br>・相手の強さはセットアップで変更可。赤矢印が相手方向を示します。'
   };
   const startLabels = {
     mission: 'ミッション開始',
@@ -2852,9 +2879,36 @@ document.getElementById('camBtn').addEventListener('click', () => {
   cycleCamMode();
 });
 
+function syncHoverModeUI() {
+  const btn = document.getElementById('hoverBtn');
+  const pill = document.getElementById('hoverPill');
+  const on = !!state.hoverMode;
+  if (btn) {
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? 'HOV●' : 'HOV';
+  }
+  if (pill) {
+    pill.style.display = on ? '' : 'none';
+    pill.classList.toggle('hover-on', on);
+  }
+}
+
+function toggleHoverMode() {
+  state.hoverMode = !state.hoverMode;
+  localStorage.setItem(HOVER_KEY, state.hoverMode ? '1' : '0');
+  syncHoverModeUI();
+  showToast(state.hoverMode ? 'ホバーON（スティック離しで静止）' : 'ホバーOFF（マニュアル）', 1400);
+}
+
+document.getElementById('hoverBtn').addEventListener('click', () => {
+  toggleHoverMode();
+});
+syncHoverModeUI();
+
 window.addEventListener('keydown', (e) => {
   state.keys[e.code] = true;
   if (e.code === 'KeyC') cycleCamMode();
+  if (e.code === 'KeyH') toggleHoverMode();
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', (e) => { state.keys[e.code] = false; });
@@ -4362,6 +4416,9 @@ function resetCrafts() {
     enemy.alive = true;
     enemy.fireCd = 0;
     enemy.aiPhase = 0;
+    enemy.aiDogMode = 'engage';
+    enemy.aiDogTimer = 0;
+    enemy.aiBreakSide = 1;
     enemy.mesh.visible = state.gameType === 'dogfight' || state.gameType === 'online';
   }
 
@@ -4468,6 +4525,7 @@ function applyFlight(craft, ctrl, dt, isAi) {
   const maxSpd = craft.maxSpd != null ? craft.maxSpd : (isAi ? 28 : 32);
   const thrust = craft.thrust != null ? craft.thrust : 38;
   const liftBias = 9.5;
+  const hover = !isAi && state.hoverMode;
 
   // AI: 低空なら強制引き上げ（自爆防止）
   if (isAi) {
@@ -4481,28 +4539,56 @@ function applyFlight(craft, ctrl, dt, isAi) {
     }
   }
 
-  craft.yaw += ctrl.yaw * (isAi ? 2.0 * (craft.aiYawMul || 1) : 2.4) * dt;
-  craft.pitch = THREE.MathUtils.clamp(craft.pitch + ctrl.pitch * (isAi ? 1.45 * (craft.aiTurnMul || 1) : 1.8) * dt, -0.85, 0.85);
-  craft.roll = THREE.MathUtils.clamp(craft.roll + ctrl.roll * (isAi ? 1.8 * (craft.aiTurnMul || 1) : 2.2) * dt, -0.9, 0.9);
-  // auto-level slightly
-  craft.pitch *= (1 - 0.55 * dt);
-  craft.roll *= (1 - 0.7 * dt);
+  let q;
+  if (hover) {
+    // ホバーモード: スティック中立で高度・水平位置を維持（GPSホールド風）
+    craft.yaw += ctrl.yaw * 2.0 * dt;
+    const thrInput = ctrl.throttle - 0.5;
+    const targetPitch = THREE.MathUtils.clamp(ctrl.pitch * 0.35, -0.45, 0.45);
+    const targetRoll = THREE.MathUtils.clamp(ctrl.roll * 0.4, -0.55, 0.55);
+    craft.pitch = THREE.MathUtils.lerp(craft.pitch, targetPitch, 1 - Math.exp(-6 * dt));
+    craft.roll = THREE.MathUtils.lerp(craft.roll, targetRoll, 1 - Math.exp(-7 * dt));
 
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    q = new THREE.Quaternion().setFromEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+    forward.y = 0;
+    right.y = 0;
+    if (forward.lengthSq() > 1e-6) forward.normalize();
+    if (right.lengthSq() > 1e-6) right.normalize();
 
-  const throttleForce = (ctrl.throttle - 0.42) * thrust;
-  const accel = new THREE.Vector3()
-    .addScaledVector(up, throttleForce + liftBias * (ctrl.throttle - 0.35))
-    .addScaledVector(forward, ctrl.throttle * 10)
-    .add(new THREE.Vector3(0, -18, 0)); // gravity
+    const targetVel = new THREE.Vector3()
+      .addScaledVector(forward, -ctrl.pitch * 16)
+      .addScaledVector(right, ctrl.roll * 16);
+    targetVel.y = thrInput * 14;
 
-  craft.vel.addScaledVector(accel, dt);
-  craft.vel.multiplyScalar(Math.exp(-1.8 * dt));
-  if (craft.vel.length() > maxSpd) craft.vel.setLength(maxSpd);
+    craft.vel.lerp(targetVel, 1 - Math.exp(-5.5 * dt));
+    if (craft.vel.length() > maxSpd) craft.vel.setLength(maxSpd);
+    craft.pos.addScaledVector(craft.vel, dt);
+  } else {
+    craft.yaw += ctrl.yaw * (isAi ? 2.0 * (craft.aiYawMul || 1) : 2.4) * dt;
+    craft.pitch = THREE.MathUtils.clamp(craft.pitch + ctrl.pitch * (isAi ? 1.45 * (craft.aiTurnMul || 1) : 1.8) * dt, -0.85, 0.85);
+    craft.roll = THREE.MathUtils.clamp(craft.roll + ctrl.roll * (isAi ? 1.8 * (craft.aiTurnMul || 1) : 2.2) * dt, -0.9, 0.9);
+    // auto-level slightly
+    craft.pitch *= (1 - 0.55 * dt);
+    craft.roll *= (1 - 0.7 * dt);
 
-  craft.pos.addScaledVector(craft.vel, dt);
+    q = new THREE.Quaternion().setFromEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+
+    const throttleForce = (ctrl.throttle - 0.42) * thrust;
+    const accel = new THREE.Vector3()
+      .addScaledVector(up, throttleForce + liftBias * (ctrl.throttle - 0.35))
+      .addScaledVector(forward, ctrl.throttle * 10)
+      .add(new THREE.Vector3(0, -18, 0)); // gravity
+
+    craft.vel.addScaledVector(accel, dt);
+    craft.vel.multiplyScalar(Math.exp(-1.8 * dt));
+    if (craft.vel.length() > maxSpd) craft.vel.setLength(maxSpd);
+
+    craft.pos.addScaledVector(craft.vel, dt);
+  }
 
   // Arena clamp
   craft.pos.x = THREE.MathUtils.clamp(craft.pos.x, -ARENA, ARENA);
@@ -4878,17 +4964,119 @@ function checkMissionClear() {
   }
 }
 
-/** 強化CPU / 群れAI：高度維持・周回・障害物回避 */
+/** ドッグファイトCPU：突っ込んで撃つ→近すぎたら離脱→再接近（ぐるぐる周回しない） */
+function aiControlDogfight(craft, targetCraft, dt) {
+  craft.aiPhase = (craft.aiPhase || 0) + dt;
+  if (!craft.aiDogMode) craft.aiDogMode = 'engage';
+  if (craft.aiDogTimer == null) craft.aiDogTimer = 0;
+  craft.aiDogTimer -= dt;
+
+  const toTarget = targetCraft.pos.clone().sub(craft.pos);
+  const dist = Math.max(0.1, toTarget.length());
+  const desiredDir = toTarget.clone().normalize();
+  const side = new THREE.Vector3(-desiredDir.z, 0, desiredDir.x);
+  if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+  else side.normalize();
+
+  if (craft.aiDogMode === 'engage') {
+    if (dist < 7.5) {
+      craft.aiDogMode = 'break';
+      craft.aiDogTimer = 1.4 + Math.random() * 0.7;
+      craft.aiBreakSide = Math.random() < 0.5 ? 1 : -1;
+    }
+  } else if (craft.aiDogTimer <= 0 || dist > 24) {
+    craft.aiDogMode = 'engage';
+  }
+
+  let aimPoint;
+  if (craft.aiDogMode === 'break') {
+    // すれ違い離脱：横に逃げて距離を取り、正面再接近の余地を作る
+    const away = desiredDir.clone().multiplyScalar(-1);
+    aimPoint = craft.pos.clone()
+      .addScaledVector(away, 20)
+      .addScaledVector(side, (craft.aiBreakSide || 1) * 14);
+    aimPoint.y = Math.max(AI_SAFE_ALT + 2, targetCraft.pos.y + 5);
+  } else {
+    // ほぼ直進で狙い、わずかな揺れだけ（周回バイアスなし）
+    const lead = targetCraft.vel
+      ? targetCraft.vel.clone().multiplyScalar(0.28)
+      : new THREE.Vector3();
+    const weave = side.clone().multiplyScalar(Math.sin(craft.aiPhase * 0.65) * 1.8);
+    aimPoint = targetCraft.pos.clone()
+      .add(new THREE.Vector3(0, 1.2, 0))
+      .add(lead)
+      .add(weave);
+  }
+
+  const toAim = aimPoint.clone().sub(craft.pos).normalize();
+  const desiredYaw = Math.atan2(-toAim.x, -toAim.z);
+  let yawErr = desiredYaw - craft.yaw;
+  while (yawErr > Math.PI) yawErr -= Math.PI * 2;
+  while (yawErr < -Math.PI) yawErr += Math.PI * 2;
+
+  const targetAlt = Math.max(AI_SAFE_ALT, aimPoint.y);
+  const altErr = targetAlt - craft.pos.y;
+  let throttle = 0.64 + THREE.MathUtils.clamp(altErr * 0.05, -0.22, 0.32);
+  if (craft.aiDogMode === 'engage') {
+    if (dist > 18) throttle += 0.18;
+    else if (dist > 10) throttle += 0.08;
+  } else {
+    throttle += 0.12;
+  }
+
+  let avoidYaw = 0;
+  obstacles.forEach((ob) => {
+    const dx = craft.pos.x - ob.mesh.position.x;
+    const dz = craft.pos.z - ob.mesh.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < ob.radius + 6 && craft.pos.y < ob.yMax + 4) {
+      avoidYaw += Math.atan2(dx, dz) * 0.35;
+      throttle = Math.max(throttle, 0.85);
+    }
+  });
+
+  let pitchCmd = THREE.MathUtils.clamp(-toAim.y * 0.9, -0.55, 0.45);
+  if (craft.pos.y < AI_SAFE_ALT + 2) pitchCmd = Math.min(pitchCmd, -0.2);
+
+  const ctrl = {
+    throttle: THREE.MathUtils.clamp(throttle, 0.35, 1),
+    yaw: THREE.MathUtils.clamp(yawErr * 1.55 + avoidYaw, -1, 1),
+    pitch: pitchCmd,
+    roll: THREE.MathUtils.clamp(yawErr * 0.35 + Math.sin(craft.aiPhase * 1.4) * 0.08, -0.75, 0.75),
+    fire: false
+  };
+
+  const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
+  const aim = desiredDir.dot(forward);
+  const aimNeed = craft.aiAimNeed != null ? craft.aiAimNeed : 0.8;
+  // 接近パス中だけ射撃（離脱中は撃たず、プレイヤーが狙いやすい）
+  if (
+    craft.aiDogMode === 'engage'
+    && aim > aimNeed
+    && dist < 48
+    && dist > 6
+    && craft.pos.y > AI_MIN_ALT
+  ) {
+    ctrl.fire = true;
+  }
+  return ctrl;
+}
+
+/** 群れAI：高度維持・周回・障害物回避 */
 function aiControlCraft(craft, targetCraft, dt, style) {
   if (!craft || !craft.alive || !targetCraft || !targetCraft.alive) {
     return { throttle: 0.65, yaw: 0, pitch: -0.15, roll: 0, fire: false };
   }
+  if (style === 'dogfight') {
+    return aiControlDogfight(craft, targetCraft, dt);
+  }
+
   craft.aiPhase = (craft.aiPhase || 0) + dt;
   const toTarget = targetCraft.pos.clone().sub(craft.pos);
   const dist = Math.max(0.1, toTarget.length());
   const desiredDir = toTarget.clone().normalize();
 
-  const orbit = style === 'dogfight' ? 14 : (style === 'deathmatch' ? 10 : 12);
+  const orbit = style === 'deathmatch' ? 10 : 12;
   const side = new THREE.Vector3(-desiredDir.z, 0, desiredDir.x).normalize();
   const orbitBias = side.multiplyScalar(Math.sin(craft.aiPhase * 1.1) * orbit * 0.08);
   const aimPoint = targetCraft.pos.clone()
@@ -4905,7 +5093,7 @@ function aiControlCraft(craft, targetCraft, dt, style) {
   while (yawErr > Math.PI) yawErr -= Math.PI * 2;
   while (yawErr < -Math.PI) yawErr += Math.PI * 2;
 
-  const targetAlt = Math.max(AI_SAFE_ALT, targetCraft.pos.y + (style === 'dogfight' ? 3 : 1.5));
+  const targetAlt = Math.max(AI_SAFE_ALT, targetCraft.pos.y + 1.5);
   const altErr = targetAlt - craft.pos.y;
   let throttle = 0.62 + THREE.MathUtils.clamp(altErr * 0.05, -0.25, 0.35);
   if (dist > 30) throttle += 0.15;
@@ -4936,7 +5124,7 @@ function aiControlCraft(craft, targetCraft, dt, style) {
   const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(craft.pitch, craft.yaw, -craft.roll, 'YXZ'));
   const aim = desiredDir.dot(forward);
   const fireDistMax = style === 'musou' || style === 'defense' ? 48 : 52;
-  const aimNeed = craft.aiAimNeed != null ? craft.aiAimNeed : (style === 'dogfight' ? 0.78 : 0.78);
+  const aimNeed = craft.aiAimNeed != null ? craft.aiAimNeed : 0.78;
   if (aim > aimNeed && dist < fireDistMax && dist > 5 && craft.pos.y > AI_MIN_ALT) {
     ctrl.fire = true;
   }
