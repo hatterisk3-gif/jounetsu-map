@@ -6166,6 +6166,9 @@ function createSignboardMarker(name, pos, icon, id) {
           locEl.textContent = locText;
         }
         badge.style.display = 'block';
+        if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') {
+          window.updateMaintenanceTargetPhotoPreview();
+        }
       };
 
       window.updatePartsList = () => {
@@ -9690,6 +9693,245 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         sel.innerHTML = html;
         if (keep && Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+        if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') {
+          window.updateMaintenanceTargetPhotoPreview();
+        }
+      };
+
+      // --- 🚜 機体の写真から選択モーダル & プレビュー機能 ---
+      window.getMachinePhotoUrl = (item) => {
+        if (!item) return '';
+        if (item.photo && typeof item.photo === 'string' && item.photo.trim()) return item.photo.trim();
+        if (item.photo2 && typeof item.photo2 === 'string' && item.photo2.trim()) return item.photo2.trim();
+        if (item.photoUrl && typeof item.photoUrl === 'string' && item.photoUrl.trim()) return item.photoUrl.trim();
+        if (Array.isArray(item.photos) && item.photos.length > 0) {
+          const p = item.photos[0];
+          if (typeof p === 'string') return p;
+          if (p && (p.url || p.base64)) return p.url || p.base64;
+        }
+        return '';
+      };
+
+      window.updateMaintenanceTargetPhotoPreview = () => {
+        const previewEl = document.getElementById('m_target_photo_preview');
+        const imgEl = document.getElementById('m_target_photo_img');
+        const titleEl = document.getElementById('m_target_photo_title');
+        const subEl = document.getElementById('m_target_photo_sub');
+        if (!previewEl) return;
+
+        const sel = document.getElementById('m_tool');
+        const tId = sel ? sel.value : '';
+        if (!tId) {
+          previewEl.style.display = 'none';
+          return;
+        }
+
+        const item = (typeof window.findMaintenanceTargetById_ === 'function')
+          ? window.findMaintenanceTargetById_(tId)
+          : null;
+        if (!item) {
+          previewEl.style.display = 'none';
+          return;
+        }
+
+        const photoUrl = window.getMachinePhotoUrl(item);
+        if (photoUrl) {
+          if (imgEl) {
+            imgEl.src = photoUrl;
+            imgEl.style.display = 'block';
+          }
+        } else {
+          if (imgEl) {
+            imgEl.style.display = 'none';
+          }
+        }
+
+        if (titleEl) {
+          const icon = item.isVehicle ? '🛻 ' : (item.isTool ? '🔧 ' : '🚜 ');
+          titleEl.textContent = icon + (item.name || '名称未設定');
+        }
+        if (subEl) {
+          const num = item.machineNumber || item.serialNo || '';
+          const cat = item.category || item.type || item.group || item.driveType || '';
+          const loc = item.currentLocName || item.signName || item.location || '';
+          subEl.textContent = [num ? `[${num}]` : '', cat, loc ? `📍${loc}` : ''].filter(Boolean).join(' ・ ');
+        }
+        previewEl.style.display = 'flex';
+      };
+
+      window.ensureMachinePhotoPickerModal = () => {
+        let modal = document.getElementById('machinePhotoPickerModal');
+        if (!modal) {
+          modal = document.createElement('div');
+          modal.id = 'machinePhotoPickerModal';
+          modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.68); z-index:25000; justify-content:center; align-items:center; padding:12px; box-sizing:border-box;';
+          modal.innerHTML = `
+            <div style="width:100%; max-width:680px; max-height:90vh; background:#fff; border-radius:14px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,0.38);">
+              <div style="background:#2E7D32; color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-weight:bold; font-size:16px; display:flex; align-items:center; gap:6px;">
+                  🖼️ 機体の写真から選択
+                </div>
+                <button type="button" onclick="closeMachinePhotoPickerModal()" style="background:transparent; border:none; color:#fff; font-size:24px; cursor:pointer; line-height:1;">×</button>
+              </div>
+              <div style="padding:12px 16px; background:#f5f5f5; border-bottom:1px solid #e0e0e0;">
+                <input type="search" id="machine_photo_picker_search" class="form-input" placeholder="🔍 名前・機械番号・型式・カテゴリ等で絞り込み..." oninput="renderMachinePhotoPickerGrid()" style="margin-bottom:8px; font-size:13px; width:100%; box-sizing:border-box;">
+                <div id="machine_photo_picker_cats" style="display:flex; flex-wrap:nowrap; overflow-x:auto; gap:6px; padding-bottom:4px; -webkit-overflow-scrolling:touch;"></div>
+              </div>
+              <div id="machine_photo_picker_grid" style="flex:1; overflow-y:auto; padding:14px; display:grid; grid-template-columns:repeat(auto-fill, minmax(135px, 1fr)); gap:12px; background:#fafafa; align-content:start;"></div>
+              <div style="padding:10px 16px; background:#fff; border-top:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center;">
+                <span id="machine_photo_picker_count" style="font-size:12px; color:#666; font-weight:bold;">全 0 件</span>
+                <button type="button" onclick="closeMachinePhotoPickerModal()" style="background:#757575; color:#fff; border:none; padding:8px 18px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">閉じる</button>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(modal);
+        }
+        return modal;
+      };
+
+      window.openMachinePhotoPickerModal = () => {
+        window.ensureMachinePhotoPickerModal();
+        window._activePhotoPickerCat = 'all';
+        const searchInput = document.getElementById('machine_photo_picker_search');
+        if (searchInput) searchInput.value = '';
+        const modal = document.getElementById('machinePhotoPickerModal');
+        if (modal) modal.style.display = 'flex';
+        window.renderMachinePhotoPickerGrid();
+      };
+
+      window.closeMachinePhotoPickerModal = () => {
+        const modal = document.getElementById('machinePhotoPickerModal');
+        if (modal) modal.style.display = 'none';
+      };
+
+      window.selectMachineFromPhotoPicker = (id) => {
+        const sel = document.getElementById('m_tool');
+        if (sel) {
+          sel.value = id;
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
+          if (typeof window.updateMaintenanceTargetInfoBadge === 'function') window.updateMaintenanceTargetInfoBadge();
+          if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+        }
+        const item = (typeof window.findMaintenanceTargetById_ === 'function') ? window.findMaintenanceTargetById_(id) : null;
+        const name = item ? (item.name || '対象') : '対象';
+        if (typeof window.showRecordSyncToast === 'function') {
+          window.showRecordSyncToast(`✅ 対象「${name}」を選択しました`, 'ok');
+        }
+        window.closeMachinePhotoPickerModal();
+      };
+
+      window.renderMachinePhotoPickerGrid = () => {
+        const gridEl = document.getElementById('machine_photo_picker_grid');
+        const catsEl = document.getElementById('machine_photo_picker_cats');
+        const countEl = document.getElementById('machine_photo_picker_count');
+        const searchEl = document.getElementById('machine_photo_picker_search');
+        if (!gridEl) return;
+
+        const q = searchEl ? String(searchEl.value || '').trim().toLowerCase() : '';
+        const sel = document.getElementById('m_tool');
+        const currentSelId = sel ? String(sel.value || '') : '';
+
+        const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+          ? pdlMachines.map(m => Object.assign({}, m, { isTool: false, isVehicle: false }))
+          : [];
+
+        const tools = (typeof pdlTools !== 'undefined' && Array.isArray(pdlTools))
+          ? pdlTools.map(t => Object.assign({}, t, {
+              isTool: true,
+              isVehicle: false,
+              id: t.id || `tool_${t.name}`,
+              group: t.group || t.category || t.workTypes || '道具'
+            }))
+          : [];
+
+        const vehicles = (window.pdlMobileVehicles || []).map(v => ({
+          id: (typeof window.getMobileVehicleOptionId_ === 'function') ? window.getMobileVehicleOptionId_(v) : (v.id || v.plateNumber),
+          name: v.plateNumber || v.id || '移動車両',
+          isTool: false,
+          isVehicle: true,
+          photo: v.photo || v.photoUrl || '',
+          driveType: v.driveType || '移動車両',
+          group: v.driveType || '移動車両',
+          status: v.status || '',
+          mileage: v.mileage
+        }));
+
+        const allItems = [...machines, ...tools, ...vehicles];
+
+        const catSet = new Set(['all']);
+        allItems.forEach(item => {
+          const c = item.category || item.type || item.group || (item.isVehicle ? '移動車両' : (item.isTool ? '道具' : '機械'));
+          if (c) catSet.add(c);
+        });
+
+        if (catsEl) {
+          const catsArr = Array.from(catSet);
+          let catHtml = '';
+          catsArr.forEach(c => {
+            const label = c === 'all' ? 'すべて' : c;
+            const active = (window._activePhotoPickerCat || 'all') === c;
+            const bg = active ? '#2E7D32' : '#e0e0e0';
+            const color = active ? '#fff' : '#333';
+            const safeC = c.replace(/'/g, "\\'");
+            catHtml += `<button type="button" onclick="window._activePhotoPickerCat='${safeC}'; renderMachinePhotoPickerGrid();" style="background:${bg}; color:${color}; border:none; padding:4px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap; flex-shrink:0;">${label}</button>`;
+          });
+          catsEl.innerHTML = catHtml;
+        }
+
+        const filtered = allItems.filter(item => {
+          const cat = item.category || item.type || item.group || (item.isVehicle ? '移動車両' : (item.isTool ? '道具' : '機械'));
+          if (window._activePhotoPickerCat && window._activePhotoPickerCat !== 'all' && cat !== window._activePhotoPickerCat) {
+            return false;
+          }
+          if (q) {
+            const hay = [
+              item.name, item.machineNumber, item.serialNo, item.group, item.type, item.category, item.model, item.location, item.driveType
+            ].map(x => String(x || '').toLowerCase()).join(' ');
+            return hay.includes(q);
+          }
+          return true;
+        });
+
+        if (countEl) countEl.textContent = `表示 ${filtered.length} / 全 ${allItems.length} 件`;
+
+        if (filtered.length === 0) {
+          gridEl.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px 10px; color:#888; font-size:13px; font-weight:bold;">該当する機械・車両・道具が見つかりませんでした</div>';
+          return;
+        }
+
+        let gridHtml = '';
+        filtered.forEach(item => {
+          const photoUrl = window.getMachinePhotoUrl(item);
+          const isSelected = String(item.id) === currentSelId;
+          const borderStyle = isSelected ? 'border:3px solid #2E7D32; box-shadow:0 4px 12px rgba(46,125,50,0.3); background:#E8F5E9;' : 'border:1px solid #e0e0e0; background:#fff;';
+          const icon = item.isVehicle ? '🛻' : (item.isTool ? '🔧' : '🚜');
+          const badgeText = item.category || item.type || item.group || (item.isVehicle ? '車両' : (item.isTool ? '道具' : '機械'));
+          const subText = item.machineNumber || item.serialNo || item.model || '';
+          const safeId = String(item.id).replace(/'/g, "\\'");
+
+          gridHtml += `
+            <div onclick="selectMachineFromPhotoPicker('${safeId}')" style="${borderStyle} border-radius:10px; padding:8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; position:relative; transition:all 0.15s ease-in-out;">
+              ${isSelected ? `<div style="position:absolute; top:4px; right:4px; background:#2E7D32; color:#fff; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px; z-index:2;">選択中 ✅</div>` : ''}
+              
+              <div style="width:100%; height:84px; border-radius:6px; overflow:hidden; background:#f0f0f0; display:flex; justify-content:center; align-items:center; margin-bottom:6px; position:relative;">
+                ${photoUrl ? `<img src="${photoUrl}" alt="${item.name || ''}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" style="width:100%; height:100%; object-fit:cover;">` : ''}
+                <div style="display:${photoUrl ? 'none' : 'flex'}; font-size:36px; align-items:center; justify-content:center; width:100%; height:100%; background:#e8f5e9; color:#2e7d32;">
+                  ${icon}
+                </div>
+              </div>
+
+              <div style="font-size:12px; font-weight:bold; color:#1a237e; text-align:center; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:2px;">
+                ${item.name || '名称未設定'}
+              </div>
+              ${subText ? `<div style="font-size:10px; color:#555; text-align:center; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${subText}</div>` : ''}
+              <div style="font-size:9px; color:#2e7d32; background:#e8f5e9; padding:1px 6px; border-radius:4px; margin-top:4px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                ${badgeText}
+              </div>
+            </div>
+          `;
+        });
+
+        gridEl.innerHTML = gridHtml;
       };
 
       /** 作業記録画面から直接、農業機械を機械マスタに登録（管理者用） */
@@ -10354,12 +10596,24 @@ function createSignboardMarker(name, pos, icon, id) {
                     <label class="form-label">🔍 機械・車両・道具を検索</label>
                     <input type="search" id="m_tool_search" class="form-input" placeholder="名前・機械番号・ナンバー・道具カテゴリ等で絞り込み" oninput="filterMaintenanceMachineSelect()" style="margin-bottom:8px;">
                     
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:4px;">
                       <label class="form-label" style="margin-bottom:0;">対象（機械・車両・道具）</label>
-                      ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `<button type="button" onclick="addNewMachineFromWorker()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:3px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:3px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">＋ 機械を登録</button>` : ''}
+                      <div style="display:flex; gap:6px; align-items:center;">
+                        <button type="button" onclick="openMachinePhotoPickerModal()" style="background:#2E7D32; color:#fff; border:none; border-radius:4px; padding:3px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">🖼️ 写真から選ぶ</button>
+                        ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `<button type="button" onclick="addNewMachineFromWorker()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:3px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:3px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">＋ 機械を登録</button>` : ''}
+                      </div>
                     </div>
-                    <select id="m_tool" class="form-input" onchange="updatePartsList(); updateMaintenanceTargetInfoBadge();"><option value="">選択してください</option></select>
+                    <select id="m_tool" class="form-input" onchange="updatePartsList(); updateMaintenanceTargetInfoBadge(); updateMaintenanceTargetPhotoPreview();"><option value="">選択してください</option></select>
                     <div id="m_tool_empty_hint" style="display:none; font-size:11px; color:#c62828; margin:-6px 0 10px;">機械・道具マスタに該当の登録がありません。${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? '上の「＋ 機械を登録」ボタンからすぐ追加できます。' : '管理画面または車両・農機状況から追加してください。'}</div>
+
+                    <!-- 🌟 写真プレビュー枠 -->
+                    <div id="m_target_photo_preview" style="display:none; margin:4px 0 10px; background:#fff; border:1px solid #FFCC80; border-radius:8px; padding:8px 12px; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                      <img id="m_target_photo_img" src="" alt="機体写真" style="width:58px; height:58px; object-fit:cover; border-radius:6px; border:1px solid #e0e0e0; flex-shrink:0;">
+                      <div style="font-size:12px; flex:1; min-width:0;">
+                        <div id="m_target_photo_title" style="font-weight:bold; color:#e65100; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
+                        <div id="m_target_photo_sub" style="color:#666; font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
+                      </div>
+                    </div>
 
                     <!-- 🌟 機械のグループ・カテゴリ・現在地拠点表示バッジ -->
                     <div id="m_target_info_badge" style="display:none; background:#FFF; border:1px solid #FFE0B2; border-radius:8px; padding:8px 10px; margin-bottom:12px; font-size:12px; line-height:1.5;">
