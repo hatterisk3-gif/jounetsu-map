@@ -3211,11 +3211,15 @@ function createSignboardMarker(name, pos, icon, id) {
         const forBreak = !!opts.forBreak || (typeof window.isRestWorkNameSelected === 'function' && window.isRestWorkNameSelected());
         const finalizeStart = (result) => {
           if (!result || ymd !== todayStr) return result;
+          // 出勤時刻や前作業・休憩の終了時刻が確定している場合は、その時刻を優先
+          if (result.source === 'clockIn' || result.source === 'latestEnd' || result.source === 'restEnd' || result.source === 'lunchEnd') {
+            return result;
+          }
           const startMins = window.timeHmToMinutes
             ? window.timeHmToMinutes(result.start)
             : window._timeToMinsSafe(result.start);
-          // 当日の新規作業で、自動候補が8:00以前なら古い開始候補を使わず現在時刻にする。
-          if (startMins != null && startMins <= 8 * 60) {
+          // 自動候補が極端に古い（05:00未満など）場合のみ現在時刻にする
+          if (startMins != null && startMins < 5 * 60) {
             return {
               start: nowHm,
               source: 'currentTime',
