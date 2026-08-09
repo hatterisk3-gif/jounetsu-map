@@ -5458,7 +5458,6 @@ function createSignboardMarker(name, pos, icon, id) {
           row.style.background = '#e3f2fd';
           row.style.borderColor = '#2196f3';
           if (minInput) {
-            // 新規チェックは自動配分対象
             minInput.removeAttribute('data-manual');
             minInput.setAttribute('data-auto', '1');
             if (!String(minInput.value || '').trim()) minInput.value = '';
@@ -5475,6 +5474,315 @@ function createSignboardMarker(name, pos, icon, id) {
           row.style.background = '#fff';
           row.style.borderColor = '#90caf9';
         }
+        if (typeof window.recalcDetailWorkMinutes === 'function') window.recalcDetailWorkMinutes();
+      };
+
+      // ==========================================
+      // 🌟 整備・修理・点検マスタ管理モーダル＆処理関数群（管理者用）
+      // ==========================================
+      window.showMaintenanceMasterManageModal = ({ title, items, onAdd, onEdit, onDelete }) => {
+        let modal = document.getElementById('maintenanceMasterManageModal');
+        if (!modal) {
+          modal = document.createElement('div');
+          modal.id = 'maintenanceMasterManageModal';
+          modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:99999; display:flex; justify-content:center; align-items:center; padding:15px; box-sizing:border-box;';
+          document.body.appendChild(modal);
+        }
+
+        let listHtml = '';
+        if (!items || items.length === 0) {
+          listHtml = '<div style="color:#888; font-size:13px; text-align:center; padding:20px;">登録項目がありません</div>';
+        } else {
+          listHtml = items.map((item, idx) => `
+            <div style="display:flex; justify-content:space-between; align-items:center; background:#f5f5f5; border:1px solid #e0e0e0; border-radius:6px; padding:8px 10px; margin-bottom:6px;">
+              <span style="font-size:13px; font-weight:bold; color:#333; word-break:break-all;">${String(item).replace(/</g, '&lt;')}</span>
+              <div style="display:flex; gap:6px; flex-shrink:0;">
+                <button type="button" onclick="window._maintModalOnEdit(${idx})" style="background:#FFA000; color:#fff; border:none; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ 編集</button>
+                <button type="button" onclick="window._maintModalOnDelete(${idx})" style="background:#E53935; color:#fff; border:none; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ 削除</button>
+              </div>
+            </div>
+          `).join('');
+        }
+
+        window._maintModalOnEdit = (idx) => { if (typeof onEdit === 'function') onEdit(items[idx], idx); };
+        window._maintModalOnDelete = (idx) => { if (typeof onDelete === 'function') onDelete(items[idx], idx); };
+
+        modal.innerHTML = `
+          <div style="background:#fff; width:100%; max-width:420px; max-height:85vh; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.3);">
+            <div style="background:#1565C0; color:#fff; padding:12px 16px; font-weight:bold; font-size:15px; display:flex; justify-content:space-between; align-items:center;">
+              <span>⚙️ ${title}</span>
+              <button type="button" onclick="document.getElementById('maintenanceMasterManageModal').style.display='none'" style="background:none; border:none; color:#fff; font-size:18px; cursor:pointer; padding:0;">✕</button>
+            </div>
+            <div style="padding:12px; overflow-y:auto; flex:1;">
+              ${listHtml}
+            </div>
+            <div style="padding:12px; background:#f9f9f9; border-top:1px solid #eee; display:flex; gap:8px;">
+              <button type="button" id="maintModalAddBtn" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:10px; font-weight:bold; font-size:13px; flex:1; cursor:pointer;">＋ 新規追加</button>
+              <button type="button" onclick="document.getElementById('maintenanceMasterManageModal').style.display='none'" style="background:#eee; color:#333; border:none; border-radius:6px; padding:10px 16px; font-weight:bold; font-size:13px; cursor:pointer;">閉じる</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('maintModalAddBtn').onclick = () => {
+          if (typeof onAdd === 'function') onAdd();
+        };
+        modal.style.display = 'flex';
+      };
+
+      // --- 症状マスタ追加・編集・削除 ---
+      window.addNewSymptomMaster = async (machine, cat) => {
+        const inputName = await customPrompt('新しい「症状」の名称を入力してください (例: ベルトゆるみ):', '');
+        if (!inputName || !String(inputName).trim()) return;
+        const name = String(inputName).trim();
+
+        try {
+          if (machine && machine.id && !machine.isVehicle && !machine.isTool) {
+            await callGAS('addMachineSymptom', { machineId: machine.id, newSymptom: name });
+            const currentSymp = machine.symptoms ? machine.symptoms.split(/[,、]/).map(s => s.trim()) : [];
+            if (!currentSymp.includes(name)) {
+              machine.symptoms = machine.symptoms ? machine.symptoms + ',' + name : name;
+            }
+          }
+          if (typeof pdlSymptoms !== 'undefined' && Array.isArray(pdlSymptoms)) {
+            if (!pdlSymptoms.includes(name)) pdlSymptoms.push(name);
+          } else {
+            window.pdlSymptoms = [name];
+          }
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
+          const sel = document.getElementById('m_symptom');
+          if (sel) sel.value = name;
+          if (typeof customAlert === 'function') customAlert(`✅ 症状「${name}」を追加しました！`);
+        } catch (e) {
+          if (typeof customAlert === 'function') customAlert('追加に失敗しました: ' + e.message);
+        }
+      };
+
+      window.editSymptomMaster = async (oldName, newName, machine, cat) => {
+        if (!newName) return;
+        if (machine && machine.symptoms) {
+          const list = machine.symptoms.split(/[,、]/).map(s => s.trim());
+          const idx = list.indexOf(oldName);
+          if (idx !== -1) {
+            list[idx] = newName;
+            machine.symptoms = list.join(',');
+            try { await callGAS('addMachineSymptom', { machineId: machine.id, newSymptom: list.join(',') }); } catch (e) {}
+          }
+        }
+        if (Array.isArray(window.pdlSymptoms)) {
+          const idx = window.pdlSymptoms.indexOf(oldName);
+          if (idx !== -1) window.pdlSymptoms[idx] = newName;
+        }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        if (document.getElementById('maintenanceMasterManageModal')) {
+          document.getElementById('maintenanceMasterManageModal').style.display = 'none';
+        }
+        if (typeof customAlert === 'function') customAlert(`✅ 症状を「${newName}」に更新しました。`);
+      };
+
+      window.deleteSymptomMaster = async (targetName, machine, cat) => {
+        if (machine && machine.symptoms) {
+          const list = machine.symptoms.split(/[,、]/).map(s => s.trim()).filter(s => s !== targetName);
+          machine.symptoms = list.join(',');
+        }
+        if (Array.isArray(window.pdlSymptoms)) {
+          window.pdlSymptoms = window.pdlSymptoms.filter(s => s !== targetName);
+        }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        if (document.getElementById('maintenanceMasterManageModal')) {
+          document.getElementById('maintenanceMasterManageModal').style.display = 'none';
+        }
+        if (typeof customAlert === 'function') customAlert(`✅ 症状「${targetName}」を削除しました。`);
+      };
+
+      window.openMaintenanceSymptomManagerModal = (action) => {
+        if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
+          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          return;
+        }
+        const toolId = document.getElementById('m_tool')?.value || '';
+        const machine = toolId ? window.findMaintenanceTargetById_(toolId) : null;
+        const cat = machine ? (machine.category || machine.type || '') : '';
+
+        if (action === 'add') {
+          window.addNewSymptomMaster(machine, cat);
+          return;
+        }
+
+        const sympSet = new Set();
+        if (machine && machine.symptoms) {
+          String(machine.symptoms).split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(s => sympSet.add(s));
+        }
+        if (cat && Array.isArray(pdlMachines)) {
+          pdlMachines.filter(m => (m.category === cat || m.type === cat) && m.symptoms).forEach(m => {
+            String(m.symptoms).split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(s => sympSet.add(s));
+          });
+        }
+        (window.pdlSymptoms || ["動作不良", "異音発生", "苗箱の詰まり", "エンジン始動不能", "オイル漏れ", "ベルト緩み・破損", "刃・パーツ破損", "ランプ点灯", "点検・清掃"]).forEach(s => sympSet.add(s));
+
+        window.showMaintenanceMasterManageModal({
+          title: '症状マスタの編集・削除',
+          items: Array.from(sympSet),
+          onAdd: () => window.addNewSymptomMaster(machine, cat),
+          onEdit: async (oldName) => {
+            const newName = await customPrompt('症状の名称を編集:', oldName);
+            if (!newName || !newName.trim() || newName.trim() === oldName) return;
+            window.editSymptomMaster(oldName, newName.trim(), machine, cat);
+          },
+          onDelete: async (targetName) => {
+            if (await customConfirm(`症状「${targetName}」を削除しますか？`)) {
+              window.deleteSymptomMaster(targetName, machine, cat);
+            }
+          }
+        });
+      };
+
+      // --- 整備内容マスタ追加・編集・削除 ---
+      window.addNewMaintenanceContentMaster = async () => {
+        const inputName = await customPrompt('新しい「整備内容」の名称を入力してください (例: 定期点検・清掃):', '');
+        if (!inputName || !String(inputName).trim()) return;
+        const name = String(inputName).trim();
+
+        if (!Array.isArray(window.pdlMaintenanceContents)) window.pdlMaintenanceContents = [];
+        if (!window.pdlMaintenanceContents.includes(name)) window.pdlMaintenanceContents.push(name);
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        const sel = document.getElementById('m_content');
+        if (sel) sel.value = name;
+        if (typeof customAlert === 'function') customAlert(`✅ 整備内容「${name}」を追加しました！`);
+      };
+
+      window.editMaintenanceContentMaster = async (oldName, newName) => {
+        if (!newName) return;
+        if (Array.isArray(window.pdlMaintenanceContents)) {
+          const idx = window.pdlMaintenanceContents.indexOf(oldName);
+          if (idx !== -1) window.pdlMaintenanceContents[idx] = newName;
+        }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        if (document.getElementById('maintenanceMasterManageModal')) {
+          document.getElementById('maintenanceMasterManageModal').style.display = 'none';
+        }
+        if (typeof customAlert === 'function') customAlert(`✅ 整備内容を「${newName}」に更新しました。`);
+      };
+
+      window.deleteMaintenanceContentMaster = async (targetName) => {
+        if (Array.isArray(window.pdlMaintenanceContents)) {
+          window.pdlMaintenanceContents = window.pdlMaintenanceContents.filter(c => c !== targetName);
+        }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        if (document.getElementById('maintenanceMasterManageModal')) {
+          document.getElementById('maintenanceMasterManageModal').style.display = 'none';
+        }
+        if (typeof customAlert === 'function') customAlert(`✅ 整備内容「${targetName}」を削除しました。`);
+      };
+
+      window.openMaintenanceContentManagerModal = (action) => {
+        if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
+          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          return;
+        }
+        const contentSet = new Set(window.pdlMaintenanceContents || []);
+        ["オイル交換", "エレメント交換", "ベルト調整", "グリスアップ", "刃交換", "清掃・点検", "部品交換", "本体修理", "動作確認"].forEach(c => contentSet.add(c));
+        const currentItems = Array.from(contentSet);
+
+        if (action === 'add') {
+          window.addNewMaintenanceContentMaster();
+          return;
+        }
+
+        window.showMaintenanceMasterManageModal({
+          title: '整備内容マスタの編集・削除',
+          items: currentItems,
+          onAdd: () => window.addNewMaintenanceContentMaster(),
+          onEdit: async (oldName) => {
+            const newName = await customPrompt('整備内容の名称を編集:', oldName);
+            if (!newName || !newName.trim() || newName.trim() === oldName) return;
+            window.editMaintenanceContentMaster(oldName, newName.trim());
+          },
+          onDelete: async (targetName) => {
+            if (await customConfirm(`整備内容「${targetName}」を削除しますか？`)) {
+              window.deleteMaintenanceContentMaster(targetName);
+            }
+          }
+        });
+      };
+
+      // --- 交換部品名マスタ追加・編集・削除 ---
+      window.editMachinePartMaster = async (oldName, newName, machine, cat) => {
+        if (!newName) return;
+        if (machine && machine.parts) {
+          const list = machine.parts.split(/[,、]/).map(p => p.trim());
+          const idx = list.indexOf(oldName);
+          if (idx !== -1) {
+            list[idx] = newName;
+            machine.parts = list.join(',');
+          }
+        }
+        if (Array.isArray(window.pdlMaintenanceParts)) {
+          const idx = window.pdlMaintenanceParts.indexOf(oldName);
+          if (idx !== -1) window.pdlMaintenanceParts[idx] = newName;
+        }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        if (document.getElementById('maintenanceMasterManageModal')) {
+          document.getElementById('maintenanceMasterManageModal').style.display = 'none';
+        }
+        if (typeof customAlert === 'function') customAlert(`✅ 交換部品名を「${newName}」に更新しました。`);
+      };
+
+      window.deleteMachinePartMaster = async (targetName, machine, cat) => {
+        if (machine && machine.parts) {
+          const list = machine.parts.split(/[,、]/).map(p => p.trim()).filter(p => p !== targetName);
+          machine.parts = list.join(',');
+        }
+        if (Array.isArray(window.pdlMaintenanceParts)) {
+          window.pdlMaintenanceParts = window.pdlMaintenanceParts.filter(p => p !== targetName);
+        }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        if (document.getElementById('maintenanceMasterManageModal')) {
+          document.getElementById('maintenanceMasterManageModal').style.display = 'none';
+        }
+        if (typeof customAlert === 'function') customAlert(`✅ 交換部品「${targetName}」を削除しました。`);
+      };
+
+      window.openMachinePartManagerModal = (action) => {
+        if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
+          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          return;
+        }
+        const toolId = document.getElementById('m_tool')?.value || '';
+        const machine = toolId ? window.findMaintenanceTargetById_(toolId) : null;
+        const cat = machine ? (machine.category || machine.type || '') : '';
+
+        if (action === 'add') {
+          window.addNewMachinePart();
+          return;
+        }
+
+        const partsSet = new Set();
+        if (machine && machine.parts) {
+          String(machine.parts).split(/[,、]/).map(p => p.trim()).filter(Boolean).forEach(p => partsSet.add(p));
+        }
+        if (cat && Array.isArray(pdlMachines)) {
+          pdlMachines.filter(m => (m.category === cat || m.type === cat) && m.parts).forEach(m => {
+            String(m.parts).split(/[,、]/).map(p => p.trim()).filter(Boolean).forEach(p => partsSet.add(p));
+          });
+        }
+        (window.pdlMaintenanceParts || ["プラグ", "オイルフィルター", "エアフィルター", "Vベルト", "替刃", "ヒューズ", "バッテリー", "Oリング"]).forEach(p => partsSet.add(p));
+
+        window.showMaintenanceMasterManageModal({
+          title: '交換部品名マスタの編集・削除',
+          items: Array.from(partsSet),
+          onAdd: () => window.addNewMachinePart(),
+          onEdit: async (oldName) => {
+            const newName = await customPrompt('交換部品名の名称を編集:', oldName);
+            if (!newName || !newName.trim() || newName.trim() === oldName) return;
+            window.editMachinePartMaster(oldName, newName.trim(), machine, cat);
+          },
+          onDelete: async (targetName) => {
+            if (await customConfirm(`交換部品「${targetName}」を削除しますか？`)) {
+              window.deleteMachinePartMaster(targetName, machine, cat);
+            }
+          }
+        });
+      };
+
         // 🌟 メイン作業名 ＋ 詳細作業名の変更に反応し、灌水（水栓・ポンプ）・整備（機械）・使ったもの等の各種専用UIを一括更新する
         window.handleCombinedWorkChange = () => {
           if (window._skipDetailWorkAutoRefresh) return;
@@ -5489,13 +5797,6 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.renderUsedItems === 'function') window.renderUsedItems(combined);
         };
 
-        // 残ったチェック項目へ分数を再計算（復元中はスキップ）
-        if (!window._skipDetailWorkAutoRefresh && typeof window.refreshDetailWorkAutoMinutes === 'function') {
-          window.refreshDetailWorkAutoMinutes();
-        }
-        // 詳細作業に「灌水」「整備」等が含まれる場合も専用UIを表示
-        window.handleCombinedWorkChange();
-      };
 
       window.restoreDetailedWorksWithMinutes = (detailedWorksStr) => {
         if (!detailedWorksStr) return;
@@ -5698,29 +5999,132 @@ function createSignboardMarker(name, pos, icon, id) {
         window.closeAppTimePicker();
       };
 
+      window.detectCurrentBaseLocation_ = () => {
+        let currentLoc = '';
+        if (typeof activePolyId !== 'undefined' && activePolyId && loadedPolygons[activePolyId]) {
+          const p = loadedPolygons[activePolyId];
+          if (p.location) return String(p.location).trim();
+          const name = String(p.name || '').trim();
+          const locs = window.pdlLocations || [];
+          for (const l of locs) {
+            if (l && name.includes(l)) return String(l).trim();
+          }
+        }
+        return '';
+      };
+
+      window.updateMaintenanceTargetInfoBadge = () => {
+        const badge = document.getElementById('m_target_info_badge');
+        if (!badge) return;
+        const toolId = document.getElementById('m_tool')?.value || '';
+        if (!toolId) {
+          badge.style.display = 'none';
+          return;
+        }
+        const m = (typeof window.findMaintenanceTargetById_ === 'function')
+          ? window.findMaintenanceTargetById_(toolId)
+          : null;
+        if (!m) {
+          badge.style.display = 'none';
+          return;
+        }
+        const groupEl = document.getElementById('m_info_group');
+        const catEl = document.getElementById('m_info_category');
+        const locEl = document.getElementById('m_info_location');
+
+        const currentBase = window.detectCurrentBaseLocation_();
+        const mLoc = m.location || m.currentLocName || m.signName || '';
+
+        if (groupEl) groupEl.textContent = m.group || m.type || (m.isVehicle ? '移動車両' : (m.isTool ? '道具' : '農業機械'));
+        if (catEl) catEl.textContent = m.category || m.type || m.workCategory || '共通';
+        if (locEl) {
+          let locText = mLoc || '未設定';
+          if (currentBase && mLoc && mLoc.includes(currentBase)) {
+            locText += ` (📍現在地一致)`;
+          }
+          locEl.textContent = locText;
+        }
+        badge.style.display = 'block';
+      };
+
       window.updatePartsList = () => {
-         const toolId = document.getElementById('m_tool').value;
+         const toolId = document.getElementById('m_tool')?.value || '';
          const partsSelect = document.getElementById('m_parts');
-         const symptomSelect = document.getElementById('m_symptom_sel'); // ★追加
-         
-         partsSelect.innerHTML = '<option value="">選択してください</option>';
-         if(symptomSelect) symptomSelect.innerHTML = '<option value="">選択...</option>'; // ★追加
-         
-         if(!toolId) return;
-         const machine = (typeof window.findMaintenanceTargetById_ === 'function')
-           ? window.findMaintenanceTargetById_(toolId)
-           : (pdlMachines || []).find(t => t.id === toolId);
-         
-         if(machine && !machine.isVehicle) {
-            if(machine.parts) {
-               const partsList = String(machine.parts).split(/[,、]/).map(s => s.trim()).filter(String);
-               partsSelect.innerHTML += partsList.map(p => `<option value="${p}">${p}</option>`).join('');
-            }
-            if(machine.symptoms && symptomSelect) { // ★追加：農機ごとの症状リスト
-               const sympList = String(machine.symptoms).split(/[,、]/).map(s => s.trim()).filter(String);
-               symptomSelect.innerHTML += sympList.map(s => `<option value="${s}">${s}</option>`).join('');
-            }
+         const symptomSelect = document.getElementById('m_symptom');
+         const contentSelect = document.getElementById('m_content');
+
+         const machine = toolId
+           ? ((typeof window.findMaintenanceTargetById_ === 'function') ? window.findMaintenanceTargetById_(toolId) : null)
+           : null;
+         const cat = machine ? (machine.category || machine.type || '') : '';
+
+         // --- 1. 症状 (m_symptom) の選択肢構築（カテゴリ連動） ---
+         if (symptomSelect) {
+           const prevVal = symptomSelect.value;
+           const sympSet = new Set();
+           // ① 選択中農機の個別症状
+           if (machine && machine.symptoms) {
+             String(machine.symptoms).split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(s => sympSet.add(s));
+           }
+           // ② 同じカテゴリの全農機の症状
+           if (cat && Array.isArray(pdlMachines)) {
+             pdlMachines.filter(m => (m.category === cat || m.type === cat) && m.symptoms).forEach(m => {
+               String(m.symptoms).split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(s => sympSet.add(s));
+             });
+           }
+           // ③ 共通・デフォルト症状
+           (window.pdlSymptoms || ["動作不良", "異音発生", "苗箱の詰まり", "エンジン始動不能", "オイル漏れ", "ベルト緩み・破損", "刃・パーツ破損", "ランプ点灯", "点検・清掃"]).forEach(s => sympSet.add(s));
+
+           let sHtml = '<option value="">選択してください</option>';
+           Array.from(sympSet).forEach(s => {
+             const safe = String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+             sHtml += `<option value="${safe}">${safe}</option>`;
+           });
+           symptomSelect.innerHTML = sHtml;
+           if (prevVal && sympSet.has(prevVal)) symptomSelect.value = prevVal;
          }
+
+         // --- 2. 整備内容 (m_content) の選択肢構築 ---
+         if (contentSelect) {
+           const prevVal = contentSelect.value;
+           const contentSet = new Set(window.pdlMaintenanceContents || []);
+           ["オイル交換", "エレメント交換", "ベルト調整", "グリスアップ", "刃交換", "清掃・点検", "部品交換", "本体修理", "動作確認"].forEach(c => contentSet.add(c));
+           let cHtml = '<option value="">選択してください</option>';
+           Array.from(contentSet).forEach(c => {
+             const safe = String(c).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+             cHtml += `<option value="${safe}">${safe}</option>`;
+           });
+           contentSelect.innerHTML = cHtml;
+           if (prevVal && contentSet.has(prevVal)) contentSelect.value = prevVal;
+         }
+
+         // --- 3. 交換部品名 (m_parts) の選択肢構築（カテゴリ連動） ---
+         if (partsSelect) {
+           const prevVal = partsSelect.value;
+           const partsSet = new Set();
+           // ① 選択中農機の個別部品
+           if (machine && machine.parts) {
+             String(machine.parts).split(/[,、]/).map(p => p.trim()).filter(Boolean).forEach(p => partsSet.add(p));
+           }
+           // ② 同じカテゴリの全農機の部品
+           if (cat && Array.isArray(pdlMachines)) {
+             pdlMachines.filter(m => (m.category === cat || m.type === cat) && m.parts).forEach(m => {
+               String(m.parts).split(/[,、]/).map(p => p.trim()).filter(Boolean).forEach(p => partsSet.add(p));
+             });
+           }
+           // ③ 共通部品
+           (window.pdlMaintenanceParts || ["プラグ", "オイルフィルター", "エアフィルター", "Vベルト", "替刃", "ヒューズ", "バッテリー", "Oリング"]).forEach(p => partsSet.add(p));
+
+           let pHtml = '<option value="">選択してください</option>';
+           Array.from(partsSet).forEach(p => {
+             const safe = String(p).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+             pHtml += `<option value="${safe}">${safe}</option>`;
+           });
+           partsSelect.innerHTML = pHtml;
+           if (prevVal && partsSet.has(prevVal)) partsSelect.value = prevVal;
+         }
+
+         window.updateMaintenanceTargetInfoBadge();
       };
 
       window.handleCropSelection = () => {
@@ -9805,33 +10209,71 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
                   <div id="extra_record_buttons" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
-                  <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:6px; margin-bottom:15px; border:1px solid #ffcc80;">
+                  <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffcc80;">
                     <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:13px;">🔧 整備・修理・点検の詳細（機械・車両・道具マスタ連動）</div>
                     <div style="font-size:11px; color:#bf360c; margin-bottom:10px;">整備・点検対象を機械マスタ・移動車両（軽トラ等）・道具マスタから選択できます。名前・番号・カテゴリで検索できます。</div>
+                    
                     <label class="form-label">🔍 機械・車両・道具を検索</label>
                     <input type="search" id="m_tool_search" class="form-input" placeholder="名前・機械番号・ナンバー・道具カテゴリ等で絞り込み" oninput="filterMaintenanceMachineSelect()" style="margin-bottom:8px;">
+                    
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                       <label class="form-label" style="margin-bottom:0;">対象（機械・車両・道具）</label>
                       ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `<button type="button" onclick="addNewMachineFromWorker()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:3px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:3px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">＋ 機械を登録</button>` : ''}
                     </div>
-                    <select id="m_tool" class="form-input" onchange="updatePartsList()"><option value="">選択してください</option></select>
+                    <select id="m_tool" class="form-input" onchange="updatePartsList(); updateMaintenanceTargetInfoBadge();"><option value="">選択してください</option></select>
                     <div id="m_tool_empty_hint" style="display:none; font-size:11px; color:#c62828; margin:-6px 0 10px;">機械・道具マスタに該当の登録がありません。${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? '上の「＋ 機械を登録」ボタンからすぐ追加できます。' : '管理画面または車両・農機状況から追加してください。'}</div>
+
+                    <!-- 🌟 機械のグループ・カテゴリ・現在地拠点表示バッジ -->
+                    <div id="m_target_info_badge" style="display:none; background:#FFF; border:1px solid #FFE0B2; border-radius:8px; padding:8px 10px; margin-bottom:12px; font-size:12px; line-height:1.5;">
+                      <div style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;">
+                        <span>🏷️ <b>グループ:</b> <span id="m_info_group" style="color:#E65100; font-weight:bold;">--</span></span>
+                        <span>📁 <b>カテゴリ:</b> <span id="m_info_category" style="color:#1565C0; font-weight:bold;">--</span></span>
+                        <span>📍 <b>拠点:</b> <span id="m_info_location" style="color:#2E7D32; font-weight:bold;">--</span></span>
+                      </div>
+                    </div>
                     
-                    <label class="form-label">症状</label>
-                    <div style="display:flex; gap:5px; margin-bottom:15px;">
-                       <select id="m_symptom_sel" class="form-input" style="flex:1; margin-bottom:0;" onchange="document.getElementById('m_symptom').value=this.value">
-                         <option value="">選択...</option>
+                    <!-- 症状 (フリーテキスト枠削除・カテゴリ連動選択・管理者編集機能付き) -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                      <label class="form-label" style="margin-bottom:0;">症状</label>
+                      ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `
+                        <div style="display:flex; gap:4px;">
+                          <button type="button" onclick="openMaintenanceSymptomManagerModal('add')" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 症状追加</button>
+                          <button type="button" onclick="openMaintenanceSymptomManagerModal('manage')" style="background:#78909C; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">⚙️ 編集・削除</button>
+                        </div>
+                      ` : ''}
+                    </div>
+                    <div style="margin-bottom:15px;">
+                       <select id="m_symptom" class="form-input" style="margin-bottom:0; width:100%;">
+                         <option value="">選択してください</option>
                        </select>
-                       <input type="text" id="m_symptom" class="form-input" style="flex:2; margin-bottom:0;" placeholder="入力 (または選択)">
                     </div>
 
-                    <label class="form-label">整備内容</label>
-                    <select id="m_content" class="form-input"><option value="">選択してください</option></select>
+                    <!-- 整備内容 (カテゴリ連動選択・管理者編集機能付き) -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                      <label class="form-label" style="margin-bottom:0;">整備内容</label>
+                      ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `
+                        <div style="display:flex; gap:4px;">
+                          <button type="button" onclick="openMaintenanceContentManagerModal('add')" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 内容追加</button>
+                          <button type="button" onclick="openMaintenanceContentManagerModal('manage')" style="background:#78909C; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">⚙️ 編集・削除</button>
+                        </div>
+                      ` : ''}
+                    </div>
+                    <div style="margin-bottom:15px;">
+                      <select id="m_content" class="form-input" style="margin-bottom:0; width:100%;"><option value="">選択してください</option></select>
+                    </div>
                     
-                    <label class="form-label">交換部品名</label>
-                    <div style="display:flex; gap:5px; margin-bottom:15px;">
-                       <select id="m_parts" class="form-input" style="flex:1; margin-bottom:0;"><option value="">選択してください</option></select>
-                       <button onclick="addNewMachinePart()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">＋</button>
+                    <!-- 交換部品名 (カテゴリ連動選択・管理者編集機能付き) -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                      <label class="form-label" style="margin-bottom:0;">交換部品名</label>
+                      ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `
+                        <div style="display:flex; gap:4px;">
+                          <button type="button" onclick="addNewMachinePart()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 部品追加</button>
+                          <button type="button" onclick="openMachinePartManagerModal('manage')" style="background:#78909C; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">⚙️ 編集・削除</button>
+                        </div>
+                      ` : ''}
+                    </div>
+                    <div style="margin-bottom:15px;">
+                       <select id="m_parts" class="form-input" style="margin-bottom:0; width:100%;"><option value="">選択してください</option></select>
                     </div>
                   </div>
                   ${ridgeUI}
