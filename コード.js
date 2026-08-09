@@ -91,12 +91,12 @@ function doPost(e) {
     else if (action === 'addToolToMaster') result = addToolToMaster(params);
     else if (action === "updateToolStatus") result = updateToolStatus(params);
     else if (action === "getToolUsageHistory") result = getToolUsageHistory(params);
-    else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray);
-    else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop);
+    else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray, params.planType);
+    else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop, params.planType);
     else if (action === "previewCultivationPlanTags") result = previewCultivationPlanTags(params);
     else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
     else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
-    else if (action === "deleteSavedCultivationPlans") result = deleteSavedCultivationPlans(params.year, params.crop);
+    else if (action === "deleteSavedCultivationPlans") result = deleteSavedCultivationPlans(params.year, params.crop, params.planType);
     else if (action === "getCultivationHarvestSummary") result = getCultivationHarvestSummary(params.year);
     else if (action === "getCultivationRidgeParamsForField") result = getCultivationRidgeParamsForField(params.fieldId || params.id);
     else if (action === "getCultivationMaster") result = getCultivationMaster();
@@ -7109,7 +7109,29 @@ function appendCultivationMasterBatch_(plans) {
   }
 }
 
-function saveCultivationPlans(year, crop, planDataArray) {
+/** 計画JSONから本作/試作を判定（未設定は計画名末尾、それもなければ本作） */
+function resolveCultivationPlanType_(planOrType) {
+  if (typeof planOrType === 'string') {
+    const t = String(planOrType || '').trim();
+    return t === '試作' ? '試作' : '本作';
+  }
+  const plan = planOrType || {};
+  const typed = String(plan.planType || '').trim();
+  if (typed === '試作' || typed === '本作') return typed;
+  const name = String(plan.planName || '').trim();
+  if (/\s+試作$/.test(name)) return '試作';
+  return '本作';
+}
+
+function parseCultivationPlanJson_(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveCultivationPlans(year, crop, planDataArray, planType) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -7130,19 +7152,30 @@ function saveCultivationPlans(year, crop, planDataArray) {
         }
       }
     }
+
+    const plans = planDataArray || [];
+    const targetType = resolveCultivationPlanType_(
+      planType || (plans[0] && (plans[0].planType || plans[0].planName)) || '本作'
+    );
     
-    // 対象年度・作物以外をメモリ上で残し、削除・追加を1回の一括書き込みにする。
+    // 対象は「年度＋作物＋本作/試作」。別タイプ（本作⇔試作）は残す。
     const existingCount = Math.max(0, sheet.getLastRow() - 1);
     const existingRows = existingCount > 0
       ? sheet.getRange(2, 1, existingCount, 6).getValues()
       : [];
-    const outputRows = existingRows.filter(row =>
-      !(String(row[1]) === String(year) && String(row[3]) === String(crop))
-    );
+    const outputRows = existingRows.filter(row => {
+      if (!(String(row[1]) === String(year) && String(row[3]) === String(crop))) return true;
+      const planData = parseCultivationPlanJson_(row[5]);
+      return resolveCultivationPlanType_(planData) !== targetType;
+    });
 
     // 常に未実行=planned として保存。実行は executeCultivationPlans。
     const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    (planDataArray || []).forEach(plan => {
+    plans.forEach(plan => {
+       plan.planType = targetType;
+       if (!plan.planName) {
+         plan.planName = String(year) + '年 ' + String(crop) + ' ' + targetType;
+       }
        plan.status = 'planned';
        delete plan.executedAt;
        outputRows.push([
@@ -7161,9 +7194,9 @@ function saveCultivationPlans(year, crop, planDataArray) {
     if (outputRows.length > 0) {
       sheet.getRange(2, 1, outputRows.length, 6).setValues(outputRows);
     }
-    appendCultivationMasterBatch_(planDataArray || []);
+    appendCultivationMasterBatch_(plans);
     
-    return { status: 'success', message: '栽培計画を未実行計画として保存しました' };
+    return { status: 'success', message: '栽培計画を未実行計画として保存しました', planType: targetType };
   } catch(e) {
     throw new Error("栽培計画保存エラー: " + e.message);
   } finally {
@@ -7171,7 +7204,7 @@ function saveCultivationPlans(year, crop, planDataArray) {
   }
 }
 
-function getCultivationPlans(year, crop) {
+function getCultivationPlans(year, crop, planType) {
   try {
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('栽培計画');
@@ -7181,14 +7214,18 @@ function getCultivationPlans(year, crop) {
     
     const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
     const results = [];
+    const filterType = (planType != null && String(planType).trim() !== '')
+      ? resolveCultivationPlanType_(planType)
+      : '';
     
     for (let i = 0; i < data.length; i++) {
        const row = data[i];
        if (String(row[1]) === String(year) && String(row[3]) === String(crop)) {
-          try {
-             const planData = JSON.parse(row[5]);
-             results.push(planData);
-          } catch(e) {}
+          const planData = parseCultivationPlanJson_(row[5]);
+          if (!planData) continue;
+          if (filterType && resolveCultivationPlanType_(planData) !== filterType) continue;
+          if (!planData.planType) planData.planType = resolveCultivationPlanType_(planData);
+          results.push(planData);
        }
     }
     return results;
@@ -7227,7 +7264,10 @@ function getSavedCultivationPlanList() {
       }
     }
 
-    const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
+    const dataRowCount = Math.max(0, sheet.getLastRow() - 1);
+    const data = dataRowCount > 0
+      ? sheet.getRange(2, 1, dataRowCount, 6).getValues()
+      : [];
     const map = {};
 
     for (let i = 0; i < data.length; i++) {
@@ -7243,29 +7283,31 @@ function getSavedCultivationPlanList() {
        let planId = String(row[2] || '');
        let vName = String(row[4] || '').trim();
        let planName = '';
-       try {
-         const planData = JSON.parse(row[5]);
-         if (planData && planData.status === 'executed') status = 'executed';
-         if (planData) {
-           trays = Number(planData.trays) || 0;
-           holes = Number(planData.holes) || 0;
-           areaA = Number(planData.areaA) || 0;
-           if (planData.id) planId = String(planData.id);
-           if (!vName && planData.variety) vName = String(planData.variety || '').trim();
-           if (planData.planName) planName = String(planData.planName || '').trim();
-         }
-       } catch (e) {}
+       let planType = '本作';
+       const planData = parseCultivationPlanJson_(row[5]);
+       if (planData) {
+         if (planData.status === 'executed') status = 'executed';
+         trays = Number(planData.trays) || 0;
+         holes = Number(planData.holes) || 0;
+         areaA = Number(planData.areaA) || 0;
+         if (planData.id) planId = String(planData.id);
+         if (!vName && planData.variety) vName = String(planData.variety || '').trim();
+         if (planData.planName) planName = String(planData.planName || '').trim();
+         planType = resolveCultivationPlanType_(planData);
+       }
        if (!vName) vName = '(品種未設定)';
+       if (!planName) planName = year + '年 ' + crop + ' ' + planType;
 
        const seedCount = (holes === 1) ? trays : (trays * (holes > 0 ? holes : 0));
        const meta = metaMap[crop + '\t' + vName] || { maker: '', grainCount: '' };
 
-       const key = year + "_" + crop;
+       const key = year + '_' + crop + '_' + planType;
        if (!map[key]) {
            map[key] = {
              year: year,
              crop: crop,
-             planName: planName || (year + '年 ' + crop),
+             planType: planType,
+             planName: planName,
              count: 0,
              plannedCount: 0,
              executedCount: 0,
@@ -7291,20 +7333,27 @@ function getSavedCultivationPlanList() {
          holes: holes,
          areaA: areaA,
          seedCount: seedCount,
-         status: status
+         status: status,
+         planType: planType
        });
        map[key].seedTotal += seedCount;
        if (status !== 'executed') map[key].seedPlannedTotal += seedCount;
     }
 
-    return Object.values(map).sort((a, b) => b.year.localeCompare(a.year));
+    return Object.values(map).sort((a, b) => {
+      const y = String(b.year).localeCompare(String(a.year));
+      if (y) return y;
+      const c = String(a.crop).localeCompare(String(b.crop), 'ja');
+      if (c) return c;
+      return String(a.planType || '').localeCompare(String(b.planType || ''), 'ja');
+    });
   } catch(e) {
     throw new Error("栽培計画リスト取得エラー: " + e.message);
   }
 }
 
-/** 保存済み栽培計画を年度＋作物単位で削除 */
-function deleteSavedCultivationPlans(year, crop) {
+/** 保存済み栽培計画を年度＋作物＋本作/試作単位で削除 */
+function deleteSavedCultivationPlans(year, crop, planType) {
   try {
     const ss = TENANT_SS;
     if (!ss) return { success: false, message: 'スプレッドシート未設定' };
@@ -7315,24 +7364,31 @@ function deleteSavedCultivationPlans(year, crop) {
 
     const targetYear = String(year || '').trim();
     const targetCrop = String(crop || '').trim();
+    const targetType = (planType != null && String(planType).trim() !== '')
+      ? resolveCultivationPlanType_(planType)
+      : '';
     if (!targetYear || !targetCrop) {
       return { success: false, message: '年度と作物は必須です' };
     }
 
-    const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
     let deleted = 0;
     for (let i = data.length - 1; i >= 0; i--) {
-      if (String(data[i][1]) === targetYear && String(data[i][3]) === targetCrop) {
-        sheet.deleteRow(i + 2);
-        deleted++;
+      if (String(data[i][1]) !== targetYear || String(data[i][3]) !== targetCrop) continue;
+      if (targetType) {
+        const planData = parseCultivationPlanJson_(data[i][5]);
+        if (resolveCultivationPlanType_(planData) !== targetType) continue;
       }
+      sheet.deleteRow(i + 2);
+      deleted++;
     }
     SpreadsheetApp.flush();
+    const typeLabel = targetType ? ` ${targetType}` : '';
     return {
       success: true,
       deleted: deleted,
       message: deleted > 0
-        ? `${targetYear}年 ${targetCrop} の計画を${deleted}件削除しました`
+        ? `${targetYear}年 ${targetCrop}${typeLabel} の計画を${deleted}件削除しました`
         : '削除対象はありませんでした'
     };
   } catch (e) {
@@ -7915,9 +7971,10 @@ function previewCultivationPlanTags(params) {
   try {
     const year = params && params.year;
     const crop = params && params.crop;
+    const planType = params && params.planType;
     if (!year || !crop) throw new Error('年度と作物が必要です');
 
-    const plans = getCultivationPlans(year, crop);
+    const plans = getCultivationPlans(year, crop, planType);
     if (!plans || plans.length === 0) {
       return { success: false, message: '対象の栽培計画がありません' };
     }
@@ -7937,6 +7994,7 @@ function previewCultivationPlanTags(params) {
       success: true,
       year: year,
       crop: crop,
+      planType: planType ? resolveCultivationPlanType_(planType) : '',
       plans: targets.map(plan => ({
         id: plan.id || '',
         crop: plan.crop || crop,
@@ -7954,15 +8012,16 @@ function previewCultivationPlanTags(params) {
 
 /**
  * 未実行の栽培計画を「実行」し、播種を作業予定へ登録する
- * params: { year, crop, planIds?: string[] }
+ * params: { year, crop, planType?: string, planIds?: string[] }
  */
 function executeCultivationPlans(params) {
   try {
     const year = params.year;
     const crop = params.crop;
+    const planType = params.planType;
     if (!year || !crop) throw new Error('年度と作物が必要です');
 
-    const plans = getCultivationPlans(year, crop);
+    const plans = getCultivationPlans(year, crop, planType);
     if (!plans || plans.length === 0) {
       return { success: false, message: '対象の栽培計画がありません' };
     }

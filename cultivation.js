@@ -4338,9 +4338,8 @@ function finishCpSaveProgress(success) {
 
 async function saveCultivationPlan(options) {
     const opts = options || {};
-    const wasOverwrite = !!cpLoadedPlanKey;
     if (cpPlans.length === 0) {
-        if (!confirm("この年度の作型がすべて削除されます。保存してよろしいですか？")) {
+        if (!confirm("この計画タイプの作型がすべて削除されます。保存してよろしいですか？")) {
             return false;
         }
     }
@@ -4357,6 +4356,8 @@ async function saveCultivationPlan(options) {
         }
         const planNameInput = document.getElementById('cpPlanName');
         const planType = getCpPlanType() || '本作';
+        const saveKey = String(year) + '\t' + String(crop) + '\t' + String(planType);
+        const wasOverwrite = cpLoadedPlanKey === saveKey;
         const planName = buildCpPlanNameWithType(
             String(planNameInput ? planNameInput.value : '').trim() || getCpDefaultPlanName(year, crop),
             planType
@@ -4422,7 +4423,12 @@ async function saveCultivationPlan(options) {
         // 品種マスタは saveCultivationPlans 内で一括同期する。
         // ここで計画数分のGAS通信を並列実行すると、保存本体と競合して大幅に遅くなる。
         if (!opts.silent) setCpSaveProgress(25, '計画データを送信しています...', 55);
-        await callGAS('saveCultivationPlans', { year: year, crop: crop, planDataArray: payloadPlans });
+        await callGAS('saveCultivationPlans', {
+            year: year,
+            crop: crop,
+            planType: planType,
+            planDataArray: payloadPlans
+        });
         if (!opts.silent) setCpSaveProgress(60, '品種情報を整理しています...', 65);
         
         // 作型DBへ作物・品種・産地付きで保存（産地未選択時は拠点の各産地へ紐づけ）
@@ -4480,7 +4486,7 @@ async function saveCultivationPlan(options) {
             const tagDisplay = document.getElementById('tagDisplay_' + p.id);
             if (tagDisplay) tagDisplay.innerText = '';
         });
-        cpLoadedPlanKey = String(year) + '\t' + String(crop);
+        cpLoadedPlanKey = saveKey;
         if (!opts.silent) finishCpSaveProgress(true);
 
         if (!opts.keepOpen) {
@@ -4489,8 +4495,10 @@ async function saveCultivationPlan(options) {
         }
 
         if (!opts.silent) {
-            alert((wasOverwrite ? '栽培計画を上書き保存しました。' : '未実行の栽培計画として保存しました。') +
-                '\n「計画一覧」から実行すると、作業予定に播種が出ます。');
+            alert((wasOverwrite
+                ? `栽培計画（${planType}）を上書き保存しました。`
+                : `未実行の栽培計画（${planType}）として保存しました。`) +
+                '\n本作と試作は別々に保存されます。\n「計画一覧」から実行すると、作業予定に播種が出ます。');
         }
 
         if (typeof loadData === 'function') loadData();
@@ -4521,11 +4529,12 @@ async function executeCultivationPlanFromModal() {
     if (typeof showPlanListModal === 'function') showPlanListModal({ mode: 'manage' });
 }
 
-async function runExecuteCultivationPlans(year, crop, planIds) {
+async function runExecuteCultivationPlans(year, crop, planIds, planType) {
     try {
         const res = await callGAS('executeCultivationPlans', {
             year: year,
             crop: crop,
+            planType: planType || '',
             planIds: planIds || []
         });
         if (!res || res.success === false) {
@@ -4617,6 +4626,8 @@ async function showPlanListModal(options) {
             const executed = item.executedCount || 0;
             const y = String(item.year).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const c = String(item.crop).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const pt = String(item.planType || (/試作$/.test(String(item.planName || '')) ? '試作' : '本作'))
+                .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const canExec = planned > 0;
 
             const plans = Array.isArray(item.plans) ? item.plans : [];
@@ -4678,16 +4689,16 @@ async function showPlanListModal(options) {
             <div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 12px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
                   <div style="flex:1; min-width:140px;">
-                    <div style="font-size: 16px; font-weight: bold; color: #333; margin-bottom: 2px;">${esc(item.planName || (item.year + '年 ' + item.crop))}</div>
-                    <div style="font-size: 11px; color: #666; margin-bottom: 4px;">${item.year}年度 ／ ${esc(item.crop)}</div>
+                    <div style="font-size: 16px; font-weight: bold; color: #333; margin-bottom: 2px;">${esc(item.planName || (item.year + '年 ' + item.crop + ' ' + (item.planType || '本作')))}</div>
+                    <div style="font-size: 11px; color: #666; margin-bottom: 4px;">${item.year}年度 ／ ${esc(item.crop)} ／ <b style="color:${pt === '試作' ? '#ef6c00' : '#2e7d32'};">${esc(item.planType || pt || '本作')}</b></div>
                     <div style="font-size: 12px; color: #777;">作型: ${item.count}件（未実行 ${planned} / 実行済 ${executed}）</div>
                     <div style="font-size: 11px; color: #999; margin-top:2px;">最終更新 ${dateStr}</div>
                     ${varietyHtml}
                   </div>
                   <div style="display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end;">
-                    <button type="button" onclick="event.stopPropagation(); selectHistoryPlan('${y}', '${c}')" style="background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer;">📂 読込</button>
-                    ${isLoadMode ? '' : `<button type="button" onclick="event.stopPropagation(); executeSavedCultivationGroup('${y}', '${c}')" ${canExec ? '' : 'disabled'} title="${canExec ? '未実行計画を作業予定へ' : '未実行がありません'}" style="background:${canExec ? '#4CAF50' : '#bbb'}; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:${canExec ? 'pointer' : 'not-allowed'};">▶️ 実行</button>`}
-                    <button type="button" onclick="event.stopPropagation(); deleteSavedCultivationGroup('${y}', '${c}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗑 削除</button>
+                    <button type="button" onclick="event.stopPropagation(); selectHistoryPlan('${y}', '${c}', '${pt}')" style="background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer;">📂 読込</button>
+                    ${isLoadMode ? '' : `<button type="button" onclick="event.stopPropagation(); executeSavedCultivationGroup('${y}', '${c}', null, '${pt}')" ${canExec ? '' : 'disabled'} title="${canExec ? '未実行計画を作業予定へ' : '未実行がありません'}" style="background:${canExec ? '#4CAF50' : '#bbb'}; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:${canExec ? 'pointer' : 'not-allowed'};">▶️ 実行</button>`}
+                    <button type="button" onclick="event.stopPropagation(); deleteSavedCultivationGroup('${y}', '${c}', '${pt}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗑 削除</button>
                   </div>
                 </div>
             </div>`;
@@ -4725,7 +4736,7 @@ function closeCpTagConfirmModal() {
     cpPendingTagExecution = null;
 }
 
-function showCpTagConfirmModal(year, crop, plans, planIds) {
+function showCpTagConfirmModal(year, crop, plans, planIds, planType) {
     let modal = document.getElementById('cpTagConfirmModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -4739,6 +4750,7 @@ function showCpTagConfirmModal(year, crop, plans, planIds) {
 
     const esc = (s) => String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const typeLabel = String(planType || '').trim() || '';
     const rows = (plans || []).map(plan => {
         const qty = Number(plan.trays) || 0;
         const unit = Number(plan.holes) === 1 ? '株' : '枚';
@@ -4753,12 +4765,13 @@ function showCpTagConfirmModal(year, crop, plans, planIds) {
     cpPendingTagExecution = {
         year: year,
         crop: crop,
+        planType: typeLabel,
         planIds: Array.isArray(planIds) ? planIds.slice() : []
     };
     modal.innerHTML = `
       <div style="width:min(94vw,520px); max-height:88vh; overflow:auto; background:#fff; border-radius:10px; padding:18px; box-sizing:border-box; box-shadow:0 8px 28px rgba(0,0,0,.3);">
         <h3 style="margin:0 0 5px; color:#2e7d32; font-size:18px;">🏷️ タグ割り当て確認</h3>
-        <div style="font-size:12px; color:#666; margin-bottom:12px;">${esc(year)}年 ${esc(crop)} ／ 定植が早い順、同じ場合は収穫が早い順に自動割り当て</div>
+        <div style="font-size:12px; color:#666; margin-bottom:12px;">${esc(year)}年 ${esc(crop)}${typeLabel ? ' ／ ' + esc(typeLabel) : ''} ／ 定植が早い順、同じ場合は収穫が早い順に自動割り当て</div>
         <div style="border:1px solid #ddd; border-radius:7px; overflow:hidden; margin-bottom:14px;">
           ${rows}
         </div>
@@ -4783,7 +4796,7 @@ async function confirmCpTagExecution() {
     }
     const tagModal = document.getElementById('cpTagConfirmModal');
     if (tagModal) tagModal.style.display = 'none';
-    const ok = await runExecuteCultivationPlans(pending.year, pending.crop, pending.planIds);
+    const ok = await runExecuteCultivationPlans(pending.year, pending.crop, pending.planIds, pending.planType);
     if (ok) {
         cpPendingTagExecution = null;
         cpCropHarvestSummaryCache = null;
@@ -4795,18 +4808,19 @@ async function confirmCpTagExecution() {
     }
 }
 
-async function executeSavedCultivationGroup(year, crop, planIds) {
+async function executeSavedCultivationGroup(year, crop, planIds, planType) {
     try {
         const res = await callGAS('previewCultivationPlanTags', {
             year: year,
             crop: crop,
+            planType: planType || '',
             planIds: planIds || []
         });
         if (!res || res.success === false) {
             alert((res && res.message) ? res.message : 'タグ割り当てを確認できませんでした');
             return;
         }
-        showCpTagConfirmModal(year, crop, res.plans || [], planIds || []);
+        showCpTagConfirmModal(year, crop, res.plans || [], planIds || [], planType || res.planType || '');
     } catch (e) {
         alert('タグ割り当て確認エラー: ' + e.message);
     }
@@ -7559,13 +7573,16 @@ function yieldCpLoadRender() {
     });
 }
 
-async function loadHistoryPlans(yearOverride, cropOverride) {
+async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride) {
     const year = (yearOverride != null && yearOverride !== '')
         ? yearOverride
         : (getCpVal('cpYear', true) || new Date().getFullYear());
     const crop = (cropOverride != null && cropOverride !== '')
         ? String(cropOverride)
         : getCpVal('cpCrop');
+    const planType = (planTypeOverride != null && String(planTypeOverride).trim() !== '')
+        ? (String(planTypeOverride).trim() === '試作' ? '試作' : '本作')
+        : (getCpPlanType() || '本作');
     
     if (!crop) {
         alert("作物を選択してください。");
@@ -7590,7 +7607,11 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
         }
 
         setCpLoadProgress(8, 'サーバーから計画を取得しています...', 45);
-        const plans = await callGAS('getCultivationPlans', { year: year, crop: crop });
+        const plans = await callGAS('getCultivationPlans', {
+            year: year,
+            crop: crop,
+            planType: planType
+        });
         if (plans && Array.isArray(plans) && plans.length > 0) {
             plans.forEach((plan, index) => {
                 if (!plan.id) {
@@ -7624,27 +7645,26 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
             }
             if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
             if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
-            cpLoadedPlanKey = String(year) + '\t' + String(crop);
             const loadedPlanName = plans.find(plan => plan && String(plan.planName || '').trim());
             const loadedPlanType = plans.find(plan => plan && String(plan.planType || '').trim());
-            setCpPlanType(
-                loadedPlanType ? loadedPlanType.planType
-                    : (loadedPlanName && /\s+試作$/.test(String(loadedPlanName.planName || '')) ? '試作' : '本作'),
-                false
-            );
+            const resolvedType = loadedPlanType
+                ? (loadedPlanType.planType === '試作' ? '試作' : '本作')
+                : (loadedPlanName && /\s+試作$/.test(String(loadedPlanName.planName || '')) ? '試作' : planType);
+            setCpPlanType(resolvedType, false);
             setCpPlanName(loadedPlanName ? loadedPlanName.planName : '', {
                 loaded: true,
                 year: year,
                 crop: crop
             });
             applyCpPlanTypeToName();
+            cpLoadedPlanKey = String(year) + '\t' + String(crop) + '\t' + String(resolvedType);
             updateCpSaveButtonLabel();
             await waitForCpPlanLayoutReady();
             window.cpBulkPlanLoadInProgress = false;
-            finishCpLoadProgress(true, `${plans.length}件の計画を読み込みました`);
+            finishCpLoadProgress(true, `${plans.length}件の計画（${resolvedType}）を読み込みました`);
         } else {
             finishCpLoadProgress(false, '保存済みの計画が見つかりませんでした');
-            alert(`${year}年「${crop}」の保存済み計画は見つかりませんでした。`);
+            alert(`${year}年「${crop}」の${planType}計画は見つかりませんでした。`);
         }
     } catch (e) {
         console.error("計画読み込みエラー", e);
@@ -7661,12 +7681,13 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
 
 // --- History / Plan List Modal ---
 
-async function deleteSavedCultivationGroup(year, crop) {
+async function deleteSavedCultivationGroup(year, crop, planType) {
     const y = String(year || '').trim();
     const c = String(crop || '').trim();
+    const t = String(planType || '').trim() === '試作' ? '試作' : '本作';
     if (!y || !c) return;
 
-    if (!confirm(`${y}年「${c}」の保存済み計画を削除しますか？\n\n※この年度・作物の作型がすべて削除されます。元に戻せません。`)) {
+    if (!confirm(`${y}年「${c}」の${t}計画を削除しますか？\n\n※同じ作物のもう一方（${t === '本作' ? '試作' : '本作'}）は残ります。元に戻せません。`)) {
         return;
     }
 
@@ -7676,7 +7697,7 @@ async function deleteSavedCultivationGroup(year, crop) {
     }
 
     try {
-        const res = await callGAS('deleteSavedCultivationPlans', { year: y, crop: c });
+        const res = await callGAS('deleteSavedCultivationPlans', { year: y, crop: c, planType: t });
         if (!res || res.success === false) {
             alert((res && res.message) ? res.message : '削除に失敗しました');
             await showPlanListModal({ mode: currentPlanListMode });
@@ -7693,7 +7714,7 @@ async function deleteSavedCultivationGroup(year, crop) {
 
 window.deleteSavedCultivationGroup = deleteSavedCultivationGroup;
 
-async function selectHistoryPlan(year, crop) {
+async function selectHistoryPlan(year, crop, planType) {
     closePlanListModal();
 
     // メニューから計画一覧だけ開いた場合、栽培計画モーダルが閉じたままだと
@@ -7752,8 +7773,10 @@ async function selectHistoryPlan(year, crop) {
     if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
     if (typeof onCpCropChangedForCost === 'function') onCpCropChangedForCost();
     if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') scheduleRefreshCpWorkSchedulePanel();
-    // フォーム値に依存せず、一覧で選んだ年度・作物を直接渡す
-    await loadHistoryPlans(year, crop);
+    const resolvedType = String(planType || '').trim() === '試作' ? '試作' : '本作';
+    setCpPlanType(resolvedType, false);
+    // フォーム値に依存せず、一覧で選んだ年度・作物・計画タイプを直接渡す
+    await loadHistoryPlans(year, crop, resolvedType);
 }
 window.selectHistoryPlan = selectHistoryPlan;
 window.loadHistoryPlans = loadHistoryPlans;
