@@ -587,11 +587,24 @@ async function fetchWeatherAndUpdateUI() {
         }
         params.action = action;
         params.spreadsheetId = spreadsheetId;
+        const timeoutMs = {
+          saveCultivationPlans: 90000,
+          saveCroptypeDBBatch: 90000,
+          getCultivationMaster: 60000
+        }[action] || 30000;
+        const maxRetries = (action === 'saveCultivationPlans' || action === 'saveCroptypeDBBatch') ? 0 : retries;
         
         let lastError = null;
-        for (let i = 0; i <= retries; i++) {
+        for (let i = 0; i <= maxRetries; i++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             try {
-                const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
+                const res = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(params),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
                 const text = await res.text();
                 let json;
                 try {
@@ -605,11 +618,17 @@ async function fetchWeatherAndUpdateUI() {
                 if (json && json.status === "error") throw new Error(json.message || "エラーが発生しました");
                 return json && json.data !== undefined ? json.data : json;
             } catch (e) {
+                clearTimeout(timeoutId);
                 lastError = e;
-                if (i === retries) throw e;
-                await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+                if (i < maxRetries) {
+                    await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+                }
             }
         }
+        if (lastError && lastError.name === 'AbortError') {
+            throw new Error("通信がタイムアウトしました。保存済みの場合があるため、計画一覧を再読み込みして確認してください。");
+        }
+        throw lastError;
       }
 
       window.openWeatherModal = function() {
@@ -689,11 +708,24 @@ async function fetchWeatherAndUpdateUI() {
         }
         params.action = action;
         params.spreadsheetId = spreadsheetId;
+        const timeoutMs = {
+          saveCultivationPlans: 90000,
+          saveCroptypeDBBatch: 90000,
+          getCultivationMaster: 60000
+        }[action] || 30000;
+        const maxRetries = (action === 'saveCultivationPlans' || action === 'saveCroptypeDBBatch') ? 0 : retries;
         
         let lastError = null;
-        for (let i = 0; i <= retries; i++) {
+        for (let i = 0; i <= maxRetries; i++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             try {
-                const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
+                const res = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(params),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
                 const text = await res.text();
                 let json;
                 try {
@@ -707,12 +739,16 @@ async function fetchWeatherAndUpdateUI() {
                 if (json.status !== "success") throw new Error(json.message);
                 return json.data;
             } catch (err) {
+                clearTimeout(timeoutId);
                 lastError = err;
-                if (i < retries) {
-                    console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${retries})`, err);
+                if (i < maxRetries) {
+                    console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${maxRetries})`, err);
                     await new Promise(r => setTimeout(r, 1500));
                 }
             }
+        }
+        if (lastError && lastError.name === 'AbortError') {
+            throw new Error("通信がタイムアウトしました。保存済みの場合があるため、計画一覧を再読み込みして確認してください。");
         }
         lastError.message = lastError.message.replace("（リトライ中...）", "");
         throw lastError;
@@ -1934,7 +1970,9 @@ window.updateRowParams = function(planId, source) {
     }
 
     updateRowCalculations(planId);
-    if (typeof window.pushCpEditHistoryDebounced === 'function') window.pushCpEditHistoryDebounced(400);
+    if (!window.cpBulkPlanLoadInProgress && typeof window.pushCpEditHistoryDebounced === 'function') {
+        window.pushCpEditHistoryDebounced(400);
+    }
 };
 
 /**
@@ -2142,7 +2180,7 @@ window.updateFieldAllocations = function() {
 };
 
 window.assignTags = function() {
-    // 作物ごとにグループ化
+    // 拠点＋作物ごとにグループ化
     let groups = {};
     cpPlans.forEach(plan => {
         // 現在のDOMから最新のtasksを取得してソートに使う
@@ -2150,27 +2188,50 @@ window.assignTags = function() {
         // wait, we need to gather tasks from DOM directly to be safe, just like saveCultivationPlan does
         const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
         let plantingTaskIndices = [];
+        let harvestingTaskIndices = [];
         if (tr) {
-            const cells = tr.querySelectorAll('td[data-task="planting"]');
-            cells.forEach(cell => {
+            tr.querySelectorAll('td[data-task="planting"]').forEach(cell => {
                 const mIdx = parseInt(cell.dataset.monthIndex, 10);
                 const pIdx = parseInt(cell.dataset.period, 10);
                 plantingTaskIndices.push(mIdx * 6 + pIdx);
+            });
+            tr.querySelectorAll('td[data-task="harvesting"]').forEach(cell => {
+                const mIdx = parseInt(cell.dataset.monthIndex, 10);
+                const pIdx = parseInt(cell.dataset.period, 10);
+                harvestingTaskIndices.push(mIdx * 6 + pIdx);
             });
         }
         
         // 最も早い定植時期を探す。無ければ非常に大きい値にする
         let earliestPlanting = plantingTaskIndices.length > 0 ? Math.min(...plantingTaskIndices) : 9999;
+        let earliestHarvesting = harvestingTaskIndices.length > 0 ? Math.min(...harvestingTaskIndices) : 9999;
         
-        if (!groups[plan.crop]) groups[plan.crop] = [];
-        groups[plan.crop].push({ plan: plan, earliest: earliestPlanting });
+        const location = String(plan.location || '').trim();
+        const key = location + '\t' + plan.crop;
+        if (!groups[key]) groups[key] = { location: location, crop: plan.crop, items: [] };
+        groups[key].items.push({
+            plan: plan,
+            earliestPlanting: earliestPlanting,
+            earliestHarvesting: earliestHarvesting
+        });
     });
     
     // ソートしてタグ割り当て
-    Object.keys(groups).forEach(crop => {
-        groups[crop].sort((a, b) => a.earliest - b.earliest);
-        groups[crop].forEach((item, index) => {
-            item.plan.tag = `${crop}${index + 1}`;
+    Object.keys(groups).forEach(key => {
+        const group = groups[key];
+        group.items.sort((a, b) =>
+            (a.earliestPlanting - b.earliestPlanting) ||
+            (a.earliestHarvesting - b.earliestHarvesting)
+        );
+        const detail = typeof getLocationDetailByName === 'function'
+            ? getLocationDetailByName(group.location)
+            : null;
+        const locationCode = group.location
+            ? String((detail && detail.tagAbbreviation) || group.location)
+            : '';
+        const prefix = locationCode ? `${locationCode}-${group.crop}` : group.crop;
+        group.items.forEach((item, index) => {
+            item.plan.tag = `${prefix}${index + 1}`;
             const tagDisplay = document.getElementById('tagDisplay_' + item.plan.id);
             if (tagDisplay) {
                 tagDisplay.innerText = item.plan.tag;

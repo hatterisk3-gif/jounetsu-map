@@ -9,7 +9,7 @@
           <div id="cpLoadProgressPercent" style="margin-top:6px; text-align:right; font-size:11px; font-weight:bold; color:#388e3c;">0%</div>
         </div>
       </div>
-      <div style="background: #fff; color: #333; padding: 10px; border-radius: 0; width: 100%; max-width: 100%; box-shadow: none; height: 100%; max-height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
+      <div id="cpPlanEditorSurface" style="background: #fff; color: #333; padding: 10px; border-radius: 0; width: 100%; max-width: 100%; box-shadow: none; height: 100%; max-height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
           <h3 style="margin: 0; color: #4CAF50;">🌱 栽培計画作成</h3>
           <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="closeCultivationPlanModal()">×</span>
@@ -373,8 +373,8 @@
           <button type="button" onclick="sortCpPlansByHarvesting()" title="収穫セルが最も早い品種を上に並べ替えます" style="font-size: 11px; padding: 2px 10px; border: 1px solid #FFB74D; background: #FFF3E0; color: #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🍊 収穫早い順</button>
         </div>
         
-        <div id="cpTwoColContainer" style="flex: 1; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 120px;">
-          <div id="cpLeftPanel" style="width: 156px; min-width: 156px; overflow-y: auto; border-right: 2px solid #1976D2; background: #f5f5f5; flex-shrink: 0;">
+        <div id="cpTwoColContainer" style="flex: 1 1 120px; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 0;">
+          <div id="cpLeftPanel" style="width: 156px; min-width: 156px; min-height:0; overflow-y: auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; border-right: 2px solid #1976D2; background: #f5f5f5; flex-shrink: 0;">
             <style>
               #cpLeftBody input[type=number]::-webkit-outer-spin-button,
               #cpLeftBody input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -383,7 +383,7 @@
             <div id="cpLeftHeader" style="height: 0px; position: sticky; top: 0; z-index: 5; background: #f5f5f5; flex-shrink: 0;"></div>
             <div id="cpLeftBody"></div>
           </div>
-          <div id="cpRightPanel" style="flex: 1; overflow-x: auto; overflow-y: auto;">
+          <div id="cpRightPanel" style="flex: 1; min-width:0; min-height:0; overflow-x:auto; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y;">
             <table id="cpTable" style="border-collapse: separate; border-spacing: 0; min-width: 100%; width: max-content;">
               <!-- Rendered by JS -->
             </table>

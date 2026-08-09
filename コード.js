@@ -91,6 +91,7 @@ function doPost(e) {
     else if (action === "updateToolStatus") result = updateToolStatus(params);
     else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray);
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop);
+    else if (action === "previewCultivationPlanTags") result = previewCultivationPlanTags(params);
     else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
     else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
     else if (action === "deleteSavedCultivationPlans") result = deleteSavedCultivationPlans(params.year, params.crop);
@@ -765,8 +766,8 @@ function ensureLocationMasterSheet_() {
   let sheet = ss.getSheetByName('拠点マスタ');
   if (!sheet) {
     sheet = ss.insertSheet('拠点マスタ');
-    sheet.appendRow(['拠点名', '県', '市', '産地']);
-    sheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#e0e0e0');
+    sheet.appendRow(['拠点名', '県', '市', '産地', 'タグ略称']);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#e0e0e0');
     return sheet;
   }
 
@@ -791,6 +792,11 @@ function ensureLocationMasterSheet_() {
   if (headers.indexOf('産地') === -1) {
     const col = headers.length + 1;
     sheet.getRange(1, col).setValue('産地').setFontWeight('bold').setBackground('#e0e0e0');
+    headers.push('産地');
+  }
+  if (headers.indexOf('タグ略称') === -1) {
+    const col = headers.length + 1;
+    sheet.getRange(1, col).setValue('タグ略称').setFontWeight('bold').setBackground('#e0e0e0');
   }
   return sheet;
 }
@@ -817,6 +823,7 @@ function readLocationMasterDetails_() {
   const idxPref = headers.indexOf('県');
   const idxCity = headers.indexOf('市');
   const idxClimate = headers.indexOf('産地');
+  const idxTagAbbreviation = headers.indexOf('タグ略称');
   const results = [];
   const seen = {};
   for (let i = 1; i < data.length; i++) {
@@ -829,6 +836,7 @@ function readLocationMasterDetails_() {
       name: name,
       prefecture: idxPref >= 0 ? String(data[i][idxPref] || '').trim() : '',
       city: idxCity >= 0 ? String(data[i][idxCity] || '').trim() : '',
+      tagAbbreviation: idxTagAbbreviation >= 0 ? String(data[i][idxTagAbbreviation] || '').trim() : '',
       climate: climates.join(','),
       climates: climates
     });
@@ -1078,17 +1086,24 @@ function manageMasterData(masterType, manageAction, value, userName) {
       if (existing.some(l => l.name === name)) {
         throw new Error(`拠点名「${name}」は既に登録されています`);
       }
+      const tagAbbreviation = String(loc.tagAbbreviation || '').trim();
+      const effectiveTagCode = tagAbbreviation || name;
+      if (existing.some(l => String(l.tagAbbreviation || l.name || '').trim() === effectiveTagCode)) {
+        throw new Error(`タグ略称「${effectiveTagCode}」は他の拠点で使用されています`);
+      }
       const row = new Array(headers.length).fill('');
       row[0] = name;
       const prefIdx = headers.indexOf('県');
       const cityIdx = headers.indexOf('市');
       const climIdx = headers.indexOf('産地');
+      const tagAbbrIdx = headers.indexOf('タグ略称');
       if (prefIdx >= 0) row[prefIdx] = String(loc.prefecture || '').trim();
       if (cityIdx >= 0) row[cityIdx] = String(loc.city || '').trim();
       if (climIdx >= 0) {
         const climates = loc.climates != null ? loc.climates : loc.climate;
         row[climIdx] = formatLocationClimates_(climates);
       }
+      if (tagAbbrIdx >= 0) row[tagAbbrIdx] = tagAbbreviation;
       sheet.appendRow(row);
       writeLog(userName, "マスタ追加", name, `対象: ${sheetName}`);
     } else if (masterType === 'container') {
@@ -1174,9 +1189,19 @@ function manageMasterData(masterType, manageAction, value, userName) {
           throw new Error(`拠点名「${newName}」は既に登録されています`);
         }
       }
+      const existing = readLocationMasterDetails_();
+      const tagAbbreviation = String(loc.tagAbbreviation || '').trim();
+      const effectiveTagCode = tagAbbreviation || newName;
+      if (existing.some(l =>
+        l.name !== originalName &&
+        String(l.tagAbbreviation || l.name || '').trim() === effectiveTagCode
+      )) {
+        throw new Error(`タグ略称「${effectiveTagCode}」は他の拠点で使用されています`);
+      }
       const prefIdx = headers.indexOf('県');
       const cityIdx = headers.indexOf('市');
       const climIdx = headers.indexOf('産地');
+      const tagAbbrIdx = headers.indexOf('タグ略称');
       for (let i = 1; i < data.length; i++) {
         if (String(data[i][0] || '').trim() === originalName) {
           sheet.getRange(i + 1, 1).setValue(newName);
@@ -1186,6 +1211,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
             const climates = loc.climates != null ? loc.climates : loc.climate;
             sheet.getRange(i + 1, climIdx + 1).setValue(formatLocationClimates_(climates));
           }
+          if (tagAbbrIdx >= 0) sheet.getRange(i + 1, tagAbbrIdx + 1).setValue(tagAbbreviation);
           writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
           break;
         }
@@ -6898,8 +6924,77 @@ function getOpenClockInStatus(params) {
 // trigger clasp
 
 
+function appendCultivationMasterBatch_(plans) {
+  const ss = TENANT_SS;
+  if (!ss || !plans || plans.length === 0) return;
+
+  let sheet = ss.getSheetByName('栽培計画マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('栽培計画マスタ');
+    sheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積', '1苗当たり収量', '1P当たり入り数']);
+  }
+
+  const width = Math.max(10, sheet.getLastColumn());
+  const data = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues()
+    : [];
+  const pairSet = {};
+  const valueSets = [null, null, {}, {}, {}, {}, null, null, {}, {}];
+  data.forEach(row => {
+    const crop = String(row[0] || '').trim();
+    const variety = String(row[1] || '').trim();
+    if (crop && variety) pairSet[crop + '\t' + variety] = true;
+    [2, 3, 4, 5, 8, 9].forEach(col => {
+      if (row[col] !== '' && row[col] !== null && row[col] !== undefined) {
+        valueSets[col][String(row[col])] = true;
+      }
+    });
+  });
+
+  const rowsToAdd = [];
+  plans.forEach(plan => {
+    const crop = String((plan && plan.crop) || '').trim();
+    const variety = String((plan && plan.variety) || '').trim();
+    if (!crop || !variety) return;
+
+    const pairKey = crop + '\t' + variety;
+    const values = {
+      2: plan.holes,
+      3: plan.rows,
+      4: plan.pSpace,
+      5: plan.rSpace,
+      8: plan.yieldPerPlant || plan.yieldPerSeedling || '',
+      9: plan.itemsPerPack
+    };
+    const row = new Array(width).fill('');
+    let needsRow = false;
+    if (!pairSet[pairKey]) {
+      row[0] = crop;
+      row[1] = variety;
+      pairSet[pairKey] = true;
+      needsRow = true;
+    }
+    Object.keys(values).forEach(colKey => {
+      const col = Number(colKey);
+      const value = values[col];
+      if (value !== '' && value !== null && value !== undefined && !valueSets[col][String(value)]) {
+        row[col] = value;
+        valueSets[col][String(value)] = true;
+        needsRow = true;
+      }
+    });
+    if (needsRow) rowsToAdd.push(row);
+  });
+
+  if (rowsToAdd.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAdd.length, width).setValues(rowsToAdd);
+  }
+}
+
 function saveCultivationPlans(year, crop, planDataArray) {
+  const lock = LockService.getScriptLock();
   try {
+    lock.waitLock(30000);
     const ss = TENANT_SS;
     let sheet = ss.getSheetByName('栽培計画');
     if (!sheet) {
@@ -6918,22 +7013,21 @@ function saveCultivationPlans(year, crop, planDataArray) {
       }
     }
     
-    // 1. Delete existing rows for this year and crop
-    if (sheet.getLastRow() > 1) {
-      const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
-      for (let i = data.length - 1; i >= 0; i--) {
-        if (String(data[i][1]) === String(year) && String(data[i][3]) === String(crop)) {
-          sheet.deleteRow(i + 2);
-        }
-      }
-    }
-    
-    // 2. Append new rows（常に未実行=planned として保存。実行は executeCultivationPlans）
+    // 対象年度・作物以外をメモリ上で残し、削除・追加を1回の一括書き込みにする。
+    const existingCount = Math.max(0, sheet.getLastRow() - 1);
+    const existingRows = existingCount > 0
+      ? sheet.getRange(2, 1, existingCount, 6).getValues()
+      : [];
+    const outputRows = existingRows.filter(row =>
+      !(String(row[1]) === String(year) && String(row[3]) === String(crop))
+    );
+
+    // 常に未実行=planned として保存。実行は executeCultivationPlans。
     const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    for (const plan of planDataArray) {
+    (planDataArray || []).forEach(plan => {
        plan.status = 'planned';
        delete plan.executedAt;
-       sheet.appendRow([
+       outputRows.push([
           timestamp,
           year,
           plan.id,
@@ -6941,23 +7035,21 @@ function saveCultivationPlans(year, crop, planDataArray) {
           plan.variety,
           JSON.stringify(plan)
        ]);
-       try {
-         appendCultivationMaster({
-           crop: plan.crop,
-           variety: plan.variety,
-           holes: plan.holes,
-           rows: plan.rows,
-           pSpace: plan.pSpace,
-           rSpace: plan.rSpace,
-           yieldPerSeedling: plan.yieldPerPlant || plan.yieldPerSeedling || '',
-           itemsPerPack: plan.itemsPerPack || ''
-         });
-       } catch (appendErr) {}
+    });
+
+    if (existingCount > 0) {
+      sheet.getRange(2, 1, existingCount, 6).clearContent();
     }
+    if (outputRows.length > 0) {
+      sheet.getRange(2, 1, outputRows.length, 6).setValues(outputRows);
+    }
+    appendCultivationMasterBatch_(planDataArray || []);
     
     return { status: 'success', message: '栽培計画を未実行計画として保存しました' };
   } catch(e) {
     throw new Error("栽培計画保存エラー: " + e.message);
+  } finally {
+    try { lock.releaseLock(); } catch (lockErr) {}
   }
 }
 
@@ -6969,7 +7061,7 @@ function getCultivationPlans(year, crop) {
     
     if (sheet.getLastRow() <= 1) return [];
     
-    const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
     const results = [];
     
     for (let i = 0; i < data.length; i++) {
@@ -7388,7 +7480,9 @@ function resolveCpFieldDisplayName_(fieldId) {
 }
 
 /**
- * 定植の最も早い半旬順に、作物ごとへタグを割り当て（例: キャベツ1）
+ * 定植の最も早い半旬順、同じ場合は収穫の最も早い半旬順に、
+ * 拠点＋作物ごとへタグを割り当て
+ * 例: 徳島阿南（略称: 徳阿）のキャベツ → 徳阿-キャベツ1
  * plans 配列内のオブジェクトを直接更新する
  */
 
@@ -7645,27 +7739,99 @@ function getSowingProgress(params) {
 function assignCultivationPlanTags_(plans) {
   if (!plans || plans.length === 0) return;
   const groups = {};
+  const locationCodeMap = {};
+  readLocationMasterDetails_().forEach(location => {
+    if (!location || !location.name) return;
+    locationCodeMap[String(location.name)] =
+      String(location.tagAbbreviation || location.name).trim();
+  });
   plans.forEach(plan => {
     const planting = (plan.tasks && plan.tasks.planting) ? plan.tasks.planting : [];
-    let earliest = 9999;
-    planting.forEach(c => {
-      const mIdx = Number(c.monthIndex);
-      const pIdx = (c.periodIndex != null) ? Number(c.periodIndex) : Number(c.period);
-      if (!isNaN(mIdx) && !isNaN(pIdx)) {
-        const idx = mIdx * 6 + pIdx;
-        if (idx < earliest) earliest = idx;
-      }
-    });
+    const harvesting = (plan.tasks && plan.tasks.harvesting) ? plan.tasks.harvesting : [];
+    const getEarliest = cells => {
+      let earliest = 9999;
+      cells.forEach(c => {
+        const mIdx = Number(c.monthIndex);
+        const pIdx = (c.periodIndex != null) ? Number(c.periodIndex) : Number(c.period);
+        if (!isNaN(mIdx) && !isNaN(pIdx)) {
+          const idx = mIdx * 6 + pIdx;
+          if (idx < earliest) earliest = idx;
+        }
+      });
+      return earliest;
+    };
+    const earliestPlanting = getEarliest(planting);
+    const earliestHarvesting = getEarliest(harvesting);
     const crop = plan.crop || '';
-    if (!groups[crop]) groups[crop] = [];
-    groups[crop].push({ plan: plan, earliest: earliest });
-  });
-  Object.keys(groups).forEach(crop => {
-    groups[crop].sort((a, b) => a.earliest - b.earliest);
-    groups[crop].forEach((item, index) => {
-      item.plan.tag = crop + (index + 1);
+    const location = String(plan.location || '').trim();
+    const groupKey = location + '\t' + crop;
+    if (!groups[groupKey]) groups[groupKey] = {
+      crop: crop,
+      location: location,
+      items: []
+    };
+    groups[groupKey].items.push({
+      plan: plan,
+      earliestPlanting: earliestPlanting,
+      earliestHarvesting: earliestHarvesting
     });
   });
+  Object.keys(groups).forEach(groupKey => {
+    const group = groups[groupKey];
+    group.items.sort((a, b) =>
+      (a.earliestPlanting - b.earliestPlanting) ||
+      (a.earliestHarvesting - b.earliestHarvesting)
+    );
+    const locationCode = group.location
+      ? (locationCodeMap[group.location] || group.location)
+      : '';
+    const prefix = locationCode ? (locationCode + '-' + group.crop) : group.crop;
+    group.items.forEach((item, index) => {
+      item.plan.tag = prefix + (index + 1);
+    });
+  });
+}
+
+/** 実行前に、実際の実行処理と同じ規則でタグ割り当てを確認する */
+function previewCultivationPlanTags(params) {
+  try {
+    const year = params && params.year;
+    const crop = params && params.crop;
+    if (!year || !crop) throw new Error('年度と作物が必要です');
+
+    const plans = getCultivationPlans(year, crop);
+    if (!plans || plans.length === 0) {
+      return { success: false, message: '対象の栽培計画がありません' };
+    }
+
+    let targets = plans.filter(p => p.status !== 'executed');
+    if (params.planIds && params.planIds.length > 0) {
+      const idSet = {};
+      params.planIds.forEach(id => { idSet[String(id)] = true; });
+      targets = plans.filter(p => idSet[String(p.id)] && p.status !== 'executed');
+    }
+    if (targets.length === 0) {
+      return { success: false, message: '実行対象の未実行計画がありません' };
+    }
+
+    assignCultivationPlanTags_(plans);
+    return {
+      success: true,
+      year: year,
+      crop: crop,
+      plans: targets.map(plan => ({
+        id: plan.id || '',
+        crop: plan.crop || crop,
+        location: plan.location || '',
+        variety: plan.variety || '(品種未設定)',
+        tag: plan.tag || '',
+        trays: Number(plan.trays) || 0,
+        holes: Number(plan.holes) || 0
+      }))
+    };
+  } catch (e) {
+    return { success: false, message: 'タグ割り当て確認エラー: ' + e.message };
+  }
 }
 
 /**

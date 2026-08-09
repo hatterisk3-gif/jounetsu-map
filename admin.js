@@ -997,6 +997,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">拠点名</label>
                 <input type="text" id="add_location_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 本社農場">
+                <label style="font-size:12px; font-weight:bold; color:#555;">タグ略称</label>
+                <input type="text" id="add_location_tag_abbreviation" class="form-input" maxlength="10" style="margin-bottom:0; padding:8px;" placeholder="例: 徳阿">
+                <div style="font-size:11px; color:#777;">栽培タグに使用します（例: 徳阿-キャベツ1）。空欄時は拠点名を使用します。</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">都道府県 / 市区町村</label>
                 <div style="display:flex; gap:5px;">
                   <select id="add_location_pref" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml('')}</select>
@@ -1307,7 +1310,11 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 const climates = parseLocationClimates(v.climates != null ? v.climates : v.climate);
                 const climateLabel = climates.length ? climates.join('・') : '';
                 const bits = [v.prefecture, v.city, climateLabel].filter(Boolean);
-                if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">${bits.join(' / ')}</span>`;
+                const tagLabel = v.tagAbbreviation
+                    ? `<span style="font-size:11px; color:#c2185b; margin-left:6px;">タグ:${v.tagAbbreviation}</span>`
+                    : '';
+                if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">${bits.join(' / ')}</span>${tagLabel}`;
+                else subInfo = tagLabel;
             }
             if (type === 'costItem') {
                 const bits = [];
@@ -1468,12 +1475,16 @@ window.renderMasterSection = () => {
 window.openEditLocationMaster = (encodedStr) => {
     const v = JSON.parse(decodeURIComponent(encodedStr));
     const safeName = (v.name || "").replace(/"/g, '&quot;');
+    const safeTagAbbreviation = (v.tagAbbreviation || "").replace(/"/g, '&quot;');
     const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; color:#2196F3; font-size:15px; border-bottom:2px solid #2196F3; padding-bottom:5px;">✏️ 拠点マスタの編集</h4>
             <input type="hidden" id="edit_location_original_name" value="${safeName}">
             <label class="form-label">拠点名</label>
             <input type="text" id="edit_location_name" class="form-input" value="${safeName}">
+            <label class="form-label">タグ略称</label>
+            <input type="text" id="edit_location_tag_abbreviation" class="form-input" maxlength="10" value="${safeTagAbbreviation}" placeholder="例: 徳阿">
+            <div style="font-size:11px; color:#777; margin-top:-8px; margin-bottom:10px;">栽培タグに使用します（例: 徳阿-キャベツ1）。空欄時は拠点名を使用します。</div>
             <label class="form-label">県</label>
             <select id="edit_location_pref" class="form-input" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml(v.prefecture || '')}</select>
             <label class="form-label">市・町・村</label>
@@ -3477,6 +3488,7 @@ window.execMaster = async (type, act, val) => {
             const climates = getSelectedLocationClimates('add');
             value = {
                 name: name,
+                tagAbbreviation: (document.getElementById('add_location_tag_abbreviation')?.value || '').trim(),
                 prefecture: document.getElementById('add_location_pref').value,
                 city: getLocationCityValue('add'),
                 climates: climates,
@@ -3566,6 +3578,7 @@ window.execMaster = async (type, act, val) => {
                 originalName: originalName,
                 newData: {
                     name: newName,
+                    tagAbbreviation: (document.getElementById('edit_location_tag_abbreviation')?.value || '').trim(),
                     prefecture: document.getElementById('edit_location_pref').value,
                     city: getLocationCityValue('edit'),
                     climates: climates,

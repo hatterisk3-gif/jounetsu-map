@@ -565,6 +565,8 @@ window.renderMasterSection = () => {
         else if (type === 'location') {
             html += `<div style="display:flex; flex-direction:column; gap:5px; margin-top:5px; margin-bottom:5px;">
               <input type="text" id="add_location_name" class="form-input" style="width:100%; margin-bottom:0; padding:6px;" placeholder="拠点名 (例: 本社農場)">
+              <input type="text" id="add_location_tag_abbreviation" class="form-input" maxlength="10" style="width:100%; margin-bottom:0; padding:6px;" placeholder="タグ略称 (例: 徳阿)">
+              <div style="font-size:11px; color:#777;">栽培タグ例: 徳阿-キャベツ1（空欄時は拠点名）</div>
               <div style="display:flex; gap:5px;">
                 <select id="add_location_pref" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml('')}</select>
                 <select id="add_location_city" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationCityChange(this)">
@@ -633,6 +635,7 @@ window.renderMasterSection = () => {
                 const climates = parseLocationClimates(v.climates != null ? v.climates : v.climate);
                 const climateLabel = climates.length ? climates.join('・') : '';
                 const bits = [v.prefecture, v.city, climateLabel].filter(Boolean);
+                if (v.tagAbbreviation) bits.push('タグ:' + v.tagAbbreviation);
                 if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0;">${bits.join(' / ')}</span>`;
             }
             if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 4px; border-radius:4px;">${v.workCategory || '汎用'}</span>`;
@@ -666,6 +669,7 @@ window.execMaster = async (type, act, val) => {
             const climates = getSelectedLocationClimates('add');
             value = {
                 name: name,
+                tagAbbreviation: (document.getElementById('add_location_tag_abbreviation')?.value || '').trim(),
                 prefecture: document.getElementById('add_location_pref').value,
                 city: getLocationCityValue('add'),
                 climates: climates,

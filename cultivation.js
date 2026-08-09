@@ -2609,6 +2609,45 @@ function syncAllRowHeights() {
     });
 }
 
+function setupCpPlanPanelScrollSync() {
+    const leftPanel = document.getElementById('cpLeftPanel');
+    const rightPanel = document.getElementById('cpRightPanel');
+    if (!leftPanel || !rightPanel || leftPanel.dataset.scrollSyncBound === '1') return;
+
+    let syncing = false;
+    const syncTop = function(source, target) {
+        if (syncing) return;
+        syncing = true;
+        target.scrollTop = source.scrollTop;
+        requestAnimationFrame(function() { syncing = false; });
+    };
+    leftPanel.addEventListener('scroll', function() {
+        syncTop(leftPanel, rightPanel);
+    }, { passive: true });
+    rightPanel.addEventListener('scroll', function() {
+        syncTop(rightPanel, leftPanel);
+    }, { passive: true });
+    leftPanel.dataset.scrollSyncBound = '1';
+    rightPanel.dataset.scrollSyncBound = '1';
+}
+
+function waitForCpPlanLayoutReady() {
+    return new Promise(resolve => {
+        requestAnimationFrame(() => {
+            syncLeftHeaderHeight();
+            syncAllRowHeights();
+            requestAnimationFrame(() => {
+                const leftPanel = document.getElementById('cpLeftPanel');
+                const rightPanel = document.getElementById('cpRightPanel');
+                if (leftPanel) leftPanel.style.overflowY = 'auto';
+                if (rightPanel) rightPanel.style.overflowY = 'auto';
+                setupCpPlanPanelScrollSync();
+                requestAnimationFrame(resolve);
+            });
+        });
+    });
+}
+
 let pendingCroptypeData = null;
 
 function searchCroptypeWeb() {
@@ -2772,7 +2811,8 @@ function addCpPlanRow() {
     if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
 }
 
-function renderCpPlanRow(plan) {
+function renderCpPlanRow(plan, options) {
+    const opts = options || {};
     const tbody = document.getElementById('cpTableBody');
     const leftBody = document.getElementById('cpLeftBody');
     if (!tbody || !leftBody) return;
@@ -2876,7 +2916,8 @@ function renderCpPlanRow(plan) {
             td.dataset.period = i;
             td.dataset.task = '';
             td.style.userSelect = 'none';
-            td.style.touchAction = 'none';
+            // タッチではスワイプをスクロールに使い、短いタップだけをペイントにする。
+            td.style.touchAction = 'pan-x pan-y';
             bindCpCellPaintEvents(td, plan.id);
             
             let div = document.createElement('div');
@@ -2912,20 +2953,16 @@ function renderCpPlanRow(plan) {
     
     tbody.appendChild(tr);
     
-    // ハイライト状態を反映
-    applyCpColumnHighlights();
-    
-    // 圃場選択表示を更新
-    if (typeof updateVarietyCardFieldsDisplay === 'function') {
-        updateVarietyCardFieldsDisplay(plan.id);
+    if (!opts.deferPostRender) {
+        // 通常の1行追加時のみ即時反映。一括読込時は全行描画後に1回だけ行う。
+        applyCpColumnHighlights();
+        if (typeof updateVarietyCardFieldsDisplay === 'function') {
+            updateVarietyCardFieldsDisplay(plan.id);
+        }
+        syncCpSemiAutoStepForPlan(plan.id);
+        if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint();
+        setTimeout(() => { syncAllRowHeights(); }, 50);
     }
-    
-    // 半自動ヒント（カードごと）を反映
-    syncCpSemiAutoStepForPlan(plan.id);
-    if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint();
-    
-    // 左右の高さを同期
-    setTimeout(() => { syncAllRowHeights(); }, 50);
 }
 
 /** 品種カードの詳細（圃場・歩留など）を開閉 */
@@ -3451,11 +3488,25 @@ function resolveCpPaintToolForPlan(planId) {
 function bindCpCellPaintEvents(td, planId) {
     td.onpointerdown = function(e) {
         if (e.button != null && e.button !== 0) return;
+        const startCol = parseInt(td.dataset.colIdx, 10);
+        if (e.pointerType === 'touch') {
+            cpPaintDrag = {
+                planId: planId,
+                startTd: td,
+                startCol: startCol,
+                lastCol: startCol,
+                pointerId: e.pointerId,
+                touchTap: true,
+                startX: e.clientX,
+                startY: e.clientY,
+                dragged: false
+            };
+            return;
+        }
         // スクロールとの競合を抑えつつドラッグ塗りを開始
         e.preventDefault();
         try { td.setPointerCapture(e.pointerId); } catch (err) {}
         const resolved = resolveCpPaintToolForPlan(planId);
-        const startCol = parseInt(td.dataset.colIdx, 10);
         cpPaintDrag = {
             planId: planId,
             startTd: td,
@@ -3472,6 +3523,14 @@ function bindCpCellPaintEvents(td, planId) {
     td.onpointermove = function(e) {
         if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
         if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
+        if (cpPaintDrag.touchTap) {
+            const moved = Math.hypot(
+                e.clientX - cpPaintDrag.startX,
+                e.clientY - cpPaintDrag.startY
+            );
+            if (moved > 8) cpPaintDrag = null;
+            return;
+        }
 
         const el = document.elementFromPoint(e.clientX, e.clientY);
         const overTd = el && el.closest
@@ -3507,6 +3566,10 @@ function bindCpCellPaintEvents(td, planId) {
         if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
         const drag = cpPaintDrag;
         cpPaintDrag = null;
+        if (drag.touchTap) {
+            toggleCpCell(drag.startTd, planId);
+            return;
+        }
         try { td.releasePointerCapture(e.pointerId); } catch (err) {}
 
         if (!drag.dragged) {
@@ -3535,7 +3598,11 @@ function bindCpCellPaintEvents(td, planId) {
     };
 
     td.onpointerup = endDrag;
-    td.onpointercancel = endDrag;
+    td.onpointercancel = function(e) {
+        if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
+        if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
+        cpPaintDrag = null;
+    };
 }
 window.bindCpCellPaintEvents = bindCpCellPaintEvents;
 
@@ -3702,9 +3769,11 @@ function updateCpCellsText(planId, forceRatioRebuild) {
         });
     });
     
-    // UI改善: 高さの同期を追加（スクロール位置は syncAllRowHeights 内で保持）
-    setTimeout(() => { syncAllRowHeights(); }, 50);
-    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    // 一括読込中は各行ごとの全体再計算を避け、最後に1回だけ実行する。
+    if (!window.cpBulkPlanLoadInProgress) {
+        setTimeout(() => { syncAllRowHeights(); }, 50);
+        if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    }
 }
 
 // --- 半旬別収穫量グラフ ---
@@ -4147,6 +4216,7 @@ async function saveCultivationPlan(options) {
             year: year,
             planName: planName,
             planType: planType,
+            location: plan.location || getCpVal('cpLocation') || '',
             crop: plan.crop,
             variety: plan.variety,
             areaA: plan.areaA,
@@ -4195,19 +4265,8 @@ async function saveCultivationPlan(options) {
             }
         });
 
-        // 品種マスタ追記（非同期・並列）
-        Promise.all(payloadPlans.map(plan => {
-            if (!plan.crop || !plan.variety) return Promise.resolve();
-            return syncVarietyToMasterDB(plan.crop, plan.variety, {
-                holes: plan.holes,
-                rows: plan.rows,
-                pSpace: plan.pSpace,
-                rSpace: plan.rSpace,
-                yieldPerSeedling: plan.yieldPerPlant || plan.yieldPerSeedling || '',
-                itemsPerPack: plan.itemsPerPack || ''
-            }).catch(e => console.warn('品種マスタ同期スキップ:', e));
-        }));
-        
+        // 品種マスタは saveCultivationPlans 内で一括同期する。
+        // ここで計画数分のGAS通信を並列実行すると、保存本体と競合して大幅に遅くなる。
         if (!opts.silent) setCpSaveProgress(25, '計画データを送信しています...', 55);
         await callGAS('saveCultivationPlans', { year: year, crop: crop, planDataArray: payloadPlans });
         if (!opts.silent) setCpSaveProgress(60, '品種情報を整理しています...', 65);
@@ -4504,14 +4563,103 @@ function closePlanListModal() {
 window.showPlanListModal = showPlanListModal;
 window.closePlanListModal = closePlanListModal;
 
-async function executeSavedCultivationGroup(year, crop) {
-    if (!confirm(`${year}年 ${crop} の未実行計画を実行し、播種を作業予定に登録しますか？`)) return;
-    const ok = await runExecuteCultivationPlans(year, crop);
+let cpPendingTagExecution = null;
+
+function closeCpTagConfirmModal() {
+    const modal = document.getElementById('cpTagConfirmModal');
+    if (modal) modal.style.display = 'none';
+    cpPendingTagExecution = null;
+}
+
+function showCpTagConfirmModal(year, crop, plans, planIds) {
+    let modal = document.getElementById('cpTagConfirmModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'cpTagConfirmModal';
+        modal.style.cssText = 'display:none; position:fixed; inset:0; z-index:12050; background:rgba(0,0,0,.6); align-items:center; justify-content:center; padding:14px; box-sizing:border-box;';
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) closeCpTagConfirmModal();
+        });
+        document.body.appendChild(modal);
+    }
+
+    const esc = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const rows = (plans || []).map(plan => {
+        const qty = Number(plan.trays) || 0;
+        const unit = Number(plan.holes) === 1 ? '株' : '枚';
+        return `
+          <div style="display:grid; grid-template-columns:minmax(110px,auto) 1fr auto; gap:8px; align-items:center; padding:9px 8px; border-bottom:1px solid #e0e0e0;">
+            <b style="color:#c2185b; font-size:14px;">${esc(plan.tag)}</b>
+            <span style="min-width:0; word-break:break-word; font-size:13px;">${esc(plan.variety)}<small style="display:block; color:#777; margin-top:2px;">${esc(plan.location || '拠点未設定')}</small></span>
+            <span style="color:#777; font-size:11px; white-space:nowrap;">${qty.toLocaleString('ja-JP')}${unit}</span>
+          </div>`;
+    }).join('');
+
+    cpPendingTagExecution = {
+        year: year,
+        crop: crop,
+        planIds: Array.isArray(planIds) ? planIds.slice() : []
+    };
+    modal.innerHTML = `
+      <div style="width:min(94vw,520px); max-height:88vh; overflow:auto; background:#fff; border-radius:10px; padding:18px; box-sizing:border-box; box-shadow:0 8px 28px rgba(0,0,0,.3);">
+        <h3 style="margin:0 0 5px; color:#2e7d32; font-size:18px;">🏷️ タグ割り当て確認</h3>
+        <div style="font-size:12px; color:#666; margin-bottom:12px;">${esc(year)}年 ${esc(crop)} ／ 定植が早い順、同じ場合は収穫が早い順に自動割り当て</div>
+        <div style="border:1px solid #ddd; border-radius:7px; overflow:hidden; margin-bottom:14px;">
+          ${rows}
+        </div>
+        <div style="font-size:11px; color:#795548; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:8px; margin-bottom:14px;">
+          このタグで確定すると、播種が作業予定へ登録されます。
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button type="button" onclick="closeCpTagConfirmModal()" style="flex:1; padding:11px; background:#fff; color:#555; border:1px solid #bbb; border-radius:6px; font-weight:bold; cursor:pointer;">戻る</button>
+          <button type="button" id="cpConfirmExecuteBtn" onclick="confirmCpTagExecution()" style="flex:1.5; padding:11px; background:#4CAF50; color:#fff; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">このタグで実行</button>
+        </div>
+      </div>`;
+    modal.style.display = 'flex';
+}
+
+async function confirmCpTagExecution() {
+    if (!cpPendingTagExecution) return;
+    const pending = cpPendingTagExecution;
+    const btn = document.getElementById('cpConfirmExecuteBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '実行中...';
+    }
+    const tagModal = document.getElementById('cpTagConfirmModal');
+    if (tagModal) tagModal.style.display = 'none';
+    const ok = await runExecuteCultivationPlans(pending.year, pending.crop, pending.planIds);
     if (ok) {
+        cpPendingTagExecution = null;
         cpCropHarvestSummaryCache = null;
         await showPlanListModal({ mode: 'manage' });
+    } else if (btn) {
+        if (tagModal) tagModal.style.display = 'flex';
+        btn.disabled = false;
+        btn.textContent = 'このタグで実行';
     }
 }
+
+async function executeSavedCultivationGroup(year, crop, planIds) {
+    try {
+        const res = await callGAS('previewCultivationPlanTags', {
+            year: year,
+            crop: crop,
+            planIds: planIds || []
+        });
+        if (!res || res.success === false) {
+            alert((res && res.message) ? res.message : 'タグ割り当てを確認できませんでした');
+            return;
+        }
+        showCpTagConfirmModal(year, crop, res.plans || [], planIds || []);
+    } catch (e) {
+        alert('タグ割り当て確認エラー: ' + e.message);
+    }
+}
+
+window.closeCpTagConfirmModal = closeCpTagConfirmModal;
+window.confirmCpTagExecution = confirmCpTagExecution;
 
 const CP_DRAFT_KEY = 'jmap_cp_plan_draft';
 
@@ -7167,11 +7315,20 @@ function updateVarietyCardFieldsDisplay(planId) {
         namesEl.innerText = selectedNames.length > 0 ? selectedNames.join(', ') : '未選択';
     }
     
-    // UI改善: 高さの同期を追加
-    setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
+    if (!window.cpBulkPlanLoadInProgress) {
+        setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
+    }
 }
 
 let cpLoadProgressTimer = null;
+
+function setCpPlanInteractionLocked(locked) {
+    const surface = document.getElementById('cpPlanEditorSurface');
+    if (!surface) return;
+    surface.inert = !!locked;
+    if (locked) surface.setAttribute('aria-busy', 'true');
+    else surface.removeAttribute('aria-busy');
+}
 
 function setCpLoadProgress(percent, label, autoAdvanceTo) {
     const overlay = document.getElementById('cpLoadProgressOverlay');
@@ -7186,6 +7343,7 @@ function setCpLoadProgress(percent, label, autoAdvanceTo) {
     }
 
     let current = Math.max(0, Math.min(100, Math.round(percent)));
+    setCpPlanInteractionLocked(true);
     overlay.style.display = 'flex';
     bar.style.background = '#4CAF50';
     bar.style.width = current + '%';
@@ -7228,12 +7386,14 @@ function finishCpLoadProgress(success, label) {
             requestAnimationFrame(() => {
                 overlay.style.display = 'none';
                 bar.style.width = '0%';
+                setCpPlanInteractionLocked(false);
             });
         });
     } else {
         setTimeout(() => {
             overlay.style.display = 'none';
             bar.style.width = '0%';
+            setCpPlanInteractionLocked(false);
         }, 1800);
     }
 }
@@ -7264,6 +7424,7 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
     const leftBody = document.getElementById('cpLeftBody');
     if (leftBody) leftBody.innerHTML = '';
     cpPlans = [];
+    window.cpBulkPlanLoadInProgress = true;
 
     const btn = document.querySelector('button[onclick="loadHistoryPlans()"]');
     let orgText = '📂 この条件で保存済み計画を読み込む';
@@ -7277,17 +7438,21 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
         setCpLoadProgress(8, 'サーバーから計画を取得しています...', 45);
         const plans = await callGAS('getCultivationPlans', { year: year, crop: crop });
         if (plans && Array.isArray(plans) && plans.length > 0) {
+            plans.forEach((plan, index) => {
+                if (!plan.id) {
+                    plan.id = 'cp_' + Date.now() + '_' + index + '_' + Math.random().toString(36).substr(2, 6);
+                }
+            });
+            cpPlans = plans;
             setCpLoadProgress(50, `計画を画面へ展開しています（0/${plans.length}件）`);
             for (let i = 0; i < plans.length; i++) {
                 const plan = plans[i];
-                // IDがない場合は新規生成
-                if (!plan.id) plan.id = 'cp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                cpPlans.push(plan);
-                renderCpPlanRow(plan);
+                renderCpPlanRow(plan, { deferPostRender: true });
                 setCpLoadProgress(50 + ((i + 1) / plans.length) * 28,
                     `計画を画面へ展開しています（${i + 1}/${plans.length}件）`);
-                if (i % 4 === 3 || i === plans.length - 1) await yieldCpLoadRender();
+                if (i % 10 === 9 || i === plans.length - 1) await yieldCpLoadRender();
             }
+            applyCpColumnHighlights();
 
             // 各種数値を再計算・表示
             setCpLoadProgress(80, `計算結果を反映しています（0/${cpPlans.length}件）`);
@@ -7295,16 +7460,11 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
                 const plan = cpPlans[i];
                 if (typeof window.updateRowParams === 'function') window.updateRowParams(plan.id);
                 else if (typeof updateRowParams === 'function') updateRowParams(plan.id);
-                
-                if (typeof window.updateRowCalculations === 'function') window.updateRowCalculations(plan.id);
-                else if (typeof updateRowCalculations === 'function') updateRowCalculations(plan.id);
                 setCpLoadProgress(80 + ((i + 1) / cpPlans.length) * 15,
                     `計算結果を反映しています（${i + 1}/${cpPlans.length}件）`);
-                if (i % 4 === 3 || i === cpPlans.length - 1) await yieldCpLoadRender();
+                if (i % 10 === 9 || i === cpPlans.length - 1) await yieldCpLoadRender();
             }
             setCpLoadProgress(96, '画面レイアウトを調整しています...');
-            await yieldCpLoadRender();
-            if (typeof syncAllRowHeights === 'function') syncAllRowHeights();
             if (typeof syncCpSemiAutoStepsFromPlans === 'function') {
                 syncCpSemiAutoStepsFromPlans();
             }
@@ -7325,7 +7485,8 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
             });
             applyCpPlanTypeToName();
             updateCpSaveButtonLabel();
-            await yieldCpLoadRender();
+            await waitForCpPlanLayoutReady();
+            window.cpBulkPlanLoadInProgress = false;
             finishCpLoadProgress(true, `${plans.length}件の計画を読み込みました`);
         } else {
             finishCpLoadProgress(false, '保存済みの計画が見つかりませんでした');
@@ -7336,6 +7497,7 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
         finishCpLoadProgress(false, '計画の読み込みに失敗しました');
         alert("計画の読み込みに失敗しました。");
     } finally {
+        window.cpBulkPlanLoadInProgress = false;
         if (btn) {
             btn.innerHTML = orgText;
             btn.disabled = false;
