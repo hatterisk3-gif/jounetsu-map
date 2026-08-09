@@ -5687,12 +5687,25 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!inputName || !String(inputName).trim()) return;
         const name = String(inputName).trim();
 
-        if (!Array.isArray(window.pdlMaintenanceContents)) window.pdlMaintenanceContents = [];
-        if (!window.pdlMaintenanceContents.includes(name)) window.pdlMaintenanceContents.push(name);
-        if (typeof window.updatePartsList === 'function') window.updatePartsList();
-        const sel = document.getElementById('m_content');
-        if (sel) sel.value = name;
-        if (typeof customAlert === 'function') customAlert(`✅ 整備内容「${name}」を追加しました！`);
+        try {
+          const result = await callGAS('addMaintenanceContent', {
+            name: name,
+            userName: (typeof currentUser !== 'undefined' ? currentUser : '')
+          });
+          if (!result || result.success === false) {
+            throw new Error((result && result.message) || '登録に失敗しました');
+          }
+          window.pdlMaintenanceContents = Array.isArray(result.items)
+            ? result.items.slice()
+            : (Array.isArray(window.pdlMaintenanceContents) ? window.pdlMaintenanceContents : []);
+          if (!window.pdlMaintenanceContents.includes(name)) window.pdlMaintenanceContents.push(name);
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
+          const sel = document.getElementById('m_content');
+          if (sel) sel.value = name;
+          if (typeof customAlert === 'function') customAlert(`✅ 整備内容「${name}」を登録しました！`);
+        } catch (e) {
+          if (typeof customAlert === 'function') customAlert('整備内容の登録に失敗しました: ' + e.message);
+        }
       };
 
       window.editMaintenanceContentMaster = async (oldName, newName) => {
@@ -10643,12 +10656,12 @@ function createSignboardMarker(name, pos, icon, id) {
                     <!-- 整備内容 (カテゴリ連動選択・管理者編集機能付き) -->
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                       <label class="form-label" style="margin-bottom:0;">整備内容</label>
-                      ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `
-                        <div style="display:flex; gap:4px;">
-                          <button type="button" onclick="openMaintenanceContentManagerModal('add')" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 内容追加</button>
+                      <div style="display:flex; gap:4px;">
+                          <button type="button" onclick="addNewMaintenanceContentMaster()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 内容追加</button>
+                          ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `
                           <button type="button" onclick="openMaintenanceContentManagerModal('manage')" style="background:#78909C; color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">⚙️ 編集・削除</button>
-                        </div>
-                      ` : ''}
+                          ` : ''}
+                      </div>
                     </div>
                     <div style="margin-bottom:15px;">
                       <select id="m_content" class="form-input" style="margin-bottom:0; width:100%;"><option value="">選択してください</option></select>
@@ -11746,6 +11759,10 @@ function createSignboardMarker(name, pos, icon, id) {
               ? window.buildDetailedWorksFormattedString()
               : Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked')).map(cb => cb.value).join(', ');
             let usedItemsText = (typeof getUsedItemsText === 'function') ? getUsedItemsText() : "";
+            const usedMachines = Array.from(document.querySelectorAll('.used-machine-check:checked')).map(chk => ({
+              id: chk.value || '',
+              name: chk.getAttribute('data-name') || ''
+            })).filter(machine => machine.id || machine.name);
             const ridgeProgress = (typeof window.collectRidgeProgressData === 'function') ? window.collectRidgeProgressData() : [];
             const firstRidge = ridgeProgress[0] || {};
 
@@ -11782,6 +11799,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 ? window.resolveProgressStatusForSubmit()
                 : (document.getElementById('rec_progress_status')?.value || ""),
               usedTools: "", 
+              usedMachines: usedMachines,
               usedMaterials: usedItemsText,
               workedRidges: firstRidge.workedRidges || "",
               nextRidge: firstRidge.nextRidge || "",
@@ -17595,12 +17613,16 @@ window.openSkillTreeModal = async function(targetUser) {
 
   // 1. 全作業記録から該当ユーザーの作業実績を抽出・集計
   let userWorkRecords = [];
+  const seenWorkRecordIds = new Set();
   if (typeof loadedPolygons !== 'undefined') {
     for (let pid in loadedPolygons) {
       const p = loadedPolygons[pid];
       if (p.photos && Array.isArray(p.photos)) {
-        p.photos.forEach(ph => {
+        p.photos.forEach((ph, index) => {
           if (ph.author === user && (ph.type === 'work' || (ph.data && ph.data.workName))) {
+            const recordKey = ph.id ? String(ph.id) : `${pid}:${index}`;
+            if (seenWorkRecordIds.has(recordKey)) return;
+            seenWorkRecordIds.add(recordKey);
             userWorkRecords.push(ph);
           }
         });
@@ -17608,18 +17630,31 @@ window.openSkillTreeModal = async function(targetUser) {
     }
   }
 
-  // カテゴリマッピングと作業名集計
+  // 道具を「貸出中」にした履歴を取得（返却・故障報告は経験値に含めない）
+  let toolUsageRecords = [];
+  try {
+    const toolRes = await callGAS('getToolUsageHistory', { userName: user });
+    if (toolRes && toolRes.success && Array.isArray(toolRes.usageRecords)) {
+      toolUsageRecords = toolRes.usageRecords;
+    }
+  } catch (e) {
+    console.warn('道具使用履歴の取得に失敗しました', e);
+  }
+
+  // カテゴリマッピングと作業・機械・道具の集計
   const categories = [
     { id: 'cat_tillage', name: '🌾 耕起・土づくり', keywords: ['耕起', '代かき', '土づくり', '堆肥', '起す', 'トラクター'] },
     { id: 'cat_sowing', name: '🌱 播種・育苗・定植', keywords: ['播種', '育苗', '定植', '植付', '種まき', '苗', '鉢上げ'] },
     { id: 'cat_care', name: '💧 肥培・防除・水管理', keywords: ['防除', '消毒', '追肥', '施肥', '水管理', '除草', '草刈り', '追肥'] },
     { id: 'cat_harvest', name: '📦 収穫・調整・出荷', keywords: ['収穫', '選別', '出荷', '調整', '袋詰め', 'コンテナ', '収穫作業'] },
     { id: 'cat_machine', name: '🚜 機械操作・整備', keywords: ['整備', '点検', '給油', '洗浄', '修理', 'オイル', '刈払機', 'トラクター'] },
+    { id: 'cat_tool', name: '🪚 道具操作', keywords: [] },
     { id: 'cat_other', name: '📑 事務・管理・その他', keywords: [] }
   ];
 
   let catCounts = {};
   categories.forEach(c => catCounts[c.id] = { ...c, total: 0, works: {} });
+  let machineUsageExp = 0;
 
   userWorkRecords.forEach(rec => {
     const wName = (rec.data && rec.data.workName) ? String(rec.data.workName).trim() : '一般的な作業';
@@ -17632,15 +17667,44 @@ window.openSkillTreeModal = async function(targetUser) {
     }
     catCounts[matchedCatId].total += 1;
     catCounts[matchedCatId].works[wName] = (catCounts[matchedCatId].works[wName] || 0) + 1;
+
+    const data = rec.data || {};
+    let machineNames = [];
+    if (Array.isArray(data.usedMachines)) {
+      machineNames = data.usedMachines.map(machine => {
+        return typeof machine === 'string' ? machine : (machine && machine.name);
+      });
+    } else if (data.usedMaterials) {
+      const machineSection = String(data.usedMaterials).match(/【使用農機】([\s\S]*?)(?=\n\s*【|$)/);
+      if (machineSection) {
+        machineNames = machineSection[1].split(/\r?\n/).map(line => line.replace(/^[\s・]+/, '').trim());
+      }
+    }
+    [...new Set(machineNames.filter(Boolean))].forEach(machineName => {
+      machineUsageExp += 1;
+      catCounts.cat_machine.total += 1;
+      const label = `🚜 ${machineName}`;
+      catCounts.cat_machine.works[label] = (catCounts.cat_machine.works[label] || 0) + 1;
+    });
+  });
+
+  toolUsageRecords.forEach(usage => {
+    const toolName = String(usage.name || '道具').trim();
+    catCounts.cat_tool.total += 1;
+    const label = `🪚 ${toolName}`;
+    catCounts.cat_tool.works[label] = (catCounts.cat_tool.works[label] || 0) + 1;
   });
 
   const totalWorks = userWorkRecords.length;
-  const userLevel = Math.floor(totalWorks / 3) + 1;
+  const machineExp = machineUsageExp;
+  const toolExp = catCounts.cat_tool.total;
+  const totalExp = totalWorks + machineExp + toolExp;
+  const userLevel = Math.floor(totalExp / 3) + 1;
   let rankTitle = '🐣 農業ビギナー';
-  if (totalWorks >= 36) rankTitle = '👑 農業マスター';
-  else if (totalWorks >= 20) rankTitle = '🚜 ベテラン農家';
-  else if (totalWorks >= 10) rankTitle = '🌾 一人前農家';
-  else if (totalWorks >= 3) rankTitle = '🌿 見習い農家';
+  if (totalExp >= 36) rankTitle = '👑 農業マスター';
+  else if (totalExp >= 20) rankTitle = '🚜 ベテラン農家';
+  else if (totalExp >= 10) rankTitle = '🌾 一人前農家';
+  else if (totalExp >= 3) rankTitle = '🌿 見習い農家';
 
   // 2. 免許・資格データの読み込み (LocalStorage + GAS)
   let userQuals = [];
@@ -17670,7 +17734,7 @@ window.openSkillTreeModal = async function(targetUser) {
     </div>
     <div style="display:flex; align-items:baseline; gap:10px;">
       <div style="font-size:32px; font-weight:bold;">Lv.${userLevel}</div>
-      <div style="font-size:13px; opacity:0.9;">累計作業記録: <strong>${totalWorks} 回</strong></div>
+      <div style="font-size:13px; opacity:0.9;">累計経験値: <strong>${totalExp} XP</strong>（作業 ${totalWorks}・機械 ${machineExp}・道具 ${toolExp}）</div>
     </div>
   </div>`;
 
@@ -17682,7 +17746,7 @@ window.openSkillTreeModal = async function(targetUser) {
 
   // --- タブ1: スキルツリーセクション ---
   h += `<div id="skillSectionTree">`;
-  h += `<div style="font-size:12px; color:#666; margin-bottom:10px;">作業記録が積み重なると経験値が自動集計され、スキルが解放・強化されます！</div>`;
+  h += `<div style="font-size:12px; color:#666; margin-bottom:10px;">作業記録・使用した機械・借りた道具が、それぞれ1 XPとして自動集計されます。</div>`;
 
   categories.forEach(cat => {
     const data = catCounts[cat.id];

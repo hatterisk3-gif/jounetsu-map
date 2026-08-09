@@ -83,12 +83,14 @@ function doPost(e) {
     else if (action === "addMachineToSign") result = addMachineToSign(params);
     else if (action === "addMachinePart") result = addMachinePart(params);
     else if (action === "addMachineSymptom") result = addMachineSymptom(params);
+    else if (action === "addMaintenanceContent") result = addMaintenanceContent(params);
     else if (action === "getRefuelHistory") result = getRefuelHistory();
     else if (action === "saveRefuelRecord") result = saveRefuelRecord(params);
     else if (action === "getMachineLastHourMeters") result = getMachineLastHourMeters();
     else if (action === "updateSignLink") result = updateSignLink(params);
     else if (action === 'addToolToMaster') result = addToolToMaster(params);
     else if (action === "updateToolStatus") result = updateToolStatus(params);
+    else if (action === "getToolUsageHistory") result = getToolUsageHistory(params);
     else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray);
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop);
     else if (action === "previewCultivationPlanTags") result = previewCultivationPlanTags(params);
@@ -587,6 +589,11 @@ function getInitData() {
   pdl.containers = readContainerMasterList_(containerNames);
   pdl.containerNames = [...new Set(pdl.containers.map(c => c.name))];
   pdl.contentUnits = getContentUnitMasterList_(pdl.containers);
+  try {
+    maintenanceContents = maintenanceContents.concat(readMaintenanceContentMaster_());
+  } catch (e) {
+    console.warn('整備内容マスタ読み込みスキップ:', e);
+  }
   pdl.maintenanceContents = [...new Set(maintenanceContents)].filter(String); 
 
   pdl.crops = readMergedCropMasterList_();
@@ -842,6 +849,40 @@ function readLocationMasterDetails_() {
     });
   }
   return results;
+}
+
+function ensureMaintenanceContentMasterSheet_() {
+  let sheet = TENANT_SS.getSheetByName('整備内容マスタ');
+  if (!sheet) {
+    sheet = TENANT_SS.insertSheet('整備内容マスタ');
+    sheet.appendRow(['整備内容']);
+    sheet.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0');
+  }
+  return sheet;
+}
+
+function readMaintenanceContentMaster_() {
+  const sheet = ensureMaintenanceContentMasterSheet_();
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues()
+    .map(row => String(row[0] || '').trim())
+    .filter(Boolean);
+}
+
+function addMaintenanceContent(params) {
+  const name = String((params && (params.name || params.content)) || '').trim();
+  if (!name) return { success: false, message: '整備内容を入力してください' };
+  if (name.length > 80) return { success: false, message: '整備内容は80文字以内で入力してください' };
+
+  const sheet = ensureMaintenanceContentMasterSheet_();
+  const items = readMaintenanceContentMaster_();
+  if (!items.includes(name)) sheet.appendRow([name]);
+  const updated = readMaintenanceContentMaster_();
+  return {
+    success: true,
+    message: items.includes(name) ? '既に登録されています' : '整備内容を追加しました',
+    items: updated
+  };
 }
 
 function ensureMachineTypeMasterSheet_() {
@@ -5988,6 +6029,33 @@ function updateToolStatus(params) {
   writeLog(params.userName, "道具状態更新", toolData[2], `${params.newStatus}に変更`);
 
   return true;
+}
+
+// スキルツリー用：指定ユーザーが道具を借りた履歴だけを返す
+function getToolUsageHistory(params) {
+  const logSheet = TENANT_SS.getSheetByName('道具記録');
+  const userName = String(params.userName || '').trim();
+  if (!logSheet || !userName) return { success: true, usageRecords: [] };
+
+  const values = logSheet.getDataRange().getValues();
+  const usageRecords = [];
+  const operatorMarker = `(操作者: ${userName})`;
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const status = String(row[6] || '').trim();
+    const actionLog = String(row[4] || '');
+    if (status !== '貸出中' || !actionLog.includes(operatorMarker)) continue;
+
+    usageRecords.push({
+      toolId: String(row[0] || ''),
+      date: row[1] instanceof Date ? row[1].toISOString() : String(row[1] || ''),
+      name: String(row[2] || '道具'),
+      regNumber: String(row[3] || '')
+    });
+  }
+
+  return { success: true, usageRecords: usageRecords };
 }
 // ==========================================
 // 🪚 道具マスタの編集
