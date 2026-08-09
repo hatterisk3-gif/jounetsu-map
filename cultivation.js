@@ -4487,32 +4487,37 @@ async function saveCultivationPlan(options) {
         }
         const saveKey = buildCpPlanSaveKey(year, crop, planName);
 
-        // タグは実行時に自動割り当て（計画段階では未設定のまま保存）
-        const payloadPlans = collectCurrentCpPlansFromDom().map(plan => ({
-            year: year,
-            planName: planName,
-            planType: planType,
-            location: plan.location || getCpVal('cpLocation') || '',
-            crop: plan.crop,
-            variety: plan.variety,
-            areaA: plan.areaA,
-            holes: plan.holes,
-            rows: plan.rows,
-            pSpace: plan.pSpace,
-            rSpace: plan.rSpace,
-            yieldRate: plan.yieldRate,
-            seedlingSuccess: plan.seedlingSuccess,
-            harvestRatios: plan.harvestRatios || [],
-            yieldPerPlant: plan.yieldPerPlant,
-            itemsPerPack: plan.itemsPerPack,
-            trays: plan.trays,
-            yield: plan.yield,
-            tasks: plan.tasks,
-            fieldIds: plan.fieldIds || [],
-            tag: '',
-            id: plan.id,
-            status: 'planned'
-        }));
+        // 未実行はタグ空・planned。実行済みは status/tag/executedAt を維持（サーバ側でも照合）
+        const payloadPlans = collectCurrentCpPlansFromDom().map(plan => {
+            const isExecuted = plan.status === 'executed';
+            return {
+                year: year,
+                planName: planName,
+                planType: planType,
+                location: plan.location || getCpVal('cpLocation') || '',
+                crop: plan.crop,
+                variety: plan.variety,
+                areaA: plan.areaA,
+                holes: plan.holes,
+                rows: plan.rows,
+                pSpace: plan.pSpace,
+                rSpace: plan.rSpace,
+                yieldRate: plan.yieldRate,
+                seedlingSuccess: plan.seedlingSuccess,
+                harvestRatios: plan.harvestRatios || [],
+                yieldPerPlant: plan.yieldPerPlant,
+                itemsPerPack: plan.itemsPerPack,
+                trays: plan.trays,
+                yield: plan.yield,
+                tasks: plan.tasks,
+                fieldIds: plan.fieldIds || [],
+                tag: isExecuted ? (plan.tag || '') : '',
+                id: plan.id,
+                status: isExecuted ? 'executed' : 'planned',
+                executedAt: isExecuted ? (plan.executedAt || '') : undefined
+            };
+        });
+        const hadExecutedPlans = payloadPlans.some(p => p.status === 'executed');
 
         const missingSowing = payloadPlans.filter(p => !p.tasks || !p.tasks.sowing || p.tasks.sowing.length === 0);
         if (missingSowing.length > 0 && !opts.allowNoSowing) {
@@ -4546,7 +4551,7 @@ async function saveCultivationPlan(options) {
         // 品種マスタは saveCultivationPlans 内で一括同期する。
         // ここで計画数分のGAS通信を並列実行すると、保存本体と競合して大幅に遅くなる。
         if (!opts.silent) setCpSaveProgress(25, '計画データを送信しています...', 55);
-        await callGAS('saveCultivationPlans', {
+        const saveResult = await callGAS('saveCultivationPlans', {
             year: year,
             crop: crop,
             planType: planType,
@@ -4603,12 +4608,27 @@ async function saveCultivationPlan(options) {
 
         clearCultivationPlanDraft();
 
-        // メモリ上も未実行・タグ未割当（タグは実行時に付与）
+        // サーバ返却の status/tag を反映。未実行のみタグをクリア
+        const savedMetaById = {};
+        if (saveResult && Array.isArray(saveResult.plans)) {
+            saveResult.plans.forEach(p => {
+                if (p && p.id != null) savedMetaById[String(p.id)] = p;
+            });
+        }
+        const keepExecuted = !!(saveResult && saveResult.hasExecuted) || hadExecutedPlans;
         cpPlans.forEach(p => {
-            p.status = 'planned';
-            p.tag = '';
+            const meta = savedMetaById[String(p.id)];
+            if (meta) {
+                p.status = meta.status || 'planned';
+                p.tag = meta.tag || '';
+                p.executedAt = meta.executedAt || '';
+            } else if (!keepExecuted) {
+                p.status = 'planned';
+                p.tag = '';
+                p.executedAt = '';
+            }
             const tagDisplay = document.getElementById('tagDisplay_' + p.id);
-            if (tagDisplay) tagDisplay.innerText = '';
+            if (tagDisplay) tagDisplay.innerText = p.tag || '';
         });
         cpLoadedPlanKey = saveKey;
         if (!opts.silent) finishCpSaveProgress(true);
@@ -4619,10 +4639,20 @@ async function saveCultivationPlan(options) {
         }
 
         if (!opts.silent) {
-            alert((wasOverwrite
-                ? `栽培計画「${planName}」を上書き保存しました。`
-                : `未実行の栽培計画「${planName}」として保存しました。`) +
-                '\n本作・試作や本作2などは別々に保存されます。\n「計画一覧」から実行すると、作業予定に播種が出ます。');
+            const sync = saveResult && saveResult.scheduleSync;
+            const scheduleTouched = !!(sync && ((sync.updated || 0) + (sync.created || 0) + (sync.deleted || 0) > 0));
+            if (keepExecuted) {
+                alert(`実行済みの栽培計画「${planName}」を保存しました。` +
+                    (scheduleTouched
+                        ? '\n播種・定植の変更に合わせて、作業予定の播種日程もずらしました。'
+                        : '') +
+                    '\n本作・試作や本作2などは別々に保存されます。');
+            } else {
+                alert((wasOverwrite
+                    ? `栽培計画「${planName}」を上書き保存しました。`
+                    : `未実行の栽培計画「${planName}」として保存しました。`) +
+                    '\n本作・試作や本作2などは別々に保存されます。\n「計画一覧」から実行すると、作業予定に播種が出ます。');
+            }
         }
 
         if (typeof loadData === 'function') loadData();

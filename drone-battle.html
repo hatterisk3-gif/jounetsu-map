@@ -919,7 +919,7 @@
           <button type="button" data-sens="100" data-expo="25" id="sensPresetNormal" class="active">普通</button>
           <button type="button" data-sens="145" data-expo="10" id="sensPresetSharp">きつめ</button>
         </div>
-        <p class="sens-hint">初期は「普通」。感度↑＝小さく動かしても反応。精密さ↑＝中央付近は細かく、端は急に効く。</p>
+        <p class="sens-hint">感度・精密さは姿勢（ヨー/ピッチ/ロール）向け。スロットルは最大推力を維持し、精密さだけ中央付近を細かくします。</p>
       </div>
 
       <div class="sens-block" id="cpuDiffBlock" style="display:none;">
@@ -1050,8 +1050,8 @@ const FERT_IDEAL_ALT = 7;
 const FERT_SPRAY_R = 2.4;
 const FERT_TIME = 90;
 const AIRSHIP_MAX_HP = 2200;
-const AIRSHIP_HIT_R = 11;
-const AIRSHIP_WEAK_R = 4.2;
+const AIRSHIP_HIT_R = 26;
+const AIRSHIP_WEAK_R = 6.5;
 const AI_MIN_ALT = 9;
 const AI_SAFE_ALT = 14;
 
@@ -1888,12 +1888,28 @@ function refreshFireButtonLabel() {
   if (alt) alt.textContent = label.length > 4 ? 'FIRE' : label;
 }
 
+/** 姿勢軸（ヨー/ピッチ/ロール）用。感度で最大入力も変わり操作感が変わる */
 function applyStickAxis(v) {
   const sens = state.stickSens || 1;
   const expo = state.stickExpo || 0;
   const sign = v < 0 ? -1 : 1;
   let a = Math.min(1, Math.abs(v) * sens);
   // expo: 中央を鈍く、端で急に効く（0=線形）
+  if (expo > 0.001) {
+    const curved = a * a * a;
+    a = a * (1 - expo) + curved * expo;
+  }
+  return sign * a;
+}
+
+/**
+ * スロットル軸専用。感度では最大推力を削らない（端は必ず ±1）。
+ * 精密さだけ中央付近を細かくし、ホバリングをしやすくする。
+ */
+function applyThrottleStick(v) {
+  const expo = state.stickExpo || 0;
+  const sign = v < 0 ? -1 : 1;
+  let a = Math.min(1, Math.abs(v));
   if (expo > 0.001) {
     const curved = a * a * a;
     a = a * (1 - expo) + curved * expo;
@@ -2065,7 +2081,7 @@ function openSetup(gameType) {
     musou: '大量の敵ドローンを撃墜していく無双バトル。全滅で勝利。',
     deathmatch: '全員が敵同士でも撃ち合う乱闘。最後の1機が勝ち残る。',
     defense: '拠点の防衛線を守れ。波状に襲来する敵の突破を防ぎ、全ウェーブ撃退で勝利。',
-    airship: '巨大飛行艇の船体とゴンドラ弱点を狙い、撃破せよ。',
+    airship: 'ギガント級の巨大飛行要塞。橙色のゴンドラ弱点を狙い、撃破せよ。',
     race: 'ゲートを順番に通過するタイムアタック。最速クリアを目指せ。',
     fertilizer: '適正高度を保ち、畑へムラなく肥料を散布せよ。',
     dogfight: '対CPUの空中ドッグファイト。先にHPを0にした方が勝ち。'
@@ -2075,7 +2091,7 @@ function openSetup(gameType) {
     musou: '<strong>無双モード</strong><br>・敵ドローンが群れて襲来<br>・すべて撃墜すれば勝利／自分のHP0で敗北<br>・低空接触に注意しつつ撃ちまくれ',
     deathmatch: '<strong>デスマッチ</strong><br>・AI同士も撃ち合う大乱闘<br>・最後の1機が勝利<br>・接近戦・横槍に注意',
     defense: '<strong>防衛線モード</strong><br>・拠点の防衛線（光る柵）を突破されると拠点HPが減る<br>・全 ' + DEFENSE_WAVES.length + ' ウェーブを撃退すれば勝利<br>・拠点HP0 または 自機撃破で敗北',
-    airship: '<strong>巨大飛行艇撃破</strong><br>・橙色のゴンドラが弱点（ダメージ2.5倍）<br>・飛行艇からも反撃あり<br>・オンライン協力プレイも可（ONLINE → 飛行艇協力）',
+    airship: '<strong>巨大飛行艇撃破</strong><br>・ギガント級の超巨大翼付き飛行要塞<br>・橙色のゴンドラが弱点（ダメージ2.5倍）<br>・飛行艇からも反撃あり<br>・オンライン協力プレイも可（ONLINE → 飛行艇協力）',
     race: '<strong>エアレース</strong><br>・光るゲートを番号順に通過<br>・' + RACE_LAPS + ' 周でゴール／タイム計測<br>・墜落で失敗。低空に注意',
     fertilizer: '<strong>肥料散布</strong><br>・高度 約' + FERT_MIN_ALT + '〜' + FERT_MAX_ALT + 'm で散布ボタン<br>・畑のマスをムラなく緑に変えよ<br>・制限時間 ' + FERT_TIME + ' 秒／被覆率で評価',
     dogfight: '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ（三人称→一人称→地上）<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。<br>・相手の強さはセットアップで変更可。赤矢印が相手方向を示します。'
@@ -2686,11 +2702,6 @@ function readControls() {
   if (keyLx || keyLy) { Lx = keyLx; Ly = keyLy; }
   if (keyRx || keyRy) { Rx = keyRx; Ry = keyRy; }
 
-  Lx = applyStickAxis(Lx);
-  Ly = applyStickAxis(Ly);
-  Rx = applyStickAxis(Rx);
-  Ry = applyStickAxis(Ry);
-
   let throttle;
   let yaw;
   let pitch;
@@ -2698,16 +2709,17 @@ function readControls() {
   if (state.mode === 2) {
     // 左: スロットル / ヨー　右: ピッチ / ロール（実機 Mode2）
     // スティック上=上昇、右=右ヨー（Three.jsの+Y回転は左回りなので符号反転）
-    throttle = (Ly + 1) * 0.5;
-    yaw = -Lx;
-    pitch = -Ry; // スティック上（前方）= 機首下げ＝前進
-    roll = Rx;   // スティック右=右バンク
+    // スロットルは感度で最大推力を落とさない（姿勢軸だけ stickSens）
+    throttle = (applyThrottleStick(Ly) + 1) * 0.5;
+    yaw = -applyStickAxis(Lx);
+    pitch = -applyStickAxis(Ry); // スティック上（前方）= 機首下げ＝前進
+    roll = applyStickAxis(Rx);   // スティック右=右バンク
   } else {
     // 左: ピッチ / ヨー　右: スロットル / ロール（実機 Mode1）
-    pitch = -Ly;
-    yaw = -Lx;
-    throttle = (Ry + 1) * 0.5;
-    roll = Rx;
+    pitch = -applyStickAxis(Ly);
+    yaw = -applyStickAxis(Lx);
+    throttle = (applyThrottleStick(Ry) + 1) * 0.5;
+    roll = applyStickAxis(Rx);
   }
 
   return {
@@ -3593,62 +3605,143 @@ function setDefenseWorldVisible(on) {
   defenseGroup.visible = !!on;
 }
 
-/** 巨大飛行艇ボス */
+/** 巨大飛行艇ボス（未来少年コナンのギガント風・巨大翼付き飛行要塞） */
 function createAirshipMesh() {
   const root = new THREE.Group();
   const hullMat = new THREE.MeshStandardMaterial({
-    color: 0x455a64, metalness: 0.45, roughness: 0.4, emissive: 0x102027, emissiveIntensity: 0.2
+    color: 0x5d4037, metalness: 0.55, roughness: 0.48, emissive: 0x1a120c, emissiveIntensity: 0.18
+  });
+  const steelMat = new THREE.MeshStandardMaterial({
+    color: 0x455a64, metalness: 0.7, roughness: 0.35, emissive: 0x0d1518, emissiveIntensity: 0.15
+  });
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x263238, metalness: 0.65, roughness: 0.4
   });
   const accentMat = new THREE.MeshStandardMaterial({
     color: 0xff6d00, metalness: 0.3, roughness: 0.45, emissive: 0xff3d00, emissiveIntensity: 0.55
   });
-  const hull = new THREE.Mesh(new THREE.SphereGeometry(5.2, 20, 14), hullMat);
-  hull.scale.set(1.15, 0.72, 2.55);
-  hull.castShadow = true;
-  root.add(hull);
-  const mid = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 14, 16), hullMat);
-  mid.rotation.x = Math.PI / 2;
-  mid.castShadow = true;
-  root.add(mid);
-  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.35, 4.5, 3.2), hullMat);
-  fin.position.set(0, 2.2, 10.5);
-  root.add(fin);
-  const finH = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.3, 2.2), hullMat);
-  finH.position.set(0, 0.5, 11);
-  root.add(finH);
-  // 弱点ゴンドラ
-  const gondola = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.2, 5.5), accentMat);
-  gondola.position.set(0, -4.2, 0);
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x4fc3f7, metalness: 0.2, roughness: 0.15, transparent: true, opacity: 0.55, emissive: 0x0277bd, emissiveIntensity: 0.35
+  });
+
+  // 巨大胴体（前後に長い飛行船型）
+  const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(4.8, 5.6, 42, 18, 1, false), hullMat);
+  fuselage.rotation.x = Math.PI / 2;
+  fuselage.castShadow = true;
+  root.add(fuselage);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(4.8, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), hullMat);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -21;
+  nose.castShadow = true;
+  root.add(nose);
+  const tailCone = new THREE.Mesh(new THREE.ConeGeometry(5.6, 10, 14), hullMat);
+  tailCone.rotation.x = Math.PI / 2;
+  tailCone.position.z = 26;
+  tailCone.castShadow = true;
+  root.add(tailCone);
+
+  // 上部デッキ／司令塔
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(6.5, 3.2, 10), steelMat);
+  bridge.position.set(0, 5.2, -6);
+  bridge.castShadow = true;
+  root.add(bridge);
+  const bridgeWin = new THREE.Mesh(new THREE.BoxGeometry(5.8, 1.4, 0.3), glassMat);
+  bridgeWin.position.set(0, 5.6, -11.1);
+  root.add(bridgeWin);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 6, 8), darkMat);
+  mast.position.set(0, 9.2, -4);
+  root.add(mast);
+
+  // 超巨大主翼（ギガントの象徴）
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(72, 0.9, 14), steelMat);
+  wing.position.set(0, 0.6, 2);
+  wing.castShadow = true;
+  root.add(wing);
+  const wingFront = new THREE.Mesh(new THREE.BoxGeometry(64, 0.55, 5), hullMat);
+  wingFront.position.set(0, 0.4, -5.5);
+  root.add(wingFront);
+  // 翼端・補強
+  [-1, 1].forEach((s) => {
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.8, 8), darkMat);
+    tip.position.set(s * 35.5, 1.4, 1);
+    root.add(tip);
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.45, 4.5, 0.45), darkMat);
+    strut.position.set(s * 18, -1.5, 1);
+    root.add(strut);
+  });
+
+  // 後方水平・垂直尾翼
+  const hStab = new THREE.Mesh(new THREE.BoxGeometry(22, 0.45, 5.5), steelMat);
+  hStab.position.set(0, 1.2, 24);
+  root.add(hStab);
+  const vStab = new THREE.Mesh(new THREE.BoxGeometry(0.7, 12, 8), hullMat);
+  vStab.position.set(0, 7.5, 24);
+  vStab.castShadow = true;
+  root.add(vStab);
+  const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.4, 8, 3.5), darkMat);
+  rudder.position.set(0, 8, 28.5);
+  root.add(rudder);
+
+  // エンジンナセル＋プロペラ（両翼に複数）
+  const engMat = new THREE.MeshStandardMaterial({ color: 0x37474f, metalness: 0.6, roughness: 0.35 });
+  const propMat = new THREE.MeshStandardMaterial({ color: 0xb0bec5, metalness: 0.4, roughness: 0.45, transparent: true, opacity: 0.85 });
+  const props = [];
+  [-28, -16, 16, 28].forEach((x) => {
+    const nacelle = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, 5.5, 12), engMat);
+    nacelle.rotation.x = Math.PI / 2;
+    nacelle.position.set(x, -1.8, -1);
+    nacelle.castShadow = true;
+    root.add(nacelle);
+    const spinner = new THREE.Mesh(new THREE.ConeGeometry(1.3, 2.2, 10), darkMat);
+    spinner.rotation.x = -Math.PI / 2;
+    spinner.position.set(x, -1.8, -4.2);
+    root.add(spinner);
+    const prop = new THREE.Mesh(new THREE.BoxGeometry(0.25, 7.5, 0.8), propMat);
+    prop.position.set(x, -1.8, -3.4);
+    root.add(prop);
+    props.push(prop);
+    const prop2 = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.25, 0.8), propMat);
+    prop2.position.set(x, -1.8, -3.4);
+    root.add(prop2);
+    props.push(prop2);
+  });
+
+  // 弱点ゴンドラ（腹部の巨大指揮室）
+  const gondola = new THREE.Mesh(new THREE.BoxGeometry(5.5, 3.6, 12), accentMat);
+  gondola.position.set(0, -7.2, -2);
   gondola.castShadow = true;
   root.add(gondola);
+  const gondolaWin = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.6, 0.25), glassMat);
+  gondolaWin.position.set(0, -6.8, -8.1);
+  root.add(gondolaWin);
   const weakGlow = new THREE.Mesh(
-    new THREE.SphereGeometry(1.6, 12, 10),
+    new THREE.SphereGeometry(2.8, 14, 12),
     new THREE.MeshBasicMaterial({ color: 0xffab40, transparent: true, opacity: 0.35 })
   );
   weakGlow.position.copy(gondola.position);
   root.add(weakGlow);
-  // エンジン
-  [-1, 1].forEach((s) => {
-    const eng = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.9, 1.1, 2.4, 10),
-      new THREE.MeshStandardMaterial({ color: 0x263238, metalness: 0.6, roughness: 0.3 })
-    );
-    eng.rotation.z = Math.PI / 2;
-    eng.position.set(s * 5.5, -1.2, 2);
-    root.add(eng);
-  });
-  // 砲塔っぽい出っ張り
-  [[-3, -2, 4], [3, -2, 4], [0, -2.5, -6]].forEach(([x, y, z]) => {
-    const gun = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.35, 0.45, 1.8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x37474f, metalness: 0.5, roughness: 0.4 })
-    );
+
+  // 砲塔
+  [[-8, -3.5, 8], [8, -3.5, 8], [0, -4, -14], [-20, -2.2, 0], [20, -2.2, 0]].forEach(([x, y, z]) => {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 1.2, 10), darkMat);
+    base.position.set(x, y, z);
+    root.add(base);
+    const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 3.2, 8), engMat);
     gun.rotation.x = Math.PI / 2;
-    gun.position.set(x, y, z);
+    gun.position.set(x, y + 0.2, z - 1.6);
     root.add(gun);
   });
+
+  // 甲板の装甲パネル感
+  for (let i = -3; i <= 3; i++) {
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.25, 3.2), i % 2 === 0 ? steelMat : hullMat);
+    plate.position.set(0, 4.2, i * 4.5);
+    root.add(plate);
+  }
+
   root.userData.gondola = gondola;
   root.userData.weakGlow = weakGlow;
+  root.userData.props = props;
   root.visible = false;
   scene.add(root);
   return root;
@@ -3657,7 +3750,7 @@ function createAirshipMesh() {
 const airshipMesh = createAirshipMesh();
 const airship = {
   mesh: airshipMesh,
-  pos: new THREE.Vector3(0, 32, -40),
+  pos: new THREE.Vector3(0, 48, -55),
   yaw: 0,
   hp: AIRSHIP_MAX_HP,
   maxHp: AIRSHIP_MAX_HP,
@@ -3665,7 +3758,7 @@ const airship = {
   fireCd: 0,
   phase: 0,
   hitRadius: AIRSHIP_HIT_R,
-  weakLocal: new THREE.Vector3(0, -4.2, 0)
+  weakLocal: new THREE.Vector3(0, -7.2, -2)
 };
 
 function resetAirship() {
@@ -3675,7 +3768,7 @@ function resetAirship() {
   airship.fireCd = 1.2;
   airship.phase = 0;
   airship.yaw = 0;
-  airship.pos.set(0, 32, -38);
+  airship.pos.set(0, 48, -55);
   airship.mesh.visible = true;
   airship.mesh.position.copy(airship.pos);
   airship.mesh.rotation.set(0, airship.yaw, 0);
@@ -3722,32 +3815,46 @@ function updateAirship(dt) {
   if (!isAirshipMode() || !airship.alive || state.over) return;
   // ゲストはホストの補間のみ
   if (state.gameType === 'airship_coop' && !state.isHost) {
+    airship.phase += dt;
     airship.mesh.position.lerp(airship.pos, 1 - Math.pow(0.001, dt));
     airship.mesh.rotation.y = THREE.MathUtils.lerp(airship.mesh.rotation.y, airship.yaw, 0.12);
+    if (Array.isArray(airship.mesh.userData.props)) {
+      const spin = airship.phase * 28;
+      airship.mesh.userData.props.forEach((p, i) => { p.rotation.z = spin + i * 0.4; });
+    }
     return;
   }
 
   airship.phase += dt;
-  const radius = 36 + Math.sin(airship.phase * 0.15) * 6;
-  const ang = airship.phase * 0.22;
+  const radius = 58 + Math.sin(airship.phase * 0.12) * 10;
+  const ang = airship.phase * 0.14;
   const target = new THREE.Vector3(
     Math.cos(ang) * radius,
-    28 + Math.sin(airship.phase * 0.4) * 4,
+    42 + Math.sin(airship.phase * 0.35) * 5,
     Math.sin(ang) * radius
   );
-  airship.pos.lerp(target, 1 - Math.pow(0.15, dt));
+  airship.pos.lerp(target, 1 - Math.pow(0.12, dt));
   const face = target.clone().sub(airship.pos);
   if (face.lengthSq() > 0.01) {
     const desiredYaw = Math.atan2(-face.x, -face.z);
     let dy = desiredYaw - airship.yaw;
     while (dy > Math.PI) dy -= Math.PI * 2;
     while (dy < -Math.PI) dy += Math.PI * 2;
-    airship.yaw += dy * Math.min(1, dt * 1.2);
+    airship.yaw += dy * Math.min(1, dt * 0.9);
   }
   airship.mesh.position.copy(airship.pos);
   airship.mesh.rotation.y = airship.yaw;
+  // わずかなロールで巨大機らしい重み
+  airship.mesh.rotation.z = Math.sin(airship.phase * 0.35) * 0.08;
   if (airship.mesh.userData.weakGlow) {
     airship.mesh.userData.weakGlow.material.opacity = 0.28 + Math.sin(airship.phase * 4) * 0.12;
+  }
+  // プロペラ回転
+  if (Array.isArray(airship.mesh.userData.props)) {
+    const spin = airship.phase * 28;
+    airship.mesh.userData.props.forEach((p, i) => {
+      p.rotation.z = spin + i * 0.4;
+    });
   }
 
   // 反撃
@@ -3761,9 +3868,9 @@ function updateAirship(dt) {
       if (!best) return t;
       return airship.pos.distanceTo(t.pos) < airship.pos.distanceTo(best.pos) ? t : best;
     }, null);
-    const from = airship.pos.clone().add(new THREE.Vector3(0, -2, 0));
+    const from = getAirshipWeakWorld().clone().add(new THREE.Vector3(0, -1.5, 0));
     const dir = tgt.pos.clone().sub(from).normalize();
-    const profile = Object.assign({}, getWeaponProfile('cannon', 16), { color: 0xff6d00, speed: 42, life: 2.2 });
+    const profile = Object.assign({}, getWeaponProfile('cannon', 16), { color: 0xff6d00, speed: 42, size: 2.2 });
     fireBullet(from, dir, 'ship', profile, { atk: 16 });
     if (state.gameType === 'airship_coop' && state.isHost) {
       netSend({
@@ -5181,7 +5288,7 @@ function startBattle() {
     musou: '無双モード開始！敵 ' + MUSOU_COUNT + ' 機',
     deathmatch: 'デスマッチ乱闘開始！',
     defense: '防衛線モード開始！ WAVE 1/' + DEFENSE_WAVES.length,
-    airship: '巨大飛行艇撃破！弱点（ゴンドラ）を狙え',
+    airship: 'ギガント級飛行要塞撃破！弱点（ゴンドラ）を狙え',
     race: 'エアレース開始！ゲートを走れ',
     fertilizer: '肥料散布開始！適正高度でムラなく',
     dogfight: 'ドッグファイト開始！（' + getCpuDiffProfile(state.cpuDiff).label + '）'
