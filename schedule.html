@@ -13,6 +13,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <script src="exit-guard.js?v=1786240000001"></script>
+  <script src="map-loading.js?v=1786240000002"></script>
   <link rel="stylesheet" href="schedule.css">
 </head>
 
@@ -122,7 +123,6 @@
         <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="document.getElementById('sowingProgressModal').style.display='none'">×</span>
       </div>
       <div style="padding:12px 16px; overflow:auto; flex:1;" id="sowingProgressBody">
-        <div style="color:#888;">読み込み中...</div>
       </div>
     </div>
   </div>
@@ -135,7 +135,6 @@
         <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="document.getElementById('workRecordAnalysisModal').style.display='none'">×</span>
       </div>
       <div style="padding:12px 16px; overflow:auto; flex:1;" id="workRecordAnalysisBody">
-        <div style="color:#888;">読み込み中...</div>
       </div>
     </div>
   </div>
@@ -275,7 +274,6 @@
         <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="closeAttendanceCalendar()">×</span>
       </div>
       <div style="padding:12px 16px; overflow:auto; flex:1;" id="attendanceCalendarBody">
-        <div style="color:#888;">読み込み中...</div>
       </div>
     </div>
   </div>
@@ -345,17 +343,35 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
 
   <script>
-    // 栽培計画モーダルのHTMLを動的読み込みしてから JS を起動
-    const cacheBust = Date.now();
-    fetch('cultivation_modal.html?v=' + cacheBust)
-      .then(res => {
-        if (!res.ok) throw new Error('cultivation_modal.html HTTP ' + res.status);
-        return res.text();
-      })
-      .then(html => {
-        document.getElementById('cultivationModalContainer').innerHTML = html;
-      })
-      .catch(err => console.error('栽培モーダルHTMLの読み込み失敗', err));
+    // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
+    const cacheBust = '1786240000002';
+    const bootstrapFiles = [
+      'cultivation_modal.html', 'weather-agri.js', 'schedule.js',
+      'attendance-calendar.js', 'market.js', 'tracking.js',
+      'cultivation.js', 'cost_calc.js', 'crop_work.js'
+    ];
+    const bootstrapLoading = window.AppLoading
+      ? AppLoading.start({
+          label: '予定確認アプリを読み込み中...',
+          detail: '0 / ' + bootstrapFiles.length + ' ファイル',
+          current: 0,
+          total: bootstrapFiles.length,
+          delay: 0,
+          lockMap: false
+        })
+      : null;
+    let loadedBootstrapFiles = 0;
+
+    function markBootstrapFileLoaded(name) {
+      loadedBootstrapFiles += 1;
+      if (bootstrapLoading) {
+        bootstrapLoading.update({
+          detail: loadedBootstrapFiles + ' / ' + bootstrapFiles.length + ' — ' + name,
+          current: loadedBootstrapFiles,
+          total: bootstrapFiles.length
+        });
+      }
+    }
 
     function appendScript(src) {
       return new Promise((resolve, reject) => {
@@ -367,16 +383,30 @@
       });
     }
 
-    appendScript('map-loading.js?v=1785312000001')
-      .then(() => appendScript('weather-agri.js?v=1785489000100'))
-      .then(() => appendScript('schedule.js?v=' + cacheBust))
-      .then(() => appendScript('attendance-calendar.js?v=' + cacheBust))
-      .then(() => appendScript('market.js?v=' + cacheBust))
-      .then(() => appendScript('tracking.js?v=1784615000015'))
-      .then(() => appendScript('cultivation.js?v=' + cacheBust))
-      .then(() => appendScript('cost_calc.js?v=' + cacheBust))
-      .then(() => appendScript('crop_work.js?v=' + cacheBust))
-      .catch(err => console.error('スクリプト読み込み失敗', err));
+    fetch('cultivation_modal.html?v=' + cacheBust)
+      .then(res => {
+        if (!res.ok) throw new Error('cultivation_modal.html HTTP ' + res.status);
+        return res.text();
+      })
+      .then(html => {
+        document.getElementById('cultivationModalContainer').innerHTML = html;
+        markBootstrapFileLoaded('cultivation_modal.html');
+      })
+      .then(() => appendScript('weather-agri.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('weather-agri.js')))
+      .then(() => appendScript('schedule.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('schedule.js')))
+      .then(() => appendScript('attendance-calendar.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('attendance-calendar.js')))
+      .then(() => appendScript('market.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('market.js')))
+      .then(() => appendScript('tracking.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('tracking.js')))
+      .then(() => appendScript('cultivation.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cultivation.js')))
+      .then(() => appendScript('cost_calc.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cost_calc.js')))
+      .then(() => appendScript('crop_work.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('crop_work.js')))
+      .then(() => {
+        if (bootstrapLoading) bootstrapLoading.done();
+      })
+      .catch(err => {
+        console.error('予定確認アプリの読み込み失敗', err);
+        if (bootstrapLoading) bootstrapLoading.fail('アプリの読み込みに失敗しました');
+      });
   </script>
 
   <!-- Radar Modal -->

@@ -7003,6 +7003,7 @@ function getSavedCultivationPlanList() {
        let areaA = 0;
        let planId = String(row[2] || '');
        let vName = String(row[4] || '').trim();
+       let planName = '';
        try {
          const planData = JSON.parse(row[5]);
          if (planData && planData.status === 'executed') status = 'executed';
@@ -7012,6 +7013,7 @@ function getSavedCultivationPlanList() {
            areaA = Number(planData.areaA) || 0;
            if (planData.id) planId = String(planData.id);
            if (!vName && planData.variety) vName = String(planData.variety || '').trim();
+           if (planData.planName) planName = String(planData.planName || '').trim();
          }
        } catch (e) {}
        if (!vName) vName = '(品種未設定)';
@@ -7024,6 +7026,7 @@ function getSavedCultivationPlanList() {
            map[key] = {
              year: year,
              crop: crop,
+             planName: planName || (year + '年 ' + crop),
              count: 0,
              plannedCount: 0,
              executedCount: 0,
@@ -7038,6 +7041,7 @@ function getSavedCultivationPlanList() {
        else map[key].plannedCount++;
        if (new Date(row[0]) > new Date(map[key].lastUpdated)) {
            map[key].lastUpdated = row[0];
+           if (planName) map[key].planName = planName;
        }
        map[key].plans.push({
          id: planId,

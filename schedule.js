@@ -979,7 +979,16 @@ async function fetchWeatherAndUpdateUI() {
 
       function loadData() {
         if (!checkLoginStatus()) return;
-        if (typeof beginMapDataLoad === 'function') beginMapDataLoad('スケジュールデータを読み込み中...');
+        const initialLoad = window.AppLoading
+          ? AppLoading.start({
+              label: 'スケジュールデータを読み込み中...',
+              detail: 'キャッシュを確認しています',
+              current: 0,
+              total: 3,
+              delay: 0
+            })
+          : null;
+        if (!initialLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('スケジュールデータを読み込み中...');
         const btn = document.querySelector('.btn-primary') || document.querySelector('.btn-reload');
         const orgTxt = btn ? btn.innerText : '';
         if (btn) {
@@ -1005,15 +1014,25 @@ async function fetchWeatherAndUpdateUI() {
             applyScheduleData(JSON.parse(cachedStr));
           } catch(e) { console.error("Cache parse error", e); }
         }
+        if (initialLoad) {
+          initialLoad.update({ detail: '最新データを取得しています', current: 1, total: 3 });
+        }
   
         callGAS('getScheduleData').then(data => {
+          if (initialLoad) {
+            initialLoad.update({ detail: '地図表示を更新しています', current: 2, total: 3 });
+          }
           localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
           applyScheduleData(data);
+          if (initialLoad) {
+            initialLoad.update({ detail: '読み込み完了', current: 3, total: 3 });
+            initialLoad.done();
+          }
           if (btn) {
             btn.innerText = orgTxt;
             btn.disabled = false;
           }
-          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+          if (!initialLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
         }).catch(e => {
           console.error('getScheduleData failed', e);
           customAlert("エラーが発生しました。");
@@ -1021,7 +1040,8 @@ async function fetchWeatherAndUpdateUI() {
             btn.innerText = orgTxt;
             btn.disabled = false;
           }
-          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+          if (initialLoad) initialLoad.fail('スケジュールの読み込みに失敗しました');
+          else if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
         });
       }
 
@@ -1257,7 +1277,13 @@ async function fetchWeatherAndUpdateUI() {
         const body = document.getElementById('sowingProgressBody');
         if (!modal || !body) return;
         modal.style.display = 'flex';
-        body.innerHTML = '<div style="color:#666; padding:12px;">読み込み中...</div>';
+        const loading = window.AppLoading
+          ? AppLoading.inline(body, {
+              label: '播種進捗を読み込み中...',
+              detail: '年度別の実績を集計しています',
+              delay: 0
+            })
+          : null;
         try {
           const year = String(new Date().getFullYear());
           const res = await callGAS('getSowingProgress', { year });
@@ -1314,8 +1340,10 @@ async function fetchWeatherAndUpdateUI() {
             });
           }
           html += `</tbody></table></div>`;
+          if (loading) loading.done();
           body.innerHTML = html;
         } catch (e) {
+          if (loading) loading.done();
           body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g,'&lt;')}</div>`;
         }
       };
@@ -1422,23 +1450,44 @@ async function fetchWeatherAndUpdateUI() {
         if (fromEl) st.fromYmd = fromEl.value || st.fromYmd;
         if (toEl) st.toYmd = toEl.value || st.toYmd;
 
-        body.innerHTML = '<div style="color:#666; padding:20px; text-align:center;">働き方を集計中...</div>';
+        let completedRequests = 0;
+        let totalRequests = st.author ? 2 : 1;
+        const loading = window.AppLoading
+          ? AppLoading.inline(body, {
+              label: '働き方を集計中...',
+              detail: '0 / ' + totalRequests + ' データ',
+              current: 0,
+              total: totalRequests,
+              delay: 0
+            })
+          : null;
+        const trackRequest = promise => promise.then(result => {
+          completedRequests += 1;
+          if (loading) {
+            loading.update({
+              detail: completedRequests + ' / ' + totalRequests + ' データ',
+              current: completedRequests,
+              total: totalRequests
+            });
+          }
+          return result;
+        });
         try {
           // チーム全体（人一覧用）と、選択中の人を並行取得
-          const teamPromise = callGAS('getWorkRecordAnalysis', {
+          const teamPromise = trackRequest(callGAS('getWorkRecordAnalysis', {
             fromYmd: st.fromYmd,
             toYmd: st.toYmd,
             author: '',
             workName: ''
-          });
+          }));
           let personPromise = Promise.resolve(null);
           if (st.author) {
-            personPromise = callGAS('getWorkRecordAnalysis', {
+            personPromise = trackRequest(callGAS('getWorkRecordAnalysis', {
               fromYmd: st.fromYmd,
               toYmd: st.toYmd,
               author: st.author,
               workName: ''
-            });
+            }));
           }
           const [teamRes, personRes] = await Promise.all([teamPromise, personPromise]);
           st.teamData = teamRes || null;
@@ -1453,9 +1502,11 @@ async function fetchWeatherAndUpdateUI() {
                 || st.author.replace(/\s+/g,'').indexOf(a.replace(/\s+/g,'')) >= 0);
               if (hit) {
                 st.author = hit;
-                const again = await callGAS('getWorkRecordAnalysis', {
+                totalRequests += 1;
+                if (loading) loading.update({ total: totalRequests });
+                const again = await trackRequest(callGAS('getWorkRecordAnalysis', {
                   fromYmd: st.fromYmd, toYmd: st.toYmd, author: hit, workName: ''
-                });
+                }));
                 st.data = again;
               } else {
                 st.author = '';
@@ -1465,8 +1516,10 @@ async function fetchWeatherAndUpdateUI() {
             }
           }
           st.view = st.author ? 'person' : 'people';
+          if (loading) loading.done();
           window.renderWorkRecordAnalysis_();
         } catch (e) {
+          if (loading) loading.done();
           body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g,'&lt;')}<br><span style="font-size:12px; color:#666;">GASに getWorkRecordAnalysis を再デプロイ済みか確認してください。</span></div>`;
         }
       };

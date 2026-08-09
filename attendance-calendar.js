@@ -61,9 +61,8 @@
       alert('出勤カレンダーの表示領域が見つかりません');
       return;
     }
-    body.innerHTML = '<div style="text-align:center;padding:24px;color:#666;">読み込み中...</div>';
     modal.style.display = 'flex';
-    await refreshAttendanceCalendar();
+    await refreshAttendanceCalendar(true);
   };
 
   window.closeAttendanceCalendar = function () {
@@ -71,9 +70,16 @@
     if (modal) modal.style.display = 'none';
   };
 
-  async function refreshAttendanceCalendar() {
+  async function refreshAttendanceCalendar(showProgress) {
     const body = document.getElementById('attendanceCalendarBody');
     if (!body) return;
+    const loading = showProgress && window.AppLoading
+      ? AppLoading.inline(body, {
+          label: '出勤カレンダーを読み込み中...',
+          detail: `${state.year}年${state.month}月の記録を取得しています`,
+          delay: 0
+        })
+      : null;
     try {
       if (typeof callGAS !== 'function') throw new Error('通信モジュールが未読込です');
       const data = await callGAS('getAttendanceCalendar', {
@@ -84,6 +90,7 @@
         month: state.month
       });
       if (!data || data.success === false) {
+        if (loading) loading.done();
         body.innerHTML = `<div style="color:#c62828;padding:16px;">${esc((data && data.message) || '取得に失敗しました')}</div>`;
         return;
       }
@@ -92,8 +99,10 @@
         state.targetUserId = data.user.userId || state.targetUserId;
         state.targetUserName = data.user.userName || state.targetUserName;
       }
+      if (loading) loading.done();
       body.innerHTML = state.view === 'admin' ? renderAdminView(data) : renderCalendarView(data);
     } catch (e) {
+      if (loading) loading.done();
       body.innerHTML = `<div style="color:#c62828;padding:16px;">エラー: ${esc(e.message || e)}</div>`;
     }
   }
@@ -216,7 +225,7 @@
       </tr>`;
     }).join('');
 
-    if (!rows) rows = '<tr><td colspan="6" style="text-align:center;color:#888;">読み込み中またはスタッフなし</td></tr>';
+    if (!rows) rows = '<tr><td colspan="6" style="text-align:center;color:#888;">スタッフがいません</td></tr>';
 
     return `
       <div class="att-admin-head">
@@ -265,7 +274,13 @@
   window.attShowAdminView = async function () {
     state.view = 'admin';
     const body = document.getElementById('attendanceCalendarBody');
-    if (body) body.innerHTML = '<div style="text-align:center;padding:24px;color:#666;">管理者データを読み込み中...</div>';
+    const loading = body && window.AppLoading
+      ? AppLoading.inline(body, {
+          label: '管理者データを読み込み中...',
+          detail: 'スタッフ設定を取得しています',
+          delay: 0
+        })
+      : null;
     try {
       state.staffList = await callGAS('getAttendanceStaffList', { requesterId: myId() });
       if (!state.staffList || state.staffList.success === false) {
@@ -276,6 +291,7 @@
       alert('エラー: ' + (e.message || e));
       state.view = 'calendar';
     }
+    if (loading) loading.done();
     refreshAttendanceCalendar();
   };
 

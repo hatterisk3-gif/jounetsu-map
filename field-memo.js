@@ -626,11 +626,15 @@
         const modal = document.getElementById('fieldMemoHistoryModal');
         const list = document.getElementById('fieldMemoHistoryList');
         if (!modal || !list) return;
-        list.innerHTML = '<div style="text-align:center;padding:16px;color:#666;">読み込み中...</div>';
+        const historyLoad = window.AppLoading
+            ? AppLoading.inline(list, { label: '履歴を読み込み中...', detail: '圃場メモ履歴を取得しています', delay: 80 })
+            : null;
+        if (!historyLoad) list.innerHTML = '<div style="text-align:center;padding:16px;color:#666;">読み込み中...</div>';
         modal.style.display = 'flex';
 
         try {
             const history = await callGAS('getFieldMemoHistory', { id: fmTarget.id });
+            if (historyLoad) historyLoad.done();
             if (!history || !history.length) {
                 list.innerHTML = '<div style="text-align:center;padding:16px;color:#888;">履歴がありません</div>';
                 return;
@@ -655,6 +659,7 @@
                 list.appendChild(row);
             });
         } catch (e) {
+            if (historyLoad) historyLoad.done();
             list.innerHTML = `<div style="color:red;padding:12px;">取得失敗: ${e.message || e}</div>`;
         }
     };

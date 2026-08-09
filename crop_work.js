@@ -38,7 +38,7 @@
     return collectPlantingCellsFromDom_(plan.id);
   }
 
-  window.refreshCpWorkSchedulePanel = async function () {
+  window.refreshCpWorkSchedulePanel = async function (showProgress) {
     const listEl = document.getElementById('cpWorkScheduleList');
     const hintEl = document.getElementById('cpWorkScheduleHint');
     const cropEl = document.getElementById('cpWorkScheduleCrop');
@@ -73,7 +73,13 @@
         : '定植をカレンダーに塗ると、半旬と日付が確定します（設定のみも表示）';
     }
 
-    listEl.innerHTML = '<div style="color:#1565c0;padding:6px;">読込中...</div>';
+    const loading = showProgress !== false && window.AppLoading
+      ? AppLoading.inline(listEl, {
+          label: '作業予定を読み込み中...',
+          detail: crop + ' の品目別作業を確認しています',
+          delay: 0
+        })
+      : null;
     try {
       if (typeof callGAS !== 'function') throw new Error('通信不可');
       const res = await callGAS('previewCropWorkSchedule', {
@@ -83,6 +89,7 @@
       });
       const works = (res && res.works) || [];
       if (!works.length) {
+        if (loading) loading.done();
         listEl.innerHTML = '<div style="color:#888;padding:6px;">この作物の品目別作業設定がありません。管理画面で登録してください。</div>';
         return;
       }
@@ -106,8 +113,10 @@
           (w.note ? '<div style="font-size:10px;color:#888;">' + esc(w.note) + '</div>' : '') +
           '</div><div style="text-align:right;font-size:11px;white-space:nowrap;">' + when + '</div></div>';
       }).join('');
+      if (loading) loading.done();
       listEl.innerHTML = html;
     } catch (e) {
+      if (loading) loading.done();
       listEl.innerHTML = '<div style="color:#c62828;padding:6px;">取得に失敗しました</div>';
     }
   };
@@ -118,7 +127,7 @@
   window.scheduleRefreshCpWorkSchedulePanel = function () {
     if (_cwpTimer) clearTimeout(_cwpTimer);
     _cwpTimer = setTimeout(function () {
-      if (typeof refreshCpWorkSchedulePanel === 'function') refreshCpWorkSchedulePanel();
+      if (typeof refreshCpWorkSchedulePanel === 'function') refreshCpWorkSchedulePanel(false);
     }, 400);
   };
 })();

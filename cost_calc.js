@@ -38,7 +38,17 @@
     const status = document.getElementById('costCalcStatus');
     const result = document.getElementById('costCalcResult');
     if (result) result.innerHTML = '';
-    if (status) status.textContent = '作物一覧を準備中...';
+    modal.style.display = 'flex';
+    const loading = result && window.AppLoading
+      ? AppLoading.inline(result, {
+          label: '原価計算データを読み込み中...',
+          detail: '栽培マスタを確認しています',
+          current: 0,
+          total: 2,
+          delay: 0
+        })
+      : null;
+    if (status) status.textContent = '';
 
     try {
       if ((!cpMasterData || !cpMasterData.crops) && typeof callGAS === 'function') {
@@ -48,6 +58,9 @@
         }
       }
     } catch (e) { /* ignore */ }
+    if (loading) {
+      loading.update({ detail: '原価設定のある作物を取得しています', current: 1, total: 2 });
+    }
 
     let crops = collectCropNames();
     try {
@@ -72,7 +85,11 @@
         ? '品目別原価設定がある作物で計算できます（未設定だと明細は空になります）'
         : '作物がありません。栽培マスタか品目別原価設定を登録してください';
     }
-    modal.style.display = 'flex';
+    if (loading) {
+      loading.update({ detail: '読み込み完了', current: 2, total: 2 });
+      loading.done();
+      result.innerHTML = '';
+    }
   };
 
   window.runCropCostCalc = async function () {
@@ -92,8 +109,15 @@
     const plants = Number((document.getElementById('costCalcPlants') || {}).value || 0) || 0;
     const yieldPack = Number((document.getElementById('costCalcYield') || {}).value || 0) || 0;
 
-    if (status) status.textContent = '計算中...';
     if (result) result.innerHTML = '';
+    const loading = result && window.AppLoading
+      ? AppLoading.inline(result, {
+          label: '原価を計算中...',
+          detail: crop + ' の原価明細を集計しています',
+          delay: 0
+        })
+      : null;
+    if (status) status.textContent = '';
     try {
       const res = await callGAS('calcCropCost', {
         cropName: crop,
@@ -102,9 +126,11 @@
         plants: plants,
         yield: yieldPack
       });
+      if (loading) loading.done();
       if (status) status.textContent = '';
       renderCostResult_(res);
     } catch (e) {
+      if (loading) loading.done();
       if (status) status.textContent = '計算に失敗しました';
       alert(e.message || String(e));
     }
@@ -260,13 +286,22 @@
       window.refreshAllCpPlanEconomics_();
       return window._cpCostProfile;
     }
-    if (hint) hint.innerHTML = '<span style="color:#1565c0;">原価プロファイル読込中...</span>';
+    const loading = hint && window.AppLoading
+      ? AppLoading.inline(hint, {
+          label: '原価プロファイルを読み込み中...',
+          detail: crop,
+          delay: 100
+        })
+      : null;
     const token = Symbol('costProfile');
     window._cpCostProfileLoading = token;
     try {
       if (typeof callGAS !== 'function') throw new Error('通信不可');
       const res = await callGAS('getCropCostPlan', { cropName: crop });
-      if (window._cpCostProfileLoading !== token) return null;
+      if (window._cpCostProfileLoading !== token) {
+        if (loading) loading.done();
+        return null;
+      }
       const plan = (res && res.plan) || { cropName: crop, entries: [], sellPricePerPack: '' };
       window._cpCostProfile = {
         cropName: plan.cropName || crop,
@@ -277,12 +312,17 @@
       if (sellInput && document.activeElement !== sellInput) {
         sellInput.value = (plan.sellPricePerPack === '' || plan.sellPricePerPack == null) ? '' : plan.sellPricePerPack;
       }
+      if (loading) loading.done();
       window.updateCpCostProfileHint_();
       window.refreshAllCpPlanEconomics_();
       return window._cpCostProfile;
     } catch (e) {
-      if (window._cpCostProfileLoading !== token) return null;
+      if (window._cpCostProfileLoading !== token) {
+        if (loading) loading.done();
+        return null;
+      }
       window._cpCostProfile = { cropName: crop, entries: [], sellPricePerPack: '', _error: true };
+      if (loading) loading.done();
       window.updateCpCostProfileHint_();
       window.refreshAllCpPlanEconomics_();
       return null;

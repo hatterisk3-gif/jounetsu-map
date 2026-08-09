@@ -3917,7 +3917,13 @@ function closeCropHarvestChartModal() {
 async function refreshCropHarvestChartModal() {
     const bars = document.getElementById('cpCropHarvestBars');
     if (!bars) return;
-    bars.innerHTML = '<div style="color:#999;font-size:12px;text-align:center;padding-top:40px;">読み込み中...</div>';
+    const loading = window.AppLoading
+        ? AppLoading.inline(bars, {
+            label: '収穫サマリーを読み込み中...',
+            detail: '作物別の半旬データを集計しています',
+            delay: 0
+        })
+        : null;
 
     const yearSel = document.getElementById('cpCropHarvestYear');
     const modeSel = document.getElementById('cpCropHarvestMode');
@@ -3931,6 +3937,7 @@ async function refreshCropHarvestChartModal() {
         }
         const data = cpCropHarvestSummaryCache;
         if (!data || data.success === false) {
+            if (loading) loading.done();
             bars.innerHTML = `<div style="color:#d32f2f;font-size:12px;text-align:center;padding-top:40px;">${(data && data.message) || '取得に失敗しました'}</div>`;
             return;
         }
@@ -3959,7 +3966,9 @@ async function refreshCropHarvestChartModal() {
         const totalEl = document.getElementById('cpCropHarvestTotal');
         if (totalEl) totalEl.textContent = result.total > 0 ? `合計 ${result.total.toLocaleString()}` : '';
         syncCpHarvestScroll('cpCropHarvestBars', 'cpCropHarvestAxis');
+        if (loading) loading.done();
     } catch (e) {
+        if (loading) loading.done();
         bars.innerHTML = `<div style="color:#d32f2f;font-size:12px;text-align:center;padding-top:40px;">エラー: ${e.message || e}</div>`;
     }
 }
@@ -3970,8 +3979,41 @@ window.closeCropHarvestChartModal = closeCropHarvestChartModal;
 window.refreshCropHarvestChartModal = refreshCropHarvestChartModal;
 
 let cpLoadedPlanKey = null;
+let cpPlanNameManuallyEdited = false;
 let cpSaveProgressTimer = null;
 let cpSaveProgressHideTimer = null;
+
+function getCpDefaultPlanName(yearOverride, cropOverride) {
+    const year = String(yearOverride || getCpVal('cpYear', true) || new Date().getFullYear()).trim();
+    const crop = String(cropOverride || getCpVal('cpCrop') || '').trim();
+    return crop ? `${year}年 ${crop}` : `${year}年 栽培計画`;
+}
+
+function updateCpDefaultPlanName() {
+    const input = document.getElementById('cpPlanName');
+    if (!input) return;
+    if (!cpPlanNameManuallyEdited || !String(input.value || '').trim()) {
+        input.value = getCpDefaultPlanName();
+    }
+}
+
+function onCpPlanNameInput() {
+    const input = document.getElementById('cpPlanName');
+    if (!input) return;
+    const value = String(input.value || '').trim();
+    cpPlanNameManuallyEdited = !!value && value !== getCpDefaultPlanName();
+}
+
+function setCpPlanName(value, options) {
+    const input = document.getElementById('cpPlanName');
+    const opts = options || {};
+    const name = String(value || '').trim();
+    if (input) input.value = name || getCpDefaultPlanName(opts.year, opts.crop);
+    cpPlanNameManuallyEdited = !!opts.loaded || (!!name && name !== getCpDefaultPlanName(opts.year, opts.crop));
+}
+
+window.updateCpDefaultPlanName = updateCpDefaultPlanName;
+window.onCpPlanNameInput = onCpPlanNameInput;
 
 function updateCpSaveButtonLabel() {
     const btn = document.getElementById('btnCpSavePlan');
@@ -4057,10 +4099,14 @@ async function saveCultivationPlan(options) {
             alert("作物が選択されていません。基本設定から作物を選択してください。");
             return false;
         }
+        const planNameInput = document.getElementById('cpPlanName');
+        const planName = String(planNameInput ? planNameInput.value : '').trim() || getCpDefaultPlanName(year, crop);
+        if (planNameInput) planNameInput.value = planName;
 
         // タグは実行時に自動割り当て（計画段階では未設定のまま保存）
         const payloadPlans = collectCurrentCpPlansFromDom().map(plan => ({
             year: year,
+            planName: planName,
             crop: plan.crop,
             variety: plan.variety,
             areaA: plan.areaA,
@@ -4268,11 +4314,18 @@ async function showPlanListModal(options) {
     }
     modal.style.display = 'flex';
     const container = document.getElementById('historyListContainer');
-    container.innerHTML = '<div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">読み込み中...</div>';
+    const loading = window.AppLoading
+        ? AppLoading.inline(container, {
+            label: '栽培計画一覧を読み込み中...',
+            detail: '保存済みの計画を取得しています',
+            delay: 0
+        })
+        : null;
 
     try {
         const list = await callGAS('getSavedCultivationPlanList');
         if (!list || list.length === 0) {
+            if (loading) loading.done();
             container.innerHTML = '<div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">保存済みの計画はありません。<br>「栽培計画を立てる」→「計画を保存」してください。</div>';
             return;
         }
@@ -4372,7 +4425,8 @@ async function showPlanListModal(options) {
             <div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 12px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
                   <div style="flex:1; min-width:140px;">
-                    <div style="font-size: 16px; font-weight: bold; color: #333; margin-bottom: 4px;">${item.year}年 ${esc(item.crop)}</div>
+                    <div style="font-size: 16px; font-weight: bold; color: #333; margin-bottom: 2px;">${esc(item.planName || (item.year + '年 ' + item.crop))}</div>
+                    <div style="font-size: 11px; color: #666; margin-bottom: 4px;">${item.year}年度 ／ ${esc(item.crop)}</div>
                     <div style="font-size: 12px; color: #777;">作型: ${item.count}件（未実行 ${planned} / 実行済 ${executed}）</div>
                     <div style="font-size: 11px; color: #999; margin-top:2px;">最終更新 ${dateStr}</div>
                     ${varietyHtml}
@@ -4386,8 +4440,10 @@ async function showPlanListModal(options) {
             </div>`;
         });
         html += '</div>';
+        if (loading) loading.done();
         container.innerHTML = html;
     } catch (e) {
+        if (loading) loading.done();
         container.innerHTML = '<div style="text-align: center; color: #d32f2f; font-size: 14px; padding: 20px;">一覧の取得に失敗しました。</div>';
     }
 }
@@ -4629,6 +4685,7 @@ function collectCurrentCpPlansFromDom() {
 function collectCpFormState() {
     return {
         year: getCpVal('cpYear'),
+        planName: document.getElementById('cpPlanName') ? document.getElementById('cpPlanName').value : '',
         location: getCpVal('cpLocation'),
         crop: getCpVal('cpCrop'),
         climate: document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '',
@@ -4853,6 +4910,11 @@ function applyCpFormState(form) {
     if (form.yieldRate !== undefined && form.yieldRate !== '') setCpVal('cpYieldRate', form.yieldRate);
     if (form.seedlingSuccess !== undefined && form.seedlingSuccess !== '') setCpVal('cpSeedlingSuccess', form.seedlingSuccess);
     if (form.variety) setCpVal('cpVariety', form.variety);
+    setCpPlanName(form.planName || '', {
+        loaded: !!form.planName,
+        year: form.year,
+        crop: form.crop
+    });
     calcCp();
     checkCroptypeDB();
     refreshAllChoiceButtons();
@@ -5021,6 +5083,8 @@ function openCultivationPlanModal(options) {
     cpSemiAutoLastPaint = {};
     cpSemiAutoActivePlanId = null;
     cpLoadedPlanKey = null;
+    cpPlanNameManuallyEdited = false;
+    updateCpDefaultPlanName();
     updateCpSaveButtonLabel();
     if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
     
@@ -5616,9 +5680,13 @@ async function showRegisteredCroptypeListModal(options) {
     }
     modal.style.display = 'flex';
     const container = document.getElementById('regCtListContainer');
-    if (container) {
-        container.innerHTML = '<div style="text-align:center; color:#666; font-size:13px; padding:20px;">読み込み中...</div>';
-    }
+    const loading = container && window.AppLoading
+        ? AppLoading.inline(container, {
+            label: '登録品種を読み込み中...',
+            detail: '品種マスタを準備しています',
+            delay: 0
+        })
+        : null;
 
     // マスタが無ければ取得
     try {
@@ -5629,6 +5697,7 @@ async function showRegisteredCroptypeListModal(options) {
         console.error(e);
     }
 
+    if (loading) loading.done();
     populateRegisteredCroptypeFilters();
     setRegisteredCroptypeMode(opts.mode === 'search' ? 'search' : (window._regCtMode || 'list'));
 }
@@ -5640,9 +5709,13 @@ function closeRegisteredCroptypeListModal() {
 
 async function refreshRegisteredCroptypeList() {
     const container = document.getElementById('regCtListContainer');
-    if (container) {
-        container.innerHTML = '<div style="text-align:center; color:#666; font-size:13px; padding:20px;">再読込中...</div>';
-    }
+    const loading = container && window.AppLoading
+        ? AppLoading.inline(container, {
+            label: '登録品種を再読み込み中...',
+            detail: '最新の品種マスタを取得しています',
+            delay: 0
+        })
+        : null;
     try {
         const data = await callGAS('getCultivationMaster');
         if (data && data.crops) {
@@ -5654,6 +5727,7 @@ async function refreshRegisteredCroptypeList() {
         console.error(e);
         alert('マスタの再読込に失敗しました。');
     }
+    if (loading) loading.done();
     populateRegisteredCroptypeFilters();
     renderRegCtTagChips();
     renderRegisteredCroptypeList();
@@ -7182,6 +7256,12 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
             if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
             if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
             cpLoadedPlanKey = String(year) + '\t' + String(crop);
+            const loadedPlanName = plans.find(plan => plan && String(plan.planName || '').trim());
+            setCpPlanName(loadedPlanName ? loadedPlanName.planName : '', {
+                loaded: true,
+                year: year,
+                crop: crop
+            });
             updateCpSaveButtonLabel();
             finishCpLoadProgress(true, `${plans.length}件の計画を読み込みました`);
         } else {

@@ -160,10 +160,12 @@ function initMap() {
 }
 
 async function loadAllData() {
-    if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場・農機データを読み込み中...');
+    const load = (window.AppLoading && AppLoading.start)
+        ? AppLoading.start({ label: '機械管理を準備中...', detail: '1/4 圃場・マスタを取得しています', current: 0, total: 4, delay: 0 })
+        : null;
     showToast("データ読み込み中...");
     try {
-        // 圃場＋マスタデータ取得
+        // 1/4 圃場＋マスタデータ取得・描画
         const initData = await callGAS('getInitData');
         if (initData && initData.pdl) {
             pdlLocations = initData.pdl.locations || [];
@@ -190,8 +192,15 @@ async function loadAllData() {
             }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
             renderFieldPolygons(initData.polygons);
         }
+        if (load) load.update({
+            label: '圃場・マスタを読み込みました',
+            detail: `1/4 圃場 ${(initData && initData.polygons ? initData.polygons.length : 0)} 件`,
+            current: 1,
+            total: 4
+        });
         
-        // 機械データ取得（農機マスタ正本）
+        // 2/4 機械データ取得（農機マスタ正本）
+        if (load) load.update({ label: '機械データを取得中...', detail: '2/4 農機マスタと履歴を読み込んでいます' });
         const machineData = await callGAS('machine_loadAll');
         if (machineData.machines) machines = machineData.machines;
         if (machineData.maintenanceRecords) maintenanceRecords = machineData.maintenanceRecords;
@@ -203,8 +212,10 @@ async function loadAllData() {
             if (m.type && !machineTypes.includes(m.type)) machineTypes.push(m.type);
         }
         machineCategories = machineTypes;
+        if (load) load.update({ label: '機械データを読み込みました', detail: `2/4 機械 ${Object.keys(machines).length} 件`, current: 2, total: 4 });
 
-        // 移動車両データ取得
+        // 3/4 移動車両データ取得
+        if (load) load.update({ label: '移動車両を取得中...', detail: '3/4 車両マスタを読み込んでいます' });
         try {
             const vehicleData = await callGAS('vehicle_loadAll');
             if (vehicleData && vehicleData.vehicles) vehicles = vehicleData.vehicles;
@@ -212,14 +223,18 @@ async function loadAllData() {
             console.warn("Vehicle load skipped:", ve);
             vehicles = {};
         }
+        if (load) load.update({ label: '移動車両を読み込みました', detail: `3/4 車両 ${Object.keys(vehicles).length} 件`, current: 3, total: 4 });
         
+        // 4/4 機械・車両マーカー描画
+        if (load) load.update({ label: '地図へ配置中...', detail: `4/4 機械 ${Object.keys(machines).length} 件・車両 ${Object.keys(vehicles).length} 件` });
         renderMachineMarkers();
         renderVehicleMarkers();
+        if (load) load.update({ label: '機械管理の準備が完了しました', detail: '4/4 地図表示を更新しました', current: 4, total: 4 });
         showToast("読み込み完了");
-        if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (load) load.done();
     } catch (e) {
         console.error("Data load error:", e);
-        if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (load) load.fail('機械データの読み込みに失敗しました');
         alert("データの読み込みに失敗しました: " + e.message);
     }
 }

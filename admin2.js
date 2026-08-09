@@ -370,12 +370,18 @@ function startLocationWatch() {
 
 function loadInitData() {
     initDataLoadStarted = true;
-    if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
+    if (window._adminInitLoading) window._adminInitLoading.done();
+    window._adminInitLoading = (window.AppLoading && AppLoading.start)
+        ? AppLoading.start({ label: '管理画面を準備中...', detail: '初期データを確認しています', current: 0, total: 3, delay: 0 })
+        : null;
     const cached = localStorage.getItem('pMapAdminInitData');
     if (cached) {
+        if (window._adminInitLoading) window._adminInitLoading.update({ label: '保存データを読み込み中...', detail: '地図を先に表示します', current: 1, total: 3 });
         try { renderInitData(JSON.parse(cached), { interim: true }); } catch(e){}
     }
+    if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
     callGAS('getInitData').then(data => {
+        if (window._adminInitLoading) window._adminInitLoading.update({ label: '表示データを準備中...', detail: 'マスタと圃場を反映しています', current: 2, total: 3 });
         // サーバーが空（0件）を返した場合、圃場入りのキャッシュを空で上書きしない
         const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
         let skipCacheSave = false;
@@ -399,10 +405,11 @@ function loadInitData() {
         console.log("InitData Error:", e);
         if (cached && Object.keys(loadedPolygons || {}).length === 0) {
             try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {
-                if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                if (window._adminInitLoading) { window._adminInitLoading.fail('圃場データの読み込みに失敗しました'); window._adminInitLoading = null; }
             }
-        } else if (typeof hideMapDataLoading === 'function') {
-            hideMapDataLoading();
+        } else if (window._adminInitLoading) {
+            window._adminInitLoading.fail('圃場データの読み込みに失敗しました');
+            window._adminInitLoading = null;
         }
     });
 }
@@ -431,7 +438,7 @@ function flushPendingInitData() {
             }
             if (++attempts > 300) {
                 console.warn('地図初期化前のため圃場データの描画をスキップします');
-                if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                if (!interim && window._adminInitLoading) { window._adminInitLoading.fail('地図の準備に失敗しました'); window._adminInitLoading = null; }
                 return;
             }
             setTimeout(tryRender, 100);
@@ -440,7 +447,7 @@ function flushPendingInitData() {
         return;
     }
     if (!data.pdl) {
-        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (!interim && window._adminInitLoading) { window._adminInitLoading.fail('表示データがありません'); window._adminInitLoading = null; }
         return;
     }
     pendingInitData = null;
@@ -477,7 +484,7 @@ function flushPendingInitData() {
     const incomingPolys = Array.isArray(data.polygons) ? data.polygons : [];
     if (incomingPolys.length === 0 && Object.keys(loadedPolygons).length > 0) {
         console.warn('取得データの圃場が0件のため、表示中の圃場・看板を保持します（マスタのみ更新）');
-        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (!interim && window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
         return;
     }
     console.log('圃場・看板の描画開始:', incomingPolys.length + '件');
@@ -493,6 +500,7 @@ function flushPendingInitData() {
     if (data.polygons) {
         const chunkSize = 50; // 1回に描画する数
         let currentIndex = 0;
+        if (!interim && window._adminInitLoading) window._adminInitLoading.update({ label: '圃場・看板を描画中...', detail: `0 / ${data.polygons.length} 件`, current: 0, total: Math.max(1, data.polygons.length) });
         const drawId = (window._adminMapDrawId = (window._adminMapDrawId || 0) + 1);
 
         function renderChunk() {
@@ -507,6 +515,7 @@ function flushPendingInitData() {
                     console.warn('圃場/看板の描画スキップ:', f && f.id, err);
                 }
             }
+            if (!interim && window._adminInitLoading) window._adminInitLoading.update({ detail: `${currentIndex} / ${data.polygons.length} 件`, current: currentIndex, total: Math.max(1, data.polygons.length) });
 
             if (currentIndex < data.polygons.length) {
                 // まだ残っていたら、50ミリ秒だけ休んでから次を描画（これでスマホがフリーズしません！）
@@ -515,13 +524,13 @@ function flushPendingInitData() {
                 // 全部の描画が終わったら検索機能をセット
                 updateAdminLegend();
                 if (typeof setupSearch === 'function') setupSearch();
-                if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                if (!interim && window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
             }
         }
         renderChunk(); // 最初の50個を描き始める
     } else {
         if (typeof setupSearch === 'function') setupSearch();
-        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (!interim && window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
     }
 }
 
@@ -717,12 +726,19 @@ window.execMaster = async (type, act, val) => {
 
 function showToukiInfo(id) {
     const p = loadedPolygons[id]; if (!p.toukiId) { customAlert("紐付いている登記情報がありません"); return; }
-    document.getElementById('modalBody').innerHTML = "読み込み中..."; document.getElementById('modal').style.display = 'flex';
+    const modalBody = document.getElementById('modalBody');
+    const detailLoad = window.AppLoading ? AppLoading.inline(modalBody, { label: '登記情報を取得中...', detail: '登録内容を確認しています', delay: 0 }) : null;
+    if (!detailLoad) modalBody.innerHTML = "読み込み中...";
+    document.getElementById('modal').style.display = 'flex';
     callGAS('getToukiDetails', { toukiIds: p.toukiId }).then(details => {
+        if (detailLoad) detailLoad.done();
         let html = `<h3>${p.name} の登記情報</h3><table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:15px;" border="1"><tr><th>ID</th><th>住所</th><th>面積</th><th>地主</th></tr>`;
         details.forEach(d => html += `<tr><td>${d.id}</td><td>${d.address}</td><td>${d.area}</td><td>${d.owner}</td></tr>`);
         document.getElementById('modalBody').innerHTML = html + `</table><button onclick="document.getElementById('modal').style.display='none'" style="width:100%;padding:10px;background:#666;color:#fff;border-radius:4px;border:none;font-weight:bold;">閉じる</button>`;
-    }).catch(e => customAlert("取得失敗"));
+    }).catch(e => {
+        if (detailLoad) detailLoad.fail('登記情報の取得に失敗しました');
+        customAlert("取得失敗");
+    });
 }
 
 function openAddTouki(hojoId) {

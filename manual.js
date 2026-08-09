@@ -25,6 +25,41 @@
   let drawColor = '#FF1744'; // 初期ペン色（赤）
   let drawLineWidth = 4;
 
+  function startLoading(options) {
+    if (window.AppLoading && typeof window.AppLoading.start === 'function') {
+      return window.AppLoading.start(options || {});
+    }
+    return { update: function() {}, done: function() {}, fail: function() {} };
+  }
+
+  function startInlineLoading(target, options) {
+    if (window.AppLoading && typeof window.AppLoading.inline === 'function') {
+      return window.AppLoading.inline(target, options || {});
+    }
+    return startLoading(Object.assign({}, options || {}, { target: target, blocking: false }));
+  }
+
+  function nextPaint() {
+    return new Promise(resolve => {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+      else setTimeout(resolve, 0);
+    });
+  }
+
+  function setManualSyncStatus(message, isError) {
+    const status = document.getElementById('manualSyncStatus');
+    if (!status) return;
+    status.textContent = message || '';
+    status.style.color = isError ? '#c62828' : '#666';
+  }
+
+  function ensureServerSuccess(response, operationName) {
+    if (response && response.success === false) {
+      throw new Error(response.message || (operationName + 'に失敗しました。'));
+    }
+    return response;
+  }
+
   // 初期化
   document.addEventListener('DOMContentLoaded', () => {
     window.loadManualList();
@@ -35,6 +70,16 @@
   // 1. データ読み込み ＆ 保存
   // ==========================================
   window.loadManualList = async function() {
+    const grid = document.getElementById('manualGrid');
+    const localLoading = startInlineLoading(grid, {
+      label: '端末内のマニュアルを読み込み中...',
+      detail: 'ローカルデータを確認しています',
+      current: 0,
+      total: 1,
+      delay: 0
+    });
+    await nextPaint();
+
     try {
       const local = localStorage.getItem(MANUAL_STORAGE_KEY);
       if (local) {
@@ -44,63 +89,163 @@
       console.warn('ローカルマニュアル読込失敗:', e);
       window.manualList = [];
     }
+    localLoading.update({
+      label: '端末内のマニュアルを読み込みました',
+      detail: window.manualList.length + '件',
+      current: 1,
+      total: 1
+    });
+    window.renderManualGrid();
+    localLoading.done();
 
-    // GASからの取得も並行実行
-    if (typeof callGAS === 'function') {
-      try {
-        const res = await callGAS('getManualList');
-        if (res && res.success && Array.isArray(res.manuals)) {
-          window.manualList = res.manuals;
-          localStorage.setItem(MANUAL_STORAGE_KEY, JSON.stringify(window.manualList));
-        }
-      } catch(e) {
-        console.warn('GASマニュアル取得失敗 (ローカル保持データを使用):', e);
-      }
+    if (typeof callGAS !== 'function') {
+      setManualSyncStatus('この環境では端末内データのみを表示しています（サーバー同期なし）。');
+      return;
     }
 
-    window.renderManualGrid();
+    const syncLoading = startLoading({
+      label: 'マニュアルを同期中...',
+      detail: '端末内データは操作できます',
+      blocking: false,
+      lockMap: false,
+      delay: 0
+    });
+    setManualSyncStatus('サーバーのマニュアルを確認しています...');
+    try {
+      const res = await callGAS('getManualList');
+      if (!res || res.success !== true || !Array.isArray(res.manuals)) {
+        throw new Error((res && res.message) || 'サーバーから有効なデータを取得できませんでした。');
+      }
+      window.manualList = res.manuals;
+      localStorage.setItem(MANUAL_STORAGE_KEY, JSON.stringify(window.manualList));
+      window.renderManualGrid();
+      syncLoading.update({ label: '同期しました', detail: window.manualList.length + '件', current: 1, total: 1 });
+      setManualSyncStatus('サーバーと同期済み（' + window.manualList.length + '件）');
+    } catch(e) {
+      console.warn('GASマニュアル取得失敗 (ローカル保持データを使用):', e);
+      setManualSyncStatus('サーバー同期に失敗したため、端末内データを表示しています。', true);
+    } finally {
+      syncLoading.done();
+    }
   };
 
   window.saveManualToStorageAndGAS = async function(manualData) {
+    const hasServer = typeof callGAS === 'function';
+    const loading = startLoading({
+      label: 'マニュアルを保存中...',
+      detail: '保存内容を準備しています',
+      current: 0,
+      total: hasServer ? 3 : 2,
+      delay: 0
+    });
+    await nextPaint();
+
     // ID生成
     if (!manualData.id) {
       manualData.id = 'man_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
       manualData.createdAt = new Date().toISOString();
     }
     manualData.updatedAt = new Date().toISOString();
+    loading.update({ detail: '端末内に保存しています', current: 1 });
 
     // ローカル追加・更新
-    const idx = window.manualList.findIndex(m => m.id === manualData.id);
-    if (idx >= 0) {
-      window.manualList[idx] = manualData;
-    } else {
-      window.manualList.unshift(manualData);
-    }
+    const previousList = window.manualList.slice();
+    try {
+      const idx = window.manualList.findIndex(m => m.id === manualData.id);
+      if (idx >= 0) {
+        window.manualList[idx] = manualData;
+      } else {
+        window.manualList.unshift(manualData);
+      }
 
-    localStorage.setItem(MANUAL_STORAGE_KEY, JSON.stringify(window.manualList));
-    window.renderManualGrid();
+      localStorage.setItem(MANUAL_STORAGE_KEY, JSON.stringify(window.manualList));
+      window.renderManualGrid();
+    } catch(e) {
+      window.manualList = previousList;
+      window.renderManualGrid();
+      e.localSaved = false;
+      loading.fail('端末内への保存に失敗しました');
+      throw e;
+    }
+    loading.update({
+      label: hasServer ? 'サーバーへ保存中...' : '端末内に保存しました',
+      detail: hasServer ? '同期完了までお待ちください' : 'この環境ではサーバー同期なし',
+      current: 2
+    });
 
     // GAS保存
-    if (typeof callGAS === 'function') {
-      try {
-        await callGAS('saveManualData', { manual: manualData });
-      } catch(e) {
-        console.warn('GAS保存失敗:', e);
-      }
+    if (!hasServer) {
+      setManualSyncStatus('マニュアルは端末内のみに保存されました（サーバー同期なし）。');
+      loading.done();
+      return { localSaved: true, serverStatus: 'unavailable' };
+    }
+
+    try {
+      const response = await callGAS('saveManualData', { manual: manualData });
+      ensureServerSuccess(response, 'サーバー保存');
+      loading.update({ label: '保存しました', detail: 'サーバー同期済み', current: 3, total: 3 });
+      setManualSyncStatus('マニュアルをサーバーと同期しました。');
+      return { localSaved: true, serverStatus: 'saved' };
+    } catch(e) {
+      console.warn('GAS保存失敗:', e);
+      e.localSaved = true;
+      setManualSyncStatus('端末内には保存しましたが、サーバー保存に失敗しました。', true);
+      throw e;
+    } finally {
+      loading.done();
     }
   };
 
   window.deleteManual = async function(manualId) {
     if (!confirm('このマニュアルを削除してもよろしいですか？')) return;
 
-    window.manualList = window.manualList.filter(m => m.id !== manualId);
-    localStorage.setItem(MANUAL_STORAGE_KEY, JSON.stringify(window.manualList));
-    window.renderManualGrid();
+    const hasServer = typeof callGAS === 'function';
+    const loading = startLoading({
+      label: 'マニュアルを削除中...',
+      detail: '端末内データを更新しています',
+      current: 0,
+      total: hasServer ? 2 : 1,
+      delay: 0
+    });
+    await nextPaint();
 
-    if (typeof callGAS === 'function') {
-      try {
-        await callGAS('deleteManualData', { manualId: manualId });
-      } catch(e) {}
+    const previousList = window.manualList.slice();
+    try {
+      window.manualList = window.manualList.filter(m => m.id !== manualId);
+      localStorage.setItem(MANUAL_STORAGE_KEY, JSON.stringify(window.manualList));
+      window.renderManualGrid();
+      loading.update({
+        label: hasServer ? 'サーバーから削除中...' : '端末内から削除しました',
+        detail: hasServer ? '同期完了までお待ちください' : 'この環境ではサーバー同期なし',
+        current: 1
+      });
+    } catch(e) {
+      window.manualList = previousList;
+      window.renderManualGrid();
+      loading.fail('削除に失敗しました');
+      alert('マニュアルを削除できませんでした。\n' + (e.message || e));
+      return;
+    }
+
+    if (!hasServer) {
+      setManualSyncStatus('マニュアルは端末内のみから削除されました（サーバー同期なし）。');
+      loading.done();
+      alert('端末内のマニュアルを削除しました。\n（この環境ではサーバー同期なし）');
+      return;
+    }
+
+    try {
+      const response = await callGAS('deleteManualData', { manualId: manualId });
+      ensureServerSuccess(response, 'サーバー削除');
+      loading.update({ label: '削除しました', detail: 'サーバー同期済み', current: 2, total: 2 });
+      setManualSyncStatus('マニュアルの削除をサーバーと同期しました。');
+      alert('マニュアルを削除し、サーバーと同期しました。');
+    } catch(e) {
+      console.warn('GAS削除失敗:', e);
+      setManualSyncStatus('端末内では削除しましたが、サーバー削除に失敗しました。', true);
+      alert('端末内のマニュアルは削除しましたが、サーバーからの削除に失敗しました。\n' + (e.message || e));
+    } finally {
+      loading.done();
     }
   };
 
@@ -224,24 +369,62 @@
   // ==========================================
   // 4. 写真追加 ＆ 送信前フォトエディター
   // ==========================================
-  window.addManualPhotoFromInput = function(input) {
+  window.addManualPhotoFromInput = async function(input) {
     if (!input.files || !input.files.length) return;
     const files = Array.from(input.files);
+    const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
+    const loadedByFile = new Array(files.length).fill(0);
+    const loading = startInlineLoading('#manualPhotoProgress', {
+      label: '写真を読み込み中...',
+      detail: '0 / ' + files.length + '枚',
+      current: 0,
+      total: totalBytes || files.length,
+      delay: 0
+    });
+    await nextPaint();
 
-    files.forEach(file => {
+    let completed = 0;
+    const results = await Promise.allSettled(files.map((file, fileIndex) => new Promise((resolve, reject) => {
       const reader = new FileReader();
+      reader.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        loadedByFile[fileIndex] = event.loaded;
+        loading.update({
+          detail: completed + ' / ' + files.length + '枚',
+          current: loadedByFile.reduce((sum, loaded) => sum + loaded, 0),
+          total: totalBytes || files.length
+        });
+      };
       reader.onload = (e) => {
-        const dataUrl = e.target.result;
+        loadedByFile[fileIndex] = file.size || 1;
+        completed += 1;
         window.currentCreatingManual.photos.push({
           id: 'p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
-          dataUrl: dataUrl,
+          dataUrl: e.target.result,
           rotation: 0
         });
         window.renderPhotoPreviewGrid();
+        loading.update({
+          label: '写真を読み込み中...',
+          detail: completed + ' / ' + files.length + '枚',
+          current: totalBytes ? loadedByFile.reduce((sum, loaded) => sum + loaded, 0) : completed,
+          total: totalBytes || files.length
+        });
+        resolve();
       };
+      reader.onerror = () => reject(reader.error || new Error(file.name + 'の読み込みに失敗しました。'));
       reader.readAsDataURL(file);
-    });
+    })));
+
     input.value = ''; // リセット
+    const failedCount = results.filter(result => result.status === 'rejected').length;
+    if (failedCount) {
+      console.warn('写真読込失敗:', results.filter(result => result.status === 'rejected'));
+      loading.fail(failedCount + '枚の写真を読み込めませんでした');
+      alert(failedCount + '枚の写真を読み込めませんでした。');
+    } else {
+      loading.done();
+    }
   };
 
   window.renderPhotoPreviewGrid = function() {
@@ -359,15 +542,32 @@
     canvasCtx.drawImage(tempCanvas, 0, 0);
   };
 
-  window.saveEditedPhoto = function() {
+  window.saveEditedPhoto = async function() {
     const canvas = document.getElementById('editorCanvas');
     if (!canvas || window.editingPhotoIndex < 0) return;
 
-    const editedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-    window.currentCreatingManual.photos[window.editingPhotoIndex].dataUrl = editedDataUrl;
+    const loading = startLoading({
+      label: '編集した写真を保存中...',
+      detail: '画像を変換しています',
+      current: 0,
+      total: 1,
+      delay: 0
+    });
+    await nextPaint();
+    try {
+      const editedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      window.currentCreatingManual.photos[window.editingPhotoIndex].dataUrl = editedDataUrl;
+      loading.update({ label: '写真を保存しました', detail: '', current: 1, total: 1 });
 
-    window.closePhotoEditor();
-    window.renderPhotoPreviewGrid();
+      window.closePhotoEditor();
+      window.renderPhotoPreviewGrid();
+    } catch(e) {
+      console.warn('編集写真保存失敗:', e);
+      loading.fail('写真の保存に失敗しました');
+      alert('編集した写真を保存できませんでした。\n' + (e.message || e));
+      return;
+    }
+    loading.done();
   };
 
   window.closePhotoEditor = function() {
@@ -410,7 +610,7 @@
   // ==========================================
   // 6. 新規保存・リセット
   // ==========================================
-  window.submitManualForm = function() {
+  window.submitManualForm = async function() {
     const title = (document.getElementById('manualTitleInput')?.value || '').trim();
     const notice = (document.getElementById('manualNoticeInput')?.value || '').trim();
 
@@ -428,11 +628,24 @@
       photos: window.currentCreatingManual.photos || []
     };
 
-    window.saveManualToStorageAndGAS(manualData);
-    alert('マニュアルを保存しました！');
-
-    window.resetManualForm();
-    window.switchManualTab('list');
+    try {
+      const result = await window.saveManualToStorageAndGAS(manualData);
+      if (result.serverStatus === 'saved') {
+        alert('マニュアルを保存し、サーバーと同期しました！');
+      } else {
+        alert('マニュアルを端末内に保存しました。\n（この環境ではサーバー同期なし）');
+      }
+      window.resetManualForm();
+      window.switchManualTab('list');
+    } catch(e) {
+      if (e && e.localSaved) {
+        alert('マニュアルは端末内に保存しましたが、サーバーへの保存に失敗しました。\n' + (e.message || e));
+        window.resetManualForm();
+        window.switchManualTab('list');
+      } else {
+        alert('マニュアルを端末内に保存できませんでした。\n' + (e.message || e));
+      }
+    }
   };
 
   window.resetManualForm = function() {

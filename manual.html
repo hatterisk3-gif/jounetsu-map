@@ -41,6 +41,7 @@
         </select>
       </div>
 
+      <div id="manualSyncStatus" role="status" aria-live="polite" style="font-size:11px; color:#666; margin:0 2px 8px;"></div>
       <div id="manualGrid" class="manual-grid">
         <!-- JSでカードを描画 -->
       </div>
@@ -77,6 +78,7 @@
         <div style="font-size:11px; color:#666; margin-bottom:8px;">💡 写真の「✏️編集」ボタンを押すと、送信前に画像の回転やペンで矢印・注釈を自由描き込みできます。</div>
 
         <!-- プレビュー枠 -->
+        <div id="manualPhotoProgress" aria-live="polite"></div>
         <div id="photoPreviewGrid" class="photo-preview-grid"></div>
 
         <!-- 📋 作業手順ステップ -->
@@ -156,6 +158,7 @@
     </div>
   </div>
 
-  <script src="manual.js"></script>
+  <script src="map-loading.js?v=1786240000002"></script>
+  <script src="manual.js?v=1786240000001"></script>
 </body>
 </html>

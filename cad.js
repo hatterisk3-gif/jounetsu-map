@@ -2291,9 +2291,13 @@ window.openCADMode = async (id) => {
     infoWindow.close();
     window.cadTargetId = id;
     const p = loadedPolygons[id];
+    const cadLoad = (window.AppLoading && AppLoading.start)
+        ? AppLoading.start({ label: 'CADを準備中...', detail: '1/4 地図を初期化しています', current: 0, total: 4, delay: 0 })
+        : null;
 
     document.getElementById('cadTargetName').innerText = p.name + " (最新の図面を読込中...)";
     document.getElementById('cadOverlay').style.display = 'flex';
+    try {
 
     window.cadCurrentRotation = 0;
     window.cadCurrentScale = BASE_SCALE;
@@ -2346,6 +2350,7 @@ window.openCADMode = async (id) => {
 
     window.cadClearLines(true);
     switchCadTab(1);
+    if (cadLoad) cadLoad.update({ label: '最新図面を取得中...', detail: '2/4 保存履歴を確認しています', current: 1, total: 4 });
 
     try {
         const history = await callGAS('getPolygonDrawingHistory', { id });
@@ -2358,12 +2363,21 @@ window.openCADMode = async (id) => {
     document.getElementById('cadTargetName').innerText = p.name;
 
     window.cadWidthLinkedFromPlan = false;
+    if (cadLoad) cadLoad.update({ label: 'CAD設定を取得中...', detail: '3/4 畝幅マスタを読み込んでいます', current: 2, total: 4 });
     await window.loadCadWidthOptionsFromMaster();
     window.setCadWidthCm(null, { updatePreview: false });
 
     if (p.uneSimData) {
         try {
             const saved = JSON.parse(p.uneSimData);
+            const savedRenderTotal = (saved.pins || []).length + (saved.nakamichiLines || []).length +
+                (saved.customShapes || []).length + (saved.unePolygons || []).length;
+            if (cadLoad) cadLoad.update({
+                label: '保存図面を描画中...',
+                detail: `4/4 ${savedRenderTotal} 要素を復元しています`,
+                current: 3,
+                total: 4
+            });
             document.getElementById('cadAngle').value = saved.angle !== undefined ? saved.angle : 0;
             // 基準畝幅は計画連動時のみ自動選択。保存値では選択しない
             document.getElementById('cadUneCount').value = saved.uneCount !== undefined ? saved.uneCount : 0;
@@ -2439,6 +2453,7 @@ window.openCADMode = async (id) => {
 
     // 栽培計画でこの圃場が選ばれていれば、計画の畝間を基準畝幅に連動
     await window.applyCultivationPlanWidthToCad(id);
+    if (cadLoad) cadLoad.update({ label: 'CADの準備が完了しました', detail: '4/4 図面を表示しました', current: 4, total: 4 });
 
     // 起動直後の状態を履歴0番目として保存
     setTimeout(() => {
@@ -2446,6 +2461,9 @@ window.openCADMode = async (id) => {
         window.cadHistoryIndex = -1;
         window.saveCadStateToHistory();
     }, 500);
+    } finally {
+        if (cadLoad) cadLoad.done();
+    }
 };
 
 window.closeCADMode = () => {
@@ -7116,17 +7134,22 @@ window.showCadHistoryModal = async () => {
     if (!window.cadTargetId) return;
     const listEl = document.getElementById('cadHistoryList');
     if (!listEl) return;
-    listEl.innerHTML = '<div style="text-align:center; padding:20px;">読み込み中...</div>';
+    const historyLoad = (window.AppLoading && AppLoading.inline)
+        ? AppLoading.inline(listEl, { label: 'CAD履歴を取得中...', detail: '保存済み図面を確認しています', delay: 0 })
+        : null;
+    if (!historyLoad) listEl.innerHTML = '<div style="text-align:center; padding:20px;">読み込み中...</div>';
     document.getElementById('cadHistoryModal').style.display = 'block';
     
     try {
         const history = await callGAS('getPolygonDrawingHistory', { id: window.cadTargetId });
         if (!history || history.length === 0) {
+            if (historyLoad) historyLoad.done();
             listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">保存された履歴がありません。</div>';
             return;
         }
         
-        listEl.innerHTML = '';
+        if (historyLoad) historyLoad.update({ label: 'CAD履歴を表示中...', detail: `0 / ${history.length} 件`, current: 0, total: history.length });
+        const historyFragment = document.createDocumentFragment();
         history.forEach((item, idx) => {
             const btn = document.createElement('button');
             btn.style.cssText = 'width:100%; text-align:left; padding:12px; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:14px; margin-bottom:5px;';
@@ -7137,10 +7160,15 @@ window.showCadHistoryModal = async () => {
                     document.getElementById('cadHistoryModal').style.display = 'none';
                 }
             };
-            listEl.appendChild(btn);
+            historyFragment.appendChild(btn);
+            if (historyLoad) historyLoad.update({ detail: `${idx + 1} / ${history.length} 件`, current: idx + 1, total: history.length });
         });
+        if (historyLoad) historyLoad.done();
+        listEl.innerHTML = '';
+        listEl.appendChild(historyFragment);
     } catch(e) {
         console.error("CAD History Error:", e);
+        if (historyLoad) historyLoad.done();
         listEl.innerHTML = `<div style="text-align:center; padding:20px; color:red;">エラーが発生しました。<br>${e.message}</div>`;
     }
 };

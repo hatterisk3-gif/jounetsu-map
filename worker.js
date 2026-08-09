@@ -430,6 +430,15 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
           const btn = document.querySelector('.login-btn');
+          const startupLoad = isAuto ? window._workerStartupLoading : null;
+          if (startupLoad) {
+              startupLoad.update({
+                  label: 'ログイン状態を確認中...',
+                  detail: 'サーバーに接続しています',
+                  current: null,
+                  total: null
+              });
+          }
           
           // 自動ログイン時はボタンの文字を変えない（チラつき防止）
           if (!isAuto && btn) { 
@@ -441,10 +450,6 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               const result = await callGAS('login', {orgId: 'default', userId: id, password: pw});
               if (result.success) {
                   currentUser = result.name;
-                  // ログイン画面を消す前にロード表示を出す（チラつき・ワンテンポ遅れ防止）
-                  if (typeof beginMapDataLoad === 'function') {
-                      beginMapDataLoad('圃場データを読み込み中...');
-                  }
                   document.getElementById('loginScreen').style.display = 'none';
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
@@ -452,8 +457,13 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   localStorage.setItem('passionMapUserRole', result.role || '作業員');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
                   
-                  // 最新データを取りに行く（ローディングは loadInitData 内でも維持）
-                  loadInitData(); 
+                  // 最新データが画面へ反映されるまで起動時ローダーを維持する
+                  const loaded = await loadInitData({ loadingHandle: startupLoad });
+                  if (startupLoad) {
+                      if (loaded) startupLoad.done();
+                      else startupLoad.fail('圃場データの読み込みに失敗しました');
+                      window._workerStartupLoading = null;
+                  }
                   startLocationWatch();
                   // 作業開始時間ヒントを先行取得（getInitData完了を待たない）
                   if (typeof window.prefetchWorkTimeHints === 'function') {
@@ -466,11 +476,23 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   document.getElementById('loginScreen').style.display = 'flex';
                   document.getElementById('loginError').innerText = result.message;
                   if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+                  if (startupLoad) {
+                      startupLoad.done();
+                      window._workerStartupLoading = null;
+                  } else if (typeof hideMapDataLoading === 'function') {
+                      hideMapDataLoading();
+                  }
               }
           } catch(e) { 
               document.getElementById('loginScreen').style.display = 'flex';
               document.getElementById('loginError').innerText = "通信エラー: " + e.message; 
               if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+              if (startupLoad) {
+                  startupLoad.fail('ログインまたはデータ読み込みに失敗しました');
+                  window._workerStartupLoading = null;
+              } else if (typeof hideMapDataLoading === 'function') {
+                  hideMapDataLoading();
+              }
           }
       }
 
@@ -494,40 +516,77 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       }
 
     // 🌟 2. データの取得とキャッシュ保存（超軽量化＆SWRバックグラウンド更新版！） 🌟
-      function loadInitData() {
+      function loadInitData(options = {}) {
           const hasCache = !!localStorage.getItem('passionMapInitData');
-          // キャッシュが無い初回のみローディングを表示、キャッシュがある場合はバックグラウンドで静かに更新
-          if (!hasCache && typeof beginMapDataLoad === 'function') {
+          const externalLoad = options.loadingHandle || null;
+          const appLoad = externalLoad || (window.AppLoading
+              ? AppLoading.start({
+                  label: '圃場データを読み込み中...',
+                  detail: 'サーバーから取得しています',
+                  current: 1,
+                  total: 3,
+                  blocking: true,
+                  lockMap: true,
+                  delay: 0
+                })
+              : null);
+          const ownsLoad = !!appLoad && !externalLoad;
+          if (appLoad) {
+              appLoad.update({
+                  label: '圃場データを読み込み中...',
+                  detail: 'サーバーから最新データを取得しています',
+                  current: 1,
+                  total: 3
+              });
+          }
+          if (!appLoad && typeof beginMapDataLoad === 'function') {
               beginMapDataLoad('圃場データを読み込み中...');
           }
-          callGAS('getInitData').then(data => {
+          return callGAS('getInitData').then(data => {
+              let renderFailed = false;
               try {
+                  if (appLoad) appLoad.update({ detail: 'データを確認しています', current: 2 });
                   const newDataStr = JSON.stringify(data);
                   const oldDataStr = localStorage.getItem('passionMapInitData');
                   
                   // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
                   if (newDataStr === oldDataStr) {
                       console.log("変更なし：再描画をスキップしました");
-                      if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
-                      if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
-                      return; 
+                      if (ownsLoad) appLoad.done();
+                      else if (!appLoad) {
+                          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                          if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
+                      }
+                      return true;
                   }
 
                   // 変更があった場合のみ保存して再描画
                   if (data) {
                       localStorage.setItem('passionMapInitData', newDataStr);
+                      if (appLoad) appLoad.update({ detail: '地図を描画しています', current: 3 });
                       renderInitData(data);
                   }
               } catch (err) {
                   console.error("renderInitData/Data processing Error:", err);
+                  renderFailed = true;
+                  if (ownsLoad) appLoad.fail('圃場データの表示に失敗しました');
+                  return false;
               } finally {
+                  if (ownsLoad && !renderFailed) appLoad.done();
+                  else if (!appLoad) {
+                      if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                      if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
+                  }
+              }
+              return true;
+          }).catch(e => {
+              console.log("InitData Error:", e);
+              if (ownsLoad) appLoad.fail('圃場データの読み込みに失敗しました');
+              else if (!appLoad) {
                   if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
                   if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
               }
-          }).catch(e => {
-              console.log("InitData Error:", e);
-              if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
-              if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
+              return false;
           });
       }
 
@@ -1518,7 +1577,11 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.showInventoryHistory = async (matId, matName, unitStr, currentStock, signId) => {
-         document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>履歴を読み込み中...</div>";
+         const modalBody = document.getElementById('modalBody');
+         const historyLoad = window.AppLoading
+           ? AppLoading.inline(modalBody, { label: '履歴を読み込み中...', detail: '在庫履歴を取得しています', delay: 80 })
+           : null;
+         if (!historyLoad) modalBody.innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>履歴を読み込み中...</div>";
          document.getElementById('modal').style.display = 'flex';
          try {
             const history = await callGAS('getInventoryHistory', { materialId: matId });
@@ -1558,9 +1621,11 @@ function createSignboardMarker(name, pos, icon, id) {
                html += `</div>`;
             }
             html += `<button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; margin-top:15px; background:#ccc; color:#333; border:none; border-radius:4px; font-weight:bold; font-size:15px; cursor:pointer;">閉じる</button>`;
-            document.getElementById('modalBody').innerHTML = html;
+            if (historyLoad) historyLoad.done();
+            modalBody.innerHTML = html;
          } catch (e) {
-            document.getElementById('modalBody').innerHTML = `<div style="color:red; text-align:center; padding:20px;">エラー: ${e.message}</div><button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; margin-top:15px; background:#ccc; border:none; border-radius:4px; font-weight:bold;">閉じる</button>`;
+            if (historyLoad) historyLoad.done();
+            modalBody.innerHTML = `<div style="color:red; text-align:center; padding:20px;">エラー: ${e.message}</div><button onclick="document.getElementById('modal').style.display='none'" style="width:100%; padding:12px; margin-top:15px; background:#ccc; border:none; border-radius:4px; font-weight:bold;">閉じる</button>`;
          }
       };
 
@@ -12051,7 +12116,10 @@ function createSignboardMarker(name, pos, icon, id) {
            location: locEl ? locEl.value : 'all',
            q: qEl ? qEl.value : ''
          };
-         body.innerHTML = `<div style="padding:20px; text-align:center; color:#888;">読み込み中...</div>`;
+         const lotLoad = window.AppLoading
+           ? AppLoading.inline(body, { label: 'ロットを読み込み中...', detail: '一覧を取得しています', delay: 80 })
+           : null;
+         if (!lotLoad) body.innerHTML = `<div style="padding:20px; text-align:center; color:#888;">読み込み中...</div>`;
          if (meta) meta.innerText = '読み込み中...';
          try {
            const res = await callGAS('getLotList', {
@@ -12060,10 +12128,12 @@ function createSignboardMarker(name, pos, icon, id) {
              limit: 200
            });
            window._lotListCache = (res && res.lots) ? res.lots : [];
+           if (lotLoad) lotLoad.done();
            if (meta) meta.innerText = `表示 ${window._lotListCache.length} 件` + ((res && res.total > window._lotListCache.length) ? ` / 全${res.total}件` : '');
            window.renderLotListRows();
          } catch (e) {
            window._lotListCache = [];
+           if (lotLoad) lotLoad.done();
            body.innerHTML = `<div style="padding:16px; color:#c62828; text-align:center;">取得に失敗しました<br><span style="font-size:12px;">${(e && e.message) || e}</span></div>`;
            if (meta) meta.innerText = '';
          }
@@ -13131,7 +13201,13 @@ function createSignboardMarker(name, pos, icon, id) {
       window.openRefuelUI = async (signId) => {
          const p = loadedPolygons[signId];
          document.getElementById('rightPanelTitle').innerText = `⛽ ${p.name} - 給油管理`;
-         document.getElementById('rightPanelContent').innerHTML = "<div id='refuel_loading' style='text-align:center; padding:20px; font-weight:bold;'>履歴を読み込み中...</div>";
+         const panelContent = document.getElementById('rightPanelContent');
+         panelContent.innerHTML = "<div id='refuel_loading'></div>";
+         const refuelTarget = document.getElementById('refuel_loading');
+         const refuelLoad = window.AppLoading
+           ? AppLoading.inline(refuelTarget, { label: '履歴を読み込み中...', detail: '給油履歴を取得しています', delay: 80 })
+           : null;
+         if (!refuelLoad) refuelTarget.innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>履歴を読み込み中...</div>";
          
          document.getElementById('rightPanelFooter').innerHTML = `
            <div style="display:flex; gap:10px;">
@@ -13144,7 +13220,10 @@ function createSignboardMarker(name, pos, icon, id) {
 
          try {
             const history = await callGAS('getRefuelHistory');
-            if (!document.getElementById('refuel_loading')) return;
+            if (!document.getElementById('refuel_loading')) {
+               if (refuelLoad) refuelLoad.done();
+               return;
+            }
 
             let html = `<div style="margin-bottom:15px; font-size:12px; color:#666;">最近の給油履歴です。</div>`;
             if (history.length === 0) {
@@ -13165,10 +13244,15 @@ function createSignboardMarker(name, pos, icon, id) {
                   `;
                });
             }
-            document.getElementById('rightPanelContent').innerHTML = html;
+            if (refuelLoad) refuelLoad.done();
+            panelContent.innerHTML = html;
          } catch(e) {
-            if (!document.getElementById('refuel_loading')) return;
-            document.getElementById('rightPanelContent').innerHTML = `<div style="color:red; text-align:center;">エラー: ${e.message}</div>`;
+            if (!document.getElementById('refuel_loading')) {
+               if (refuelLoad) refuelLoad.done();
+               return;
+            }
+            if (refuelLoad) refuelLoad.done();
+            panelContent.innerHTML = `<div style="color:red; text-align:center;">エラー: ${e.message}</div>`;
          }
       };
 
@@ -13854,13 +13938,17 @@ function createSignboardMarker(name, pos, icon, id) {
           if (accDiv.style.display === 'none') {
               // 閉じていたら開く
               accDiv.style.display = 'block';
-              listDiv.innerHTML = '<div style="text-align:center; padding:10px; color:#1a73e8; font-weight:bold;">履歴を読み込み中...</div>';
+              const inventoryLoad = window.AppLoading
+                ? AppLoading.inline(listDiv, { label: '履歴を読み込み中...', detail: '在庫履歴を取得しています', delay: 80 })
+                : null;
+              if (!inventoryLoad) listDiv.innerHTML = '<div style="text-align:center; padding:10px; color:#1a73e8; font-weight:bold;">履歴を読み込み中...</div>';
               
               try {
                   // 裏側(GAS)から履歴を引っ張ってくる
                   const history = await callGAS('getInventoryHistory', { materialId: matId });
                   
                   if (history.length === 0) {
+                      if (inventoryLoad) inventoryLoad.done();
                       listDiv.innerHTML = '<div style="text-align:center; color:#666; padding:10px;">履歴はありません。</div>';
                   } else {
                       let hHtml = '';
@@ -13885,9 +13973,11 @@ function createSignboardMarker(name, pos, icon, id) {
                               </div>
                           </div>`;
                       });
+                      if (inventoryLoad) inventoryLoad.done();
                       listDiv.innerHTML = hHtml;
                   }
               } catch(e) {
+                  if (inventoryLoad) inventoryLoad.done();
                   listDiv.innerHTML = `<div style="text-align:center; color:red; padding:10px;">エラー: ${e.message}</div>`;
               }
           } else {
@@ -14533,20 +14623,35 @@ window.executeAutoRecord = async () => {
           if(document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw; 
           
           if(id && pw) { 
-              // ログイン画面を消す前にロード表示（空白のワンテンポを作らない）
-              if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
               const loginScreen = document.getElementById('loginScreen');
               if(loginScreen) loginScreen.style.display = 'none';
+              window._workerStartupLoading = (window.AppLoading && AppLoading.start)
+                ? AppLoading.start({
+                    label: 'アプリを準備中...',
+                    detail: '保存データを確認しています',
+                    blocking: true,
+                    lockMap: true,
+                    delay: 0
+                  })
+                : null;
            
-              // ★爆速化・ロード画面即時撤去：キャッシュがあれば先に描画して0秒で操作可能に！
+              // キャッシュを先に描画するが、最新データ取得完了までは操作をブロックする
               const cachedData = localStorage.getItem('passionMapInitData');
               if (cachedData) {
+                  const cacheLoad = window._workerStartupLoading;
+                  if (cacheLoad) {
+                      cacheLoad.update({
+                          label: '圃場データを読み込み中...',
+                          detail: 'キャッシュを反映しています',
+                          current: 1,
+                          total: 3
+                      });
+                  }
+                  if (!cacheLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
                   requestAnimationFrame(() => {
                       try {
                           renderInitData(JSON.parse(cachedData));
-                          // キャッシュ反映後、ロード画面を即時撤去してユーザーがすぐ圃場作業記録を取れる状態にする！
-                          if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
-                          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                          if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを反映しました。最新データを確認します', current: 2 });
 
                           if (typeof window.prefetchWorkTimeHints === 'function') {
                               const now = new Date();
@@ -14556,14 +14661,16 @@ window.executeAutoRecord = async () => {
                           // バックグラウンドで非同期に最新サーバーデータを確認・更新（SWRパターン）
                           executeLogin(true);
                       } catch(e) {
-                          if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
-                          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                          if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを利用できないため、最新データを取得します', current: null, total: null });
                           executeLogin(true);
                       }
                   });
               } else {
                   executeLogin(true);
               }
+          } else {
+              // 未ログイン時はログイン画面を操作できるよう、起動ブロックだけ解除する
+              if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
           }
       });
 window.openRadarModal = function(lat, lng) {
@@ -14946,11 +15053,15 @@ window.openMyWorkHistoryDetail = function() {
     if (!body) return;
 
     modal.style.display = 'flex';
-    body.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:14px;">読み込み中...</div>`;
+    const historyLoad = window.AppLoading
+      ? AppLoading.inline(body, { label: '作業記録を読み込み中...', detail: '表示を準備しています', delay: 0 })
+      : null;
+    if (!historyLoad) body.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:14px;">読み込み中...</div>`;
     if (sub) sub.innerText = '読み込み中...';
 
     setTimeout(() => {
         const all = window.collectMyWorkRecords(null);
+        if (historyLoad) historyLoad.done();
         if (sub) sub.innerText = `全 ${all.length} 件（新しい日付から）`;
         body.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
     }, 30);
@@ -15221,7 +15332,10 @@ window.loadMyAttendance = async function() {
     const box = document.getElementById('myAttendanceBody');
     if (!box) return;
 
-    box.innerHTML = `<div style="color:#888; font-size:13px;">読み込み中...</div>`;
+    const attendanceLoad = window.AppLoading
+      ? AppLoading.inline(box, { label: '出退勤記録を読み込み中...', detail: '直近30日分を取得しています', delay: 80 })
+      : null;
+    if (!attendanceLoad) box.innerHTML = `<div style="color:#888; font-size:13px;">読み込み中...</div>`;
     const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
 
     try {
@@ -15232,6 +15346,7 @@ window.loadMyAttendance = async function() {
         });
         const rows = (res && res.trackingData) ? res.trackingData : (Array.isArray(res) ? res : []);
         const sessions = summarizeMyAttendanceList(rows, userName);
+        if (attendanceLoad) attendanceLoad.done();
 
         if (!sessions.length) {
             box.innerHTML = `<div style="color:#888; font-size:13px; text-align:center; padding:8px 0;">直近の出退勤記録はありません。</div>`;
@@ -15336,6 +15451,7 @@ window.loadMyAttendance = async function() {
             window._trackingListOpenClockIn = null;
         }
     } catch (e) {
+        if (attendanceLoad) attendanceLoad.done();
         console.warn('出退勤取得エラー', e);
         const localHint = getLocalClockInHint();
         if (localHint) {
@@ -15632,9 +15748,13 @@ window.loadMyCalendarSelectIntoMyPage = async function() {
   const box = document.getElementById('myCalendarSelectList');
   if (!box) return;
   const staffId = localStorage.getItem('passionMapUserId') || '';
-  box.innerHTML = '<div style="color:#888; font-size:13px;">読み込み中...</div>';
+  const calendarLoad = window.AppLoading
+    ? AppLoading.inline(box, { label: 'カレンダーを読み込み中...', detail: '一覧を取得しています', delay: 80 })
+    : null;
+  if (!calendarLoad) box.innerHTML = '<div style="color:#888; font-size:13px;">読み込み中...</div>';
   try {
     const res = await callGAS('listGoogleCalendars', { userId: staffId });
+    if (calendarLoad) calendarLoad.done();
     window.renderCalendarSelectChecklist(
       'myCalendarSelectList',
       res && res.calendars,
@@ -15642,6 +15762,7 @@ window.loadMyCalendarSelectIntoMyPage = async function() {
       res && res.hasPreference
     );
   } catch (e) {
+    if (calendarLoad) calendarLoad.done();
     box.innerHTML = `<div style="color:#c62828; font-size:13px;">取得に失敗しました: ${(e && e.message) || e}</div>`;
   }
 };
@@ -15694,10 +15815,14 @@ window.togglePersonalCalendarPicker = async function() {
   if (panel.style.display === 'none' || !panel.style.display) {
     panel.style.display = 'block';
     const list = document.getElementById('psCalendarSelectList');
-    if (list) list.innerHTML = '<div style="color:#888;font-size:13px;">読み込み中...</div>';
+    const calendarLoad = list && window.AppLoading
+      ? AppLoading.inline(list, { label: 'カレンダーを読み込み中...', detail: '一覧を取得しています', delay: 80 })
+      : null;
+    if (list && !calendarLoad) list.innerHTML = '<div style="color:#888;font-size:13px;">読み込み中...</div>';
     try {
       const staffId = localStorage.getItem('passionMapUserId') || '';
       const res = await callGAS('listGoogleCalendars', { userId: staffId });
+      if (calendarLoad) calendarLoad.done();
       window.renderCalendarSelectChecklist(
         'psCalendarSelectList',
         res && res.calendars,
@@ -15705,6 +15830,7 @@ window.togglePersonalCalendarPicker = async function() {
         res && res.hasPreference
       );
     } catch (e) {
+      if (calendarLoad) calendarLoad.done();
       if (list) list.innerHTML = `<div style="color:#c62828;font-size:13px;">取得失敗: ${(e && e.message) || e}</div>`;
     }
   } else {
@@ -16150,7 +16276,6 @@ window.openPersonalSchedule = function() {
   const backdrop = document.getElementById('personalScheduleBackdrop');
   const content = document.getElementById('personalScheduleContent');
   if (!panel || !content) return;
-  content.innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">読み込み中...</div>';
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
   if (backdrop) {
@@ -16277,6 +16402,10 @@ window.renderPersonalSchedulePanel = async function() {
   const staffId = localStorage.getItem('passionMapUserId') || '';
   const content = document.getElementById('personalScheduleContent');
   if (!content) return;
+  const panelLoad = window.AppLoading
+    ? AppLoading.inline(content, { label: '個人スケジュールを読み込み中...', detail: '予定とカレンダーを取得しています', delay: 80 })
+    : null;
+  if (!panelLoad) content.innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">読み込み中...</div>';
   try {
     const [data, calRes] = await Promise.all([
       callGAS('getPersonalSchedule', { userId: staffId }),
@@ -16327,6 +16456,7 @@ window.renderPersonalSchedulePanel = async function() {
         '<div id="psPriorityList">' + renderList(tasks, 'タスク') + '</div>';
     }
 
+    if (panelLoad) panelLoad.done();
     content.innerHTML =
       window.buildGoogleCalendarEventsHtml(calRes) +
       '<div style="display:flex;gap:6px;margin-bottom:10px;">' +
@@ -16348,6 +16478,7 @@ window.renderPersonalSchedulePanel = async function() {
       '</div>' +
       '<div style="font-size:11px;color:#888;line-height:1.5;">※このスケジュールはあなたのアカウント専用です。<br>予定一覧から登録したタスクは、予定一覧にあなたの名前が表示されます。<br>Googleカレンダー連動にはマイページでGmail登録が必要です。</div>';
   } catch (e) {
+    if (panelLoad) panelLoad.done();
     content.innerHTML = '<div style="color:red;text-align:center;margin-top:30px;">読み込みエラー<br><span style="font-size:12px;">' + window._escapeHtmlPs(e.message || e) + '</span></div>';
   }
 };
@@ -16417,7 +16548,10 @@ window.togglePsSchedulePicker = async function() {
   if (!show) return;
   const listEl = document.getElementById('psSchedulePickerList');
   if (!listEl) return;
-  listEl.innerHTML = '読み込み中...';
+  const scheduleLoad = window.AppLoading
+    ? AppLoading.inline(listEl, { label: '作業予定を読み込み中...', detail: '予定一覧を取得しています', delay: 80 })
+    : null;
+  if (!scheduleLoad) listEl.innerHTML = '読み込み中...';
   try {
     let schedules = window._psCachedSchedules;
     if (!Array.isArray(schedules)) {
@@ -16425,6 +16559,7 @@ window.togglePsSchedulePicker = async function() {
       schedules = data.activeSchedules || [];
       window._psCachedSchedules = schedules;
     }
+    if (scheduleLoad) scheduleLoad.done();
     if (!schedules.length) {
       listEl.innerHTML = '<div style="color:#666;">登録できる作業予定はありません</div>';
       return;
@@ -16444,6 +16579,7 @@ window.togglePsSchedulePicker = async function() {
     }).join('');
     window._psPickerSorted = sorted;
   } catch (e) {
+    if (scheduleLoad) scheduleLoad.done();
     listEl.innerHTML = '<div style="color:#c62828;">読み込み失敗: ' + window._escapeHtmlPs(e.message || e) + '</div>';
   }
 };

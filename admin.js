@@ -420,12 +420,18 @@ function startLocationWatch() {
 
 function loadInitData() {
     initDataLoadStarted = true;
-    if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
+    if (window._adminInitLoading) window._adminInitLoading.done();
+    window._adminInitLoading = (window.AppLoading && AppLoading.start)
+        ? AppLoading.start({ label: '管理画面を準備中...', detail: '初期データを確認しています', current: 0, total: 3, delay: 0 })
+        : null;
     const cached = localStorage.getItem('pMapAdminInitData');
     if (cached) {
+        if (window._adminInitLoading) window._adminInitLoading.update({ label: '保存データを読み込み中...', detail: '地図を先に表示します', current: 1, total: 3 });
         try { renderInitData(JSON.parse(cached), { interim: true }); } catch(e){}
     }
+    if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
     callGAS('getInitData').then(data => {
+        if (window._adminInitLoading) window._adminInitLoading.update({ label: '表示データを準備中...', detail: 'マスタと圃場を反映しています', current: 2, total: 3 });
         // サーバーが空（0件）を返した場合、圃場入りのキャッシュを空で上書きしない
         const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
         let skipCacheSave = false;
@@ -455,10 +461,11 @@ function loadInitData() {
         // ネット取得失敗時でもキャッシュが未描画なら再試行
         if (cached && Object.keys(loadedPolygons || {}).length === 0) {
             try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {
-                if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                if (window._adminInitLoading) { window._adminInitLoading.fail('圃場データの読み込みに失敗しました'); window._adminInitLoading = null; }
             }
-        } else if (typeof hideMapDataLoading === 'function') {
-            hideMapDataLoading();
+        } else if (window._adminInitLoading) {
+            window._adminInitLoading.fail('圃場データの読み込みに失敗しました');
+            window._adminInitLoading = null;
         }
     });
 }
@@ -496,7 +503,7 @@ function renderInitData(data, opts) {
             }
             if (++attempts > 300) { // 最大30秒待つ
                 console.warn('地図初期化前のため圃場データの描画をスキップします');
-                if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                if (!interim && window._adminInitLoading) { window._adminInitLoading.fail('地図の準備に失敗しました'); window._adminInitLoading = null; }
                 return;
             }
             setTimeout(tryRender, 100);
@@ -505,7 +512,7 @@ function renderInitData(data, opts) {
         return;
     }
     if (!data.pdl) {
-        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (!interim && window._adminInitLoading) { window._adminInitLoading.fail('表示データがありません'); window._adminInitLoading = null; }
         return;
     }
     pendingInitData = null;
@@ -560,7 +567,7 @@ function renderInitData(data, opts) {
     const incomingPolys = Array.isArray(data.polygons) ? data.polygons : [];
     if (incomingPolys.length === 0 && Object.keys(loadedPolygons).length > 0) {
         console.warn('取得データの圃場が0件のため、表示中の圃場・看板を保持します（マスタのみ更新）');
-        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (!interim && window._adminInitLoading) { window._adminInitLoading.update({ label: '表示を更新しました', detail: '既存の圃場表示を保持しました', current: 1, total: 1 }); window._adminInitLoading.done(); window._adminInitLoading = null; }
         return;
     }
     console.log('圃場・看板の描画開始:', incomingPolys.length + '件');
@@ -576,6 +583,7 @@ function renderInitData(data, opts) {
     if (data.polygons) {
         const chunkSize = 50; // 1回に描画する数
         let currentIndex = 0;
+        if (!interim && window._adminInitLoading) window._adminInitLoading.update({ label: '圃場・看板を描画中...', detail: `0 / ${data.polygons.length} 件`, current: 0, total: Math.max(1, data.polygons.length) });
         const drawId = (window._adminMapDrawId = (window._adminMapDrawId || 0) + 1);
 
         function renderChunk() {
@@ -590,6 +598,7 @@ function renderInitData(data, opts) {
                     console.warn('圃場/看板の描画スキップ:', f && f.id, err);
                 }
             }
+            if (!interim && window._adminInitLoading) window._adminInitLoading.update({ detail: `${currentIndex} / ${data.polygons.length} 件`, current: currentIndex, total: Math.max(1, data.polygons.length) });
 
             if (currentIndex < data.polygons.length) {
                 // まだ残っていたら、50ミリ秒だけ休んでから次を描画（これでスマホがフリーズしません！）
@@ -598,13 +607,13 @@ function renderInitData(data, opts) {
                 // 全部の描画が終わったら検索機能をセット
                 updateAdminLegend();
                 if (typeof setupSearch === 'function') setupSearch();
-                if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                if (!interim && window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
             }
         }
         renderChunk(); // 最初の50個を描き始める
     } else {
         if (typeof setupSearch === 'function') setupSearch();
-        if (!interim && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        if (!interim && window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
     }
 }
 
@@ -1862,9 +1871,11 @@ window.ccpSearchPestCatalog = async function() {
         customAlert('農薬名または作物名を入力してください');
         return;
     }
-    area.innerHTML = '<div style="padding:6px;color:#1565c0;">検索中...</div>';
+    const searchLoad = window.AppLoading ? AppLoading.inline(area, { label: '農薬カタログを検索中...', detail: '最大50件を取得します', delay: 0 }) : null;
+    if (!searchLoad) area.innerHTML = '<div style="padding:6px;color:#1565c0;">検索中...</div>';
     try {
         const res = await callGAS('searchPesticideCatalog', { q, crop, limit: 50 });
+        if (searchLoad) searchLoad.done();
         window._ccpPestCatalogHits = (res && res.items) || [];
         if (!window._ccpPestCatalogHits.length) {
             area.innerHTML = '<div style="color:#888;">該当なし。カタログ未取込か、キーワードを変えてください。</div>';
@@ -1885,6 +1896,7 @@ window.ccpSearchPestCatalog = async function() {
             `<button type="button" onclick="ccpRegisterSelectedPestFromCatalog(false)" style="width:100%;background:#c62828;color:#fff;border:none;border-radius:4px;padding:9px;font-weight:bold;cursor:pointer;margin-bottom:6px;">選択を農薬マスタへ登録</button>` +
             `<button type="button" onclick="ccpRegisterSelectedPestFromCatalog(true)" style="width:100%;background:#2e7d32;color:#fff;border:none;border-radius:4px;padding:9px;font-weight:bold;cursor:pointer;">登録して半旬設定にも追加</button>`;
     } catch (e) {
+        if (searchLoad) searchLoad.done();
         area.innerHTML = '';
         customAlert(e.message || e);
     }
@@ -1899,9 +1911,11 @@ window.ccpSearchFertCatalog = async function() {
         customAlert('肥料名またはメーカーを入力してください');
         return;
     }
-    area.innerHTML = '<div style="padding:6px;color:#1565c0;">検索中...</div>';
+    const searchLoad = window.AppLoading ? AppLoading.inline(area, { label: '肥料カタログを検索中...', detail: '最大50件を取得します', delay: 0 }) : null;
+    if (!searchLoad) area.innerHTML = '<div style="padding:6px;color:#1565c0;">検索中...</div>';
     try {
         const res = await callGAS('searchFertilizerCatalog', { q, maker, limit: 50 });
+        if (searchLoad) searchLoad.done();
         window._ccpFertCatalogHits = (res && res.items) || [];
         if (!window._ccpFertCatalogHits.length) {
             area.innerHTML = '<div style="color:#888;">該当なし。カタログ未取込か、キーワードを変えてください。</div>';
@@ -1923,6 +1937,7 @@ window.ccpSearchFertCatalog = async function() {
             `<button type="button" onclick="ccpRegisterSelectedFertFromCatalog(false)" style="width:100%;background:#c62828;color:#fff;border:none;border-radius:4px;padding:9px;font-weight:bold;cursor:pointer;margin-bottom:6px;">選択を肥料マスタへ登録</button>` +
             `<button type="button" onclick="ccpRegisterSelectedFertFromCatalog(true)" style="width:100%;background:#2e7d32;color:#fff;border:none;border-radius:4px;padding:9px;font-weight:bold;cursor:pointer;">登録して半旬設定にも追加</button>`;
     } catch (e) {
+        if (searchLoad) searchLoad.done();
         area.innerHTML = '';
         customAlert(e.message || e);
     }
@@ -2650,9 +2665,11 @@ window.searchFertilizerCatalogUi = async function() {
         customAlert('肥料名またはメーカーを入力してください');
         return;
     }
-    area.innerHTML = '<div style="padding:8px;color:#2e7d32;">検索中...</div>';
+    const searchLoad = window.AppLoading ? AppLoading.inline(area, { label: '肥料カタログを検索中...', detail: '最大50件を取得します', delay: 0 }) : null;
+    if (!searchLoad) area.innerHTML = '<div style="padding:8px;color:#2e7d32;">検索中...</div>';
     try {
         const res = await callGAS('searchFertilizerCatalog', { q, maker, limit: 50 });
+        if (searchLoad) searchLoad.done();
         window._fertCatalogHits = (res && res.items) || [];
         if (!window._fertCatalogHits.length) {
             area.innerHTML = '<div style="color:#888;">該当なし。カタログ未取込か、キーワードを変えてください。</div>';
@@ -2673,6 +2690,7 @@ window.searchFertilizerCatalogUi = async function() {
             `<div style="max-height:220px;overflow:auto;background:#fff;border:1px solid #a5d6a7;border-radius:6px;padding:8px;margin-bottom:8px;">${rowsHtml}</div>` +
             `<button type="button" onclick="addSelectedFertilizerFromCatalog()" style="width:100%;background:#c62828;color:#fff;border:none;border-radius:4px;padding:10px;font-weight:bold;cursor:pointer;">選択した肥料をマスタへ登録</button>`;
     } catch (e) {
+        if (searchLoad) searchLoad.done();
         area.innerHTML = '';
         customAlert(e.message || e);
     }
@@ -2822,9 +2840,11 @@ window.searchPesticideCatalogUi = async function() {
         customAlert('農薬名または作物名を入力してください');
         return;
     }
-    area.innerHTML = '<div style="padding:8px;color:#2e7d32;">検索中...</div>';
+    const searchLoad = window.AppLoading ? AppLoading.inline(area, { label: '農薬カタログを検索中...', detail: '最大50件を取得します', delay: 0 }) : null;
+    if (!searchLoad) area.innerHTML = '<div style="padding:8px;color:#2e7d32;">検索中...</div>';
     try {
         const res = await callGAS('searchPesticideCatalog', { q, crop, limit: 50 });
+        if (searchLoad) searchLoad.done();
         window._pestCatalogHits = (res && res.items) || [];
         if (!window._pestCatalogHits.length) {
             area.innerHTML = '<div style="color:#888;">該当なし。カタログ未取込か、キーワードを変えてください。</div>';
@@ -2844,6 +2864,7 @@ window.searchPesticideCatalogUi = async function() {
             `<div style="max-height:220px;overflow:auto;background:#fff;border:1px solid #a5d6a7;border-radius:6px;padding:8px;margin-bottom:8px;">${rowsHtml}</div>` +
             `<button type="button" onclick="addSelectedPesticideFromCatalog()" style="width:100%;background:#c62828;color:#fff;border:none;border-radius:4px;padding:10px;font-weight:bold;cursor:pointer;">選択した農薬をマスタへ登録</button>`;
     } catch (e) {
+        if (searchLoad) searchLoad.done();
         area.innerHTML = '';
         customAlert(e.message || e);
     }
@@ -3685,12 +3706,19 @@ window.execMaster = async (type, act, val) => {
 
 function showToukiInfo(id) {
     const p = loadedPolygons[id]; if (!p.toukiId) { customAlert("紐付いている登記情報がありません"); return; }
-    document.getElementById('modalBody').innerHTML = "読み込み中..."; document.getElementById('modal').style.display = 'flex';
+    const modalBody = document.getElementById('modalBody');
+    const detailLoad = window.AppLoading ? AppLoading.inline(modalBody, { label: '登記情報を取得中...', detail: '登録内容を確認しています', delay: 0 }) : null;
+    if (!detailLoad) modalBody.innerHTML = "読み込み中...";
+    document.getElementById('modal').style.display = 'flex';
     callGAS('getToukiDetails', { toukiIds: p.toukiId }).then(details => {
+        if (detailLoad) detailLoad.done();
         let html = `<h3>${p.name} の登記情報</h3><table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:15px;" border="1"><tr><th>ID</th><th>住所</th><th>面積</th><th>地主</th></tr>`;
         details.forEach(d => html += `<tr><td>${d.id}</td><td>${d.address}</td><td>${d.area}</td><td>${d.owner}</td></tr>`);
         document.getElementById('modalBody').innerHTML = html + `</table><button onclick="document.getElementById('modal').style.display='none'" style="width:100%;padding:10px;background:#666;color:#fff;border-radius:4px;border:none;font-weight:bold;">閉じる</button>`;
-    }).catch(e => customAlert("取得失敗"));
+    }).catch(e => {
+        if (detailLoad) detailLoad.fail('登記情報の取得に失敗しました');
+        customAlert("取得失敗");
+    });
 }
 
 function openAddTouki(hojoId) {

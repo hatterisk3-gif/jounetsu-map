@@ -251,9 +251,24 @@ async function executeLogin(isAuto = false) {
             // キャッシュで即座に地図描画
             const cached = localStorage.getItem('manureMapData');
             if (cached) {
-                if (typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
-                try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
-                if (typeof ensureMapGesturesEnabled === 'function') ensureMapGesturesEnabled();
+                const cacheLoad = window.AppLoading
+                    ? AppLoading.start({
+                        label: '圃場データを読み込み中...',
+                        detail: 'キャッシュを反映しています',
+                        current: 1,
+                        total: 2,
+                        blocking: true,
+                        lockMap: true,
+                        delay: 0
+                    })
+                    : null;
+                if (!cacheLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
+                try {
+                    drawPolygons(JSON.parse(cached));
+                    if (cacheLoad) cacheLoad.update({ detail: '地図の準備が完了しました', current: 2 });
+                } catch(ex) {}
+                if (cacheLoad) cacheLoad.done();
+                else if (typeof ensureMapGesturesEnabled === 'function') ensureMapGesturesEnabled();
                 else if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
             }
 
@@ -428,9 +443,21 @@ function restoreMapInteractions_() {
 
 // ====== データ読み込み (worker.jsと同じgetInitData使用) ======
 async function loadInitData() {
-    if (typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
+    const appLoad = window.AppLoading
+        ? AppLoading.start({
+            label: '圃場データを読み込み中...',
+            detail: 'サーバーから取得しています',
+            current: 1,
+            total: 3,
+            blocking: true,
+            lockMap: true,
+            delay: 120
+        })
+        : null;
+    if (!appLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
     try {
         const data = await callGAS('getInitData');
+        if (appLoad) appLoad.update({ detail: 'データを確認しています', current: 2 });
         if (data && data.prodCategories) {
             setProdCategories(data.prodCategories);
         } else {
@@ -441,23 +468,30 @@ async function loadInitData() {
             const oldDataStr = localStorage.getItem('manureMapData');
             if (newDataStr === oldDataStr) {
                 console.log("変更なし：再描画をスキップしました");
-                restoreMapInteractions_();
+                if (appLoad) appLoad.done();
+                else restoreMapInteractions_();
                 return;
             }
             // キャッシュに保存
             localStorage.setItem('manureMapData', newDataStr);
+            if (appLoad) appLoad.update({ detail: '地図を描画しています', current: 3 });
             drawPolygons(data.polygons);
         }
-        restoreMapInteractions_();
+        if (appLoad) appLoad.done();
+        else restoreMapInteractions_();
     } catch (e) {
         console.error("InitData Error:", e);
         // キャッシュから読む
         const cached = localStorage.getItem('manureMapData');
         if (cached) {
+            if (appLoad) appLoad.update({ detail: 'キャッシュから復元しています', current: 3 });
             try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
         }
         renderProdCategorySelect();
-        restoreMapInteractions_();
+        if (appLoad) {
+            if (cached) appLoad.done();
+            else appLoad.fail('圃場データの読み込みに失敗しました');
+        } else restoreMapInteractions_();
     }
 }
 
