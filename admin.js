@@ -1165,8 +1165,12 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 </div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">保証成分（その他）</label>
                 <input type="text" id="add_fert_components" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 苦土3・ほう素0.2">
-                <label style="font-size:12px; font-weight:bold; color:#555;">内容量（手入力）</label>
-                <input type="text" id="add_fert_volume" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 20kg">
+                <label style="font-size:12px; font-weight:bold; color:#555;">内容量 / 単位</label>
+                <div style="display:flex; gap:6px;">
+                  <input type="text" id="add_fert_volume_amount" class="form-input" style="flex:2; margin-bottom:0; padding:8px;" inputmode="decimal" placeholder="例: 20">
+                  <input type="text" id="add_fert_volume_unit" list="fert_volume_unit_options" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="kg">
+                  <datalist id="fert_volume_unit_options"><option value="kg"><option value="g"><option value="L"><option value="mL"><option value="袋"><option value="本"></datalist>
+                </div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">製造メーカー</label>
                 <input type="text" id="add_fert_maker" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: ○○肥料株式会社">
                 <label style="font-size:12px; font-weight:bold; color:#555;">登録番号（任意）</label>
@@ -1638,8 +1642,12 @@ window.openEditFertilizerMaster = (encoded) => {
             </div>
             <label class="form-label">保証成分（その他）</label>
             <input type="text" id="edit_fert_components" class="form-input" value="${esc(v.components)}">
-            <label class="form-label">内容量</label>
-            <input type="text" id="edit_fert_volume" class="form-input" value="${esc(v.volume)}">
+            <label class="form-label">内容量 / 単位</label>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="edit_fert_volume_amount" class="form-input" style="flex:2;" inputmode="decimal" value="${esc(v.volumeAmount != null ? v.volumeAmount : v.volume)}" placeholder="例: 20">
+              <input type="text" id="edit_fert_volume_unit" list="edit_fert_volume_unit_options" class="form-input" style="flex:1;" value="${esc(v.volumeUnit)}" placeholder="kg">
+              <datalist id="edit_fert_volume_unit_options"><option value="kg"><option value="g"><option value="L"><option value="mL"><option value="袋"><option value="本"></datalist>
+            </div>
             <label class="form-label">製造メーカー</label>
             <input type="text" id="edit_fert_maker" class="form-input" value="${esc(v.manufacturer)}">
             <label class="form-label">登録番号</label>
@@ -3521,7 +3529,8 @@ window.execMaster = async (type, act, val) => {
                 phosphate: (document.getElementById('add_fert_p')?.value || '').trim(),
                 potash: (document.getElementById('add_fert_k')?.value || '').trim(),
                 components: (document.getElementById('add_fert_components')?.value || '').trim(),
-                volume: (document.getElementById('add_fert_volume')?.value || '').trim(),
+                volumeAmount: (document.getElementById('add_fert_volume_amount')?.value || '').trim(),
+                volumeUnit: (document.getElementById('add_fert_volume_unit')?.value || '').trim(),
                 manufacturer: (document.getElementById('add_fert_maker')?.value || '').trim(),
                 regNumber: (document.getElementById('add_fert_reg')?.value || '').trim(),
                 note: (document.getElementById('add_fert_note')?.value || '').trim()
@@ -3696,7 +3705,8 @@ window.execMaster = async (type, act, val) => {
                     phosphate: (document.getElementById('edit_fert_p')?.value || '').trim(),
                     potash: (document.getElementById('edit_fert_k')?.value || '').trim(),
                     components: (document.getElementById('edit_fert_components')?.value || '').trim(),
-                    volume: (document.getElementById('edit_fert_volume')?.value || '').trim(),
+                    volumeAmount: (document.getElementById('edit_fert_volume_amount')?.value || '').trim(),
+                    volumeUnit: (document.getElementById('edit_fert_volume_unit')?.value || '').trim(),
                     manufacturer: (document.getElementById('edit_fert_maker')?.value || '').trim(),
                     regNumber: (document.getElementById('edit_fert_reg')?.value || '').trim(),
                     note: (document.getElementById('edit_fert_note')?.value || '').trim()

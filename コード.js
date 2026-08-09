@@ -62,6 +62,10 @@ function doPost(e) {
     else if (action === "saveManualData") result = saveManualData(params.manual);
     else if (action === "getManualList") result = getManualList();
     else if (action === "deleteManualData") result = deleteManualData(params.manualId);
+    else if (action === "quotation_getInit") result = quotationGetInit_();
+    else if (action === "quotation_list") result = quotationList_(params);
+    else if (action === "quotation_save") result = quotationSave_(params);
+    else if (action === "quotation_archive") result = quotationArchive_(params);
     else if (action === "lookupCultivationByTag") result = lookupCultivationByTag(params);
     else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
     else if (action === "markHarvestQtyLotResolved") result = markHarvestQtyLotResolved(params);
@@ -1367,11 +1371,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
           newData.phosphate,
           newData.potash,
           newData.components,
-          newData.volume,
+          newData.volumeAmount,
           newData.manufacturer,
           newData.regNumber,
           newData.note
         ]]);
+        sheet.getRange(i + 1, 12).setValue(newData.volumeUnit);
         found = true;
         break;
       }
@@ -2124,7 +2129,7 @@ function pesticideDedupKey_(e) {
 // ========== 肥料マスタ ==========
 const FERTILIZER_MASTER_HEADERS_ = [
   'ID', '肥料名', '肥料種類', '窒素', 'りん酸', '加里',
-  '保証成分', '内容量', '製造メーカー', '登録番号', '備考'
+  '保証成分', '内容量', '製造メーカー', '登録番号', '備考', '内容量単位'
 ];
 
 function ensureFertilizerMasterSheet_() {
@@ -2144,8 +2149,26 @@ function ensureFertilizerMasterSheet_() {
   return sheet;
 }
 
+function splitFertilizerVolume_(amountValue, unitValue) {
+  let amount = String(amountValue == null ? '' : amountValue).trim();
+  let unit = String(unitValue == null ? '' : unitValue).trim();
+  if (!unit && amount) {
+    const match = amount.match(/^([0-9０-９.,．，]+)\s*(.*)$/);
+    if (match && match[2]) {
+      amount = match[1].replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+        .replace(/，/g, ',').replace(/．/g, '.');
+      unit = match[2].trim();
+    }
+  }
+  return { amount: amount, unit: unit, display: amount + unit };
+}
+
 function normalizeFertilizerMasterItem_(raw) {
   const v = (raw && typeof raw === 'object') ? raw : {};
+  const volumeParts = splitFertilizerVolume_(
+    v.volumeAmount != null ? v.volumeAmount : (v.contentAmount != null ? v.contentAmount : (v.volume || v.内容量 || '')),
+    v.volumeUnit != null ? v.volumeUnit : (v.contentUnit != null ? v.contentUnit : (v.内容量単位 || ''))
+  );
   return {
     name: String(v.name || v.肥料名 || '').trim(),
     fertilizerType: String(v.fertilizerType || v.肥料種類 || '').trim(),
@@ -2153,7 +2176,9 @@ function normalizeFertilizerMasterItem_(raw) {
     phosphate: String(v.phosphate || v.りん酸 || v.リン酸 || v.P || '').trim(),
     potash: String(v.potash || v.加里 || v.カリ || v.K || '').trim(),
     components: String(v.components || v.保証成分 || '').trim(),
-    volume: String(v.volume || v.内容量 || '').trim(),
+    volumeAmount: volumeParts.amount,
+    volumeUnit: volumeParts.unit,
+    volume: volumeParts.display,
     manufacturer: String(v.manufacturer || v.製造メーカー || v.業者名 || '').trim(),
     regNumber: String(v.regNumber || v.登録番号 || '').trim(),
     note: String(v.note || v.備考 || '').trim()
@@ -2170,10 +2195,11 @@ function appendFertilizerMasterRow_(sheet, rowObj) {
     rowObj.phosphate || '',
     rowObj.potash || '',
     rowObj.components || '',
-    rowObj.volume || '',
+    rowObj.volumeAmount || '',
     rowObj.manufacturer || '',
     rowObj.regNumber || '',
-    rowObj.note || ''
+    rowObj.note || '',
+    rowObj.volumeUnit || ''
   ]);
   return id;
 }
@@ -2186,6 +2212,7 @@ function readFertilizerMasterList_() {
     const id = String(data[i][0] || '').trim();
     const name = String(data[i][1] || '').trim();
     if (!id && !name) continue;
+    const volumeParts = splitFertilizerVolume_(data[i][7], data[i][11]);
     list.push({
       id: id,
       name: name,
@@ -2194,7 +2221,9 @@ function readFertilizerMasterList_() {
       phosphate: String(data[i][4] || '').trim(),
       potash: String(data[i][5] || '').trim(),
       components: String(data[i][6] || '').trim(),
-      volume: String(data[i][7] || '').trim(),
+      volumeAmount: volumeParts.amount,
+      volumeUnit: volumeParts.unit,
+      volume: volumeParts.display,
       manufacturer: String(data[i][8] || '').trim(),
       regNumber: String(data[i][9] || '').trim(),
       note: String(data[i][10] || '').trim()
@@ -11011,4 +11040,185 @@ function getAttendanceStaffList(params) {
   return { success: true, staff: list, settings: getAttendanceSettingsMap_() };
 }
 
+// ========== 見積台帳（作成見積・受領見積） ==========
+const QUOTATION_HEADERS_ = [
+  'ID', '文書種別', '見積番号', '見積日', '有効期限', '取引先名', '件名',
+  '状態', '税率', '小計', '消費税', '合計', '添付JSON', '備考',
+  '作成者', '作成日時', '更新者', '更新日時'
+];
+const QUOTATION_LINE_HEADERS_ = [
+  '明細ID', '見積ID', '行番号', 'カテゴリ', 'マスタID', '対象機械ID',
+  '品名', '規格・型番', '数量', '単位', '単価', '金額', '備考'
+];
 
+function ensureQuotationSheets_() {
+  const ss = TENANT_SS;
+  if (!ss) throw new Error('保存先が設定されていません');
+  let quoteSheet = ss.getSheetByName('見積台帳');
+  if (!quoteSheet) {
+    quoteSheet = ss.insertSheet('見積台帳');
+    quoteSheet.appendRow(QUOTATION_HEADERS_.slice());
+    quoteSheet.getRange(1, 1, 1, QUOTATION_HEADERS_.length).setFontWeight('bold');
+    quoteSheet.setFrozenRows(1);
+  }
+  let lineSheet = ss.getSheetByName('見積明細');
+  if (!lineSheet) {
+    lineSheet = ss.insertSheet('見積明細');
+    lineSheet.appendRow(QUOTATION_LINE_HEADERS_.slice());
+    lineSheet.getRange(1, 1, 1, QUOTATION_LINE_HEADERS_.length).setFontWeight('bold');
+    lineSheet.setFrozenRows(1);
+  }
+  return { quoteSheet: quoteSheet, lineSheet: lineSheet };
+}
+
+function quotationGetInit_() {
+  const machineData = machine_loadAll({});
+  return {
+    success: true,
+    fertilizers: readFertilizerMasterList_(),
+    pesticides: readPesticideMasterList_(),
+    machines: (machineData && machineData.machines) || {}
+  };
+}
+
+function quotationSaveAttachment_(attachment, quotationId) {
+  if (!attachment || !attachment.dataUrl) return null;
+  const match = String(attachment.dataUrl).match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error('添付ファイルの形式が正しくありません');
+  const bytes = Utilities.base64Decode(match[2]);
+  if (bytes.length > 5 * 1024 * 1024) throw new Error('添付ファイルは5MB以下にしてください');
+  const rootName = '情熱MAP_見積書_' + TENANT_SS.getId().slice(-8);
+  const roots = DriveApp.getFoldersByName(rootName);
+  const root = roots.hasNext() ? roots.next() : DriveApp.createFolder(rootName);
+  const quoteFolders = root.getFoldersByName(quotationId);
+  const folder = quoteFolders.hasNext() ? quoteFolders.next() : root.createFolder(quotationId);
+  const safeName = String(attachment.name || 'quotation-file').replace(/[\\/:*?"<>|]/g, '_');
+  const file = folder.createFile(Utilities.newBlob(bytes, match[1], safeName));
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return {
+    fileId: file.getId(), fileName: safeName, mimeType: match[1], size: bytes.length,
+    url: 'https://drive.google.com/file/d/' + file.getId() + '/view'
+  };
+}
+
+function quotationSave_(params) {
+  const quote = (params && params.quotation) || {};
+  const lines = Array.isArray(quote.lines) ? quote.lines : [];
+  if (!String(quote.partner || '').trim()) throw new Error('取引先名を入力してください');
+  if (!lines.length) throw new Error('見積明細を1件以上入力してください');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheets = ensureQuotationSheets_();
+    const now = new Date();
+    const id = String(quote.id || '').trim() || ('QUO-' + Utilities.getUuid().substring(0, 8));
+    let attachments = Array.isArray(quote.existingAttachments) ? quote.existingAttachments : [];
+    if (quote.attachment && quote.attachment.dataUrl) {
+      const saved = quotationSaveAttachment_(quote.attachment, id);
+      if (saved) attachments = attachments.concat([saved]);
+    }
+    let subtotal = 0;
+    const normalizedLines = lines.map(function(line, idx) {
+      const qty = Math.max(0, Number(line.qty) || 0);
+      const unitPrice = Math.max(0, Number(line.unitPrice) || 0);
+      const amount = qty * unitPrice;
+      subtotal += amount;
+      return {
+        id: String(line.id || '') || ('QL-' + Utilities.getUuid().substring(0, 8)),
+        rowNo: idx + 1, category: String(line.category || 'other'),
+        masterId: String(line.masterId || ''), machineId: String(line.machineId || ''),
+        name: String(line.name || '').trim(), spec: String(line.spec || '').trim(),
+        qty: qty, unit: String(line.unit || '').trim(), unitPrice: unitPrice,
+        amount: amount, note: String(line.note || '').trim()
+      };
+    }).filter(function(line) { return line.name; });
+    if (!normalizedLines.length) throw new Error('品名を選択または入力してください');
+    const taxRate = Math.max(0, Number(quote.taxRate) || 0);
+    const tax = Math.floor(subtotal * taxRate / 100);
+    const quoteData = sheets.quoteSheet.getDataRange().getValues();
+    let rowIndex = -1;
+    for (let i = 1; i < quoteData.length; i++) {
+      if (String(quoteData[i][0]) === id) { rowIndex = i + 1; break; }
+    }
+    const existingCreatedAt = rowIndex > 0 ? quoteData[rowIndex - 1][15] : now;
+    const values = [[
+      id, String(quote.documentType || 'incoming'), String(quote.quoteNo || ''),
+      String(quote.quoteDate || ''), String(quote.validUntil || ''), String(quote.partner || ''),
+      String(quote.subject || ''), String(quote.status || 'received'), taxRate,
+      subtotal, tax, subtotal + tax, JSON.stringify(attachments), String(quote.note || ''),
+      rowIndex > 0 ? String(quoteData[rowIndex - 1][14] || params.userName || '') : String(params.userName || ''),
+      existingCreatedAt, String(params.userName || ''), now
+    ]];
+    if (rowIndex > 0) sheets.quoteSheet.getRange(rowIndex, 1, 1, QUOTATION_HEADERS_.length).setValues(values);
+    else sheets.quoteSheet.getRange(sheets.quoteSheet.getLastRow() + 1, 1, 1, QUOTATION_HEADERS_.length).setValues(values);
+    const lineData = sheets.lineSheet.getDataRange().getValues();
+    for (let i = lineData.length - 1; i >= 1; i--) {
+      if (String(lineData[i][1]) === id) sheets.lineSheet.deleteRow(i + 1);
+    }
+    if (normalizedLines.length) {
+      const lineValues = normalizedLines.map(function(line) {
+        return [line.id, id, line.rowNo, line.category, line.masterId, line.machineId,
+          line.name, line.spec, line.qty, line.unit, line.unitPrice, line.amount, line.note];
+      });
+      sheets.lineSheet.getRange(sheets.lineSheet.getLastRow() + 1, 1, lineValues.length, QUOTATION_LINE_HEADERS_.length).setValues(lineValues);
+    }
+    SpreadsheetApp.flush();
+    return { success: true, id: id, attachments: attachments, total: subtotal + tax };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function quotationList_(params) {
+  const sheets = ensureQuotationSheets_();
+  const quoteData = sheets.quoteSheet.getDataRange().getValues();
+  const lineData = sheets.lineSheet.getDataRange().getValues();
+  const linesByQuote = {};
+  for (let i = 1; i < lineData.length; i++) {
+    const quoteId = String(lineData[i][1] || '');
+    if (!quoteId) continue;
+    if (!linesByQuote[quoteId]) linesByQuote[quoteId] = [];
+    linesByQuote[quoteId].push({
+      id: String(lineData[i][0] || ''), rowNo: Number(lineData[i][2]) || 0,
+      category: String(lineData[i][3] || ''), masterId: String(lineData[i][4] || ''),
+      machineId: String(lineData[i][5] || ''), name: String(lineData[i][6] || ''),
+      spec: String(lineData[i][7] || ''), qty: Number(lineData[i][8]) || 0,
+      unit: String(lineData[i][9] || ''), unitPrice: Number(lineData[i][10]) || 0,
+      amount: Number(lineData[i][11]) || 0, note: String(lineData[i][12] || '')
+    });
+  }
+  const items = [];
+  for (let i = quoteData.length - 1; i >= 1; i--) {
+    const row = quoteData[i];
+    const status = String(row[7] || '');
+    if (status === 'archived' && !(params && params.includeArchived)) continue;
+    let attachments = [];
+    try { attachments = JSON.parse(String(row[12] || '[]')); } catch (e) {}
+    const id = String(row[0] || '');
+    items.push({
+      id: id, documentType: String(row[1] || ''), quoteNo: String(row[2] || ''),
+      quoteDate: String(row[3] || ''), validUntil: String(row[4] || ''),
+      partner: String(row[5] || ''), subject: String(row[6] || ''), status: status,
+      taxRate: Number(row[8]) || 0, subtotal: Number(row[9]) || 0,
+      tax: Number(row[10]) || 0, total: Number(row[11]) || 0,
+      attachments: attachments, note: String(row[13] || ''), creator: String(row[14] || ''),
+      updatedAt: row[17] instanceof Date ? row[17].toISOString() : String(row[17] || ''),
+      lines: linesByQuote[id] || []
+    });
+  }
+  return { success: true, items: items };
+}
+
+function quotationArchive_(params) {
+  const id = String((params && params.id) || '');
+  if (!id) throw new Error('見積IDがありません');
+  const sheets = ensureQuotationSheets_();
+  const data = sheets.quoteSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== id) continue;
+    sheets.quoteSheet.getRange(i + 1, 8).setValue('archived');
+    sheets.quoteSheet.getRange(i + 1, 17, 1, 2).setValues([[String(params.userName || ''), new Date()]]);
+    return { success: true };
+  }
+  throw new Error('対象の見積が見つかりません');
+}

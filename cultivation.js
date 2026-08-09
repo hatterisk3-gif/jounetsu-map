@@ -2974,10 +2974,6 @@ function copyCpPlanRow(sourcePlanId) {
 
     const src = cpPlans[srcIdx];
 
-    const formCrop = getCpVal('cpCrop');
-    const formVariety = getCpVal('cpVariety');
-    const useFormVariety = !!(formVariety && String(formVariety).trim());
-
     const areaEl = document.getElementById('area_' + sourcePlanId);
     const traysEl = document.getElementById('trays_' + sourcePlanId);
     const yieldEl = document.getElementById('yieldRate_' + sourcePlanId);
@@ -2986,8 +2982,8 @@ function copyCpPlanRow(sourcePlanId) {
     const newPlan = {
         id: 'plan_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
         location: src.location,
-        crop: (formCrop && String(formCrop).trim()) ? formCrop : src.crop,
-        variety: useFormVariety ? formVariety : src.variety,
+        crop: src.crop,
+        variety: src.variety,
         fieldCondition: src.fieldCondition || '露地',
         holes: src.holes,
         rows: src.rows,
@@ -3983,10 +3979,47 @@ let cpPlanNameManuallyEdited = false;
 let cpSaveProgressTimer = null;
 let cpSaveProgressHideTimer = null;
 
+function getCpPlanType() {
+    const checked = document.querySelector('input[name="cpPlanType"]:checked');
+    return checked ? String(checked.value || '').trim() : '';
+}
+
+function stripCpPlanTypeSuffix(value) {
+    return String(value || '').trim().replace(/\s+(?:本作|試作)$/, '').trim();
+}
+
+function buildCpPlanNameWithType(value, planType) {
+    const type = String(planType || getCpPlanType()).trim();
+    const base = stripCpPlanTypeSuffix(value);
+    if (!type) return base;
+    const maxBaseLength = Math.max(0, 80 - type.length - 1);
+    return `${base.slice(0, maxBaseLength).trim()} ${type}`.trim();
+}
+
+function setCpPlanType(value, updateName) {
+    const type = value === '試作' ? '試作' : '本作';
+    const radio = document.querySelector(`input[name="cpPlanType"][value="${type}"]`);
+    if (radio) radio.checked = true;
+    if (updateName !== false) applyCpPlanTypeToName();
+}
+
+function applyCpPlanTypeToName() {
+    const input = document.getElementById('cpPlanName');
+    if (!input) return;
+    const baseName = stripCpPlanTypeSuffix(input.value) || stripCpPlanTypeSuffix(getCpDefaultPlanName());
+    input.value = buildCpPlanNameWithType(baseName);
+    cpPlanNameManuallyEdited = input.value !== getCpDefaultPlanName();
+}
+
+function onCpPlanTypeChange() {
+    applyCpPlanTypeToName();
+}
+
 function getCpDefaultPlanName(yearOverride, cropOverride) {
     const year = String(yearOverride || getCpVal('cpYear', true) || new Date().getFullYear()).trim();
     const crop = String(cropOverride || getCpVal('cpCrop') || '').trim();
-    return crop ? `${year}年 ${crop}` : `${year}年 栽培計画`;
+    const baseName = crop ? `${year}年 ${crop}` : `${year}年 栽培計画`;
+    return buildCpPlanNameWithType(baseName);
 }
 
 function updateCpDefaultPlanName() {
@@ -4014,6 +4047,8 @@ function setCpPlanName(value, options) {
 
 window.updateCpDefaultPlanName = updateCpDefaultPlanName;
 window.onCpPlanNameInput = onCpPlanNameInput;
+window.onCpPlanTypeChange = onCpPlanTypeChange;
+window.applyCpPlanTypeToName = applyCpPlanTypeToName;
 
 function updateCpSaveButtonLabel() {
     const btn = document.getElementById('btnCpSavePlan');
@@ -4100,13 +4135,18 @@ async function saveCultivationPlan(options) {
             return false;
         }
         const planNameInput = document.getElementById('cpPlanName');
-        const planName = String(planNameInput ? planNameInput.value : '').trim() || getCpDefaultPlanName(year, crop);
+        const planType = getCpPlanType() || '本作';
+        const planName = buildCpPlanNameWithType(
+            String(planNameInput ? planNameInput.value : '').trim() || getCpDefaultPlanName(year, crop),
+            planType
+        );
         if (planNameInput) planNameInput.value = planName;
 
         // タグは実行時に自動割り当て（計画段階では未設定のまま保存）
         const payloadPlans = collectCurrentCpPlansFromDom().map(plan => ({
             year: year,
             planName: planName,
+            planType: planType,
             crop: plan.crop,
             variety: plan.variety,
             areaA: plan.areaA,
@@ -4686,6 +4726,7 @@ function collectCpFormState() {
     return {
         year: getCpVal('cpYear'),
         planName: document.getElementById('cpPlanName') ? document.getElementById('cpPlanName').value : '',
+        planType: getCpPlanType() || '本作',
         location: getCpVal('cpLocation'),
         crop: getCpVal('cpCrop'),
         climate: document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '',
@@ -4885,6 +4926,9 @@ async function saveCultivationPlanDraft() {
 
 function applyCpFormState(form) {
     if (!form) return;
+    const restoredPlanType = form.planType
+        || (/\s+試作$/.test(String(form.planName || '')) ? '試作' : '本作');
+    setCpPlanType(restoredPlanType, false);
     if (form.year != null && form.year !== '') setChoiceValue('cpYear', String(form.year), false);
     if (form.location) {
         setCpVal('cpLocation', form.location);
@@ -4915,6 +4959,7 @@ function applyCpFormState(form) {
         year: form.year,
         crop: form.crop
     });
+    applyCpPlanTypeToName();
     calcCp();
     checkCroptypeDB();
     refreshAllChoiceButtons();
@@ -5084,6 +5129,7 @@ function openCultivationPlanModal(options) {
     cpSemiAutoActivePlanId = null;
     cpLoadedPlanKey = null;
     cpPlanNameManuallyEdited = false;
+    setCpPlanType('本作', false);
     updateCpDefaultPlanName();
     updateCpSaveButtonLabel();
     if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
@@ -7266,11 +7312,18 @@ async function loadHistoryPlans(yearOverride, cropOverride) {
             if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
             cpLoadedPlanKey = String(year) + '\t' + String(crop);
             const loadedPlanName = plans.find(plan => plan && String(plan.planName || '').trim());
+            const loadedPlanType = plans.find(plan => plan && String(plan.planType || '').trim());
+            setCpPlanType(
+                loadedPlanType ? loadedPlanType.planType
+                    : (loadedPlanName && /\s+試作$/.test(String(loadedPlanName.planName || '')) ? '試作' : '本作'),
+                false
+            );
             setCpPlanName(loadedPlanName ? loadedPlanName.planName : '', {
                 loaded: true,
                 year: year,
                 crop: crop
             });
+            applyCpPlanTypeToName();
             updateCpSaveButtonLabel();
             await yieldCpLoadRender();
             finishCpLoadProgress(true, `${plans.length}件の計画を読み込みました`);

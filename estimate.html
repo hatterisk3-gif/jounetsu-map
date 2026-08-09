@@ -41,6 +41,17 @@
     .total-row.grand { background: #fff3e0; color: #bf360c; font-size: 20px; font-weight: 800; border: 2px solid #ffb74d; }
     .footer-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
     .status { min-height: 20px; margin-top: 10px; color: #2e7d32; font-size: 12px; font-weight: 700; text-align: right; }
+    .mode-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+    .mode-tab { background: #fff3e0; color: #bf360c; border: 1px solid #ffcc80; }
+    .mode-tab.active { background: #ef6c00; color: #fff; }
+    .incoming-line { display: grid; grid-template-columns: 130px minmax(180px, 2fr) minmax(130px, 1fr) 80px 90px 120px 38px; gap: 7px; align-items: end; padding: 10px; margin-bottom: 8px; border: 1px solid #d7e3dd; border-radius: 8px; background: #fafcfb; }
+    .incoming-line label { min-width: 0; }
+    .line-help { grid-column: 2 / 4; color: #607d8b; font-size: 11px; }
+    .registry-card { padding: 13px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+    .registry-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 800; }
+    .registry-meta { margin-top: 5px; color: #607d8b; font-size: 12px; }
+    .registry-lines { margin-top: 8px; font-size: 12px; line-height: 1.6; }
+    .file-note { color: #607d8b; font-size: 11px; margin-top: 4px; }
     @media (max-width: 650px) {
       header { align-items: flex-start; }
       header h1 { font-size: 17px; }
@@ -50,6 +61,9 @@
       .document-title { font-size: 23px; }
       .footer-actions { flex-direction: column; }
       .footer-actions button { width: 100%; }
+      .incoming-line { grid-template-columns: 1fr 1fr; }
+      .incoming-line label:nth-child(2), .line-help { grid-column: 1 / -1; }
+      .mode-tab { padding: 9px 3px; font-size: 12px; }
     }
     @media print {
       body { background: #fff; }
@@ -70,6 +84,12 @@
     </div>
   </header>
   <main>
+    <div class="mode-tabs">
+      <button id="tabOutgoing" class="mode-tab active" type="button" onclick="switchEstimateMode('outgoing')">✍️ 見積書を作成</button>
+      <button id="tabIncoming" class="mode-tab" type="button" onclick="switchEstimateMode('incoming')">📥 受領見積を登録</button>
+      <button id="tabRegistry" class="mode-tab" type="button" onclick="switchEstimateMode('registry')">📚 見積台帳</button>
+    </div>
+    <div id="outgoingPanel">
     <div class="toolbar">
       <select id="savedEstimateSelect" onchange="loadSelectedEstimate()">
         <option value="">保存済み見積を選択...</option>
@@ -114,10 +134,274 @@
       </div>
       <div id="saveStatus" class="status"></div>
     </section>
+    </div>
+
+    <section id="incomingPanel" class="sheet" style="display:none;">
+      <h2 style="margin-top:0;color:#2e7d32;">📥 受領見積の登録</h2>
+      <p style="font-size:12px;color:#607d8b;">仕入先から受け取った見積書と、肥料・農薬・機械部品の単価を台帳へ保存します。</p>
+      <input type="hidden" id="incomingId">
+      <div class="grid">
+        <label>仕入先・取引先名 *<input id="incomingPartner" placeholder="例: ○○農材株式会社"></label>
+        <label>見積番号<input id="incomingQuoteNo" placeholder="見積書記載の番号"></label>
+        <label>見積日<input id="incomingQuoteDate" type="date"></label>
+        <label>有効期限<input id="incomingValidUntil" type="date"></label>
+        <label class="full">件名<input id="incomingSubject" placeholder="例: 秋作肥料一式"></label>
+        <label>消費税率<select id="incomingTaxRate" onchange="calculateIncomingTotal()"><option value="10">10%</option><option value="8">8%</option><option value="0">0%</option></select></label>
+        <label>見積書ファイル（PDF・画像、5MB以下）<input id="incomingFile" type="file" accept=".pdf,image/jpeg,image/png,application/pdf"></label>
+        <div class="file-note full">添付書類は見積台帳と一緒にGoogle Driveへ保存されます。</div>
+      </div>
+      <h3 style="margin:22px 0 10px;">見積明細</h3>
+      <div id="incomingLines"></div>
+      <button type="button" onclick="addIncomingLine()">＋ 明細を追加</button>
+      <div class="totals">
+        <div class="total-row"><span>小計</span><strong id="incomingSubtotal">¥0</strong></div>
+        <div class="total-row"><span>消費税</span><strong id="incomingTax">¥0</strong></div>
+        <div class="total-row grand"><span>合計</span><span id="incomingGrandTotal">¥0</span></div>
+      </div>
+      <label style="margin-top:18px;">備考<textarea id="incomingNote" placeholder="納期、支払条件、担当者など"></textarea></label>
+      <div class="footer-actions">
+        <button id="saveIncomingBtn" type="button" class="btn-green" onclick="saveIncomingQuotation()">受領見積を登録</button>
+      </div>
+      <div id="incomingStatus" class="status"></div>
+    </section>
+
+    <section id="registryPanel" class="sheet" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
+        <h2 style="margin:0;color:#455a64;">📚 見積台帳</h2>
+        <button type="button" onclick="loadQuotationRegistry()">更新</button>
+      </div>
+      <input id="registrySearch" type="search" placeholder="取引先・品名・見積番号で検索..." oninput="renderQuotationRegistry()" style="margin-bottom:12px;">
+      <div id="quotationRegistry"><div style="color:#888;">読み込み中...</div></div>
+    </section>
   </main>
   <script>
     const ESTIMATE_STORAGE_KEY = 'passionMapEstimates';
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec';
     let estimates = [];
+    let quotationMasters = { fertilizers: [], pesticides: [], machines: {} };
+    let quotationRegistry = [];
+
+    async function callEstimateGAS(action, params = {}) {
+      const spreadsheetId = localStorage.getItem('spreadsheetId');
+      if (!spreadsheetId) throw new Error('ログイン情報がありません。総合案内所からログインし直してください。');
+      const response = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({}, params, { action, spreadsheetId }))
+      });
+      const json = await response.json();
+      if (json.status !== 'success') throw new Error(json.message || '通信に失敗しました');
+      return json.data;
+    }
+
+    function switchEstimateMode(mode) {
+      ['outgoing', 'incoming', 'registry'].forEach(key => {
+        document.getElementById(key + 'Panel').style.display = key === mode ? 'block' : 'none';
+        document.getElementById('tab' + key.charAt(0).toUpperCase() + key.slice(1)).classList.toggle('active', key === mode);
+      });
+      if (mode === 'incoming' && !document.querySelector('#incomingLines .incoming-line')) addIncomingLine();
+      if (mode === 'registry') loadQuotationRegistry();
+    }
+
+    async function loadQuotationMasters() {
+      const status = document.getElementById('incomingStatus');
+      try {
+        status.textContent = '肥料・農薬・機械マスタを読み込み中...';
+        const data = await callEstimateGAS('quotation_getInit');
+        quotationMasters = data || quotationMasters;
+        document.querySelectorAll('#incomingLines .incoming-line').forEach(refreshIncomingLineOptions);
+        status.textContent = '';
+      } catch (e) {
+        status.textContent = e.message || String(e);
+        status.style.color = '#c62828';
+      }
+    }
+
+    function addIncomingLine(item = {}) {
+      const line = document.createElement('div');
+      line.className = 'incoming-line';
+      line.innerHTML =
+        '<label>分類<select class="line-category" onchange="refreshIncomingLineOptions(this.closest(&quot;.incoming-line&quot;))">' +
+          '<option value="fertilizer">肥料</option><option value="pesticide">農薬</option><option value="machine_part">機械部品</option><option value="other">その他</option></select></label>' +
+        '<label class="line-item-label">品目<select class="line-master"></select><input class="line-free-name" style="display:none;" placeholder="品名・部品名"></label>' +
+        '<label>規格・型番<input class="line-spec" placeholder="容量・型番など"></label>' +
+        '<label>数量<input class="line-qty num" type="number" min="0" step="any" value="1" oninput="calculateIncomingTotal()"></label>' +
+        '<label>単位<input class="line-unit" placeholder="袋・本・個"></label>' +
+        '<label>単価<input class="line-price num" type="number" min="0" step="any" placeholder="円" oninput="calculateIncomingTotal()"></label>' +
+        '<button class="remove" type="button" onclick="this.closest(&quot;.incoming-line&quot;).remove();calculateIncomingTotal()">×</button>' +
+        '<div class="line-help"></div>';
+      document.getElementById('incomingLines').appendChild(line);
+      line.querySelector('.line-category').value = item.category || 'fertilizer';
+      refreshIncomingLineOptions(line);
+      line.querySelector('.line-spec').value = item.spec || '';
+      line.querySelector('.line-qty').value = item.qty == null ? 1 : item.qty;
+      line.querySelector('.line-unit').value = item.unit || '';
+      line.querySelector('.line-price').value = item.unitPrice || '';
+      if (item.masterId || item.machineId) line.querySelector('.line-master').value = item.masterId || item.machineId;
+      if (item.category === 'machine_part' || item.category === 'other') line.querySelector('.line-free-name').value = item.name || '';
+      calculateIncomingTotal();
+    }
+
+    function refreshIncomingLineOptions(target) {
+      const line = target && target.classList ? target : target.closest('.incoming-line');
+      if (!line) return;
+      const category = line.querySelector('.line-category').value;
+      const select = line.querySelector('.line-master');
+      const freeName = line.querySelector('.line-free-name');
+      const help = line.querySelector('.line-help');
+      let options = [];
+      if (category === 'fertilizer') {
+        options = (quotationMasters.fertilizers || []).map(item => ({
+          id: item.id, name: item.name,
+          label: item.name + (item.manufacturer ? ' ／ ' + item.manufacturer : '') + (item.volume ? ' ／ ' + item.volume : ''),
+          help: [item.fertilizerType, item.manufacturer, item.volume].filter(Boolean).join(' ／ ')
+        }));
+      } else if (category === 'pesticide') {
+        options = (quotationMasters.pesticides || []).map(item => ({
+          id: item.id, name: item.name,
+          label: item.name + (item.manufacturer ? ' ／ ' + item.manufacturer : '') + (item.volume ? ' ／ ' + item.volume : ''),
+          help: [item.activeIngredient, item.cropName, item.manufacturer, item.volume].filter(Boolean).join(' ／ ')
+        }));
+      } else if (category === 'machine_part') {
+        options = Object.values(quotationMasters.machines || {}).map(item => ({
+          id: item.id, name: item.name,
+          label: (item.name || item.id) + (item.machineNumber ? ' ／ No.' + item.machineNumber : ''),
+          help: [item.model, item.type, item.parts].filter(Boolean).join(' ／ ')
+        }));
+      }
+      const oldValue = select.value;
+      select.innerHTML = '<option value="">選択してください</option>' + options.map(item =>
+        '<option value="' + escapeAttr(item.id || '') + '" data-name="' + escapeAttr(item.name || '') + '" data-help="' + escapeAttr(item.help || '') + '">' + escapeAttr(item.label || item.name || '') + '</option>'
+      ).join('');
+      if (options.some(item => String(item.id) === oldValue)) select.value = oldValue;
+      select.style.display = category === 'other' ? 'none' : 'block';
+      freeName.style.display = (category === 'machine_part' || category === 'other') ? 'block' : 'none';
+      freeName.placeholder = category === 'machine_part' ? '部品名（必須）' : '品名（必須）';
+      select.onchange = () => {
+        const option = select.options[select.selectedIndex];
+        help.textContent = option ? (option.dataset.help || '') : '';
+      };
+      select.onchange();
+    }
+
+    function calculateIncomingTotal() {
+      let subtotal = 0;
+      document.querySelectorAll('#incomingLines .incoming-line').forEach(line => {
+        subtotal += (Number(line.querySelector('.line-qty').value) || 0) * (Number(line.querySelector('.line-price').value) || 0);
+      });
+      const tax = Math.floor(subtotal * (Number(document.getElementById('incomingTaxRate').value) || 0) / 100);
+      document.getElementById('incomingSubtotal').textContent = yen(subtotal);
+      document.getElementById('incomingTax').textContent = yen(tax);
+      document.getElementById('incomingGrandTotal').textContent = yen(subtotal + tax);
+    }
+
+    function readAttachment(file) {
+      if (!file) return Promise.resolve(null);
+      if (file.size > 5 * 1024 * 1024) return Promise.reject(new Error('添付ファイルは5MB以下にしてください。'));
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, type: file.type, size: file.size, dataUrl: reader.result });
+        reader.onerror = () => reject(new Error('添付ファイルを読み込めませんでした'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function saveIncomingQuotation() {
+      const button = document.getElementById('saveIncomingBtn');
+      const status = document.getElementById('incomingStatus');
+      const lines = Array.from(document.querySelectorAll('#incomingLines .incoming-line')).map(line => {
+        const category = line.querySelector('.line-category').value;
+        const select = line.querySelector('.line-master');
+        const option = select.options[select.selectedIndex];
+        const freeName = line.querySelector('.line-free-name').value.trim();
+        const selectedName = option ? (option.dataset.name || option.textContent.split(' ／ ')[0]) : '';
+        return {
+          category,
+          masterId: category === 'fertilizer' || category === 'pesticide' ? select.value : '',
+          machineId: category === 'machine_part' ? select.value : '',
+          name: category === 'machine_part' || category === 'other' ? freeName : selectedName,
+          spec: line.querySelector('.line-spec').value.trim(),
+          qty: line.querySelector('.line-qty').value,
+          unit: line.querySelector('.line-unit').value.trim(),
+          unitPrice: line.querySelector('.line-price').value
+        };
+      }).filter(line => line.name);
+      try {
+        button.disabled = true;
+        status.style.color = '#2e7d32';
+        status.textContent = '見積書を登録中...';
+        const file = document.getElementById('incomingFile').files[0];
+        const attachment = await readAttachment(file);
+        const quotation = {
+          id: document.getElementById('incomingId').value,
+          documentType: 'incoming',
+          partner: document.getElementById('incomingPartner').value.trim(),
+          quoteNo: document.getElementById('incomingQuoteNo').value.trim(),
+          quoteDate: document.getElementById('incomingQuoteDate').value,
+          validUntil: document.getElementById('incomingValidUntil').value,
+          subject: document.getElementById('incomingSubject').value.trim(),
+          taxRate: document.getElementById('incomingTaxRate').value,
+          note: document.getElementById('incomingNote').value.trim(),
+          status: 'received', attachment, lines
+        };
+        const result = await callEstimateGAS('quotation_save', {
+          quotation, userName: localStorage.getItem('passionMapUserName') || ''
+        });
+        document.getElementById('incomingId').value = result.id || '';
+        status.textContent = '受領見積を登録しました';
+        await loadQuotationRegistry();
+      } catch (e) {
+        status.style.color = '#c62828';
+        status.textContent = e.message || String(e);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function loadQuotationRegistry() {
+      const area = document.getElementById('quotationRegistry');
+      area.innerHTML = '<div style="color:#888;">見積台帳を読み込み中...</div>';
+      try {
+        const result = await callEstimateGAS('quotation_list');
+        quotationRegistry = (result && result.items) || [];
+        renderQuotationRegistry();
+      } catch (e) {
+        area.innerHTML = '<div style="color:#c62828;">' + escapeAttr(e.message || e) + '</div>';
+      }
+    }
+
+    function renderQuotationRegistry() {
+      const area = document.getElementById('quotationRegistry');
+      const q = (document.getElementById('registrySearch').value || '').trim().toLowerCase();
+      const list = quotationRegistry.filter(item => {
+        const text = [item.partner, item.quoteNo, item.subject].concat((item.lines || []).map(line => line.name)).join(' ').toLowerCase();
+        return !q || text.includes(q);
+      });
+      if (!list.length) {
+        area.innerHTML = '<div style="color:#888;">登録された見積はありません。</div>';
+        return;
+      }
+      area.innerHTML = list.map(item => {
+        const lines = (item.lines || []).map(line =>
+          '<div>' + escapeAttr(line.name) + '　' + escapeAttr(line.qty + (line.unit || '')) + ' × ' + yen(line.unitPrice) + '</div>'
+        ).join('');
+        const files = (item.attachments || []).map(file =>
+          '<a href="' + escapeAttr(file.url) + '" target="_blank" rel="noopener">📎 ' + escapeAttr(file.fileName) + '</a>'
+        ).join('　');
+        return '<div class="registry-card">' +
+          '<div class="registry-head"><span>' + escapeAttr(item.partner || '取引先未設定') + '</span><span>' + yen(item.total) + '</span></div>' +
+          '<div class="registry-meta">' + escapeAttr([item.quoteDate, item.quoteNo, item.subject].filter(Boolean).join(' ／ ')) + '</div>' +
+          '<div class="registry-lines">' + lines + '</div>' +
+          (files ? '<div class="registry-meta">' + files + '</div>' : '') +
+          '<div style="text-align:right;margin-top:8px;"><button type="button" onclick="archiveQuotation(&quot;' + escapeAttr(item.id) + '&quot;)">アーカイブ</button></div>' +
+        '</div>';
+      }).join('');
+    }
+
+    async function archiveQuotation(id) {
+      if (!confirm('この見積を台帳からアーカイブしますか？')) return;
+      await callEstimateGAS('quotation_archive', { id, userName: localStorage.getItem('passionMapUserName') || '' });
+      loadQuotationRegistry();
+    }
 
     function yen(value) {
       return '¥' + Math.round(Number(value) || 0).toLocaleString('ja-JP');
@@ -237,6 +521,11 @@
       try { estimates = JSON.parse(localStorage.getItem(ESTIMATE_STORAGE_KEY) || '[]'); } catch (e) { estimates = []; }
       refreshSavedEstimateSelect();
       newEstimate();
+      document.getElementById('incomingQuoteDate').value = todayYmd();
+      addIncomingLine();
+      loadQuotationMasters();
+      const requestedMode = new URLSearchParams(window.location.search).get('mode');
+      if (requestedMode === 'incoming' || requestedMode === 'registry') switchEstimateMode(requestedMode);
     });
   </script>
 </body>

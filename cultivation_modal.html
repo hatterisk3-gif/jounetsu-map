@@ -450,10 +450,16 @@
               </div>
               <div id="cpBottomPanelSave" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabSave" hidden>
                 <div style="width:min(100%, 520px); margin:0 auto 10px;">
-                  <label for="cpPlanName" style="display:block; margin-bottom:4px; font-size:12px; font-weight:bold; color:#555;">計画名</label>
-                  <input type="text" id="cpPlanName" maxlength="80" oninput="onCpPlanNameInput()" placeholder="例: 2026年 キャベツ 秋冬作"
+                  <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px; margin-bottom:4px;">
+                    <label for="cpPlanName" style="font-size:12px; font-weight:bold; color:#555;">計画名</label>
+                    <div role="radiogroup" aria-label="計画属性" style="display:flex; align-items:center; gap:10px; font-size:12px; font-weight:bold; color:#555;">
+                      <label style="display:flex; align-items:center; gap:3px; cursor:pointer;"><input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()" style="margin:0;">本作</label>
+                      <label style="display:flex; align-items:center; gap:3px; cursor:pointer;"><input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()" style="margin:0;">試作</label>
+                    </div>
+                  </div>
+                  <input type="text" id="cpPlanName" maxlength="80" oninput="onCpPlanNameInput()" onblur="applyCpPlanTypeToName()" placeholder="例: 2026年 キャベツ 秋冬作 本作"
                     style="width:100%; padding:9px 10px; border:1px solid #FFB74D; border-radius:6px; box-sizing:border-box; font-size:14px;">
-                  <div style="margin-top:3px; font-size:10px; color:#888;">未入力の場合は「年度＋作物」で自動設定されます。</div>
+                  <div style="margin-top:3px; font-size:10px; color:#888;">未入力の場合は「年度＋作物＋計画属性」で自動設定されます。</div>
                 </div>
                 <div style="text-align: center; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px;">
                   <button type="button" id="btnCpDraftSave" onclick="saveCultivationPlanDraft()" style="padding: 10px 24px; background: #607D8B; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">一時保存</button>
