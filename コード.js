@@ -150,6 +150,7 @@ function doPost(e) {
     else if (action === "machine_saveFuel") result = machine_saveFuel(params);
     else if (action === "vehicle_loadAll") result = vehicle_loadAll();
     else if (action === "vehicle_saveVehicle") result = vehicle_saveVehicle(params);
+    else if (action === "vehicle_deleteVehicle") result = vehicle_deleteVehicle(params);
     else if (action === "vehicle_saveLocation") result = vehicle_saveLocation(params);
     else if (action === "vehicle_saveStatus") result = vehicle_saveStatus(params);
     else if (action === "saveTempWorkRecord") result = saveTempWorkRecord(params);
@@ -9585,6 +9586,18 @@ function vehicle_saveVehicle(p) {
     sheet.appendRow(rowData);
   }
   return { success: true, photo: photoUrl };
+}
+
+function vehicle_deleteVehicle(p) {
+  const sheet = ensureVehicleMasterSheet();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(p.id)) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: true };
 }
 
 function vehicle_saveLocation(p) {

@@ -9983,6 +9983,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const keep = preserveId != null ? String(preserveId) : String(sel.value || '');
         const qEl = document.getElementById('m_tool_search');
         const q = qEl ? String(qEl.value || '').trim().toLowerCase() : '';
+        const catFilter = window._selectedMaintCategory || 'all';
 
         // 機械マスタ (pdlMachines)
         const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
@@ -10014,19 +10015,21 @@ function createSignboardMarker(name, pos, icon, id) {
         const allItems = [...machines, ...tools, ...vehicles];
         allItems.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
 
-        const filtered = q
-          ? allItems.filter(m => {
-              const hay = [
-                m.name, m.machineNumber, m.serialNo, m.group, m.type, m.category, m.model, m.modelType, m.location, m.workTypes, m.driveType, m.status
-              ].map(x => String(x || '').toLowerCase()).join(' ');
-              return hay.includes(q);
-            })
-          : allItems;
+        const filtered = allItems.filter(m => {
+          if (catFilter === 'vehicle' && !m.isVehicle) return false;
+          if (catFilter === 'machine' && (m.isVehicle || m.isTool)) return false;
+          if (catFilter === 'tool' && !m.isTool) return false;
+          if (!q) return true;
+          const hay = [
+            m.name, m.machineNumber, m.serialNo, m.group, m.type, m.category, m.model, m.modelType, m.location, m.workTypes, m.driveType, m.status
+          ].map(x => String(x || '').toLowerCase()).join(' ');
+          return hay.includes(q);
+        });
 
         let html = '<option value="">選択してください</option>';
         if (filtered.length === 0) {
-          html += q
-            ? '<option value="" disabled>検索に一致する機械・道具・車両がありません</option>'
+          html += (q || catFilter !== 'all')
+            ? '<option value="" disabled>該当する対象（車両・農機具・道具）がありません</option>'
             : '<option value="" disabled>機械・道具・車両マスタに登録がありません</option>';
         } else {
           const machineList = filtered.filter(x => !x.isTool && !x.isVehicle);
@@ -10375,6 +10378,161 @@ function createSignboardMarker(name, pos, icon, id) {
         } catch (e) {
           if (typeof customAlert === 'function') customAlert(e.message || '登録に失敗しました。');
         }
+      };
+
+      window.setMaintenanceCategoryFilter = (cat) => {
+        window._selectedMaintCategory = cat || 'all';
+        const tabs = document.querySelectorAll('.m-cat-tab');
+        tabs.forEach(t => {
+          const isAct = (t.getAttribute('data-cat') || 'all') === window._selectedMaintCategory;
+          t.style.background = isAct ? '#2E7D32' : '#e0e0e0';
+          t.style.color = isAct ? '#fff' : '#333';
+        });
+
+        const addBtn = document.getElementById('m_add_cat_btn');
+        if (addBtn) {
+          if (window._selectedMaintCategory === 'vehicle') addBtn.textContent = '＋ 車両を登録';
+          else if (window._selectedMaintCategory === 'machine') addBtn.textContent = '＋ 農機具を登録';
+          else if (window._selectedMaintCategory === 'tool') addBtn.textContent = '＋ 道具を登録';
+          else addBtn.textContent = '＋ 新規登録';
+        }
+
+        window.populateMaintenanceMachineSelect();
+      };
+
+      window.addNewCategoryItemFromWorker = async () => {
+        const cat = window._selectedMaintCategory || 'all';
+
+        if (cat === 'vehicle') {
+          const plate = await customPrompt('新しい車両の名称/ナンバーを入力してください (例: 軽トラ 熊谷500あ1234):', '');
+          if (!plate || !String(plate).trim()) return;
+          const name = String(plate).trim();
+          const newId = `veh_${Date.now()}`;
+          const newVehicle = {
+            id: newId,
+            plateNumber: name,
+            driveType: '移動車両',
+            status: '使用可能',
+            mileage: 0
+          };
+          if (!Array.isArray(window.pdlMobileVehicles)) window.pdlMobileVehicles = [];
+          window.pdlMobileVehicles.push(newVehicle);
+
+          safeCallGAS('vehicle_saveVehicle', { id: newId, plateNumber: name, driveType: '移動車両', status: '使用可能' });
+          const optionId = window.getMobileVehicleOptionId_(newVehicle);
+          window.populateMaintenanceMachineSelect(optionId);
+          const sel = document.getElementById('m_tool');
+          if (sel) sel.value = optionId;
+          if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+          if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(`✅ 車両「${name}」を登録しました！`, 'ok');
+
+        } else if (cat === 'tool') {
+          const toolName = await customPrompt('新しい道具の名称を入力してください (例: チェンソー 26cc):', '');
+          if (!toolName || !String(toolName).trim()) return;
+          const name = String(toolName).trim();
+          const newId = `tool_${Date.now()}`;
+          const newTool = {
+            id: newId,
+            name: name,
+            group: '道具',
+            category: '道具'
+          };
+          if (typeof pdlTools === 'undefined' || !Array.isArray(pdlTools)) window.pdlTools = [];
+          pdlTools.push(newTool);
+
+          safeCallGAS('addToolToMaster', { name: name, userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者' });
+          window.populateMaintenanceMachineSelect(newId);
+          const sel = document.getElementById('m_tool');
+          if (sel) sel.value = newId;
+          if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+          if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(`✅ 道具「${name}」を登録しました！`, 'ok');
+
+        } else {
+          // machine or all
+          if (typeof window.addNewMachineFromWorker === 'function') {
+            window.addNewMachineFromWorker();
+          }
+        }
+      };
+
+      window.editSelectedCategoryItemFromWorker = async () => {
+        const sel = document.getElementById('m_tool');
+        const tId = sel ? sel.value : '';
+        if (!tId) {
+          if (typeof customAlert === 'function') customAlert('編集する対象（車両・農機具・道具）を選択してください。');
+          return;
+        }
+        const item = (typeof window.findMaintenanceTargetById_ === 'function') ? window.findMaintenanceTargetById_(tId) : null;
+        if (!item) {
+          if (typeof customAlert === 'function') customAlert('対象の情報が見つかりませんでした。');
+          return;
+        }
+
+        const oldName = item.name || '名称未設定';
+        const catName = item.isVehicle ? '車両' : (item.isTool ? '道具' : '農機具');
+        const newName = await customPrompt(`【${catName}の編集】名称・管理番号を変更してください:`, oldName);
+        if (!newName || !String(newName).trim() || String(newName).trim() === oldName) return;
+        const valName = String(newName).trim();
+
+        if (item.isVehicle) {
+          const rawVid = String(item.id).replace('veh:', '');
+          const targetV = (window.pdlMobileVehicles || []).find(v => String(v.id) === rawVid);
+          if (targetV) targetV.plateNumber = valName;
+          safeCallGAS('vehicle_saveVehicle', { id: rawVid, plateNumber: valName });
+        } else if (item.isTool) {
+          const targetT = (pdlTools || []).find(t => String(t.id || ('tool_' + t.name)) === String(item.id));
+          if (targetT) targetT.name = valName;
+          safeCallGAS('editToolInMaster', { toolId: item.id, name: valName, userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者' });
+        } else {
+          const targetM = (pdlMachines || []).find(m => String(m.id) === String(item.id));
+          if (targetM) targetM.name = valName;
+          safeCallGAS('addMachineToSign', { id: item.id, name: valName, userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者' });
+        }
+
+        window.populateMaintenanceMachineSelect(tId);
+        if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+        if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(`✏️ ${catName}「${valName}」に編集しました！`, 'ok');
+      };
+
+      window.deleteSelectedCategoryItemFromWorker = async () => {
+        const sel = document.getElementById('m_tool');
+        const tId = sel ? sel.value : '';
+        if (!tId) {
+          if (typeof customAlert === 'function') customAlert('削除する対象（車両・農機具・道具）を選択してください。');
+          return;
+        }
+        const item = (typeof window.findMaintenanceTargetById_ === 'function') ? window.findMaintenanceTargetById_(tId) : null;
+        if (!item) {
+          if (typeof customAlert === 'function') customAlert('対象の情報が見つかりませんでした。');
+          return;
+        }
+
+        const name = item.name || '名称未設定';
+        const catName = item.isVehicle ? '車両' : (item.isTool ? '道具' : '農機具');
+        if (!(await customConfirm(`${catName}「${name}」をマスターから削除しますか？`))) return;
+
+        if (item.isVehicle) {
+          const rawVid = String(item.id).replace('veh:', '');
+          if (Array.isArray(window.pdlMobileVehicles)) {
+            window.pdlMobileVehicles = window.pdlMobileVehicles.filter(v => String(v.id) !== rawVid);
+          }
+          safeCallGAS('vehicle_deleteVehicle', { id: rawVid });
+        } else if (item.isTool) {
+          if (Array.isArray(pdlTools)) {
+            window.pdlTools = pdlTools.filter(t => String(t.id || ('tool_' + t.name)) !== String(item.id));
+          }
+          safeCallGAS('deleteToolFromMaster', { toolId: item.id });
+        } else {
+          if (Array.isArray(pdlMachines)) {
+            window.pdlMachines = pdlMachines.filter(m => String(m.id) !== String(item.id));
+          }
+          safeCallGAS('deleteMachineFromMaster', { machineId: item.id });
+        }
+
+        window.populateMaintenanceMachineSelect('');
+        if (sel) sel.value = '';
+        if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+        if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(`🗑️ ${catName}「${name}」を削除しました`, 'ok');
       };
 
       window.filterMaintenanceMachineSelect = () => {
@@ -11000,20 +11158,36 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="extra_record_buttons" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffcc80;">
                     <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:13px;">🔧 整備・修理・点検の詳細（機械・車両・道具マスタ連動）</div>
-                    <div style="font-size:11px; color:#bf360c; margin-bottom:10px;">整備・点検対象を機械マスタ・移動車両（軽トラ等）・道具マスタから選択できます。名前・番号・カテゴリで検索できます。</div>
+                    <div style="font-size:11px; color:#bf360c; margin-bottom:10px;">整備・点検対象を「車両」「農機具」「道具」のカテゴリから選択し、登録・編集・削除が行えます。</div>
                     
-                    <label class="form-label">🔍 機械・車両・道具を検索</label>
-                    <input type="search" id="m_tool_search" class="form-input" placeholder="名前・機械番号・ナンバー・道具カテゴリ等で絞り込み" oninput="filterMaintenanceMachineSelect()" style="margin-bottom:8px;">
+                    <!-- 🌟 1. カテゴリ選択タブ (車両 / 農機具 / 道具 / すべて) -->
+                    <div style="background:#FFF8E1; border:1px solid #FFE0B2; border-radius:8px; padding:8px 10px; margin-bottom:10px;">
+                      <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:6px; display:flex; align-items:center; gap:4px;">
+                        <span>🏷️ カテゴリを選択:</span>
+                      </div>
+                      <div id="m_category_tabs" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:0;">
+                        <button type="button" onclick="setMaintenanceCategoryFilter('all')" class="m-cat-tab" data-cat="all" style="background:#2E7D32; color:#fff; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.1);">🌐 すべて</button>
+                        <button type="button" onclick="setMaintenanceCategoryFilter('vehicle')" class="m-cat-tab" data-cat="vehicle" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.1);">🛻 車両</button>
+                        <button type="button" onclick="setMaintenanceCategoryFilter('machine')" class="m-cat-tab" data-cat="machine" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.1);">🚜 農機具</button>
+                        <button type="button" onclick="setMaintenanceCategoryFilter('tool')" class="m-cat-tab" data-cat="tool" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.1);">🔧 道具</button>
+                      </div>
+                    </div>
+
+                    <label class="form-label" style="font-size:12px;">🔍 対象をキーワードで絞り込み</label>
+                    <input type="search" id="m_tool_search" class="form-input" placeholder="名前・機械番号・ナンバー・型式等で絞り込み" oninput="filterMaintenanceMachineSelect()" style="margin-bottom:8px;">
                     
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:4px;">
-                      <label class="form-label" style="margin-bottom:0;">対象（機械・車両・道具）</label>
-                      <div style="display:flex; gap:6px; align-items:center;">
-                        <button type="button" onclick="openMachinePhotoPickerModal()" style="background:#2E7D32; color:#fff; border:none; border-radius:4px; padding:3px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">🖼️ 写真から選ぶ</button>
-                        ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `<button type="button" onclick="addNewMachineFromWorker()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:3px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:3px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">＋ 機械を登録</button>` : ''}
+                    <!-- 🌟 2. 対象選択＆追加・編集・削除アクションボタン群 -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:6px;">
+                      <label class="form-label" style="margin-bottom:0; font-size:12px;">対象を選択・管理</label>
+                      <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                        <button type="button" onclick="openMachinePhotoPickerModal()" style="background:#2E7D32; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">🖼️ 写真選択</button>
+                        <button type="button" id="m_add_cat_btn" onclick="addNewCategoryItemFromWorker()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">＋ 新規登録</button>
+                        <button type="button" id="m_edit_cat_btn" onclick="editSelectedCategoryItemFromWorker()" style="background:#FFA000; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">✏️ 編集</button>
+                        <button type="button" id="m_del_cat_btn" onclick="deleteSelectedCategoryItemFromWorker()" style="background:#E53935; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">🗑️ 削除</button>
                       </div>
                     </div>
                     <select id="m_tool" class="form-input" onchange="updatePartsList(); updateMaintenanceTargetInfoBadge(); updateMaintenanceTargetPhotoPreview();"><option value="">選択してください</option></select>
-                    <div id="m_tool_empty_hint" style="display:none; font-size:11px; color:#c62828; margin:-6px 0 10px;">機械・道具マスタに該当の登録がありません。${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? '上の「＋ 機械を登録」ボタンからすぐ追加できます。' : '管理画面または車両・農機状況から追加してください。'}</div>
+                    <div id="m_tool_empty_hint" style="display:none; font-size:11px; color:#c62828; margin:-6px 0 10px;">選択されたカテゴリに該当する登録がありません。上の「＋ 新規登録」ボタンからすぐ追加できます。</div>
 
                     <!-- 🌟 写真プレビュー枠 -->
                     <div id="m_target_photo_preview" style="display:none; margin:4px 0 10px; background:#fff; border:1px solid #FFCC80; border-radius:8px; padding:8px 12px; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
