@@ -426,12 +426,13 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       }
 
    // 🌟 1. ログイン処理（完全版） 🌟
-      async function executeLogin(isAuto = false) {
+      async function executeLogin(isAuto = false, options = {}) {
+          const fromCache = !!options.fromCache;
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
           const btn = document.querySelector('.login-btn');
           const startupLoad = isAuto ? window._workerStartupLoading : null;
-          if (startupLoad) {
+          if (startupLoad && !fromCache) {
               startupLoad.update({
                   label: 'ログイン状態を確認中...',
                   detail: 'サーバーに接続しています',
@@ -456,20 +457,30 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   localStorage.setItem('passionMapUserName', result.name);
                   localStorage.setItem('passionMapUserRole', result.role || '作業員');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
-                  
-                  // 最新データが画面へ反映されるまで起動時ローダーを維持する
-                  const loaded = await loadInitData({ loadingHandle: startupLoad });
-                  if (startupLoad) {
-                      if (loaded) startupLoad.done();
-                      else startupLoad.fail('圃場データの読み込みに失敗しました');
-                      window._workerStartupLoading = null;
-                  }
+
                   startLocationWatch();
                   // 作業開始時間ヒントを先行取得（getInitData完了を待たない）
                   if (typeof window.prefetchWorkTimeHints === 'function') {
                       const now = new Date();
                       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                       window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
+                  }
+
+                  if (fromCache) {
+                      // キャッシュ描画済み → 操作可能なまま裏で最新を取得
+                      if (startupLoad) {
+                          startupLoad.done();
+                          window._workerStartupLoading = null;
+                      }
+                      loadInitData({ background: true });
+                  } else {
+                      // 初回などキャッシュなし → 完了までブロック
+                      const loaded = await loadInitData({ loadingHandle: startupLoad });
+                      if (startupLoad) {
+                          if (loaded) startupLoad.done();
+                          else startupLoad.fail('圃場データの読み込みに失敗しました');
+                          window._workerStartupLoading = null;
+                      }
                   }
               } else {
                   // もし自動ログインに失敗したら、隠していたログイン画面を再表示する
@@ -517,19 +528,23 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
     // 🌟 2. データの取得とキャッシュ保存（超軽量化＆SWRバックグラウンド更新版！） 🌟
       function loadInitData(options = {}) {
+          const background = !!options.background;
           const hasCache = !!localStorage.getItem('passionMapInitData');
           const externalLoad = options.loadingHandle || null;
-          const appLoad = externalLoad || (window.AppLoading
-              ? AppLoading.start({
-                  label: '圃場データを読み込み中...',
-                  detail: 'サーバーから取得しています',
-                  current: 1,
-                  total: 3,
-                  blocking: true,
-                  lockMap: true,
-                  delay: 0
-                })
-              : null);
+          // バックグラウンド更新時は操作をブロックしない
+          const appLoad = background
+              ? null
+              : (externalLoad || (window.AppLoading
+                  ? AppLoading.start({
+                      label: '圃場データを読み込み中...',
+                      detail: 'サーバーから取得しています',
+                      current: 1,
+                      total: 3,
+                      blocking: true,
+                      lockMap: true,
+                      delay: 0
+                    })
+                  : null));
           const ownsLoad = !!appLoad && !externalLoad;
           if (appLoad) {
               appLoad.update({
@@ -539,21 +554,41 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   total: 3
               });
           }
-          if (!appLoad && typeof beginMapDataLoad === 'function') {
+          if (!background && !appLoad && typeof beginMapDataLoad === 'function') {
               beginMapDataLoad('圃場データを読み込み中...');
           }
           return callGAS('getInitData').then(data => {
               let renderFailed = false;
+              let changed = false;
               try {
                   if (appLoad) appLoad.update({ detail: 'データを確認しています', current: 2 });
+
+                  // 空レスポンスで既存キャッシュを消さない
+                  const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
+                  if (hasCache && (!data || !data.pdl || incomingCount === 0)) {
+                      console.warn('getInitData が空のためキャッシュを維持します');
+                      if (background && typeof window.showRecordSyncToast === 'function') {
+                          window.showRecordSyncToast('☁️ 読み込み完了しました', 'ok');
+                      }
+                      if (ownsLoad) appLoad.done();
+                      else if (!background && !appLoad) {
+                          if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                          if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
+                      }
+                      return true;
+                  }
+
                   const newDataStr = JSON.stringify(data);
                   const oldDataStr = localStorage.getItem('passionMapInitData');
                   
                   // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
                   if (newDataStr === oldDataStr) {
                       console.log("変更なし：再描画をスキップしました");
+                      if (background && typeof window.showRecordSyncToast === 'function') {
+                          window.showRecordSyncToast('☁️ 読み込み完了しました', 'ok');
+                      }
                       if (ownsLoad) appLoad.done();
-                      else if (!appLoad) {
+                      else if (!background && !appLoad) {
                           if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
                           if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
                       }
@@ -562,18 +597,25 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
                   // 変更があった場合のみ保存して再描画
                   if (data) {
+                      changed = true;
                       localStorage.setItem('passionMapInitData', newDataStr);
                       if (appLoad) appLoad.update({ detail: '地図を描画しています', current: 3 });
                       renderInitData(data);
+                  }
+                  if (background && typeof window.showRecordSyncToast === 'function') {
+                      window.showRecordSyncToast(changed ? '☁️ 読み込み完了しました（最新に更新）' : '☁️ 読み込み完了しました', 'ok');
                   }
               } catch (err) {
                   console.error("renderInitData/Data processing Error:", err);
                   renderFailed = true;
                   if (ownsLoad) appLoad.fail('圃場データの表示に失敗しました');
+                  else if (background && typeof window.showRecordSyncToast === 'function') {
+                      window.showRecordSyncToast('⚠️ 最新データの反映に失敗しました（キャッシュで続行中）', 'error');
+                  }
                   return false;
               } finally {
                   if (ownsLoad && !renderFailed) appLoad.done();
-                  else if (!appLoad) {
+                  else if (!background && !appLoad) {
                       if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
                       if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
                   }
@@ -582,7 +624,13 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }).catch(e => {
               console.log("InitData Error:", e);
               if (ownsLoad) appLoad.fail('圃場データの読み込みに失敗しました');
-              else if (!appLoad) {
+              else if (background) {
+                  if (typeof window.showRecordSyncToast === 'function') {
+                      window.showRecordSyncToast(hasCache
+                          ? '⚠️ 最新の読み込みに失敗しました（キャッシュで続行中）'
+                          : '⚠️ データの読み込みに失敗しました', 'error');
+                  }
+              } else if (!appLoad) {
                   if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
                   if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
               }
@@ -11976,6 +12024,11 @@ function createSignboardMarker(name, pos, icon, id) {
             if (uid) callGAS('clearTempWorkRecord', { userId: uid, type: job.recordType }).catch(() => {});
           } catch (e) {}
         }
+
+        // 同期完了後の最新状態を次回起動用キャッシュへ反映
+        if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+          window.updateInitDataCacheWithLocalRecords_();
+        }
       };
 
       async function submitRecord() {
@@ -15888,7 +15941,7 @@ window.executeAutoRecord = async () => {
                   })
                 : null;
            
-              // キャッシュを先に描画するが、最新データ取得完了までは操作をブロックする
+              // キャッシュを先に描画し、すぐ操作可能にする。最新は裏で取得。
               const cachedData = localStorage.getItem('passionMapInitData');
               if (cachedData) {
                   const cacheLoad = window._workerStartupLoading;
@@ -15903,16 +15956,29 @@ window.executeAutoRecord = async () => {
                   if (!cacheLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
                   requestAnimationFrame(() => {
                       try {
+                          if (!currentUser) {
+                              currentUser = localStorage.getItem('passionMapUserName') || '';
+                          }
                           renderInitData(JSON.parse(cachedData));
-                          if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを反映しました。最新データを確認します', current: 2 });
+                          // キャッシュ反映完了 → すぐ操作可能にする
+                          if (cacheLoad) {
+                              cacheLoad.done();
+                              window._workerStartupLoading = null;
+                          } else {
+                              if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                              if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
+                          }
+                          if (typeof window.showRecordSyncToast === 'function') {
+                              window.showRecordSyncToast('📦 キャッシュで起動しました（最新データを裏で確認中…）', 'info');
+                          }
 
                           if (typeof window.prefetchWorkTimeHints === 'function') {
                               const now = new Date();
                               const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                               window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
                           }
-                          // バックグラウンドで非同期に最新サーバーデータを確認・更新（SWRパターン）
-                          executeLogin(true);
+                          // ログイン＋最新データは裏で取得（操作はブロックしない）
+                          executeLogin(true, { fromCache: true });
                       } catch(e) {
                           if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを利用できないため、最新データを取得します', current: null, total: null });
                           executeLogin(true);

@@ -309,7 +309,7 @@ async function processJob(data) {
         pendingImages = []; // 基地のメモリをリセット
       }
 
-      const modifyPrompt = `${imageContext}${cleanCommand}。
+      const modifyPrompt = `${imageContext}${cleanCommand}
 【最後に行うことのリスト】
  1.修正したら、個所が正しく動作するか自律的にテスト・再修正してください。
  2.コードを修正したら、関連するhtml(箱)のページ名に記載されているバージョン情報を0.01足してください。
