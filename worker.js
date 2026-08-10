@@ -4832,6 +4832,8 @@ function createSignboardMarker(name, pos, icon, id) {
           works = inCat;
         }
         const keys = new Set();
+        // 全てのカテゴリで全般・共通作業用として「共通」を選択可能にする
+        keys.add('__common__');
         works.forEach(w => keys.add(window.normalizeWorkCropKey(w && w.cropName)));
         // 作物マスタにだけある作物も選択できるようにする
         (pdlCrops || []).forEach(c => {
