@@ -2,6 +2,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
       let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], pdlContentUnits = [], activeLots = [];
       let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
+      let pdlDeliveryDestinations = [];
       let pdlNurseryLocations = [], pdlCropCultSettings = [];
       let selectedPolyIds = [], isMapSelecting = false, backupSelectedPolyIds = [];
       let pendingFiles = [];
@@ -626,6 +627,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           pdlSymptoms=data.pdl.symptoms||[];
           pdlNurseryLocations = data.pdl.nurseryLocations || [];
           pdlCropCultSettings = data.pdl.cropCultSettings || [];
+          pdlDeliveryDestinations = data.pdl.deliveryDestinations || [];
+          window.pdlDeliveryDestinations = pdlDeliveryDestinations;
           window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
           pdlSignFunctions = data.pdl.signFunctionsMaster || [];
           pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
@@ -8582,6 +8585,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.isLotUseWorkName === 'function' && window.isLotUseWorkName(name)) {
           defs.push({ key: 'lotUse', label: 'ロット使用', emoji: '📦', color: '#43A047' });
         }
+        if (typeof window.isDeliveryWork === 'function' && window.isDeliveryWork(name)) {
+          defs.push({ key: 'delivery', label: '配送先・運搬場所の指定', emoji: '🚚', color: '#0288D1' });
+        }
         if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) {
           defs.push({ key: 'fuel', label: '給油記録', emoji: '⛽', color: '#C2185B' });
         } else if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(name)) {
@@ -8646,6 +8652,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshPrepTargetWorkSection === 'function') window.refreshPrepTargetWorkSection();
         if (typeof window.refreshWorkHarvestQtySection === 'function') window.refreshWorkHarvestQtySection();
         if (typeof window.refreshFuelRecordSection === 'function') window.refreshFuelRecordSection();
+        if (typeof window.refreshDeliveryDestinationSection === 'function') window.refreshDeliveryDestinationSection();
         if (typeof window.refreshMaintenanceSection === 'function') window.refreshMaintenanceSection(wName);
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
@@ -8700,6 +8707,10 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(name)) {
           window.setExtraRecordOpen_('prep', true);
         }
+        // 配送・運搬作業は配送先パネルを自動で開く
+        if (typeof window.isDeliveryWork === 'function' && window.isDeliveryWork(name)) {
+          window.setExtraRecordOpen_('delivery', true);
+        }
         // 給油は給油記録パネルを自動で開く
         if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) {
           window.setExtraRecordOpen_('fuel', true);
@@ -8714,6 +8725,310 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (session && session.kind === 'ridge' && window.isRidgeMakeWorkName(name)) {
           window.setExtraRecordOpen_('ridge', true);
+        }
+      };
+
+      window.isDeliveryWork = (wName) => {
+        const name = String(wName || '').trim();
+        const cat = document.getElementById('rec_work_category')?.value || '';
+        if (cat === '出荷・運搬') return true;
+        if (!name) return false;
+        return name.includes('配送') || name.includes('運搬') || name.includes('集荷') ||
+               name.includes('納品') || name.includes('出荷') || name.includes('配達') ||
+               name.includes('送迎') || name.includes('移動');
+      };
+
+      window.refreshDeliveryDestinationSection = (preset) => {
+        const box = document.getElementById('delivery_destination_section');
+        if (!box) return;
+        const wName = document.getElementById('rec_work_name')?.value || '';
+        if (!window.isDeliveryWork(wName)) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        if (preset) window.setExtraRecordOpen_('delivery', true);
+        if (!window.isExtraRecordOpen_('delivery')) {
+          box.style.display = 'none';
+          return;
+        }
+
+        box.style.display = 'block';
+        box.style.cssText = 'background:#E1F5FE; border:2px solid #0288D1; border-radius:10px; padding:12px; margin-bottom:15px;';
+
+        const curName = preset ? (preset.name || '') : (document.getElementById('rec_delivery_name')?.value || '');
+        const curLat = preset ? (preset.lat != null ? preset.lat : '') : (document.getElementById('rec_delivery_lat')?.value || '');
+        const curLng = preset ? (preset.lng != null ? preset.lng : '') : (document.getElementById('rec_delivery_lng')?.value || '');
+
+        const destList = window.pdlDeliveryDestinations || [];
+
+        const chipsHtml = destList.length > 0 ? destList.map(item => {
+          const safeName = String(item.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+          const safeId = String(item.id || '').replace(/'/g, "\\'");
+          const isSelected = curName === item.name;
+          const bg = isSelected ? '#0288D1' : '#fff';
+          const color = isSelected ? '#fff' : '#01579B';
+          const border = isSelected ? '#01579B' : '#81D4FA';
+          const fontW = isSelected ? 'bold' : 'normal';
+          return `<div style="display:inline-flex; align-items:center; background:${bg}; color:${color}; border:1px solid ${border}; border-radius:18px; padding:4px 10px; font-size:12px; font-weight:${fontW}; gap:4px;">
+            <span onclick="window.selectDeliveryDestinationChip('${safeId}')" style="cursor:pointer;">📍 ${String(item.name).replace(/</g, '&lt;')}</span>
+            <span onclick="window.deleteDeliveryDestinationFromCloud('${safeId}')" title="削除" style="cursor:pointer; color:${isSelected ? '#FFCDD2' : '#E53935'}; font-size:12px; margin-left:4px; font-weight:bold;">✕</span>
+          </div>`;
+        }).join('') : `<div style="font-size:11px; color:#888;">記憶された配送先はまだありません（地図で「ここに運ぶ」指定で自動保存されます）</div>`;
+
+        const hasCoords = curLat !== '' && curLng !== '';
+        const coordsDisplay = hasCoords ? `📍 座標: ${Number(curLat).toFixed(5)}, ${Number(curLng).toFixed(5)}` : '';
+
+        box.innerHTML = `
+          <div style="font-weight:bold; color:#01579B; margin-bottom:6px; font-size:14px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            🚚 配送先・運搬場所の指定
+            <span style="font-size:11px; font-weight:normal; color:#0288D1;">（タップで簡単選択／複数記憶・全端末同期）</span>
+          </div>
+
+          <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">📍 記憶済みの配送先（タップで自動入力）:</div>
+          <div id="delivery_dest_chips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+            ${chipsHtml}
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <input type="text" id="rec_delivery_name" class="form-input" value="${String(curName).replace(/"/g, '&quot;')}" placeholder="配送先・建物名 (例: 〇〇直売所, 〇〇市場)" style="flex:1; min-width:160px; padding:8px; border:1px solid #81D4FA; border-radius:6px; font-size:13px;" oninput="window.updateDeliveryPreview_()">
+              <button type="button" onclick="window.openDeliveryMapModal()" style="background:#0288D1; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 2px 5px rgba(2,136,209,0.3);">
+                🗺️ 地図で位置を指定（ここに運ぶ）
+              </button>
+            </div>
+
+            <div id="delivery_location_preview" style="font-size:12px; color:#01579B; background:#B3E5FC; padding:6px 10px; border-radius:6px; display:${hasCoords || curName ? 'flex' : 'none'}; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+              <span id="delivery_location_coords_text">${coordsDisplay || (curName ? `📍 名称: ${curName}` : '')}</span>
+              <button type="button" onclick="window.saveCurrentDeliveryDestinationToCloud()" style="background:#00897B; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">💾 この場所を記憶</button>
+            </div>
+
+            <input type="hidden" id="rec_delivery_lat" value="${curLat}">
+            <input type="hidden" id="rec_delivery_lng" value="${curLng}">
+          </div>
+        `;
+      };
+
+      window.updateDeliveryPreview_ = () => {
+        const curName = document.getElementById('rec_delivery_name')?.value || '';
+        const curLat = document.getElementById('rec_delivery_lat')?.value || '';
+        const curLng = document.getElementById('rec_delivery_lng')?.value || '';
+        const prev = document.getElementById('delivery_location_preview');
+        const txt = document.getElementById('delivery_location_coords_text');
+        if (prev && txt) {
+          const hasCoords = curLat !== '' && curLng !== '';
+          const coordsDisplay = hasCoords ? `📍 座標: ${Number(curLat).toFixed(5)}, ${Number(curLng).toFixed(5)}` : '';
+          txt.textContent = coordsDisplay || (curName ? `📍 名称: ${curName}` : '');
+          prev.style.display = (hasCoords || curName) ? 'flex' : 'none';
+        }
+      };
+
+      window.openDeliveryMapModal = () => {
+        let modal = document.getElementById('deliveryMapModal');
+        if (!modal) {
+          modal = document.createElement('div');
+          modal.id = 'deliveryMapModal';
+          modal.style.cssText = 'display:none; position:fixed; z-index:40000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; padding:10px; box-sizing:border-box;';
+          modal.innerHTML = `
+            <div style="background:#fff; width:min(96vw, 680px); max-height:92vh; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.3);">
+              <div style="background:#0288D1; color:#fff; padding:12px 16px; font-weight:bold; font-size:15px; display:flex; justify-content:space-between; align-items:center;">
+                <span>🗺️ 配送先・運搬場所を地図で選択</span>
+                <span onclick="window.closeDeliveryMapModal()" style="cursor:pointer; font-size:22px; line-height:1; font-weight:bold;">✕</span>
+              </div>
+              <div style="padding:8px 14px; background:#E1F5FE; font-size:12px; color:#01579B; font-weight:bold;">
+                💡 地図上をタップ／クリックして「ここに運ぶ」ピンを立ててください。
+              </div>
+              <div id="delivery_map_container" style="width:100%; height:360px; position:relative; background:#e0e0e0;"></div>
+              <div style="padding:12px 14px; background:#fafafa; border-top:1px solid #ddd; display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <input type="text" id="delivery_modal_dest_name" placeholder="配送先・建物名 (例: 〇〇直売所, 〇〇市場)" style="flex:1; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <span id="delivery_modal_coords_label" style="font-size:12px; color:#01579B; font-weight:bold;">📍 ピンをタップして位置を指定</span>
+                  <div style="display:flex; gap:8px;">
+                    <button type="button" onclick="window.closeDeliveryMapModal()" style="background:#9E9E9E; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-size:13px; cursor:pointer;">キャンセル</button>
+                    <button type="button" onclick="window.confirmDeliveryMapLocation()" style="background:#4CAF50; color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(76,175,80,0.4);">📍 ここに運ぶ (この位置を決定)</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(modal);
+        }
+
+        modal.style.display = 'flex';
+
+        const curName = document.getElementById('rec_delivery_name')?.value || '';
+        const curLat = document.getElementById('rec_delivery_lat')?.value || '';
+        const curLng = document.getElementById('rec_delivery_lng')?.value || '';
+
+        const nameInput = document.getElementById('delivery_modal_dest_name');
+        if (nameInput) nameInput.value = curName;
+
+        setTimeout(() => {
+          const mapBox = document.getElementById('delivery_map_container');
+          if (!mapBox) return;
+
+          let centerLat = 35.17, centerLng = 136.9;
+          if (curLat && curLng) {
+            centerLat = Number(curLat);
+            centerLng = Number(curLng);
+          } else if (activePolyId && loadedPolygons[activePolyId]) {
+            const p = loadedPolygons[activePolyId];
+            if (p.center) {
+              centerLat = p.center.lat || p.center[0] || centerLat;
+              centerLng = p.center.lng || p.center[1] || centerLng;
+            }
+          } else if (typeof map !== 'undefined' && map && map.getCenter) {
+            const c = map.getCenter();
+            centerLat = c.lat;
+            centerLng = c.lng;
+          }
+
+          if (!window.deliveryMapInstance) {
+            window.deliveryMapInstance = L.map('delivery_map_container').setView([centerLat, centerLng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              maxZoom: 19,
+              attribution: '© OpenStreetMap'
+            }).addTo(window.deliveryMapInstance);
+
+            window.deliveryMapInstance.on('click', (e) => {
+              window.updateDeliveryMapMarker_(e.latlng.lat, e.latlng.lng);
+            });
+          } else {
+            window.deliveryMapInstance.setView([centerLat, centerLng], 15);
+            window.deliveryMapInstance.invalidateSize();
+          }
+
+          if (curLat && curLng) {
+            window.updateDeliveryMapMarker_(Number(curLat), Number(curLng));
+          } else {
+            window.updateDeliveryMapMarker_(centerLat, centerLng);
+          }
+        }, 100);
+      };
+
+      window.closeDeliveryMapModal = () => {
+        const modal = document.getElementById('deliveryMapModal');
+        if (modal) modal.style.display = 'none';
+      };
+
+      window.updateDeliveryMapMarker_ = (lat, lng) => {
+        if (!window.deliveryMapInstance) return;
+        window.deliveryMapSelectedLat = lat;
+        window.deliveryMapSelectedLng = lng;
+
+        if (window.deliveryMapMarker) {
+          window.deliveryMapMarker.setLatLng([lat, lng]);
+        } else {
+          window.deliveryMapMarker = L.marker([lat, lng], { draggable: true }).addTo(window.deliveryMapInstance);
+          window.deliveryMapMarker.on('dragend', (e) => {
+            const pos = e.target.getLatLng();
+            window.deliveryMapSelectedLat = pos.lat;
+            window.deliveryMapSelectedLng = pos.lng;
+            const lbl = document.getElementById('delivery_modal_coords_label');
+            if (lbl) lbl.innerHTML = `📍 選択中の座標: <b>${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}</b>`;
+          });
+        }
+
+        const lbl = document.getElementById('delivery_modal_coords_label');
+        if (lbl) lbl.innerHTML = `📍 選択中の座標: <b>${lat.toFixed(5)}, ${lng.toFixed(5)}</b>`;
+      };
+
+      window.confirmDeliveryMapLocation = () => {
+        const lat = window.deliveryMapSelectedLat;
+        const lng = window.deliveryMapSelectedLng;
+        const name = (document.getElementById('delivery_modal_dest_name')?.value || '').trim() || '配送指定場所';
+
+        if (lat == null || lng == null) {
+          if (typeof customAlert === 'function') customAlert('地図上で位置をタップして指定してください。');
+          return;
+        }
+
+        const nameEl = document.getElementById('rec_delivery_name');
+        const latEl = document.getElementById('rec_delivery_lat');
+        const lngEl = document.getElementById('rec_delivery_lng');
+
+        if (nameEl) nameEl.value = name;
+        if (latEl) latEl.value = lat;
+        if (lngEl) lngEl.value = lng;
+
+        // クラウド記憶に即時登録
+        window.saveCurrentDeliveryDestinationToCloud({ name, lat, lng });
+
+        window.closeDeliveryMapModal();
+        if (typeof window.refreshDeliveryDestinationSection === 'function') {
+          window.refreshDeliveryDestinationSection();
+        }
+        if (typeof customAlert === 'function') {
+          customAlert(`✅ 配送先「${name}」を設定・記憶しました！`);
+        }
+      };
+
+      window.selectDeliveryDestinationChip = (id) => {
+        const item = (window.pdlDeliveryDestinations || []).find(d => String(d.id) === String(id));
+        if (!item) return;
+        const nameEl = document.getElementById('rec_delivery_name');
+        const latEl = document.getElementById('rec_delivery_lat');
+        const lngEl = document.getElementById('rec_delivery_lng');
+        if (nameEl) nameEl.value = item.name || '';
+        if (latEl) latEl.value = item.lat != null ? item.lat : '';
+        if (lngEl) lngEl.value = item.lng != null ? item.lng : '';
+        if (typeof window.refreshDeliveryDestinationSection === 'function') {
+          window.refreshDeliveryDestinationSection();
+        }
+      };
+
+      window.saveCurrentDeliveryDestinationToCloud = async (overrideData) => {
+        const name = overrideData ? overrideData.name : (document.getElementById('rec_delivery_name')?.value || '').trim();
+        const lat = overrideData ? overrideData.lat : document.getElementById('rec_delivery_lat')?.value;
+        const lng = overrideData ? overrideData.lng : document.getElementById('rec_delivery_lng')?.value;
+
+        if (!name) {
+          if (typeof customAlert === 'function') customAlert('配送先名を入力してください。');
+          return;
+        }
+
+        const destObj = { name, lat: lat ? Number(lat) : null, lng: lng ? Number(lng) : null };
+
+        window.pdlDeliveryDestinations = window.pdlDeliveryDestinations || [];
+        const idx = window.pdlDeliveryDestinations.findIndex(d => d.name === name);
+        if (idx !== -1) {
+          window.pdlDeliveryDestinations[idx] = Object.assign({}, window.pdlDeliveryDestinations[idx], destObj);
+        } else {
+          window.pdlDeliveryDestinations.unshift(destObj);
+        }
+
+        if (typeof window.refreshDeliveryDestinationSection === 'function') {
+          window.refreshDeliveryDestinationSection();
+        }
+
+        const res = await safeCallGAS('saveDeliveryDestination', { destination: destObj });
+        if (res && res.list) {
+          window.pdlDeliveryDestinations = res.list;
+          if (typeof window.refreshDeliveryDestinationSection === 'function') {
+            window.refreshDeliveryDestinationSection();
+          }
+        }
+      };
+
+      window.deleteDeliveryDestinationFromCloud = async (id) => {
+        const item = (window.pdlDeliveryDestinations || []).find(d => String(d.id) === String(id));
+        const name = item ? item.name : 'この配送先';
+        const ok = confirm(`「${name}」を記憶リストから削除しますか？（他端末にも反映されます）`);
+        if (!ok) return;
+
+        window.pdlDeliveryDestinations = (window.pdlDeliveryDestinations || []).filter(d => String(d.id) !== String(id));
+        if (typeof window.refreshDeliveryDestinationSection === 'function') {
+          window.refreshDeliveryDestinationSection();
+        }
+
+        const res = await safeCallGAS('deleteDeliveryDestination', { id });
+        if (res && res.list) {
+          window.pdlDeliveryDestinations = res.list;
+          if (typeof window.refreshDeliveryDestinationSection === 'function') {
+            window.refreshDeliveryDestinationSection();
+          }
         }
       };
 
@@ -10607,7 +10922,6 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="linked_special_work_banner" style="display:none; border:1px solid #CE93D8; border-radius:8px; padding:10px 12px; margin:10px 0 12px; font-size:13px; font-weight:bold; line-height:1.4;"></div>
                   <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
                   ${timeUI}
-                  ${workTimeUI}
                   <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:1px solid #9FA8DA; border-radius:10px; padding:12px; margin-bottom:12px;">
                   <label class="form-label" style="margin-top:0; color:#3949AB;">📁 カテゴリ</label>
                   <div id="work_category_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
@@ -10632,7 +10946,9 @@ function createSignboardMarker(name, pos, icon, id) {
                   <select id="rec_work_name" class="form-input" style="display:none;" onchange="handleWorkNameChange()">${wNames}</select>
                   </div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
+                  <div id="delivery_destination_section" style="display:none; background:#E1F5FE; border:2px solid #0288D1; border-radius:10px; padding:12px; margin-bottom:15px;"></div>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
+                  ${workTimeUI}
                   <div id="extra_record_buttons" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffcc80;">
                     <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:13px;">🔧 整備・修理・点検の詳細（機械・車両・道具マスタ連動）</div>
@@ -10966,6 +11282,13 @@ function createSignboardMarker(name, pos, icon, id) {
                 window.refreshPlantingRecordSection(d.plantingRecord);
                 if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
               }, 125);
+            }
+            if (d.deliveryDestination && typeof window.refreshDeliveryDestinationSection === 'function') {
+              setTimeout(() => {
+                window.setExtraRecordOpen_('delivery', true);
+                window.refreshDeliveryDestinationSection(d.deliveryDestination);
+                if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
+              }, 130);
             }
             if (d.prepTargetWork || (d.detailedWorks && (d.detailedWorks.includes('対象:') || d.detailedWorks.includes('準備対象')))) {
               setTimeout(() => {
@@ -11864,6 +12187,17 @@ function createSignboardMarker(name, pos, icon, id) {
               ridgeProgress: ridgeProgress,
               comment: document.getElementById('rec_work_comment') ? document.getElementById('rec_work_comment').value.trim() : ""
             };
+
+            const delNameVal = (document.getElementById('rec_delivery_name')?.value || '').trim();
+            const delLatVal = document.getElementById('rec_delivery_lat')?.value || '';
+            const delLngVal = document.getElementById('rec_delivery_lng')?.value || '';
+            if (delNameVal) {
+              data.deliveryDestination = {
+                name: delNameVal,
+                lat: delLatVal !== '' ? Number(delLatVal) : null,
+                lng: delLngVal !== '' ? Number(delLngVal) : null
+              };
+            }
 
             const harvestQty = (typeof window.collectWorkHarvestQty === 'function')
               ? window.collectWorkHarvestQty()
@@ -15920,6 +16254,7 @@ window.renderMyWorkRecordCardHtml = function(rec) {
                 ${progressBadge}
             </div>
             ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">✅ 詳細: ${d.detailedWorks}</div>` : ''}
+            ${d.deliveryDestination && d.deliveryDestination.name ? `<div style="font-size:12px; color:#01579B; font-weight:bold; margin-top:3px; background:#E1F5FE; border:1px solid #81D4FA; padding:4px 8px; border-radius:6px; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">🚚 配送先: ${String(d.deliveryDestination.name).replace(/</g, '&lt;')} ${d.deliveryDestination.lat != null && d.deliveryDestination.lng != null ? `<a href="https://maps.google.com/?q=${d.deliveryDestination.lat},${d.deliveryDestination.lng}" target="_blank" rel="noopener" style="color:#0288D1; font-size:11px; text-decoration:underline; font-weight:bold;">📍 地図で開く</a>` : ''}</div>` : ''}
             ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
                 <span onclick="window.deleteRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>

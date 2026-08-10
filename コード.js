@@ -16,6 +16,9 @@ function doPost(e) {
 
     if (action === "login") result = checkLogin(params.orgId, params.userId, params.password);
     else if (action === "getInitData") result = getInitData(); 
+    else if (action === "getDeliveryDestinations") result = getDeliveryDestinations();
+    else if (action === "saveDeliveryDestination") result = saveDeliveryDestination(params);
+    else if (action === "deleteDeliveryDestination") result = deleteDeliveryDestination(params);
     else if (action === "savePolygon") result = savePolygon(params); 
     else if (action === "savePolygonBatch") result = savePolygonBatch(params); // ★一括保存用
     else if (action === "updatePolygon") result = updatePolygon(params); 
@@ -755,12 +758,66 @@ pdl.materials = [];
     
   
 
+  try {
+    pdl.deliveryDestinations = getDeliveryDestinations();
+  } catch (ddErr) {
+    pdl.deliveryDestinations = [];
+  }
+
   // =========================================================
   // ★修正：履歴から見つけていただいた「完璧なreturn」に上書き！
   return { pdl, polygons: getSavedPolygons(), toukiList: getCol(['登記ID'], 0), activeLots, prodCategories: getProdMgmtCategories() };
   // =========================================================
 
 } // ← これが getInitData を閉じる } です
+
+function getDeliveryDestinations() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const raw = props.getProperty('DELIVERY_DESTINATIONS_JSON');
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('getDeliveryDestinations error:', e);
+    return [];
+  }
+}
+
+function saveDeliveryDestination(params) {
+  const dest = (params && (params.destination || params.dest)) ? (params.destination || params.dest) : params;
+  if (!dest || !dest.name) return { success: false, message: '配送先名が必要です。' };
+  const props = PropertiesService.getScriptProperties();
+  let list = getDeliveryDestinations();
+
+  const id = dest.id || ('dest_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
+  const newEntry = {
+    id: id,
+    name: String(dest.name).trim(),
+    lat: dest.lat != null && dest.lat !== '' ? Number(dest.lat) : null,
+    lng: dest.lng != null && dest.lng !== '' ? Number(dest.lng) : null,
+    address: dest.address ? String(dest.address).trim() : '',
+    updatedAt: new Date().toISOString()
+  };
+
+  const idx = list.findIndex(item => item.id === id || (item.name && item.name === newEntry.name));
+  if (idx !== -1) {
+    list[idx] = Object.assign({}, list[idx], newEntry);
+  } else {
+    list.unshift(newEntry);
+  }
+  props.setProperty('DELIVERY_DESTINATIONS_JSON', JSON.stringify(list));
+  return { success: true, list: list, entry: newEntry };
+}
+
+function deleteDeliveryDestination(params) {
+  const id = params ? (params.id || params.destId) : null;
+  const name = params ? params.name : null;
+  const props = PropertiesService.getScriptProperties();
+  let list = getDeliveryDestinations();
+  list = list.filter(item => item.id !== id && item.name !== name);
+  props.setProperty('DELIVERY_DESTINATIONS_JSON', JSON.stringify(list));
+  return { success: true, list: list };
+}
   
 
 
