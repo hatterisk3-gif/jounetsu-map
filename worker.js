@@ -11798,6 +11798,129 @@ function createSignboardMarker(name, pos, icon, id) {
         }, kind === 'error' ? 8000 : 2800);
       };
 
+      window.adjustPreviousOverlappingRecords_ = (newRecord, opts) => {
+        opts = opts || {};
+        if (!newRecord || (newRecord.recordType && newRecord.recordType !== 'work')) return;
+        const d = newRecord.data || newRecord;
+        if (!d || !d.workDate || !d.startTime) return;
+
+        const parseTimeMins = (tStr) => {
+          if (!tStr || typeof tStr !== 'string') return null;
+          const parts = tStr.trim().split(':');
+          if (parts.length < 2) return null;
+          const h = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+          return (isNaN(h) || isNaN(m)) ? null : h * 60 + m;
+        };
+
+        const newStartMins = parseTimeMins(d.startTime);
+        if (newStartMins == null) return;
+
+        const normalizeDate = (typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr
+          : (s => String(s || '').replace(/\//g, '-').slice(0, 10));
+
+        const newDateStr = normalizeDate(d.workDate);
+        const targetUser = String(newRecord.userName || d.userName || (typeof currentUser !== 'undefined' ? currentUser : '') || localStorage.getItem('passionMapUserName') || '').trim();
+        const currentRecordId = String(opts.editId || newRecord.id || newRecord.localId || '').trim();
+        const ignoreLocalId = String(opts.localId || '').trim();
+
+        const adjustedRecordIds = new Set();
+        const adjustedItems = [];
+
+        const polyKeys = Object.keys(loadedPolygons || {});
+        polyKeys.forEach(polyId => {
+          const p = loadedPolygons[polyId];
+          if (!p || !Array.isArray(p.photos)) return;
+
+          p.photos.forEach(ph => {
+            if (!ph || (ph.type && ph.type !== 'work')) return;
+            const phId = String(ph.id || ph._syncLocalId || ph.url || '').trim();
+            if (!phId) return;
+            if (currentRecordId && (phId === currentRecordId || phId === ignoreLocalId)) return;
+            if (adjustedRecordIds.has(phId)) return;
+
+            const phData = ph.data || {};
+            const phUser = String(ph.author || phData.userName || ph.userName || '').trim();
+            if (targetUser && phUser && targetUser !== phUser) return;
+
+            const phDate = normalizeDate(phData.workDate || ph.date);
+            if (phDate !== newDateStr) return;
+
+            const prevStartStr = phData.startTime || ph.time || '';
+            const prevEndStr = phData.endTime || '';
+
+            const prevStartMins = parseTimeMins(prevStartStr);
+            const prevEndMins = parseTimeMins(prevEndStr);
+
+            if (prevStartMins == null || prevEndMins == null) return;
+
+            // 前の作業の開始時刻 < 次の作業の開始時刻 かつ 前の作業の終了時刻 > 次の作業の開始時刻
+            if (prevStartMins < newStartMins && prevEndMins > newStartMins) {
+              adjustedRecordIds.add(phId);
+
+              const oldEndTime = prevEndStr;
+              const newEndTime = d.startTime;
+
+              const diff = newStartMins - prevStartMins;
+              let breakMinsVal = Math.max(0, parseInt(phData.breakMins, 10) || 0);
+              if (breakMinsVal > diff) breakMinsVal = diff;
+              const workMins = Math.max(0, diff - breakMinsVal);
+              const totalTimeStr = Math.floor(workMins / 60) + "時間" + (workMins % 60) + "分";
+
+              phData.endTime = newEndTime;
+              phData.totalTime = totalTimeStr;
+              ph.data = phData;
+              if (ph.time) ph.time = prevStartStr;
+
+              adjustedItems.push({
+                polyId: polyId,
+                recordId: phId,
+                workName: phData.workName || '作業',
+                oldEndTime: oldEndTime,
+                newEndTime: newEndTime,
+                totalTime: totalTimeStr,
+                data: phData,
+                author: phUser || targetUser,
+                keptUrls: ph.urls || (ph.url ? [ph.url] : [])
+              });
+            }
+          });
+        });
+
+        adjustedItems.forEach(item => {
+          // 記憶中リスト (myWorkRecords) の同期
+          if (window.myWorkRecords && Array.isArray(window.myWorkRecords)) {
+            window.myWorkRecords.forEach(r => {
+              if (r && (r.id === item.recordId || r.recordId === item.recordId)) {
+                r.endTime = item.newEndTime;
+                r.totalTime = item.totalTime;
+                if (r.data) {
+                  r.data.endTime = item.newEndTime;
+                  r.data.totalTime = item.totalTime;
+                }
+              }
+            });
+          }
+
+          // クラウド同期 (GAS)
+          if (typeof callGAS === 'function' && String(item.recordId).indexOf('local_') !== 0) {
+            callGAS('updateRecordItem', {
+              id: item.polyId,
+              recordId: item.recordId,
+              recordType: 'work',
+              data: item.data,
+              keptUrls: item.keptUrls,
+              userName: item.author
+            }).catch(e => console.warn('前作業時間の自動調整同期エラー:', e));
+          }
+
+          // トースト通知
+          if (typeof window.showRecordSyncToast === 'function') {
+            window.showRecordSyncToast(`⏱️ 前の作業「${item.workName}」の終了時間を ${item.newEndTime} に調整しました`, 'ok');
+          }
+        });
+      };
+
       window.applyOptimisticRecordItem_ = (opts) => {
         opts = opts || {};
         const targetIds = (opts.targetIds || []).map(String);
@@ -11874,6 +11997,18 @@ function createSignboardMarker(name, pos, icon, id) {
             loadedPolygons[globalKey].photos.push(item);
           }
         }
+
+        // ⏱️ 次の作業記録の開始時間が前の作業記録の終了時間より前だったら、前の作業の終了時間を新しい開始時間に自動変更
+        if (recordType === 'work') {
+          if (typeof window.adjustPreviousOverlappingRecords_ === 'function') {
+            try {
+              window.adjustPreviousOverlappingRecords_(item, { editId: editId, localId: localId });
+            } catch (e) {
+              console.warn('重複作業時間自動調整エラー:', e);
+            }
+          }
+        }
+
         return localId;
       };
 
