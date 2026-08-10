@@ -10426,7 +10426,37 @@ function createSignboardMarker(name, pos, icon, id) {
         selectedPolyIds = activePolyId ? [String(activePolyId)] : []; pendingFiles = []; 
         const addBtnStyle = ''; // ★変更：編集時もボタンを常に表示する！
         let tgt = null; existingUrlsInEdit = [];
-        if(isEdit){ tgt = p.photos.find(ph => ph.id===currentEditRecordId || ph.url===currentEditRecordId); if(tgt) existingUrlsInEdit=tgt.urls?[...tgt.urls]:(tgt.url?[tgt.url]:[]); }
+        if (isEdit) {
+          if (p && Array.isArray(p.photos)) {
+            tgt = p.photos.find(ph => ph.id === currentEditRecordId || ph.url === currentEditRecordId);
+          }
+          if (!tgt && typeof loadedPolygons !== 'undefined') {
+            for (let polyKey in loadedPolygons) {
+              if (loadedPolygons[polyKey] && Array.isArray(loadedPolygons[polyKey].photos)) {
+                const found = loadedPolygons[polyKey].photos.find(ph => ph.id === currentEditRecordId || ph.url === currentEditRecordId);
+                if (found) {
+                  tgt = found;
+                  activePolyId = polyKey;
+                  break;
+                }
+              }
+            }
+          }
+          if (!tgt && window.myWorkRecords && Array.isArray(window.myWorkRecords)) {
+            const foundRec = window.myWorkRecords.find(r => r.id === currentEditRecordId || r.recordId === currentEditRecordId);
+            if (foundRec) {
+              tgt = {
+                id: foundRec.id || currentEditRecordId,
+                type: 'work',
+                author: currentUser,
+                date: foundRec.date || foundRec.workDate || todayStr,
+                time: foundRec.time || foundRec.startTime || '',
+                data: Object.assign({}, foundRec.data || foundRec)
+              };
+            }
+          }
+          if (tgt) existingUrlsInEdit = tgt.urls ? [...tgt.urls] : (tgt.url ? [tgt.url] : []);
+        }
         
         let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業登録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 圃場 作業記録" : "🌱 圃場 生育記録");
         document.getElementById('rightPanelTitle').innerText = `${p.name} - ${formTitle}`;
@@ -10742,17 +10772,27 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         
         if (currentRecordType === 'work') setTimeout(() => {
-            const catInit = document.getElementById('rec_work_category')?.value || 'すべて';
-            if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons(catInit);
-            const cat = document.getElementById('rec_work_category')?.value || catInit;
-            const defaultCrop = (typeof window.getDefaultWorkCropKey === 'function')
-              ? window.getDefaultWorkCropKey(cat, p)
-              : '';
-            if (defaultCrop && typeof window.selectWorkCropFilter === 'function') {
-              window.selectWorkCropFilter(defaultCrop);
-            } else if (typeof window.renderCropFilterButtons === 'function') {
-              window.renderCropFilterButtons('');
-              if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(cat, '');
+            if (!isEdit) {
+              const catInit = document.getElementById('rec_work_category')?.value || 'すべて';
+              if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons(catInit);
+              const cat = document.getElementById('rec_work_category')?.value || catInit;
+              const defaultCrop = (typeof window.getDefaultWorkCropKey === 'function')
+                ? window.getDefaultWorkCropKey(cat, p)
+                : '';
+              if (defaultCrop && typeof window.selectWorkCropFilter === 'function') {
+                window.selectWorkCropFilter(defaultCrop);
+              } else if (typeof window.renderCropFilterButtons === 'function') {
+                window.renderCropFilterButtons('');
+                if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(cat, '');
+              }
+            } else {
+              const cat = document.getElementById('rec_work_category')?.value || 'すべて';
+              if (typeof window.renderCategoryButtons === 'function') window.renderCategoryButtons(cat);
+              const cropFilterVal = document.getElementById('rec_work_crop_filter')?.value || '';
+              const cropKeys = cropFilterVal ? cropFilterVal.split(',').map(s => s.trim()).filter(Boolean) : [];
+              if (typeof window.renderCropFilterButtons === 'function') {
+                window.renderCropFilterButtons(cropKeys);
+              }
             }
             if (typeof window.renderCategoryAdminBar === 'function') {
               window.renderCategoryAdminBar(document.getElementById('rec_work_category')?.value || 'すべて');
@@ -10882,8 +10922,24 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
             }, 80);
             
-            if (d.workName && typeof selectWorkChip === 'function') {
-                selectWorkChip(d.workName);
+            const editWorkName = d.workName || d.name || d.title || '';
+            if (editWorkName) {
+                if (typeof selectWorkChip === 'function') {
+                    selectWorkChip(editWorkName);
+                } else {
+                    const sel = document.getElementById('rec_work_name');
+                    if (sel) sel.value = editWorkName;
+                    if (typeof handleWorkNameChange === 'function') handleWorkNameChange();
+                }
+                setTimeout(() => {
+                    if (typeof selectWorkChip === 'function') {
+                        selectWorkChip(editWorkName);
+                    } else {
+                        const sel = document.getElementById('rec_work_name');
+                        if (sel) sel.value = editWorkName;
+                        if (typeof handleWorkNameChange === 'function') handleWorkNameChange();
+                    }
+                }, 70);
             } else {
                 handleWorkNameChange();
             }
