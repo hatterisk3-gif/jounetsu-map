@@ -4635,13 +4635,13 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.normalizeWorkCropKey = (val) => {
         const s = String(val || '').trim();
-        if (!s || s === '__common__' || s.toLowerCase() === 'common' || s === '共通') return '__common__';
+        if (!s || s === '__common__' || s.toLowerCase() === 'common' || s === '共通' || s === 'すべて' || s === '全て' || s === '全作物' || s === '全対象') return '__common__';
         return s;
       };
 
       window.getWorkCropLabel = (val) => {
         const s = String(val || '').trim();
-        if (!s || s === '__common__' || s.toLowerCase() === 'common') return '共通';
+        if (!s || s === '__common__' || s.toLowerCase() === 'common' || s === '共通' || s === 'すべて' || s === '全て' || s === '全作物' || s === '全対象') return '共通';
         return s;
       };
 
