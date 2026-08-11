@@ -1785,8 +1785,100 @@ function buildCpVarietySelectHtml(plan) {
         const sel = String(v) === cur ? ' selected' : '';
         return `<option value="${esc}"${sel}>${esc}</option>`;
     }).join('');
-    return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="display:block; width:100%; min-width:0; height:20px; font-size:11px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${placeholder}${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
+    return `<div style="display:flex; align-items:center; gap:3px; min-width:0;">
+      <select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="display:block; flex:1; min-width:0; height:20px; font-size:11px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${placeholder}${optionsHtml}<option value="__custom__">＋手入力…</option></select>
+      <span id="varietyOrdinal_${plan.id}" class="cp-variety-ordinal" style="flex-shrink:0; min-width:1.8em; height:18px; line-height:18px; text-align:center; font-size:10px; font-weight:bold; color:#1565C0; background:#BBDEFB; border-radius:9px; padding:0 5px; box-sizing:border-box;"></span>
+    </div>`;
 }
+
+/** 同一品種を上から番号付け（表示は 1, 2, 3…） */
+function refreshCpVarietyOrdinals() {
+    if (!Array.isArray(cpPlans)) return;
+    const counts = {};
+    const indexes = {};
+    cpPlans.forEach(plan => {
+        if (!plan || !plan.id) return;
+        const name = String(plan.variety || '').trim();
+        if (!name) {
+            indexes[plan.id] = { n: 0, total: 0, name: '' };
+            return;
+        }
+        const key = String(plan.crop || '') + '\t' + name;
+        counts[key] = (counts[key] || 0) + 1;
+        indexes[plan.id] = { n: counts[key], total: 0, name: name, key: key };
+    });
+    cpPlans.forEach(plan => {
+        if (!plan || !plan.id) return;
+        const info = indexes[plan.id];
+        if (!info) return;
+        if (info.key) info.total = counts[info.key] || 0;
+        const el = document.getElementById('varietyOrdinal_' + plan.id);
+        if (!el) return;
+        if (!info.name || info.total < 1) {
+            el.textContent = '';
+            el.style.display = 'none';
+            el.title = '';
+            return;
+        }
+        el.style.display = 'inline-block';
+        el.textContent = String(info.n);
+        el.title = info.name + '：上から' + info.n + '番目';
+    });
+    if (typeof assignCpPlanTags === 'function') assignCpPlanTags({ silent: true });
+    if (typeof refreshCpVarietyGroupDividers === 'function') refreshCpVarietyGroupDividers();
+}
+
+/** 同一品種が連続している区間に仕切りを付ける */
+function refreshCpVarietyGroupDividers() {
+    const leftBody = document.getElementById('cpLeftBody');
+    if (!leftBody || !Array.isArray(cpPlans)) return;
+
+    leftBody.querySelectorAll('.cp-var-group-label').forEach(el => el.remove());
+    leftBody.querySelectorAll('.cp-var-group, .cp-var-group-first, .cp-var-group-mid, .cp-var-group-last').forEach(el => {
+        el.classList.remove('cp-var-group', 'cp-var-group-first', 'cp-var-group-mid', 'cp-var-group-last');
+    });
+
+    const wraps = [];
+    cpPlans.forEach(plan => {
+        if (!plan || !plan.id) return;
+        const wrap = document.getElementById('cpLeftCardWrap_' + plan.id);
+        if (!wrap) return;
+        const name = String(plan.variety || '').trim();
+        const key = name ? (String(plan.crop || '') + '\t' + name) : '';
+        wraps.push({ wrap: wrap, name: name, key: key });
+    });
+
+    let i = 0;
+    while (i < wraps.length) {
+        const cur = wraps[i];
+        if (!cur.key) {
+            i += 1;
+            continue;
+        }
+        let j = i;
+        while (j + 1 < wraps.length && wraps[j + 1].key === cur.key) j += 1;
+        if (j > i) {
+            for (let k = i; k <= j; k++) {
+                const w = wraps[k].wrap;
+                w.classList.add('cp-var-group');
+                if (k === i) w.classList.add('cp-var-group-first');
+                else if (k === j) w.classList.add('cp-var-group-last');
+                else w.classList.add('cp-var-group-mid');
+            }
+            const label = document.createElement('div');
+            label.className = 'cp-var-group-label';
+            label.textContent = cur.name;
+            label.title = cur.name + '（' + (j - i + 1) + '枚）';
+            wraps[i].wrap.insertBefore(label, wraps[i].wrap.firstChild);
+        }
+        i = j + 1;
+    }
+    if (typeof syncAllRowHeights === 'function') {
+        setTimeout(() => { syncAllRowHeights(); }, 30);
+    }
+}
+window.refreshCpVarietyOrdinals = refreshCpVarietyOrdinals;
+window.refreshCpVarietyGroupDividers = refreshCpVarietyGroupDividers;
 
 const CP_AREA_CANDIDATES_KEY = 'cpAreaSelectCandidates';
 const CP_TRAYS_CANDIDATES_KEY = 'cpTraysSelectCandidates';
@@ -1987,8 +2079,9 @@ function refreshCpPlanVarietySelect(planId) {
     if (!plan || !sel) return;
     const tmp = document.createElement('div');
     tmp.innerHTML = buildCpVarietySelectHtml(plan);
-    const next = tmp.firstElementChild;
+    const next = tmp.querySelector('select');
     if (next) sel.replaceWith(next);
+    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
 }
 
 function refreshCpPlanVarietySelectsForCrop(crop) {
@@ -2040,6 +2133,7 @@ function applyCpPlanVariety(planId, variety) {
 
     if (typeof refreshCpSeedProcureDisplay === 'function') refreshCpSeedProcureDisplay(planId);
     if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
     if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
 }
 function changeCpPlanVariety(planId, value) {
@@ -2777,6 +2871,7 @@ function renderCultivationPlanTable() {
     // 左パネルをクリア
     const leftBody = document.getElementById('cpLeftBody');
     if (leftBody) leftBody.innerHTML = '';
+    if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
     
     const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
     
@@ -3281,7 +3376,7 @@ function addCpPlanRow(options) {
     const croptypeData = (opts.croptypeData !== undefined) ? opts.croptypeData : pendingCroptypeData;
     const location = getCpVal('cpLocation');
     const crop = getCpVal('cpCrop');
-    const variety = getCpVal('cpVariety');
+    const variety = opts.variety || getCpVal('cpVariety');
     const fieldCondition = getCpVal('cpFieldCondition') || '露地';
     if (!crop || !variety) {
         alert("作物と品種を選択または入力してください。");
@@ -3383,6 +3478,7 @@ function addCpPlanRow(options) {
             if (el) el.open = false;
         }
     }
+    if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
     if (!opts.silentHistory && typeof pushCpEditHistory === 'function') pushCpEditHistory();
     return true;
 }
@@ -3478,6 +3574,114 @@ function syncCropToBlankStarterCards() {
 window.addBlankCpPlanRow = addBlankCpPlanRow;
 window.ensureStarterCpPlanRow = ensureStarterCpPlanRow;
 window.syncCropToBlankStarterCards = syncCropToBlankStarterCards;
+
+/** 初期設定（年度・拠点・作物）が揃っているか */
+function isCpInitialSettingsReady() {
+    const year = getCpVal('cpYear');
+    const location = getCpVal('cpLocation');
+    const crop = getCpVal('cpCrop');
+    return !!(String(year || '').trim() && String(location || '').trim() && String(crop || '').trim());
+}
+
+function closeCpQuickVarietyPopover() {
+    const pop = document.getElementById('cpQuickVarietyPopover');
+    if (pop) pop.remove();
+    document.removeEventListener('mousedown', onCpQuickVarietyPopoverOutside, true);
+}
+
+function onCpQuickVarietyPopoverOutside(e) {
+    const pop = document.getElementById('cpQuickVarietyPopover');
+    const btn = document.getElementById('cpAddVarietyCardBtn');
+    if (pop && !pop.contains(e.target) && btn && !btn.contains(e.target)) {
+        closeCpQuickVarietyPopover();
+    }
+}
+
+function addVarietyCardFromPick(variety) {
+    const v = String(variety || '').trim();
+    if (!v) return;
+    closeCpQuickVarietyPopover();
+    const crop = getCpVal('cpCrop');
+    if (!crop) return;
+    if (typeof setChoiceValue === 'function') setChoiceValue('cpVariety', v, true);
+    else if (typeof setCpVal === 'function') setCpVal('cpVariety', v);
+    if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
+    addCpPlanRow({
+        variety: v,
+        croptypeData: (typeof pendingCroptypeData !== 'undefined' ? pendingCroptypeData : null)
+    });
+}
+
+function openCpQuickVarietyPicker(anchorEl) {
+    const crop = getCpVal('cpCrop');
+    const opts = (typeof getVarietyOptionsForCrop === 'function') ? getVarietyOptionsForCrop(crop) : [];
+    if (!opts.length) {
+        alert('この作物の品種がマスタにありません。初期設定の「3. 品種登録」から追加してください。');
+        if (typeof setCpInitialSettingsOpen === 'function') {
+            setCpInitialSettingsOpen(true, { openStep: 3 });
+        }
+        return;
+    }
+
+    closeCpQuickVarietyPopover();
+    const pop = document.createElement('div');
+    pop.id = 'cpQuickVarietyPopover';
+    pop.style.cssText = 'position:fixed; z-index:12060; background:#fff; border:1px solid #1976D2; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.25); padding:8px; min-width:140px; max-width:220px; max-height:240px; overflow:auto;';
+    pop.innerHTML = '<div style="font-size:11px; font-weight:bold; color:#1565C0; margin-bottom:6px;">品種を選択</div>';
+    opts.forEach(v => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = v;
+        b.style.cssText = 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #bbdefb; background:#e3f2fd; color:#0d47a1; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;';
+        b.onclick = function() { addVarietyCardFromPick(v); };
+        pop.appendChild(b);
+    });
+    document.body.appendChild(pop);
+    const rect = (anchorEl && anchorEl.getBoundingClientRect) ? anchorEl.getBoundingClientRect() : { left: 20, bottom: 80, right: 160 };
+    let left = rect.left;
+    let top = rect.bottom + 4;
+    const pw = pop.offsetWidth || 180;
+    const ph = pop.offsetHeight || 200;
+    if (left + pw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - pw - 8);
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, rect.top - ph - 4);
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+    document.addEventListener('mousedown', onCpQuickVarietyPopoverOutside, true);
+}
+
+function onCpAddVarietyCardClick() {
+    closeCpQuickVarietyPopover();
+    if (!isCpInitialSettingsReady()) {
+        if (typeof setCpInitialSettingsOpen === 'function') {
+            setCpInitialSettingsOpen(true, { openStep: 1, openDefaultStep: true });
+        }
+        return;
+    }
+    openCpQuickVarietyPicker(document.getElementById('cpAddVarietyCardBtn'));
+}
+
+/** 左パネル最下部に、カード相当サイズの＋を常時表示 */
+function ensureCpAddVarietyBtn() {
+    const leftBody = document.getElementById('cpLeftBody');
+    if (!leftBody) return;
+    let btn = document.getElementById('cpAddVarietyCardBtn');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'cpAddVarietyCardBtn';
+        btn.type = 'button';
+        btn.title = '品種カードを追加';
+        btn.setAttribute('aria-label', '品種カードを追加');
+        btn.innerHTML = '<span style="font-size:28px; line-height:1; font-weight:bold;">＋</span>' +
+            '<span style="font-size:11px; font-weight:bold; margin-top:4px;">品種を追加</span>';
+        btn.style.cssText = 'display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; min-height:78px; margin:4px 0 8px; padding:8px 4px; box-sizing:border-box; background:#fff; color:#1565C0; border:2px dashed #1976D2; border-radius:6px; cursor:pointer;';
+        btn.onclick = onCpAddVarietyCardClick;
+    }
+    leftBody.appendChild(btn);
+}
+window.ensureCpAddVarietyBtn = ensureCpAddVarietyBtn;
+window.onCpAddVarietyCardClick = onCpAddVarietyCardClick;
+window.addVarietyCardFromPick = addVarietyCardFromPick;
+window.isCpInitialSettingsReady = isCpInitialSettingsReady;
 
 function renderCpPlanRow(plan, options) {
     const opts = options || {};
@@ -3627,6 +3831,8 @@ function renderCpPlanRow(plan, options) {
         if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint();
         setTimeout(() => { syncAllRowHeights(); }, 50);
     }
+    if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
+    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
 }
 
 /** 品種カードの詳細（圃場・歩留など）を開閉 */
@@ -3662,6 +3868,8 @@ function removeCpPlanRow(planId) {
     updateCpSemiAutoHint();
     if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
     if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
+    if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
+    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
 }
 
 /** 品種カードの設定（面積・歩留・成功率など）をコピーして直下に追加（作型カレンダーは空） */
@@ -3741,6 +3949,8 @@ function copyCpPlanRow(sourcePlanId) {
         setTimeout(() => { highlightEl.style.outline = ''; }, 1200);
     }
     if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
+    if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
+    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
 }
 
 window.copyCpPlanRow = copyCpPlanRow;
@@ -3775,6 +3985,52 @@ function getCpPlanEarliestTaskCol(planId, taskType) {
     return min2 === Infinity ? 9999 : min2;
 }
 
+/**
+ * タグ番号は表示順ではなく、定植早い順→収穫早い順（安定ソート）の結果で振る。
+ */
+function assignCpPlanTags(options) {
+    if (!Array.isArray(cpPlans) || !cpPlans.length) return;
+    const groups = {};
+    const defaultType = (typeof getCpPlanType === 'function' ? getCpPlanType() : '') || '本作';
+    const defaultLocation = (typeof getCpVal === 'function' ? getCpVal('cpLocation') : '') || '';
+    cpPlans.forEach((plan, idx) => {
+        if (!plan) return;
+        const location = String(plan.location || defaultLocation || '').trim();
+        const crop = plan.crop || '';
+        const planType = plan.planType || defaultType;
+        const key = location + '\t' + crop + '\t' + planType;
+        if (!groups[key]) groups[key] = { location: location, crop: crop, items: [] };
+        groups[key].items.push({
+            plan: plan,
+            earliestPlanting: getCpPlanEarliestTaskCol(plan.id, 'planting'),
+            earliestHarvesting: getCpPlanEarliestTaskCol(plan.id, 'harvesting'),
+            idx: idx
+        });
+    });
+
+    Object.keys(groups).forEach(key => {
+        const group = groups[key];
+        group.items.sort((a, b) => (a.earliestPlanting - b.earliestPlanting) || (a.idx - b.idx));
+        group.items.forEach((item, i) => { item.idx = i; });
+        group.items.sort((a, b) => (a.earliestHarvesting - b.earliestHarvesting) || (a.idx - b.idx));
+
+        const detail = typeof getLocationDetailByName === 'function'
+            ? getLocationDetailByName(group.location)
+            : null;
+        const locationCode = group.location
+            ? String((detail && detail.tagAbbreviation) || group.location)
+            : '';
+        const prefix = locationCode ? (locationCode + '-' + group.crop) : group.crop;
+        group.items.forEach((item, index) => {
+            item.plan.tag = prefix + (index + 1);
+            const tagDisplay = document.getElementById('tagDisplay_' + item.plan.id);
+            if (tagDisplay) tagDisplay.innerText = item.plan.tag;
+        });
+    });
+}
+window.assignCpPlanTags = assignCpPlanTags;
+window.assignTags = assignCpPlanTags;
+
 /** cpPlans の順に左カード・右行を並べ直す */
 function applyCpPlanOrderToDom() {
     const leftBody = document.getElementById('cpLeftBody');
@@ -3789,6 +4045,8 @@ function applyCpPlanOrderToDom() {
         else if (wrap) leftBody.appendChild(wrap);
         if (tr) tbody.appendChild(tr);
     });
+    if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
+    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
     setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 40);
 }
 
@@ -3843,21 +4101,7 @@ function sortCpPlansByTask(taskType, options) {
 
     if (!opts.silent) {
         const label = type === 'planting' ? '定植' : (type === 'harvesting' ? '収穫' : (type === 'sowing' ? '播種' : type));
-        const statusEl = document.getElementById('cpDraftStatus');
-        if (statusEl) {
-            const prev = statusEl.textContent;
-            statusEl.textContent = `✓ ${label}の早い順に並べ替えました`;
-            statusEl.style.color = '#2e7d32';
-            statusEl.style.fontWeight = 'bold';
-            setTimeout(() => {
-                if (typeof updateCpDraftStatusUI === 'function') updateCpDraftStatusUI();
-                else {
-                    statusEl.textContent = prev;
-                    statusEl.style.color = '';
-                    statusEl.style.fontWeight = '';
-                }
-            }, 1800);
-        }
+        flashCpPlanSortStatus(`✓ ${label}の早い順に並べ替えました`);
     }
     return true;
 }
@@ -3866,10 +4110,80 @@ function sortCpPlansByPlanting() { return sortCpPlansByTask('planting'); }
 function sortCpPlansByHarvesting() { return sortCpPlansByTask('harvesting'); }
 function sortCpPlansBySowing() { return sortCpPlansByTask('sowing'); }
 
+function flashCpPlanSortStatus(message) {
+    const statusEl = document.getElementById('cpDraftStatus');
+    if (!statusEl) return;
+    const prev = statusEl.textContent;
+    statusEl.textContent = message;
+    statusEl.style.color = '#2e7d32';
+    statusEl.style.fontWeight = 'bold';
+    setTimeout(() => {
+        if (typeof updateCpDraftStatusUI === 'function') updateCpDraftStatusUI();
+        else {
+            statusEl.textContent = prev;
+            statusEl.style.color = '';
+            statusEl.style.fontWeight = '';
+        }
+    }, 1800);
+}
+
+/** 今の並びを保ったまま、同一品種を連続してまとめる */
+function groupCpPlansByVariety(options) {
+    const opts = options || {};
+    if (!Array.isArray(cpPlans) || cpPlans.length < 2) {
+        if (!opts.silent) {
+            if (typeof customAlert === 'function') customAlert('まとめる品種が2件以上必要です。');
+            else alert('まとめる品種が2件以上必要です。');
+        }
+        return false;
+    }
+
+    if (typeof collectCurrentCpPlansFromDom === 'function') {
+        try {
+            const synced = collectCurrentCpPlansFromDom();
+            if (Array.isArray(synced) && synced.length) cpPlans = synced;
+        } catch (e) {}
+    }
+
+    const before = cpPlans.map(p => p.id).join(',');
+    const groups = [];
+    const map = new Map();
+    cpPlans.forEach(plan => {
+        if (!plan) return;
+        const name = String(plan.variety || '').trim();
+        const key = name
+            ? (String(plan.crop || '') + '\t' + name)
+            : ('__empty__' + String(plan.id));
+        if (!map.has(key)) {
+            const g = [];
+            map.set(key, g);
+            groups.push(g);
+        }
+        map.get(key).push(plan);
+    });
+    cpPlans = groups.reduce((acc, g) => acc.concat(g), []);
+    const after = cpPlans.map(p => p.id).join(',');
+    applyCpPlanOrderToDom();
+
+    cpPlans.forEach((plan, i) => {
+        const el = document.getElementById('cpLeftCardWrap_' + plan.id)
+            || document.getElementById('cpLeftCard_' + plan.id);
+        if (!el) return;
+        el.style.outline = '2px solid #42A5F5';
+        setTimeout(() => { el.style.outline = ''; }, 700 + i * 30);
+    });
+
+    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    if (before !== after && typeof pushCpEditHistory === 'function') pushCpEditHistory();
+    if (!opts.silent) flashCpPlanSortStatus('✓ 同一品種をまとめて表示しました');
+    return true;
+}
+
 window.sortCpPlansByTask = sortCpPlansByTask;
 window.sortCpPlansByPlanting = sortCpPlansByPlanting;
 window.sortCpPlansByHarvesting = sortCpPlansByHarvesting;
 window.sortCpPlansBySowing = sortCpPlansBySowing;
+window.groupCpPlansByVariety = groupCpPlansByVariety;
 window.applyCpPlanOrderToDom = applyCpPlanOrderToDom;
 
 
@@ -4428,6 +4742,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
     
     // 一括読込中は各行ごとの全体再計算を避け、最後に1回だけ実行する。
     if (!window.cpBulkPlanLoadInProgress) {
+        if (typeof assignCpPlanTags === 'function') assignCpPlanTags();
         setTimeout(() => { syncAllRowHeights(); }, 50);
         if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
     }
@@ -5915,6 +6230,8 @@ function applyCpEditorSnapshot(snap) {
 
         if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
         if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') scheduleRefreshCpWorkSchedulePanel();
+        if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
+        if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
         setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
     } finally {
         cpEditHistoryNavigating = false;
@@ -6400,6 +6717,10 @@ function openCultivationPlanModal(options) {
     const leftBody = document.getElementById('cpLeftBody');
     if (leftBody) leftBody.innerHTML = '';
     cpPlans = [];
+    if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
+    if (typeof setCpInitialSettingsOpen === 'function') {
+        setCpInitialSettingsOpen(true, { openDefaultStep: true });
+    }
     cpSemiAutoSteps = {};
     cpSemiAutoLastPaint = {};
     cpSemiAutoActivePlanId = null;
@@ -6864,15 +7185,7 @@ function initCpStepsAccordion() {
         // inline onclick を外して二重発火を防ぐ
         tab.removeAttribute('onclick');
     }
-    // 初期表示: 格納状態に同期（タイトル横の「初期設定」にまとめる）
-    const row = document.getElementById('cpStepsRow');
-    if (row && row.classList.contains('is-collapsed')) {
-        setCpInitialSettingsOpen(false, { keepPanels: true });
-        openCpStep(0, { skipExpand: true });
-    } else {
-        const s1 = document.getElementById('cpStep1');
-        if (s1 && s1.classList.contains('is-open')) openCpStep(1);
-    }
+    // 初期表示は openCultivationPlanModal 側で制御する
 }
 
 if (document.readyState === 'loading') {
@@ -8679,6 +8992,8 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
             cpLoadedPlanKey = buildCpPlanSaveKey(year, crop, resolvedName);
             updateCpSaveButtonLabel();
             await waitForCpPlanLayoutReady();
+            if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
+            if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
             window.cpBulkPlanLoadInProgress = false;
             finishCpLoadProgress(true, `${plans.length}件の計画（${resolvedName}）を読み込みました`);
         } else {

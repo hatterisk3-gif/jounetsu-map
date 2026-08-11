@@ -2493,64 +2493,7 @@ window.updateFieldAllocations = function() {
 };
 
 window.assignTags = function() {
-    // 拠点＋作物ごとにグループ化
-    let groups = {};
-    cpPlans.forEach(plan => {
-        // 現在のDOMから最新のtasksを取得してソートに使う
-        updateCpCellsText(plan.id); // ensures plan.tasks is up to date theoretically, but tasks are populated on toggle.
-        // wait, we need to gather tasks from DOM directly to be safe, just like saveCultivationPlan does
-        const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
-        let plantingTaskIndices = [];
-        let harvestingTaskIndices = [];
-        if (tr) {
-            tr.querySelectorAll('td[data-task="planting"]').forEach(cell => {
-                const mIdx = parseInt(cell.dataset.monthIndex, 10);
-                const pIdx = parseInt(cell.dataset.period, 10);
-                plantingTaskIndices.push(mIdx * 6 + pIdx);
-            });
-            tr.querySelectorAll('td[data-task="harvesting"]').forEach(cell => {
-                const mIdx = parseInt(cell.dataset.monthIndex, 10);
-                const pIdx = parseInt(cell.dataset.period, 10);
-                harvestingTaskIndices.push(mIdx * 6 + pIdx);
-            });
-        }
-        
-        // 最も早い定植時期を探す。無ければ非常に大きい値にする
-        let earliestPlanting = plantingTaskIndices.length > 0 ? Math.min(...plantingTaskIndices) : 9999;
-        let earliestHarvesting = harvestingTaskIndices.length > 0 ? Math.min(...harvestingTaskIndices) : 9999;
-        
-        const location = String(plan.location || '').trim();
-        const key = location + '\t' + plan.crop;
-        if (!groups[key]) groups[key] = { location: location, crop: plan.crop, items: [] };
-        groups[key].items.push({
-            plan: plan,
-            earliestPlanting: earliestPlanting,
-            earliestHarvesting: earliestHarvesting
-        });
-    });
-    
-    // ソートしてタグ割り当て
-    Object.keys(groups).forEach(key => {
-        const group = groups[key];
-        group.items.sort((a, b) =>
-            (a.earliestPlanting - b.earliestPlanting) ||
-            (a.earliestHarvesting - b.earliestHarvesting)
-        );
-        const detail = typeof getLocationDetailByName === 'function'
-            ? getLocationDetailByName(group.location)
-            : null;
-        const locationCode = group.location
-            ? String((detail && detail.tagAbbreviation) || group.location)
-            : '';
-        const prefix = locationCode ? `${locationCode}-${group.crop}` : group.crop;
-        group.items.forEach((item, index) => {
-            item.plan.tag = `${prefix}${index + 1}`;
-            const tagDisplay = document.getElementById('tagDisplay_' + item.plan.id);
-            if (tagDisplay) {
-                tagDisplay.innerText = item.plan.tag;
-            }
-        });
-    });
+    if (typeof assignCpPlanTags === 'function') assignCpPlanTags();
 };
 
 // =============================================

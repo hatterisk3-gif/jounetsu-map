@@ -8245,8 +8245,8 @@ function resolveCpFieldDisplayName_(fieldId) {
 }
 
 /**
- * 定植の最も早い半旬順、同じ場合は収穫の最も早い半旬順に、
- * 拠点＋作物＋本作/試作ごとへタグを割り当て。
+ * 定植の早い順に並べ、その順を保ったまま収穫の早い順へ並べ替えた結果で、
+ * 拠点＋作物＋本作/試作ごとへタグを割り当て（画面上の並びは使わない）。
  * 番号は「年度 × 拠点略称 × 作物略称 × 本/試」で全体ユニーク
  * （本作・本作2など計画名をまたいで空き番を使う）。
  * 例: 徳阿-キャ本1, 徳阿-キャ本2（本作）のあと本作2は 徳阿-キャ本3…
@@ -8339,15 +8339,20 @@ function assignCultivationPlanTags_(plans, options) {
     groups[groupKey].items.push({
       plan: plan,
       earliestPlanting: earliestPlanting,
-      earliestHarvesting: earliestHarvesting
+      earliestHarvesting: earliestHarvesting,
+      idx: groups[groupKey].items.length
     });
   });
 
   Object.keys(groups).forEach(groupKey => {
     const group = groups[groupKey];
+    // 定植早い順 → その順を保ったまま収穫早い順（＝収穫優先、同時期は定植順）
     group.items.sort((a, b) =>
-      (a.earliestPlanting - b.earliestPlanting) ||
-      (a.earliestHarvesting - b.earliestHarvesting)
+      (a.earliestPlanting - b.earliestPlanting) || (a.idx - b.idx)
+    );
+    group.items.forEach((item, i) => { item.idx = i; });
+    group.items.sort((a, b) =>
+      (a.earliestHarvesting - b.earliestHarvesting) || (a.idx - b.idx)
     );
     const locationCode = group.location
       ? (locationCodeMap[group.location] || group.location)
@@ -8660,6 +8665,11 @@ function previewCultivationPlanTags(params) {
     }
 
     assignCultivationPlanTags_(plans, { year: year });
+    const tagOrder = function(tag) {
+      const m = String(tag || '').match(/(\d+)$/);
+      return m ? parseInt(m[1], 10) : 9999;
+    };
+    targets.sort((a, b) => tagOrder(a.tag) - tagOrder(b.tag) || String(a.tag || '').localeCompare(String(b.tag || ''), 'ja'));
     return {
       success: true,
       year: year,
@@ -8709,7 +8719,7 @@ function executeCultivationPlans(params) {
       return { success: false, message: '実行対象の未実行計画がありません（既に実行済みの可能性があります）' };
     }
 
-    // 実行時に定植の早い順でタグを自動割り当て（年度内で全体ユニーク）
+    // 実行時に定植早い順→収穫早い順の結果でタグを自動割り当て（年度内で全体ユニーク）
     assignCultivationPlanTags_(plans, { year: year });
 
     const executedAt = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
@@ -8743,7 +8753,7 @@ function executeCultivationPlans(params) {
     SpreadsheetApp.flush();
     return {
       success: true,
-      message: created + '件の播種を作業予定に登録しました（タグは定植順に自動割り当て）',
+      message: created + '件の播種を作業予定に登録しました（タグは定植→収穫の早い順で自動割り当て）',
       created: created,
       executed: targets.length
     };

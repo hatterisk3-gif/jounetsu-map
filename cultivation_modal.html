@@ -26,7 +26,7 @@
         </div>
         
         <!-- ステップ1〜3: 「初期設定」で展開／格納。タブ＋下にパネル -->
-        <div id="cpStepsRow" class="cp-steps is-collapsed">
+        <div id="cpStepsRow" class="cp-steps">
           <div class="cp-step-tabs" role="tablist" aria-label="栽培計画の設定ステップ">
             <button type="button" role="tab" id="cpStepTab1" class="cp-step-tab cp-step-tab--1" aria-selected="false" aria-controls="cpStep1" data-step="1" onclick="openCpStep(1)">
               <span class="cp-step-tab-title">1. 基本設定</span>
@@ -406,6 +406,7 @@
           <span style="width:1px; height:18px; background:#ccc; margin:0 2px; flex-shrink:0;"></span>
           <button type="button" onclick="sortCpPlansByPlanting()" title="定植セルが最も早い品種を上に並べ替えます" style="font-size: 11px; padding: 2px 10px; border: 1px solid #81C784; background: #E8F5E9; color: #2E7D32; border-radius: 4px; cursor: pointer; font-weight: bold;">🌱 定植早い順</button>
           <button type="button" onclick="sortCpPlansByHarvesting()" title="収穫セルが最も早い品種を上に並べ替えます" style="font-size: 11px; padding: 2px 10px; border: 1px solid #FFB74D; background: #FFF3E0; color: #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🍊 収穫早い順</button>
+          <button type="button" onclick="groupCpPlansByVariety()" title="今の並びを保ったまま、同一品種を連続してまとめます（定植早い順・収穫早い順のあとに押す想定）" style="font-size: 11px; padding: 2px 10px; border: 1px solid #90CAF9; background: #E3F2FD; color: #1565C0; border-radius: 4px; cursor: pointer; font-weight: bold;">📦 品種でまとめる</button>
         </div>
         
         <div id="cpTwoColContainer" style="flex: 1 1 120px; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 0;">
@@ -414,6 +415,36 @@
               #cpLeftBody input[type=number]::-webkit-outer-spin-button,
               #cpLeftBody input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
               #cpLeftBody input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+              #cpLeftBody .cp-var-group {
+                box-sizing: border-box;
+                background: #BBDEFB;
+                box-shadow: inset 4px 0 0 #1565C0;
+              }
+              #cpLeftBody .cp-var-group-first {
+                border-top: 2px solid #0D47A1;
+                border-radius: 6px 6px 0 0;
+              }
+              #cpLeftBody .cp-var-group-last {
+                border-bottom: 3px solid #0D47A1;
+                border-radius: 0 0 6px 6px;
+              }
+              #cpLeftBody .cp-var-group-first.cp-var-group-last {
+                border-radius: 6px;
+              }
+              #cpLeftBody .cp-var-group-label {
+                flex-shrink: 0;
+                height: 16px;
+                line-height: 16px;
+                padding: 0 6px 0 8px;
+                font-size: 10px;
+                font-weight: bold;
+                color: #fff;
+                background: #1565C0;
+                letter-spacing: 0.02em;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+              }
             </style>
             <div id="cpLeftHeader" style="height: 0px; position: sticky; top: 0; z-index: 5; background: #f5f5f5; flex-shrink: 0;"></div>
             <div id="cpLeftBody"></div>
