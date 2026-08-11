@@ -14,14 +14,14 @@
     .header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .user-pill { background: rgba(255,255,255,.18); padding: 4px 10px; border-radius: 14px; font-size: 12px; font-weight: 700; }
     .back { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.55); border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
-    main { width: min(860px, 100%); margin: 0 auto; padding: 14px 12px 48px; }
+    main { width: min(860px, 100%); margin: 0 auto; padding: 14px 12px 88px; }
     .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
     .tab { border: 1px solid #d1c4e9; background: #fff; color: #5e35b1; border-radius: 10px; padding: 12px 8px; font-weight: 800; cursor: pointer; }
     .tab.active { background: #5e35b1; color: #fff; border-color: #4527a0; }
     .tab .n { display: inline-block; min-width: 18px; margin-left: 4px; background: rgba(0,0,0,.12); border-radius: 10px; padding: 0 6px; font-size: 11px; }
     .tab.active .n { background: rgba(255,255,255,.22); }
-    .card-form { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 14px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
-    .form-title { font-weight: 800; color: #4527a0; margin-bottom: 10px; }
+    .card-form { background: #fff; }
+    .form-title { font-weight: 800; color: #4527a0; margin: 0; }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     label { display: block; font-size: 12px; font-weight: 700; color: #546e7a; margin-bottom: 4px; }
     input, select, textarea, button { font: inherit; }
@@ -62,10 +62,19 @@
     .modal h3 { margin: 0 0 8px; color: #4527a0; }
     .hist, .memo { border: 1px solid #eee; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; background: #fafafa; }
     .hist b, .memo b { color: #5e35b1; }
+    .fab {
+      position: fixed; right: 18px; bottom: 22px; z-index: 40;
+      width: 58px; height: 58px; border: 0; border-radius: 50%;
+      background: #5e35b1; color: #fff; font-size: 32px; font-weight: 700; line-height: 1;
+      box-shadow: 0 6px 18px rgba(69, 39, 160, .45); cursor: pointer;
+    }
+    .fab:active { transform: scale(.96); }
+    .form-modal-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
     @media (max-width: 640px) {
       .grid2 { grid-template-columns: 1fr; }
       .tab { font-size: 12px; padding: 10px 4px; }
       header h1 { font-size: 16px; }
+      .fab { right: 14px; bottom: 16px; width: 54px; height: 54px; }
     }
   </style>
 </head>
@@ -84,8 +93,17 @@
       <button type="button" class="tab" id="tab_running" onclick="ideaSwitchTab('running')">🚀 運用中 <span class="n" id="cnt_running">0</span></button>
     </div>
 
-    <div class="card-form">
-      <div class="form-title">＋ アイデアを登録</div>
+    <div id="ideaList"></div>
+  </main>
+
+  <button type="button" class="fab" onclick="ideaOpenRegister()" aria-label="アイデアを登録">＋</button>
+
+  <div class="overlay" id="ideaRegisterOverlay" onclick="if(event.target===this) ideaCloseRegister()">
+    <div class="modal card-form" onclick="event.stopPropagation()">
+      <div class="form-modal-head">
+        <div class="form-title">＋ アイデアを登録</div>
+        <button type="button" class="btn btn-sub" onclick="ideaCloseRegister()">閉じる</button>
+      </div>
       <div class="grid2">
         <div>
           <label>アカウント名</label>
@@ -118,14 +136,12 @@
       <button type="button" class="btn btn-primary" onclick="ideaSubmit()">💡 アイデアを登録</button>
       <div class="status" id="ideaFormStatus"></div>
     </div>
-
-    <div id="ideaList"></div>
-  </main>
+  </div>
 
   <div class="overlay" id="ideaOverlay" onclick="if(event.target===this) ideaCloseDetail()">
     <div class="modal" id="ideaModal"></div>
   </div>
 
-  <script src="アイデア.js?v=1786458600000"></script>
+  <script src="アイデア.js?v=1786458700000"></script>
 </body>
 </html>

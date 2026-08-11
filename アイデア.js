@@ -108,6 +108,21 @@ window.ideaSwitchTab = (tab) => {
   ideaRenderList();
 };
 
+window.ideaOpenRegister = () => {
+  const overlay = document.getElementById('ideaRegisterOverlay');
+  if (!overlay) return;
+  ideaFillFormMeta();
+  ideaRenderCategories();
+  if (!ideaUser()) ideaSetFormStatus('ポータルからログインすると、全員で共有できます', true);
+  else ideaSetFormStatus('');
+  overlay.classList.add('show');
+};
+
+window.ideaCloseRegister = () => {
+  const overlay = document.getElementById('ideaRegisterOverlay');
+  if (overlay) overlay.classList.remove('show');
+};
+
 window.ideaAddCategory = async () => {
   const input = document.getElementById('ideaCategoryNew');
   const name = String((input && input.value) || '').trim();
@@ -178,7 +193,10 @@ window.ideaSubmit = async () => {
   if (ta) ta.value = '';
   const issueEl = document.getElementById('ideaIssue');
   if (issueEl) issueEl.value = '';
+  const catNew = document.getElementById('ideaCategoryNew');
+  if (catNew) catNew.value = '';
   ideaSetFormStatus('登録しました。アイデアタブに入ります。');
+  ideaCloseRegister();
   ideaSwitchTab('idea');
 };
 
