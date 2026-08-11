@@ -2513,6 +2513,60 @@ async function renameCultivationPresetUI() {
 
 let cpCurrentCalc = { trays: 0, yield: 0 };
 
+/**
+ * 上部の栽培パラメーター（穴数・条数・株間・畝間・収量）を
+ * 既存の品種カードへ反映し、面積モードなら枚数を再計算する。
+ */
+function syncCpParamsToExistingPlans(options) {
+    const opts = options || {};
+    if (window.cpBulkPlanLoadInProgress || cpEditHistoryNavigating) return false;
+    if (!Array.isArray(cpPlans) || cpPlans.length === 0) return false;
+
+    const holes = getCpVal('cpTrayHoles', true);
+    const rows = getCpVal('cpRows', true);
+    const pSpace = getCpVal('cpPlantSpacing', true);
+    const rSpace = getCpVal('cpRidgeSpacing', true);
+    const yieldPerPlant = getCpVal('cpYieldPerPlant', true);
+    const itemsPerPack = getCpVal('cpItemsPerPack', true);
+
+    let changed = false;
+    cpPlans.forEach(plan => {
+        if (!plan) return;
+        const before = [
+            plan.holes, plan.rows, plan.pSpace, plan.rSpace,
+            plan.yieldPerPlant, plan.itemsPerPack, plan.trays, plan.areaA, plan.yield
+        ].join('|');
+
+        if (holes != null && holes !== '') plan.holes = holes;
+        if (rows != null && rows !== '') plan.rows = rows;
+        if (pSpace != null && pSpace !== '') plan.pSpace = pSpace;
+        if (rSpace != null && rSpace !== '') plan.rSpace = rSpace;
+        if (yieldPerPlant != null && yieldPerPlant !== '') plan.yieldPerPlant = yieldPerPlant;
+        if (itemsPerPack != null && itemsPerPack !== '') plan.itemsPerPack = itemsPerPack;
+
+        if (typeof window.updateRowCalculations === 'function') {
+            window.updateRowCalculations(plan.id);
+        } else if (typeof updateRowCalculations === 'function') {
+            updateRowCalculations(plan.id);
+        }
+
+        const after = [
+            plan.holes, plan.rows, plan.pSpace, plan.rSpace,
+            plan.yieldPerPlant, plan.itemsPerPack, plan.trays, plan.areaA, plan.yield
+        ].join('|');
+        if (before !== after) changed = true;
+    });
+
+    if (changed && !opts.silent && typeof window.pushCpEditHistoryDebounced === 'function') {
+        window.pushCpEditHistoryDebounced(400);
+    }
+    if (changed && typeof refreshCpHarvestChart === 'function') {
+        refreshCpHarvestChart();
+    }
+    return changed;
+}
+window.syncCpParamsToExistingPlans = syncCpParamsToExistingPlans;
+
 function calcCp() {
     const areaA = getCpVal('cpArea', true) || 0;
     const holes = getCpVal('cpTrayHoles', true) || 128;
@@ -2542,6 +2596,8 @@ function calcCp() {
         if(traysEl) traysEl.innerText = '0';
         if(yieldEl) yieldEl.innerText = '0';
     }
+    // 既存カードへパラメーターを同期（面積モードなら枚数も再計算）
+    syncCpParamsToExistingPlans();
     updateCpCellsText();
 }
 
