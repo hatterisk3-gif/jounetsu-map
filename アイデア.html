@@ -28,8 +28,12 @@
     input, select, textarea { width: 100%; padding: 9px 10px; border: 1px solid #cfd8dc; border-radius: 8px; background: #fff; }
     input[readonly] { background: #f5f5f5; color: #546e7a; }
     textarea { min-height: 88px; resize: vertical; }
-    .cat-row { display: flex; gap: 6px; }
-    .cat-row input { flex: 1; }
+    .cat-row { display: flex; gap: 8px; align-items: stretch; }
+    .cat-row input { flex: 1; min-height: 48px; font-size: 16px; padding: 12px 14px; }
+    .cat-row .btn-sub { padding: 12px 16px; font-size: 14px; }
+    #ideaCategory { min-height: 44px; font-size: 15px; }
+    #ideaIssue { min-height: 72px; }
+    .issue-tag { display: inline-block; margin-top: 8px; background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; line-height: 1.45; white-space: pre-wrap; }
     .btn { border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 800; cursor: pointer; }
     .btn-primary { background: #5e35b1; color: #fff; width: 100%; margin-top: 10px; padding: 12px; }
     .btn-sub { background: #ede7f6; color: #4527a0; white-space: nowrap; }
@@ -94,11 +98,18 @@
       </div>
       <div style="margin-top:10px;">
         <label>カテゴリ</label>
+        <select id="ideaCategory"></select>
+      </div>
+      <div style="margin-top:10px;">
+        <label>カテゴリを手動追加</label>
         <div class="cat-row">
-          <select id="ideaCategory"></select>
-          <input id="ideaCategoryNew" placeholder="新規カテゴリ">
+          <input id="ideaCategoryNew" placeholder="新しいカテゴリ名を入力">
           <button type="button" class="btn btn-sub" onclick="ideaAddCategory()">＋ 追加</button>
         </div>
+      </div>
+      <div style="margin-top:10px;">
+        <label>課題</label>
+        <textarea id="ideaIssue" placeholder="解決したい課題・困っていることを書いてください"></textarea>
       </div>
       <div style="margin-top:10px;">
         <label>内容</label>
@@ -115,6 +126,6 @@
     <div class="modal" id="ideaModal"></div>
   </div>
 
-  <script src="アイデア.js?v=1786458100000"></script>
+  <script src="アイデア.js?v=1786458600000"></script>
 </body>
 </html>

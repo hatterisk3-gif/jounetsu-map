@@ -12787,11 +12787,18 @@ function ideaBoard_defaultCategories_() {
 
 function ideaBoard_ensureSheets_() {
   const ss = TENANT_SS;
+  const headers = ['ID', '登録者', '登録日', 'カテゴリ', '内容', 'ステータス', '廃案理由', 'メモJSON', '履歴JSON', '更新者', '更新日時', '課題'];
   let board = ss.getSheetByName('アイデアボード');
   if (!board) {
     board = ss.insertSheet('アイデアボード');
-    board.getRange(1, 1, 1, 11).setValues([['ID', '登録者', '登録日', 'カテゴリ', '内容', 'ステータス', '廃案理由', 'メモJSON', '履歴JSON', '更新者', '更新日時']]);
-    try { board.getRange(1, 1, 1, 11).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    board.getRange(1, 1, 1, headers.length).setValues([headers]);
+    try { board.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+  } else {
+    const lastCol = Math.max(board.getLastColumn(), 1);
+    const existing = board.getRange(1, 1, 1, Math.max(lastCol, headers.length)).getValues()[0];
+    for (let i = 0; i < headers.length; i++) {
+      if (String(existing[i] || '') !== headers[i]) board.getRange(1, i + 1).setValue(headers[i]);
+    }
   }
   let cats = ss.getSheetByName('アイデアカテゴリ');
   if (!cats) {
@@ -12838,7 +12845,8 @@ function ideaBoard_rowToItem_(row) {
     updatedBy: String(row[9] || ''),
     updatedAt: row[10] instanceof Date
       ? Utilities.formatDate(row[10], 'JST', 'yyyy/MM/dd HH:mm')
-      : String(row[10] || '')
+      : String(row[10] || ''),
+    issue: String(row[11] || '')
   };
 }
 
@@ -12880,6 +12888,7 @@ function ideaBoard_save(params) {
   if (!category) return { success: false, message: 'カテゴリを選択してください' };
   const author = String((params && params.author) || user).trim();
   const dateYmd = String((params && params.date) || '').trim() || Utilities.formatDate(now, 'JST', 'yyyy-MM-dd');
+  const issue = String((params && params.issue) || '').trim();
   const id = 'IDEA_' + now.getTime() + '_' + Math.random().toString(36).slice(2, 6);
   const history = [{
     at: Utilities.formatDate(now, 'JST', 'yyyy/MM/dd HH:mm'),
@@ -12890,10 +12899,10 @@ function ideaBoard_save(params) {
   }];
   sheets.board.appendRow([
     id, author, dateYmd, category, content, 'idea', '',
-    JSON.stringify([]), JSON.stringify(history), author, now
+    JSON.stringify([]), JSON.stringify(history), author, now, issue
   ]);
   writeLog(author, 'アイデア登録', category, content.slice(0, 80));
-  return { success: true, item: ideaBoard_rowToItem_(sheets.board.getRange(sheets.board.getLastRow(), 1, 1, 11).getValues()[0]) };
+  return { success: true, item: ideaBoard_rowToItem_(sheets.board.getRange(sheets.board.getLastRow(), 1, 1, 12).getValues()[0]) };
 }
 
 function ideaBoard_findRow_(sheet, id) {

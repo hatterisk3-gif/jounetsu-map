@@ -129,6 +129,7 @@ window.ideaSubmit = async () => {
   const user = ideaUser();
   if (!user) return ideaSetFormStatus('ログインしてから登録してください', true);
   const content = String(document.getElementById('ideaContent')?.value || '').trim();
+  const issue = String(document.getElementById('ideaIssue')?.value || '').trim();
   const category = String(document.getElementById('ideaCategory')?.value || '').trim();
   const date = String(document.getElementById('ideaDate')?.value || ideaTodayYmd());
   if (!category) return ideaSetFormStatus('カテゴリを選択してください', true);
@@ -140,6 +141,7 @@ window.ideaSubmit = async () => {
       author: user,
       date: date,
       category: category,
+      issue: issue,
       content: content
     });
     if (res && res.success === false) return ideaSetFormStatus(res.message || '登録できませんでした', true);
@@ -150,6 +152,7 @@ window.ideaSubmit = async () => {
         author: user,
         date: date,
         category: category,
+        issue: issue,
         content: content,
         status: 'idea',
         rejectReason: '',
@@ -163,6 +166,7 @@ window.ideaSubmit = async () => {
       author: user,
       date: date,
       category: category,
+      issue: issue,
       content: content,
       status: 'idea',
       rejectReason: '',
@@ -172,6 +176,8 @@ window.ideaSubmit = async () => {
   }
   const ta = document.getElementById('ideaContent');
   if (ta) ta.value = '';
+  const issueEl = document.getElementById('ideaIssue');
+  if (issueEl) issueEl.value = '';
   ideaSetFormStatus('登録しました。アイデアタブに入ります。');
   ideaSwitchTab('idea');
 };
@@ -251,6 +257,7 @@ function ideaCardHtml(item, tab) {
       </div>
       <div class="meta">${ideaEsc(item.author || '')}　${ideaEsc(item.date || '')}</div>
       <div class="meta" style="margin-top:6px; color:#4527a0; font-weight:700;">📅 ${ideaEsc(ideaMoveHistoryLine(item))}</div>
+      ${item.issue ? `<div class="issue-tag">🎯 課題：${ideaEsc(item.issue)}</div>` : ''}
       <div class="body">${ideaEsc(item.content || '')}</div>
       <div class="progress" onclick="event.stopPropagation()">
         <div>
@@ -335,6 +342,7 @@ window.ideaOpenDetail = (id) => {
     </div>
     <div class="meta">${ideaEsc(item.author || '')}　${ideaEsc(labelOf(item.status))}</div>
     <div class="meta" style="margin-top:6px; color:#4527a0; font-weight:700;">📅 ${ideaEsc(ideaMoveHistoryLine(item))}</div>
+    ${item.issue ? `<div class="issue-tag" style="margin:10px 0 0;">🎯 課題：${ideaEsc(item.issue)}</div>` : ''}
     <div class="body" style="margin:10px 0 16px;">${ideaEsc(item.content || '')}</div>
     ${item.status === 'rejected' && item.rejectReason ? `<div class="hist"><b>廃案理由</b><div>${ideaEsc(item.rejectReason)}</div></div>` : ''}
     <div style="font-weight:800; color:#4527a0; margin-bottom:6px;">📝 メモ</div>
