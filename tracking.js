@@ -131,6 +131,46 @@
 
   installCommonTimePicker();
 
+  window.getPassionMapUserName = function () {
+    return localStorage.getItem('passionMapUserName') || '';
+  };
+
+  window.refreshAccountNameButtons = function () {
+    const name = window.getPassionMapUserName() || 'アカウント';
+    document.querySelectorAll('[data-account-name]').forEach(function (el) {
+      el.textContent = name;
+    });
+    document.querySelectorAll('[data-account-name-btn]').forEach(function (el) {
+      el.textContent = '👤 ' + name;
+    });
+  };
+
+  window.toggleAccountMenu = function (ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+    const menu = document.getElementById('accountMenuDropdown');
+    if (!menu) return;
+    const open = menu.style.display === 'none' || menu.style.display === '';
+    menu.style.display = open ? 'block' : 'none';
+  };
+
+  window.closeAccountMenu = function () {
+    const menu = document.getElementById('accountMenuDropdown');
+    if (menu) menu.style.display = 'none';
+  };
+
+  document.addEventListener('click', function () {
+    window.closeAccountMenu();
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    window.refreshAccountNameButtons();
+  });
+  // 遅延読み込みページ向けにも一度走らせる
+  setTimeout(function () { window.refreshAccountNameButtons(); }, 300);
+
   function alertMsg(msg) {
     if (typeof customAlert === 'function') customAlert(msg);
     else if (window.customAlert) window.customAlert(msg);

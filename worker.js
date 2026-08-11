@@ -526,6 +526,11 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       }
 
       function executeLogout() { localStorage.clear(); location.reload(); }
+      window.executeLogout = executeLogout;
+      if (typeof window.refreshAccountNameButtons === 'function') window.refreshAccountNameButtons();
+      else setTimeout(function () {
+        if (typeof window.refreshAccountNameButtons === 'function') window.refreshAccountNameButtons();
+      }, 400);
 
       function startLocationWatch() {
           if (navigator.geolocation) {

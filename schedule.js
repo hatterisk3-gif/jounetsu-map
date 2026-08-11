@@ -57,6 +57,15 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       }
 
       function executeLogout() { localStorage.clear(); location.reload(); }
+      window.executeLogout = executeLogout;
+
+      if (typeof window.refreshAccountNameButtons === 'function') {
+        window.refreshAccountNameButtons();
+      } else {
+        document.addEventListener('DOMContentLoaded', function () {
+          if (typeof window.refreshAccountNameButtons === 'function') window.refreshAccountNameButtons();
+        });
+      }
 
       // ====== 天気予報関連 ======
       let lastWeatherFetchPos = null;

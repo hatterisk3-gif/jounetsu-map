@@ -62,8 +62,15 @@
       <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示"
         style="margin-right:10px; background:white; color:#1565c0; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">🌱</button>
       <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
-      <button type="button" onclick="executeLogout()"
-        style="background:#c62828; color:#fff; border:1px solid #ef9a9a; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; cursor:pointer; white-space:nowrap;">🚪 ログアウト</button>
+      <div style="position:relative; display:inline-block; margin-right:0;">
+        <button type="button" id="accountMenuBtn" data-account-name-btn onclick="toggleAccountMenu(event)"
+          style="background:#fff; color:#1565c0; border:1px solid #90caf9; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; cursor:pointer; white-space:nowrap; max-width:160px; overflow:hidden; text-overflow:ellipsis;">👤 アカウント</button>
+        <div id="accountMenuDropdown" onclick="event.stopPropagation()"
+          style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:160px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
+          <button type="button" onclick="closeAccountMenu(); executeLogout();"
+            style="width:100%; background:#c62828; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:13px; cursor:pointer;">🚪 ログアウト</button>
+        </div>
+      </div>
       <!-- 軌跡表示用（下部タブのアクションシートから参照・非表示） -->
       <select id="trackingUserSelect" class="desktop-only" aria-hidden="true">
         <option value="ALL">全員</option>
@@ -266,7 +273,7 @@
     </button>
     <button type="button" onclick="openMyPage()">
       <div style="font-size:20px;">👤</div>
-      <div style="font-weight:bold;">マイページ</div>
+      <div style="font-weight:bold; max-width:72px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" data-account-name>マイページ</div>
     </button>
   </div>
 

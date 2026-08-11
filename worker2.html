@@ -290,10 +290,17 @@
         style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️
         連絡</button>
       <button onclick="openMyPage()"
-        style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">👤
-        マイページ</button>
-      <button onclick="executeLogout()"
-        style="background:#F44336; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">ログアウト</button>
+        style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤
+        <span data-account-name>マイページ</span></button>
+      <div style="position:relative; display:inline-block;">
+        <button type="button" data-account-name-btn onclick="toggleAccountMenu(event)"
+          style="background:#fff; color:#1565c0; border:1px solid #90caf9; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤 アカウント</button>
+        <div id="accountMenuDropdown" onclick="event.stopPropagation()"
+          style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:140px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
+          <button type="button" onclick="closeAccountMenu(); executeLogout();"
+            style="width:100%; background:#F44336; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:12px; cursor:pointer;">🚪 ログアウト</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -328,7 +335,7 @@
   <script src="map-loading.js?v=1786243000000"></script>
   <script src="weather-agri.js?v=1785489000100"></script>
   <script src="worker.js?v=1786458500000"></script>
-  <script src="tracking.js?v=1786458400000"></script>
+  <script src="tracking.js?v=1786458800000"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js?v=worker2', { scope: '/worker2.html' });
