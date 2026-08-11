@@ -1788,12 +1788,14 @@ function buildCpVarietySelectHtml(plan) {
     return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="display:block; width:100%; min-width:0; height:20px; font-size:11px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${placeholder}${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
 }
 
+let cpShowVarietyGroupDividers = false;
+
 function refreshCpVarietyOrdinals() {
     if (typeof assignCpPlanTags === 'function') assignCpPlanTags({ silent: true });
     if (typeof refreshCpVarietyGroupDividers === 'function') refreshCpVarietyGroupDividers();
 }
 
-/** 同一品種が連続している区間に仕切りを付ける */
+/** 「品種でまとめる」後だけ、同一品種の区間に仕切りを付ける（1枚でも表示） */
 function refreshCpVarietyGroupDividers() {
     const leftBody = document.getElementById('cpLeftBody');
     if (!leftBody || !Array.isArray(cpPlans)) return;
@@ -1802,6 +1804,13 @@ function refreshCpVarietyGroupDividers() {
     leftBody.querySelectorAll('.cp-var-group, .cp-var-group-first, .cp-var-group-mid, .cp-var-group-last').forEach(el => {
         el.classList.remove('cp-var-group', 'cp-var-group-first', 'cp-var-group-mid', 'cp-var-group-last');
     });
+
+    if (!cpShowVarietyGroupDividers) {
+        if (typeof syncAllRowHeights === 'function') {
+            setTimeout(() => { syncAllRowHeights(); }, 30);
+        }
+        return;
+    }
 
     const wraps = [];
     cpPlans.forEach(plan => {
@@ -1822,20 +1831,18 @@ function refreshCpVarietyGroupDividers() {
         }
         let j = i;
         while (j + 1 < wraps.length && wraps[j + 1].key === cur.key) j += 1;
-        if (j > i) {
-            for (let k = i; k <= j; k++) {
-                const w = wraps[k].wrap;
-                w.classList.add('cp-var-group');
-                if (k === i) w.classList.add('cp-var-group-first');
-                else if (k === j) w.classList.add('cp-var-group-last');
-                else w.classList.add('cp-var-group-mid');
-            }
-            const label = document.createElement('div');
-            label.className = 'cp-var-group-label';
-            label.textContent = cur.name;
-            label.title = cur.name + '（' + (j - i + 1) + '枚）';
-            wraps[i].wrap.insertBefore(label, wraps[i].wrap.firstChild);
+        for (let k = i; k <= j; k++) {
+            const w = wraps[k].wrap;
+            w.classList.add('cp-var-group');
+            if (k === i) w.classList.add('cp-var-group-first');
+            if (k === j) w.classList.add('cp-var-group-last');
+            if (k !== i && k !== j) w.classList.add('cp-var-group-mid');
         }
+        const label = document.createElement('div');
+        label.className = 'cp-var-group-label';
+        label.textContent = cur.name;
+        label.title = cur.name + '（' + (j - i + 1) + '枚）';
+        wraps[i].wrap.insertBefore(label, wraps[i].wrap.firstChild);
         i = j + 1;
     }
     if (typeof syncAllRowHeights === 'function') {
@@ -4071,6 +4078,7 @@ function sortCpPlansByTask(taskType, options) {
     });
     cpPlans = decorated.map(d => d.plan);
     const after = cpPlans.map(p => p.id).join(',');
+    cpShowVarietyGroupDividers = false;
     applyCpPlanOrderToDom();
 
     // 並びが変わったカードを一瞬ハイライト
@@ -4116,10 +4124,10 @@ function flashCpPlanSortStatus(message) {
 /** 今の並びを保ったまま、同一品種を連続してまとめる */
 function groupCpPlansByVariety(options) {
     const opts = options || {};
-    if (!Array.isArray(cpPlans) || cpPlans.length < 2) {
+    if (!Array.isArray(cpPlans) || cpPlans.length < 1) {
         if (!opts.silent) {
-            if (typeof customAlert === 'function') customAlert('まとめる品種が2件以上必要です。');
-            else alert('まとめる品種が2件以上必要です。');
+            if (typeof customAlert === 'function') customAlert('まとめる品種がありません。');
+            else alert('まとめる品種がありません。');
         }
         return false;
     }
@@ -4149,6 +4157,7 @@ function groupCpPlansByVariety(options) {
     });
     cpPlans = groups.reduce((acc, g) => acc.concat(g), []);
     const after = cpPlans.map(p => p.id).join(',');
+    cpShowVarietyGroupDividers = true;
     applyCpPlanOrderToDom();
 
     cpPlans.forEach((plan, i) => {
