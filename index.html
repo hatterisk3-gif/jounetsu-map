@@ -38,12 +38,38 @@
 
         .account-box {
             margin-top: 18px;
-            padding: 16px;
+            padding: 10px 12px;
             background: #2a2a2a;
             border: 1px solid #444;
             border-radius: 8px;
             text-align: left;
         }
+        .account-toggle {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            border: none;
+            background: transparent;
+            color: #a5d6a7;
+            cursor: pointer;
+            padding: 8px 4px;
+            text-align: left;
+            font-size: 15px;
+            font-weight: bold;
+        }
+        .account-toggle-meta {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #a5d6a7;
+            font-size: 11px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .account-body { display: none; margin-top: 8px; }
+        .account-body.is-open { display: block; }
         .account-box h2 {
             margin: 0 0 12px;
             font-size: 15px;
@@ -129,7 +155,14 @@
         <a href="javascript:location.replace('index2.html')" class="btn btn-portal2" style="margin-bottom:0; margin-top:8px;">🚪 プロポータルを開く</a>
 
         <div class="account-box">
-            <h2>アカウント登録</h2>
+            <button type="button" class="account-toggle" id="btnAccountToggle" onclick="toggleAccountBox()" aria-expanded="false" aria-controls="accountBody">
+                <span>👤 アカウント登録</span>
+                <span class="account-toggle-meta">
+                    <span id="accountToggleLabel">開く</span>
+                    <span id="accountToggleChevron">▼</span>
+                </span>
+            </button>
+            <div id="accountBody" class="account-body">
             <div class="account-tabs" role="tablist">
                 <button type="button" class="account-tab is-active" id="tabSignup" onclick="switchAccountTab('signup')">新規登録</button>
                 <button type="button" class="account-tab" id="tabAdminAdd" onclick="switchAccountTab('admin')">管理者：ユーザー追加</button>
@@ -178,6 +211,7 @@
                     <button type="button" class="btn btn-muted" id="adminLogoutBtn" onclick="adminLogout()" style="margin-bottom:0;">管理者ログアウト</button>
                 </div>
             </div>
+            </div>
         </div>
     </div>
 
@@ -203,6 +237,21 @@
         } else {
           window.location.replace('worker.html' + window.location.search);
         }
+      }
+
+      function toggleAccountBox(forceOpen) {
+        const body = document.getElementById('accountBody');
+        const btn = document.getElementById('btnAccountToggle');
+        const label = document.getElementById('accountToggleLabel');
+        const chevron = document.getElementById('accountToggleChevron');
+        if (!body || !btn) return;
+        const open = typeof forceOpen === 'boolean'
+          ? forceOpen
+          : !body.classList.contains('is-open');
+        body.classList.toggle('is-open', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (label) label.textContent = open ? '閉じる' : '開く';
+        if (chevron) chevron.textContent = open ? '▲' : '▼';
       }
 
       function setMsg(elId, text, ok) {

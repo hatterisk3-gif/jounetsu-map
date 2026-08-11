@@ -161,11 +161,33 @@ window.switchWeatherTab = function(tabName) {
   }
 };
 
-window.weatherSunshineState = window.weatherSunshineState || { data: null, historyData: null, todayStr: '', lastYearTodayStr: '', activeDays: 7 };
+window.weatherSunshineState = window.weatherSunshineState || {
+  data: null,
+  historyData: null,
+  todayStr: '',
+  lastYearTodayStr: '',
+  activeDays: 7,
+  yearCompareOpen: false
+};
+
+window.toggleSunshineYearCompare = function(forceOpen) {
+  const st = window.weatherSunshineState = window.weatherSunshineState || {};
+  if (typeof forceOpen === 'boolean') st.yearCompareOpen = forceOpen;
+  else st.yearCompareOpen = !st.yearCompareOpen;
+  const body = document.getElementById('sunshineCompareAccordionBody');
+  const chevron = document.getElementById('sunshineCompareChevron');
+  const label = document.getElementById('sunshineCompareToggleLabel');
+  const btn = document.getElementById('btnSunshineYearCompare');
+  const open = !!st.yearCompareOpen;
+  if (body) body.style.display = open ? 'block' : 'none';
+  if (chevron) chevron.textContent = open ? '▲' : '▼';
+  if (label) label.textContent = open ? '閉じる' : '開く';
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+};
 
 window.calculateClimateDiff = (days) => {
   const st = window.weatherSunshineState;
-  if (!st.data || !st.data.daily || !st.data.daily.time) return null;
+  if (!st || !st.data || !st.data.daily || !st.data.daily.time) return null;
   const todayIndex = st.data.daily.time.indexOf(st.todayStr);
   if (todayIndex === -1) return null;
   const pastStartIdx = Math.max(0, todayIndex - days);
@@ -204,6 +226,174 @@ window.calculateClimateDiff = (days) => {
   };
 };
 window.calculateSunshineDiff = (days) => window.calculateClimateDiff(days);
+
+/** 先週平均 → 直近の気温変化、および今週予報の傾向 */
+window.calculateWeeklyWeatherOutlook = function() {
+  const st = window.weatherSunshineState;
+  if (!st || !st.data || !st.data.daily || !st.data.daily.time || !st.todayStr) return null;
+  const daily = st.data.daily;
+  const todayIndex = daily.time.indexOf(st.todayStr);
+  if (todayIndex < 0) return null;
+
+  const meanAt = (i) => {
+    if (i < 0 || i >= daily.time.length) return null;
+    if (daily.temperature_2m_mean && daily.temperature_2m_mean[i] != null && !isNaN(daily.temperature_2m_mean[i])) {
+      return Number(daily.temperature_2m_mean[i]);
+    }
+    const mx = daily.temperature_2m_max && daily.temperature_2m_max[i];
+    const mn = daily.temperature_2m_min && daily.temperature_2m_min[i];
+    if (mx == null || mn == null || isNaN(mx) || isNaN(mn)) return null;
+    return (Number(mx) + Number(mn)) / 2;
+  };
+  const avgRange = (start, end) => {
+    let s = 0, n = 0;
+    for (let i = start; i < end; i++) {
+      const v = meanAt(i);
+      if (v != null) { s += v; n++; }
+    }
+    return n ? Math.round((s / n) * 10) / 10 : null;
+  };
+
+  const lastWeekAvg = avgRange(Math.max(0, todayIndex - 7), todayIndex);
+  const recentAvg = avgRange(Math.max(0, todayIndex - 2), todayIndex + 1);
+  let weekDiff = null;
+  if (lastWeekAvg != null && recentAvg != null) {
+    weekDiff = Math.round((recentAvg - lastWeekAvg) * 10) / 10;
+  }
+
+  const end = Math.min(daily.time.length, todayIndex + 7);
+  const forecastDays = Math.max(0, end - todayIndex);
+  if (forecastDays <= 0) {
+    return {
+      lastWeekAvg, recentAvg, weekDiff,
+      forecastDays: 0,
+      chips: [],
+      summary: '今週の予報データがありません'
+    };
+  }
+
+  const rainA = daily.precipitation_sum || [];
+  const codeA = daily.weathercode || [];
+  const windA = daily.wind_speed_10m_max || [];
+  const sunA = daily.sunshine_duration || [];
+
+  let rainy = 0, sunny = 0, windy = 0, calmSunny = 0;
+  const means = [];
+  for (let i = todayIndex; i < end; i++) {
+    const rain = Number(rainA[i]) || 0;
+    const code = Number(codeA[i]) || 0;
+    const wind = Number(windA[i]) || 0;
+    const sunH = (Number(sunA[i]) || 0) / 3600;
+    const isRainy = rain >= 1.5 || code >= 51;
+    const isWindy = wind >= 10;
+    const isSunny = !isRainy && (code <= 1 || sunH >= 5);
+    if (isRainy) rainy++;
+    if (isSunny) sunny++;
+    if (isWindy) windy++;
+    if (isSunny && wind < 6) calmSunny++;
+    const m = meanAt(i);
+    if (m != null) means.push(m);
+  }
+
+  const firstHalf = means.length >= 4
+    ? means.slice(0, Math.ceil(means.length / 2))
+    : means.slice(0, Math.min(3, means.length));
+  const secondHalf = means.length >= 4
+    ? means.slice(Math.ceil(means.length / 2))
+    : means.slice(Math.max(0, means.length - 3));
+  const avg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+  const a1 = avg(firstHalf);
+  const a2 = avg(secondHalf);
+  let tempTrend = '横ばい';
+  let tempTrendDiff = null;
+  if (a1 != null && a2 != null) {
+    tempTrendDiff = Math.round((a2 - a1) * 10) / 10;
+    if (tempTrendDiff >= 1.0) tempTrend = '上がる';
+    else if (tempTrendDiff <= -1.0) tempTrend = '下がる';
+  }
+
+  const chips = [];
+  if (tempTrend === '上がる') {
+    chips.push({ icon: '🔺', text: `気温は上がる傾向（後半 +${Math.abs(tempTrendDiff)}℃）`, color: '#c62828', bg: '#ffebee' });
+  } else if (tempTrend === '下がる') {
+    chips.push({ icon: '🔻', text: `気温は下がる傾向（後半 ${tempTrendDiff}℃）`, color: '#1565c0', bg: '#e3f2fd' });
+  } else {
+    chips.push({ icon: '➡️', text: '気温はほぼ横ばい', color: '#546e7a', bg: '#eceff1' });
+  }
+
+  if (rainy >= 4) chips.push({ icon: '🌧️', text: `雨の日が多い（${rainy}/${forecastDays}日）`, color: '#0277bd', bg: '#e1f5fe' });
+  else if (rainy >= 2) chips.push({ icon: '🌦️', text: `雨日あり（${rainy}/${forecastDays}日）`, color: '#0277bd', bg: '#e1f5fe' });
+  else if (rainy === 0 && sunny >= Math.max(4, forecastDays - 1)) {
+    chips.push({ icon: '☀️', text: '晴れだけ続きそう', color: '#e65100', bg: '#fff3e0' });
+  } else if (sunny >= 4) {
+    chips.push({ icon: '🌤️', text: `晴れ多め（${sunny}/${forecastDays}日）`, color: '#ef6c00', bg: '#fff8e1' });
+  }
+
+  if (windy >= 3) chips.push({ icon: '💨', text: `風の強い日が多い（${windy}/${forecastDays}日）`, color: '#6a1b9a', bg: '#f3e5f5' });
+  else if (windy >= 1) chips.push({ icon: '🌬️', text: `強風日あり（${windy}/${forecastDays}日）`, color: '#6a1b9a', bg: '#f3e5f5' });
+
+  if (calmSunny >= 3 && rainy <= 1) {
+    chips.push({ icon: '🌿', text: '作業向きの穏やかな晴れあり', color: '#2e7d32', bg: '#e8f5e9' });
+  }
+
+  const parts = chips.map(c => c.text);
+  return {
+    lastWeekAvg,
+    recentAvg,
+    weekDiff,
+    forecastDays,
+    rainy,
+    sunny,
+    windy,
+    tempTrend,
+    tempTrendDiff,
+    chips,
+    summary: parts.join(' ／ ')
+  };
+};
+
+window.renderWeeklyWeatherOutlookHtml = function() {
+  const o = typeof window.calculateWeeklyWeatherOutlook === 'function'
+    ? window.calculateWeeklyWeatherOutlook()
+    : null;
+  if (!o) {
+    return `<div style="background:#f5f5f5;border:1px solid #e0e0e0;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#888;">週間の気温・予報まとめを計算できませんでした</div>`;
+  }
+
+  let weekDiffHtml = '<span style="color:#888;">データ不足</span>';
+  if (o.weekDiff != null) {
+    if (o.weekDiff > 0) {
+      weekDiffHtml = `<span style="color:#d32f2f;font-weight:bold;background:#ffebee;padding:3px 8px;border-radius:999px;">先週比 +${o.weekDiff}℃ 上がった</span>`;
+    } else if (o.weekDiff < 0) {
+      weekDiffHtml = `<span style="color:#1976d2;font-weight:bold;background:#e3f2fd;padding:3px 8px;border-radius:999px;">先週比 ${o.weekDiff}℃ 下がった</span>`;
+    } else {
+      weekDiffHtml = `<span style="color:#616161;font-weight:bold;background:#f0f0f0;padding:3px 8px;border-radius:999px;">先週比 ±0℃</span>`;
+    }
+  }
+
+  const chipsHtml = (o.chips || []).map(c =>
+    `<span style="display:inline-flex;align-items:center;gap:4px;background:${c.bg};color:${c.color};border:1px solid ${c.color}33;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:bold;white-space:nowrap;">${c.icon} ${c.text}</span>`
+  ).join('');
+
+  return `
+    <div style="background:#f3e5f5;border:1px solid #ce93d8;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;">
+      <div style="font-weight:bold;color:#6a1b9a;margin-bottom:8px;font-size:13px;">🧭 先週からの変化 ／ 今週の予想</div>
+      <div style="background:#fff;border-radius:6px;border:1px solid #e1bee7;padding:8px 10px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span>🌡 直近の平均 <b>${o.recentAvg != null ? o.recentAvg + '℃' : '-'}</b>
+            <span style="color:#888;font-size:11px;">（先週平均 ${o.lastWeekAvg != null ? o.lastWeekAvg + '℃' : '-'}）</span>
+          </span>
+          <div>${weekDiffHtml}</div>
+        </div>
+      </div>
+      <div style="background:#fff;border-radius:6px;border:1px solid #e1bee7;padding:8px 10px;">
+        <div style="font-weight:bold;color:#4a148c;margin-bottom:6px;">今週の予想（${o.forecastDays}日間）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${chipsHtml || '<span style="color:#888;">特記事項なし</span>'}</div>
+      </div>
+      <div style="font-size:10px;color:#888;margin-top:6px;line-height:1.4;">※先週＝今日より前の7日平均、直近＝今日含む最大3日平均。今週予想は今日からの予報です。</div>
+    </div>
+  `;
+};
 
 window.renderSunshineContentHtml = (diff) => {
   if (!diff) return '<div style="color:#888; text-align:center; padding:10px;">比較データなし</div>';
@@ -249,20 +439,31 @@ window.switchSunshinePeriod = (days) => {
 };
 
 window.renderSunshinePanelHtml = () => {
-  const activeDays = (window.weatherSunshineState && window.weatherSunshineState.activeDays) || 7;
+  const st = window.weatherSunshineState || {};
+  const activeDays = st.activeDays || 7;
+  const open = !!st.yearCompareOpen;
   const diff = window.calculateClimateDiff(activeDays);
   return `
-    <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-        <span style="font-weight:bold; color:#e65100;">📊 昨年との気温・日照比較</span>
-        <div style="display:flex; gap:3px; background:#ffe0b2; padding:2px; border-radius:6px;">
-          <button type="button" onclick="switchSunshinePeriod(7)" id="btnSun7" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===7?'#e65100':'transparent'}; color:${activeDays===7?'#fff':'#e65100'};">7日間</button>
-          <button type="button" onclick="switchSunshinePeriod(14)" id="btnSun14" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===14?'#e65100':'transparent'}; color:${activeDays===14?'#fff':'#e65100'};">2週間</button>
-          <button type="button" onclick="switchSunshinePeriod(30)" id="btnSun30" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===30?'#e65100':'transparent'}; color:${activeDays===30?'#fff':'#e65100'};">1ヶ月</button>
+    <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:8px 10px; margin-bottom:12px; font-size:12px;">
+      <button type="button" id="btnSunshineYearCompare" onclick="toggleSunshineYearCompare()" aria-expanded="${open ? 'true' : 'false'}"
+        style="width:100%; display:flex; justify-content:space-between; align-items:center; gap:8px; border:none; background:transparent; cursor:pointer; padding:4px 2px; text-align:left;">
+        <span style="font-weight:bold; color:#e65100; font-size:13px;">📊 昨年との気温・日照比較</span>
+        <span style="display:inline-flex; align-items:center; gap:6px; color:#e65100; font-size:11px; font-weight:bold; white-space:nowrap;">
+          <span id="sunshineCompareToggleLabel">${open ? '閉じる' : '開く'}</span>
+          <span id="sunshineCompareChevron">${open ? '▲' : '▼'}</span>
+        </span>
+      </button>
+      <div id="sunshineCompareAccordionBody" style="display:${open ? 'block' : 'none'}; margin-top:8px;">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+          <div style="display:flex; gap:3px; background:#ffe0b2; padding:2px; border-radius:6px;">
+            <button type="button" onclick="event.stopPropagation(); switchSunshinePeriod(7)" id="btnSun7" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===7?'#e65100':'transparent'}; color:${activeDays===7?'#fff':'#e65100'};">7日間</button>
+            <button type="button" onclick="event.stopPropagation(); switchSunshinePeriod(14)" id="btnSun14" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===14?'#e65100':'transparent'}; color:${activeDays===14?'#fff':'#e65100'};">2週間</button>
+            <button type="button" onclick="event.stopPropagation(); switchSunshinePeriod(30)" id="btnSun30" style="border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; background:${activeDays===30?'#e65100':'transparent'}; color:${activeDays===30?'#fff':'#e65100'};">1ヶ月</button>
+          </div>
         </div>
+        <div id="sunshineComparisonContent">${window.renderSunshineContentHtml(diff)}</div>
+        <div style="font-size:10px; color:#888; margin-top:6px; line-height:1.4;">※平均気温は日ごとの（最高+最低）÷2 の平均。今後は予報値と昨年実績の比較です。</div>
       </div>
-      <div id="sunshineComparisonContent">${window.renderSunshineContentHtml(diff)}</div>
-      <div style="font-size:10px; color:#888; margin-top:6px; line-height:1.4;">※平均気温は日ごとの（最高+最低）÷2 の平均。今後は予報値と昨年実績の比較です。</div>
     </div>
   `;
 };
@@ -315,7 +516,9 @@ async function fetchWeatherAndUpdateUI() {
     }
 
     // --- 気温・日照比較ステート保持 ---
-    window.weatherSunshineState = window.weatherSunshineState || { data: null, historyData: null, todayStr: '', lastYearTodayStr: '', activeDays: 7 };
+    window.weatherSunshineState = window.weatherSunshineState || {
+      data: null, historyData: null, todayStr: '', lastYearTodayStr: '', activeDays: 7, yearCompareOpen: false
+    };
     window.weatherSunshineState.data = data;
     window.weatherSunshineState.historyData = historyData;
     window.weatherSunshineState.todayStr = todayStr;
@@ -355,7 +558,12 @@ async function fetchWeatherAndUpdateUI() {
       </div>`;
     }
 
-    // --- 📊 気温・日照 昨年比較パネル ---
+    // --- 🧭 先週比・今週予想 ---
+    if (typeof window.renderWeeklyWeatherOutlookHtml === 'function') {
+      html += window.renderWeeklyWeatherOutlookHtml();
+    }
+
+    // --- 📊 気温・日照 昨年比較パネル（アコーディオン） ---
     if (historyData && historyData.daily && typeof window.renderSunshinePanelHtml === 'function') {
       html += window.renderSunshinePanelHtml();
     }

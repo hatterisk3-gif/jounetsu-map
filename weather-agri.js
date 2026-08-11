@@ -133,7 +133,8 @@
 
       const scores = {
         weeding: !isRainy && !isWindy && sunH >= 2 ? 2 : (!isRainy ? 1 : 0),
-        spray: !isRainy && wind < 4 && tMax >= 12 && tMax <= 30 ? 2 : (!isRainy && wind < 6 ? 1 : 0),
+        // 防除: ◎風<4＆適温 / △風<10（飛散注意・条件付き） / ×雨or風≥10
+        spray: !isRainy && wind < 4 && tMax >= 12 && tMax <= 30 ? 2 : (!isRainy && wind < 10 ? 1 : 0),
         harvest: !isRainy && !isFrost && tMax < 36 ? 2 : (!isRainy ? 1 : 0),
         irrigate: moisture < 45 && rain < 2 ? 2 : (moisture < 52 && rain < 5 ? 1 : 0)
       };
@@ -259,7 +260,7 @@
               ${workRows}
             </table>
           </div>
-          <div style="font-size:10px;color:#888;margin-top:4px;">◎向き　△条件つき　×控えめ</div>
+          <div style="font-size:10px;color:#888;margin-top:4px;">◎向き　△条件つき　×控えめ<br>防除目安: 風&lt;4◎　〜10△（飛散注意）　10以上×</div>
         </div>
       </div>
     `;
