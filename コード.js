@@ -8819,6 +8819,7 @@ function getCultivationMaster() {
     const locationDetails = readLocationMasterDetails_();
     master.locations = locationDetails.map(l => l.name);
     master.locationDetails = locationDetails;
+    master.cropTagAbbreviations = readCropTagAbbreviationMap_();
     
     // データがない場合はマスタの反映処理をスキップしますが、プリセット取得処理には進みます
     for (let i = 1; i < data.length; i++) {

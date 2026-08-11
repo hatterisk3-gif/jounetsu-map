@@ -1703,7 +1703,95 @@ function onCpLocationChange() {
     updateVarietyList();
     checkCroptypeDB();
     updatePresetList(getCpVal('cpCrop'));
+    fillCpTagAbbreviationInputs();
 }
+
+function fillCpTagAbbreviationInputs() {
+    const locInp = document.getElementById('cpLocationTagAbbr');
+    const cropInp = document.getElementById('cpCropTagAbbr');
+    const location = getCpVal('cpLocation');
+    const crop = getCpVal('cpCrop');
+    const detail = typeof getLocationDetailByName === 'function' ? getLocationDetailByName(location) : null;
+    if (locInp) locInp.value = (detail && detail.tagAbbreviation) ? detail.tagAbbreviation : '';
+    const map = (cpMasterData && cpMasterData.cropTagAbbreviations) || {};
+    if (cropInp) {
+        const abbr = map[crop];
+        cropInp.value = (abbr && abbr !== crop) ? abbr : (abbr || '');
+    }
+}
+
+function getCpMasterUserName_() {
+    return localStorage.getItem('passionMapUserName')
+        || (typeof currentUser !== 'undefined' ? currentUser : '')
+        || '';
+}
+
+async function saveCpLocationTagAbbreviation() {
+    const location = getCpVal('cpLocation');
+    if (!location) {
+        alert('拠点を先に選んでください');
+        return;
+    }
+    const abbr = String((document.getElementById('cpLocationTagAbbr') || {}).value || '').trim();
+    const detail = getLocationDetailByName(location) || {};
+    try {
+        await callGAS('manageMaster', {
+            masterType: 'location',
+            manageAction: 'edit',
+            userName: getCpMasterUserName_(),
+            value: {
+                originalName: location,
+                newData: {
+                    name: location,
+                    prefecture: detail.prefecture || '',
+                    city: detail.city || '',
+                    climates: detail.climates || detail.climate || '',
+                    tagAbbreviation: abbr
+                }
+            }
+        });
+        if (cpMasterData && Array.isArray(cpMasterData.locationDetails)) {
+            const d = cpMasterData.locationDetails.find(l => l && l.name === location);
+            if (d) d.tagAbbreviation = abbr;
+        }
+        if (typeof assignCpPlanTags === 'function') assignCpPlanTags();
+        if (typeof flashCpPlanSortStatus === 'function') flashCpPlanSortStatus('✓ 拠点のタグ略称を保存しました');
+        else alert('拠点のタグ略称を保存しました');
+    } catch (e) {
+        alert((e && e.message) ? e.message : '拠点のタグ略称の保存に失敗しました');
+    }
+}
+
+async function saveCpCropTagAbbreviation() {
+    const crop = getCpVal('cpCrop');
+    if (!crop) {
+        alert('作物を先に選んでください');
+        return;
+    }
+    const abbr = String((document.getElementById('cpCropTagAbbr') || {}).value || '').trim();
+    try {
+        await callGAS('manageMaster', {
+            masterType: 'crop',
+            manageAction: 'edit',
+            userName: getCpMasterUserName_(),
+            value: {
+                originalName: crop,
+                newData: { name: crop, tagAbbreviation: abbr }
+            }
+        });
+        if (!cpMasterData) cpMasterData = {};
+        if (!cpMasterData.cropTagAbbreviations) cpMasterData.cropTagAbbreviations = {};
+        cpMasterData.cropTagAbbreviations[crop] = abbr || crop;
+        if (typeof assignCpPlanTags === 'function') assignCpPlanTags();
+        if (typeof flashCpPlanSortStatus === 'function') flashCpPlanSortStatus('✓ 作物のタグ略称を保存しました');
+        else alert('作物のタグ略称を保存しました');
+    } catch (e) {
+        alert((e && e.message) ? e.message : '作物のタグ略称の保存に失敗しました');
+    }
+}
+window.fillCpTagAbbreviationInputs = fillCpTagAbbreviationInputs;
+window.saveCpLocationTagAbbreviation = saveCpLocationTagAbbreviation;
+window.saveCpCropTagAbbreviation = saveCpCropTagAbbreviation;
 
 async function fetchCultivationMaster() {
     try {
@@ -2294,6 +2382,7 @@ function updateVarietyList() {
     checkCroptypeDB();
     if (typeof syncCpVarietyMetaFields === 'function') syncCpVarietyMetaFields();
     if (typeof syncCropToBlankStarterCards === 'function') syncCropToBlankStarterCards();
+    if (typeof fillCpTagAbbreviationInputs === 'function') fillCpTagAbbreviationInputs();
 }
 
 function encodePresetKey(location, name) {
@@ -3616,9 +3705,10 @@ function closeCpQuickVarietyPopover() {
 function onCpQuickVarietyPopoverOutside(e) {
     const pop = document.getElementById('cpQuickVarietyPopover');
     const btn = document.getElementById('cpAddVarietyCardBtn');
-    if (pop && !pop.contains(e.target) && btn && !btn.contains(e.target)) {
-        closeCpQuickVarietyPopover();
-    }
+    if (!pop) return;
+    if (pop.contains(e.target)) return;
+    if (btn && btn.contains(e.target)) return;
+    closeCpQuickVarietyPopover();
 }
 
 function addVarietyCardFromPick(variety) {
@@ -3650,7 +3740,7 @@ function openCpQuickVarietyPicker(anchorEl) {
     closeCpQuickVarietyPopover();
     const pop = document.createElement('div');
     pop.id = 'cpQuickVarietyPopover';
-    pop.style.cssText = 'position:fixed; z-index:12060; background:#fff; border:1px solid #1976D2; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.25); padding:8px; min-width:140px; max-width:220px; max-height:240px; overflow:auto;';
+    pop.style.cssText = 'position:relative; z-index:30; background:#fff; border:1px solid #1976D2; border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,0.2); padding:8px; width:100%; max-height:240px; overflow:auto; box-sizing:border-box; margin:0 0 4px;';
     const head = document.createElement('div');
     head.style.cssText = 'display:flex; align-items:center; gap:4px; margin-bottom:6px;';
     const title = document.createElement('div');
@@ -3678,17 +3768,24 @@ function openCpQuickVarietyPicker(anchorEl) {
         b.onclick = function() { addVarietyCardFromPick(v); };
         pop.appendChild(b);
     });
-    document.body.appendChild(pop);
-    const rect = (anchorEl && anchorEl.getBoundingClientRect) ? anchorEl.getBoundingClientRect() : { left: 20, bottom: 80, right: 160 };
-    let left = rect.left;
-    let top = rect.bottom + 4;
-    const pw = pop.offsetWidth || 180;
-    const ph = pop.offsetHeight || 200;
-    if (left + pw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - pw - 8);
-    if (top + ph > window.innerHeight - 8) top = Math.max(8, rect.top - ph - 4);
-    pop.style.left = left + 'px';
-    pop.style.top = top + 'px';
-    document.addEventListener('mousedown', onCpQuickVarietyPopoverOutside, true);
+    const leftBody = document.getElementById('cpLeftBody');
+    const btn = document.getElementById('cpAddVarietyCardBtn') || anchorEl;
+    if (leftBody && btn && btn.parentNode === leftBody) {
+        leftBody.insertBefore(pop, btn);
+    } else if (leftBody) {
+        leftBody.appendChild(pop);
+    } else {
+        document.body.appendChild(pop);
+    }
+    const panel = document.getElementById('cpLeftPanel');
+    if (panel) {
+        requestAnimationFrame(() => {
+            try { panel.scrollTop = panel.scrollHeight; } catch (e) {}
+        });
+    }
+    setTimeout(() => {
+        document.addEventListener('mousedown', onCpQuickVarietyPopoverOutside, true);
+    }, 0);
 }
 
 function onCpAddVarietyCardClick() {
@@ -3718,10 +3815,14 @@ function ensureCpAddVarietyBtn() {
         btn.setAttribute('aria-label', '品種カードを追加');
         btn.innerHTML = '<span style="font-size:28px; line-height:1; font-weight:bold;">＋</span>' +
             '<span style="font-size:11px; font-weight:bold; margin-top:4px;">品種を追加</span>';
-        btn.style.cssText = 'display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; min-height:78px; margin:4px 0 8px; padding:8px 4px; box-sizing:border-box; background:#fff; color:#1565C0; border:2px dashed #1976D2; border-radius:6px; cursor:pointer;';
+        btn.style.cssText = 'display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; min-height:78px; margin:4px 0 8px; padding:8px 4px; box-sizing:border-box; background:#fff; color:#1565C0; border:2px dashed #1976D2; border-radius:6px; cursor:pointer; position:relative; z-index:2;';
+        btn.onclick = onCpAddVarietyCardClick;
+    } else {
         btn.onclick = onCpAddVarietyCardClick;
     }
     leftBody.appendChild(btn);
+    const pop = document.getElementById('cpQuickVarietyPopover');
+    if (pop && pop.parentNode === leftBody) leftBody.insertBefore(pop, btn);
 }
 window.ensureCpAddVarietyBtn = ensureCpAddVarietyBtn;
 window.onCpAddVarietyCardClick = onCpAddVarietyCardClick;
@@ -3753,7 +3854,7 @@ function renderCpPlanRow(plan, options) {
         <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
             <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0; font-weight:bold;">${escapeCpHtmlAttr(plan.crop || '作物未設定')}</span>
             ${fileLinkHtml}
-            <span id="tagDisplay_${plan.id}" style="color:#e91e63; font-size:9px; font-weight:bold; flex-shrink:0; margin-left:auto;">${plan.tag || ''}</span>
+            <span id="tagDisplay_${plan.id}" title="${escapeCpHtmlAttr(plan.tag || '')}" style="color:#e91e63; font-size:8px; font-weight:bold; margin-left:auto; min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; letter-spacing:-0.04em;">${plan.tag || ''}</span>
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:13px; line-height:1; padding:0; width:14px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
         <div style="margin-top:2px; min-width:0;">
@@ -4065,11 +4166,16 @@ function assignCpPlanTags(options) {
         const locationCode = group.location
             ? String((detail && detail.tagAbbreviation) || group.location)
             : '';
-        const prefix = locationCode ? (locationCode + '-' + group.crop) : group.crop;
+        const cropMap = (cpMasterData && cpMasterData.cropTagAbbreviations) || {};
+        const cropCode = String(cropMap[group.crop] || group.crop || '');
+        const prefix = locationCode ? (locationCode + '-' + cropCode) : cropCode;
         group.items.forEach((item, index) => {
             item.plan.tag = prefix + (index + 1);
             const tagDisplay = document.getElementById('tagDisplay_' + item.plan.id);
-            if (tagDisplay) tagDisplay.innerText = item.plan.tag;
+            if (tagDisplay) {
+                tagDisplay.innerText = item.plan.tag;
+                tagDisplay.title = item.plan.tag;
+            }
         });
     });
 }

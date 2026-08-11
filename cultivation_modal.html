@@ -65,12 +65,22 @@
                 </select>
                 <input type="text" id="cpLocation_custom" placeholder="手入力" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
               </div>
+              <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
+                <label style="font-size:10px; color:#888; white-space:nowrap;">タグ略称</label>
+                <input type="text" id="cpLocationTagAbbr" maxlength="10" placeholder="例: 徳阿" title="拠点のタグ略称" style="flex:1; min-width:0; padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px;">
+                <button type="button" onclick="saveCpLocationTagAbbreviation()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">保存</button>
+              </div>
             </div>
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">作物</label>
               <div style="display: flex; gap: 4px; width: 100%;">
                 <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
                 <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName()" oninput="calcCp(); checkCroptypeDB(); updateCpDefaultPlanName()" onblur="onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
+              </div>
+              <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
+                <label style="font-size:10px; color:#888; white-space:nowrap;">タグ略称</label>
+                <input type="text" id="cpCropTagAbbr" maxlength="10" placeholder="例: キャ" title="作物のタグ略称" style="flex:1; min-width:0; padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px;">
+                <button type="button" onclick="saveCpCropTagAbbreviation()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">保存</button>
               </div>
               <div id="cpCostProfileHint" style="font-size:10px; color:#666; margin-top:3px; line-height:1.35; min-height:14px;">作物を選ぶと原価プロファイルを読み込みます</div>
             </div>
