@@ -181,7 +181,7 @@
                 <div id="cpVarietyMetaHint" style="margin-top:6px; font-size:10px; color:#888;">バッジを選ぶか「＋ 新規追加」で品種・メーカー・粒数を登録できます。</div>
               </div>
               <div style="display: flex; align-items: flex-end;">
-                <button type="button" onclick="loadAndAddCroptype()" style="padding: 6px 12px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">🔄 品種マスタから作型を読込</button>
+                <button type="button" onclick="openCroptypePickModal()" style="padding: 6px 12px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">🔄 品種マスタから作型を読込</button>
               </div>
             </div>
 
@@ -704,6 +704,30 @@
         <div style="text-align: right; margin-top: auto;">
           <button onclick="closeCroptypeRegistrationModal()" style="padding: 10px 20px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 14px; margin-right: 15px;">キャンセル</button>
           <button id="btnSaveCroptype" onclick="saveCroptypeData()" style="padding: 10px 40px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">リストの作型を一括で登録</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 品種マスタから作型を選んで計画へ追加 -->
+    <div id="cpCroptypePickModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); z-index:10035; align-items:center; justify-content:center;">
+      <div style="background:#fff; width:96%; max-width:720px; border-radius:12px; padding:16px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px;">
+          <h3 style="margin:0; font-size:16px; color:#E65100;">🔄 作型を選んで追加</h3>
+          <span style="cursor:pointer; font-size:22px; color:#999; line-height:1;" onclick="closeCroptypePickModal()">×</span>
+        </div>
+        <div id="cpCroptypePickContext" style="margin-bottom:10px; padding:8px 10px; background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; font-size:12px; color:#5D4037; line-height:1.45;"></div>
+        <p style="margin:0 0 8px 0; font-size:12px; color:#666;">チェックした作型を計画に追加します。産地・カレンダーを見て選んでください。</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button type="button" onclick="setAllCroptypePickChecks(true)" style="padding:4px 10px; font-size:11px; background:#fff; border:1px solid #ccc; border-radius:4px; cursor:pointer;">すべて選択</button>
+            <button type="button" onclick="setAllCroptypePickChecks(false)" style="padding:4px 10px; font-size:11px; background:#fff; border:1px solid #ccc; border-radius:4px; cursor:pointer;">選択解除</button>
+          </div>
+          <span id="cpCroptypePickCount" style="font-size:11px; color:#888;"></span>
+        </div>
+        <div id="cpCroptypePickList" style="flex:1; overflow-y:auto; min-height:120px; max-height:55vh; border:1px solid #eee; border-radius:8px; padding:8px; background:#fafafa;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px; flex-wrap:wrap;">
+          <button type="button" onclick="closeCroptypePickModal()" style="padding:8px 16px; border:1px solid #ccc; background:#fff; border-radius:6px; cursor:pointer; font-size:13px;">キャンセル</button>
+          <button type="button" id="cpCroptypePickAddBtn" onclick="addSelectedCroptypesToPlan()" style="padding:8px 18px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">＋ チェックした作型を追加</button>
         </div>
       </div>
     </div>

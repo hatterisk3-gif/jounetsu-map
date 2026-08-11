@@ -5,6 +5,7 @@
     '#cultivationPlanModal',
     '#varietyRegistrationModal',
     '#croptypeRegistrationModal',
+    '#cpCroptypePickModal',
     '#cpPresetSaveModal',
     '#fieldCultivationModeBanner',
     '#fieldMemoOverlay',

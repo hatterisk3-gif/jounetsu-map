@@ -8713,7 +8713,7 @@ function getCultivationMaster() {
     master.croptypesDB = [];
     const croptypeSheet = ss.getSheetByName('作型DB');
     if (!croptypeSheet) {
-      ss.insertSheet('作型DB').appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL', '特性', 'メーカー', '粒数']);
+      ss.insertSheet('作型DB').appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL', '特性', 'メーカー', '粒数', '年度', '拠点', '圃場条件']);
     } else {
       const dbData = croptypeSheet.getDataRange().getValues();
       const headers = (dbData[0] || []).map(h => String(h || '').trim());
@@ -8723,10 +8723,16 @@ function getCultivationMaster() {
       const makerCol = headers.indexOf('メーカー');
       const grainCol = headers.indexOf('粒数');
       const harvestSeasonCol = headers.indexOf('とる時期');
+      const yearCol = headers.indexOf('年度');
+      const locationCol = headers.indexOf('拠点');
+      const fieldCondCol = headers.indexOf('圃場条件');
       for (let i = 1; i < dbData.length; i++) {
         let r = dbData[i];
         if (r[0] && r[1]) {
           try {
+            const years = yearCol !== -1 ? parseCroptypeHistoryCsv_(r[yearCol]) : [];
+            const locations = locationCol !== -1 ? parseCroptypeHistoryCsv_(r[locationCol]) : [];
+            const fieldConditions = fieldCondCol !== -1 ? parseCroptypeHistoryCsv_(r[fieldCondCol]) : [];
             master.croptypesDB.push({
               crop: String(r[0]),
               variety: String(r[1]),
@@ -8739,7 +8745,13 @@ function getCultivationMaster() {
               characteristics: charCol !== -1 ? String(r[charCol] || '') : '',
               maker: makerCol !== -1 ? String(r[makerCol] || '') : '',
               grainCount: grainCol !== -1 ? String(r[grainCol] || '') : '',
-              harvestSeason: harvestSeasonCol !== -1 ? String(r[harvestSeasonCol] || '') : ''
+              harvestSeason: harvestSeasonCol !== -1 ? String(r[harvestSeasonCol] || '') : '',
+              years: years,
+              year: years.length ? years.join(',') : '',
+              locations: locations,
+              location: locations.length ? locations.join(',') : '',
+              fieldConditions: fieldConditions,
+              fieldCondition: fieldConditions.length ? fieldConditions.join(',') : ''
             });
           } catch(e) { console.log('JSON parse error in croptypesDB', e); }
         }
@@ -8901,6 +8913,74 @@ function saveCroptypeDBBatch(params) {
   }
 }
 
+/** 作型の播種/定植/収穫を比較用キーに正規化 */
+function normalizeCroptypeScheduleKey_(arr) {
+  let parsed = arr;
+  if (typeof arr === 'string') {
+    try { parsed = JSON.parse(arr); } catch (e) { return String(arr || ''); }
+  }
+  if (!Array.isArray(parsed)) return '[]';
+  const out = [];
+  parsed.forEach(x => {
+    if (typeof x === 'number' && !isNaN(x)) {
+      out.push(x);
+    } else if (x && typeof x === 'object') {
+      const mi = parseInt(x.monthIndex, 10);
+      if (!isNaN(mi)) {
+        if (x.periodIndex != null || x.period != null) {
+          const pi = parseInt(x.periodIndex != null ? x.periodIndex : x.period, 10) || 0;
+          out.push(mi > 17 ? mi : (mi * 6 + pi));
+        } else {
+          out.push(mi);
+        }
+      }
+    }
+  });
+  out.sort(function(a, b) { return a - b; });
+  return JSON.stringify(out);
+}
+
+function parseCroptypeHistoryCsv_(val) {
+  const s = String(val == null ? '' : val).trim();
+  if (!s) return [];
+  if (s.charAt(0) === '[') {
+    try {
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr)) {
+        return arr.map(function(v) { return String(v == null ? '' : v).trim(); }).filter(Boolean);
+      }
+    } catch (e) {}
+  }
+  return s.split(/[,、／/|]/).map(function(v) { return v.trim(); }).filter(Boolean);
+}
+
+function mergeCroptypeHistoryCsv_(existing, add) {
+  const set = {};
+  parseCroptypeHistoryCsv_(existing).forEach(function(v) { set[v] = true; });
+  parseCroptypeHistoryCsv_(add).forEach(function(v) { set[v] = true; });
+  const arr = Object.keys(set);
+  const allYear = arr.every(function(v) { return /^\d{4}$/.test(v); });
+  if (allYear) arr.sort(function(a, b) { return Number(a) - Number(b); });
+  else arr.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  return arr.join(',');
+}
+
+function ensureCroptypeSheetHeaders_(sheet) {
+  const rawHeaders = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+  const headers = rawHeaders.map(function(h) { return h ? String(h).trim() : ''; });
+  const needed = ['特性(タグ)', 'メーカー', '粒数', '年度', '拠点', '圃場条件'];
+  let changed = false;
+  needed.forEach(function(name) {
+    if (headers.indexOf(name) === -1) {
+      sheet.getRange(1, headers.length + 1).setValue(name);
+      headers.push(name);
+      changed = true;
+    }
+  });
+  if (changed) SpreadsheetApp.flush();
+  return headers;
+}
+
 // 作型DBを保存する関数
 function saveCroptypeDB(params) {
   try {
@@ -8908,53 +8988,86 @@ function saveCroptypeDB(params) {
     let sheet = ss.getSheetByName('作型DB');
     if (!sheet) {
       sheet = ss.insertSheet('作型DB');
-      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)', 'メーカー', '粒数']);
-    } else {
-      // 既存シートに「特性(タグ)」「メーカー」「粒数」カラムがない場合は追加
-      const rawHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      const headers = rawHeaders.map(h => h ? String(h).trim() : "");
-      if (headers.indexOf('特性(タグ)') === -1) {
-        sheet.getRange(1, headers.length + 1).setValue('特性(タグ)');
-        headers.push('特性(タグ)');
-      }
-      if (headers.indexOf('メーカー') === -1) {
-        sheet.getRange(1, headers.length + 1).setValue('メーカー');
-        headers.push('メーカー');
-      }
-      if (headers.indexOf('粒数') === -1) {
-        sheet.getRange(1, headers.length + 1).setValue('粒数');
-        headers.push('粒数');
-      }
+      sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)', 'メーカー', '粒数', '年度', '拠点', '圃場条件']);
     }
+    const headers = ensureCroptypeSheetHeaders_(sheet);
     
     const data = sheet.getDataRange().getValues();
-    const headers = data[0];
     const tagsColIndex = headers.indexOf('特性(タグ)') + 1; // 1-based index
-    const makerColIndex = headers.indexOf('メーカー') + 1; // 1-based index
+    const makerColIndex = headers.indexOf('メーカー') + 1;
     const grainColIndex = headers.indexOf('粒数') + 1;
+    const yearColIndex = headers.indexOf('年度') + 1;
+    const locationColIndex = headers.indexOf('拠点') + 1;
+    const fieldCondColIndex = headers.indexOf('圃場条件') + 1;
+
+    const crop = String(params.crop || '').trim();
+    const variety = String(params.variety || '').trim();
+    const season = String(params.season || '').trim();
+    const climate = String(params.climate || '').trim();
+    const sowKey = normalizeCroptypeScheduleKey_(params.sowing || []);
+    const plantKey = normalizeCroptypeScheduleKey_(params.planting || []);
+    const harvestKey = normalizeCroptypeScheduleKey_(params.harvesting || []);
+    const yearVal = String(params.year == null ? '' : params.year).trim();
+    const locationVal = String(params.location == null ? '' : params.location).trim();
+    const fieldCondVal = String(params.fieldCondition == null ? '' : params.fieldCondition).trim();
     
     let updated = false;
+    let matchRow = -1;
+
+    // 1) 同一作物・品種・産地で、播種/定植/収穫時期が同じ行を優先して更新（年度実績を蓄積）
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(params.crop).trim() && 
-          String(data[i][1]).trim() === String(params.variety).trim() && 
-          String(data[i][2] || '').trim() === String(params.season || '').trim() && 
-          String(data[i][3] || '').trim() === String(params.climate || '').trim()) {
-        
-        sheet.getRange(i + 1, 5).setValue(JSON.stringify(params.sowing || []));
-        sheet.getRange(i + 1, 6).setValue(JSON.stringify(params.planting || []));
-        sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
-        if (tagsColIndex > 0) {
-          sheet.getRange(i + 1, tagsColIndex).setValue(params.characteristics || '');
-        }
-        if (makerColIndex > 0 && params.maker !== undefined && params.maker !== null) {
-          sheet.getRange(i + 1, makerColIndex).setValue(params.maker);
-        }
-        if (grainColIndex > 0 && params.grainCount !== undefined && params.grainCount !== null) {
-          sheet.getRange(i + 1, grainColIndex).setValue(params.grainCount);
-        }
-        updated = true;
+      if (String(data[i][0] || '').trim() !== crop) continue;
+      if (String(data[i][1] || '').trim() !== variety) continue;
+      if (String(data[i][3] || '').trim() !== climate) continue;
+      const rowSow = normalizeCroptypeScheduleKey_(data[i][4]);
+      const rowPlant = normalizeCroptypeScheduleKey_(data[i][5]);
+      const rowHarvest = normalizeCroptypeScheduleKey_(data[i][6]);
+      if (rowSow === sowKey && rowPlant === plantKey && rowHarvest === harvestKey) {
+        matchRow = i;
         break;
       }
+    }
+
+    // 2) 旧キー（作物+品種+まき時期+産地）
+    if (matchRow < 0) {
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === crop &&
+            String(data[i][1] || '').trim() === variety &&
+            String(data[i][2] || '').trim() === season &&
+            String(data[i][3] || '').trim() === climate) {
+          matchRow = i;
+          break;
+        }
+      }
+    }
+
+    if (matchRow >= 0) {
+      const i = matchRow;
+      sheet.getRange(i + 1, 5).setValue(JSON.stringify(params.sowing || []));
+      sheet.getRange(i + 1, 6).setValue(JSON.stringify(params.planting || []));
+      sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
+      if (tagsColIndex > 0) {
+        sheet.getRange(i + 1, tagsColIndex).setValue(params.characteristics || data[i][tagsColIndex - 1] || '');
+      }
+      if (makerColIndex > 0 && params.maker !== undefined && params.maker !== null && String(params.maker) !== '') {
+        sheet.getRange(i + 1, makerColIndex).setValue(params.maker);
+      }
+      if (grainColIndex > 0 && params.grainCount !== undefined && params.grainCount !== null && String(params.grainCount) !== '') {
+        sheet.getRange(i + 1, grainColIndex).setValue(params.grainCount);
+      }
+      if (yearColIndex > 0) {
+        const mergedYears = mergeCroptypeHistoryCsv_(data[i][yearColIndex - 1], yearVal);
+        sheet.getRange(i + 1, yearColIndex).setValue(mergedYears);
+      }
+      if (locationColIndex > 0) {
+        const mergedLoc = mergeCroptypeHistoryCsv_(data[i][locationColIndex - 1], locationVal);
+        sheet.getRange(i + 1, locationColIndex).setValue(mergedLoc);
+      }
+      if (fieldCondColIndex > 0) {
+        const mergedFc = mergeCroptypeHistoryCsv_(data[i][fieldCondColIndex - 1], fieldCondVal);
+        sheet.getRange(i + 1, fieldCondColIndex).setValue(mergedFc);
+      }
+      updated = true;
     }
     
     if (!updated) {
@@ -8979,6 +9092,15 @@ function saveCroptypeDB(params) {
       }
       if (grainColIndex > 0) {
         newRow[grainColIndex - 1] = (params.grainCount !== undefined && params.grainCount !== null) ? params.grainCount : '';
+      }
+      if (yearColIndex > 0) {
+        newRow[yearColIndex - 1] = yearVal;
+      }
+      if (locationColIndex > 0) {
+        newRow[locationColIndex - 1] = locationVal;
+      }
+      if (fieldCondColIndex > 0) {
+        newRow[fieldCondColIndex - 1] = fieldCondVal;
       }
       sheet.appendRow(newRow);
     }
