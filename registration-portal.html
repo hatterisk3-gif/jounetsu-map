@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>情熱MAP データ登録ポータル</title>
+  <title>情熱MAP データ登録ポータル v1.01</title>
   <link rel="icon" href="icon_index.png">
   <link rel="apple-touch-icon" href="icon_index.png">
   <link rel="manifest" href="manifest_portal.json">
@@ -30,9 +30,19 @@
 </head>
 <body>
   <header class="header">
-    <h1>📝 データ登録ポータル</h1>
-    <a class="back" href="index.html">← 総合案内所</a>
+    <h1>📝 データ登録ポータル (v1.01)</h1>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span id="headerUserStatus" style="font-size:12px; font-weight:bold; background:rgba(255,255,255,0.2); padding:4px 8px; border-radius:12px;"></span>
+      <a class="back" href="index.html">← 総合案内所</a>
+    </div>
   </header>
+  <script>
+    (function() {
+      const name = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId');
+      const el = document.getElementById('headerUserStatus');
+      if (el && name) el.textContent = '👤 ' + name;
+    })();
+  </script>
   <main>
     <p class="lead">登録したいデータを選ぶと、各アプリの新規登録画面へ直接移動します。</p>
     <div class="grid">
@@ -71,6 +81,10 @@
       <a class="card manual" href="manual.html?tab=create">
         <span class="icon">📖</span><span class="title">マニュアルを登録</span>
         <span class="desc">作業手順書・画像・注意点を新規作成します。</span><span class="go">新規作成へ →</span>
+      </a>
+      <a class="card" href="アイデア.html" style="border-color:#d1c4e9;">
+        <span class="icon">💡</span><span class="title" style="color:#5e35b1;">アイデアを登録</span>
+        <span class="desc">改善アイデアを登録し、審議・運用・廃案まで進捗管理します。</span><span class="go" style="color:#5e35b1;">アイデアボードへ →</span>
       </a>
     </div>
     <h2 class="subhead">その他の登録</h2>

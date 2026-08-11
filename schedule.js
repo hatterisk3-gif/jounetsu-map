@@ -16,6 +16,9 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let map, infoWindow, loadedPolygons = {};
       let globalSchedules = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
+      window.getActiveScheduleList = function () {
+        return (globalSchedules || []).slice();
+      };
 
       
       async function executeLogin() {
@@ -1510,6 +1513,7 @@ async function fetchWeatherAndUpdateUI() {
                     <b>${t.workName}</b><br>
                     <small>${t.cropName ? t.cropName : ''}${tagPart}${traysPart}</small><br>
                     <small>期間: ${t.schedDate}〜${t.deadline}</small>
+                    ${formatDayPlansBadgeHtml(t)}
                   </div>`;
         }).join('');
 
@@ -1546,6 +1550,18 @@ async function fetchWeatherAndUpdateUI() {
         infoWindow.setContent(h);
         infoWindow.setPosition(latLng);
         infoWindow.open(map);
+      }
+
+      function formatDayPlansBadgeHtml(t) {
+        const plans = (t && Array.isArray(t.dayPlans)) ? t.dayPlans : [];
+        if (!plans.length) return '';
+        return '<div style="margin-top:4px;">' + plans.map(function (p) {
+          const n = String(p.userName || p.userId || '').replace(/</g, '&lt;');
+          const ds = String(p.date || '');
+          const m = ds.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+          const md = m ? (Number(m[2]) + '/' + Number(m[3])) : ds;
+          return '<span style="display:inline-block;background:#e3f2fd;color:#0d47a1;border:1px solid #90caf9;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:bold;margin:1px 2px 0 0;">👤' + n + ' 予定済み（' + md + '）</span>';
+        }).join('') + '</div>';
       }
 
       window.openScheduleTable = () => {
@@ -1595,8 +1611,9 @@ async function fetchWeatherAndUpdateUI() {
                   return '<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:999px;padding:1px 6px;font-size:10px;font-weight:bold;margin:1px 2px 0 0;' + st + '">👤' + n + '</span>';
                 }).join('') + '</div>'
               : '';
+            const dayPlansHtml = formatDayPlansBadgeHtml(t);
             return `<tr ${rowClass}>
-                      <td>${workLabel}${taskUsersHtml}</td>
+                      <td>${workLabel}${taskUsersHtml}${dayPlansHtml}</td>
                       <td>${t.dept || '-'}</td>
                       <td>${cropCell}</td>
                       <td>${t.fieldName}</td>

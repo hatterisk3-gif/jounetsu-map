@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>プロポータル v1.38</title>
+    <title>プロポータル v1.39</title>
     
     <link rel="apple-touch-icon" href="icon_index.png">
     <link rel="icon" href="icon_index.png">
@@ -12,7 +12,7 @@
     <style>
         body { font-family: sans-serif; background-color: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
         .container { position: relative; text-align: center; background: #222; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 85%; max-width: 400px; overflow-y: auto; max-height: 90vh; }
-        h1 { color: #FF9800; margin-bottom: 20px; font-size: 24px; }
+        h1 { color: #FF9800; margin-bottom: 12px; font-size: 24px; }
         .btn { display: block; width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 8px; font-size: 18px; font-weight: bold; text-decoration: none; color: white; box-sizing: border-box; transition: opacity 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
         .btn:active { opacity: 0.7; }
         .btn-map { background-color: #795548; }
@@ -29,9 +29,11 @@
 </head>
 <body>
     <div class="container">
-        <h1>プロポータル</h1>
+        <h1>プロポータル (v1.39)</h1>
         
         <a href="javascript:location.reload()" class="reload-btn" title="画面を更新">🔄</a>
+
+        <div id="currentUserBanner" style="margin-bottom:18px; padding:10px 14px; background:#1e2d24; border:1px solid #388e3c; border-radius:8px; font-size:13px; color:#c8e6c9; text-align:center;"></div>
         
         <a href="map.html" class="btn btn-map">🌾生産管理MAP</a>
         
@@ -41,7 +43,48 @@
         
         <a href="admin2.html" class="btn btn-admin2" style="background-color:#009688;">🗺️ 圃場登録</a>
         
-        <a href="machine.html" class="btn" style="background-color:#E91E63; margin-bottom:0;">🚜 機械管理</a>
+        <a href="machine.html" class="btn" style="background-color:#E91E63; margin-bottom:15px;">🚜 機械管理</a>
+        <a href="index.html" class="btn btn-home" style="margin-top:10px;">🏠 総合案内所に戻る</a>
     </div>
+
+    <script>
+      function updateLoginDisplay() {
+        const userId = localStorage.getItem('passionMapUserId') || '';
+        const userName = localStorage.getItem('passionMapUserName') || '';
+        const userRole = localStorage.getItem('passionMapUserRole') || '';
+
+        const banner = document.getElementById('currentUserBanner');
+
+        if (userId) {
+          const roleColor = (userRole === '管理者') ? '#e53935' : '#4CAF50';
+          if (banner) {
+            banner.style.display = 'block';
+            banner.style.background = '#1e2d24';
+            banner.style.border = '1px solid #388e3c';
+            banner.style.color = '#c8e6c9';
+            banner.innerHTML = `
+              <div style="display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;">
+                <span>🔑 ログイン中: <strong>${userName || userId}</strong> (${userId})</span>
+                <span style="background:${roleColor}; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">${userRole || '作業員'}</span>
+              </div>
+            `;
+          }
+        } else {
+          if (banner) {
+            banner.style.display = 'block';
+            banner.style.background = '#2c2214';
+            banner.style.border = '1px solid #f57c00';
+            banner.style.color = '#ffe0b2';
+            banner.innerHTML = `
+              <div style="font-weight:bold; margin-bottom:4px;">🔑 未ログイン状態です</div>
+              <a href="index.html" style="color:#FF9800; text-decoration:underline; font-size:12px; font-weight:bold;">総合案内所でログインする →</a>
+            `;
+          }
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', updateLoginDisplay);
+      updateLoginDisplay();
+    </script>
 </body>
 </html>

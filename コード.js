@@ -188,6 +188,20 @@ function doPost(e) {
     else if (action === "saveAttendanceSettings") result = saveAttendanceSettings(params);
     else if (action === "updateStaffHireDate") result = updateStaffHireDate(params);
     else if (action === "getAttendanceStaffList") result = getAttendanceStaffList(params);
+    else if (action === "getStaffClockBoard") result = getStaffClockBoard(params);
+    else if (action === "confirmStaffClockOut") result = confirmStaffClockOut(params);
+    else if (action === "getFrequentClockInTimes") result = getFrequentClockInTimes(params);
+    else if (action === "ideaBoard_list") result = ideaBoard_list(params);
+    else if (action === "ideaBoard_save") result = ideaBoard_save(params);
+    else if (action === "ideaBoard_setStatus") result = ideaBoard_setStatus(params);
+    else if (action === "ideaBoard_addMemo") result = ideaBoard_addMemo(params);
+    else if (action === "ideaBoard_addCategory") result = ideaBoard_addCategory(params);
+    else if (action === "estimateWorkDuration") result = estimateWorkDuration(params);
+    else if (action === "dayPlan_list") result = dayPlan_list(params);
+    else if (action === "dayPlan_save") result = dayPlan_save(params);
+    else if (action === "dayPlan_update") result = dayPlan_update(params);
+    else if (action === "dayPlan_delete") result = dayPlan_delete(params);
+    else if (action === "dayPlan_options") result = dayPlan_options(params);
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
@@ -1536,7 +1550,6 @@ function manageMasterData(masterType, manageAction, value, userName) {
       for (let i = 1; i < latestData.length; i++) {
         if (keyIdx >= 0 && String(latestData[i][keyIdx]).trim() === originalName) {
           // 既存行をベースに必要な列だけ更新（担当部署など他列は維持）
-          // getRange(row, column, numRows, numColumns) ※3つ目は行数
           const rowVals = latestData[i].slice();
           while (rowVals.length < workHeaders.length) rowVals.push("");
           applyWorkMasterValuesToRow_(rowVals, workHeaders, value.newData || {});
@@ -5083,6 +5096,7 @@ function getScheduleData() {
   const schedSheet = ss.getSheetByName('作業予定');
   let activeSchedules = [];
   const taskUsersMap = collectScheduleTaskUsersMap_();
+  const dayPlanMaps = collectDayPlanBookings_();
   if (schedSheet) {
     const sData = schedSheet.getDataRange().getValues();
     let scheduleUpdates = [];
@@ -5165,8 +5179,10 @@ function getScheduleData() {
           periodLabel: periodLabel,
           scheduleKey: scheduleKey,
           taskUsers: taskUsersMap[scheduleKey] || [],
-          isMidWork: false
+          isMidWork: false,
+          dayPlans: []
         });
+        attachDayPlansToSchedule_(activeSchedules[activeSchedules.length - 1], dayPlanMaps);
       }
     }
     // 空欄を自動補完
@@ -5203,8 +5219,10 @@ function getScheduleData() {
       recordId: mw.recordId,
       polyId: mw.polyId,
       workedRidges: mw.workedRidges,
-      nextRidge: mw.nextRidge
+      nextRidge: mw.nextRidge,
+      dayPlans: []
     });
+    attachDayPlansToSchedule_(activeSchedules[activeSchedules.length - 1], dayPlanMaps);
   });
 
   // 4. ポリゴン情報の収集（ステータスはフロントエンドで計算させるために付加情報を乗せる）
@@ -5952,26 +5970,49 @@ function updateMachineLocations(params) {
 // ==========================================
 // 現場（アプリ）からの新規農機・車両登録
 // ==========================================
+function saveNoukiMachinePhoto_(photoObj) {
+  if (!photoObj) return '';
+  let base64 = '';
+  let filename = 'machine.jpg';
+  if (typeof photoObj === 'string') {
+    base64 = photoObj;
+  } else {
+    base64 = photoObj.base64 || photoObj.photoBase64 || '';
+    filename = photoObj.filename || photoObj.photoFilename || filename;
+  }
+  if (!base64 || String(base64).indexOf(',') < 0) return '';
+  try {
+    const splitBase = String(base64).split(',');
+    const type = splitBase[0].split(';')[0].replace('data:', '') || 'image/jpeg';
+    const blob = Utilities.newBlob(Utilities.base64Decode(splitBase[1]), type, filename);
+    const folders = DriveApp.getFoldersByName("情熱MAP_農機写真");
+    const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("情熱MAP_農機写真");
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w1000";
+  } catch (e) {
+    return '';
+  }
+}
+
 function addMachineToSign(params) {
   const sheet = ensureNoukiMasterSheet();
   const newId = 'MAC-' + Utilities.getUuid().substring(0,8);
-  
-  // 写真をGoogleドライブに保存する内部関数
-  function saveImage(photoObj) {
-    if (!photoObj || !photoObj.base64) return "";
-    try {
-      const splitBase = photoObj.base64.split(',');
-      const type = splitBase[0].split(';')[0].replace('data:', '');
-      const byteString = Utilities.base64Decode(splitBase[1]);
-      const blob = Utilities.newBlob(byteString, type, photoObj.filename || "photo.jpg");
-      const folders = DriveApp.getFoldersByName("情熱MAP_農機写真"); // 専用フォルダ作成
-      const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("情熱MAP_農機写真");
-      return folder.createFile(blob).getUrl();
-    } catch(e) { return ""; }
-  }
 
-  const photo1Url = params.photos && params.photos.length > 0 ? saveImage(params.photos[0]) : (params.photo || "");
-  const photo2Url = params.photos && params.photos.length > 1 ? saveImage(params.photos[1]) : (params.photo2 || "");
+  let photo1Url = params.photo || "";
+  let photo2Url = params.photo2 || "";
+  if (params.photoBase64) {
+    const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || "photo.jpg" });
+    if (u) photo1Url = u;
+  }
+  if (params.photos && params.photos.length > 0) {
+    const u = saveNoukiMachinePhoto_(params.photos[0]);
+    if (u) photo1Url = u;
+  }
+  if (params.photos && params.photos.length > 1) {
+    const u = saveNoukiMachinePhoto_(params.photos[1]);
+    if (u) photo2Url = u;
+  }
   const signName = params.signName || "";
   const signId = params.signId || "";
   const fuel = params.fuel || params.fuelType || "";
@@ -6549,6 +6590,26 @@ function editMachineInMaster(params) {
   }
   if (targetRowIndex === -1) throw new Error("指定された農機が見つかりません。");
 
+  let photo = existing.photo || '';
+  let photo2 = existing.photo2 || '';
+  if (params.clearPhoto) photo = '';
+  if (params.clearPhoto2) photo2 = '';
+  if (params.photoBase64) {
+    const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || 'machine.jpg' });
+    if (u) photo = u;
+  }
+  if (params.photos && params.photos[0]) {
+    const u = saveNoukiMachinePhoto_(params.photos[0]);
+    if (u) photo = u;
+  }
+  if (params.photos && params.photos[1]) {
+    const u = saveNoukiMachinePhoto_(params.photos[1]);
+    if (u) photo2 = u;
+  }
+  if (params.photo && !params.photoBase64 && !(params.photos && params.photos[0]) && !params.clearPhoto) {
+    photo = params.photo;
+  }
+
   const merged = Object.assign({}, existing, {
     name: params.name != null ? params.name : existing.name,
     model: params.model != null ? params.model : (params.modelType != null ? params.modelType : existing.model),
@@ -6561,11 +6622,13 @@ function editMachineInMaster(params) {
     fuel: params.fuel != null ? params.fuel : (params.fuelType != null ? params.fuelType : existing.fuel),
     status: params.status != null ? params.status : existing.status,
     signId: params.signId != null ? params.signId : existing.signId,
-    signName: params.signName != null ? params.signName : existing.signName
+    signName: params.signName != null ? params.signName : existing.signName,
+    photo: photo,
+    photo2: photo2
   });
   const row = buildNoukiMachineRow(merged);
   sheet.getRange(targetRowIndex, 1, 1, row.length).setValues([row]);
-  return true;
+  return { success: true, machine: parseNoukiMachineRow(row) };
 }
 
 // ==========================================
@@ -6925,6 +6988,64 @@ function getTrackingData(params) {
     return { trackingData: data, allUsers: allUsers };
   } catch(e) {
     throw new Error("トラッキング取得エラー: " + e.message);
+  }
+}
+
+function roundClockHm5_(hm) {
+  const p = String(hm || '').split(':');
+  let h = parseInt(p[0], 10);
+  let m = parseInt(p[1], 10);
+  if (isNaN(h) || isNaN(m)) return '';
+  m = Math.round(m / 5) * 5;
+  if (m >= 60) {
+    m = 0;
+    h = (h + 1) % 24;
+  }
+  if (h < 0) h = 0;
+  if (h > 23) h = 23;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+/** 本人の過去出勤から、よく登録する時刻（5分丸め）を返す */
+function getFrequentClockInTimes(params) {
+  try {
+    const userName = String((params && params.userName) || '').replace(/\s+/g, '');
+    if (!userName) return { times: [], mostFrequent: '' };
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('トラッキング');
+    if (!sheet) return { times: [], mostFrequent: '' };
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { times: [], mostFrequent: '' };
+
+    const startRow = Math.max(2, lastRow - 7999);
+    const numRows = lastRow - startRow + 1;
+    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
+    const counts = {};
+
+    for (let i = 0; i < values.length; i++) {
+      const type = String(values[i][4] || '');
+      if (type !== '出勤') continue;
+      const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
+      if (!rowUser) continue;
+      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
+      const tObj = new Date(values[i][0]);
+      if (isNaN(tObj.getTime())) continue;
+      const hm = roundClockHm5_(Utilities.formatDate(tObj, 'Asia/Tokyo', 'HH:mm'));
+      if (!hm) continue;
+      counts[hm] = (counts[hm] || 0) + 1;
+    }
+
+    const times = Object.keys(counts).map(function (t) {
+      return { time: t, count: counts[t] };
+    }).sort(function (a, b) {
+      return b.count - a.count || a.time.localeCompare(b.time);
+    });
+    return {
+      times: times.slice(0, 5),
+      mostFrequent: times.length ? times[0].time : ''
+    };
+  } catch (e) {
+    throw new Error('よく使う出勤時間の取得エラー: ' + e.message);
   }
 }
 
@@ -7484,6 +7605,289 @@ function getOpenClockInStatus(params) {
   } catch (e) {
     throw new Error('出退勤状態取得エラー: ' + e.message);
   }
+}
+
+function ensureClockConfirmSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('退勤確認');
+  if (!sheet) {
+    sheet = ss.insertSheet('退勤確認');
+    sheet.getRange(1, 1, 1, 7).setValues([['日付', '対象ユーザー', '出勤', '退勤', 'メモ', '確認者', '確認日時']]);
+    try { sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+  }
+  return sheet;
+}
+
+function attYmdJst_(d) {
+  return Utilities.formatDate(d, 'JST', 'yyyy-MM-dd');
+}
+
+function attHmJst_(d) {
+  return Utilities.formatDate(d, 'JST', 'HH:mm');
+}
+
+function normClockUser_(name) {
+  return String(name || '').replace(/\s+/g, '');
+}
+
+function parseClockOutNote_(type) {
+  const t = String(type || '');
+  const m = t.match(/^退勤[（(](.+)[）)]$/);
+  return m ? String(m[1] || '').trim() : '';
+}
+
+function getStaffClockBoard(params) {
+  const requesterId = String((params && params.requesterId) || (params && params.userId) || '').trim();
+  const requester = findMeiboUser_(requesterId, params && params.requesterName);
+  if (!requester || !attIsAdminRole_(requester.role)) {
+    return { success: false, message: '管理者のみ閲覧できます' };
+  }
+  const todayYmd = attYmdJst_(new Date());
+  const dateYmd = String((params && params.dateYmd) || todayYmd).trim() || todayYmd;
+
+  const ss = TENANT_SS;
+  const meibo = ss.getSheetByName('名簿');
+  const members = [];
+  if (meibo) {
+    const md = meibo.getDataRange().getValues();
+    for (let i = 1; i < md.length; i++) {
+      const userId = String(md[i][0] || '').trim();
+      const userName = String(md[i][2] || '').trim();
+      const role = String(md[i][3] || '').trim();
+      if (!userName) continue;
+      members.push({ userId: userId, userName: userName, role: role, key: normClockUser_(userName) });
+    }
+  }
+
+  function emptyClockState_(m) {
+    return {
+      userId: m.userId || '',
+      userName: m.userName || '',
+      role: m.role || '',
+      status: 'none',
+      clockInTime: '',
+      clockInDateYmd: '',
+      clockOutTime: '',
+      clockOutDateYmd: '',
+      clockOutNote: '',
+      forgot: false,
+      lunchNote: '',
+      confirmed: false,
+      confirmedBy: '',
+      confirmedAt: ''
+    };
+  }
+
+  const stateMap = {};
+  members.forEach(function (m) {
+    stateMap[m.key] = emptyClockState_(m);
+  });
+
+  const sheet = ss.getSheetByName('トラッキング');
+  if (sheet && sheet.getLastRow() > 1) {
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - 7999);
+    const values = sheet.getRange(startRow, 1, lastRow - startRow + 1, 5).getValues();
+    const openByUser = {};
+    const lunchByUser = {};
+    const lastClosedByUser = {};
+
+    function applyShiftToDate_(key, closed, open, lunch) {
+      const st = stateMap[key];
+      if (!st) return;
+      if (closed && closed.outMs) {
+        const outYmd = attYmdJst_(new Date(closed.outMs));
+        const inYmd = closed.openIn ? attYmdJst_(new Date(closed.openIn.ms)) : '';
+        if (outYmd === dateYmd || inYmd === dateYmd) {
+          st.status = 'clocked_out';
+          st.forgot = false;
+          st.clockOutDateYmd = outYmd;
+          st.clockOutTime = attHmJst_(new Date(closed.outMs));
+          st.clockOutNote = closed.note || '';
+          if (closed.openIn) {
+            st.clockInDateYmd = inYmd;
+            st.clockInTime = attHmJst_(new Date(closed.openIn.ms));
+          }
+          st.lunchNote = closed.lunch ? String(closed.lunch) : '';
+        }
+      } else if (open && open.ms) {
+        const inYmd = attYmdJst_(new Date(open.ms));
+        if (inYmd === dateYmd) {
+          st.status = 'working';
+          st.forgot = false;
+          st.clockInDateYmd = inYmd;
+          st.clockInTime = attHmJst_(new Date(open.ms));
+          st.clockOutTime = '';
+          st.clockOutDateYmd = '';
+          st.clockOutNote = '';
+          st.lunchNote = lunch || '';
+        } else if (inYmd < dateYmd && dateYmd === todayYmd) {
+          st.status = 'forgot';
+          st.forgot = true;
+          st.clockInDateYmd = inYmd;
+          st.clockInTime = attHmJst_(new Date(open.ms));
+          st.clockOutTime = '';
+          st.clockOutDateYmd = '';
+          st.clockOutNote = '';
+          st.lunchNote = lunch || '';
+        }
+      }
+    }
+
+    for (let i = 0; i < values.length; i++) {
+      const key = normClockUser_(values[i][1]);
+      if (!key) continue;
+      if (!stateMap[key]) {
+        stateMap[key] = emptyClockState_({ userName: String(values[i][1] || '').trim() });
+      }
+      const type = String(values[i][4] || '');
+      const tObj = new Date(values[i][0]);
+      if (isNaN(tObj.getTime())) continue;
+      const isIn = (type === '出勤' || type === 'アプリ起動');
+      const isOut = (type === '退勤' || type.indexOf('退勤(') === 0);
+      const isClockInCancel = (type === '出勤取消');
+      const isClockOutCancel = (type === '退勤取消');
+
+      if (isIn) {
+        openByUser[key] = { ms: tObj.getTime() };
+        lunchByUser[key] = null;
+        lastClosedByUser[key] = null;
+        applyShiftToDate_(key, null, openByUser[key], '');
+      } else if (isOut) {
+        lastClosedByUser[key] = {
+          openIn: openByUser[key] || null,
+          lunch: lunchByUser[key] || null,
+          outMs: tObj.getTime(),
+          note: parseClockOutNote_(type)
+        };
+        openByUser[key] = null;
+        lunchByUser[key] = null;
+        applyShiftToDate_(key, lastClosedByUser[key], null, '');
+      } else if (isClockOutCancel) {
+        const closed = lastClosedByUser[key];
+        if (closed && closed.openIn) {
+          openByUser[key] = closed.openIn;
+          lunchByUser[key] = closed.lunch;
+          lastClosedByUser[key] = null;
+          if (stateMap[key] && (stateMap[key].clockOutDateYmd === dateYmd || stateMap[key].clockInDateYmd === dateYmd)) {
+            stateMap[key].status = 'none';
+            stateMap[key].clockOutTime = '';
+            stateMap[key].clockOutDateYmd = '';
+            stateMap[key].clockOutNote = '';
+          }
+          applyShiftToDate_(key, null, openByUser[key], lunchByUser[key] || '');
+        }
+      } else if (isClockInCancel) {
+        if (stateMap[key] && stateMap[key].clockInDateYmd === dateYmd) {
+          stateMap[key].status = 'none';
+          stateMap[key].clockInTime = '';
+          stateMap[key].clockInDateYmd = '';
+          stateMap[key].clockOutTime = '';
+          stateMap[key].clockOutDateYmd = '';
+          stateMap[key].clockOutNote = '';
+          stateMap[key].forgot = false;
+        }
+        openByUser[key] = null;
+        lunchByUser[key] = null;
+        lastClosedByUser[key] = null;
+      } else if (openByUser[key]) {
+        if (type === '昼休憩なし') lunchByUser[key] = '昼なし';
+        else if (type.indexOf('昼休憩') === 0) lunchByUser[key] = type;
+        applyShiftToDate_(key, null, openByUser[key], lunchByUser[key] || '');
+      }
+    }
+  }
+
+  const confSheet = ensureClockConfirmSheet_();
+  const confData = confSheet.getDataRange().getValues();
+  const confMap = {};
+  for (let i = 1; i < confData.length; i++) {
+    const d = String(confData[i][0] || '').trim();
+    const u = normClockUser_(confData[i][1]);
+    if (d === dateYmd && u) {
+      confMap[u] = {
+        confirmed: true,
+        confirmedBy: String(confData[i][5] || '').trim(),
+        confirmedAt: (confData[i][6] instanceof Date)
+          ? (attYmdJst_(confData[i][6]) + ' ' + attHmJst_(confData[i][6]))
+          : String(confData[i][6] || '').trim()
+      };
+    }
+  }
+  Object.keys(confMap).forEach(function (key) {
+    if (stateMap[key]) {
+      stateMap[key].confirmed = true;
+      stateMap[key].confirmedBy = confMap[key].confirmedBy;
+      stateMap[key].confirmedAt = confMap[key].confirmedAt;
+    }
+  });
+
+  const list = Object.keys(stateMap).map(function (k) { return stateMap[k]; });
+  list.sort(function (a, b) {
+    const rank = function (s) {
+      if (s.status === 'clocked_out' && !s.confirmed) return 0;
+      if (s.status === 'forgot') return 1;
+      if (s.status === 'working') return 2;
+      if (s.status === 'clocked_out') return 3;
+      return 4;
+    };
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    return String(a.userName).localeCompare(String(b.userName), 'ja');
+  });
+
+  const pending = list.filter(function (m) { return m.status === 'clocked_out' && !m.confirmed; }).length;
+  const working = list.filter(function (m) { return m.status === 'working' || m.status === 'forgot'; }).length;
+  const done = list.filter(function (m) { return m.status === 'clocked_out'; }).length;
+
+  return {
+    success: true,
+    dateYmd: dateYmd,
+    todayYmd: todayYmd,
+    pendingCount: pending,
+    workingCount: working,
+    clockedOutCount: done,
+    members: list
+  };
+}
+
+function confirmStaffClockOut(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const requester = findMeiboUser_(requesterId, params && params.requesterName);
+  if (!requester || !attIsAdminRole_(requester.role)) {
+    return { success: false, message: '管理者のみ確認できます' };
+  }
+  const dateYmd = String((params && params.dateYmd) || '').trim();
+  const targetName = String((params && params.targetUserName) || '').trim();
+  if (!dateYmd || !targetName) return { success: false, message: '日付と対象ユーザーが必要です' };
+  const undo = !!(params && params.undo);
+  const sheet = ensureClockConfirmSheet_();
+  const data = sheet.getDataRange().getValues();
+  const key = normClockUser_(targetName);
+  let foundRow = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0] || '').trim() === dateYmd && normClockUser_(data[i][1]) === key) {
+      foundRow = i + 1;
+      break;
+    }
+  }
+  if (undo) {
+    if (foundRow > 0) sheet.deleteRow(foundRow);
+    writeLog(requester.userName || requesterId, '退勤確認解除', targetName, dateYmd);
+    return { success: true, confirmed: false, message: '確認を取り消しました' };
+  }
+  const clockIn = String((params && params.clockInTime) || '').trim();
+  const clockOut = String((params && params.clockOutTime) || '').trim();
+  const note = String((params && params.note) || '').trim();
+  const now = new Date();
+  const rowVals = [dateYmd, targetName, clockIn, clockOut, note, requester.userName || requesterId, now];
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 1, 1, 7).setValues([rowVals]);
+  } else {
+    sheet.appendRow(rowVals);
+  }
+  writeLog(requester.userName || requesterId, '退勤確認', targetName, dateYmd + ' ' + clockIn + '〜' + clockOut);
+  return { success: true, confirmed: true, message: '退勤を確認しました' };
 }
 
 // trigger clasp
@@ -10156,7 +10560,12 @@ function vehicle_saveVehicle(p) {
     }
   }
 
-  let photoUrl = p.photo || existingPhoto || '';
+  let photoUrl = existingPhoto || '';
+  if (p.clearPhoto) {
+    photoUrl = '';
+  } else if (p.photo && !p.photoBase64) {
+    photoUrl = p.photo;
+  }
   if (p.photoBase64) {
     const folders = DriveApp.getFoldersByName("情熱MAP_車両写真");
     const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("情熱MAP_車両写真");
@@ -11388,6 +11797,32 @@ function getManualSheet() {
   return sheet;
 }
 
+function parseManualWorkLink_(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return { workNames: [], category: '', crops: [] };
+  if (s.charAt(0) === '{') {
+    try {
+      const o = JSON.parse(s);
+      const workNames = Array.isArray(o.workNames)
+        ? o.workNames.map(function(x) { return String(x || '').trim(); }).filter(Boolean)
+        : String(o.workNames || '').split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+      const crops = Array.isArray(o.crops)
+        ? o.crops.map(function(x) { return String(x || '').trim(); }).filter(Boolean)
+        : String(o.crops || o.crop || '').split(/[,、]/).map(function(x) { return x.trim(); }).filter(Boolean);
+      return {
+        workNames: workNames,
+        category: String(o.category || '').trim(),
+        crops: crops
+      };
+    } catch (e) {}
+  }
+  return {
+    workNames: s.split(',').map(function(x) { return x.trim(); }).filter(Boolean),
+    category: '',
+    crops: []
+  };
+}
+
 function saveManualData(manual) {
   try {
     if (!manual || !manual.id) return { success: false, message: '無効なデータ' };
@@ -11402,10 +11837,19 @@ function saveManualData(manual) {
       }
     }
 
+    const crops = Array.isArray(manual.crops)
+      ? manual.crops.map(function(x) { return String(x || '').trim(); }).filter(Boolean)
+      : String(manual.crop || '').split(/[,、]/).map(function(x) { return x.trim(); }).filter(Boolean);
+    const linkJson = JSON.stringify({
+      workNames: Array.isArray(manual.workNames) ? manual.workNames : (manual.workNames ? [manual.workNames] : []),
+      category: manual.category || '',
+      crops: crops
+    });
+
     const rowVals = [
       manual.id,
       manual.title || '',
-      Array.isArray(manual.workNames) ? manual.workNames.join(',') : (manual.workNames || ''),
+      linkJson,
       manual.notice || '',
       JSON.stringify(manual.steps || []),
       JSON.stringify(manual.photos || []),
@@ -11436,10 +11880,13 @@ function getManualList() {
       try { steps = JSON.parse(row[4] || '[]'); } catch(e) {}
       try { photos = JSON.parse(row[5] || '[]'); } catch(e) {}
 
+      const link = parseManualWorkLink_(row[2]);
       manuals.push({
         id: String(row[0]),
         title: String(row[1] || ''),
-        workNames: String(row[2] || '').split(',').filter(Boolean),
+        workNames: link.workNames,
+        category: link.category,
+        crops: link.crops,
         notice: String(row[3] || ''),
         steps: steps,
         photos: photos,
@@ -12329,4 +12776,520 @@ function quotationArchive_(params) {
     return { success: true };
   }
   throw new Error('対象の見積が見つかりません');
+}
+
+// ==========================================
+// 💡 アイデアボード
+// ==========================================
+function ideaBoard_defaultCategories_() {
+  return ['機械', '栽培', '運営', '販売'];
+}
+
+function ideaBoard_ensureSheets_() {
+  const ss = TENANT_SS;
+  let board = ss.getSheetByName('アイデアボード');
+  if (!board) {
+    board = ss.insertSheet('アイデアボード');
+    board.getRange(1, 1, 1, 11).setValues([['ID', '登録者', '登録日', 'カテゴリ', '内容', 'ステータス', '廃案理由', 'メモJSON', '履歴JSON', '更新者', '更新日時']]);
+    try { board.getRange(1, 1, 1, 11).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+  }
+  let cats = ss.getSheetByName('アイデアカテゴリ');
+  if (!cats) {
+    cats = ss.insertSheet('アイデアカテゴリ');
+    cats.getRange(1, 1).setValue('カテゴリ名');
+    ideaBoard_defaultCategories_().forEach(function (c) { cats.appendRow([c]); });
+    try { cats.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+  }
+  return { board: board, cats: cats };
+}
+
+function ideaBoard_parseJson_(raw, fallback) {
+  if (raw == null || raw === '') return fallback;
+  if (Array.isArray(raw) || (typeof raw === 'object' && !(raw instanceof Date))) return raw;
+  try {
+    const o = JSON.parse(String(raw));
+    return o == null ? fallback : o;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function ideaBoard_formatYmd_(d) {
+  if (d instanceof Date && !isNaN(d.getTime())) {
+    return Utilities.formatDate(d, 'JST', 'yyyy-MM-dd');
+  }
+  const s = String(d || '').trim();
+  const m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+  return s;
+}
+
+function ideaBoard_rowToItem_(row) {
+  return {
+    id: String(row[0] || ''),
+    author: String(row[1] || ''),
+    date: ideaBoard_formatYmd_(row[2]),
+    category: String(row[3] || ''),
+    content: String(row[4] || ''),
+    status: String(row[5] || 'idea'),
+    rejectReason: String(row[6] || ''),
+    memos: ideaBoard_parseJson_(row[7], []),
+    history: ideaBoard_parseJson_(row[8], []),
+    updatedBy: String(row[9] || ''),
+    updatedAt: row[10] instanceof Date
+      ? Utilities.formatDate(row[10], 'JST', 'yyyy/MM/dd HH:mm')
+      : String(row[10] || '')
+  };
+}
+
+function ideaBoard_listCategories_(sheet) {
+  const names = ideaBoard_defaultCategories_().slice();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    const n = String(data[i][0] || '').trim();
+    if (n && names.indexOf(n) < 0) names.push(n);
+  }
+  return names;
+}
+
+function ideaBoard_list(params) {
+  const sheets = ideaBoard_ensureSheets_();
+  const data = sheets.board.getDataRange().getValues();
+  const items = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!String(data[i][0] || '').trim()) continue;
+    items.push(ideaBoard_rowToItem_(data[i]));
+  }
+  items.sort(function (a, b) {
+    return String(b.date || '').localeCompare(String(a.date || '')) || String(b.id).localeCompare(String(a.id));
+  });
+  return {
+    success: true,
+    items: items,
+    categories: ideaBoard_listCategories_(sheets.cats)
+  };
+}
+
+function ideaBoard_save(params) {
+  const sheets = ideaBoard_ensureSheets_();
+  const user = String((params && params.userName) || '').trim() || '不明';
+  const now = new Date();
+  const content = String((params && params.content) || '').trim();
+  if (!content) return { success: false, message: '内容を入力してください' };
+  const category = String((params && params.category) || '').trim();
+  if (!category) return { success: false, message: 'カテゴリを選択してください' };
+  const author = String((params && params.author) || user).trim();
+  const dateYmd = String((params && params.date) || '').trim() || Utilities.formatDate(now, 'JST', 'yyyy-MM-dd');
+  const id = 'IDEA_' + now.getTime() + '_' + Math.random().toString(36).slice(2, 6);
+  const history = [{
+    at: Utilities.formatDate(now, 'JST', 'yyyy/MM/dd HH:mm'),
+    by: author,
+    from: '',
+    to: 'idea',
+    note: '登録'
+  }];
+  sheets.board.appendRow([
+    id, author, dateYmd, category, content, 'idea', '',
+    JSON.stringify([]), JSON.stringify(history), author, now
+  ]);
+  writeLog(author, 'アイデア登録', category, content.slice(0, 80));
+  return { success: true, item: ideaBoard_rowToItem_(sheets.board.getRange(sheets.board.getLastRow(), 1, 1, 11).getValues()[0]) };
+}
+
+function ideaBoard_findRow_(sheet, id) {
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(id)) return i + 1;
+  }
+  return -1;
+}
+
+function ideaBoard_setStatus(params) {
+  const sheets = ideaBoard_ensureSheets_();
+  const id = String((params && params.id) || '').trim();
+  const to = String((params && params.status) || '').trim();
+  const allowed = { idea: 1, review: 1, running: 1, rejected: 1 };
+  if (!id || !allowed[to]) return { success: false, message: '対象または進捗が不正です' };
+  const row = ideaBoard_findRow_(sheets.board, id);
+  if (row < 0) return { success: false, message: 'アイデアが見つかりません' };
+  const vals = sheets.board.getRange(row, 1, 1, 11).getValues()[0];
+  const from = String(vals[5] || 'idea');
+  const user = String((params && params.userName) || '').trim() || '不明';
+  const now = new Date();
+  let history = ideaBoard_parseJson_(vals[8], []);
+  if (!Array.isArray(history)) history = [];
+  if (from !== to) {
+    history.push({
+      at: Utilities.formatDate(now, 'JST', 'yyyy/MM/dd HH:mm'),
+      by: user,
+      from: from,
+      to: to,
+      note: to === 'rejected' ? '廃案' : ''
+    });
+  }
+  const rejectReason = (to === 'rejected')
+    ? String((params && params.rejectReason) || vals[6] || '')
+    : (to === 'review' || to === 'idea' || to === 'running' ? String(vals[6] || '') : '');
+  sheets.board.getRange(row, 6, 1, 6).setValues([[
+    to,
+    rejectReason,
+    JSON.stringify(ideaBoard_parseJson_(vals[7], [])),
+    JSON.stringify(history),
+    user,
+    now
+  ]]);
+  writeLog(user, 'アイデア進捗', id, from + '→' + to);
+  const updated = sheets.board.getRange(row, 1, 1, 11).getValues()[0];
+  return { success: true, item: ideaBoard_rowToItem_(updated) };
+}
+
+function ideaBoard_addMemo(params) {
+  const sheets = ideaBoard_ensureSheets_();
+  const id = String((params && params.id) || '').trim();
+  const text = String((params && params.text) || '').trim();
+  if (!id || !text) return { success: false, message: 'メモを入力してください' };
+  const row = ideaBoard_findRow_(sheets.board, id);
+  if (row < 0) return { success: false, message: 'アイデアが見つかりません' };
+  const vals = sheets.board.getRange(row, 1, 1, 11).getValues()[0];
+  let memos = ideaBoard_parseJson_(vals[7], []);
+  if (!Array.isArray(memos)) memos = [];
+  const user = String((params && params.userName) || '').trim() || '不明';
+  const now = new Date();
+  memos.push({
+    at: Utilities.formatDate(now, 'JST', 'yyyy/MM/dd HH:mm'),
+    by: user,
+    text: text
+  });
+  sheets.board.getRange(row, 8, 1, 4).setValues([[JSON.stringify(memos), JSON.stringify(ideaBoard_parseJson_(vals[8], [])), user, now]]);
+  writeLog(user, 'アイデアメモ', id, text.slice(0, 80));
+  const updated = sheets.board.getRange(row, 1, 1, 11).getValues()[0];
+  return { success: true, item: ideaBoard_rowToItem_(updated) };
+}
+
+function ideaBoard_addCategory(params) {
+  const sheets = ideaBoard_ensureSheets_();
+  const name = String((params && params.name) || '').trim();
+  if (!name) return { success: false, message: 'カテゴリ名を入力してください' };
+  const list = ideaBoard_listCategories_(sheets.cats);
+  if (list.indexOf(name) >= 0) return { success: true, categories: list };
+  sheets.cats.appendRow([name]);
+  writeLog(String((params && params.userName) || ''), 'アイデアカテゴリ追加', name, '');
+  return { success: true, categories: ideaBoard_listCategories_(sheets.cats) };
+}
+
+// ==========================================
+// 🗓️ 日次予定（Googleカレンダー風ブロック）
+// ==========================================
+function dayPlan_ensureSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('日次予定');
+  const headers = ['ID', 'ユーザーID', 'ユーザー名', '日付', '開始', '終了', '分数', '作業名', 'カテゴリ', '推定分数', '推定根拠', '承認済', '備考', '作成日時', '更新日時', 'スケジュールキー'];
+  if (!sheet) {
+    sheet = ss.insertSheet('日次予定');
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    try { sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    return sheet;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  for (let i = 0; i < headers.length; i++) {
+    if (String(existing[i] || '') !== headers[i]) sheet.getRange(1, i + 1).setValue(headers[i]);
+  }
+  return sheet;
+}
+
+function dayPlan_hmToMins_(hm) {
+  const m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return 0;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function dayPlan_minsToHm_(mins) {
+  let n = Math.max(0, parseInt(mins, 10) || 0) % (24 * 60);
+  return ('0' + Math.floor(n / 60)).slice(-2) + ':' + ('0' + (n % 60)).slice(-2);
+}
+
+function dayPlan_rowToItem_(row) {
+  return {
+    id: String(row[0] || ''),
+    userId: String(row[1] || ''),
+    userName: String(row[2] || ''),
+    date: formatPersonalScheduleDateYmd_(row[3]),
+    startTime: String(row[4] || ''),
+    endTime: String(row[5] || ''),
+    durationMins: parseInt(row[6], 10) || 0,
+    workName: String(row[7] || ''),
+    category: String(row[8] || ''),
+    estimateMins: parseInt(row[9], 10) || 0,
+    estimateSource: String(row[10] || ''),
+    approved: row[11] === true || String(row[11]) === 'TRUE' || String(row[11]) === 'true',
+    note: String(row[12] || ''),
+    scheduleKey: String(row[15] || '')
+  };
+}
+
+/** 作業一覧に載せる「誰が・いつ予定済みか」 */
+function collectDayPlanBookings_() {
+  const byKey = {};
+  const byWorkField = {};
+  const byWork = {};
+  try {
+    const sheet = TENANT_SS.getSheetByName('日次予定');
+    if (!sheet || sheet.getLastRow() <= 1) return { byKey: byKey, byWorkField: byWorkField, byWork: byWork };
+    const data = sheet.getDataRange().getValues();
+    const today = formatPersonalScheduleDateYmd_(new Date());
+    for (let i = 1; i < data.length; i++) {
+      const item = dayPlan_rowToItem_(data[i]);
+      if (!item.workName || !item.date) continue;
+      if (today && item.date < today) continue;
+      const fieldName = String(item.note || '').split('/')[0].trim();
+      const booking = {
+        userName: item.userName || '',
+        userId: item.userId || '',
+        date: item.date,
+        startTime: item.startTime || '',
+        workName: item.workName,
+        fieldName: fieldName
+      };
+      const push = function (map, k) {
+        if (!k) return;
+        if (!map[k]) map[k] = [];
+        map[k].push(booking);
+      };
+      push(byKey, item.scheduleKey);
+      if (fieldName) push(byWorkField, item.workName + '||' + fieldName);
+      push(byWork, item.workName);
+    }
+  } catch (e) {}
+  return { byKey: byKey, byWorkField: byWorkField, byWork: byWork };
+}
+
+function attachDayPlansToSchedule_(t, maps) {
+  if (!t || !maps) return;
+  let list = [];
+  if (t.scheduleKey && maps.byKey[t.scheduleKey] && maps.byKey[t.scheduleKey].length) {
+    list = maps.byKey[t.scheduleKey];
+  } else if (t.workName && t.fieldName && maps.byWorkField[t.workName + '||' + t.fieldName]) {
+    list = maps.byWorkField[t.workName + '||' + t.fieldName];
+  } else if (t.workName && maps.byWork[t.workName]) {
+    list = maps.byWork[t.workName];
+  }
+  const seen = {};
+  t.dayPlans = list.filter(function (p) {
+    const k = String(p.userId || p.userName || '') + '|' + String(p.date || '');
+    if (seen[k]) return false;
+    seen[k] = true;
+    return true;
+  });
+}
+
+function dayPlan_workCategoryMap_() {
+  const map = {};
+  const sheet = TENANT_SS.getSheetByName('作業マスタ');
+  if (!sheet) return map;
+  const list = readWorkMasterList_(sheet) || [];
+  list.forEach(function (w) {
+    if (w && w.name) map[String(w.name).trim()] = String(w.category || '圃場作業').trim() || '圃場作業';
+  });
+  return map;
+}
+
+function estimateWorkDuration(params) {
+  const workName = String((params && params.workName) || '').trim();
+  let category = String((params && params.category) || '').trim();
+  const catMap = dayPlan_workCategoryMap_();
+  if (!category && workName && catMap[workName]) category = catMap[workName];
+  const sheet = TENANT_SS.getSheetByName('作業記録');
+  const result = {
+    success: true,
+    workName: workName,
+    category: category,
+    source: 'none',
+    avgMins: 0,
+    count: 0,
+    label: '過去データなし。手入力してください'
+  };
+  if (!sheet || sheet.getLastRow() <= 1) return result;
+  const lastRow = sheet.getLastRow();
+  const startRow = Math.max(2, lastRow - 7999);
+  const values = sheet.getRange(startRow, 1, lastRow - startRow + 1, 10).getValues();
+  const exact = [];
+  const byCat = [];
+  for (let i = 0; i < values.length; i++) {
+    const wn = String(values[i][4] || '').trim();
+    if (!wn) continue;
+    const mins = parseWorkRecordMinutes_(values[i][9], values[i][6], values[i][7], 0);
+    if (mins < 5 || mins > 12 * 60) continue;
+    if (workName && wn === workName) exact.push(mins);
+    const recCat = catMap[wn] || '';
+    if (category && recCat === category) byCat.push(mins);
+  }
+  const avg = function (arr) {
+    if (!arr.length) return 0;
+    const s = arr.reduce(function (a, b) { return a + b; }, 0);
+    return Math.max(15, Math.round(s / arr.length / 5) * 5);
+  };
+  if (exact.length) {
+    result.source = 'work';
+    result.count = exact.length;
+    result.avgMins = avg(exact);
+    result.label = '作業名「' + workName + '」の平均（' + exact.length + '件）';
+  } else if (byCat.length) {
+    result.source = 'category';
+    result.count = byCat.length;
+    result.avgMins = avg(byCat);
+    result.label = 'カテゴリ「' + category + '」の平均（' + byCat.length + '件）';
+  }
+  return result;
+}
+
+function dayPlan_options(params) {
+  const cats = Array.from(new Set((TENANT_SS.getSheetByName('作業カテゴリマスタ')
+    ? TENANT_SS.getSheetByName('作業カテゴリマスタ').getDataRange().getValues().slice(1).map(function (r) { return String(r[0] || '').trim(); }).filter(Boolean)
+    : []).concat(['圃場作業', '圃場農機作業', '事務作業', '保全・整備'])));
+  let works = [];
+  const ws = TENANT_SS.getSheetByName('作業マスタ');
+  if (ws) works = readWorkMasterList_(ws) || [];
+  return {
+    success: true,
+    categories: cats,
+    works: works.map(function (w) { return { name: w.name, category: w.category }; })
+  };
+}
+
+function dayPlan_list(params) {
+  const userId = String((params && params.userId) || '').trim();
+  if (!userId) return { success: true, items: [] };
+  const fromYmd = String((params && params.fromYmd) || '').trim();
+  const toYmd = String((params && params.toYmd) || fromYmd || '').trim();
+  const sheet = dayPlan_ensureSheet_();
+  const data = sheet.getDataRange().getValues();
+  const items = [];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1] || '') !== userId) continue;
+    const item = dayPlan_rowToItem_(data[i]);
+    if (fromYmd && item.date < fromYmd) continue;
+    if (toYmd && item.date > toYmd) continue;
+    items.push(item);
+  }
+  items.sort(function (a, b) {
+    return String(a.date).localeCompare(String(b.date)) || String(a.startTime).localeCompare(String(b.startTime));
+  });
+  return { success: true, items: items };
+}
+
+function dayPlan_syncPersonal_(item) {
+  try {
+    const key = 'dayplan:' + item.id;
+    const start = item.startTime || '';
+    const end = item.endTime || '';
+    const text = (start && end ? (start + '〜' + end + ' ') : '') + (item.workName || '予定') +
+      (item.durationMins ? ('（' + item.durationMins + '分）') : '');
+    addPersonalScheduleItem({
+      userId: item.userId,
+      userName: item.userName,
+      category: 'タスク',
+      text: text,
+      startDate: item.date,
+      deadline: item.date,
+      scheduleKey: key
+    });
+  } catch (e) {}
+}
+
+function dayPlan_save(params) {
+  const userId = String((params && params.userId) || '').trim();
+  if (!userId) return { success: false, message: 'ログインが必要です' };
+  const dateYmd = formatPersonalScheduleDateYmd_(params && params.date);
+  const workName = String((params && params.workName) || '').trim();
+  if (!dateYmd) return { success: false, message: '日付が必要です' };
+  if (!workName) return { success: false, message: '作業名を入力してください' };
+  let startTime = String((params && params.startTime) || '').trim();
+  let durationMins = parseInt(params && params.durationMins, 10) || 0;
+  let endTime = String((params && params.endTime) || '').trim();
+  if (!durationMins && startTime && endTime) {
+    durationMins = dayPlan_hmToMins_(endTime) - dayPlan_hmToMins_(startTime);
+    if (durationMins <= 0) durationMins += 24 * 60;
+  }
+  if (!durationMins) durationMins = 30;
+  if (startTime && !endTime) endTime = dayPlan_minsToHm_(dayPlan_hmToMins_(startTime) + durationMins);
+  const id = 'DP_' + new Date().getTime() + '_' + Math.random().toString(36).slice(2, 6);
+  const now = new Date();
+  const approved = !!(params && params.approved);
+  const item = {
+    id: id,
+    userId: userId,
+    userName: String((params && params.userName) || ''),
+    date: dateYmd,
+    startTime: startTime,
+    endTime: endTime,
+    durationMins: durationMins,
+    workName: workName,
+    category: String((params && params.category) || ''),
+    estimateMins: parseInt(params && params.estimateMins, 10) || 0,
+    estimateSource: String((params && params.estimateSource) || ''),
+    approved: approved,
+    note: String((params && params.note) || ''),
+    scheduleKey: String((params && params.scheduleKey) || '')
+  };
+  const sheet = dayPlan_ensureSheet_();
+  sheet.appendRow([
+    item.id, item.userId, item.userName, item.date, item.startTime, item.endTime, item.durationMins,
+    item.workName, item.category, item.estimateMins, item.estimateSource, item.approved, item.note, now, now,
+    item.scheduleKey
+  ]);
+  if (approved) dayPlan_syncPersonal_(item);
+  writeLog(item.userName, '日次予定登録', item.date, item.workName + ' ' + item.startTime);
+  return { success: true, item: item };
+}
+
+function dayPlan_update(params) {
+  const id = String((params && params.id) || '').trim();
+  if (!id) return { success: false, message: 'IDがありません' };
+  const sheet = dayPlan_ensureSheet_();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== id) continue;
+    const item = dayPlan_rowToItem_(data[i]);
+    if (params.startTime !== undefined) item.startTime = String(params.startTime || '');
+    if (params.endTime !== undefined) item.endTime = String(params.endTime || '');
+    if (params.durationMins !== undefined) item.durationMins = parseInt(params.durationMins, 10) || item.durationMins;
+    if (params.workName !== undefined) item.workName = String(params.workName || '');
+    if (params.category !== undefined) item.category = String(params.category || '');
+    if (params.estimateMins !== undefined) item.estimateMins = parseInt(params.estimateMins, 10) || 0;
+    if (params.estimateSource !== undefined) item.estimateSource = String(params.estimateSource || '');
+    if (params.approved !== undefined) item.approved = !!params.approved;
+    if (params.note !== undefined) item.note = String(params.note || '');
+    if (params.date !== undefined) item.date = formatPersonalScheduleDateYmd_(params.date) || item.date;
+    if (item.startTime && item.durationMins && !params.endTime) {
+      item.endTime = dayPlan_minsToHm_(dayPlan_hmToMins_(item.startTime) + item.durationMins);
+    }
+    if (item.startTime && item.endTime) {
+      let d = dayPlan_hmToMins_(item.endTime) - dayPlan_hmToMins_(item.startTime);
+      if (d <= 0) d += 24 * 60;
+      item.durationMins = d;
+    }
+    sheet.getRange(i + 1, 4, 1, 10).setValues([[
+      item.date, item.startTime, item.endTime, item.durationMins, item.workName, item.category,
+      item.estimateMins, item.estimateSource, item.approved, item.note
+    ]]);
+    sheet.getRange(i + 1, 15).setValue(new Date());
+    if (item.approved) dayPlan_syncPersonal_(item);
+    return { success: true, item: item };
+  }
+  return { success: false, message: '予定が見つかりません' };
+}
+
+function dayPlan_delete(params) {
+  const id = String((params && params.id) || '').trim();
+  if (!id) return { success: false, message: 'IDがありません' };
+  const sheet = dayPlan_ensureSheet_();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === id) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false, message: '予定が見つかりません' };
 }

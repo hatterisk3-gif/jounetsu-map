@@ -323,13 +323,37 @@
             padding: 10px 10px 8px;
             border-radius: 6px;
             box-sizing: border-box;
+            max-height: clamp(200px, 50vh, 420px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
           }
           @keyframes cpStepPanelIn {
             from { opacity: 0; transform: translateY(-6px); }
             to { opacity: 1; transform: translateY(0); }
           }
           @media (max-width: 720px) {
-            .cp-step-tabs { grid-template-columns: 1fr; }
+            .cp-step-tabs {
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 4px;
+            }
+            .cp-step-tab {
+              padding: 6px 4px;
+              align-items: center;
+              text-align: center;
+            }
+            .cp-step-tab-title {
+              font-size: 11px;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .cp-step-tab-sub {
+              display: none;
+            }
+            .cp-step-body {
+              max-height: clamp(180px, 48vh, 360px);
+            }
           }
           @media (prefers-reduced-motion: reduce) {
             .cp-step-panels { transition: none; }

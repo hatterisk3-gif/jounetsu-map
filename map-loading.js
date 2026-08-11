@@ -214,7 +214,7 @@
       if (depth <= 0) {
         var none = document.getElementById('mapDataLoadingOverlay');
         if (none) {
-          none.classList.remove('is-visible', 'is-nonblocking');
+          none.classList.remove('is-visible', 'is-nonblocking', 'worker-boot-loading');
           none.style.display = 'none';
           none.style.pointerEvents = 'none';
           none.setAttribute('aria-busy', 'false');
@@ -404,7 +404,7 @@
     else {
       var el = document.getElementById('mapDataLoadingOverlay');
       if (el) {
-        el.classList.remove('is-visible', 'is-nonblocking');
+        el.classList.remove('is-visible', 'is-nonblocking', 'worker-boot-loading');
         el.style.display = 'none';
         el.style.pointerEvents = 'none';
         el.setAttribute('aria-busy', 'false');
@@ -423,7 +423,7 @@
     resetSafetyTimer();
     var el = document.getElementById('mapDataLoadingOverlay');
     if (el) {
-      el.classList.remove('is-visible');
+      el.classList.remove('is-visible', 'is-nonblocking', 'worker-boot-loading');
       el.style.display = 'none';
       el.style.pointerEvents = 'none';
       el.setAttribute('aria-busy', 'false');

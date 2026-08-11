@@ -1227,6 +1227,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">作業マスタを追加</button>
             </div>`;
         } else if (type === 'machine') {
+            window._adminMacPhoto = { add: '', edit: '', clearEdit: false, existingEdit: '' };
             const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">車両名・農機名 * / 機械番号</label>
@@ -1260,6 +1261,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 ${buildMachineWorkCategoryEditorHtml('add_mac_category_rows', '', '作業名 (例:草刈)')}
                 <label style="font-size:12px; font-weight:bold; color:#555;">定位置（看板を選択）*</label>
                 <select id="add_mac_sign" class="form-input" style="margin-bottom:0; padding:8px;">${getAdminSignOptionsHtml('')}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">写真（洗車・整備の選択用）</label>
+                <div id="add_mac_photo_preview" style="min-height:80px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:6px;"><div style="color:#888; font-size:12px; padding:12px;">写真未登録</div></div>
+                <input type="file" id="add_mac_photo" accept="image/*" onchange="previewAdminMachinePhoto(this, 'add')" style="width:100%; font-size:12px; margin-bottom:4px;">
+                <button type="button" onclick="clearAdminMachinePhoto('add')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px; font-size:12px; cursor:pointer;">写真を外す</button>
                 <button onclick="execMaster('machine', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">農機を追加する</button>
             </div>`;
         }
@@ -1374,7 +1379,12 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 if (v.group) bits.push(v.group);
                 if (v.workCategory) bits.push(v.workCategory);
                 if (v.signName || v.currentLocName) bits.push(`📍${v.signName || v.currentLocName}`);
-                if (bits.length) subInfo = `<div style="font-size:11px; color:#1565c0; margin-top:2px;">${bits.join(' / ')}</div>`;
+                const thumbUrl = (typeof window.adminMachinePhotoUrl === 'function') ? window.adminMachinePhotoUrl(v.photo || v.photo2 || '') : (v.photo || '');
+                const thumb = thumbUrl
+                    ? `<img src="${String(thumbUrl).replace(/"/g, '&quot;')}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #cfd8dc; vertical-align:middle; margin-right:8px;">`
+                    : '';
+                if (bits.length) subInfo = `${thumb}<div style="font-size:11px; color:#1565c0; margin-top:2px;">${bits.join(' / ')}</div>`;
+                else if (thumb) subInfo = thumb;
             }
 
             let actionBtns = '';
@@ -3319,6 +3329,79 @@ window.openEditWorkMasterLegacy = (encodedStr) => {
     openMasterDetail('work', editHtml);
 };
 
+window._adminMacPhoto = { add: '', edit: '', clearEdit: false, existingEdit: '' };
+
+window.adminMachinePhotoUrl = (url) => {
+    if (!url || typeof url !== 'string') return '';
+    url = url.trim();
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('blob:') || url.indexOf('thumbnail?id=') >= 0) return url;
+    let fileId = null;
+    const m1 = url.match(/\/file\/d\/([^\/\?]+)/);
+    if (m1 && m1[1]) fileId = m1[1];
+    else {
+        const m2 = url.match(/[?&]id=([^&]+)/);
+        if (m2 && m2[1]) fileId = m2[1];
+    }
+    if (fileId) return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w800';
+    return url;
+};
+
+window.resizeAdminMachineImg = (file) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            const cvs = document.createElement('canvas');
+            let w = img.width, h = img.height, max = 1200;
+            if (w > h && w > max) { h *= max / w; w = max; }
+            else if (h > max) { w *= max / h; h = max; }
+            cvs.width = w; cvs.height = h;
+            cvs.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(cvs.toDataURL('image/jpeg', 0.8));
+        };
+        img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+        img.src = e.target.result;
+    };
+    r.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
+    r.readAsDataURL(file);
+});
+
+window.renderAdminMachinePhotoPreview = (which) => {
+    const el = document.getElementById(which === 'edit' ? 'edit_mac_photo_preview' : 'add_mac_photo_preview');
+    if (!el) return;
+    const st = window._adminMacPhoto || {};
+    const b64 = which === 'edit' ? st.edit : st.add;
+    const existing = which === 'edit' && !st.clearEdit ? (st.existingEdit || '') : '';
+    const url = b64 || (which === 'edit' ? window.adminMachinePhotoUrl(existing) : '');
+    if (url) {
+        el.innerHTML = `<img src="${String(url).replace(/"/g, '&quot;')}" alt="" style="max-width:100%; max-height:160px; object-fit:contain; display:block;">`;
+    } else {
+        el.innerHTML = '<div style="color:#888; font-size:12px; padding:12px;">写真未登録</div>';
+    }
+};
+
+window.previewAdminMachinePhoto = async (input, which) => {
+    if (!input || !input.files || !input.files[0]) return;
+    try {
+        const b64 = await window.resizeAdminMachineImg(input.files[0]);
+        window._adminMacPhoto = window._adminMacPhoto || { add: '', edit: '', clearEdit: false, existingEdit: '' };
+        window._adminMacPhoto[which] = b64;
+        if (which === 'edit') window._adminMacPhoto.clearEdit = false;
+        window.renderAdminMachinePhotoPreview(which);
+    } catch (e) {
+        customAlert(e.message || '写真の読み込みに失敗しました');
+    }
+    input.value = '';
+};
+
+window.clearAdminMachinePhoto = (which) => {
+    window._adminMacPhoto = window._adminMacPhoto || { add: '', edit: '', clearEdit: false, existingEdit: '' };
+    window._adminMacPhoto[which] = '';
+    if (which === 'edit') window._adminMacPhoto.clearEdit = true;
+    window.renderAdminMachinePhotoPreview(which);
+};
+
 window.openEditMachineMaster = (encodedStr) => {
     const v = JSON.parse(decodeURIComponent(encodedStr));
     const safeName = (v.name || "").replace(/"/g, '&quot;');
@@ -3359,6 +3442,11 @@ window.openEditMachineMaster = (encodedStr) => {
             <div style="font-size:11px; color:#666; margin:-6px 0 10px;">作業後の「片付け場所 → 定位置」の候補になります。看板機能に「車両・機械管理」または「農機管理」がある看板から選べます。</div>
             <label class="form-label">作業分類（各枠で既存の作業から1つ選択）</label>
             ${buildMachineWorkCategoryEditorHtml('edit_mac_category_rows', v.workCategory || '')}
+            <label class="form-label">写真（洗車・整備の選択用）</label>
+            <input type="hidden" id="edit_mac_existing_photo" value="${String(v.photo || v.photo2 || '').replace(/"/g, '&quot;')}">
+            <div id="edit_mac_photo_preview" style="min-height:80px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:6px;"></div>
+            <input type="file" id="edit_mac_photo" accept="image/*" onchange="previewAdminMachinePhoto(this, 'edit')" style="width:100%; font-size:12px; margin-bottom:6px;">
+            <button type="button" onclick="clearAdminMachinePhoto('edit')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px; font-size:12px; cursor:pointer; margin-bottom:8px;">写真を外す</button>
             <div style="display:flex; gap:10px; margin-top:15px;">
                 <button onclick="execMaster('machine', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
                 <button onclick="openMasterDetail('machine')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
@@ -3366,6 +3454,11 @@ window.openEditMachineMaster = (encodedStr) => {
         </div>
     `;
     openMasterDetail('machine', editHtml);
+    window._adminMacPhoto = window._adminMacPhoto || { add: '', edit: '', clearEdit: false, existingEdit: '' };
+    window._adminMacPhoto.edit = '';
+    window._adminMacPhoto.clearEdit = false;
+    window._adminMacPhoto.existingEdit = v.photo || v.photo2 || '';
+    if (typeof window.renderAdminMachinePhotoPreview === 'function') window.renderAdminMachinePhotoPreview('edit');
 };
 
 window.execMaster = async (type, act, val) => {
@@ -3387,10 +3480,13 @@ window.execMaster = async (type, act, val) => {
                 const fuel = (document.getElementById('add_mac_fuel') || {}).value || '';
                 const purchaseDate = document.getElementById('add_mac_date').value;
                 const workCategory = collectDetailWorksFromInputs('add_mac_category_rows');
+                const photoB64 = (window._adminMacPhoto && window._adminMacPhoto.add) || '';
+                const photos = photoB64 ? [{ filename: (name || 'machine').replace(/\s+/g, '_') + '.jpg', base64: photoB64 }] : [];
                 document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
                 const newMac = await callGAS('addMachineToSign', {
                     name, machineNumber, model, type, group, location, fuel, workCategory, purchaseDate,
-                    parts: "", photos: [], signId, signName, userName: currentUser
+                    parts: "", photos, photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
+                    signId, signName, userName: currentUser
                 });
                 if (!window.pdlMachines) window.pdlMachines = [];
                 window.pdlMachines.push({
@@ -3404,11 +3500,14 @@ window.execMaster = async (type, act, val) => {
                     location: location,
                     fuel: fuel,
                     purchaseDate: purchaseDate,
+                    photo: newMac.photo || '',
+                    photo2: newMac.photo2 || '',
                     signName: newMac.signName || signName,
                     signId: newMac.signId || signId,
                     currentLocName: newMac.signName || signName,
                     currentLocId: newMac.signId || signId
                 });
+                if (window._adminMacPhoto) window._adminMacPhoto.add = '';
             } else if (act === 'edit') {
                 if (!await customConfirm('更新しますか？')) return;
                 const machineId = document.getElementById('edit_mac_id').value;
@@ -3427,9 +3526,14 @@ window.execMaster = async (type, act, val) => {
                 const sign = loadedPolygons[signId];
                 const signName = sign ? (sign.name || '') : '';
                 document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
-                await callGAS('editMachineInMaster', {
+                const photoB64 = (window._adminMacPhoto && window._adminMacPhoto.edit) || '';
+                const clearPhoto = !!(window._adminMacPhoto && window._adminMacPhoto.clearEdit && !photoB64);
+                const photos = photoB64 ? [{ filename: (name || 'machine').replace(/\s+/g, '_') + '.jpg', base64: photoB64 }] : [];
+                const saved = await callGAS('editMachineInMaster', {
                     machineId, name, machineNumber: number, model, type, group, location, fuel,
-                    purchaseDate: date, workCategory: category, signId, signName
+                    purchaseDate: date, workCategory: category, signId, signName,
+                    photos, photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
+                    clearPhoto: clearPhoto
                 });
                 const m = (window.pdlMachines || []).find(x => String(x.id) === String(machineId));
                 if (m) {
@@ -3437,6 +3541,18 @@ window.execMaster = async (type, act, val) => {
                     m.type = type; m.group = group; m.location = location; m.fuel = fuel;
                     m.purchaseDate = date; m.workCategory = category;
                     m.signId = signId; m.signName = signName;
+                    if (saved && saved.machine) {
+                        m.photo = saved.machine.photo || '';
+                        m.photo2 = saved.machine.photo2 || '';
+                    } else if (photoB64) {
+                        m.photo = photoB64;
+                    } else if (clearPhoto) {
+                        m.photo = '';
+                    }
+                }
+                if (window._adminMacPhoto) {
+                    window._adminMacPhoto.edit = '';
+                    window._adminMacPhoto.clearEdit = false;
                 }
             } else {
                 if (!await customConfirm('削除しますか？')) return;
@@ -7148,5 +7264,227 @@ document.addEventListener('DOMContentLoaded', () => {
         if(typeof window.syncTrackingUI === 'function') {
             window.syncTrackingUI();
         }
+        if (typeof window.refreshClockBoardBadge === 'function') {
+            window.refreshClockBoardBadge();
+        }
     }, 500);
 });
+
+function clockBoardEsc_(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function clockBoardRequester_() {
+    return {
+        requesterId: localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '',
+        requesterName: localStorage.getItem('passionMapUserName') || ''
+    };
+}
+
+function clockBoardShiftDate_(ymd, days) {
+    const p = String(ymd || '').split('-').map(Number);
+    const d = new Date(p[0], (p[1] || 1) - 1, p[2] || 1);
+    d.setDate(d.getDate() + days);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + dd;
+}
+
+window._clockBoardState = { dateYmd: '', filter: '', data: null };
+
+window.closeClockBoardModal = function () {
+    const el = document.getElementById('clockBoardModal');
+    if (el) el.style.display = 'none';
+};
+
+window.openClockBoardModal = function (dateYmd) {
+    const el = document.getElementById('clockBoardModal');
+    if (!el) return;
+    el.style.display = 'flex';
+    window.loadClockBoard(dateYmd || (window._clockBoardState && window._clockBoardState.dateYmd) || '');
+};
+
+window.setClockBoardFilter = function (filter) {
+    window._clockBoardState.filter = filter || 'all';
+    window.renderClockBoard();
+};
+
+window.loadClockBoard = async function (dateYmd) {
+    const body = document.getElementById('clockBoardBody');
+    if (!body) return;
+    body.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">読み込み中...</div>';
+    try {
+        const req = clockBoardRequester_();
+        const data = await callGAS('getStaffClockBoard', {
+            requesterId: req.requesterId,
+            requesterName: req.requesterName,
+            dateYmd: dateYmd || ''
+        });
+        if (!data || data.success === false) {
+            body.innerHTML = '<div style="color:#c62828;padding:20px;">' + clockBoardEsc_((data && data.message) || '取得できませんでした') + '</div>';
+            return;
+        }
+        window._clockBoardState.dateYmd = data.dateYmd;
+        window._clockBoardState.data = data;
+        if (!window._clockBoardState.filter) {
+            window._clockBoardState.filter = (data.pendingCount > 0) ? 'pending' : 'all';
+        }
+        window.renderClockBoard();
+        window.updateClockBoardBadge(data);
+    } catch (e) {
+        body.innerHTML = '<div style="color:#c62828;padding:20px;">' + clockBoardEsc_(e.message || e) + '</div>';
+    }
+};
+
+window.updateClockBoardBadge = function (data) {
+    const badge = document.getElementById('clockBoardPendingBadge');
+    if (!badge) return;
+    const n = data && typeof data.pendingCount === 'number' ? data.pendingCount : 0;
+    if (n > 0) {
+        badge.style.display = 'inline-block';
+        badge.textContent = String(n);
+    } else {
+        badge.style.display = 'none';
+    }
+};
+
+window.refreshClockBoardBadge = async function () {
+    try {
+        const req = clockBoardRequester_();
+        if (!req.requesterId && !req.requesterName) return;
+        const data = await callGAS('getStaffClockBoard', {
+            requesterId: req.requesterId,
+            requesterName: req.requesterName
+        }, 0);
+        if (data && data.success !== false) window.updateClockBoardBadge(data);
+    } catch (e) {}
+};
+
+window.renderClockBoard = function () {
+    const body = document.getElementById('clockBoardBody');
+    const st = window._clockBoardState || {};
+    const data = st.data;
+    if (!body || !data) return;
+    const filter = st.filter || 'all';
+    const members = Array.isArray(data.members) ? data.members : [];
+    const filtered = members.filter(function (m) {
+        if (filter === 'pending') return m.status === 'clocked_out' && !m.confirmed;
+        if (filter === 'working') return m.status === 'working' || m.status === 'forgot';
+        if (filter === 'done') return m.status === 'clocked_out';
+        if (filter === 'none') return m.status === 'none';
+        return true;
+    });
+    const chip = function (id, label, count) {
+        const on = filter === id;
+        return '<button onclick="setClockBoardFilter(\'' + id + '\')" style="border:1px solid ' + (on ? '#2e7d32' : '#ccc') + ';background:' + (on ? '#e8f5e9' : '#fff') + ';color:' + (on ? '#1b5e20' : '#555') + ';border-radius:16px;padding:6px 12px;font-size:12px;font-weight:bold;cursor:pointer;">' + label + (count != null ? ' ' + count : '') + '</button>';
+    };
+    const pending = data.pendingCount || 0;
+    let html = '';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
+    html += '<button onclick="loadClockBoard(\'' + clockBoardShiftDate_(data.dateYmd, -1) + '\')" style="border:1px solid #ccc;background:#fff;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:bold;">◀</button>';
+    html += '<input type="date" value="' + clockBoardEsc_(data.dateYmd) + '" onchange="loadClockBoard(this.value)" style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:14px;font-weight:bold;">';
+    html += '<button onclick="loadClockBoard(\'' + clockBoardShiftDate_(data.dateYmd, 1) + '\')" style="border:1px solid #ccc;background:#fff;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:bold;">▶</button>';
+    if (data.dateYmd !== data.todayYmd) {
+        html += '<button onclick="loadClockBoard(\'' + clockBoardEsc_(data.todayYmd) + '\')" style="border:none;background:#2e7d32;color:#fff;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:bold;font-size:12px;">今日</button>';
+    }
+    html += '<button onclick="loadClockBoard(\'' + clockBoardEsc_(data.dateYmd) + '\')" style="margin-left:auto;border:1px solid #90caf9;background:#e3f2fd;color:#1565c0;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:bold;font-size:12px;">更新</button>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">';
+    html += chip('pending', '退勤あり（未確認）', pending);
+    html += chip('working', '出勤中', data.workingCount || 0);
+    html += chip('done', '退勤済み', data.clockedOutCount || 0);
+    html += chip('none', '未出勤');
+    html += chip('all', '全員', members.length);
+    html += '</div>';
+    if (pending > 0 && filter !== 'pending') {
+        html += '<div style="background:#fff3e0;border:1px solid #ffcc80;color:#e65100;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;font-weight:bold;">退勤登録が ' + pending + ' 件あります。未確認タブから確認できます。</div>';
+    }
+    if (!filtered.length) {
+        html += '<div style="text-align:center;color:#888;padding:30px;">該当するメンバーはいません</div>';
+        body.innerHTML = html;
+        return;
+    }
+    filtered.forEach(function (m) {
+        const mi = members.indexOf(m);
+        const name = clockBoardEsc_(m.userName);
+        let statusLabel = '未出勤';
+        let bg = '#fafafa';
+        let border = '#e0e0e0';
+        let accent = '#9e9e9e';
+        if (m.status === 'working') {
+            statusLabel = '出勤中';
+            bg = '#e3f2fd';
+            border = '#90caf9';
+            accent = '#1565c0';
+        } else if (m.status === 'forgot') {
+            statusLabel = '退勤忘れ';
+            bg = '#fce4ec';
+            border = '#f48fb1';
+            accent = '#c2185b';
+        } else if (m.status === 'clocked_out' && !m.confirmed) {
+            statusLabel = '退勤登録あり';
+            bg = '#fff8e1';
+            border = '#ffd54f';
+            accent = '#f57f17';
+        } else if (m.status === 'clocked_out') {
+            statusLabel = '確認済み';
+            bg = '#e8f5e9';
+            border = '#a5d6a7';
+            accent = '#2e7d32';
+        }
+        const timeLine = (m.clockInTime ? ('出勤 ' + m.clockInTime) : '') +
+            (m.clockOutTime ? ((m.clockInTime ? '  →  ' : '') + '退勤 ' + m.clockOutTime) : '');
+        const extra = [m.clockOutNote, m.lunchNote].filter(Boolean).join(' / ');
+        html += '<div style="background:' + bg + ';border:1px solid ' + border + ';border-left:5px solid ' + accent + ';border-radius:10px;padding:12px;margin-bottom:8px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">';
+        html += '<div><div style="font-weight:bold;font-size:16px;">' + name + '</div>';
+        html += '<div style="font-size:12px;color:' + accent + ';font-weight:bold;margin-top:2px;">' + statusLabel + '</div>';
+        if (timeLine) html += '<div style="font-size:14px;margin-top:4px;">' + clockBoardEsc_(timeLine) + '</div>';
+        if (extra) html += '<div style="font-size:12px;color:#666;margin-top:2px;">' + clockBoardEsc_(extra) + '</div>';
+        if (m.confirmedBy) html += '<div style="font-size:11px;color:#2e7d32;margin-top:4px;">確認: ' + clockBoardEsc_(m.confirmedBy) + (m.confirmedAt ? ('（' + clockBoardEsc_(m.confirmedAt) + '）') : '') + '</div>';
+        html += '</div>';
+        if (m.status === 'clocked_out') {
+            if (!m.confirmed) {
+                html += '<button onclick="confirmClockBoardMember(' + mi + ', false)" style="background:#f57f17;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:bold;cursor:pointer;white-space:nowrap;">確認する</button>';
+            } else {
+                html += '<button onclick="confirmClockBoardMember(' + mi + ', true)" style="background:#fff;color:#666;border:1px solid #ccc;border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">確認を取消</button>';
+            }
+        }
+        html += '</div></div>';
+    });
+    body.innerHTML = html;
+};
+
+window.confirmClockBoardMember = async function (memberIndex, undo) {
+    const st = window._clockBoardState || {};
+    const data = st.data;
+    if (!data) return;
+    const m = (data.members || [])[memberIndex];
+    const userName = m && m.userName;
+    if (!userName) return;
+    try {
+        const req = clockBoardRequester_();
+        const res = await callGAS('confirmStaffClockOut', {
+            requesterId: req.requesterId,
+            requesterName: req.requesterName,
+            dateYmd: data.dateYmd,
+            targetUserName: userName,
+            undo: !!undo,
+            clockInTime: (m && m.clockInTime) || '',
+            clockOutTime: (m && m.clockOutTime) || '',
+            note: (m && (m.clockOutNote || m.lunchNote)) || ''
+        });
+        if (res && res.success === false) {
+            if (typeof customAlert === 'function') customAlert(res.message || '保存できませんでした');
+            else alert(res.message || '保存できませんでした');
+            return;
+        }
+        await window.loadClockBoard(data.dateYmd);
+    } catch (e) {
+        if (typeof customAlert === 'function') customAlert(e.message || String(e));
+        else alert(e.message || String(e));
+    }
+};

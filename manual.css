@@ -378,3 +378,30 @@ body {
   object-fit: contain;
   touch-action: none;
 }
+
+.manual-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.manual-meta-chip {
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.work-tag.cat-tag {
+  background: #e3f2fd;
+  color: #1565c0;
+  border-color: #90caf9;
+}
+
+.work-tag.crop-tag {
+  background: #fff3e0;
+  color: #e65100;
+  border-color: #ffb74d;
+}

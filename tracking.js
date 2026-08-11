@@ -12,6 +12,7 @@
   const PREFILL_KEY = 'passionMapPrefillWorkTime';
   const LUNCH_KEY = 'passionMapLunchBreak';
   const LAST_CLOCKOUT_KEY = 'passionMapLastClockOut';
+  const CLOCKIN_HIST_KEY = 'passionMapClockInTimeHistory';
 
   function ensureClockModal() {
     let modal = document.getElementById('modal');
@@ -353,6 +354,130 @@
     openClockInModal();
   };
 
+  function padHm_(h, m) {
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  }
+
+  function roundHm5_(hm) {
+    const p = String(hm || '').split(':');
+    let h = parseInt(p[0], 10);
+    let m = parseInt(p[1], 10);
+    if (isNaN(h) || isNaN(m)) return '';
+    m = Math.round(m / 5) * 5;
+    if (m >= 60) {
+      m = 0;
+      h = (h + 1) % 24;
+    }
+    if (h < 0) h = 0;
+    if (h > 23) h = 23;
+    return padHm_(h, m);
+  }
+
+  function rememberClockInTime(hm) {
+    const rounded = roundHm5_(hm);
+    if (!rounded) return;
+    try {
+      const list = JSON.parse(localStorage.getItem(CLOCKIN_HIST_KEY) || '[]');
+      const next = Array.isArray(list) ? list : [];
+      next.push({ t: rounded, at: Date.now() });
+      localStorage.setItem(CLOCKIN_HIST_KEY, JSON.stringify(next.slice(-120)));
+    } catch (e) {}
+  }
+
+  function mostFrequentClockInTimeLocal() {
+    let list = [];
+    try {
+      list = JSON.parse(localStorage.getItem(CLOCKIN_HIST_KEY) || '[]');
+    } catch (e) {
+      list = [];
+    }
+    if (!Array.isArray(list) || !list.length) return '';
+    const counts = {};
+    list.forEach(function (row) {
+      const t = roundHm5_(row && (row.t || row));
+      if (!t) return;
+      counts[t] = (counts[t] || 0) + 1;
+    });
+    let best = '';
+    let bestN = 0;
+    Object.keys(counts).forEach(function (t) {
+      if (counts[t] > bestN || (counts[t] === bestN && t < best)) {
+        best = t;
+        bestN = counts[t];
+      }
+    });
+    return best;
+  }
+
+  function clockInPresetBtnStyle_() {
+    return 'background:#fff;color:#2e7d32;border:1px solid #81c784;border-radius:8px;padding:10px 8px;font-weight:bold;font-size:12px;line-height:1.35;cursor:pointer;';
+  }
+
+  function buildClockInPresetButtonsHtml() {
+    const freq = window._frequentClockInTime || mostFrequentClockInTimeLocal();
+    const freqLabel = freq ? ('よく登録する時間に合わせる<br><span style="font-size:11px;font-weight:normal;color:#555;">（' + freq + '）</span>') : 'よく登録する時間に合わせる';
+    let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 14px;">';
+    html += '<button type="button" onclick="setClockInPreset(\'now\')" style="' + clockInPresetBtnStyle_() + '">今の時間に合わせる</button>';
+    html += '<button type="button" onclick="setClockInPreset(\'08:00\')" style="' + clockInPresetBtnStyle_() + '">8時に合わせる</button>';
+    html += '<button type="button" onclick="setClockInPreset(\'13:00\')" style="' + clockInPresetBtnStyle_() + '">13時に合わせる</button>';
+    html += '<button type="button" id="clockInPresetFreqBtn" onclick="setClockInPreset(\'frequent\')" style="' + clockInPresetBtnStyle_() + '">' + freqLabel + '</button>';
+    html += '</div>';
+    return html;
+  }
+
+  function refreshFrequentClockInButtonLabel_(time) {
+    const btn = document.getElementById('clockInPresetFreqBtn');
+    if (!btn) return;
+    if (time) {
+      btn.innerHTML = 'よく登録する時間に合わせる<br><span style="font-size:11px;font-weight:normal;color:#555;">（' + time + '）</span>';
+    } else {
+      btn.textContent = 'よく登録する時間に合わせる';
+    }
+  }
+
+  function loadFrequentClockInTime_() {
+    const local = mostFrequentClockInTimeLocal();
+    if (local) window._frequentClockInTime = local;
+    const user = getCurrentUserName();
+    if (!user || typeof callGAS !== 'function') {
+      refreshFrequentClockInButtonLabel_(window._frequentClockInTime || '');
+      return;
+    }
+    callGAS('getFrequentClockInTimes', { userName: user }).then(function (res) {
+      const t = res && res.mostFrequent ? String(res.mostFrequent) : '';
+      if (t) window._frequentClockInTime = t;
+      else if (!window._frequentClockInTime) window._frequentClockInTime = local;
+      refreshFrequentClockInButtonLabel_(window._frequentClockInTime || '');
+    }).catch(function () {
+      refreshFrequentClockInButtonLabel_(window._frequentClockInTime || local || '');
+    });
+  }
+
+  window.setClockInPreset = function (kind) {
+    const input = document.getElementById('clockInTime');
+    if (!input) return;
+    let hm = '';
+    if (kind === 'now') {
+      const now = new Date();
+      hm = padHm_(now.getHours(), now.getMinutes());
+    } else if (kind === 'frequent') {
+      hm = window._frequentClockInTime || mostFrequentClockInTimeLocal();
+      if (!hm) {
+        alertMsg('まだよく登録する出勤時間がありません。今の時間・8時・13時から選ぶか、時間を直接指定してください。');
+        return;
+      }
+    } else {
+      hm = String(kind || '');
+    }
+    if (!/^\d{2}:\d{2}$/.test(hm)) return;
+    input.value = hm;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.style.background = '#e8f5e9';
+    setTimeout(function () {
+      if (input) input.style.background = '#fff';
+    }, 400);
+  };
+
   /** 出勤モーダルを即表示（サーバー待ちなし） */
   function openClockInModal() {
     if (!navigator.geolocation) {
@@ -364,12 +489,14 @@
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
     html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
-    html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+    html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+    html += buildClockInPresetButtonsHtml();
     html += `<div style="display:flex; gap:10px;">`;
     html += `  <button id="confirmClockInBtn" onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
     html += `  <button onclick="document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
     html += `</div>`;
     showClockModal(html);
+    loadFrequentClockInTime_();
   }
   window.openClockInModal = openClockInModal;
 
@@ -2168,6 +2295,7 @@
     }
     hideClockModal();
     if (!navigator.geolocation) return;
+    rememberClockInTime(timeInput);
 
     const clockAt = parseClockDateTime(dateInput, timeInput);
     const timeStr = timeInput;

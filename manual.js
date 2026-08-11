@@ -7,17 +7,23 @@
  */
 (function() {
   const MANUAL_STORAGE_KEY = 'passionMapManuals';
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 
   // グローバル変数
   window.manualList = [];
   window.currentCreatingManual = {
     id: null,
     title: '',
+    category: '',
+    crops: [],
     workNames: [],
     notice: '',
     steps: [''],
     photos: [] // { id, dataUrl, rotation }
   };
+  let manualWorkMaster = [];
+  let manualCategoryOptions = [];
+  let manualCropOptions = [];
   
   window.editingPhotoIndex = -1;
   let canvasCtx = null;
@@ -53,6 +59,126 @@
     status.style.color = isError ? '#c62828' : '#666';
   }
 
+  async function callGAS(action, params) {
+    const spreadsheetId = localStorage.getItem('spreadsheetId');
+    const body = Object.assign({}, params || {}, { action: action });
+    if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null' && String(spreadsheetId).trim()) {
+      body.spreadsheetId = spreadsheetId;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        throw new Error('サーバーから不正な応答がありました');
+      }
+      if (json && json.status === 'error') throw new Error(json.message || 'エラーが発生しました');
+      return json && json.data !== undefined ? json.data : json;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  window.callGAS = callGAS;
+
+  function escapeHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function escapeJsAttr(str) {
+    return String(str == null ? '' : str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  }
+
+  function uniqueSorted_(list) {
+    return Array.from(new Set((list || []).map(s => String(s || '').trim()).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, 'ja'));
+  }
+
+  function getWorkCropList_(work) {
+    if (!work) return [];
+    if (Array.isArray(work.crops) && work.crops.length) {
+      return work.crops.map(s => String(s || '').trim()).filter(Boolean);
+    }
+    return String(work.cropName || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+  }
+
+  function workMatchesCategory_(work, category) {
+    if (!category || category === 'すべて') return true;
+    return String(work.category || '').trim() === category;
+  }
+
+  function workMatchesCrop_(work, crop) {
+    if (!crop || crop === 'すべて') return true;
+    const list = getWorkCropList_(work);
+    if (!list.length) return crop === '共通';
+    if (list.includes('共通') || list.includes('すべて')) return true;
+    return list.includes(crop);
+  }
+
+  function loadManualMasters_() {
+    let workMaster = [];
+    let categories = [];
+    let crops = [];
+    try {
+      const raw = localStorage.getItem('passionMapInitData');
+      if (raw) {
+        const data = JSON.parse(raw);
+        const pdl = (data && data.pdl) ? data.pdl : (data || {});
+        if (Array.isArray(pdl.workMaster)) workMaster = pdl.workMaster;
+        if (Array.isArray(pdl.workCategories)) categories = pdl.workCategories.slice();
+        if (Array.isArray(pdl.crops)) {
+          crops = pdl.crops.map(c => typeof c === 'string' ? c : (c && c.name)).filter(Boolean);
+        }
+      }
+    } catch (e) {
+      console.warn('作業マスタ読込失敗:', e);
+    }
+    if (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster) && pdlWorkMaster.length) {
+      workMaster = pdlWorkMaster;
+    }
+    workMaster.forEach(w => {
+      const cat = String(w && w.category || '').trim();
+      if (cat) categories.push(cat);
+      getWorkCropList_(w).forEach(c => crops.push(c));
+    });
+    categories = uniqueSorted_(categories);
+    crops = uniqueSorted_(crops).filter(c => c !== 'すべて');
+    if (!categories.length) categories = ['圃場作業', '事務作業', '保全・整備'];
+    if (!crops.includes('共通')) crops.unshift('共通');
+    if (!workMaster.length) {
+      workMaster = ['定植', '播種', '収穫', '防除', '施肥', '草刈り', '芽かき', '中耕', '水管理'].map(name => ({
+        name: name,
+        category: '圃場作業',
+        cropName: '共通',
+        crops: ['共通']
+      }));
+    }
+    manualWorkMaster = workMaster;
+    manualCategoryOptions = categories;
+    manualCropOptions = crops;
+  }
+
+  function getFilteredManualWorks_() {
+    const category = window.currentCreatingManual.category || '';
+    const crop = (window.currentCreatingManual.crops && window.currentCreatingManual.crops[0]) || '';
+    return manualWorkMaster.filter(w => {
+      const name = String(w && w.name || '').trim();
+      if (!name) return false;
+      return workMatchesCategory_(w, category) && workMatchesCrop_(w, crop);
+    });
+  }
+
   function ensureServerSuccess(response, operationName) {
     if (response && response.success === false) {
       throw new Error(response.message || (operationName + 'に失敗しました。'));
@@ -64,7 +190,19 @@
   document.addEventListener('DOMContentLoaded', () => {
     window.loadManualList();
     window.initManualWorkChips();
-    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get('tab');
+    const requestedWork = params.get('work');
+    if (requestedWork) {
+      const filterWork = document.getElementById('manualFilterWorkSelect');
+      if (filterWork) {
+        if (![...filterWork.options].some(o => o.value === requestedWork)) {
+          filterWork.appendChild(new Option(requestedWork, requestedWork));
+        }
+        filterWork.value = requestedWork;
+        window.renderManualGrid();
+      }
+    }
     if (requestedTab === 'create') window.switchManualTab('create');
   });
 
@@ -98,6 +236,7 @@
       total: 1
     });
     window.renderManualGrid();
+    window.renderManualFilterSelects();
     localLoading.done();
 
     if (typeof callGAS !== 'function') {
@@ -121,6 +260,7 @@
       window.manualList = res.manuals;
       localStorage.setItem(MANUAL_STORAGE_KEY, JSON.stringify(window.manualList));
       window.renderManualGrid();
+      window.renderManualFilterSelects();
       syncLoading.update({ label: '同期しました', detail: window.manualList.length + '件', current: 1, total: 1 });
       setManualSyncStatus('サーバーと同期済み（' + window.manualList.length + '件）');
     } catch(e) {
@@ -260,16 +400,24 @@
 
     const keyword = (document.getElementById('manualSearchKeyword')?.value || '').trim().toLowerCase();
     const selectedWork = (document.getElementById('manualFilterWorkSelect')?.value || '').trim();
+    const selectedCategory = (document.getElementById('manualFilterCategorySelect')?.value || '').trim();
+    const selectedCrop = (document.getElementById('manualFilterCropSelect')?.value || '').trim();
 
     let filtered = window.manualList.filter(m => {
+      const cropText = Array.isArray(m.crops) ? m.crops.join(' ') : (m.crop || '');
       let matchK = !keyword || (
         (m.title && m.title.toLowerCase().includes(keyword)) ||
         (m.notice && m.notice.toLowerCase().includes(keyword)) ||
         (m.steps && m.steps.join(' ').toLowerCase().includes(keyword)) ||
-        (m.workNames && m.workNames.join(' ').toLowerCase().includes(keyword))
+        (m.workNames && m.workNames.join(' ').toLowerCase().includes(keyword)) ||
+        (m.category && String(m.category).toLowerCase().includes(keyword)) ||
+        (cropText && cropText.toLowerCase().includes(keyword))
       );
       let matchW = !selectedWork || (m.workNames && m.workNames.includes(selectedWork));
-      return matchK && matchW;
+      let matchC = !selectedCategory || String(m.category || '') === selectedCategory;
+      const crops = Array.isArray(m.crops) ? m.crops : (m.crop ? [m.crop] : []);
+      let matchCrop = !selectedCrop || crops.includes(selectedCrop);
+      return matchK && matchW && matchC && matchCrop;
     });
 
     if (filtered.length === 0) {
@@ -295,8 +443,13 @@
       const noticeHtml = m.notice 
         ? `<div class="manual-card-notice">⚠️ ${m.notice.replace(/</g, '&lt;')}</div>` : '';
 
-      const tagsHtml = (m.workNames || []).map(w => 
-        `<span class="work-tag">🌱 ${w.replace(/</g, '&lt;')}</span>`
+      const catHtml = m.category
+        ? `<span class="work-tag cat-tag">📁 ${escapeHtml(m.category)}</span>` : '';
+      const cropHtml = (Array.isArray(m.crops) ? m.crops : (m.crop ? [m.crop] : [])).map(c =>
+        `<span class="work-tag crop-tag">🌱 ${escapeHtml(c)}</span>`
+      ).join('');
+      const tagsHtml = catHtml + cropHtml + (m.workNames || []).map(w =>
+        `<span class="work-tag">📝 ${escapeHtml(w)}</span>`
       ).join('');
 
       return `
@@ -306,7 +459,7 @@
             ${countBadge}
           </div>
           <div class="manual-card-body">
-            <div class="manual-card-title">${(m.title || '無題のマニュアル').replace(/</g, '&lt;')}</div>
+            <div class="manual-card-title">${escapeHtml(m.title || '無題のマニュアル')}</div>
             ${noticeHtml}
             <div class="manual-works-tags">
               ${tagsHtml}
@@ -318,54 +471,145 @@
   };
 
   // ==========================================
-  // 3. 作業マスタ連動の複数選択チップ
+  // 3. カテゴリー / 作物 / 作業名 の段階選択
   // ==========================================
   window.initManualWorkChips = function() {
-    const container = document.getElementById('manualWorkSelectContainer');
-    const filterSelect = document.getElementById('manualFilterWorkSelect');
+    loadManualMasters_();
+    window.renderManualFilterSelects();
+    window.renderManualCategoryChips();
+    window.renderManualCropChips();
+    window.renderManualWorkChips();
+  };
+
+  window.renderManualFilterSelects = function() {
+    const filterWork = document.getElementById('manualFilterWorkSelect');
+    const filterCat = document.getElementById('manualFilterCategorySelect');
+    const filterCrop = document.getElementById('manualFilterCropSelect');
+    const allWorks = uniqueSorted_(manualWorkMaster.map(w => w && w.name).concat(
+      (window.manualList || []).flatMap(m => m.workNames || [])
+    ));
+    const allCats = uniqueSorted_(manualCategoryOptions.concat(
+      (window.manualList || []).map(m => m.category)
+    ));
+    const allCrops = uniqueSorted_(manualCropOptions.concat(
+      (window.manualList || []).flatMap(m => Array.isArray(m.crops) ? m.crops : [])
+    ));
+    if (filterWork) {
+      const keep = filterWork.value;
+      filterWork.innerHTML = '<option value="">すべての対象作業</option>' +
+        allWorks.map(w => `<option value="${escapeHtml(w)}">${escapeHtml(w)}</option>`).join('');
+      if (keep) filterWork.value = keep;
+    }
+    if (filterCat) {
+      const keep = filterCat.value;
+      filterCat.innerHTML = '<option value="">すべてのカテゴリー</option>' +
+        allCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      if (keep) filterCat.value = keep;
+    }
+    if (filterCrop) {
+      const keep = filterCrop.value;
+      filterCrop.innerHTML = '<option value="">すべての作物</option>' +
+        allCrops.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      if (keep) filterCrop.value = keep;
+    }
+  };
+
+  window.renderManualCategoryChips = function() {
+    const container = document.getElementById('manualCategorySelectContainer');
     if (!container) return;
+    const selected = window.currentCreatingManual.category || '';
+    const cats = ['すべて'].concat(manualCategoryOptions);
+    container.innerHTML = cats.map(c => {
+      const isSel = (c === 'すべて' && !selected) || c === selected;
+      const bg = isSel ? '#1565C0' : '#E3F2FD';
+      const color = isSel ? '#fff' : '#1565C0';
+      const border = isSel ? '#0D47A1' : '#90CAF9';
+      return `<button type="button" class="manual-meta-chip" onclick="window.selectManualCategory('${escapeJsAttr(c)}')" style="background:${bg}; color:${color}; border:1px solid ${border};">📁 ${escapeHtml(c)}</button>`;
+    }).join('');
+  };
 
-    // 作業マスタから取得
-    let works = [];
-    if (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) {
-      works = pdlWorkMaster.map(w => w.name).filter(Boolean);
-    } else {
-      works = ['定植', '播種', '収穫', '防除', '施肥', '草刈り', '芽かき', '中耕', '水管理'];
+  window.selectManualCategory = function(category) {
+    window.currentCreatingManual.category = (!category || category === 'すべて') ? '' : category;
+    const crop = (window.currentCreatingManual.crops && window.currentCreatingManual.crops[0]) || '';
+    if (crop) {
+      const still = manualWorkMaster.some(w =>
+        workMatchesCategory_(w, window.currentCreatingManual.category) && workMatchesCrop_(w, crop)
+      );
+      if (!still) window.currentCreatingManual.crops = [];
     }
-    // 重複除去
-    works = Array.from(new Set(works));
+    window.renderManualCategoryChips();
+    window.renderManualCropChips();
+    window.renderManualWorkChips();
+  };
 
-    // 検索用ドロップダウンの設定
-    if (filterSelect) {
-      filterSelect.innerHTML = '<option value="">すべての対象作業</option>' + 
-        works.map(w => `<option value="${w}">${w}</option>`).join('');
+  window.renderManualCropChips = function() {
+    const container = document.getElementById('manualCropSelectContainer');
+    if (!container) return;
+    const category = window.currentCreatingManual.category || '';
+    const selected = (window.currentCreatingManual.crops && window.currentCreatingManual.crops[0]) || '';
+    const cropsFromWorks = uniqueSorted_(
+      manualWorkMaster.filter(w => workMatchesCategory_(w, category)).flatMap(getWorkCropList_)
+    );
+    const crops = ['すべて'].concat(cropsFromWorks.length ? cropsFromWorks : manualCropOptions);
+    container.innerHTML = crops.map(c => {
+      const isSel = (c === 'すべて' && !selected) || c === selected;
+      const bg = isSel ? '#E65100' : '#FFF3E0';
+      const color = isSel ? '#fff' : '#E65100';
+      const border = isSel ? '#EF6C00' : '#FFB74D';
+      return `<button type="button" class="manual-meta-chip" onclick="window.selectManualCrop('${escapeJsAttr(c)}')" style="background:${bg}; color:${color}; border:1px solid ${border};">🌱 ${escapeHtml(c)}</button>`;
+    }).join('');
+  };
+
+  window.selectManualCrop = function(crop) {
+    window.currentCreatingManual.crops = (!crop || crop === 'すべて') ? [] : [crop];
+    window.renderManualCropChips();
+    window.renderManualWorkChips();
+  };
+
+  window.renderManualWorkChips = function() {
+    const container = document.getElementById('manualWorkSelectContainer');
+    if (!container) return;
+    const selected = window.currentCreatingManual.workNames || [];
+    const filtered = getFilteredManualWorks_();
+    let works = uniqueSorted_(filtered.map(w => w.name).concat(selected));
+    if (!works.length) {
+      container.innerHTML = '<div style="font-size:12px; color:#888; padding:6px 0;">該当する作業名がありません。下の欄に言葉で入力して追加できます。</div>';
+      return;
     }
-
-    // 作成画面用複数選択チップ
-    container.innerHTML = works.map(w => `
-      <button type="button" class="work-chip-btn" data-work="${w}" onclick="window.toggleManualWorkChip(this, '${w}')" style="background:#f0f4f1; color:#2e7d32; border:1px solid #c8e6c9; padding:6px 12px; border-radius:20px; font-size:12px; font-weight:bold; cursor:pointer; transition:all 0.15s ease;">
-        ＋ ${w}
-      </button>
-    `).join('');
+    container.innerHTML = works.map(w => {
+      const isSel = selected.includes(w);
+      const bg = isSel ? '#2E7D32' : '#f0f4f1';
+      const color = isSel ? 'white' : '#2e7d32';
+      const border = isSel ? '#1B5E20' : '#c8e6c9';
+      const label = (isSel ? '✓ ' : '＋ ') + escapeHtml(w);
+      return `<button type="button" class="work-chip-btn" data-work="${escapeHtml(w)}" onclick="window.toggleManualWorkChip(this, '${escapeJsAttr(w)}')" style="background:${bg}; color:${color}; border:1px solid ${border}; padding:6px 12px; border-radius:20px; font-size:12px; font-weight:bold; cursor:pointer;">${label}</button>`;
+    }).join('');
   };
 
   window.toggleManualWorkChip = function(btn, workName) {
     if (!window.currentCreatingManual.workNames) window.currentCreatingManual.workNames = [];
     const idx = window.currentCreatingManual.workNames.indexOf(workName);
-
     if (idx >= 0) {
       window.currentCreatingManual.workNames.splice(idx, 1);
-      btn.style.background = '#f0f4f1';
-      btn.style.color = '#2e7d32';
-      btn.style.borderColor = '#c8e6c9';
-      btn.innerText = '＋ ' + workName;
     } else {
       window.currentCreatingManual.workNames.push(workName);
-      btn.style.background = '#2E7D32';
-      btn.style.color = 'white';
-      btn.style.borderColor = '#1B5E20';
-      btn.innerText = '✓ ' + workName;
     }
+    window.renderManualWorkChips();
+  };
+
+  window.addManualCustomWorkName = function() {
+    const input = document.getElementById('manualWorkCustomInput');
+    const name = (input && input.value || '').trim();
+    if (!name) {
+      alert('作業名を入力してください。');
+      return;
+    }
+    if (!window.currentCreatingManual.workNames) window.currentCreatingManual.workNames = [];
+    if (!window.currentCreatingManual.workNames.includes(name)) {
+      window.currentCreatingManual.workNames.push(name);
+    }
+    if (input) input.value = '';
+    window.renderManualWorkChips();
   };
 
   // ==========================================
@@ -613,21 +857,33 @@
   // 6. 新規保存・リセット
   // ==========================================
   window.submitManualForm = async function() {
-    const title = (document.getElementById('manualTitleInput')?.value || '').trim();
+    const titleInput = (document.getElementById('manualTitleInput')?.value || '').trim();
     const notice = (document.getElementById('manualNoticeInput')?.value || '').trim();
+    const workNames = window.currentCreatingManual.workNames || [];
+    const category = window.currentCreatingManual.category || '';
+    const crops = Array.isArray(window.currentCreatingManual.crops) ? window.currentCreatingManual.crops.filter(Boolean) : [];
+    const steps = (window.currentCreatingManual.steps || []).filter(s => String(s || '').trim() !== '');
+    const photos = window.currentCreatingManual.photos || [];
 
-    if (!title) {
-      alert('マニュアルタイトルを入力してください。');
+    const title = titleInput
+      || (workNames.length ? workNames.join(' / ') : '')
+      || (category && crops.length ? (category + ' / ' + crops.join('・')) : '')
+      || (notice ? notice.slice(0, 40) : '');
+
+    if (!title && !notice && !steps.length && !workNames.length) {
+      alert('カテゴリー・作物・作業名を選ぶか、注意点や手順の文章を入力してください。\n（写真はなくても保存できます）');
       return;
     }
 
     const manualData = {
       id: window.currentCreatingManual.id,
-      title: title,
-      workNames: window.currentCreatingManual.workNames || [],
+      title: title || '無題のマニュアル',
+      category: category,
+      crops: crops,
+      workNames: workNames,
       notice: notice,
-      steps: window.currentCreatingManual.steps.filter(s => s.trim() !== ''),
-      photos: window.currentCreatingManual.photos || []
+      steps: steps,
+      photos: photos
     };
 
     try {
@@ -654,6 +910,8 @@
     window.currentCreatingManual = {
       id: null,
       title: '',
+      category: '',
+      crops: [],
       workNames: [],
       notice: '',
       steps: [''],
@@ -662,6 +920,7 @@
 
     if (document.getElementById('manualTitleInput')) document.getElementById('manualTitleInput').value = '';
     if (document.getElementById('manualNoticeInput')) document.getElementById('manualNoticeInput').value = '';
+    if (document.getElementById('manualWorkCustomInput')) document.getElementById('manualWorkCustomInput').value = '';
     window.renderPhotoPreviewGrid();
     window.renderManualStepInputs();
     window.initManualWorkChips();
@@ -678,8 +937,13 @@
     const body = document.getElementById('manualDetailBody');
     if (!modal || !body) return;
 
-    const tagsHtml = (manual.workNames || []).map(w => 
-      `<span class="work-tag">🌱 ${w.replace(/</g, '&lt;')}</span>`
+    const catHtml = manual.category
+      ? `<span class="work-tag cat-tag">📁 ${escapeHtml(manual.category)}</span>` : '';
+    const cropHtml = (Array.isArray(manual.crops) ? manual.crops : []).map(c =>
+      `<span class="work-tag crop-tag">🌱 ${escapeHtml(c)}</span>`
+    ).join('');
+    const tagsHtml = catHtml + cropHtml + (manual.workNames || []).map(w =>
+      `<span class="work-tag">📝 ${escapeHtml(w)}</span>`
     ).join('');
 
     const noticeHtml = manual.notice 
@@ -706,7 +970,7 @@
       : '<div style="color:#888; font-size:13px;">手順の登録はありません</div>';
 
     body.innerHTML = `
-      <div style="font-size:18px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">${(manual.title || '').replace(/</g, '&lt;')}</div>
+      <div style="font-size:18px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">${escapeHtml(manual.title || '')}</div>
       <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:12px;">${tagsHtml}</div>
       ${noticeHtml}
       ${photosHtml}

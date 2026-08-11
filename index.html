@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>情熱MAP 総合案内所 v2.23</title>
+    <title>情熱MAP 総合案内所 v2.24</title>
     
     <link rel="apple-touch-icon" href="icon_index.png">
     <link rel="icon" href="icon_index.png">
@@ -12,7 +12,7 @@
     <style>
         body { font-family: sans-serif; background-color: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
         .container { position: relative; text-align: center; background: #222; padding: 40px; padding-top: 52px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 85%; max-width: 400px; overflow: visible; max-height: 90vh; }
-        h1 { color: #4CAF50; margin-bottom: 20px; font-size: 24px; }
+        h1 { color: #4CAF50; margin-bottom: 12px; font-size: 24px; }
         .btn { display: block; width: 100%; padding: 15px; margin-bottom: 10px; border-radius: 8px; font-size: 16px; font-weight: bold; text-decoration: none; color: white; box-sizing: border-box; transition: opacity 0.2s; border: none; cursor: pointer; }
         .btn:active { opacity: 0.7; }
         .btn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -143,15 +143,18 @@
 <body>
     <div class="container">
         <div class="top-right-actions">
-            <button type="button" class="account-open-btn" id="btnAccountToggle" onclick="openAccountModal()">👤 アカウント登録</button>
+            <button type="button" class="account-open-btn" id="btnAuthStatusToggle" onclick="openAccountModal('login')">🔑 ログイン / 登録</button>
             <a href="javascript:location.reload()" class="reload-btn" title="画面を更新">🔄</a>
         </div>
 
-        <h1>情熱MAP 総合案内所 (v1.57)</h1>
+        <h1>情熱MAP 総合案内所 (v1.58)</h1>
+
+        <div id="currentUserBanner" style="margin-bottom:18px; padding:10px 14px; background:#1e2d24; border:1px solid #388e3c; border-radius:8px; font-size:13px; color:#c8e6c9; text-align:center;"></div>
         
         <a href="worker.html" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
-        <a href="schedule" class="btn btn-schedule">📅 予定 MAP を開く</a>
+        <a href="schedule.html" class="btn btn-schedule">📅 予定 MAP を開く</a>
         <a href="registration-portal.html" class="btn btn-register">📝 データ登録ポータルを開く</a>
+        <a href="アイデア.html" class="btn" style="background-color:#5e35b1;">💡 アイデアボードを開く</a>
         <a href="admin.html" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
         <a href="battle-portal.html" class="btn" style="background-color:#E65100;">⚔️ バトルポータル</a>
         <a href="javascript:location.replace('index2.html')" class="btn btn-portal2" style="margin-bottom:0; margin-top:8px;">🚪 プロポータルを開く</a>
@@ -160,20 +163,41 @@
     <div id="accountModal" class="account-modal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle" onclick="onAccountModalBackdrop(event)">
         <div class="account-modal-card" onclick="event.stopPropagation()">
             <div class="account-modal-header">
-                <h2 id="accountModalTitle">👤 アカウント登録</h2>
+                <h2 id="accountModalTitle">🔐 アカウント認証</h2>
                 <button type="button" class="account-modal-close" onclick="closeAccountModal()" aria-label="閉じる">×</button>
             </div>
-            <p class="account-hint">作業員アカウントを作成できます。<br>権限の変更は管理者用MAPのマイページから行えます。</p>
-            <div id="signupMsg" class="account-msg" aria-live="polite"></div>
-            <label class="account-label" for="signupUserId">スタッフID</label>
-            <input class="account-input" id="signupUserId" type="text" autocomplete="username" placeholder="例: tanaka">
-            <label class="account-label" for="signupUserName">表示名</label>
-            <input class="account-input" id="signupUserName" type="text" autocomplete="name" placeholder="例: 田中">
-            <label class="account-label" for="signupPassword">パスワード（4文字以上）</label>
-            <input class="account-input" id="signupPassword" type="password" autocomplete="new-password">
-            <label class="account-label" for="signupPasswordConfirm">パスワード（確認）</label>
-            <input class="account-input" id="signupPasswordConfirm" type="password" autocomplete="new-password">
-            <button type="button" class="btn btn-signup" id="signupBtn" onclick="submitSignup()" style="margin-bottom:8px;">登録する</button>
+            
+            <div style="display:flex; border-bottom:1px solid #444; margin-bottom:12px;">
+                <button type="button" id="tabBtnLogin" onclick="switchAuthTab('login')" style="flex:1; padding:8px; border:none; background:transparent; color:#a5d6a7; font-weight:bold; border-bottom:2px solid #4CAF50; cursor:pointer;">🔑 ログイン</button>
+                <button type="button" id="tabBtnSignup" onclick="switchAuthTab('signup')" style="flex:1; padding:8px; border:none; background:transparent; color:#aaa; font-weight:normal; border-bottom:2px solid transparent; cursor:pointer;">👤 アカウント新規登録</button>
+            </div>
+
+            <!-- ログインフォーム -->
+            <div id="authSectionLogin">
+                <p class="account-hint">既存のアカウントでログインします。<br>ログイン状態はすべてのMAPに自動引き継ぎされます。</p>
+                <div id="loginMsg" class="account-msg" aria-live="polite"></div>
+                <label class="account-label" for="loginUserId">スタッフID</label>
+                <input class="account-input" id="loginUserId" type="text" autocomplete="username" placeholder="例: tanaka" onkeydown="if(event.key==='Enter') submitLogin()">
+                <label class="account-label" for="loginPassword">パスワード</label>
+                <input class="account-input" id="loginPassword" type="password" autocomplete="current-password" placeholder="パスワード" onkeydown="if(event.key==='Enter') submitLogin()">
+                <button type="button" class="btn btn-worker" id="loginBtn" onclick="submitLogin()" style="margin-bottom:8px;">ログインする</button>
+            </div>
+
+            <!-- 新規登録フォーム -->
+            <div id="authSectionSignup" style="display:none;">
+                <p class="account-hint">作業員アカウントを作成できます。<br>権限の変更は管理者用MAPのマイページから行えます。</p>
+                <div id="signupMsg" class="account-msg" aria-live="polite"></div>
+                <label class="account-label" for="signupUserId">スタッフID</label>
+                <input class="account-input" id="signupUserId" type="text" autocomplete="username" placeholder="例: tanaka">
+                <label class="account-label" for="signupUserName">表示名</label>
+                <input class="account-input" id="signupUserName" type="text" autocomplete="name" placeholder="例: 田中">
+                <label class="account-label" for="signupPassword">パスワード（4文字以上）</label>
+                <input class="account-input" id="signupPassword" type="password" autocomplete="new-password">
+                <label class="account-label" for="signupPasswordConfirm">パスワード（確認）</label>
+                <input class="account-input" id="signupPasswordConfirm" type="password" autocomplete="new-password">
+                <button type="button" class="btn btn-signup" id="signupBtn" onclick="submitSignup()" style="margin-bottom:8px;">登録する</button>
+            </div>
+
             <button type="button" class="btn btn-muted" onclick="closeAccountModal()" style="margin-bottom:0;">閉じる</button>
         </div>
     </div>
@@ -198,12 +222,34 @@
         }
       }
 
-      function openAccountModal() {
+      function switchAuthTab(mode) {
+        const loginSec = document.getElementById('authSectionLogin');
+        const signupSec = document.getElementById('authSectionSignup');
+        const tabLogin = document.getElementById('tabBtnLogin');
+        const tabSignup = document.getElementById('tabBtnSignup');
+
+        if (mode === 'signup') {
+          if (loginSec) loginSec.style.display = 'none';
+          if (signupSec) signupSec.style.display = 'block';
+          if (tabLogin) { tabLogin.style.color = '#aaa'; tabLogin.style.borderBottomColor = 'transparent'; tabLogin.style.fontWeight = 'normal'; }
+          if (tabSignup) { tabSignup.style.color = '#a5d6a7'; tabSignup.style.borderBottomColor = '#4CAF50'; tabSignup.style.fontWeight = 'bold'; }
+          const first = document.getElementById('signupUserId');
+          if (first) setTimeout(function() { first.focus(); }, 50);
+        } else {
+          if (loginSec) loginSec.style.display = 'block';
+          if (signupSec) signupSec.style.display = 'none';
+          if (tabLogin) { tabLogin.style.color = '#a5d6a7'; tabLogin.style.borderBottomColor = '#4CAF50'; tabLogin.style.fontWeight = 'bold'; }
+          if (tabSignup) { tabSignup.style.color = '#aaa'; tabSignup.style.borderBottomColor = 'transparent'; tabSignup.style.fontWeight = 'normal'; }
+          const first = document.getElementById('loginUserId');
+          if (first) setTimeout(function() { first.focus(); }, 50);
+        }
+      }
+
+      function openAccountModal(initialTab) {
         const modal = document.getElementById('accountModal');
         if (!modal) return;
         modal.classList.add('is-open');
-        const first = document.getElementById('signupUserId');
-        if (first) setTimeout(function() { first.focus(); }, 50);
+        switchAuthTab(initialTab || 'login');
       }
 
       function closeAccountModal() {
@@ -254,7 +300,115 @@
           localStorage.setItem('passionMapUserRole', role || '作業員');
           if (spreadsheetId) localStorage.setItem('spreadsheetId', spreadsheetId);
           localStorage.setItem('passionMapOrgId', PORTAL_ORG_ID);
+
+          if (role === '管理者') {
+            localStorage.setItem('pMapAdminOrgId', PORTAL_ORG_ID);
+            localStorage.setItem('pMapAdminId', userId || '');
+            localStorage.setItem('pMapAdminPw', password || '');
+            localStorage.setItem('pMapAdminName', name || '');
+          }
         } catch (e) {}
+        updateLoginDisplay();
+      }
+
+      function logoutFromIndex() {
+        try {
+          localStorage.removeItem('passionMapUserId');
+          localStorage.removeItem('passionMapUserPw');
+          localStorage.removeItem('passionMapUserName');
+          localStorage.removeItem('passionMapUserRole');
+          localStorage.removeItem('pMapAdminId');
+          localStorage.removeItem('pMapAdminPw');
+          localStorage.removeItem('pMapAdminName');
+        } catch (e) {}
+        updateLoginDisplay();
+      }
+
+      function updateLoginDisplay() {
+        const userId = localStorage.getItem('passionMapUserId') || '';
+        const userName = localStorage.getItem('passionMapUserName') || '';
+        const userRole = localStorage.getItem('passionMapUserRole') || '';
+
+        const banner = document.getElementById('currentUserBanner');
+        const btnAuth = document.getElementById('btnAuthStatusToggle');
+
+        if (userId) {
+          const roleColor = (userRole === '管理者') ? '#e53935' : '#4CAF50';
+          if (banner) {
+            banner.style.display = 'block';
+            banner.style.background = '#1e2d24';
+            banner.style.border = '1px solid #388e3c';
+            banner.style.color = '#c8e6c9';
+            banner.innerHTML = `
+              <div style="display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;">
+                <span>🔑 ログイン中: <strong>${userName || userId}</strong> (${userId})</span>
+                <span style="background:${roleColor}; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">${userRole || '作業員'}</span>
+                <button type="button" onclick="logoutFromIndex()" style="margin-left:6px; background:#444; color:#fff; border:none; border-radius:12px; padding:3px 10px; font-size:11px; font-weight:bold; cursor:pointer;">ログアウト</button>
+              </div>
+            `;
+          }
+          if (btnAuth) {
+            btnAuth.textContent = `👤 ${userName || userId}`;
+            btnAuth.style.background = '#2e7d32';
+          }
+        } else {
+          if (banner) {
+            banner.style.display = 'block';
+            banner.style.background = '#2c2214';
+            banner.style.border = '1px solid #f57c00';
+            banner.style.color = '#ffe0b2';
+            banner.innerHTML = `
+              <div style="font-weight:bold; margin-bottom:4px;">🔑 未ログイン状態です</div>
+              <div style="font-size:11px; color:#ffcc80; margin-bottom:6px;">ログインすると各MAPをアカウント引き継ぎ状態で開けます。</div>
+              <button type="button" onclick="openAccountModal('login')" style="background:#FF9800; color:#fff; border:none; border-radius:16px; padding:6px 16px; font-size:12px; font-weight:bold; cursor:pointer;">ログイン画面を開く</button>
+            `;
+          }
+          if (btnAuth) {
+            btnAuth.textContent = '🔑 ログイン / 登録';
+            btnAuth.style.background = '#FF9800';
+          }
+        }
+      }
+
+      async function submitLogin() {
+        const userId = (document.getElementById('loginUserId').value || '').trim();
+        const password = document.getElementById('loginPassword').value || '';
+        const btn = document.getElementById('loginBtn');
+
+        if (!userId || !password) {
+          setMsg('loginMsg', 'スタッフIDとパスワードを入力してください', false);
+          return;
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = 'ログイン確認中...'; }
+        setMsg('loginMsg', '', true);
+
+        try {
+          const data = await callPortalGAS('login', {
+            userId: userId,
+            password: password
+          });
+
+          if (!data || data.success === false) {
+            setMsg('loginMsg', (data && data.message) || 'IDまたはパスワードが違います', false);
+            return;
+          }
+
+          const userName = data.name || userId;
+          const userRole = data.role || '作業員';
+          const spreadsheetId = data.spreadsheetId || '';
+
+          saveLoginLocal(userId, password, userName, userRole, spreadsheetId);
+          setMsg('loginMsg', `ログイン完了 (${userName})`, true);
+
+          setTimeout(function() {
+            closeAccountModal();
+          }, 600);
+        } catch (e) {
+          setMsg('loginMsg', e.message || String(e), false);
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = 'ログインする'; }
+        }
       }
 
       async function submitSignup() {
@@ -293,12 +447,20 @@
           setMsg('signupMsg', '登録完了。作業員用 MAP を開けます', true);
           document.getElementById('signupPassword').value = '';
           document.getElementById('signupPasswordConfirm').value = '';
+          setTimeout(function() {
+            closeAccountModal();
+          }, 800);
         } catch (e) {
           setMsg('signupMsg', e.message || String(e), false);
         } finally {
           if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
         }
       }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        updateLoginDisplay();
+      });
+      updateLoginDisplay();
     </script>
 </body>
 </html>

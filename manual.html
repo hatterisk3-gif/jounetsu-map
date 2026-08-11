@@ -13,7 +13,7 @@
 
   <script src="exit-guard.js?v=1786240000001"></script>
 
-  <link rel="stylesheet" href="manual.css">
+  <link rel="stylesheet" href="manual.css?v=1786450000000">
 </head>
 <body>
 
@@ -36,6 +36,12 @@
     <div id="secList">
       <div class="search-bar">
         <input type="search" id="manualSearchKeyword" class="search-input" placeholder="🔍 キーワード・注意点・作業名で検索..." oninput="renderManualGrid()">
+        <select id="manualFilterCategorySelect" class="form-control" style="margin-bottom:0;" onchange="renderManualGrid()">
+          <option value="">すべてのカテゴリー</option>
+        </select>
+        <select id="manualFilterCropSelect" class="form-control" style="margin-bottom:0;" onchange="renderManualGrid()">
+          <option value="">すべての作物</option>
+        </select>
         <select id="manualFilterWorkSelect" class="form-control" style="margin-bottom:0;" onchange="renderManualGrid()">
           <option value="">すべての対象作業</option>
         </select>
@@ -52,19 +58,29 @@
       <div class="form-section">
         <div style="font-size:16px; font-weight:bold; color:var(--primary-color); margin-bottom:12px;">✏️ マニュアルの新規作成</div>
         
-        <label class="form-label">マニュアルタイトル <span style="color:red;">*</span></label>
-        <input type="text" id="manualTitleInput" class="form-control" placeholder="例: 【苗植え】定植作業の正しい手順と注意点">
+        <label class="form-label">📁 カテゴリー <span class="form-sublabel">（作業マスタから選択）</span></label>
+        <div id="manualCategorySelectContainer" class="manual-chip-row"></div>
 
-        <label class="form-label">紐付ける作業 <span class="form-sublabel">（複数選択可能）</span></label>
-        <div id="manualWorkSelectContainer" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px;">
+        <label class="form-label">🌱 作物 <span class="form-sublabel">（カテゴリーに応じて絞り込み）</span></label>
+        <div id="manualCropSelectContainer" class="manual-chip-row"></div>
+
+        <label class="form-label">作業名 <span class="form-sublabel">（複数選択可・言葉だけの登録も可）</span></label>
+        <div id="manualWorkSelectContainer" class="manual-chip-row" style="margin-bottom:8px;">
           <!-- JSで作業チップを表示 -->
         </div>
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+          <input type="text" id="manualWorkCustomInput" class="form-control" style="margin-bottom:0; flex:1;" placeholder="作業名を直接入力（マスタに無い名前も可）" onkeydown="if(event.key==='Enter'){event.preventDefault(); window.addManualCustomWorkName();}">
+          <button type="button" onclick="window.addManualCustomWorkName()" style="background:#2E7D32; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 追加</button>
+        </div>
 
-        <label class="form-label">⚠️ 注意点・重要ポイント <span class="form-sublabel">（危険防止・NG行為など）</span></label>
+        <label class="form-label">マニュアルタイトル <span class="form-sublabel">（空なら作業名から自動）</span></label>
+        <input type="text" id="manualTitleInput" class="form-control" placeholder="例: 【苗植え】定植作業の正しい手順と注意点">
+
+        <label class="form-label">⚠️ 注意点・重要ポイント <span class="form-sublabel">（危険防止・NG行為など。文章だけでも登録できます）</span></label>
         <textarea id="manualNoticeInput" class="form-control" rows="3" placeholder="例: 苗の根を傷つけないよう優しく取り扱うこと。直射日光を避けて保管する。"></textarea>
 
         <!-- 📸 写真追加 ＆ フォトエディター連動 -->
-        <label class="form-label">📸 マニュアル写真の追加</label>
+        <label class="form-label">📸 マニュアル写真の追加 <span class="form-sublabel">（任意・なくても保存できます）</span></label>
         <div style="display:flex; gap:10px; margin-bottom:8px;">
           <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15);">
             📸 カメラ撮影
@@ -159,6 +175,6 @@
   </div>
 
   <script src="map-loading.js?v=1786243000000"></script>
-  <script src="manual.js?v=1786245000000"></script>
+  <script src="manual.js?v=1786450000000"></script>
 </body>
 </html>

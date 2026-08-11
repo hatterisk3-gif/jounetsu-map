@@ -490,6 +490,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   }
               } else {
                   // もし自動ログインに失敗したら、隠していたログイン画面を再表示する
+                  const overlayEl = document.getElementById('mapDataLoadingOverlay');
+                  if (overlayEl) {
+                      overlayEl.classList.remove('is-visible', 'is-nonblocking', 'worker-boot-loading');
+                      overlayEl.style.display = 'none';
+                      overlayEl.style.pointerEvents = 'none';
+                  }
                   document.getElementById('loginScreen').style.display = 'flex';
                   document.getElementById('loginError').innerText = result.message;
                   if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
@@ -501,6 +507,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   }
               }
           } catch(e) { 
+              const overlayEl = document.getElementById('mapDataLoadingOverlay');
+              if (overlayEl) {
+                  overlayEl.classList.remove('is-visible', 'is-nonblocking', 'worker-boot-loading');
+                  overlayEl.style.display = 'none';
+                  overlayEl.style.pointerEvents = 'none';
+              }
               document.getElementById('loginScreen').style.display = 'flex';
               document.getElementById('loginError').innerText = "通信エラー: " + e.message; 
               if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
@@ -685,7 +697,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           window.pdlDeliveryDestinations = pdlDeliveryDestinations;
           window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
           pdlSignFunctions = data.pdl.signFunctionsMaster || [];
-          pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
+          pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "圃場農機作業", "事務作業", "保全・整備"];
           pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
           pdlMachineGroups = data.pdl.machineGroups || ["農業機械", "農機インプルメント", "出荷機械"];
           if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
@@ -3491,9 +3503,8 @@ function createSignboardMarker(name, pos, icon, id) {
        * 優先:
        *  1) 当日の前記録の最遅終了（作業記録 or 休憩記録）
        *     ※ただし昼休憩登録済みで「前作業が昼前・いまは昼後」なら昼休憩終了を使う
-       *  2) 昼休憩終了
-       *  3) 出勤時刻
-       *  4) 午前08:00 / 午後13:00
+       *  2) 出勤時刻（8:00以前の早朝出勤であっても出勤時刻を優先）
+       *  3) デフォルト 08:00
        * opts.forBreak: 休憩登録向け。実終了時刻のまま（12:00を13:00にしない）
        */
       window.resolveDefaultStartTime = (dateYmd, opts) => {
@@ -3501,7 +3512,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const now = new Date();
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const ymd = window.normalizeDateStr(dateYmd) || todayStr;
-        const fallback = (now.getHours() < 13) ? '08:00' : '13:00';
+        const fallback = '08:00';
         const nowMins = now.getHours() * 60 + now.getMinutes();
         const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const forBreak = !!opts.forBreak || (typeof window.isRestWorkNameSelected === 'function' && window.isRestWorkNameSelected());
@@ -3587,10 +3598,6 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           const source = latestIsRest ? 'restEnd' : 'latestEnd';
           return finalizeStart({ start: latestEnd, source: source, syncClockIn: false, isFallback: false });
-        }
-
-        if (!forBreak && lunchEnd) {
-          return finalizeStart({ start: lunchEnd, source: 'lunchEnd', syncClockIn: false, isFallback: false });
         }
 
         const clockIn = window.getLocalClockInTimeForDate(ymd);
@@ -5248,6 +5255,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!opts.skipSideEffects) {
           if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
           if (typeof window.refreshWorkHarvestQtySection === 'function') window.refreshWorkHarvestQtySection();
+          if (typeof window.refreshFieldMachinerySectionVisibility === 'function') window.refreshFieldMachinerySectionVisibility();
         }
       };
 
@@ -5279,6 +5287,300 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           const restNotice = document.getElementById('work_rest_notice');
           if (restNotice) restNotice.style.display = 'none';
+        }
+        if (typeof window.refreshFieldMachinerySectionVisibility === 'function') window.refreshFieldMachinerySectionVisibility();
+      };
+
+      /** 🚜 圃場農機作業用 使用農機選択セクションの構築・描画 */
+      window.populateFieldMachineOptions = (selectedMachineIds) => {
+        const section = document.getElementById('field_machinery_section');
+        if (!section) return;
+
+        const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+          ? pdlMachines
+          : [];
+
+        let html = `
+          <div style="font-weight:bold; color:#E65100; margin-bottom:6px; font-size:13px; display:flex; align-items:center; gap:6px;">
+            <span>🚜 使用農機・車両の記録</span>
+          </div>
+          <div style="font-size:11px; color:#666; margin-bottom:8px;">
+            作業に使用した農機・車両を選択してください（複数選択可）。
+          </div>
+        `;
+
+        html += `
+          <div style="display:flex; justify-content:flex-end; margin:-4px 0 8px;">
+            <button type="button" onclick="addNewMachineFromWorkRecord()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 機械を新規登録</button>
+          </div>
+        `;
+
+        if (!machines.length) {
+          html += `<div style="font-size:12px; color:#888;">農機マスタに登録されている農機がありません。上のボタンから追加できます。</div>`;
+        } else {
+          const activeSelected = Array.isArray(selectedMachineIds) ? selectedMachineIds.map(String) : [];
+
+          const selOptions = machines.map(m => {
+            const id = String(m.id || m.name || '').replace(/"/g, '&quot;');
+            const name = String(m.name || m.id || '').replace(/"/g, '&quot;');
+            const model = m.model ? ` (${m.model})` : '';
+            return `<option value="${id}">${name}${model}</option>`;
+          }).join('');
+
+          html += `
+            <div style="margin-bottom:8px;">
+              <select id="rec_field_machine_select" class="form-input" onchange="if(window.onFieldMachineSelectChange) window.onFieldMachineSelectChange(this)" style="margin-bottom:6px;">
+                <option value="">農機を一覧から選択...</option>
+                ${selOptions}
+              </select>
+            </div>
+            <div id="field_machine_chips_wrapper" style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto; padding:6px; background:#fff; border:1px solid #FFE0B2; border-radius:6px;">
+          `;
+
+          const canEditFieldPhoto = typeof window.isWorkerAdmin !== 'function' || window.isWorkerAdmin();
+          html += machines.map(m => {
+            const id = String(m.id || m.name || '');
+            const name = String(m.name || m.id || '');
+            const isDiesel = typeof window.isDieselFuelMachine_ === 'function' && window.isDieselFuelMachine_(m);
+            const isChecked = activeSelected.includes(id) || activeSelected.includes(name);
+            const photoUrl = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : (m.photo || '');
+            const thumb = photoUrl
+              ? `<img src="${String(photoUrl).replace(/"/g, '&quot;')}" alt="" style="width:22px; height:22px; object-fit:cover; border-radius:50%; border:1px solid #ffcc80;">`
+              : '🚜';
+            const editBtn = canEditFieldPhoto
+              ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${String(id).replace(/'/g, "\\'")}')" style="background:transparent; border:none; color:#1565c0; font-size:11px; cursor:pointer; padding:0 2px;">📷</button>`
+              : '';
+            return `
+              <label style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; background:${isChecked ? '#FFE0B2' : '#FAFAFA'}; border:1px solid ${isChecked ? '#FF9800' : '#DDD'}; border-radius:16px; font-size:12px; cursor:pointer; font-weight:${isChecked ? 'bold' : 'normal'};">
+                <input type="checkbox" class="used-machine-check" value="${id.replace(/"/g, '&quot;')}" data-name="${name.replace(/"/g, '&quot;')}" ${isChecked ? 'checked' : ''} onchange="if(window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(this)">
+                ${thumb} ${name}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽軽油</span>' : ''} ${editBtn}
+              </label>
+            `;
+          }).join('');
+
+          html += `</div>`;
+        }
+
+        section.innerHTML = html;
+        if (typeof window.syncFieldMachineryFuelPairing_ === 'function') {
+          setTimeout(() => { try { window.syncFieldMachineryFuelPairing_(); } catch (e) {} }, 0);
+        }
+      };
+
+      window.onFieldMachineSelectChange = (selectEl) => {
+        if (!selectEl || !selectEl.value) return;
+        const val = String(selectEl.value);
+        const checks = document.querySelectorAll('.used-machine-check');
+        checks.forEach(chk => {
+          if (String(chk.value) === val || String(chk.getAttribute('data-name')) === val) {
+            chk.checked = true;
+            if (window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(chk);
+          }
+        });
+        selectEl.value = '';
+      };
+
+      window.syncFieldMachineChipStyle = (chkEl) => {
+        if (!chkEl) return;
+        const label = chkEl.closest('label');
+        if (label) {
+          const isChecked = chkEl.checked;
+          label.style.background = isChecked ? '#FFE0B2' : '#FAFAFA';
+          label.style.borderColor = isChecked ? '#FF9800' : '#DDD';
+          label.style.fontWeight = isChecked ? 'bold' : 'normal';
+        }
+        if (typeof window.syncFieldMachineryFuelPairing_ === 'function') window.syncFieldMachineryFuelPairing_();
+      };
+
+      window.isDieselFuelMachine_ = (m) => {
+        if (!m) return false;
+        return String(m.fuel || m.fuelType || '').includes('軽油');
+      };
+
+      window.isFieldMachineryWorkCategory_ = () => {
+        const cat = (document.getElementById('rec_work_category')?.value || '').trim();
+        return cat === '圃場農機作業' || cat.includes('農機');
+      };
+
+      window.findMachineByIdOrName_ = (raw) => {
+        const t = String(raw || '').trim();
+        if (!t) return null;
+        const list = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+        return list.find(m => String(m.id || '') === t || String(m.name || '') === t) || null;
+      };
+
+      window.getSelectedFieldMachines_ = () => {
+        const checks = document.querySelectorAll('#field_machinery_section .used-machine-check:checked');
+        const out = [];
+        const seen = new Set();
+        checks.forEach(chk => {
+          const id = String(chk.value || '').trim();
+          const name = String(chk.getAttribute('data-name') || '').trim();
+          const m = window.findMachineByIdOrName_(id) || window.findMachineByIdOrName_(name);
+          const key = String((m && (m.id || m.name)) || id || name);
+          if (!key || seen.has(key)) return;
+          seen.add(key);
+          out.push(m || { id: id, name: name });
+        });
+        return out;
+      };
+
+      window.getSelectedDieselFieldMachines_ = () => {
+        return window.getSelectedFieldMachines_().filter(m => window.isDieselFuelMachine_(m));
+      };
+
+      window.shouldPairFuelWithFieldMachinery_ = () => {
+        if (!window.isFieldMachineryWorkCategory_()) return false;
+        if (typeof window.isCurrentPullWork_ === 'function' && window.isCurrentPullWork_()) return false;
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        if (typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(wName)) return false;
+        return window.getSelectedDieselFieldMachines_().length > 0;
+      };
+
+      window.syncFieldMachineryFuelPairing_ = () => {
+        const pair = window.shouldPairFuelWithFieldMachinery_();
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        const isFuelName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName);
+        if (pair) window.setExtraRecordOpen_('fuel', true);
+        else if (!isFuelName) window.setExtraRecordOpen_('fuel', false);
+        if (typeof window.refreshFuelRecordSection === 'function') window.refreshFuelRecordSection();
+        if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
+      };
+
+      window.isMachinePullWorkName = (workName) => {
+        const n = String(workName || '').trim();
+        if (!n) return false;
+        return n.includes('引き上げ') || n.includes('引上げ') || n.includes('引揚');
+      };
+
+      window.isCurrentPullWork_ = () => {
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        const combined = (typeof window.getActiveCombinedWorkName === 'function')
+          ? window.getActiveCombinedWorkName()
+          : wName;
+        return window.isMachinePullWorkName(wName) || window.isMachinePullWorkName(combined);
+      };
+
+      window.getActivePlaceForMachineLoc_ = () => {
+        const id = (typeof activePolyId !== 'undefined' && activePolyId) ? String(activePolyId) : '';
+        const p = (id && typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+        return { id: id, name: (p && p.name) ? String(p.name) : 'この場所' };
+      };
+
+      window.collectFieldMachinePreselected_ = () => {
+        const fromDom = Array.from(document.querySelectorAll('#field_machinery_section .used-machine-check:checked, #used_items_section .used-machine-check:checked'))
+          .map(c => String(c.value || '').trim()).filter(Boolean);
+        let fromEdit = [];
+        if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId && typeof loadedPolygons !== 'undefined') {
+          const p = (typeof activePolyId !== 'undefined' && activePolyId) ? loadedPolygons[activePolyId] : null;
+          let tgt = null;
+          if (p && Array.isArray(p.photos)) {
+            tgt = p.photos.find(ph => ph && (ph.id === currentEditRecordId || ph.url === currentEditRecordId));
+          }
+          if (tgt && tgt.data && tgt.data.usedMachines) {
+            const um = tgt.data.usedMachines;
+            if (Array.isArray(um)) {
+              fromEdit = um.map(m => String((typeof m === 'object' ? (m.id || m.name) : m) || '').trim()).filter(Boolean);
+            } else if (typeof um === 'string') {
+              fromEdit = um.split(/[,、]/).map(s => s.trim()).filter(Boolean);
+            }
+          }
+        }
+        return [...new Set(fromDom.concat(fromEdit))];
+      };
+
+      window.populatePullMachineOptions = (selectedMachineIds) => {
+        const section = document.getElementById('field_machinery_section');
+        if (!section) return;
+        const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+        const activeSelected = Array.isArray(selectedMachineIds) ? selectedMachineIds.map(String) : [];
+        const here = window.getActivePlaceForMachineLoc_();
+        const canEditFieldPhoto = typeof window.isWorkerAdmin !== 'function' || window.isWorkerAdmin();
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+        let html = `
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+            <div style="font-weight:bold; color:#E65100; font-size:13px;">🚜 引き上げる機械と片づけ場所</div>
+            <button type="button" onclick="addNewMachineFromWorkRecord()" style="flex-shrink:0; background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 写真付きで登録</button>
+          </div>
+          <div style="font-size:11px; color:#666; margin-bottom:8px;">引き上げる機械を選び、片づけ場所を指定してください。一覧に無い機械は名前を入力して登録できます。</div>
+          <div style="display:flex; gap:6px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+            <input type="text" id="pull_new_machine_name" class="form-input" placeholder="機械名を入力（例: トラクターA）" style="flex:1; min-width:160px; margin-bottom:0;" onkeydown="if(event.key==='Enter'){event.preventDefault(); quickRegisterPullMachineName();}">
+            <button type="button" id="pull_new_machine_btn" onclick="quickRegisterPullMachineName()" style="background:#E65100; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">この名前で登録</button>
+          </div>
+        `;
+        if (!machines.length) {
+          html += `<div style="font-size:12px; color:#888;">まだ機械マスタが空です。上に機械名を入れて登録してください。</div>`;
+          section.innerHTML = html;
+          return;
+        }
+        html += `<div style="max-height:320px; overflow-y:auto;">`;
+        machines.forEach(m => {
+          const id = String(m.id || m.name || '');
+          const name = String(m.name || m.id || '');
+          const isChecked = activeSelected.includes(id) || activeSelected.includes(name);
+          const baseLocStr = m.signName ? `${m.signName} (定位置)` : '定位置';
+          const photoUrl = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : (m.photo || '');
+          const thumbHtml = photoUrl
+            ? `<img src="${esc(photoUrl)}" alt="" style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid #ffcc80; flex-shrink:0;">`
+            : `<div style="width:44px; height:44px; border-radius:6px; background:#FFE0B2; color:#E65100; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;">🚜</div>`;
+          const editPhotoBtn = canEditFieldPhoto
+            ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${String(id).replace(/'/g, "\\'")}')" style="margin-left:auto; background:#fff; color:#1565c0; border:1px solid #90caf9; border-radius:6px; padding:3px 7px; font-size:10px; font-weight:bold; cursor:pointer;">📷 写真</button>`
+            : '';
+          const safeId = esc(id);
+          html += `
+            <div style="margin-bottom:8px; background:#fff; padding:8px; border-radius:6px; border:1px solid #FFE0B2;">
+              <label style="font-size:14px; color:#333; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" class="used-machine-check" value="${safeId}" data-name="${esc(name)}" onchange="var loc=document.getElementById('machine_loc_${safeId}'); if(loc) loc.style.display=this.checked?'block':'none'; if(window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(this);" ${isChecked ? 'checked' : ''} style="transform:scale(1.2);">
+                ${thumbHtml}
+                <b>${esc(name)}</b>
+                ${editPhotoBtn}
+              </label>
+              <div id="machine_loc_${safeId}" style="display:${isChecked ? 'block' : 'none'}; margin-top:8px; padding-top:8px; border-top:1px dashed #eee;">
+                <div style="font-size:11px; color:#666; margin-bottom:4px;">📍 片づけた場所を選択:</div>
+                <label style="display:block; font-size:12px; margin-bottom:6px; cursor:pointer;">
+                  <input type="radio" name="loc_${safeId}" value="keep" checked data-signid="${esc(m.signId || '')}" data-signname="${esc(m.signName || '')}"> ① ${esc(baseLocStr)}
+                </label>
+                <label style="display:block; font-size:12px; margin-bottom:6px; cursor:pointer;">
+                  <input type="radio" name="loc_${safeId}" value="here" data-signid="${esc(here.id)}" data-signname="${esc(here.name)}"> ② この場所 (${esc(here.name)})
+                </label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label style="display:flex; align-items:center; font-size:12px; gap:5px; cursor:pointer; margin:0;">
+                    <input type="radio" name="loc_${safeId}" value="other" id="radio_other_${safeId}"> ③ その他:
+                  </label>
+                  <button type="button" onclick="openMachineLocSelect('${String(id).replace(/'/g, "\\'")}')" style="background:#fff; color:#2196F3; border:1px solid #2196F3; border-radius:12px; padding:4px 10px; font-weight:bold; font-size:11px; cursor:pointer;">🗺️ マップから選択</button>
+                </div>
+                <div id="disp_loc_other_${safeId}" style="margin-left:22px; margin-top:4px; font-size:11px; font-weight:bold; color:#1976d2; display:none;"></div>
+                <input type="hidden" id="val_loc_other_${safeId}" value="">
+              </div>
+            </div>
+          `;
+        });
+        html += `</div>`;
+        section.innerHTML = html;
+      };
+
+      window.refreshFieldMachinerySectionVisibility = () => {
+        const section = document.getElementById('field_machinery_section');
+        if (!section) return;
+        const cat = (document.getElementById('rec_work_category')?.value || '').trim();
+        const isPullWork = typeof window.isCurrentPullWork_ === 'function' && window.isCurrentPullWork_();
+        const isMachineryCat = (cat === '圃場農機作業' || cat.includes('農機'));
+        const show = isPullWork || isMachineryCat;
+        section.style.display = show ? 'block' : 'none';
+        if (!show && typeof window.syncFieldMachineryFuelPairing_ === 'function') {
+          const wNameNow = (document.getElementById('rec_work_name')?.value || '').trim();
+          const isFuelName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wNameNow);
+          if (!isFuelName) window.setExtraRecordOpen_('fuel', false);
+        }
+        if (show) {
+          const preselected = (typeof window.collectFieldMachinePreselected_ === 'function')
+            ? window.collectFieldMachinePreselected_()
+            : [];
+          if (isPullWork) window.populatePullMachineOptions(preselected);
+          else window.populateFieldMachineOptions(preselected);
+        } else if (typeof window.syncFieldMachineryFuelPairing_ === 'function') {
+          window.syncFieldMachineryFuelPairing_();
         }
       };
 
@@ -6227,6 +6529,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.refreshDrainageValveUI === 'function') window.refreshDrainageValveUI();
           if (typeof window.refreshIrrigationPumpUI === 'function') window.refreshIrrigationPumpUI();
           if (typeof window.refreshMaintenanceSection === 'function') window.refreshMaintenanceSection(combined);
+          if (typeof window.refreshFieldMachinerySectionVisibility === 'function') window.refreshFieldMachinerySectionVisibility();
           if (typeof window.renderUsedItems === 'function') window.renderUsedItems(combined);
         };
 
@@ -7668,7 +7971,9 @@ function createSignboardMarker(name, pos, icon, id) {
            const name = String(w.name || '').trim();
            if (!name) return '';
            const label = window.getWorkDisplayLabel(w);
-           const details = window.parseDetailWorksList(w.detailWorks || '');
+           const details = (typeof window.getPickerDetailNamesForWork_ === 'function')
+             ? window.getPickerDetailNamesForWork_(w)
+             : window.parseDetailWorksList(w.detailWorks || '');
            const safeLabel = String(label).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
            const safeNameAttr = String(name).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
            const safeArg = window.escapeDetailWorkJsArg(name);
@@ -7676,7 +7981,7 @@ function createSignboardMarker(name, pos, icon, id) {
            const cropLabel = window.getWorkCropLabel(w.cropName);
            const detailPreview = details.length
              ? `<div style="font-size:11px; color:#5e35b1; margin-top:4px;">詳細 ${details.length}件: ${details.slice(0, 4).map(d => String(d).replace(/</g, '&lt;')).join('、')}${details.length > 4 ? '…' : ''}</div>`
-             : `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし（作業名自体を追加）</div>`;
+             : `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし（ここで追加できます）</div>`;
            return `<button type="button" class="detail-work-master-item" data-wname="${safeNameAttr}" onclick="openDetailWorkMasterAddOptions('${safeArg}')" style="width:100%; text-align:left; background:#fff; border:1px solid #d1c4e9; border-radius:8px; padding:10px 12px; cursor:pointer; transition:all 0.15s ease;">
              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                <div style="font-size:14px; font-weight:bold; color:#333;">${safeLabel}</div>
@@ -7915,6 +8220,142 @@ function createSignboardMarker(name, pos, icon, id) {
           || '').trim();
       };
 
+      window.buildWorkAssociationStats_ = (force) => {
+        if (!force && window._workAssocStatsCache) return window._workAssocStatsCache;
+        const byWork = {};
+        const fieldDayWorks = {};
+        const bump = (name) => {
+          if (!byWork[name]) byWork[name] = { n: 0, details: {}, dayKeys: [] };
+          return byWork[name];
+        };
+        const normYmd = (v) => (typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr(v)
+          : String(v || '').slice(0, 10);
+        Object.keys(loadedPolygons || {}).forEach((id) => {
+          const p = loadedPolygons[id];
+          if (!p || !Array.isArray(p.photos)) return;
+          p.photos.forEach((ph) => {
+            if (!ph || !ph.data) return;
+            const isWork = (ph.type === 'work') || ph.data.workName;
+            if (!isWork) return;
+            const rawName = String(ph.data.workName || '').trim();
+            if (!rawName || rawName.includes('休憩')) return;
+            const canon = (typeof window.getCanonicalWorkName === 'function')
+              ? (window.getCanonicalWorkName(rawName) || rawName)
+              : rawName;
+            const st = bump(canon);
+            st.n += 1;
+            const ymd = normYmd(ph.data.workDate || ph.date);
+            const dayKey = String(id) + '|' + ymd;
+            st.dayKeys.push(dayKey);
+            if (!fieldDayWorks[dayKey]) fieldDayWorks[dayKey] = new Set();
+            fieldDayWorks[dayKey].add(canon);
+            const items = (typeof window.parseDetailedWorkWithMinutes === 'function')
+              ? window.parseDetailedWorkWithMinutes(ph.data.detailedWorks || '')
+              : [];
+            items.forEach((it) => {
+              const dn = String((it && it.name) || '').trim();
+              if (!dn || /^対象\s*[:：]/.test(dn) || dn.includes('休憩')) return;
+              st.details[dn] = (st.details[dn] || 0) + 1;
+            });
+          });
+        });
+        Object.keys(byWork).forEach((w) => {
+          const days = new Set(byWork[w].dayKeys);
+          const companions = {};
+          days.forEach((dk) => {
+            (fieldDayWorks[dk] || new Set()).forEach((other) => {
+              if (other === w) return;
+              companions[other] = (companions[other] || 0) + 1;
+            });
+          });
+          byWork[w].dayCount = days.size;
+          byWork[w].companions = companions;
+        });
+        window._workAssocStatsCache = byWork;
+        return byWork;
+      };
+
+      window.getWorkAssociationSuggestions_ = (workName) => {
+        const name = String(workName || '').trim();
+        if (!name || name.includes('休憩')) return { details: [], companions: [], sample: 0 };
+        const stats = window.buildWorkAssociationStats_();
+        const canon = (typeof window.getCanonicalWorkName === 'function')
+          ? (window.getCanonicalWorkName(name) || name)
+          : name;
+        const st = stats[canon] || stats[name];
+        if (!st || st.n < 3) return { details: [], companions: [], sample: st ? st.n : 0 };
+        const details = Object.keys(st.details).map((dn) => ({
+          name: dn,
+          count: st.details[dn],
+          rate: st.details[dn] / st.n
+        })).filter((x) => x.rate >= 0.35 && x.count >= 2)
+          .sort((a, b) => b.rate - a.rate || b.count - a.count)
+          .slice(0, 8);
+        const dayN = st.dayCount || 1;
+        const companions = Object.keys(st.companions || {}).map((dn) => ({
+          name: dn,
+          count: st.companions[dn],
+          rate: st.companions[dn] / dayN
+        })).filter((x) => x.rate >= 0.35 && x.count >= 2)
+          .sort((a, b) => b.rate - a.rate || b.count - a.count)
+          .slice(0, 6);
+        return { details: details, companions: companions, sample: st.n };
+      };
+
+      window.applyStatDetailSuggestion = (detailName) => {
+        const name = String(detailName || '').trim();
+        if (!name) return;
+        if (!Array.isArray(window.recordExtraDetailWorks)) window.recordExtraDetailWorks = [];
+        if (!window.recordExtraDetailWorks.includes(name)) window.recordExtraDetailWorks.push(name);
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        if (typeof window.renderDetailWorksSection === 'function') window.renderDetailWorksSection(wName);
+        setTimeout(() => {
+          const cbs = document.querySelectorAll('input[name="detail_work_ids"]');
+          cbs.forEach((cb) => {
+            if (String(cb.value || '').trim() === name) {
+              cb.checked = true;
+              if (typeof window.toggleDetailWorkMinutes === 'function') window.toggleDetailWorkMinutes(cb);
+            }
+          });
+        }, 30);
+      };
+
+      window.renderWorkAssociationSuggestions_ = (workName) => {
+        const box = document.getElementById('work_assoc_suggest');
+        if (!box) return;
+        const sug = (typeof window.getWorkAssociationSuggestions_ === 'function')
+          ? window.getWorkAssociationSuggestions_(workName)
+          : { details: [], companions: [], sample: 0 };
+        if (!sug.details.length && !sug.companions.length) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const pct = (r) => Math.round((r || 0) * 100) + '%';
+        const jsArg = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        let html = `<div style="font-weight:bold; color:#2E7D32; font-size:13px; margin-bottom:6px;">📊 「${esc(workName)}」でよくある記録 <span style="font-weight:normal; font-size:11px; color:#66BB6A;">（過去${sug.sample}件）</span></div>`;
+        if (sug.details.length) {
+          html += `<div style="font-size:11px; color:#558B2F; margin-bottom:4px;">よく一緒に記録される詳細</div>`;
+          html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">`;
+          sug.details.forEach((d) => {
+            html += `<button type="button" onclick="applyStatDetailSuggestion('${jsArg(d.name)}')" style="background:#fff; color:#1B5E20; border:1px solid #81C784; border-radius:16px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">${esc(d.name)} <span style="color:#2E7D32; font-size:10px;">${pct(d.rate)}</span></button>`;
+          });
+          html += `</div>`;
+        }
+        if (sug.companions.length) {
+          html += `<div style="font-size:11px; color:#558B2F; margin-bottom:4px;">同じ圃場・同じ日によくある作業</div>`;
+          html += `<div style="display:flex; flex-wrap:wrap; gap:6px;">`;
+          sug.companions.forEach((d) => {
+            html += `<button type="button" onclick="applyStatDetailSuggestion('${jsArg(d.name)}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:16px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">${esc(d.name)} <span style="color:#1976D2; font-size:10px;">${pct(d.rate)}</span></button>`;
+          });
+          html += `</div>`;
+        }
+        box.innerHTML = html;
+        box.style.display = 'block';
+      };
+
       window.renderDetailWorksSection = (wName) => {
          const detailSec = document.getElementById('detailed_works_section');
          if (!detailSec) return;
@@ -7996,6 +8437,15 @@ function createSignboardMarker(name, pos, icon, id) {
             extraDetails.forEach(name => {
               if (name && !mergedDetails.includes(name)) mergedDetails.push(name);
             });
+            const assocSug = (typeof window.getWorkAssociationSuggestions_ === 'function')
+              ? window.getWorkAssociationSuggestions_(wName)
+              : { details: [] };
+            const statRateMap = {};
+            (assocSug.details || []).forEach((d) => {
+              if (!d || !d.name) return;
+              statRateMap[d.name] = d.rate;
+              if (!mergedDetails.includes(d.name)) mergedDetails.push(d.name);
+            });
             if (mergedDetails.length) anyDetails = true;
 
             const cropAttr = isPrep ? '' : String(cropLabel === '共通' ? '' : cropLabel).replace(/"/g, '&quot;');
@@ -8013,6 +8463,7 @@ function createSignboardMarker(name, pos, icon, id) {
             mergedDetails.forEach((d) => {
                const safeVal = String(d).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
                const isExtra = extraDetails.includes(d) && !details.includes(d);
+               const isStat = !details.includes(d) && statRateMap[d] != null;
                const masterIdx = details.indexOf(d);
                const safeArg = window.escapeDetailWorkJsArg(d);
                const idSuffix = (cropAttr || (isPrep ? 'prep' : 'common')) + '_' + safeVal;
@@ -8022,6 +8473,7 @@ function createSignboardMarker(name, pos, icon, id) {
                          <input type="checkbox" name="detail_work_ids" value="${safeVal}" data-crop="${cropAttr}" onchange="toggleDetailWorkMinutes(this)" style="width:20px; height:20px; flex-shrink:0;">
                          <span style="font-size:15px; font-weight:bold; color:#1a237e; word-break:break-word; line-height:1.3;">${safeVal}</span>
                          ${isExtra ? `<span style="background:#ede7f6; color:#5e35b1; font-size:10px; padding:2px 6px; border-radius:10px; flex-shrink:0;">作業名</span>` : ''}
+                         ${isStat ? `<span style="background:#E8F5E9; color:#2E7D32; font-size:10px; padding:2px 6px; border-radius:10px; flex-shrink:0;">よくある ${Math.round((statRateMap[d] || 0) * 100)}%</span>` : ''}
                       </div>
                       <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                          ${isExtra ? `<button type="button" onclick="event.stopPropagation(); event.preventDefault(); removeRecordExtraDetailWork('${safeArg}')" title="この記録から外す" style="background:#fff; color:#6a1b9a; border:1px solid #d1c4e9; border-radius:4px; width:28px; height:28px; display:inline-flex; justify-content:center; align-items:center; cursor:pointer; font-size:13px; padding:0;">×</button>` : ''}
@@ -8121,7 +8573,9 @@ function createSignboardMarker(name, pos, icon, id) {
            const name = String(w.name || '').trim();
            if (!name) return '';
            const label = window.getWorkDisplayLabel(w);
-           const details = window.parseDetailWorksList(w.detailWorks || '');
+           const details = (typeof window.getPickerDetailNamesForWork_ === 'function')
+             ? window.getPickerDetailNamesForWork_(w)
+             : window.parseDetailWorksList(w.detailWorks || '');
            const safeLabel = String(label).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
            const safeNameAttr = String(name).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
            const safeArg = window.escapeDetailWorkJsArg(name);
@@ -8129,7 +8583,7 @@ function createSignboardMarker(name, pos, icon, id) {
            const cropLabel = window.getWorkCropLabel(w.cropName);
            const detailPreview = details.length
              ? `<div style="font-size:11px; color:#5e35b1; margin-top:4px;">詳細 ${details.length}件: ${details.slice(0, 4).map(d => String(d).replace(/</g, '&lt;')).join('、')}${details.length > 4 ? '…' : ''}</div>`
-             : `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし（作業名自体を追加）</div>`;
+             : `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし（ここで追加できます）</div>`;
            return `<button type="button" class="detail-work-master-item" data-wname="${safeNameAttr}" onclick="openDetailWorkMasterAddOptions('${safeArg}')" style="width:100%; text-align:left; background:#fff; border:1px solid #d1c4e9; border-radius:8px; padding:10px 12px; cursor:pointer; transition:all 0.15s ease;">
              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                <div style="font-size:14px; font-weight:bold; color:#333;">${safeLabel}</div>
@@ -8274,6 +8728,21 @@ function createSignboardMarker(name, pos, icon, id) {
          document.getElementById('modal').style.display = 'none';
       };
 
+      window.getPickerDetailNamesForWork_ = (w) => {
+         const name = String((w && w.name) || '').trim();
+         const set = new Set(window.parseDetailWorksList((w && w.detailWorks) || ''));
+         if (w && w.cropDetails && typeof w.cropDetails === 'object') {
+           Object.keys(w.cropDetails).forEach(k => {
+             window.parseDetailWorksList(w.cropDetails[k]).forEach(n => { if (n) set.add(n); });
+           });
+         }
+         const crops = (typeof window.getCropsForDetailWorks === 'function') ? window.getCropsForDetailWorks() : [];
+         (crops || []).forEach(c => {
+           (window.getDetailNamesForWorkCrop_(name, c && c.key) || []).forEach(n => { if (n) set.add(n); });
+         });
+         return Array.from(set);
+      };
+
       /** 作業名を選んだあと、本体／詳細作業のどれを追加するか選ぶ */
       window.openDetailWorkMasterAddOptions = (workName) => {
          const name = String(workName || '').trim();
@@ -8282,14 +8751,24 @@ function createSignboardMarker(name, pos, icon, id) {
            if (typeof customAlert === 'function') customAlert('作業マスタが見つかりません。');
            return;
          }
-         const details = window.parseDetailWorksList(w.detailWorks || '');
+         const details = window.getPickerDetailNamesForWork_(w);
          const existing = window.getExistingDetailWorkNameSet_();
+         const preserve = Array.isArray(window._dwPickPreserveChecked) ? window._dwPickPreserveChecked.slice() : null;
+         window._dwPickPreserveChecked = null;
          const safeTitle = window.getWorkDisplayLabel(w).replace(/&/g, '&amp;').replace(/</g, '&lt;');
          const safeNameAttr = String(name).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+         const safeArg = window.escapeDetailWorkJsArg(name);
+         const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+
+         const shouldCheck = (itemName, defaultChecked) => {
+           if (preserve) return preserve.indexOf(itemName) >= 0;
+           return defaultChecked;
+         };
 
          const bodyAlready = existing.has(name);
+         const bodyChecked = !bodyAlready && shouldCheck(name, true);
          let rows = `<label style="display:flex; align-items:center; gap:12px; padding:12px 14px; background:${bodyAlready ? '#f5f5f5' : '#f3e5f5'}; border:1.5px solid ${bodyAlready ? '#ddd' : '#ab47bc'}; border-radius:8px; cursor:${bodyAlready ? 'default' : 'pointer'}; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
-           <input type="checkbox" class="dw-pick-item" value="${safeNameAttr}" data-kind="work" ${bodyAlready ? 'disabled' : 'checked'} style="width:20px; height:20px; flex-shrink:0; cursor:pointer;">
+           <input type="checkbox" class="dw-pick-item" value="${safeNameAttr}" data-kind="work" ${bodyAlready ? 'disabled' : (bodyChecked ? 'checked' : '')} style="width:20px; height:20px; flex-shrink:0; cursor:pointer;">
            <div style="min-width:0; flex:1;">
              <div style="font-weight:bold; font-size:14px; color:${bodyAlready ? '#888' : '#4a148c'}; display:flex; align-items:center; gap:6px;">
                ${String(name).replace(/</g, '&lt;')} 
@@ -8299,13 +8778,14 @@ function createSignboardMarker(name, pos, icon, id) {
            </div>
          </label>`;
 
+         rows += `<div style="font-size:12px; font-weight:bold; color:#4527a0; margin:14px 0 8px; display:flex; align-items:center; gap:4px;">📋 この作業に紐づく詳細作業 (${details.length}件)</div>`;
          if (details.length) {
-           rows += `<div style="font-size:12px; font-weight:bold; color:#4527a0; margin:14px 0 8px; display:flex; align-items:center; gap:4px;">📋 この作業に紐づく詳細作業 (${details.length}件)</div>`;
            details.forEach(d => {
              const already = existing.has(d);
+             const checked = !already && shouldCheck(d, true);
              const safeD = String(d).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
              rows += `<label style="display:flex; align-items:center; gap:12px; padding:10px 14px; background:${already ? '#f5f5f5' : '#fff'}; border:1px solid ${already ? '#e0e0e0' : '#b39ddb'}; border-radius:8px; margin-bottom:6px; cursor:${already ? 'default' : 'pointer'}; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
-               <input type="checkbox" class="dw-pick-item" value="${safeD}" data-kind="detail" ${already ? 'disabled' : 'checked'} style="width:18px; height:18px; flex-shrink:0; cursor:pointer;">
+               <input type="checkbox" class="dw-pick-item" value="${safeD}" data-kind="detail" ${already ? 'disabled' : (checked ? 'checked' : '')} style="width:18px; height:18px; flex-shrink:0; cursor:pointer;">
                <div style="min-width:0; flex:1;">
                  <div style="font-weight:bold; font-size:13px; color:${already ? '#999' : '#333'};">${safeD}</div>
                  <div style="font-size:11px; color:#888;">${already ? 'すでに追加済み' : '詳細作業項目として追加'}</div>
@@ -8313,22 +8793,67 @@ function createSignboardMarker(name, pos, icon, id) {
              </label>`;
            });
          } else {
-           rows += `<div style="font-size:12px; color:#888; margin-top:10px; padding:8px; background:#fafafa; border-radius:6px;">この作業には詳細作業が未登録です。作業本体のみ追加できます。</div>`;
+           rows += `<div style="font-size:12px; color:#888; margin-bottom:8px; padding:8px; background:#fafafa; border-radius:6px;">まだ詳細作業がありません。下の欄から追加できます。</div>`;
          }
 
          document.getElementById('modalBody').innerHTML = `
            <h3 style="color:#5e35b1; margin-top:0;">追加する内容を選択</h3>
-           <div style="font-size:12px; color:#666; margin-bottom:10px;">対象: <b>${safeTitle}</b></div>
+           <div style="font-size:12px; color:#666; margin-bottom:10px;">対象: <b>${safeTitle}</b>（通常作業）</div>
            <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
              <button type="button" onclick="setDetailWorkPickAll(true)" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">すべて選択</button>
              <button type="button" onclick="setDetailWorkPickAll(false)" style="background:#fff; color:#666; border:1px solid #ccc; border-radius:4px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">すべて解除</button>
            </div>
-           <div id="detail_work_pick_list" style="max-height:50vh; overflow-y:auto;">${rows}</div>
+           <div id="detail_work_pick_list" style="max-height:42vh; overflow-y:auto;">${rows}</div>
+           <div style="margin-top:12px; padding:10px 12px; background:#e3f2fd; border:1px dashed #90caf9; border-radius:8px;">
+             <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">＋ この通常作業に詳細作業を追加</div>
+             <div style="display:flex; gap:6px;">
+               <input type="text" id="dw_pick_new_detail" class="form-input" placeholder="例: 苗の選別（カンマで複数可）" style="flex:1; margin-bottom:0; font-size:14px;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addNewDetailWorkInMasterPick('${safeArg}');}">
+               <button type="button" onclick="addNewDetailWorkInMasterPick('${safeArg}')" style="background:#1565c0; color:#fff; border:none; border-radius:6px; padding:0 12px; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">追加</button>
+             </div>
+             <div style="font-size:11px; color:#546e7a; margin-top:6px; line-height:1.4;">${isAdmin ? '作業マスタに保存され、この選択リストにもすぐ出ます。' : 'この記録の詳細候補に追加します（マスタ保存は管理者）。'}</div>
+           </div>
            <div style="font-size:11px; color:#546e7a; margin-top:10px; line-height:1.4;">追加後、必要なら各項目に「分」を手入力できます（開始・終了が無くてもOK）。</div>
            <div style="display:flex; gap:10px; margin-top:12px;">
              <button type="button" onclick="openDetailWorkFromMasterPicker()" style="background:#eee; color:#333; flex:1; padding:12px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">一覧へ</button>
-             <button type="button" onclick="confirmDetailWorksFromMasterPick()" style="background:#5e35b1; color:#fff; flex:1; padding:12px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">追加する</button>
+             <button type="button" onclick="confirmDetailWorksFromMasterPick()" style="background:#5e35b1; color:#fff; flex:1; padding:12px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">この記録に追加する</button>
            </div>`;
+      };
+
+      window.addNewDetailWorkInMasterPick = async (workName) => {
+         const input = document.getElementById('dw_pick_new_detail');
+         const raw = (input && input.value || '').trim();
+         const names = window.parseDetailWorksList(raw);
+         if (!names.length) {
+           if (typeof customAlert === 'function') customAlert('詳細作業名を入力してください。');
+           return;
+         }
+         const preserve = Array.from(document.querySelectorAll('#detail_work_pick_list .dw-pick-item:checked'))
+           .map(cb => String(cb.value || '').trim())
+           .filter(Boolean);
+         names.forEach(n => { if (preserve.indexOf(n) < 0) preserve.push(n); });
+         window._dwPickPreserveChecked = preserve;
+
+         const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+         if (isAdmin) {
+           const cropKey = (typeof window.resolveDetailWorkCropKey_ === 'function')
+             ? window.resolveDetailWorkCropKey_('')
+             : '__common__';
+           let details = window.getAdminEditableDetailNames_(workName, cropKey) || [];
+           names.forEach(n => { if (details.indexOf(n) < 0) details.push(n); });
+           window._detailWorkEditorReturnToPicker = workName;
+           await window.saveAdminDetailWorks(workName, details, '追加', cropKey);
+           return;
+         }
+         const w = window.findWorkMasterByName_(workName);
+         if (w) {
+           const list = window.parseDetailWorksList(w.detailWorks || '');
+           names.forEach(n => { if (list.indexOf(n) < 0) list.push(n); });
+           w.detailWorks = list.join(', ');
+         }
+         window.openDetailWorkMasterAddOptions(workName);
+         if (typeof window.showRecordSyncToast === 'function') {
+           window.showRecordSyncToast('✅ 詳細作業をリストに追加しました', 'ok');
+         }
       };
 
       window.setDetailWorkPickAll = (checked) => {
@@ -8531,6 +9056,9 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         
         window.renderDetailWorksSection(wName);
+        if (typeof window.renderWorkAssociationSuggestions_ === 'function') {
+          window.renderWorkAssociationSuggestions_(wName);
+        }
         if (typeof window.handleCombinedWorkChange === 'function') {
           window.handleCombinedWorkChange();
         } else {
@@ -8539,6 +9067,9 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (typeof window.refreshExtraRecordButtons === 'function') {
           window.refreshExtraRecordButtons();
+        }
+        if (typeof window.refreshFieldMachinerySectionVisibility === 'function') {
+          window.refreshFieldMachinerySectionVisibility();
         }
       };
 
@@ -8882,7 +9413,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.isDeliveryWork === 'function' && window.isDeliveryWork(name)) {
           defs.push({ key: 'delivery', label: '配送先・運搬場所の指定', emoji: '🚚', color: '#0288D1' });
         }
-        if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) {
+        const pairFuel = typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
+          && window.shouldPairFuelWithFieldMachinery_();
+        if ((typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) || pairFuel) {
           defs.push({ key: 'fuel', label: '給油記録', emoji: '⛽', color: '#C2185B' });
         } else if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(name)) {
           defs.push({ key: 'maintenance', label: '整備・修理詳細', emoji: '🔧', color: '#E65100' });
@@ -9007,6 +9540,10 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         // 給油は給油記録パネルを自動で開く
         if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) {
+          window.setExtraRecordOpen_('fuel', true);
+        }
+        // 圃場農機作業 × 軽油車両は給油をセットで開く
+        if (typeof window.shouldPairFuelWithFieldMachinery_ === 'function' && window.shouldPairFuelWithFieldMachinery_()) {
           window.setExtraRecordOpen_('fuel', true);
         }
         // 専用記録モード／復元時の自動オープン
@@ -10115,8 +10652,16 @@ function createSignboardMarker(name, pos, icon, id) {
               localStorage.removeItem('passionMapInitData');
               localStorage.removeItem('pMapAdminInitData');
 
-              window.renderDetailWorksSection(wName);
-              if (typeof customAlert === 'function') {
+              const returnPicker = window._detailWorkEditorReturnToPicker || '';
+              window._detailWorkEditorReturnToPicker = '';
+              const recWName = document.getElementById('rec_work_name')?.value || '';
+              window.renderDetailWorksSection(recWName || wName);
+              if (returnPicker) {
+                  window.openDetailWorkMasterAddOptions(returnPicker);
+                  if (typeof window.showRecordSyncToast === 'function') {
+                      window.showRecordSyncToast('✅ 詳細作業を' + actionLabel + 'しました', 'ok');
+                  }
+              } else if (typeof customAlert === 'function') {
                   const scope = isPrep
                     ? `（準備 − ${prepTarget}）`
                     : `（${window.getWorkCropLabel(resolvedCrop)}）`;
@@ -10124,7 +10669,11 @@ function createSignboardMarker(name, pos, icon, id) {
               }
           } catch (e) {
               console.warn('saveAdminDetailWorks Error:', e);
-              window.renderDetailWorksSection(wName);
+              const returnPicker = window._detailWorkEditorReturnToPicker || '';
+              window._detailWorkEditorReturnToPicker = '';
+              const recWName = document.getElementById('rec_work_name')?.value || '';
+              window.renderDetailWorksSection(recWName || wName);
+              if (returnPicker) window.openDetailWorkMasterAddOptions(returnPicker);
               if (typeof customAlert === 'function') customAlert(`詳細作業をローカルで${actionLabel}しました（通信: ${e.message || e}）`);
           }
       };
@@ -10140,6 +10689,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const name = String(workName || '').trim();
         // 給油は整備パネルではなく給油パネルへ
         if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) return false;
+        if (typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(name)) return false;
         const catEl = document.getElementById('rec_work_category');
         const cat = catEl ? String(catEl.value || '').trim() : '';
         const detailNames = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked'))
@@ -10194,7 +10744,10 @@ function createSignboardMarker(name, pos, icon, id) {
             isTool: false,
             mileage: v.mileage,
             driveType: v.driveType || '',
-            status: v.status || ''
+            status: v.status || '',
+            photo: v.photo || v.photoUrl || '',
+            photo2: v.photo2 || '',
+            photoUrl: v.photoUrl || v.photo || ''
           };
         }
         const machine = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
@@ -10258,7 +10811,10 @@ function createSignboardMarker(name, pos, icon, id) {
           driveType: v.driveType || '移動車両',
           group: v.driveType || '移動車両',
           status: v.status || '',
-          mileage: v.mileage
+          mileage: v.mileage,
+          photo: v.photo || v.photoUrl || '',
+          photo2: v.photo2 || '',
+          photoUrl: v.photoUrl || v.photo || ''
         }));
 
         const allItems = [...machines, ...tools, ...vehicles];
@@ -10329,17 +10885,34 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       // --- 🚜 機体の写真から選択モーダル & プレビュー機能 ---
+      window.toDriveThumbUrl = (url) => {
+        if (!url || typeof url !== 'string') return '';
+        url = url.trim();
+        if (!url) return '';
+        if (url.startsWith('data:') || url.startsWith('blob:') || url.indexOf('thumbnail?id=') >= 0) return url;
+        let fileId = null;
+        const m1 = url.match(/\/file\/d\/([^\/\?]+)/);
+        if (m1 && m1[1]) fileId = m1[1];
+        else {
+          const m2 = url.match(/[?&]id=([^&]+)/);
+          if (m2 && m2[1]) fileId = m2[1];
+        }
+        if (fileId) return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w800';
+        return url;
+      };
+
       window.getMachinePhotoUrl = (item) => {
         if (!item) return '';
-        if (item.photo && typeof item.photo === 'string' && item.photo.trim()) return item.photo.trim();
-        if (item.photo2 && typeof item.photo2 === 'string' && item.photo2.trim()) return item.photo2.trim();
-        if (item.photoUrl && typeof item.photoUrl === 'string' && item.photoUrl.trim()) return item.photoUrl.trim();
-        if (Array.isArray(item.photos) && item.photos.length > 0) {
+        let raw = '';
+        if (item.photo && typeof item.photo === 'string' && item.photo.trim()) raw = item.photo.trim();
+        else if (item.photo2 && typeof item.photo2 === 'string' && item.photo2.trim()) raw = item.photo2.trim();
+        else if (item.photoUrl && typeof item.photoUrl === 'string' && item.photoUrl.trim()) raw = item.photoUrl.trim();
+        else if (Array.isArray(item.photos) && item.photos.length > 0) {
           const p = item.photos[0];
-          if (typeof p === 'string') return p;
-          if (p && (p.url || p.base64)) return p.url || p.base64;
+          if (typeof p === 'string') raw = p;
+          else if (p && (p.url || p.base64)) raw = p.url || p.base64;
         }
-        return '';
+        return typeof window.toDriveThumbUrl === 'function' ? window.toDriveThumbUrl(raw) : raw;
       };
 
       window.updateMaintenanceTargetPhotoPreview = () => {
@@ -10387,6 +10960,11 @@ function createSignboardMarker(name, pos, icon, id) {
           subEl.textContent = [num ? `[${num}]` : '', cat, loc ? `📍${loc}` : ''].filter(Boolean).join(' ・ ');
         }
         previewEl.style.display = 'flex';
+        const editBtn = document.getElementById('m_target_photo_edit_btn');
+        if (editBtn) {
+          const canEdit = typeof window.isWorkerAdmin !== 'function' || window.isWorkerAdmin();
+          editBtn.style.display = canEdit ? 'inline-flex' : 'none';
+        }
       };
 
       window.ensureMachinePhotoPickerModal = () => {
@@ -10539,8 +11117,13 @@ function createSignboardMarker(name, pos, icon, id) {
           const subText = item.machineNumber || item.serialNo || item.model || '';
           const safeId = String(item.id).replace(/'/g, "\\'");
 
+          const canEditPickerPhoto = (typeof window.isWorkerAdmin !== 'function' || window.isWorkerAdmin()) && !item.isTool;
+          const pickerEditBtn = canEditPickerPhoto
+            ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${safeId}', '${item.isVehicle ? 'vehicle' : 'machine'}')" style="position:absolute; top:4px; left:4px; background:rgba(255,255,255,0.92); color:#1565c0; border:1px solid #90caf9; border-radius:10px; padding:2px 6px; font-size:10px; font-weight:bold; cursor:pointer; z-index:3;">📷</button>`
+            : '';
           gridHtml += `
             <div onclick="selectMachineFromPhotoPicker('${safeId}')" style="${borderStyle} border-radius:10px; padding:8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; position:relative; transition:all 0.15s ease-in-out;">
+              ${pickerEditBtn}
               ${isSelected ? `<div style="position:absolute; top:4px; right:4px; background:#2E7D32; color:#fff; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px; z-index:2;">選択中 ✅</div>` : ''}
               
               <div style="width:100%; height:84px; border-radius:6px; overflow:hidden; background:#f0f0f0; display:flex; justify-content:center; align-items:center; margin-bottom:6px; position:relative;">
@@ -10564,69 +11147,437 @@ function createSignboardMarker(name, pos, icon, id) {
         gridEl.innerHTML = gridHtml;
       };
 
+      window._machineItemEditorState = { kind: 'machine', mode: 'add', itemId: '', existingPhoto: '', photoBase64: '', clearPhoto: false, workCategory: '', afterSave: null, pending: [] };
+
+      window.ensureMachineItemEditorModal = () => {
+        let modal = document.getElementById('machineItemEditorModal');
+        if (modal && modal.getAttribute('data-multi') === '1') return modal;
+        if (modal) modal.remove();
+        modal = document.createElement('div');
+        modal.id = 'machineItemEditorModal';
+        modal.setAttribute('data-multi', '1');
+        modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:26000; justify-content:center; align-items:center; padding:12px; box-sizing:border-box;';
+        modal.innerHTML = `
+          <div style="width:100%; max-width:440px; max-height:92vh; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,0.35); display:flex; flex-direction:column;">
+            <div style="background:#1976D2; color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+              <div id="mie_title" style="font-weight:bold; font-size:15px;">🚜 農機・車両の登録</div>
+              <button type="button" onclick="closeMachineItemEditorModal()" style="background:transparent; border:none; color:#fff; font-size:22px; cursor:pointer; line-height:1;">×</button>
+            </div>
+            <div style="padding:14px 16px; overflow-y:auto; flex:1;">
+              <div id="mie_kind_row" style="display:flex; gap:8px; margin-bottom:12px;">
+                <button type="button" id="mie_kind_machine" onclick="setMachineItemEditorKind('machine')" style="flex:1; border-radius:8px; padding:8px; font-size:13px; font-weight:bold; cursor:pointer;">🚜 農機具</button>
+                <button type="button" id="mie_kind_vehicle" onclick="setMachineItemEditorKind('vehicle')" style="flex:1; border-radius:8px; padding:8px; font-size:13px; font-weight:bold; cursor:pointer;">🛻 車両</button>
+              </div>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">名称 *</label>
+              <input type="text" id="mie_name" class="form-input" placeholder="例: トラクター MZ655 / 軽トラ 熊谷500あ1234" style="width:100%; box-sizing:border-box; margin-bottom:12px;" onkeydown="if(event.key==='Enter'){event.preventDefault(); if((window._machineItemEditorState||{}).mode==='add'){queueMachineItemFromEditor();}else{saveMachineItemEditorModal();}}">
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">写真（任意・あとから編集可）</label>
+              <div id="mie_photo_preview" style="width:100%; min-height:100px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:8px;"></div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                <label style="flex:1; min-width:120px; background:#2E7D32; color:#fff; text-align:center; padding:8px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">
+                  📷 写真を選ぶ
+                  <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="onMachineItemEditorPhotoChange(this)">
+                </label>
+                <label style="flex:1; min-width:120px; background:#2196F3; color:#fff; text-align:center; padding:8px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">
+                  🖼️ フォルダから
+                  <input type="file" accept="image/*" style="display:none;" onchange="onMachineItemEditorPhotoChange(this)">
+                </label>
+              </div>
+              <button type="button" id="mie_clear_photo" onclick="clearMachineItemEditorPhoto()" style="display:none; width:100%; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:8px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:8px;">写真を外す</button>
+              <div id="mie_add_hint" style="font-size:11px; color:#666; line-height:1.45; margin-bottom:8px;">農機具と車両を混ぜて、何台でもリストに追加してからまとめて登録できます。</div>
+              <button type="button" id="mie_queue_btn" onclick="queueMachineItemFromEditor()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:10px; font-size:13px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ リストに追加（続けて登録）</button>
+              <div id="mie_queue_wrap" style="display:none;">
+                <div style="font-size:12px; font-weight:bold; color:#333; margin-bottom:6px;">登録待ち <span id="mie_queue_count">0</span>件</div>
+                <div id="mie_queue_list" style="display:flex; flex-direction:column; gap:6px; max-height:160px; overflow-y:auto;"></div>
+              </div>
+            </div>
+            <div id="mie_footer" style="padding:10px 16px 14px; display:flex; gap:8px; flex-shrink:0; border-top:1px solid #eee;">
+              <button type="button" id="mie_save_btn" onclick="saveMachineItemEditorModal()" style="flex:2; background:#1976D2; color:#fff; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">まとめて登録する</button>
+              <button type="button" onclick="closeMachineItemEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">キャンセル</button>
+            </div>
+          </div>`;
+        document.body.appendChild(modal);
+        return modal;
+      };
+
+      window.renderMachineItemEditorPreview = () => {
+        const box = document.getElementById('mie_photo_preview');
+        const clearBtn = document.getElementById('mie_clear_photo');
+        if (!box) return;
+        const st = window._machineItemEditorState || {};
+        const url = st.photoBase64 || (!st.clearPhoto ? (typeof window.toDriveThumbUrl === 'function' ? window.toDriveThumbUrl(st.existingPhoto) : st.existingPhoto) : '');
+        if (url) {
+          box.innerHTML = `<img src="${url.replace(/"/g, '&quot;')}" alt="preview" style="width:100%; max-height:180px; object-fit:contain; display:block;">`;
+        } else {
+          box.innerHTML = '<div style="color:#888; font-size:13px; padding:18px; text-align:center;">写真未登録</div>';
+        }
+        if (clearBtn) clearBtn.style.display = url ? 'block' : 'none';
+      };
+
+      window.onMachineItemEditorPhotoChange = async (input) => {
+        if (!input || !input.files || !input.files[0]) return;
+        const file = input.files[0];
+        try {
+          const b64 = (typeof resizeImg === 'function')
+            ? await resizeImg(file)
+            : await new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(r.result);
+                r.onerror = reject;
+                r.readAsDataURL(file);
+              });
+          window._machineItemEditorState.photoBase64 = b64;
+          window._machineItemEditorState.clearPhoto = false;
+          window.renderMachineItemEditorPreview();
+        } catch (e) {
+          if (typeof customAlert === 'function') customAlert('写真の読み込みに失敗しました');
+        }
+        input.value = '';
+      };
+
+      window.clearMachineItemEditorPhoto = () => {
+        window._machineItemEditorState.photoBase64 = '';
+        window._machineItemEditorState.clearPhoto = true;
+        window.renderMachineItemEditorPreview();
+      };
+
+      window.setMachineItemEditorKind = (kind) => {
+        const st = window._machineItemEditorState || {};
+        st.kind = kind === 'vehicle' ? 'vehicle' : 'machine';
+        window._machineItemEditorState = st;
+        const macBtn = document.getElementById('mie_kind_machine');
+        const vehBtn = document.getElementById('mie_kind_vehicle');
+        const sel = { background: '#1976D2', color: '#fff', border: '1px solid #0D47A1' };
+        const off = { background: '#f5f5f5', color: '#555', border: '1px solid #ddd' };
+        [macBtn, vehBtn].forEach((btn, i) => {
+          if (!btn) return;
+          const on = (i === 0 && st.kind !== 'vehicle') || (i === 1 && st.kind === 'vehicle');
+          const s = on ? sel : off;
+          btn.style.background = s.background;
+          btn.style.color = s.color;
+          btn.style.border = s.border;
+        });
+        const titleEl = document.getElementById('mie_title');
+        if (titleEl && st.mode === 'add') titleEl.textContent = '＋ 農機具・車両を複数登録';
+      };
+
+      window.renderMachineItemEditorQueue = () => {
+        const wrap = document.getElementById('mie_queue_wrap');
+        const list = document.getElementById('mie_queue_list');
+        const countEl = document.getElementById('mie_queue_count');
+        const pending = (window._machineItemEditorState && window._machineItemEditorState.pending) || [];
+        if (countEl) countEl.textContent = String(pending.length);
+        if (wrap) wrap.style.display = pending.length ? 'block' : 'none';
+        if (!list) return;
+        list.innerHTML = pending.map((p, idx) => {
+          const icon = p.kind === 'vehicle' ? '🛻' : '🚜';
+          const kindLabel = p.kind === 'vehicle' ? '車両' : '農機具';
+          const thumb = p.photoBase64
+            ? `<img src="${String(p.photoBase64).replace(/"/g, '&quot;')}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #ddd;">`
+            : `<div style="width:36px; height:36px; border-radius:6px; background:#eee; display:flex; align-items:center; justify-content:center;">${icon}</div>`;
+          return `<div style="display:flex; align-items:center; gap:8px; background:#fafafa; border:1px solid #eee; border-radius:8px; padding:6px 8px;">
+            ${thumb}
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:13px; font-weight:bold; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${String(p.name || '').replace(/</g, '&lt;')}</div>
+              <div style="font-size:10px; color:#666;">${kindLabel}${p.photoBase64 ? ' ・写真あり' : ''}</div>
+            </div>
+            <button type="button" onclick="removeMachineItemFromQueue(${idx})" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+          </div>`;
+        }).join('');
+      };
+
+      window.queueMachineItemFromEditor = () => {
+        const st = window._machineItemEditorState || {};
+        const name = (document.getElementById('mie_name')?.value || '').trim();
+        if (!name) {
+          if (typeof customAlert === 'function') customAlert('名称を入力してからリストに追加してください');
+          return;
+        }
+        if (!Array.isArray(st.pending)) st.pending = [];
+        const dup = st.pending.some(p => p.name === name && p.kind === (st.kind || 'machine'));
+        if (dup) {
+          if (typeof customAlert === 'function') customAlert('同じ名称がすでにリストにあります');
+          return;
+        }
+        st.pending.push({
+          kind: st.kind === 'vehicle' ? 'vehicle' : 'machine',
+          name: name,
+          photoBase64: st.photoBase64 || ''
+        });
+        window._machineItemEditorState = st;
+        const nameEl = document.getElementById('mie_name');
+        if (nameEl) nameEl.value = '';
+        st.photoBase64 = '';
+        st.clearPhoto = false;
+        window.renderMachineItemEditorPreview();
+        window.renderMachineItemEditorQueue();
+        if (nameEl) nameEl.focus();
+        if (typeof window.showRecordSyncToast === 'function') {
+          window.showRecordSyncToast('リストに追加（' + st.pending.length + '件）', 'ok');
+        }
+      };
+
+      window.removeMachineItemFromQueue = (idx) => {
+        const st = window._machineItemEditorState || {};
+        if (!Array.isArray(st.pending)) return;
+        st.pending.splice(idx, 1);
+        window.renderMachineItemEditorQueue();
+      };
+
+      window.closeMachineItemEditorModal = () => {
+        const modal = document.getElementById('machineItemEditorModal');
+        if (modal) modal.style.display = 'none';
+      };
+
+      window.syncMachineEditorAddModeUi = () => {
+        const st = window._machineItemEditorState || {};
+        const isAdd = st.mode !== 'edit';
+        const kindRow = document.getElementById('mie_kind_row');
+        const queueBtn = document.getElementById('mie_queue_btn');
+        const hint = document.getElementById('mie_add_hint');
+        const saveBtn = document.getElementById('mie_save_btn');
+        if (kindRow) kindRow.style.display = isAdd ? 'flex' : 'none';
+        if (queueBtn) queueBtn.style.display = isAdd ? 'block' : 'none';
+        if (hint) hint.style.display = isAdd ? 'block' : 'none';
+        if (saveBtn) saveBtn.textContent = isAdd ? 'まとめて登録する' : '保存する';
+        if (isAdd) window.setMachineItemEditorKind(st.kind || 'machine');
+        window.renderMachineItemEditorQueue();
+      };
+
+      window.openMachinePhotoEditorById = (machineId, kind) => {
+        kind = kind || 'machine';
+        if (kind === 'vehicle') {
+          const vid = String(machineId || '');
+          const item = (typeof window.findMaintenanceTargetById_ === 'function')
+            ? window.findMaintenanceTargetById_(vid.indexOf('veh:') === 0 ? vid : ('veh:' + vid))
+            : null;
+          if (!item) {
+            if (typeof customAlert === 'function') customAlert('車両が見つかりません');
+            return;
+          }
+          window.openMachineItemEditorModal({ mode: 'edit', kind: 'vehicle', item: item });
+          return;
+        }
+        const m = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+          ? pdlMachines.find(x => String(x.id) === String(machineId))
+          : null;
+        if (!m) {
+          if (typeof customAlert === 'function') customAlert('農機が見つかりません');
+          return;
+        }
+        window.openMachineItemEditorModal({ mode: 'edit', kind: 'machine', item: m });
+      };
+
+      window.openMachineItemEditorModal = (opts) => {
+        opts = opts || {};
+        window.ensureMachineItemEditorModal();
+        const kind = opts.kind || 'machine';
+        const mode = opts.mode || 'add';
+        const item = opts.item || null;
+        window._machineItemEditorState = {
+          kind: kind,
+          mode: mode,
+          itemId: item ? String(item.id || '') : '',
+          existingPhoto: item ? (window.getMachinePhotoUrl(item) || item.photo || '') : '',
+          photoBase64: '',
+          clearPhoto: false,
+          workCategory: opts.workCategory || '',
+          afterSave: opts.afterSave || null,
+          name: item ? (item.name || item.plateNumber || '') : '',
+          pending: []
+        };
+        const titleEl = document.getElementById('mie_title');
+        const nameEl = document.getElementById('mie_name');
+        const kindLabel = kind === 'vehicle' ? '車両' : '農機具';
+        if (titleEl) titleEl.textContent = (mode === 'edit' ? '✏️ ' : '＋ ') + (mode === 'edit' ? (kindLabel + 'の編集') : '農機具・車両を複数登録');
+        if (nameEl) nameEl.value = window._machineItemEditorState.name || '';
+        window.renderMachineItemEditorPreview();
+        window.syncMachineEditorAddModeUi();
+        const modal = document.getElementById('machineItemEditorModal');
+        if (modal) modal.style.display = 'flex';
+        setTimeout(() => { if (nameEl) nameEl.focus(); }, 50);
+      };
+
+      window.persistOneMachineOrVehicle_ = async (entry) => {
+        const st = window._machineItemEditorState || {};
+        const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者';
+        const name = String(entry.name || '').trim();
+        const kind = entry.kind === 'vehicle' ? 'vehicle' : 'machine';
+        const photoBase64 = entry.photoBase64 || '';
+        if (kind === 'vehicle') {
+          const rawId = (entry.mode === 'edit' && entry.itemId)
+            ? String(entry.itemId).replace(/^veh:/, '')
+            : ('veh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
+          const payload = {
+            id: rawId,
+            plateNumber: name,
+            driveType: '移動車両',
+            status: '使用可能'
+          };
+          if (photoBase64) {
+            payload.photoBase64 = photoBase64;
+            payload.photoFilename = name.replace(/\s+/g, '_') + '.jpg';
+          }
+          if (entry.clearPhoto && !photoBase64) payload.clearPhoto = true;
+          const res = await safeCallGAS('vehicle_saveVehicle', payload);
+          const photoUrl = (res && res.photo) || photoBase64 || (entry.clearPhoto ? '' : (entry.existingPhoto || ''));
+          if (!Array.isArray(window.pdlMobileVehicles)) window.pdlMobileVehicles = [];
+          const rec = { id: rawId, plateNumber: name, driveType: '移動車両', status: '使用可能', photo: photoUrl };
+          const idx = window.pdlMobileVehicles.findIndex(v => String(v.id) === String(rawId));
+          if (idx >= 0) window.pdlMobileVehicles[idx] = Object.assign({}, window.pdlMobileVehicles[idx], rec);
+          else window.pdlMobileVehicles.push(rec);
+          return { kind: 'vehicle', rec: rec, id: rawId, optionId: window.getMobileVehicleOptionId_(rec), name: name };
+        }
+
+        const payload = {
+          name: name,
+          userName: userName,
+          workCategory: st.workCategory || '',
+          group: '農業機械'
+        };
+        if (photoBase64) {
+          payload.photoBase64 = photoBase64;
+          payload.photoFilename = name.replace(/\s+/g, '_') + '.jpg';
+          payload.photos = [{ filename: payload.photoFilename, base64: photoBase64 }];
+        }
+        let newMachine;
+        if (entry.mode === 'edit' && entry.itemId) {
+          payload.machineId = entry.itemId;
+          payload.clearPhoto = !!(entry.clearPhoto && !photoBase64);
+          const res = await safeCallGAS('editMachineInMaster', payload);
+          newMachine = (res && res.machine) ? res.machine : Object.assign({}, payload, { id: entry.itemId, photo: photoBase64 || (payload.clearPhoto ? '' : (entry.existingPhoto || '')) });
+        } else {
+          const res = await safeCallGAS('addMachineToSign', payload);
+          newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, workCategory: payload.workCategory, group: '農業機械', status: '使用可能', photo: photoBase64 || '' };
+        }
+        if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
+        const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newMachine.id) || m.name === name);
+        const saved = Object.assign({ name: name }, newMachine);
+        if (existingIdx !== -1) pdlMachines[existingIdx] = Object.assign({}, pdlMachines[existingIdx], saved);
+        else pdlMachines.push(saved);
+        return { kind: 'machine', rec: saved, id: saved.id, optionId: saved.id, name: name };
+      };
+
+      window.applySavedMachineItemsToWorkForm_ = (results) => {
+        const machineIds = results.filter(r => r && r.kind === 'machine' && r.id).map(r => String(r.id));
+        const last = results[results.length - 1];
+        if (typeof window.populateMaintenanceMachineSelect === 'function' && last) {
+          window.populateMaintenanceMachineSelect(last.optionId || last.id);
+        }
+        const sel = document.getElementById('m_tool');
+        if (sel && last && (last.optionId || last.id)) sel.value = last.optionId || last.id;
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        if (typeof window.updateMaintenanceTargetInfoBadge === 'function') window.updateMaintenanceTargetInfoBadge();
+        if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+        if (typeof window.populateFieldMachineOptions === 'function' || typeof window.populatePullMachineOptions === 'function') {
+          const section = document.getElementById('field_machinery_section');
+          if (section && section.style.display !== 'none') {
+            const existing = Array.from(document.querySelectorAll('#field_machinery_section .used-machine-check:checked')).map(c => c.value);
+            const merged = existing.concat(machineIds);
+            if (typeof window.isCurrentPullWork_ === 'function' && window.isCurrentPullWork_() && typeof window.populatePullMachineOptions === 'function') {
+              window.populatePullMachineOptions(merged);
+            } else if (typeof window.populateFieldMachineOptions === 'function') {
+              window.populateFieldMachineOptions(merged);
+            }
+          }
+        }
+        if (typeof window.renderUsedItems === 'function') {
+          const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+          if (wName) window.renderUsedItems(wName);
+        }
+        setTimeout(() => {
+          machineIds.forEach(id => {
+            const chk = document.querySelector('.used-machine-check[value="' + String(id).replace(/"/g, '\\"') + '"]');
+            if (chk) {
+              chk.checked = true;
+              chk.dispatchEvent(new Event('change'));
+            }
+          });
+        }, 40);
+        if (typeof window.renderMachinePhotoPickerGrid === 'function' && document.getElementById('machinePhotoPickerModal')?.style.display === 'flex') {
+          window.renderMachinePhotoPickerGrid();
+        }
+      };
+
+      window.saveMachineItemEditorModal = async () => {
+        const st = window._machineItemEditorState || {};
+        const name = (document.getElementById('mie_name')?.value || '').trim();
+        try {
+          if (st.mode === 'edit') {
+            if (!name) {
+              if (typeof customAlert === 'function') customAlert('名称を入力してください');
+              return;
+            }
+            const result = await window.persistOneMachineOrVehicle_({
+              kind: st.kind,
+              name: name,
+              photoBase64: st.photoBase64 || '',
+              clearPhoto: st.clearPhoto,
+              existingPhoto: st.existingPhoto || '',
+              mode: 'edit',
+              itemId: st.itemId
+            });
+            try {
+              localStorage.removeItem('passionMapInitData');
+              localStorage.removeItem('pMapAdminInitData');
+            } catch (e) {}
+            window.closeMachineItemEditorModal();
+            window.applySavedMachineItemsToWorkForm_([result]);
+            if (typeof customAlert === 'function') customAlert('✅ 更新しました');
+            if (typeof st.afterSave === 'function') st.afterSave(result.rec, result.optionId || result.id);
+            return;
+          }
+
+          const pending = Array.isArray(st.pending) ? st.pending.slice() : [];
+          if (name) {
+            pending.push({
+              kind: st.kind === 'vehicle' ? 'vehicle' : 'machine',
+              name: name,
+              photoBase64: st.photoBase64 || ''
+            });
+          }
+          if (!pending.length) {
+            if (typeof customAlert === 'function') customAlert('名称を入力するか、リストに追加してから登録してください');
+            return;
+          }
+
+          const saveBtn = document.getElementById('mie_save_btn');
+          if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = '登録中... 0/' + pending.length;
+          }
+          const results = [];
+          for (let i = 0; i < pending.length; i++) {
+            if (saveBtn) saveBtn.textContent = '登録中... ' + (i + 1) + '/' + pending.length;
+            results.push(await window.persistOneMachineOrVehicle_(pending[i]));
+          }
+          try {
+            localStorage.removeItem('passionMapInitData');
+            localStorage.removeItem('pMapAdminInitData');
+          } catch (e) {}
+          window.closeMachineItemEditorModal();
+          window.applySavedMachineItemsToWorkForm_(results);
+          if (typeof customAlert === 'function') customAlert('✅ ' + results.length + '件を登録しました');
+          results.forEach(r => {
+            if (typeof st.afterSave === 'function') st.afterSave(r.rec, r.optionId || r.id);
+          });
+        } catch (e) {
+          if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました');
+        } finally {
+          const saveBtn = document.getElementById('mie_save_btn');
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = (window._machineItemEditorState || {}).mode === 'edit' ? '保存する' : 'まとめて登録する';
+          }
+        }
+      };
+
       /** 作業記録画面から直接、農業機械を機械マスタに登録（管理者用） */
       window.addNewMachineFromWorker = async () => {
         if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
           if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
           return;
         }
-        const inputName = await customPrompt('新しい農業機械の名称を入力してください (例: トラクター MZ655):', '');
-        if (!inputName || !String(inputName).trim()) return;
-        const name = String(inputName).trim();
-
-        try {
-          const res = await safeCallGAS('addMachineToSign', {
-            name: name,
-            userName: localStorage.getItem('passionMapUserName') || currentUser || '管理者'
-          });
-
-          const newId = (res && res.id) ? res.id : `MAC_${Date.now()}`;
-          const newMachine = (res && typeof res === 'object' && res.id) ? res : {
-            id: newId,
-            name: name,
-            machineNumber: '',
-            workCategory: '',
-            category: '',
-            type: '',
-            group: '',
-            status: '使用可能',
-            parts: '',
-            symptoms: ''
-          };
-
-          if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
-          const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newId) || m.name === name);
-          if (existingIdx !== -1) {
-            pdlMachines[existingIdx] = Object.assign({}, pdlMachines[existingIdx], newMachine);
-          } else {
-            pdlMachines.push(newMachine);
-          }
-
-          localStorage.removeItem('passionMapInitData');
-          localStorage.removeItem('pMapAdminInitData');
-
-          if (typeof window.populateMaintenanceMachineSelect === 'function') {
-            window.populateMaintenanceMachineSelect(newId);
-          }
-          const sel = document.getElementById('m_tool');
-          if (sel) sel.value = newId;
-
-          if (typeof window.updatePartsList === 'function') {
-            window.updatePartsList();
-          }
-          if (typeof window.updateMaintenanceTargetInfoBadge === 'function') {
-            window.updateMaintenanceTargetInfoBadge();
-          }
-
-          const emptyHint = document.getElementById('m_tool_empty_hint');
-          if (emptyHint) emptyHint.style.display = 'none';
-
-          if (typeof customAlert === 'function') {
-            customAlert(`✅ 農業機械「${name}」を登録し、対象農機に自動選択しました！`);
-          }
-        } catch (e) {
-          if (typeof customAlert === 'function') customAlert(e.message || '登録に失敗しました。');
-        }
+        window.openMachineItemEditorModal({ mode: 'add', kind: 'machine' });
       };
 
       window.setMaintenanceCategoryFilter = (cat) => {
@@ -10653,27 +11604,8 @@ function createSignboardMarker(name, pos, icon, id) {
         const cat = window._selectedMaintCategory || 'all';
 
         if (cat === 'vehicle') {
-          const plate = await customPrompt('新しい車両の名称/ナンバーを入力してください (例: 軽トラ 熊谷500あ1234):', '');
-          if (!plate || !String(plate).trim()) return;
-          const name = String(plate).trim();
-          const newId = `veh_${Date.now()}`;
-          const newVehicle = {
-            id: newId,
-            plateNumber: name,
-            driveType: '移動車両',
-            status: '使用可能',
-            mileage: 0
-          };
-          if (!Array.isArray(window.pdlMobileVehicles)) window.pdlMobileVehicles = [];
-          window.pdlMobileVehicles.push(newVehicle);
-
-          safeCallGAS('vehicle_saveVehicle', { id: newId, plateNumber: name, driveType: '移動車両', status: '使用可能' });
-          const optionId = window.getMobileVehicleOptionId_(newVehicle);
-          window.populateMaintenanceMachineSelect(optionId);
-          const sel = document.getElementById('m_tool');
-          if (sel) sel.value = optionId;
-          if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
-          if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(`✅ 車両「${name}」を登録しました！`, 'ok');
+          window.openMachineItemEditorModal({ mode: 'add', kind: 'vehicle' });
+          return;
 
         } else if (cat === 'tool') {
           const toolName = await customPrompt('新しい道具の名称を入力してください (例: チェンソー 26cc):', '');
@@ -10719,24 +11651,20 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const oldName = item.name || '名称未設定';
         const catName = item.isVehicle ? '車両' : (item.isTool ? '道具' : '農機具');
+        if (item.isVehicle) {
+          window.openMachineItemEditorModal({ mode: 'edit', kind: 'vehicle', item: item });
+          return;
+        }
+        if (!item.isTool) {
+          window.openMachineItemEditorModal({ mode: 'edit', kind: 'machine', item: item });
+          return;
+        }
         const newName = await customPrompt(`【${catName}の編集】名称・管理番号を変更してください:`, oldName);
         if (!newName || !String(newName).trim() || String(newName).trim() === oldName) return;
         const valName = String(newName).trim();
-
-        if (item.isVehicle) {
-          const rawVid = String(item.id).replace('veh:', '');
-          const targetV = (window.pdlMobileVehicles || []).find(v => String(v.id) === rawVid);
-          if (targetV) targetV.plateNumber = valName;
-          safeCallGAS('vehicle_saveVehicle', { id: rawVid, plateNumber: valName });
-        } else if (item.isTool) {
-          const targetT = (pdlTools || []).find(t => String(t.id || ('tool_' + t.name)) === String(item.id));
-          if (targetT) targetT.name = valName;
-          safeCallGAS('editToolInMaster', { toolId: item.id, name: valName, userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者' });
-        } else {
-          const targetM = (pdlMachines || []).find(m => String(m.id) === String(item.id));
-          if (targetM) targetM.name = valName;
-          safeCallGAS('addMachineToSign', { id: item.id, name: valName, userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者' });
-        }
+        const targetT = (pdlTools || []).find(t => String(t.id || ('tool_' + t.name)) === String(item.id));
+        if (targetT) targetT.name = valName;
+        safeCallGAS('editToolInMaster', { toolId: item.id, name: valName, userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者' });
 
         window.populateMaintenanceMachineSelect(tId);
         if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
@@ -10889,11 +11817,31 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
+      window.collectWorkFuelPairDrafts_ = () => {
+        const map = {};
+        document.querySelectorAll('.wf-pair-row').forEach(row => {
+          const id = String(row.getAttribute('data-machine-id') || '');
+          if (!id) return;
+          map[id] = {
+            amount: row.querySelector('.wf-pair-amount')?.value || '',
+            meter: row.querySelector('.wf-pair-meter')?.value || '',
+            cap: !!row.querySelector('.wf-pair-cap')?.checked,
+            oil: !!row.querySelector('.wf-pair-oil')?.checked,
+            net: !!row.querySelector('.wf-pair-net')?.checked,
+            water: !!row.querySelector('.wf-pair-water')?.checked
+          };
+        });
+        return map;
+      };
+
       window.refreshFuelRecordSection = async (preset) => {
         const box = document.getElementById('work_fuel_record_section');
         if (!box) return;
         const wName = document.getElementById('rec_work_name')?.value || '';
-        if (typeof window.isFuelWorkName !== 'function' || !window.isFuelWorkName(wName)) {
+        const isFuelName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName);
+        const pair = typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
+          && window.shouldPairFuelWithFieldMachinery_();
+        if (!isFuelName && !pair) {
           box.style.display = 'none';
           box.innerHTML = '';
           return;
@@ -10914,16 +11862,83 @@ function createSignboardMarker(name, pos, icon, id) {
         const keepOil = prev.oil != null ? !!prev.oil : !!document.getElementById('wf_chk_oil')?.checked;
         const keepNet = prev.net != null ? !!prev.net : !!document.getElementById('wf_chk_net')?.checked;
         const keepWater = prev.water != null ? !!prev.water : !!document.getElementById('wf_chk_water')?.checked;
+        const pairDrafts = Object.assign({}, window.collectWorkFuelPairDrafts_(), prev.pairDrafts || {});
+        if (Array.isArray(prev.pairs)) {
+          prev.pairs.forEach(p => {
+            const pid = String(p.targetId || p.machineId || '');
+            if (!pid) return;
+            pairDrafts[pid] = {
+              amount: p.amount || '',
+              meter: p.hourMeter || p.meter || '',
+              cap: !!p.cap,
+              oil: !!p.oil,
+              net: !!p.net,
+              water: !!p.water
+            };
+          });
+        }
 
         try { await window.ensureMobileVehiclesLoaded_(); } catch (e) {}
         try {
           if (!window.lastHourMeters) window.lastHourMeters = await callGAS('getMachineLastHourMeters');
         } catch (e) { window.lastHourMeters = window.lastHourMeters || {}; }
 
+        const dieselSelected = (typeof window.getSelectedDieselFieldMachines_ === 'function')
+          ? window.getSelectedDieselFieldMachines_()
+          : [];
+
         box.style.display = 'block';
+        if (pair && dieselSelected.length) {
+          const dateVal = String(keepDate).replace(/"/g, '&quot;');
+          const rows = dieselSelected.map(m => {
+            const id = String(m.id || m.name || '');
+            const name = String(m.name || m.id || '');
+            const d = pairDrafts[id] || pairDrafts[name] || {};
+            const last = (window.lastHourMeters && (window.lastHourMeters[id] != null && window.lastHourMeters[id] !== ''))
+              ? window.lastHourMeters[id]
+              : '';
+            const lastHtml = last !== ''
+              ? `(前回: <span style="color:#C2185B;">${String(last)}</span>)`
+              : '(前回: 記録なし)';
+            const sid = id.replace(/"/g, '&quot;');
+            return `
+              <div class="wf-pair-row" data-machine-id="${sid}" data-machine-name="${String(name).replace(/"/g, '&quot;')}" style="background:#fff; border:1px solid #f8bbd0; border-radius:8px; padding:10px; margin-bottom:8px;">
+                <div style="font-weight:bold; font-size:13px; margin-bottom:6px;">🚜 ${String(name).replace(/</g, '&lt;')} <span style="font-size:10px; color:#C2185B;">⛽軽油</span></div>
+                <div style="display:flex; gap:8px;">
+                  <div style="flex:1;">
+                    <label class="form-label">💧 給油量 (L)</label>
+                    <input type="number" class="form-input wf-pair-amount" placeholder="例: 20" value="${String(d.amount || '').replace(/"/g, '&quot;')}">
+                  </div>
+                  <div style="flex:1;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                      <label class="form-label" style="margin-bottom:0;">⏱️ アワメーター (h)</label>
+                      <span style="font-size:11px; color:#888; font-weight:bold;">${lastHtml}</span>
+                    </div>
+                    <input type="number" class="form-input wf-pair-meter" placeholder="例: 150.5" value="${String(d.meter || '').replace(/"/g, '&quot;')}">
+                  </div>
+                </div>
+                <div style="margin-top:8px; font-size:12px; color:#880E4F; display:flex; flex-wrap:wrap; gap:8px 12px;">
+                  <label class="checkbox-label" style="margin:0;"><input type="checkbox" class="wf-pair-cap" ${d.cap ? 'checked' : ''}> キャップ</label>
+                  <label class="checkbox-label" style="margin:0;"><input type="checkbox" class="wf-pair-oil" ${d.oil ? 'checked' : ''}> オイル</label>
+                  <label class="checkbox-label" style="margin:0;"><input type="checkbox" class="wf-pair-net" ${d.net ? 'checked' : ''}> 防虫網</label>
+                  <label class="checkbox-label" style="margin:0;"><input type="checkbox" class="wf-pair-water" ${d.water ? 'checked' : ''}> 冷却水</label>
+                </div>
+              </div>
+            `;
+          }).join('');
+          box.innerHTML = `
+            <div style="font-weight:bold; color:#C2185B; margin-bottom:8px; font-size:14px;">⛽ 給油記録（軽油車両とセット）</div>
+            <div style="font-size:11px; color:#880E4F; margin-bottom:10px;">圃場農機作業で選んだ燃料「軽油」の車両だけ給油を記録します。給油しない車両は空欄のままで保存できます。</div>
+            <label class="form-label">📅 給油日</label>
+            <input type="date" id="wf_date" class="form-input" value="${dateVal}">
+            ${rows}
+          `;
+          return;
+        }
+
         box.innerHTML = `
           <div style="font-weight:bold; color:#C2185B; margin-bottom:8px; font-size:14px;">⛽ 給油記録</div>
-          <div style="font-size:11px; color:#880E4F; margin-bottom:10px;">作業記録と一緒に給油内容を残せます。農業機械（軽油）と移動車両（軽トラ等）から選べます。</div>
+          <div style="font-size:11px; color:#880E4F; margin-bottom:10px;">作業記録と一緒に給油内容を残せます。燃料が「軽油」の農業機械と移動車両から選べます。</div>
           <label class="form-label">給油する機械・車両</label>
           <select id="wf_target" class="form-input" onchange="handleWorkFuelTargetChange()">${window.buildFuelTargetOptionsHtml_(keepTarget)}</select>
           <div style="display:flex; gap:10px;">
@@ -10960,10 +11975,42 @@ function createSignboardMarker(name, pos, icon, id) {
         const box = document.getElementById('work_fuel_record_section');
         if (!box || box.style.display === 'none') return null;
         const wName = document.getElementById('rec_work_name')?.value || '';
-        if (typeof window.isFuelWorkName === 'function' && !window.isFuelWorkName(wName)) return null;
+        const isFuelName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName);
+        const pair = typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
+          && window.shouldPairFuelWithFieldMachinery_();
+        if (!isFuelName && !pair) return null;
+        const date = document.getElementById('wf_date')?.value || '';
+        const pairRows = box.querySelectorAll('.wf-pair-row');
+        if (pairRows.length) {
+          const list = [];
+          pairRows.forEach(row => {
+            const targetId = String(row.getAttribute('data-machine-id') || '').trim();
+            const amount = String(row.querySelector('.wf-pair-amount')?.value || '').trim();
+            if (!targetId || !amount) return;
+            const name = String(row.getAttribute('data-machine-name') || '');
+            const target = window.findMaintenanceTargetById_(targetId) || window.findMachineByIdOrName_(targetId);
+            list.push({
+              targetId: targetId,
+              machineId: targetId.indexOf('veh:') === 0 ? targetId.slice(4) : targetId,
+              machineName: (target && target.name) || name || '',
+              isVehicle: !!(target && target.isVehicle) || targetId.indexOf('veh:') === 0,
+              date: date,
+              amount: amount,
+              hourMeter: row.querySelector('.wf-pair-meter')?.value || '',
+              attachment: '',
+              cap: !!row.querySelector('.wf-pair-cap')?.checked,
+              oil: !!row.querySelector('.wf-pair-oil')?.checked,
+              net: !!row.querySelector('.wf-pair-net')?.checked,
+              water: !!row.querySelector('.wf-pair-water')?.checked,
+              chainCover: false,
+              rotaryClaw: false
+            });
+          });
+          if (!list.length) return null;
+          return list.length === 1 ? list[0] : list;
+        }
         const targetId = document.getElementById('wf_target')?.value || '';
         const amount = document.getElementById('wf_amount')?.value || '';
-        const date = document.getElementById('wf_date')?.value || '';
         if (!targetId && !amount) return null;
         const target = window.findMaintenanceTargetById_(targetId);
         const sel = document.getElementById('wf_target');
@@ -10986,6 +12033,79 @@ function createSignboardMarker(name, pos, icon, id) {
         };
       };
 
+      window.quickRegisterPullMachineName = async () => {
+        const input = document.getElementById('pull_new_machine_name');
+        const name = String((input && input.value) || '').trim();
+        if (!name) {
+          if (typeof customAlert === 'function') customAlert('機械名を入力してください');
+          else alert('機械名を入力してください');
+          return;
+        }
+        const existing = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+          ? pdlMachines.find(m => String(m.name || '').trim() === name || String(m.id || '') === name)
+          : null;
+        if (existing) {
+          const merged = ((typeof window.collectFieldMachinePreselected_ === 'function')
+            ? window.collectFieldMachinePreselected_()
+            : []).concat([existing.id || existing.name]);
+          if (typeof window.populatePullMachineOptions === 'function') window.populatePullMachineOptions(merged);
+          setTimeout(() => {
+            const chk = document.querySelector('.used-machine-check[value="' + String(existing.id || '').replace(/"/g, '\\"') + '"]')
+              || Array.from(document.querySelectorAll('.used-machine-check')).find(c => c.getAttribute('data-name') === name);
+            if (chk) {
+              chk.checked = true;
+              chk.dispatchEvent(new Event('change'));
+            }
+          }, 30);
+          return;
+        }
+        const btn = document.getElementById('pull_new_machine_btn');
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+        try {
+          const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+          window._machineItemEditorState = Object.assign({}, window._machineItemEditorState || {}, {
+            workCategory: wName || '機械引き上げ',
+            kind: 'machine',
+            mode: 'add'
+          });
+          const result = await window.persistOneMachineOrVehicle_({
+            kind: 'machine',
+            name: name,
+            photoBase64: '',
+            mode: 'add'
+          });
+          if (typeof window.applySavedMachineItemsToWorkForm_ === 'function') {
+            window.applySavedMachineItemsToWorkForm_([result]);
+          }
+          if (input) input.value = '';
+        } catch (e) {
+          if (typeof customAlert === 'function') customAlert(e.message || '登録に失敗しました');
+          else alert(e.message || '登録に失敗しました');
+        } finally {
+          const b = document.getElementById('pull_new_machine_btn');
+          if (b) { b.disabled = false; b.textContent = 'この名前で登録'; }
+        }
+      };
+
+      window.addNewMachineFromWorkRecord = async (preselect) => {
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        window.openMachineItemEditorModal({
+          mode: 'add',
+          kind: 'machine',
+          workCategory: wName || '機械',
+          afterSave: (newMachine) => {
+            if (typeof window.renderUsedItems === 'function') window.renderUsedItems(wName);
+            setTimeout(() => {
+              const chk = document.querySelector('.used-machine-check[value="' + String(newMachine.id).replace(/"/g, '\\"') + '"]');
+              if (chk) {
+                chk.checked = true;
+                chk.dispatchEvent(new Event('change'));
+              }
+            }, 30);
+          }
+        });
+      };
+
       window.renderUsedItems = (workName) => {
          const container = document.getElementById('used_items_section');
          if(!container) return;
@@ -10993,6 +12113,11 @@ function createSignboardMarker(name, pos, icon, id) {
          window.refreshMaintenanceSection(workName);
 
          if (!workName || workName === "選択してください" || workName === "") { container.innerHTML = ""; return; }
+
+         const isPullWork = (typeof window.isCurrentPullWork_ === 'function' && window.isCurrentPullWork_())
+           || (typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(workName));
+         // 引き上げの機械選択＋新規登録は field_machinery_section 側で表示する
+         const pullShownAbove = isPullWork && document.getElementById('field_machinery_section');
          
          const isMatch = (catStr) => {
             if (!catStr) return false;
@@ -11004,7 +12129,11 @@ function createSignboardMarker(name, pos, icon, id) {
          };
          
          const matchMats = pdlMaterials.filter(m => isMatch(m.workCategory));
-         let matchMachines = pdlMachines.filter(m => isMatch(m.workCategory));
+         let matchMachines = (isPullWork && pullShownAbove)
+            ? []
+            : (isPullWork
+            ? (Array.isArray(pdlMachines) ? pdlMachines.slice() : [])
+            : pdlMachines.filter(m => isMatch(m.workCategory)));
          // 潅水作業のポンプは専用UI（設置中ボタン）で扱うため、ここでは除外
          if (typeof window.isIrrigationWork === 'function' && window.isIrrigationWork(workName) && typeof window.isPumpMachine === 'function') {
             matchMachines = matchMachines.filter(m => !window.isPumpMachine(m));
@@ -11014,23 +12143,39 @@ function createSignboardMarker(name, pos, icon, id) {
             matchMachines = [];
          }
 
-         if (matchMats.length === 0 && matchMachines.length === 0) { container.innerHTML = ""; return; }
+         if (matchMats.length === 0 && matchMachines.length === 0 && !isPullWork) { container.innerHTML = ""; return; }
 
          let html = `<div style="font-size:13px; font-weight:bold; color:#4CAF50; margin-bottom:5px;">🛠️ 使ったもの記録</div><div style="max-height:350px; overflow-y:auto; border:1px solid #81c784; padding:8px; background:#f1f8e9; border-radius:6px; margin-bottom:15px;">`;
          
-         if(matchMachines.length > 0) { 
-            html += `<div style="font-size:11px; font-weight:bold; color:#1976d2; margin-bottom:4px;">🚜 使用した農機と片づけ場所</div>`;
+         if (isPullWork || matchMachines.length > 0) { 
+            html += `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+              <div style="font-size:11px; font-weight:bold; color:#1976d2;">🚜 ${isPullWork ? '引き上げる機械と片づけ場所' : '使用した農機と片づけ場所'}</div>
+              <button type="button" onclick="addNewMachineFromWorkRecord()" style="flex-shrink:0; background:#2196F3; color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 機械を新規登録</button>
+            </div>`;
+            if (isPullWork && matchMachines.length === 0) {
+              html += `<div style="font-size:12px; color:#666; margin-bottom:8px;">登録されている機械がありません。上のボタンから追加できます。</div>`;
+            }
 
             const signOptions = Object.values(loadedPolygons).filter(p => p.isMarker).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
 
+           const canEditMachinePhoto = typeof window.isWorkerAdmin !== 'function' || window.isWorkerAdmin();
            matchMachines.forEach(m => {
               const baseLocStr = m.signName ? `${m.signName} (定位置)` : "定位置"; // ★変更
+              const photoUrl = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : (m.photo || '');
+              const thumbHtml = photoUrl
+                ? `<img src="${String(photoUrl).replace(/"/g, '&quot;')}" alt="" style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid #bbdefb; flex-shrink:0;">`
+                : `<div style="width:44px; height:44px; border-radius:6px; background:#e3f2fd; color:#1565c0; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;">🚜</div>`;
+              const editPhotoBtn = canEditMachinePhoto
+                ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${String(m.id).replace(/'/g, "\\'")}')" style="margin-left:auto; background:#fff; color:#1565c0; border:1px solid #90caf9; border-radius:6px; padding:3px 7px; font-size:10px; font-weight:bold; cursor:pointer;">📷 写真</button>`
+                : '';
               
                html += `
                  <div style="margin-bottom:8px; background:#fff; padding:8px; border-radius:4px; border:1px solid #bbdefb;">
                    <label style="font-size:14px; color:#333; display:flex; align-items:center; gap:8px; cursor:pointer;">
                      <input type="checkbox" class="used-machine-check" value="${m.id}" data-name="${m.name}" onchange="document.getElementById('machine_loc_${m.id}').style.display = this.checked ? 'block' : 'none';" style="transform:scale(1.2);">
+                     ${thumbHtml}
                      <b>${m.name}</b>
+                     ${editPhotoBtn}
                    </label>
                    
                    <div id="machine_loc_${m.id}" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed #eee;">
@@ -11039,7 +12184,7 @@ function createSignboardMarker(name, pos, icon, id) {
                         <input type="radio" name="loc_${m.id}" value="keep" checked data-signid="${m.signId}" data-signname="${m.signName}"> ① ${baseLocStr} <!-- ★変更 -->
                       </label>
                       <label style="display:block; font-size:12px; margin-bottom:6px; cursor:pointer;">
-                        <input type="radio" name="loc_${m.id}" value="here" data-signid="${activePolyId}" data-signname="${loadedPolygons[activePolyId].name}"> ② この圃場 (${loadedPolygons[activePolyId].name})
+                        <input type="radio" name="loc_${m.id}" value="here" data-signid="${(typeof window.getActivePlaceForMachineLoc_ === 'function' ? window.getActivePlaceForMachineLoc_().id : (activePolyId || ''))}" data-signname="${(typeof window.getActivePlaceForMachineLoc_ === 'function' ? String(window.getActivePlaceForMachineLoc_().name || '').replace(/"/g, '&quot;') : '')}"> ② この場所 (${(typeof window.getActivePlaceForMachineLoc_ === 'function' ? String(window.getActivePlaceForMachineLoc_().name || '').replace(/</g, '&lt;') : 'この場所')})
                       </label>
                       
                       <!-- ★修正：プルダウンを廃止し、マップ選択ボタンに変更！ -->
@@ -11267,7 +12412,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const resolvedStart = (typeof window.resolveDefaultStartTime === 'function')
           ? window.resolveDefaultStartTime(todayStr)
-          : { start: (now.getHours() < 13) ? '08:00' : '13:00', syncClockIn: true, isFallback: true };
+          : { start: '08:00', syncClockIn: true, isFallback: true };
         const defaultStartTime = resolvedStart.start;
         // 裏読み込みが遅い場合に備え、フォーム表示と同時に軽量APIを叩く
         if (typeof window.prefetchWorkTimeHints === 'function') {
@@ -11400,6 +12545,8 @@ function createSignboardMarker(name, pos, icon, id) {
                   </div>
                   <select id="rec_work_name" class="form-input" style="display:none;" onchange="handleWorkNameChange()">${wNames}</select>
                   </div>
+                  <div id="work_assoc_suggest" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
+                  <div id="field_machinery_section" style="display:none; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="delivery_destination_section" style="display:none; background:#E1F5FE; border:2px solid #0288D1; border-radius:10px; padding:12px; margin-bottom:15px;"></div>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
@@ -11445,6 +12592,7 @@ function createSignboardMarker(name, pos, icon, id) {
                         <div id="m_target_photo_title" style="font-weight:bold; color:#e65100; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
                         <div id="m_target_photo_sub" style="color:#666; font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
                       </div>
+                      <button type="button" id="m_target_photo_edit_btn" onclick="editSelectedCategoryItemFromWorker()" style="display:none; flex-shrink:0; background:#FFA000; color:#fff; border:none; border-radius:6px; padding:6px 8px; font-size:11px; font-weight:bold; cursor:pointer;">📷 写真</button>
                     </div>
 
                     <!-- 🌟 機械のグループ・カテゴリ・現在地拠点表示バッジ -->
@@ -11844,17 +12992,22 @@ function createSignboardMarker(name, pos, icon, id) {
             if (d.refuelRecord || (d.workName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(d.workName))) {
               setTimeout(() => {
                 window.setExtraRecordOpen_('fuel', true);
-                const preset = d.refuelRecord ? {
-                  targetId: d.refuelRecord.targetId
-                    || (d.refuelRecord.isVehicle ? ('veh:' + d.refuelRecord.machineId) : d.refuelRecord.machineId)
+                const recs = Array.isArray(d.refuelRecord)
+                  ? d.refuelRecord
+                  : (d.refuelRecord ? [d.refuelRecord] : []);
+                const first = recs[0] || {};
+                const preset = recs.length ? {
+                  targetId: first.targetId
+                    || (first.isVehicle ? ('veh:' + first.machineId) : first.machineId)
                     || '',
-                  amount: d.refuelRecord.amount || '',
-                  meter: d.refuelRecord.hourMeter || '',
-                  date: d.refuelRecord.date || '',
-                  cap: d.refuelRecord.cap,
-                  oil: d.refuelRecord.oil,
-                  net: d.refuelRecord.net,
-                  water: d.refuelRecord.water
+                  amount: first.amount || '',
+                  meter: first.hourMeter || '',
+                  date: first.date || recs[0]?.date || '',
+                  cap: first.cap,
+                  oil: first.oil,
+                  net: first.net,
+                  water: first.water,
+                  pairs: recs
                 } : null;
                 if (typeof window.refreshFuelRecordSection === 'function') {
                   window.refreshFuelRecordSection(preset);
@@ -12910,39 +14063,48 @@ function createSignboardMarker(name, pos, icon, id) {
                data.maintenanceParts = document.getElementById('m_parts')?.value || "";
             }
 
-            const fuelRec = (typeof window.collectWorkFuelRecordData === 'function')
+            const fuelRaw = (typeof window.collectWorkFuelRecordData === 'function')
               ? window.collectWorkFuelRecordData()
               : null;
-            if (fuelRec) {
-              if (!fuelRec.targetId) {
-                customAlert('給油記録では給油する機械・車両を選択してください。');
-                if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
-                return;
-              }
-              if (!fuelRec.amount) {
-                customAlert('給油記録では給油量を入力してください。');
-                if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
-                return;
-              }
-              data.refuelRecord = fuelRec;
-              sideEffects.push({
-                action: 'saveRefuelRecord',
-                params: {
-                  machineId: fuelRec.machineId || fuelRec.targetId,
-                  machineName: fuelRec.machineName || '',
-                  date: fuelRec.date || '',
-                  amount: fuelRec.amount,
-                  hourMeter: fuelRec.hourMeter || '',
-                  attachment: fuelRec.attachment || '',
-                  cap: !!fuelRec.cap,
-                  oil: !!fuelRec.oil,
-                  net: !!fuelRec.net,
-                  water: !!fuelRec.water,
-                  chainCover: !!fuelRec.chainCover,
-                  rotaryClaw: !!fuelRec.rotaryClaw,
-                  userName: currentUser
+            const fuelList = !fuelRaw ? [] : (Array.isArray(fuelRaw) ? fuelRaw : [fuelRaw]);
+            if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName) && !fuelList.length) {
+              customAlert('給油記録では給油する機械・車両と給油量を入力してください。');
+              if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
+              return;
+            }
+            if (fuelList.length) {
+              for (let fi = 0; fi < fuelList.length; fi++) {
+                const fuelRec = fuelList[fi];
+                if (!fuelRec.targetId) {
+                  customAlert('給油記録では給油する機械・車両を選択してください。');
+                  if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
+                  return;
                 }
-              });
+                if (!fuelRec.amount) {
+                  customAlert('給油記録では給油量を入力してください。');
+                  if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
+                  return;
+                }
+                sideEffects.push({
+                  action: 'saveRefuelRecord',
+                  params: {
+                    machineId: fuelRec.machineId || fuelRec.targetId,
+                    machineName: fuelRec.machineName || '',
+                    date: fuelRec.date || '',
+                    amount: fuelRec.amount,
+                    hourMeter: fuelRec.hourMeter || '',
+                    attachment: fuelRec.attachment || '',
+                    cap: !!fuelRec.cap,
+                    oil: !!fuelRec.oil,
+                    net: !!fuelRec.net,
+                    water: !!fuelRec.water,
+                    chainCover: !!fuelRec.chainCover,
+                    rotaryClaw: !!fuelRec.rotaryClaw,
+                    userName: currentUser
+                  }
+                });
+              }
+              data.refuelRecord = fuelList.length === 1 ? fuelList[0] : fuelList;
             }
             if ((typeof window.isLotUseWorkName === 'function' ? window.isLotUseWorkName(wName) : (wName.includes('パック') || wName.includes('選別') || wName.includes('パッキング')))
                 && document.getElementById('lot_use_section')
@@ -13109,6 +14271,8 @@ function createSignboardMarker(name, pos, icon, id) {
             previewUrls: previewUrls,
             clearTemp: true
           });
+
+          window._workAssocStatsCache = null;
 
           if (typeof window.showRecordSyncToast === 'function') {
             window.showRecordSyncToast(files.length ? '✅ 記録を反映しました（写真同期中…）' : '✅ 記録を反映しました（同期中…）', 'ok');
@@ -16546,8 +17710,16 @@ window.executeAutoRecord = async () => {
                   executeLogin(true);
               }
           } else {
-              // 未ログイン時はログイン画面を操作できるよう、起動ブロックだけ解除する
+              // 未ログイン時はログイン画面を操作できるよう、起動オーバーレイを確実に除去してログイン画面を表示
+              const overlayEl = document.getElementById('mapDataLoadingOverlay');
+              if (overlayEl) {
+                  overlayEl.classList.remove('is-visible', 'is-nonblocking', 'worker-boot-loading');
+                  overlayEl.style.display = 'none';
+                  overlayEl.style.pointerEvents = 'none';
+              }
               if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
+              const loginScreen = document.getElementById('loginScreen');
+              if (loginScreen) loginScreen.style.display = 'flex';
           }
       });
 window.openRadarModal = function(lat, lng) {
@@ -17951,7 +19123,13 @@ window.toggleTracking = () => {
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
         html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${defaultDate}">`;
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
-        html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+        html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px; background:#fff; cursor:pointer;" value="${defaultTime}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 14px;">`;
+        html += `  <button type="button" onclick="setClockInPreset('now')" style="background:#fff;color:#2e7d32;border:1px solid #81c784;border-radius:8px;padding:10px 8px;font-weight:bold;font-size:12px;cursor:pointer;">今の時間に合わせる</button>`;
+        html += `  <button type="button" onclick="setClockInPreset('08:00')" style="background:#fff;color:#2e7d32;border:1px solid #81c784;border-radius:8px;padding:10px 8px;font-weight:bold;font-size:12px;cursor:pointer;">8時に合わせる</button>`;
+        html += `  <button type="button" onclick="setClockInPreset('13:00')" style="background:#fff;color:#2e7d32;border:1px solid #81c784;border-radius:8px;padding:10px 8px;font-weight:bold;font-size:12px;cursor:pointer;">13時に合わせる</button>`;
+        html += `  <button type="button" onclick="setClockInPreset('frequent')" style="background:#fff;color:#2e7d32;border:1px solid #81c784;border-radius:8px;padding:10px 8px;font-weight:bold;font-size:12px;cursor:pointer;">よく登録する時間に合わせる</button>`;
+        html += `</div>`;
         html += `<div style="display:flex; gap:10px;">`;
         html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
         html += `  <button onclick="if(window.hideClockModal) window.hideClockModal(); else document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
@@ -18285,13 +19463,18 @@ window.renderPersonalSchedulePanel = async function() {
     : null;
   if (!panelLoad) content.innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">読み込み中...</div>';
   try {
-    const [data, calRes] = await Promise.all([
+    const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const today = new Date();
+    const tom = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const until = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 14);
+    const [data, calRes, dayPlanRes] = await Promise.all([
       callGAS('getPersonalSchedule', { userId: staffId }),
       callGAS('getTodayGoogleCalendarEvents', { userId: staffId, days: 2 }).catch(err => ({
         success: false,
         events: [],
         message: 'カレンダー取得に失敗しました: ' + (err && err.message ? err.message : String(err))
-      }))
+      })),
+      callGAS('dayPlan_list', { userId: staffId, fromYmd: ymd(today), toYmd: ymd(until) }).catch(() => ({ items: [] }))
     ]);
     const tasks = (data && (data.tasks || data.priority)) || [];
     const notes = (data && data.notes) || [];
@@ -18336,6 +19519,7 @@ window.renderPersonalSchedulePanel = async function() {
 
     if (panelLoad) panelLoad.done();
     content.innerHTML =
+      window.buildDayPlanBlocksHtml(dayPlanRes, ymd(today), ymd(tom)) +
       window.buildGoogleCalendarEventsHtml(calRes) +
       '<div style="display:flex;gap:6px;margin-bottom:10px;">' +
         '<button type="button" onclick="setPersonalScheduleViewMode(\'list\')" style="flex:1;background:' + listBtnBg + ';color:' + listBtnColor + ';border:none;padding:8px;border-radius:6px;font-weight:bold;font-size:12px;cursor:pointer;">リスト</button>' +
@@ -18359,6 +19543,39 @@ window.renderPersonalSchedulePanel = async function() {
     if (panelLoad) panelLoad.done();
     content.innerHTML = '<div style="color:red;text-align:center;margin-top:30px;">読み込みエラー<br><span style="font-size:12px;">' + window._escapeHtmlPs(e.message || e) + '</span></div>';
   }
+};
+
+/** Schedule.html で登録した時間ブロック予定（今日〜2週間） */
+window.buildDayPlanBlocksHtml = function(res, todayYmd, tomYmd) {
+  const items = (res && Array.isArray(res.items)) ? res.items.slice() : [];
+  items.sort(function (a, b) {
+    return String(a.date || '').localeCompare(String(b.date || '')) || String(a.startTime || '').localeCompare(String(b.startTime || ''));
+  });
+  let html = '<div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:10px;padding:12px;margin-bottom:14px;">';
+  html += '<div style="font-weight:bold;color:#1565C0;font-size:15px;margin-bottom:8px;">⏰ 時間予定（今日〜2週間）</div>';
+  if (!items.length) {
+    html += '<div style="font-size:12px;color:#546e7a;">まだありません。予定MAPの「時間予定」から、今日以降の日付にブロックを置けます。</div></div>';
+    return html;
+  }
+  const labelOf = function (d) {
+    if (d === todayYmd) return '今日';
+    if (d === tomYmd) return '明日';
+    const p = String(d || '').split('-').map(Number);
+    if (p.length < 3 || !p[0]) return d || '';
+    const wd = '日月火水木金土'[new Date(p[0], p[1] - 1, p[2]).getDay()] || '';
+    return p[1] + '/' + p[2] + '（' + wd + '）';
+  };
+  items.forEach(function (it) {
+    const mins = it.durationMins ? (it.durationMins + '分') : '';
+    const src = it.estimateSource === 'work' ? '作業名平均' : (it.estimateSource === 'category' ? 'カテゴリ平均' : '');
+    html += '<div style="background:#fff;border:1px solid #bbdefb;border-left:4px solid ' + (it.approved ? '#2e7d32' : '#1565c0') + ';border-radius:8px;padding:8px 10px;margin-bottom:6px;">';
+    html += '<div style="font-size:11px;color:#1565c0;font-weight:bold;">' + window._escapeHtmlPs(labelOf(it.date)) + '　' + window._escapeHtmlPs(it.startTime || '') + '〜' + window._escapeHtmlPs(it.endTime || '') + (mins ? '（' + mins + '）' : '') + '</div>';
+    html += '<div style="font-size:14px;font-weight:bold;color:#0d47a1;">' + window._escapeHtmlPs(it.workName || '予定') + '</div>';
+    if (it.category || src) html += '<div style="font-size:11px;color:#607d8b;">' + window._escapeHtmlPs([it.category, src].filter(Boolean).join(' / ')) + '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
 };
 
 /** Googleカレンダー予定（今日・明日）のHTML */
