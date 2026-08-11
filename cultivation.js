@@ -1798,12 +1798,18 @@ function refreshCpVarietyOrdinals() {
 /** 「品種でまとめる」後だけ、同一品種の区間に仕切りを付ける（1枚でも表示） */
 function refreshCpVarietyGroupDividers() {
     const leftBody = document.getElementById('cpLeftBody');
+    const tbody = document.getElementById('cpTableBody');
     if (!leftBody || !Array.isArray(cpPlans)) return;
 
-    leftBody.querySelectorAll('.cp-var-group-label').forEach(el => el.remove());
-    leftBody.querySelectorAll('.cp-var-group, .cp-var-group-first, .cp-var-group-mid, .cp-var-group-last').forEach(el => {
+    const clearGroupClass = (el) => {
+        if (!el) return;
         el.classList.remove('cp-var-group', 'cp-var-group-first', 'cp-var-group-mid', 'cp-var-group-last');
-    });
+    };
+    leftBody.querySelectorAll('.cp-var-group-label').forEach(el => el.remove());
+    leftBody.querySelectorAll('.cp-var-group, .cp-var-group-first, .cp-var-group-mid, .cp-var-group-last').forEach(clearGroupClass);
+    if (tbody) {
+        tbody.querySelectorAll('.cp-var-group, .cp-var-group-first, .cp-var-group-mid, .cp-var-group-last').forEach(clearGroupClass);
+    }
 
     if (!cpShowVarietyGroupDividers) {
         if (typeof syncAllRowHeights === 'function') {
@@ -1812,37 +1818,47 @@ function refreshCpVarietyGroupDividers() {
         return;
     }
 
-    const wraps = [];
+    const rows = [];
     cpPlans.forEach(plan => {
         if (!plan || !plan.id) return;
         const wrap = document.getElementById('cpLeftCardWrap_' + plan.id);
-        if (!wrap) return;
+        const tr = tbody ? tbody.querySelector('tr[data-plan-id="' + plan.id + '"]') : null;
+        if (!wrap && !tr) return;
         const name = String(plan.variety || '').trim();
         const key = name ? (String(plan.crop || '') + '\t' + name) : '';
-        wraps.push({ wrap: wrap, name: name, key: key });
+        rows.push({ wrap: wrap, tr: tr, name: name, key: key });
     });
 
+    const markGroup = (el, isFirst, isLast) => {
+        if (!el) return;
+        el.classList.add('cp-var-group');
+        if (isFirst) el.classList.add('cp-var-group-first');
+        if (isLast) el.classList.add('cp-var-group-last');
+        if (!isFirst && !isLast) el.classList.add('cp-var-group-mid');
+    };
+
     let i = 0;
-    while (i < wraps.length) {
-        const cur = wraps[i];
+    while (i < rows.length) {
+        const cur = rows[i];
         if (!cur.key) {
             i += 1;
             continue;
         }
         let j = i;
-        while (j + 1 < wraps.length && wraps[j + 1].key === cur.key) j += 1;
+        while (j + 1 < rows.length && rows[j + 1].key === cur.key) j += 1;
         for (let k = i; k <= j; k++) {
-            const w = wraps[k].wrap;
-            w.classList.add('cp-var-group');
-            if (k === i) w.classList.add('cp-var-group-first');
-            if (k === j) w.classList.add('cp-var-group-last');
-            if (k !== i && k !== j) w.classList.add('cp-var-group-mid');
+            const isFirst = k === i;
+            const isLast = k === j;
+            markGroup(rows[k].wrap, isFirst, isLast);
+            markGroup(rows[k].tr, isFirst, isLast);
         }
-        const label = document.createElement('div');
-        label.className = 'cp-var-group-label';
-        label.textContent = cur.name;
-        label.title = cur.name + '（' + (j - i + 1) + '枚）';
-        wraps[i].wrap.insertBefore(label, wraps[i].wrap.firstChild);
+        if (rows[i].wrap) {
+            const label = document.createElement('div');
+            label.className = 'cp-var-group-label';
+            label.textContent = cur.name;
+            label.title = cur.name + '（' + (j - i + 1) + '枚）';
+            rows[i].wrap.insertBefore(label, rows[i].wrap.firstChild);
+        }
         i = j + 1;
     }
     if (typeof syncAllRowHeights === 'function') {
