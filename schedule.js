@@ -757,6 +757,76 @@ async function fetchWeatherAndUpdateUI() {
       let trackingOverlay = null;
       let animationFrameId = null;
       let tripTime = 0;
+      window._trackingAllUsersCache = window._trackingAllUsersCache || [];
+
+      function normalizeTrackingUserName(name) {
+          return String(name == null ? '' : name).trim();
+      }
+
+      function escapeTrackingUserHtml(str) {
+          return String(str == null ? '' : str)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+      }
+
+      function fillTrackingUserSelects(users) {
+          const list = [...new Set((users || [])
+              .map(normalizeTrackingUserName)
+              .filter(u => u && u !== 'システム' && u !== 'ALL'))]
+              .sort((a, b) => a.localeCompare(b, 'ja'));
+          if (list.length) {
+              window._trackingAllUsersCache = list.slice();
+          }
+          const uSelectMobile = document.getElementById('trackingUserSelectMobile');
+          const uSelect = document.getElementById('trackingUserSelect');
+          [uSelectMobile, uSelect].forEach(sel => {
+              if (!sel) return;
+              const curVal = sel.value || 'ALL';
+              sel.innerHTML = '<option value="ALL">👥 全員の軌跡を表示</option>' +
+                  list.map(u => `<option value="${escapeTrackingUserHtml(u)}">👤 ${escapeTrackingUserHtml(u)}</option>`).join('');
+              if (Array.from(sel.options).some(o => o.value === curVal)) sel.value = curVal;
+              else sel.value = 'ALL';
+          });
+      }
+      window.fillTrackingUserSelects = fillTrackingUserSelects;
+
+      async function ensureTrackingUserOptions() {
+          if (window._trackingAllUsersCache && window._trackingAllUsersCache.length) {
+              fillTrackingUserSelects(window._trackingAllUsersCache);
+              return window._trackingAllUsersCache;
+          }
+          try {
+              const res = await callGAS('getTrackingData', { usersOnly: true });
+              const allUsers = (res && res.allUsers) ? res.allUsers : [];
+              fillTrackingUserSelects(allUsers);
+              return window._trackingAllUsersCache || [];
+          } catch (e) {
+              console.warn('対象ユーザー一覧の取得に失敗', e);
+              return [];
+          }
+      }
+      window.ensureTrackingUserOptions = ensureTrackingUserOptions;
+
+      window.openMobileTrackingMenu = async function openMobileTrackingMenu() {
+          const menu = document.getElementById('mobileTrackingMenu');
+          if (menu) menu.style.display = 'flex';
+          // 日付の初期値（未設定なら今日）
+          const dateMobile = document.getElementById('trackingDateMobile');
+          const dateHidden = document.getElementById('trackingDate');
+          if (dateMobile && !dateMobile.value) {
+              const today = new Date();
+              const ymd = today.getFullYear() + '-' +
+                  String(today.getMonth() + 1).padStart(2, '0') + '-' +
+                  String(today.getDate()).padStart(2, '0');
+              dateMobile.value = ymd;
+              if (dateHidden) dateHidden.value = ymd;
+          }
+          // 名簿のユーザー名を対象選択に反映（表示前に選べるようにする）
+          await ensureTrackingUserOptions();
+      };
 
       window.loadTrackingData = async function loadTrackingData() {
           // 既存のアニメーションをキャンセル
@@ -771,6 +841,9 @@ async function fetchWeatherAndUpdateUI() {
               
               const data = (res && res.trackingData) ? res.trackingData : (Array.isArray(res) ? res : []);
               const allUsers = (res && res.allUsers) ? res.allUsers : [];
+              const dataUsers = [...new Set((data || []).map(d => normalizeTrackingUserName(d && d.userName)).filter(Boolean))];
+              // 名簿＋当日軌跡のユーザーを対象選択に反映
+              fillTrackingUserSelects([...(window._trackingAllUsersCache || []), ...allUsers, ...dataUsers]);
               
               if (!data || data.length === 0) {
                   customAlert(targetDate ? `${targetDate}の移動履歴のデータがありません。` : "移動履歴のデータがありません。");
@@ -781,37 +854,39 @@ async function fetchWeatherAndUpdateUI() {
               const clockedInUsers = new Set();
               data.forEach(d => {
                   if (d.type === '出勤' || d.type === 'アプリ起動') {
-                      clockedInUsers.add(d.userName);
+                      const uname = normalizeTrackingUserName(d.userName);
+                      if (uname) clockedInUsers.add(uname);
                   }
               });
               
-              const uniqueAllUsers = [...new Set(allUsers)];
+              const uniqueAllUsers = [...new Set([...(window._trackingAllUsersCache || []), ...allUsers].map(normalizeTrackingUserName).filter(Boolean))];
               const notClockedInUsers = uniqueAllUsers.filter(u => !clockedInUsers.has(u) && u !== 'システム');
               
               const clockedInListEl = document.getElementById('clockedInList');
               const notClockedInListEl = document.getElementById('notClockedInList');
               
               if (clockedInListEl && notClockedInListEl) {
-                  clockedInListEl.innerHTML = Array.from(clockedInUsers).map(u => `<li style="padding: 5px 0;">👨‍🌾 ${u}</li>`).join('');
-                  notClockedInListEl.innerHTML = notClockedInUsers.length > 0 ? notClockedInUsers.map(u => `<li style="padding: 5px 0;">💤 ${u}</li>`).join('') : '<li style="padding: 5px 0;">全員が出勤しています🎉</li>';
+                  clockedInListEl.innerHTML = Array.from(clockedInUsers).map(u => `<li style="padding: 5px 0;">👨‍🌾 ${escapeTrackingUserHtml(u)}</li>`).join('');
+                  notClockedInListEl.innerHTML = notClockedInUsers.length > 0 ? notClockedInUsers.map(u => `<li style="padding: 5px 0;">💤 ${escapeTrackingUserHtml(u)}</li>`).join('') : '<li style="padding: 5px 0;">全員が出勤しています🎉</li>';
                   const titleEl = document.getElementById('trackingListModalTitle');
                   if (titleEl) titleEl.innerText = `📅 ${targetDate ? targetDate : '直近24時間'} の出勤・未出勤リスト`;
                   document.getElementById('trackingListModal').style.display = 'flex';
               }
 
-              // ユーザー選択肢ドロップダウンの更新
-              const dataUsers = [...new Set(data.map(d => d.userName).filter(Boolean))];
               const uSelectMobile = document.getElementById('trackingUserSelectMobile');
               const uSelect = document.getElementById('trackingUserSelect');
-              [uSelectMobile, uSelect].forEach(sel => {
-                  if (!sel) return;
-                  const curVal = sel.value || 'ALL';
-                  sel.innerHTML = '<option value="ALL">👥 全員の軌跡を表示</option>' +
-                      dataUsers.map(u => `<option value="${u}">👤 ${u}</option>`).join('');
-                  if (Array.from(sel.options).some(o => o.value === curVal)) sel.value = curVal;
-              });
-
               const selectedUser = (uSelectMobile && uSelectMobile.value) ? uSelectMobile.value : ((uSelect && uSelect.value) ? uSelect.value : 'ALL');
+
+              function isValidJapanCoordinate(lat, lng) {
+                  if (lat == null || lng == null) return false;
+                  const numLat = parseFloat(lat);
+                  const numLng = parseFloat(lng);
+                  if (isNaN(numLat) || isNaN(numLng)) return false;
+                  if (numLat === 0 && numLng === 0) return false;
+                  if (numLat < 20.0 || numLat > 46.0) return false;
+                  if (numLng < 122.0 || numLng > 154.0) return false;
+                  return true;
+              }
 
               // 出勤マーカーの表示ロジック
               if (window.clockInMarkers) {
@@ -819,7 +894,7 @@ async function fetchWeatherAndUpdateUI() {
               }
               window.clockInMarkers = [];
               
-              data.filter(d => d.type === '出勤' || d.type === 'アプリ起動').forEach(d => {
+              data.filter(d => (d.type === '出勤' || d.type === 'アプリ起動') && isValidJapanCoordinate(d.lat, d.lng)).forEach(d => {
                   if (selectedUser !== 'ALL' && d.userName !== selectedUser) return;
                   const pos = new google.maps.LatLng(parseFloat(d.lat), parseFloat(d.lng));
                   const m = new google.maps.Marker({
@@ -862,6 +937,7 @@ async function fetchWeatherAndUpdateUI() {
 
               data.forEach(d => {
                   if (selectedUser !== 'ALL' && d.userName !== selectedUser) return;
+                  if (!isValidJapanCoordinate(d.lat, d.lng)) return; // 🌟 日本国外・海上の衛星ノイズ誤測位座標を除外
                   if (!pathsByUser[d.userName]) pathsByUser[d.userName] = { path: [], timestamps: [] };
                   // 時刻をミリ秒から秒に変換
                   const t = new Date(d.time).getTime() / 1000;

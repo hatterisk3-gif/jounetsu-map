@@ -560,13 +560,13 @@ window.openMasterModal = () => {
 window.renderMasterSection = () => {
     const buildHTML = (title, type, list) => {
         let html = `<div style="background:#f4f6f8; padding:10px; margin-bottom:10px; border-radius:6px; color:#333;"><b style="color:#d32f2f;">${title}</b><br>`;
-        if (type === 'crop') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_crop_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作物名"><input type="number" id="add_crop_density" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="本/10a"><button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
+        if (type === 'crop') { html += `<div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_crop_name" class="form-input" style="flex:2; min-width:100px; margin-bottom:0; padding:6px;" placeholder="作物名"><input type="text" id="add_crop_tag_abbreviation" class="form-input" maxlength="10" style="flex:1; min-width:70px; margin-bottom:0; padding:6px;" placeholder="タグ略称(キャ)"><input type="number" id="add_crop_density" class="form-input" style="flex:1; min-width:70px; margin-bottom:0; padding:6px;" placeholder="本/10a"><button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
         else if (type === 'sign') { html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><input type="text" id="add_sign_name" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="看板機能名 (例: 育苗センター)"><button onclick="execMaster('sign', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:0 15px; font-weight:bold;">追加</button></div>`; }
         else if (type === 'location') {
             html += `<div style="display:flex; flex-direction:column; gap:5px; margin-top:5px; margin-bottom:5px;">
               <input type="text" id="add_location_name" class="form-input" style="width:100%; margin-bottom:0; padding:6px;" placeholder="拠点名 (例: 本社農場)">
               <input type="text" id="add_location_tag_abbreviation" class="form-input" maxlength="10" style="width:100%; margin-bottom:0; padding:6px;" placeholder="タグ略称 (例: 徳阿)">
-              <div style="font-size:11px; color:#777;">栽培タグ例: 徳阿-キャベツ1（空欄時は拠点名）</div>
+              <div style="font-size:11px; color:#777;">栽培タグ例: 徳阿-キャ本1（空欄時は拠点名）</div>
               <div style="display:flex; gap:5px;">
                 <select id="add_location_pref" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml('')}</select>
                 <select id="add_location_city" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" onchange="onLocationCityChange(this)">
@@ -630,7 +630,10 @@ window.renderMasterSection = () => {
         if (list.length === 0) html += `<div style="color:#888; font-size:12px; text-align:center;">データがありません</div>`;
         list.forEach(v => {
             const dispName = v.name || v, deleteVal = v.id || v.name || v; let subInfo = "";
-            if (type === 'crop') subInfo = `(${v.density}本/10a)`;
+            if (type === 'crop') {
+                const tagBit = v.tagAbbreviation ? ` / タグ:${v.tagAbbreviation}` : '';
+                subInfo = `(${v.density}本/10a${tagBit})`;
+            }
             if (type === 'location' && typeof v === 'object') {
                 const climates = parseLocationClimates(v.climates != null ? v.climates : v.climate);
                 const climateLabel = climates.length ? climates.join('・') : '';
@@ -661,7 +664,7 @@ window.renderMasterSection = () => {
 window.execMaster = async (type, act, val) => {
     let value = val;
     if (act === 'add') {
-        if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0) }; }
+        if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0), tagAbbreviation: (document.getElementById('add_crop_tag_abbreviation')?.value || '').trim() }; }
         else if (type === 'sign') { const name = document.getElementById('add_sign_name').value.trim(); if (!name) { customAlert("看板機能名を入力してください"); return; } value = name; }
         else if (type === 'location') {
             const name = document.getElementById('add_location_name').value.trim();

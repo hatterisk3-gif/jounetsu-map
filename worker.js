@@ -223,6 +223,12 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
             const lat = p.coords.latitude;
             const lng = p.coords.longitude;
             
+            // 🌟 日本国内の領域（北緯20〜46度, 東経122〜154度）以外は衛星ノイズ誤測位とみなし送信スキップ
+            if (!lat || !lng || lat < 20.0 || lat > 46.0 || lng < 122.0 || lng > 154.0) {
+                console.warn("GPS座標異常（日本国外/海上のノイズ）のためトラッキング送信スキップ:", lat, lng);
+                return;
+            }
+
             // GASへ送信
             if (currentUser) {
                 callGAS('saveTrackingData', {
@@ -1401,8 +1407,248 @@ window.openTyphoonModal = function() {
         });
 
         infoWindow = new google.maps.InfoWindow();
-        google.maps.event.addListener(map, 'click', () => { if(isMapSelecting) return; infoWindow.close(); closeRightPanel(); if (typeof closePersonalSchedule === 'function') closePersonalSchedule(); document.getElementById('searchSuggestions').style.display='none';});
+        google.maps.event.addListener(map, 'click', (e) => {
+          if (window._isRidgeMeasuring && typeof window.handleRidgeMeasureMapClick === 'function') {
+            window.handleRidgeMeasureMapClick(e);
+            return;
+          }
+          if(isMapSelecting) return;
+          infoWindow.close();
+          closeRightPanel();
+          if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
+          document.getElementById('searchSuggestions').style.display='none';
+        });
         map.addListener('zoom_changed', updateMarkersVisibility);
+
+        // ==========================================
+        // 📏 畝の長さ（距離）計測機能
+        // ==========================================
+        window._isRidgeMeasuring = false;
+        window._ridgeMeasurePoints = [];
+        window._ridgeMeasureOverlays = [];
+        window._latestRidgeMeasuredLength = null;
+
+        window.toggleRidgeMeasureTool = () => {
+          if (window._isRidgeMeasuring) {
+            window.closeRidgeMeasureTool();
+          } else {
+            window.openRidgeMeasureTool();
+          }
+        };
+
+        window.openRidgeMeasureTool = () => {
+          window._isRidgeMeasuring = true;
+          window.resetRidgeMeasurePoints();
+
+          const bar = document.getElementById('ridgeMeasureBar');
+          if (bar) bar.style.display = 'block';
+
+          const btn = document.getElementById('btnMeasureRidge');
+          if (btn) {
+            btn.style.background = '#00838F';
+            btn.style.color = '#fff';
+          }
+          if (typeof window.showRecordSyncToast === 'function') {
+            window.showRecordSyncToast('📏 畝の長さ計測モード: 地図上をタップして起点と終点を選んでください', 'info');
+          }
+        };
+
+        window.closeRidgeMeasureTool = () => {
+          window._isRidgeMeasuring = false;
+          window.resetRidgeMeasurePoints();
+
+          const bar = document.getElementById('ridgeMeasureBar');
+          if (bar) bar.style.display = 'none';
+
+          const btn = document.getElementById('btnMeasureRidge');
+          if (btn) {
+            btn.style.background = '';
+            btn.style.color = '#00838F';
+          }
+        };
+
+        window.resetRidgeMeasurePoints = () => {
+          if (Array.isArray(window._ridgeMeasureOverlays)) {
+            window._ridgeMeasureOverlays.forEach(ov => {
+              try { if (ov && typeof ov.setMap === 'function') ov.setMap(null); } catch (e) {}
+            });
+          }
+          window._ridgeMeasureOverlays = [];
+          window._ridgeMeasurePoints = [];
+          window._latestRidgeMeasuredLength = null;
+
+          const resultBox = document.getElementById('ridgeMeasureResultBox');
+          const applyRow = document.getElementById('ridgeMeasureApplyRow');
+          const hintEl = document.getElementById('ridgeMeasureHint');
+
+          if (resultBox) resultBox.style.display = 'none';
+          if (applyRow) applyRow.style.display = 'none';
+          if (hintEl) hintEl.textContent = '地図上を2箇所タップ（または現在地ボタン）して、畝の長さ・距離を計測します。';
+        };
+
+        window.calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
+          const R = 6371000;
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLon = (lon2 - lon1) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          return R * c;
+        };
+
+        window.handleRidgeMeasureMapClick = (e) => {
+          if (!e || !e.latLng) return;
+          const lat = e.latLng.lat();
+          const lng = e.latLng.lng();
+          window.addRidgeMeasurePoint(lat, lng);
+        };
+
+        window.addRidgeMeasurePoint = (lat, lng) => {
+          if (!map || typeof google === 'undefined' || !google.maps) return;
+          if (!window._ridgeMeasurePoints) window._ridgeMeasurePoints = [];
+          if (!window._ridgeMeasureOverlays) window._ridgeMeasureOverlays = [];
+
+          const latLng = new google.maps.LatLng(lat, lng);
+
+          if (window._ridgeMeasurePoints.length >= 2) {
+            window.resetRidgeMeasurePoints();
+          }
+
+          window._ridgeMeasurePoints.push({ lat: lat, lng: lng, latLng: latLng });
+          const idx = window._ridgeMeasurePoints.length;
+          const isStart = idx === 1;
+
+          const iconText = isStart ? '🚩' : '🎯';
+          const labelText = isStart ? '起点' : '終点';
+          const markerColor = isStart ? '#2E7D32' : '#D32F2F';
+
+          const marker = new google.maps.Marker({
+            position: latLng,
+            map: map,
+            label: { text: `${iconText} ${labelText}`, color: '#fff', fontSize: '11px', fontWeight: 'bold' },
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: markerColor, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 },
+            zIndex: 15000
+          });
+
+          window._ridgeMeasureOverlays.push(marker);
+
+          const hintEl = document.getElementById('ridgeMeasureHint');
+
+          if (isStart) {
+            if (hintEl) hintEl.textContent = '🚩 起点をセットしました。続いて終点（もう片方の端）をタップまたは現在地ボタンで押してください。';
+          } else {
+            const p1 = window._ridgeMeasurePoints[0];
+            const p2 = window._ridgeMeasurePoints[1];
+
+            const polyline = new google.maps.Polyline({
+              path: [p1.latLng, p2.latLng],
+              map: map,
+              strokeColor: '#00E676',
+              strokeOpacity: 0.95,
+              strokeWeight: 5,
+              zIndex: 14999
+            });
+            window._ridgeMeasureOverlays.push(polyline);
+
+            let distMeters = 0;
+            if (google.maps.geometry && google.maps.geometry.spherical) {
+              distMeters = google.maps.geometry.spherical.computeDistanceBetween(p1.latLng, p2.latLng);
+            } else {
+              distMeters = window.calculateHaversineDistance(p1.lat, p1.lng, p2.lat, p2.lng);
+            }
+
+            const mVal = distMeters.toFixed(1);
+            const kenVal = Math.round(distMeters / 1.81818);
+            const shakuVal = Math.round(distMeters / 0.30303);
+
+            const midLat = (p1.lat + p2.lat) / 2;
+            const midLng = (p1.lng + p2.lng) / 2;
+            const midLatLng = new google.maps.LatLng(midLat, midLng);
+
+            const midLabelMarker = new google.maps.Marker({
+              position: midLatLng,
+              map: map,
+              label: { text: `📏 ${mVal}m (${kenVal}間)`, color: '#004D40', fontSize: '13px', fontWeight: 'bold' },
+              icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+              zIndex: 15001
+            });
+            window._ridgeMeasureOverlays.push(midLabelMarker);
+
+            const resultBox = document.getElementById('ridgeMeasureResultBox');
+            const valEl = document.getElementById('ridgeMeasureValue');
+            const subEl = document.getElementById('ridgeMeasureSub');
+            const applyRow = document.getElementById('ridgeMeasureApplyRow');
+
+            if (valEl) valEl.textContent = `${mVal} m`;
+            if (subEl) subEl.textContent = `(約 ${kenVal} 間 / ${shakuVal} 尺)`;
+            if (resultBox) resultBox.style.display = 'block';
+            if (applyRow) applyRow.style.display = 'flex';
+
+            if (hintEl) hintEl.textContent = `✅ 畝の長さの計測が完了しました！（${mVal}m）`;
+            window._latestRidgeMeasuredLength = mVal;
+          }
+        };
+
+        window.setRidgeMeasurePointFromGPS = (type) => {
+          if (typeof latestUserPos === 'undefined' || !latestUserPos || !latestUserPos.lat || !latestUserPos.lng) {
+            if (typeof customAlert === 'function') customAlert('現在地を取得中または取得できませんでした。GPSボタンで現在地を確認してください。');
+            return;
+          }
+          if (type === 'start') {
+            window.resetRidgeMeasurePoints();
+            window.addRidgeMeasurePoint(latestUserPos.lat, latestUserPos.lng);
+          } else {
+            if (!window._ridgeMeasurePoints || window._ridgeMeasurePoints.length === 0) {
+              if (typeof customAlert === 'function') customAlert('まず「現在地を起点」ボタンまたは地図上をタップして起点をセットしてください。');
+              return;
+            }
+            window.addRidgeMeasurePoint(latestUserPos.lat, latestUserPos.lng);
+          }
+        };
+
+        window.applyRidgeMeasureResultToRecord = () => {
+          const len = window._latestRidgeMeasuredLength;
+          if (!len) {
+            if (typeof customAlert === 'function') customAlert('計測結果がありません。');
+            return;
+          }
+
+          const str = `${len}m`;
+          let appliedCount = 0;
+
+          const workedInputs = document.querySelectorAll('.ridge-worked');
+          workedInputs.forEach(inp => {
+            if (inp && inp.offsetParent !== null) {
+              if (!inp.value.includes(str)) {
+                inp.value = inp.value ? `${inp.value} (畝長: ${str})` : `畝長: ${str}`;
+                appliedCount++;
+              }
+            }
+          });
+
+          const commentInp = document.getElementById('rec_work_comment');
+          if (commentInp && commentInp.offsetParent !== null) {
+            if (!commentInp.value.includes(str)) {
+              commentInp.value = commentInp.value ? `${commentInp.value}\n[畝長: ${str}]` : `[畝長: ${str}]`;
+              appliedCount++;
+            }
+          }
+
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(`${str}`);
+            }
+          } catch (e) {}
+
+          if (typeof window.showRecordSyncToast === 'function') {
+            window.showRecordSyncToast(`📋 畝の長さ「${str}」をフォームに反映・クリップボードにコピーしました！`, 'ok');
+          } else if (typeof customAlert === 'function') {
+            customAlert(`📋 畝の長さ「${str}」をフォームに反映しました！`);
+          }
+
+          window.closeRidgeMeasureTool();
+        };
         
         fetchTyphoonInfo(); // 起動時に台風情報を取得
 
@@ -9119,7 +9365,7 @@ function createSignboardMarker(name, pos, icon, id) {
         box.innerHTML = `
           <div style="font-weight:bold; color:#6a1b9a; margin-bottom:8px; font-size:14px;">🌱 育苗・播種記録</div>
           <label class="form-label">TAG</label>
-          <input type="text" id="sow_tag" class="form-input" value="${String(p.tag||'').replace(/"/g,'&quot;')}" placeholder="例: キャベツ1" onchange="onSowingTagChange()" onblur="onSowingTagChange()">
+          <input type="text" id="sow_tag" class="form-input" value="${String(p.tag||'').replace(/"/g,'&quot;')}" placeholder="例: 徳阿-キャ本1" onchange="onSowingTagChange()" onblur="onSowingTagChange()">
           <label class="form-label">品種名（TAGから自動）</label>
           <input type="text" id="sow_variety" class="form-input" value="${String(p.variety||'').replace(/"/g,'&quot;')}" placeholder="TAG入力で自動表示（手修正可）">
           <input type="hidden" id="sow_plan_id" value="${String(p.planId||'').replace(/"/g,'&quot;')}">
@@ -9166,7 +9412,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const tag = (document.getElementById('sow_tag')?.value || '').trim();
         if (!tag) return;
         try {
-          const res = await callGAS('lookupCultivationByTag', { tag });
+          const workDate = (document.getElementById('sow_date')?.value
+            || document.getElementById('rec_work_date')?.value || '').trim();
+          const year = workDate ? String(workDate).slice(0, 4) : String(new Date().getFullYear());
+          const res = await callGAS('lookupCultivationByTag', { tag, year });
           const plan = res && res.plan;
           if (!plan) return;
           const varietyEl = document.getElementById('sow_variety');
@@ -9236,7 +9485,7 @@ function createSignboardMarker(name, pos, icon, id) {
         box.innerHTML = `
           <div style="font-weight:bold; color:#2E7D32; margin-bottom:8px; font-size:14px;">🌿 定植記録</div>
           <label class="form-label">TAG（育苗TAG）</label>
-          <input type="text" id="plant_tag" class="form-input" value="${String(p.tag||'').replace(/"/g,'&quot;')}" placeholder="例: キャベツ1">
+          <input type="text" id="plant_tag" class="form-input" value="${String(p.tag||'').replace(/"/g,'&quot;')}" placeholder="例: 徳阿-キャ本1">
           <label class="form-label">品種名</label>
           <input type="text" id="plant_variety" class="form-input" value="${String(p.variety||'').replace(/"/g,'&quot;')}" placeholder="品種">
           <input type="hidden" id="plant_crop_name" value="${String(p.cropName||cropHint||'').replace(/"/g,'&quot;')}">

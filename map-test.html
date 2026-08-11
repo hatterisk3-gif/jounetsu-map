@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>情熱MAP 生産・水管理 [テスト] v0.1</title>
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" href="icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <script src="exit-guard.js?v=1786240000001"></script>
+
+    <link rel="stylesheet" href="map.css">
+    <link rel="stylesheet" href="water-test.css">
+    <style>
+      .map-mode-toggle {
+        display: inline-flex;
+        border: 1px solid #455A64;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .map-mode-toggle button {
+        border: none;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        background: #eceff1;
+        color: #455A64;
+      }
+      .map-mode-toggle button.active-prod {
+        background: #795548;
+        color: #fff;
+      }
+      .map-mode-toggle button.active-water {
+        background: #1565C0;
+        color: #fff;
+      }
+      body.map-mode-water .prod-only { display: none !important; }
+      body.map-mode-prod .water-only { display: none !important; }
+      body.map-mode-water .mobile-bottom-bar { display: none !important; }
+      body.map-mode-water #btnCurrentLocation { bottom: 20px; }
+      body.map-mode-water #btnTracking { display: flex !important; }
+    </style>
+</head>
+<body class="map-mode-prod">
+    <!-- プロポータルに戻る×ボタン -->
+        <div id="loginScreen">
+        <div class="login-box">
+            <h2 style="color:#4CAF50;">情熱MAP 生産・水管理 (テスト)</h2>
+            <div id="loginError" style="color:red; margin-bottom:10px;"></div>
+            <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
+            <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
+            <button class="login-btn" onclick="executeLogin()">ログイン</button>
+        </div>
+    </div>
+
+    <!-- GPS Button -->
+    <button id="btnCurrentLocation" onclick="moveToCurrentLocation()"
+        style="position: fixed; bottom: 88px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
+        📍
+    </button>
+
+    <button id="btnTracking" class="water-only" onclick="toggleTracking()"
+        style="display:none; position: fixed; bottom: 92px; right: 10px; width: 50px; height: 50px; background: white; color: #4CAF50; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; padding: 0;">
+        🏃‍♂️
+    </button>
+
+    <div class="control-panel">
+        <div class="control-row" style="flex-wrap:wrap; gap:6px; align-items:center;">
+            <div class="map-mode-toggle" title="表示モード切替">
+                <button type="button" id="btnModeProd" class="active-prod" onclick="setMapMode('prod')">🌾 生産管理</button>
+                <button type="button" id="btnModeWater" onclick="setMapMode('water')">💧 水管理</button>
+            </div>
+            <div class="search-container prod-only">
+                <input type="text" id="searchInput" placeholder="🔍 圃場名を検索...">
+                <div id="searchSuggestions"></div>
+            </div>
+            <label class="prod-only" style="display:flex; align-items:center; gap:4px; background:#fff; border:1px solid #795548; border-radius:6px; padding:4px 8px; font-size:12px; font-weight:bold; color:#5D4037;">
+                カテゴリ
+                <select id="prodCategorySelect" onchange="onProdCategorySelectChange()"
+                    style="border:none; font-size:13px; font-weight:bold; color:#333; background:transparent; max-width:140px;"></select>
+            </label>
+            <button id="btnEditProdCategories" onclick="openProdCategoryEditModal()" class="ctrl-btn prod-only" style="display:none; background:#5D4037; color:white; border:none;">✏️ カテゴリ編集</button>
+            <button onclick="location.reload()" class="ctrl-btn" style="background:#fff; color:#333; border:1px solid #ccc;">🔄 更新</button>
+            <button type="button" onclick="openWaterHistoryModal()" class="ctrl-btn water-only" style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8;">📋 登録履歴</button>
+            <button id="btnWeather" onclick="openWeatherModal()" class="ctrl-btn" style="background:#fff; color:#ff9800; border:1px solid #ff9800;">☁️ 天気</button>
+            <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" class="ctrl-btn" style="background:#fff; color:#1565c0; border:1px solid #1565c0;">🌱 水分</button>
+            <button id="btnTyphoon" onclick="openTyphoonModal()" class="ctrl-btn" style="display:none; background:#ffebee; color:#d32f2f; border:1px solid #d32f2f;">🌀 台風</button>
+            <button onclick="openTransplantSettingModal()" class="ctrl-btn prod-only" style="background:#E8F5E9; color:#2E7D32; border:1px solid #66BB6A; font-weight:bold;">🌱 定植設定</button>
+            <button onclick="openContactModal()" class="ctrl-btn" style="background:#E8F5E9; color:#388E3C; border:1px solid #388E3C;">📞 連絡先</button>
+            <button onclick="openMyPage()" class="ctrl-btn water-only" style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2;">👤 マイページ</button>
+            <button id="btnResetAllManure" onclick="resetAllManureStatus()" class="ctrl-btn prod-only" style="display:none; background:#880E4F; color:white; border:none;">🔄 全リセット</button>
+            <button id="btnOpenAdminField" onclick="openAdminFieldModal()" class="ctrl-btn prod-only" style="display:none; background:#212121; color:#4CAF50; border:1px solid #4CAF50;">✏️ 圃場</button>
+            <button onclick="executeLogout()" class="ctrl-btn" style="background:#F44336; color:white; border:none;">ログアウト</button>
+        </div>
+    </div>
+
+    <!-- 絞り込みトグルボタン -->
+    <button id="btnFilterToggle" onclick="toggleFilterMenu()"
+        style="position: fixed; top: 140px; right: 10px; padding: 10px 15px; background: #fff; color: #333; border: 1px solid #ccc; border-radius: 6px; font-weight: bold; font-size: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); z-index: 2000; cursor: pointer; pointer-events: auto;">
+        🔍 絞り込み
+    </button>
+
+    <!-- 生産管理 絞り込み -->
+    <div id="prodFilterMenu" class="filter-menu prod-only" style="display:none; position: fixed; top: 190px; right: 10px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 2000; flex-direction: column; gap: 10px;">
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="request" checked onchange="applyFilter()"> 赤(依頼中)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="accepted" checked onchange="applyFilter()"> 橙(予定)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="inprogress" checked onchange="applyFilter()"> 黄(途中)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="completed" checked onchange="applyFilter()"> 緑(完了)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="none" checked onchange="applyFilter()"> 青(未着手)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="canceled" checked onchange="applyFilter()"> 白(中止)</label>
+    </div>
+
+    <!-- 水管理 絞り込み -->
+    <div id="waterFilterMenu" class="filter-menu water-only" style="display:none; position: fixed; top: 190px; right: 10px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 2000; flex-direction: column; gap: 10px;">
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="supplying" checked onchange="applyFilter()"> 💧 青(給水中)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="stopped" checked onchange="applyFilter()"> 🚫 赤(止水中)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="none" checked onchange="applyFilter()"> ⬜ 灰(未設定)</label>
+    </div>
+
+
+    <div id="map"></div>
+
+    <!-- 管理者：圃場追加モーダル（admin.html を iframe 表示） -->
+    <div id="adminFieldModal"
+        style="display:none; position: fixed; inset:0; background: rgba(0,0,0,0.7); z-index:15000; justify-content:center; align-items:center;">
+      <div style="width:95%; height:90%; background:#fff; border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="padding:10px 12px; background:#f5f5f5; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-weight:bold; color:#4CAF50;">✏️ 圃場追加（管理者）</div>
+          <button type="button" onclick="closeAdminFieldModal()"
+            style="background:#f44336; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+        </div>
+        <iframe id="adminFieldIframe" src="" style="flex:1; border:none; background:#fff;"></iframe>
+      </div>
+    </div>
+
+    <!-- 圃場メモ（CAD風） -->
+    <div id="fieldMemoOverlay">
+      <div id="fieldMemoHeader">
+        <div style="min-width:0; flex:1;">
+          <div style="font-weight:bold; font-size:15px;">📝 圃場メモ</div>
+          <div id="fieldMemoTargetName" style="font-size:12px; opacity:0.9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+          <label style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
+            作業日
+            <input type="date" id="fieldMemoWorkDate" style="padding:4px 6px; border-radius:4px; border:1px solid #ccc; font-size:13px; width:140px;">
+          </label>
+          <button type="button" class="fm-btn" style="background:#f44336; color:#fff;" onclick="closeFieldMemo()">閉じる</button>
+        </div>
+      </div>
+      <div id="fieldMemoMapWrap">
+        <div id="fieldMemoMap"></div>
+      </div>
+      <div id="fieldMemoPanel">
+        <div id="fieldMemoHint" style="font-size:12px; color:#FFE082; margin-bottom:6px;">ツールを選んで地図を操作してください</div>
+        <div class="fm-btn-row">
+          <button type="button" id="fmBtnLine" class="fm-btn fm-tool" style="background:#5D4037; color:#fff;" onclick="setFieldMemoMode('line')">✏️ 線で分割</button>
+          <button type="button" id="fmBtnSprayed" class="fm-btn fm-tool" style="background:#2E7D32; color:#fff;" onclick="setFieldMemoMode('sprayed')">🟢 散布</button>
+          <button type="button" id="fmBtnUnsprayed" class="fm-btn fm-tool" style="background:#E65100; color:#fff;" onclick="setFieldMemoMode('unsprayed')">🟠 未散布</button>
+        </div>
+        <div class="fm-btn-row">
+          <button type="button" class="fm-btn" style="background:#6D4C41; color:#fff;" onclick="undoFieldMemoLinePoint()">↩ 点取消</button>
+          <button type="button" class="fm-btn" style="background:#795548; color:#fff;" onclick="confirmFieldMemoLine()">✓ 線確定</button>
+          <button type="button" class="fm-btn" style="background:#BF360C; color:#fff;" onclick="clearFieldMemoDrawing()">クリア</button>
+        </div>
+        <div id="fieldMemoStats" style="background:#3E2723; border:1px solid #5D4037; border-radius:8px; padding:10px; margin-top:8px; font-size:13px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#A5D6A7;">
+            <span>散布合計</span>
+            <span id="fmStatSprayed">—</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px; color:#FFCC80;">
+            <span>未散布合計</span>
+            <span id="fmStatUnsprayed">—</span>
+          </div>
+          <div style="font-size:11px; color:#BCAAA4;">基準: 34袋/10a ・ 0.5車/10a</div>
+        </div>
+        <div class="fm-btn-row" style="margin-top:10px;">
+          <button type="button" id="fmBtnSave" class="fm-btn" style="background:#4CAF50; color:#fff;" onclick="saveFieldMemo()">💾 保存</button>
+          <button type="button" class="fm-btn" style="background:#1565C0; color:#fff;" onclick="openFieldMemoHistory()">📅 履歴</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fieldMemoHistoryModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:13000; justify-content:center; align-items:center;">
+      <div style="background:#fff; color:#333; width:90%; max-width:360px; max-height:80vh; border-radius:12px; padding:16px; display:flex; flex-direction:column; box-shadow:0 4px 20px rgba(0,0,0,0.4);">
+        <h3 style="margin:0 0 12px; border-bottom:2px solid #795548; padding-bottom:8px; font-size:16px; text-align:center;">📅 圃場メモ履歴</h3>
+        <div id="fieldMemoHistoryList" style="flex:1; overflow-y:auto; margin-bottom:12px;"></div>
+        <button type="button" onclick="closeFieldMemoHistory()" style="width:100%; background:#666; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
+    </div>
+
+    <!-- 汎用モーダル -->
+    <!-- 汎用モーダル -->
+    <div id="modal">
+        <div class="modal-content" id="modalBody"></div>
+    </div>
+
+    <!-- 簡易版農業CAD（給水口確認・登録） -->
+    <div id="waterCadOverlay">
+      <div id="waterCadHeader">
+        <div style="min-width:0;">
+          <div style="font-weight:bold; font-size:15px;">💧 簡易CAD（給水口）</div>
+          <div id="waterCadTargetName" style="font-size:12px; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+        </div>
+        <button type="button" class="water-cad-btn" style="background:#f44336; color:#fff;" onclick="closeWaterCadSimple()">閉じる</button>
+      </div>
+      <div id="waterCadMapWrap">
+        <div id="waterCadMap"></div>
+      </div>
+      <div id="waterCadPanel">
+        <div id="waterCadHint" style="font-size:12px; color:#90CAF9; margin-bottom:4px;"></div>
+        <div id="waterCadEditTools" style="display:none;">
+          <div class="water-cad-btn-row">
+            <button type="button" id="btnWaterCadAdd" class="water-cad-btn" style="background:#0288D1; color:#fff;" onclick="toggleWaterCadAddMode()">＋ 給水口を追加</button>
+            <button type="button" class="water-cad-btn" style="background:#E65100; color:#fff;" onclick="clearWaterCadPinsConfirm()">全削除</button>
+          </div>
+          <div id="waterCadGpsBar" style="background:#0D47A1; border:1px solid #1976D2; border-radius:6px; padding:8px; margin:8px 0;">
+            <div style="font-size:11px; color:#BBDEFB; margin-bottom:6px;">📡 GPSで給水口を置く</div>
+            <div class="water-cad-btn-row" style="margin-bottom:6px;">
+              <button type="button" id="btnWaterCadGpsStart" class="water-cad-btn" style="background:#1565C0; color:#fff;" onclick="waterStartGpsPinPlace()">GPSで置く</button>
+              <button type="button" id="btnWaterCadGpsConfirm" class="water-cad-btn" style="background:#455A64; color:#fff; opacity:0.6;" onclick="waterConfirmGpsPinPlace()" disabled>ここに置く</button>
+              <button type="button" id="btnWaterCadGpsCancel" class="water-cad-btn" style="background:#616161; color:#fff; opacity:0.6;" onclick="waterStopGpsPinPlace()" disabled>取消</button>
+            </div>
+            <div id="waterCadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">現場で「GPSで置く」→精度を確認→「ここに置く」</div>
+          </div>
+          <div class="water-cad-btn-row">
+            <button type="button" id="btnWaterCadSave" class="water-cad-btn" style="background:#2E7D32; color:#fff;" onclick="saveWaterCadPins()">💾 保存</button>
+            <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;" onclick="closeWaterCadSimple()">キャンセル</button>
+          </div>
+          <div style="font-size:11px; color:#aaa; margin-top:6px;">ピンをタップすると削除できます。追加モード中は地図タップで配置します。</div>
+        </div>
+        <div id="waterCadViewTools">
+          <div class="water-cad-btn-row">
+            <button type="button" id="btnWaterCadOpenEdit" class="water-cad-btn" style="background:#FF9800; color:#fff; display:none;" onclick="enterWaterCadEditMode()">✏️ 給水口を編集</button>
+            <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;" onclick="closeWaterCadSimple()">閉じる</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🌳 スキルツリー ＆ 免許・資格 モーダル -->
+    <div id="skillTreeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
+      <div style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
+          <h3 style="margin: 0; font-size: 16px;">🌳 スキルツリー ＆ 免許・資格</h3>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;" onclick="document.getElementById('skillTreeModal').style.display='none'">×</span>
+        </div>
+        <div id="skillTreeContent" style="overflow-y: auto; flex: 1;">
+          <div style="text-align:center; padding:20px;">読み込み中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 天気モーダル -->
+    <div id="weatherModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #2196F3;">⛅ 週間天気予報</h3>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('weatherModal').style.display='none'">×</span>
+            </div>
+            <div id="weatherContent" style="overflow-y: auto; flex: 1;">
+                <div style="text-align:center; padding:20px;">読み込み中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 台風モーダル -->
+    <div id="typhoonModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
+            </div>
+            <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
+                <div style="text-align:center; padding:20px;">読み込み中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 散布ルート設定モーダル -->
+    <div id="sprayRouteModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: #fff; color: #333; padding: 20px; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column; box-sizing: border-box;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #FF9800; padding-bottom: 8px;">
+                <h3 id="sprayRouteModalTitle" style="margin: 0; color: #E65100; font-size: 18px;">🚜 ルート設定</h3>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="closeSprayRouteModal()">×</span>
+            </div>
+            <div id="sprayRouteModalContent" style="overflow-y: auto; flex: 1;">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <div style="background:#EFEBE9; border:1px solid #D7CCC8; border-radius:6px; padding:8px 10px; font-size:13px; color:#5D4037;">
+                        表示中カテゴリ: <b id="sprayRouteCategoryLabel">—</b>
+                        <div style="font-size:11px; color:#795548; margin-top:4px;">上の「カテゴリ」切替で、ルート対象の作業を変えられます。</div>
+                    </div>
+                    <div>
+                        <label style="font-size: 13px; font-weight: bold; color: #444; margin-bottom: 4px; display: block;">🚜 台数 (台)</label>
+                        <input type="number" id="sprayTruckCount" min="1" max="20" value="1" oninput="updateSprayRouteCapacityDisplay()" style="width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size: 13px; font-weight: bold; color: #444; margin-bottom: 4px; display: block;">📦 1台あたりの可能面積 (a / 台)</label>
+                        <input type="number" id="sprayCapacityPerTruck" min="1" value="20" oninput="updateSprayRouteCapacityDisplay()" style="width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box;">
+                    </div>
+                    <div style="background: #FFF8E1; border: 1px solid #FFE082; border-radius: 6px; padding: 10px; font-size: 13px; color: #795548;">
+                        💡 最大許容面積: <b id="sprayMaxCapacityDisp" style="color: #E65100; font-size: 16px;">20 a</b> (<span id="sprayMaxSqmDisp">2,000</span> ㎡)
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" onclick="calculateSprayRoute()" style="flex: 1; background: #FF9800; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">ルートを算出する</button>
+                    </div>
+                    <div id="sprayRouteResultArea" style="display: none; border-top: 1px solid #eee; margin-top: 5px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 設定ルート表モーダル -->
+    <div id="todayRouteTableModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: #fff; color: #333; padding: 20px; border-radius: 10px; width: 92%; max-width: 650px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 88vh; display: flex; flex-direction: column; box-sizing: border-box;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">
+                <h3 id="todayRouteTableTitle" style="margin: 0; color: #1B5E20; font-size: 18px;">🗺️ 設定ルート表</h3>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('todayRouteTableModal').style.display='none'">×</span>
+            </div>
+            <div id="todayRouteTableContent" style="overflow-y: auto; flex: 1;">
+                <div style="text-align:center; padding:20px; color:#888;">読み込み中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 定植設定モーダル -->
+    <div id="transplantSettingModal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:10000; justify-content:center; align-items:center;">
+        <div style="background:#fff; color:#333; padding:20px; border-radius:10px; width:94%; max-width:780px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:2px solid #66BB6A; padding-bottom:8px;">
+                <h3 style="margin:0; color:#2E7D32; font-size:18px;">🌱 定植設定</h3>
+                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;" onclick="closeTransplantSettingModal()">×</span>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+                <button type="button" onclick="loadVisibleFieldsForTransplantSetting()" style="background:#4CAF50; color:#fff; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">表示中の圃場を全て表示</button>
+                <button type="button" onclick="saveTransplantSettings()" style="background:#FF9800; color:#fff; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">登録を完了する</button>
+            </div>
+            <div style="font-size:12px; color:#666; margin-bottom:10px;">
+                表示中の圃場ごとに定植旬を設定します。堆肥散布が完了以外の場合、登録時に自動で堆肥散布の依頼中へ変更し、期限日は定植旬に合わせて設定します。
+            </div>
+            <div id="transplantSettingTableArea" style="overflow:auto; flex:1; border:1px solid #e0e0e0; border-radius:8px; background:#fafafa; padding:8px;">
+                <div style="text-align:center; padding:24px; color:#888;">「表示中の圃場を全て表示」を押してください</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 生産管理カテゴリ編集モーダル -->
+    <div id="prodCategoryEditModal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:11000; justify-content:center; align-items:center;">
+        <div style="background:#fff; color:#333; padding:20px; border-radius:10px; width:94%; max-width:560px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:2px solid #5D4037; padding-bottom:8px;">
+                <h3 style="margin:0; color:#5D4037; font-size:18px;">✏️ 生産管理カテゴリ編集</h3>
+                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;" onclick="closeProdCategoryEditModal()">×</span>
+            </div>
+            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">
+                名前の変更・追加・削除と、<b>工程順（▲▼）</b>の並べ替えができます。この順番がガントチャートの並びになります。<br>
+                既存の「堆肥散布」(ID: compost) にはこれまでのステータスが紐づいています。
+            </div>
+            <div id="prodCategoryEditList" style="overflow:auto; flex:1; margin-bottom:12px;"></div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" onclick="addProdCategoryDraft()" style="flex:1; background:#795548; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">＋ 追加</button>
+                <button type="button" onclick="saveProdCategoryEdits()" style="flex:1.4; background:#4CAF50; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">保存</button>
+                <button type="button" onclick="closeProdCategoryEditModal()" style="flex:0.8; background:#9e9e9e; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 工程順ガント -->
+    <div id="prodGanttModal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:10000; justify-content:center; align-items:center;">
+        <div style="background:#fff; color:#333; padding:16px; border-radius:10px; width:96%; max-width:920px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:2px solid #8D6E63; padding-bottom:8px;">
+                <h3 style="margin:0; color:#5D4037; font-size:17px;">📊 工程順ガント</h3>
+                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;" onclick="closeProdGanttModal()">×</span>
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                <button type="button" onclick="renderProdGanttChart()" style="background:#8D6E63; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">再描画</button>
+            </div>
+            <div id="prodGanttChartArea" style="overflow:auto; flex:1;">読み込み中...</div>
+        </div>
+    </div>
+
+    <!-- 下部タブバー -->
+    <div class="mobile-bottom-bar">
+        <button type="button" onclick="openSprayRouteModal()">
+            <div style="font-size:20px;">🚜</div>
+            <div style="font-weight:bold;">ルート設定</div>
+        </button>
+        <button type="button" onclick="openTodayRouteTableModal()">
+            <div style="font-size:20px;">🗺️</div>
+            <div style="font-weight:bold;">設定ルート表</div>
+        </button>
+        <button type="button" onclick="openProdGanttModal()">
+            <div style="font-size:20px;">📊</div>
+            <div style="font-weight:bold;">ガント</div>
+        </button>
+        <button type="button" onclick="openHistoryModal()">
+            <div style="font-size:20px;">📋</div>
+            <div style="font-weight:bold;">登録履歴</div>
+        </button>
+        <button type="button" onclick="openMyPage()">
+            <div style="font-size:20px;">👤</div>
+            <div style="font-weight:bold;">マイページ</div>
+        </button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script src="map-loading.js?v=1786243000000"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
+    <script src="weather-agri.js?v=1785489000100"></script>
+    <script src="map-test.js?v=1786400000001"></script>
+    <script src="water-test.js?v=1786400000001"></script>
+    <script src="field-memo.js?v=1785200000001"></script>
+    <script src="tracking.js?v=1786244100000"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js?v=map-test', { scope: '/' });
+      }
+    </script>
+</body>
+</html>

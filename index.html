@@ -13,13 +13,16 @@
         body { font-family: sans-serif; background-color: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
         .container { position: relative; text-align: center; background: #222; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 85%; max-width: 400px; overflow-y: auto; max-height: 90vh; }
         h1 { color: #4CAF50; margin-bottom: 20px; font-size: 24px; }
-        .btn { display: block; width: 100%; padding: 15px; margin-bottom: 10px; border-radius: 8px; font-size: 16px; font-weight: bold; text-decoration: none; color: white; box-sizing: border-box; transition: opacity 0.2s; }
+        .btn { display: block; width: 100%; padding: 15px; margin-bottom: 10px; border-radius: 8px; font-size: 16px; font-weight: bold; text-decoration: none; color: white; box-sizing: border-box; transition: opacity 0.2s; border: none; cursor: pointer; }
         .btn:active { opacity: 0.7; }
+        .btn:disabled { opacity: 0.55; cursor: not-allowed; }
         .btn-worker { background-color: #4CAF50; }
         .btn-schedule { background-color: #2196F3; }
         .btn-register { background-color: #00897B; }
         .btn-portal2 { background-color: #FF9800; }
         .btn-admin { background-color: #d32f2f; }
+        .btn-signup { background-color: #2e7d32; }
+        .btn-muted { background-color: #555; }
         
         /* 🔄 更新ボタン */
         .reload-btn {
@@ -32,6 +35,84 @@
         /* 🌟LINE連携ブロックのデザインを復活 */
         .share-box { background: #333; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #444; }
         .share-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; background: #222; color: #fff; }
+
+        .account-box {
+            margin-top: 18px;
+            padding: 16px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            text-align: left;
+        }
+        .account-box h2 {
+            margin: 0 0 12px;
+            font-size: 15px;
+            color: #a5d6a7;
+            text-align: center;
+        }
+        .account-tabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .account-tab {
+            padding: 8px 6px;
+            border-radius: 6px;
+            border: 1px solid #555;
+            background: #333;
+            color: #ccc;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .account-tab.is-active {
+            background: #1b5e20;
+            border-color: #4CAF50;
+            color: #fff;
+        }
+        .account-panel { display: none; }
+        .account-panel.is-active { display: block; }
+        .account-label {
+            display: block;
+            font-size: 11px;
+            color: #aaa;
+            margin: 0 0 4px;
+            font-weight: bold;
+        }
+        .account-input, .account-select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            box-sizing: border-box;
+            background: #1a1a1a;
+            color: #fff;
+            font-size: 14px;
+        }
+        .account-msg {
+            min-height: 18px;
+            margin: 0 0 8px;
+            font-size: 12px;
+            line-height: 1.4;
+            text-align: center;
+        }
+        .account-msg.is-error { color: #ef9a9a; }
+        .account-msg.is-ok { color: #a5d6a7; }
+        .account-hint {
+            font-size: 11px;
+            color: #888;
+            margin: 0 0 10px;
+            line-height: 1.4;
+            text-align: center;
+        }
+        .admin-session {
+            font-size: 12px;
+            color: #c8e6c9;
+            margin-bottom: 10px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -46,11 +127,66 @@
         <a href="admin.html" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
         <a href="battle-portal.html" class="btn" style="background-color:#E65100;">⚔️ バトルポータル</a>
         <a href="javascript:location.replace('index2.html')" class="btn btn-portal2" style="margin-bottom:0; margin-top:8px;">🚪 プロポータルを開く</a>
-        
 
+        <div class="account-box">
+            <h2>アカウント登録</h2>
+            <div class="account-tabs" role="tablist">
+                <button type="button" class="account-tab is-active" id="tabSignup" onclick="switchAccountTab('signup')">新規登録</button>
+                <button type="button" class="account-tab" id="tabAdminAdd" onclick="switchAccountTab('admin')">管理者：ユーザー追加</button>
+            </div>
+
+            <div id="panelSignup" class="account-panel is-active">
+                <p class="account-hint">誰でも作業員アカウントを作成できます</p>
+                <div id="signupMsg" class="account-msg" aria-live="polite"></div>
+                <label class="account-label" for="signupUserId">スタッフID</label>
+                <input class="account-input" id="signupUserId" type="text" autocomplete="username" placeholder="例: tanaka">
+                <label class="account-label" for="signupUserName">表示名</label>
+                <input class="account-input" id="signupUserName" type="text" autocomplete="name" placeholder="例: 田中">
+                <label class="account-label" for="signupPassword">パスワード（4文字以上）</label>
+                <input class="account-input" id="signupPassword" type="password" autocomplete="new-password">
+                <label class="account-label" for="signupPasswordConfirm">パスワード（確認）</label>
+                <input class="account-input" id="signupPasswordConfirm" type="password" autocomplete="new-password">
+                <button type="button" class="btn btn-signup" id="signupBtn" onclick="submitSignup()" style="margin-bottom:0;">登録する</button>
+            </div>
+
+            <div id="panelAdmin" class="account-panel">
+                <div id="adminLoginBlock">
+                    <p class="account-hint">管理者でログインするとユーザーを追加できます</p>
+                    <div id="adminLoginMsg" class="account-msg" aria-live="polite"></div>
+                    <label class="account-label" for="adminLoginId">管理者スタッフID</label>
+                    <input class="account-input" id="adminLoginId" type="text" autocomplete="username">
+                    <label class="account-label" for="adminLoginPw">パスワード</label>
+                    <input class="account-input" id="adminLoginPw" type="password" autocomplete="current-password">
+                    <button type="button" class="btn btn-admin" id="adminLoginBtn" onclick="submitAdminLogin()" style="margin-bottom:0;">管理者ログイン</button>
+                </div>
+
+                <div id="adminAddBlock" style="display:none;">
+                    <div class="admin-session" id="adminSessionLabel"></div>
+                    <div id="adminAddMsg" class="account-msg" aria-live="polite"></div>
+                    <label class="account-label" for="addUserId">スタッフID</label>
+                    <input class="account-input" id="addUserId" type="text" autocomplete="off">
+                    <label class="account-label" for="addUserName">表示名</label>
+                    <input class="account-input" id="addUserName" type="text" autocomplete="off">
+                    <label class="account-label" for="addPassword">パスワード（4文字以上）</label>
+                    <input class="account-input" id="addPassword" type="password" autocomplete="new-password">
+                    <label class="account-label" for="addRole">役割</label>
+                    <select class="account-select" id="addRole">
+                        <option value="作業員">作業員</option>
+                        <option value="管理者">管理者</option>
+                    </select>
+                    <button type="button" class="btn btn-signup" id="adminAddBtn" onclick="submitAdminAddUser()">ユーザーを追加</button>
+                    <button type="button" class="btn btn-muted" id="adminLogoutBtn" onclick="adminLogout()" style="margin-bottom:0;">管理者ログアウト</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
+      const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+      const PORTAL_ORG_ID = 'default';
+
+      let portalAdminSession = null;
+
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=portal', { scope: './' });
       }
@@ -68,6 +204,204 @@
           window.location.replace('worker.html' + window.location.search);
         }
       }
+
+      function setMsg(elId, text, ok) {
+        const el = document.getElementById(elId);
+        if (!el) return;
+        el.textContent = text || '';
+        el.classList.toggle('is-ok', !!ok);
+        el.classList.toggle('is-error', !ok && !!text);
+      }
+
+      function switchAccountTab(which) {
+        const isSignup = which !== 'admin';
+        document.getElementById('tabSignup').classList.toggle('is-active', isSignup);
+        document.getElementById('tabAdminAdd').classList.toggle('is-active', !isSignup);
+        document.getElementById('panelSignup').classList.toggle('is-active', isSignup);
+        document.getElementById('panelAdmin').classList.toggle('is-active', !isSignup);
+      }
+
+      async function callPortalGAS(action, params) {
+        const body = Object.assign({ action: action, orgId: PORTAL_ORG_ID }, params || {});
+        const res = await fetch(GAS_URL, {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
+        const text = await res.text();
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          throw new Error('サーバーから不正な応答がありました');
+        }
+        if (json.status !== 'success') {
+          throw new Error(json.message || '通信エラー');
+        }
+        return json.data;
+      }
+
+      function saveLoginLocal(userId, password, name, role, spreadsheetId) {
+        try {
+          localStorage.setItem('passionMapUserId', userId || '');
+          localStorage.setItem('passionMapUserPw', password || '');
+          localStorage.setItem('passionMapUserName', name || '');
+          localStorage.setItem('passionMapUserRole', role || '作業員');
+          if (spreadsheetId) localStorage.setItem('spreadsheetId', spreadsheetId);
+          localStorage.setItem('passionMapOrgId', PORTAL_ORG_ID);
+        } catch (e) {}
+      }
+
+      async function submitSignup() {
+        const userId = (document.getElementById('signupUserId').value || '').trim();
+        const userName = (document.getElementById('signupUserName').value || '').trim();
+        const password = document.getElementById('signupPassword').value || '';
+        const confirm = document.getElementById('signupPasswordConfirm').value || '';
+        const btn = document.getElementById('signupBtn');
+
+        if (!userId || !userName || !password) {
+          setMsg('signupMsg', 'スタッフID・表示名・パスワードを入力してください', false);
+          return;
+        }
+        if (password.length < 4) {
+          setMsg('signupMsg', 'パスワードは4文字以上で入力してください', false);
+          return;
+        }
+        if (password !== confirm) {
+          setMsg('signupMsg', 'パスワード（確認）が一致しません', false);
+          return;
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+        setMsg('signupMsg', '', true);
+        try {
+          const data = await callPortalGAS('signup', {
+            userId: userId,
+            userName: userName,
+            password: password
+          });
+          if (!data || !data.success) {
+            setMsg('signupMsg', (data && data.message) || '登録に失敗しました', false);
+            return;
+          }
+          saveLoginLocal(userId, password, data.name || userName, '作業員', data.spreadsheetId);
+          setMsg('signupMsg', '登録完了。作業員用 MAP を開けます', true);
+          document.getElementById('signupPassword').value = '';
+          document.getElementById('signupPasswordConfirm').value = '';
+        } catch (e) {
+          setMsg('signupMsg', e.message || String(e), false);
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
+        }
+      }
+
+      function renderAdminSession() {
+        const loginBlock = document.getElementById('adminLoginBlock');
+        const addBlock = document.getElementById('adminAddBlock');
+        const label = document.getElementById('adminSessionLabel');
+        if (portalAdminSession && portalAdminSession.role === '管理者') {
+          if (loginBlock) loginBlock.style.display = 'none';
+          if (addBlock) addBlock.style.display = 'block';
+          if (label) label.textContent = 'ログイン中: ' + (portalAdminSession.name || portalAdminSession.userId) + '（管理者）';
+        } else {
+          if (loginBlock) loginBlock.style.display = 'block';
+          if (addBlock) addBlock.style.display = 'none';
+        }
+      }
+
+      async function submitAdminLogin() {
+        const userId = (document.getElementById('adminLoginId').value || '').trim();
+        const password = document.getElementById('adminLoginPw').value || '';
+        const btn = document.getElementById('adminLoginBtn');
+        if (!userId || !password) {
+          setMsg('adminLoginMsg', '管理者IDとパスワードを入力してください', false);
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.textContent = '確認中...'; }
+        setMsg('adminLoginMsg', '', true);
+        try {
+          const data = await callPortalGAS('login', { userId: userId, password: password });
+          if (!data || !data.success) {
+            setMsg('adminLoginMsg', (data && data.message) || 'ログインに失敗しました', false);
+            return;
+          }
+          if ((data.role || '作業員') !== '管理者') {
+            setMsg('adminLoginMsg', '管理者権限がありません', false);
+            return;
+          }
+          portalAdminSession = {
+            userId: userId,
+            password: password,
+            name: data.name || userId,
+            role: data.role,
+            spreadsheetId: data.spreadsheetId
+          };
+          setMsg('adminLoginMsg', '', true);
+          setMsg('adminAddMsg', '', true);
+          renderAdminSession();
+        } catch (e) {
+          setMsg('adminLoginMsg', e.message || String(e), false);
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '管理者ログイン'; }
+        }
+      }
+
+      function adminLogout() {
+        portalAdminSession = null;
+        document.getElementById('adminLoginPw').value = '';
+        setMsg('adminLoginMsg', '', true);
+        setMsg('adminAddMsg', '', true);
+        renderAdminSession();
+      }
+
+      async function submitAdminAddUser() {
+        if (!portalAdminSession || portalAdminSession.role !== '管理者') {
+          setMsg('adminAddMsg', '管理者ログインが必要です', false);
+          return;
+        }
+        const userId = (document.getElementById('addUserId').value || '').trim();
+        const userName = (document.getElementById('addUserName').value || '').trim();
+        const password = document.getElementById('addPassword').value || '';
+        const role = document.getElementById('addRole').value || '作業員';
+        const btn = document.getElementById('adminAddBtn');
+
+        if (!userId || !userName || !password) {
+          setMsg('adminAddMsg', 'スタッフID・表示名・パスワードを入力してください', false);
+          return;
+        }
+        if (password.length < 4) {
+          setMsg('adminAddMsg', 'パスワードは4文字以上で入力してください', false);
+          return;
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = '追加中...'; }
+        setMsg('adminAddMsg', '', true);
+        try {
+          const data = await callPortalGAS('adminAddUser', {
+            adminUserId: portalAdminSession.userId,
+            adminPassword: portalAdminSession.password,
+            userId: userId,
+            userName: userName,
+            password: password,
+            role: role,
+            spreadsheetId: portalAdminSession.spreadsheetId
+          });
+          if (!data || !data.success) {
+            setMsg('adminAddMsg', (data && data.message) || '追加に失敗しました', false);
+            return;
+          }
+          setMsg('adminAddMsg', '追加しました: ' + (data.name || userName) + '（' + (data.role || role) + '）', true);
+          document.getElementById('addUserId').value = '';
+          document.getElementById('addUserName').value = '';
+          document.getElementById('addPassword').value = '';
+          document.getElementById('addRole').value = '作業員';
+        } catch (e) {
+          setMsg('adminAddMsg', e.message || String(e), false);
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = 'ユーザーを追加'; }
+        }
+      }
+
+      renderAdminSession();
     </script>
 </body>
 </html>

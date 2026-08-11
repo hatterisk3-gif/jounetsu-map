@@ -805,7 +805,7 @@ let currentActiveMasterType = null;
 window.getMasterTypeInfo = (type) => {
     // pdl* は script スコープの let（window には載らない）。農機のみ window.pdlMachines を使う。
     const listMap = {
-        crop: { title: '🌱 作物マスタ', desc: '作物の種類と標準栽植密度の設定', list: pdlCrops || [] },
+        crop: { title: '🌱 作物マスタ', desc: '作物名・タグ略称・標準栽植密度の設定', list: pdlCrops || [] },
         sign: { title: '🪧 看板機能マスタ', desc: '看板の機能分類・用途の設定', list: pdlSignFunctions || [] },
         location: { title: '🏢 拠点マスタ', desc: '拠点名・都道府県・産地データの設定', list: (pdlLocationDetails && pdlLocationDetails.length) ? pdlLocationDetails : (pdlLocations || []) },
         workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: pdlWorkCategories || [] },
@@ -934,7 +934,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         if (type === 'crop') {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">作物名</label>
-                <input type="text" id="add_crop_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: トマト">
+                <input type="text" id="add_crop_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: キャベツ">
+                <label style="font-size:12px; font-weight:bold; color:#555;">タグ略称</label>
+                <input type="text" id="add_crop_tag_abbreviation" class="form-input" maxlength="10" style="margin-bottom:0; padding:8px;" placeholder="例: キャ">
+                <div style="font-size:11px; color:#777;">栽培タグに使用します（例: 徳阿-キャ本1）。空欄時は作物名を使用します。</div>
                 <input type="hidden" id="add_crop_density" value="0">
                 <button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
@@ -999,7 +1002,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="text" id="add_location_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 本社農場">
                 <label style="font-size:12px; font-weight:bold; color:#555;">タグ略称</label>
                 <input type="text" id="add_location_tag_abbreviation" class="form-input" maxlength="10" style="margin-bottom:0; padding:8px;" placeholder="例: 徳阿">
-                <div style="font-size:11px; color:#777;">栽培タグに使用します（例: 徳阿-キャベツ1）。空欄時は拠点名を使用します。</div>
+                <div style="font-size:11px; color:#777;">栽培タグに使用します（例: 徳阿-キャ本1）。空欄時は拠点名を使用します。</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">都道府県 / 市区町村</label>
                 <div style="display:flex; gap:5px;">
                   <select id="add_location_pref" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml('')}</select>
@@ -1291,7 +1294,12 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.id || v.name || v);
             let subInfo = "";
 
-            if (type === 'crop') subInfo = `<span style="color:#666;">(${v.density || 0}本/10a)</span>`;
+            if (type === 'crop') {
+                const tagLabel = v.tagAbbreviation
+                    ? `<span style="font-size:11px; color:#c2185b; margin-left:6px;">タグ:${v.tagAbbreviation}</span>`
+                    : '';
+                subInfo = `<span style="color:#666;">(${v.density || 0}本/10a)</span>${tagLabel}`;
+            }
             if (type === 'cropCultSetting') subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">穴数: ${v.sowingHoles != null && v.sowingHoles !== '' ? v.sowingHoles : '-'}</span>`;
             if (type === 'nurseryLocation') {
                 const bits = [];
@@ -1484,7 +1492,7 @@ window.openEditLocationMaster = (encodedStr) => {
             <input type="text" id="edit_location_name" class="form-input" value="${safeName}">
             <label class="form-label">タグ略称</label>
             <input type="text" id="edit_location_tag_abbreviation" class="form-input" maxlength="10" value="${safeTagAbbreviation}" placeholder="例: 徳阿">
-            <div style="font-size:11px; color:#777; margin-top:-8px; margin-bottom:10px;">栽培タグに使用します（例: 徳阿-キャベツ1）。空欄時は拠点名を使用します。</div>
+            <div style="font-size:11px; color:#777; margin-top:-8px; margin-bottom:10px;">栽培タグに使用します（例: 徳阿-キャ本1）。空欄時は拠点名を使用します。</div>
             <label class="form-label">県</label>
             <select id="edit_location_pref" class="form-input" onchange="onLocationPrefChange(this)">${buildPrefectureOptionsHtml(v.prefecture || '')}</select>
             <label class="form-label">市・町・村</label>
@@ -1579,12 +1587,16 @@ window.openEditCropMaster = (encoded) => {
     const v = JSON.parse(decodeURIComponent(encoded || '%7B%7D'));
     const name = String(v.name || '').replace(/"/g, '&quot;');
     const density = v.density != null ? v.density : 0;
+    const safeTagAbbreviation = String(v.tagAbbreviation || '').replace(/"/g, '&quot;');
     const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; color:#2e7d32; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px;">✏️ 作物マスタの編集</h4>
             <input type="hidden" id="edit_crop_original_name" value="${name}">
             <label class="form-label">作物名</label>
             <input type="text" id="edit_crop_name" class="form-input" value="${name}">
+            <label class="form-label">タグ略称</label>
+            <input type="text" id="edit_crop_tag_abbreviation" class="form-input" maxlength="10" value="${safeTagAbbreviation}" placeholder="例: キャ">
+            <div style="font-size:11px; color:#777; margin-top:-8px; margin-bottom:10px;">栽培タグに使用します（例: 徳阿-キャ本1）。空欄時は作物名を使用します。本作→本／試作→試 が続きます。</div>
             <label class="form-label">標準栽植密度（本/10a）</label>
             <input type="number" id="edit_crop_density" class="form-input" value="${density}">
             <div style="font-size:11px; color:#666; margin-top:6px;">※名前を変更すると、作業マスタ側の同じ作物名もまとめて更新されます。</div>
@@ -3444,7 +3456,7 @@ window.execMaster = async (type, act, val) => {
 
     let value = val;
     if (act === 'add') {
-        if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0) }; }
+        if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0), tagAbbreviation: (document.getElementById('add_crop_tag_abbreviation')?.value || '').trim() }; }
         else if (type === 'cropCultSetting') {
             const cropName = (document.getElementById('add_ccs_crop')?.value || '').trim();
             if (!cropName) { customAlert('作物名を選択してください'); return; }
@@ -3655,7 +3667,8 @@ window.execMaster = async (type, act, val) => {
                 originalName: originalName,
                 newData: {
                     name: newName,
-                    density: parseInt(document.getElementById('edit_crop_density').value || 0, 10) || 0
+                    density: parseInt(document.getElementById('edit_crop_density').value || 0, 10) || 0,
+                    tagAbbreviation: (document.getElementById('edit_crop_tag_abbreviation')?.value || '').trim()
                 }
             };
         } else if (type === 'container') {
