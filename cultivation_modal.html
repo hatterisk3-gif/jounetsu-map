@@ -443,12 +443,18 @@
                       <span id="cpHarvestChartCrop" style="font-weight:normal; color:#666;"></span>
                       <span id="cpHarvestChartTotal" style="margin-left:6px; color:#bf360c;"></span>
                     </div>
-                    <div id="cpHarvestChartLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555;"></div>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                      <div id="cpHarvestChartLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555;"></div>
+                      <button type="button" id="cpHarvestTargetApplyBtn" onclick="applyCpHarvestTargetsToAreas()" style="font-size:11px; padding:3px 8px; border:1px solid #FFB74D; background:#FFF3E0; color:#E65100; border-radius:4px; cursor:pointer; font-weight:bold; white-space:nowrap;">目標に合わせて面積調整</button>
+                    </div>
                   </div>
                   <div id="cpHarvestChartBars" style="overflow-x:auto; overflow-y:hidden; height:72px; border:1px solid #ffe082; border-radius:4px; background:#fff; padding:4px 2px 0;">
                     <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">収穫を塗るとここに表示されます</div>
                   </div>
+                  <div style="font-size:10px; color:#888; margin-top:4px; margin-bottom:2px;">目標収穫（収穫がある半旬のみ入力・空欄は制約なし）</div>
+                  <div id="cpHarvestTargetInputs" style="overflow-x:auto; overflow-y:hidden; height:26px; border:1px solid #ffe082; border-radius:4px; background:#fffaf0; padding:2px;"></div>
                   <div id="cpHarvestChartAxis" style="overflow-x:auto; overflow-y:hidden; height:16px; margin-top:2px;"></div>
+                  <div id="cpHarvestTargetMsg" style="font-size:11px; color:#666; margin-top:4px; min-height:14px;"></div>
                 </div>
               </div>
               <div id="cpBottomPanelWork" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabWork" hidden>

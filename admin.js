@@ -6585,6 +6585,7 @@ window.openMyPage = function() {
     const staffId = localStorage.getItem('passionMapUserId') || '';
     const userName = localStorage.getItem('passionMapUserName') || currentUser || '';
     const userRole = localStorage.getItem('passionMapUserRole') || '管理者';
+    const isAdmin = userRole === '管理者';
 
     let html = `
         <h3 style="color:#d32f2f; margin-top:0;">👤 マイページ</h3>
@@ -6614,10 +6615,124 @@ window.openMyPage = function() {
         <input type="password" id="myPwForIdChange" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="認証のため入力">
         <button id="changeIdBtn" onclick="doChangeId()" style="width:100%; background:#2196F3; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">IDを変更する</button>
         <div id="changeIdResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
+    `;
+
+    if (isAdmin) {
+        html += `
+        <h4 style="color:#555; margin-bottom:8px; margin-top:20px;">👥 ユーザー権限の変更</h4>
+        <p style="font-size:12px; color:#777; margin:0 0 8px 0; line-height:1.4;">管理者はユーザーの権限（管理者／作業員）を変更できます。最後の管理者は作業員に変更できません。</p>
+        <div id="userRoleManageMsg" style="min-height:18px; margin-bottom:8px; font-size:13px; font-weight:bold;"></div>
+        <div id="userRoleManageList" style="background:#fafafa; border:1px solid #e0e0e0; border-radius:8px; padding:8px; max-height:240px; overflow-y:auto; margin-bottom:8px;">
+            <div style="text-align:center; color:#999; font-size:13px; padding:12px;">読み込み中...</div>
+        </div>
+        <button type="button" onclick="loadUserRoleManageList()" style="width:100%; background:#7B1FA2; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; margin-bottom:4px;">🔄 ユーザー一覧を再読込</button>
+        `;
+    }
+
+    html += `
         <button onclick="document.getElementById('modal').style.display='none'" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">閉じる</button>
     `;
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('modal').style.display = 'flex';
+    if (isAdmin) loadUserRoleManageList();
+};
+
+window.setUserRoleManageMsg = function(text, ok) {
+    const el = document.getElementById('userRoleManageMsg');
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = ok ? '#2e7d32' : '#c62828';
+};
+
+window.loadUserRoleManageList = async function() {
+    const listEl = document.getElementById('userRoleManageList');
+    if (!listEl) return;
+    const adminUserId = localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '';
+    const adminPassword = localStorage.getItem('passionMapUserPw') || localStorage.getItem('pMapAdminPw') || '';
+    if (!adminUserId || !adminPassword) {
+        listEl.innerHTML = '<div style="text-align:center; color:#c62828; font-size:13px; padding:12px;">ログイン情報が不足しています。再ログインしてください。</div>';
+        return;
+    }
+    listEl.innerHTML = '<div style="text-align:center; color:#999; font-size:13px; padding:12px;">読み込み中...</div>';
+    window.setUserRoleManageMsg('', true);
+    try {
+        const res = await callGAS('listUsersForAdmin', {
+            adminUserId: adminUserId,
+            adminPassword: adminPassword
+        });
+        if (!res || res.success === false) {
+            listEl.innerHTML = `<div style="text-align:center; color:#c62828; font-size:13px; padding:12px;">${(res && res.message) || '取得に失敗しました'}</div>`;
+            return;
+        }
+        const users = Array.isArray(res.users) ? res.users : [];
+        if (!users.length) {
+            listEl.innerHTML = '<div style="text-align:center; color:#999; font-size:13px; padding:12px;">ユーザーがありません</div>';
+            return;
+        }
+        const esc = (s) => String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        listEl.innerHTML = users.map((u, idx) => {
+            const role = (u.role === '管理者') ? '管理者' : '作業員';
+            const uid = esc(u.userId);
+            const uname = esc(u.userName || '');
+            return `
+              <div style="display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee; flex-wrap:wrap;" data-user-id="${uid}">
+                <div style="flex:1; min-width:120px;">
+                  <div style="font-weight:bold; font-size:13px; color:#333;">${uname || uid}</div>
+                  <div style="font-size:11px; color:#888;">ID: ${uid}</div>
+                </div>
+                <select class="user-role-select" data-idx="${idx}" style="padding:6px 8px; font-size:13px; border:1px solid #ccc; border-radius:4px;">
+                  <option value="作業員" ${role === '作業員' ? 'selected' : ''}>作業員</option>
+                  <option value="管理者" ${role === '管理者' ? 'selected' : ''}>管理者</option>
+                </select>
+                <button type="button" class="user-role-change-btn" data-idx="${idx}" style="padding:6px 10px; background:#7B1FA2; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">変更</button>
+              </div>
+            `;
+        }).join('');
+        window._userRoleManageUsers = users;
+        listEl.querySelectorAll('.user-role-change-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const idx = parseInt(this.getAttribute('data-idx'), 10);
+                const user = (window._userRoleManageUsers || [])[idx];
+                if (!user) return;
+                const sel = listEl.querySelector('.user-role-select[data-idx="' + idx + '"]');
+                changeUserRoleFromAdmin(user.userId, sel ? sel.value : user.role);
+            });
+        });
+    } catch (e) {
+        listEl.innerHTML = `<div style="text-align:center; color:#c62828; font-size:13px; padding:12px;">${String(e.message || e)}</div>`;
+    }
+};
+
+window.changeUserRoleFromAdmin = async function(targetUserId, selectedRole) {
+    const newRole = selectedRole || '作業員';
+    const adminUserId = localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '';
+    const adminPassword = localStorage.getItem('passionMapUserPw') || localStorage.getItem('pMapAdminPw') || '';
+    if (!adminUserId || !adminPassword) {
+        window.setUserRoleManageMsg('ログイン情報が不足しています', false);
+        return;
+    }
+    if (!confirm(`「${targetUserId}」の権限を「${newRole}」に変更しますか？`)) return;
+    window.setUserRoleManageMsg('変更中...', true);
+    try {
+        const res = await callGAS('updateUserRole', {
+            adminUserId: adminUserId,
+            adminPassword: adminPassword,
+            targetUserId: targetUserId,
+            newRole: newRole
+        });
+        if (!res || res.success === false) {
+            window.setUserRoleManageMsg((res && res.message) || '変更に失敗しました', false);
+            return;
+        }
+        window.setUserRoleManageMsg((res.message || '変更しました') + `（${res.userName || targetUserId}: ${res.role}）`, true);
+        if (String(targetUserId) === String(adminUserId) && res.role) {
+            localStorage.setItem('passionMapUserRole', res.role);
+        }
+        loadUserRoleManageList();
+    } catch (e) {
+        window.setUserRoleManageMsg(String(e.message || e), false);
+    }
 };
 
 

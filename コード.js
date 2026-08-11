@@ -17,6 +17,8 @@ function doPost(e) {
     if (action === "login") result = checkLogin(params.orgId, params.userId, params.password);
     else if (action === "signup") result = signupUser(params);
     else if (action === "adminAddUser") result = adminAddUser(params);
+    else if (action === "listUsersForAdmin") result = listUsersForAdmin(params);
+    else if (action === "updateUserRole") result = updateUserRole(params);
     else if (action === "getInitData") result = getInitData(); 
     else if (action === "getDeliveryDestinations") result = getDeliveryDestinations();
     else if (action === "saveDeliveryDestination") result = saveDeliveryDestination(params);
@@ -584,6 +586,124 @@ function adminAddUser(params) {
     role: created.role,
     userId: created.userId,
     spreadsheetId: spreadsheetId
+  };
+}
+
+/** 管理者認証（名簿照合）。成功時は管理者情報を返す */
+function verifyMeiboAdmin_(adminUserId, adminPassword) {
+  const adminId = String(adminUserId || '').trim();
+  const adminPw = String(adminPassword || '');
+  if (!adminId || !adminPw) {
+    return { success: false, message: "管理者のログイン情報が必要です" };
+  }
+  if (!TENANT_SS) return { success: false, message: "データベースに接続できません" };
+  const sheet = TENANT_SS.getSheetByName('名簿');
+  if (!sheet) return { success: false, message: "名簿シートが見つかりません" };
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === adminId && String(data[i][1]) === adminPw) {
+      const role = String(data[i][3] || '作業員').trim();
+      if (role !== '管理者') {
+        return { success: false, message: "管理者権限がありません" };
+      }
+      return {
+        success: true,
+        row: i + 1,
+        userId: adminId,
+        userName: String(data[i][2] || adminId),
+        role: role,
+        sheet: sheet,
+        data: data
+      };
+    }
+  }
+  return { success: false, message: "管理者のIDまたはパスワードが正しくありません" };
+}
+
+/** 管理者向け: ユーザー一覧（権限変更用） */
+function listUsersForAdmin(params) {
+  const p = params || {};
+  try {
+    if (!TENANT_SS) openTenantByOrgId_(p.orgId || 'default');
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+
+  const admin = verifyMeiboAdmin_(p.adminUserId || p.userId, p.adminPassword || p.password);
+  if (!admin.success) return admin;
+
+  const users = [];
+  for (let i = 1; i < admin.data.length; i++) {
+    const uid = String(admin.data[i][0] || '').trim();
+    if (!uid) continue;
+    users.push({
+      userId: uid,
+      userName: String(admin.data[i][2] || '').trim(),
+      role: String(admin.data[i][3] || '作業員').trim() || '作業員'
+    });
+  }
+  users.sort(function(a, b) {
+    const ra = a.role === '管理者' ? 0 : 1;
+    const rb = b.role === '管理者' ? 0 : 1;
+    if (ra !== rb) return ra - rb;
+    return String(a.userName || a.userId).localeCompare(String(b.userName || b.userId), 'ja');
+  });
+  return { success: true, users: users };
+}
+
+/** 管理者向け: ユーザー権限変更 */
+function updateUserRole(params) {
+  const p = params || {};
+  try {
+    if (!TENANT_SS) openTenantByOrgId_(p.orgId || 'default');
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+
+  const admin = verifyMeiboAdmin_(p.adminUserId || p.userId, p.adminPassword || p.password);
+  if (!admin.success) return admin;
+
+  const targetUserId = String(p.targetUserId || '').trim();
+  let newRole = String(p.newRole || '').trim();
+  if (!targetUserId) return { success: false, message: "対象ユーザーが指定されていません" };
+  if (newRole !== '管理者' && newRole !== '作業員') {
+    return { success: false, message: "権限は「管理者」または「作業員」を指定してください" };
+  }
+
+  let targetRow = -1;
+  let targetName = '';
+  let currentRole = '';
+  let adminCount = 0;
+  for (let i = 1; i < admin.data.length; i++) {
+    const uid = String(admin.data[i][0] || '').trim();
+    const role = String(admin.data[i][3] || '作業員').trim() || '作業員';
+    if (role === '管理者') adminCount++;
+    if (uid === targetUserId) {
+      targetRow = i + 1;
+      targetName = String(admin.data[i][2] || uid);
+      currentRole = role;
+    }
+  }
+  if (targetRow < 0) return { success: false, message: "対象ユーザーが見つかりません" };
+  if (currentRole === newRole) {
+    return { success: true, message: "権限は変更されていません", userId: targetUserId, userName: targetName, role: newRole };
+  }
+  if (currentRole === '管理者' && newRole === '作業員' && adminCount <= 1) {
+    return { success: false, message: "最後の管理者は作業員に変更できません" };
+  }
+
+  admin.sheet.getRange(targetRow, 4).setValue(newRole);
+  try {
+    writeLog(admin.userName, "権限変更", targetUserId, targetName + ": " + currentRole + " → " + newRole);
+  } catch (e) {}
+
+  return {
+    success: true,
+    message: "権限を変更しました",
+    userId: targetUserId,
+    userName: targetName,
+    role: newRole,
+    previousRole: currentRole
   };
 }
 

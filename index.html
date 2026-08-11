@@ -11,7 +11,7 @@
     
     <style>
         body { font-family: sans-serif; background-color: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .container { position: relative; text-align: center; background: #222; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 85%; max-width: 400px; overflow-y: auto; max-height: 90vh; }
+        .container { position: relative; text-align: center; background: #222; padding: 40px; padding-top: 52px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 85%; max-width: 400px; overflow: visible; max-height: 90vh; }
         h1 { color: #4CAF50; margin-bottom: 20px; font-size: 24px; }
         .btn { display: block; width: 100%; padding: 15px; margin-bottom: 10px; border-radius: 8px; font-size: 16px; font-weight: bold; text-decoration: none; color: white; box-sizing: border-box; transition: opacity 0.2s; border: none; cursor: pointer; }
         .btn:active { opacity: 0.7; }
@@ -24,81 +24,83 @@
         .btn-signup { background-color: #2e7d32; }
         .btn-muted { background-color: #555; }
         
-        /* 🔄 更新ボタン */
+        .top-right-actions {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 5;
+        }
         .reload-btn {
-            position: absolute; top: 15px; right: 15px; background: #444; color: white; text-decoration: none;
+            flex-shrink: 0;
+            background: #444; color: white; text-decoration: none;
             width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
             font-size: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.5); transition: background 0.2s;
         }
         .reload-btn:active { background: #666; }
-        
-        /* 🌟LINE連携ブロックのデザインを復活 */
-        .share-box { background: #333; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #444; }
-        .share-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; background: #222; color: #fff; }
 
-        .account-box {
-            margin-top: 18px;
-            padding: 10px 12px;
+        .account-open-btn {
+            border: 1px solid #555;
+            background: #333;
+            color: #a5d6a7;
+            cursor: pointer;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 16px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.35);
+            white-space: nowrap;
+        }
+        .account-open-btn:hover { background: #3a3a3a; }
+
+        .account-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            box-sizing: border-box;
+            background: rgba(0,0,0,0.65);
+        }
+        .account-modal.is-open { display: flex; }
+        .account-modal-card {
+            width: 100%;
+            max-width: 360px;
+            max-height: min(90vh, 640px);
+            overflow-y: auto;
             background: #2a2a2a;
             border: 1px solid #444;
-            border-radius: 8px;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 12px 36px rgba(0,0,0,0.55);
             text-align: left;
+            box-sizing: border-box;
         }
-        .account-toggle {
-            width: 100%;
+        .account-modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 8px;
-            border: none;
-            background: transparent;
-            color: #a5d6a7;
-            cursor: pointer;
-            padding: 8px 4px;
-            text-align: left;
-            font-size: 15px;
-            font-weight: bold;
-        }
-        .account-toggle-meta {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            color: #a5d6a7;
-            font-size: 11px;
-            font-weight: bold;
-            white-space: nowrap;
-        }
-        .account-body { display: none; margin-top: 8px; }
-        .account-body.is-open { display: block; }
-        .account-box h2 {
-            margin: 0 0 12px;
-            font-size: 15px;
-            color: #a5d6a7;
-            text-align: center;
-        }
-        .account-tabs {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
             margin-bottom: 12px;
         }
-        .account-tab {
-            padding: 8px 6px;
-            border-radius: 6px;
-            border: 1px solid #555;
-            background: #333;
-            color: #ccc;
-            font-size: 12px;
-            font-weight: bold;
+        .account-modal-header h2 {
+            margin: 0;
+            font-size: 16px;
+            color: #a5d6a7;
+        }
+        .account-modal-close {
+            border: none;
+            background: transparent;
+            color: #aaa;
+            font-size: 22px;
+            line-height: 1;
             cursor: pointer;
+            padding: 0 4px;
         }
-        .account-tab.is-active {
-            background: #1b5e20;
-            border-color: #4CAF50;
-            color: #fff;
-        }
-        .account-panel { display: none; }
-        .account-panel.is-active { display: block; }
         .account-label {
             display: block;
             font-size: 11px;
@@ -106,7 +108,7 @@
             margin: 0 0 4px;
             font-weight: bold;
         }
-        .account-input, .account-select {
+        .account-input {
             width: 100%;
             padding: 10px;
             margin-bottom: 10px;
@@ -133,19 +135,19 @@
             line-height: 1.4;
             text-align: center;
         }
-        .admin-session {
-            font-size: 12px;
-            color: #c8e6c9;
-            margin-bottom: 10px;
-            text-align: center;
-        }
+
+        .share-box { background: #333; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #444; }
+        .share-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; background: #222; color: #fff; }
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="top-right-actions">
+            <button type="button" class="account-open-btn" id="btnAccountToggle" onclick="openAccountModal()">👤 アカウント登録</button>
+            <a href="javascript:location.reload()" class="reload-btn" title="画面を更新">🔄</a>
+        </div>
+
         <h1>情熱MAP 総合案内所 (v1.57)</h1>
-        
-        <a href="javascript:location.reload()" class="reload-btn" title="画面を更新">🔄</a>
         
         <a href="worker.html" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
         <a href="schedule" class="btn btn-schedule">📅 予定 MAP を開く</a>
@@ -153,65 +155,26 @@
         <a href="admin.html" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
         <a href="battle-portal.html" class="btn" style="background-color:#E65100;">⚔️ バトルポータル</a>
         <a href="javascript:location.replace('index2.html')" class="btn btn-portal2" style="margin-bottom:0; margin-top:8px;">🚪 プロポータルを開く</a>
+    </div>
 
-        <div class="account-box">
-            <button type="button" class="account-toggle" id="btnAccountToggle" onclick="toggleAccountBox()" aria-expanded="false" aria-controls="accountBody">
-                <span>👤 アカウント登録</span>
-                <span class="account-toggle-meta">
-                    <span id="accountToggleLabel">開く</span>
-                    <span id="accountToggleChevron">▼</span>
-                </span>
-            </button>
-            <div id="accountBody" class="account-body">
-            <div class="account-tabs" role="tablist">
-                <button type="button" class="account-tab is-active" id="tabSignup" onclick="switchAccountTab('signup')">新規登録</button>
-                <button type="button" class="account-tab" id="tabAdminAdd" onclick="switchAccountTab('admin')">管理者：ユーザー追加</button>
+    <div id="accountModal" class="account-modal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle" onclick="onAccountModalBackdrop(event)">
+        <div class="account-modal-card" onclick="event.stopPropagation()">
+            <div class="account-modal-header">
+                <h2 id="accountModalTitle">👤 アカウント登録</h2>
+                <button type="button" class="account-modal-close" onclick="closeAccountModal()" aria-label="閉じる">×</button>
             </div>
-
-            <div id="panelSignup" class="account-panel is-active">
-                <p class="account-hint">誰でも作業員アカウントを作成できます</p>
-                <div id="signupMsg" class="account-msg" aria-live="polite"></div>
-                <label class="account-label" for="signupUserId">スタッフID</label>
-                <input class="account-input" id="signupUserId" type="text" autocomplete="username" placeholder="例: tanaka">
-                <label class="account-label" for="signupUserName">表示名</label>
-                <input class="account-input" id="signupUserName" type="text" autocomplete="name" placeholder="例: 田中">
-                <label class="account-label" for="signupPassword">パスワード（4文字以上）</label>
-                <input class="account-input" id="signupPassword" type="password" autocomplete="new-password">
-                <label class="account-label" for="signupPasswordConfirm">パスワード（確認）</label>
-                <input class="account-input" id="signupPasswordConfirm" type="password" autocomplete="new-password">
-                <button type="button" class="btn btn-signup" id="signupBtn" onclick="submitSignup()" style="margin-bottom:0;">登録する</button>
-            </div>
-
-            <div id="panelAdmin" class="account-panel">
-                <div id="adminLoginBlock">
-                    <p class="account-hint">管理者でログインするとユーザーを追加できます</p>
-                    <div id="adminLoginMsg" class="account-msg" aria-live="polite"></div>
-                    <label class="account-label" for="adminLoginId">管理者スタッフID</label>
-                    <input class="account-input" id="adminLoginId" type="text" autocomplete="username">
-                    <label class="account-label" for="adminLoginPw">パスワード</label>
-                    <input class="account-input" id="adminLoginPw" type="password" autocomplete="current-password">
-                    <button type="button" class="btn btn-admin" id="adminLoginBtn" onclick="submitAdminLogin()" style="margin-bottom:0;">管理者ログイン</button>
-                </div>
-
-                <div id="adminAddBlock" style="display:none;">
-                    <div class="admin-session" id="adminSessionLabel"></div>
-                    <div id="adminAddMsg" class="account-msg" aria-live="polite"></div>
-                    <label class="account-label" for="addUserId">スタッフID</label>
-                    <input class="account-input" id="addUserId" type="text" autocomplete="off">
-                    <label class="account-label" for="addUserName">表示名</label>
-                    <input class="account-input" id="addUserName" type="text" autocomplete="off">
-                    <label class="account-label" for="addPassword">パスワード（4文字以上）</label>
-                    <input class="account-input" id="addPassword" type="password" autocomplete="new-password">
-                    <label class="account-label" for="addRole">役割</label>
-                    <select class="account-select" id="addRole">
-                        <option value="作業員">作業員</option>
-                        <option value="管理者">管理者</option>
-                    </select>
-                    <button type="button" class="btn btn-signup" id="adminAddBtn" onclick="submitAdminAddUser()">ユーザーを追加</button>
-                    <button type="button" class="btn btn-muted" id="adminLogoutBtn" onclick="adminLogout()" style="margin-bottom:0;">管理者ログアウト</button>
-                </div>
-            </div>
-            </div>
+            <p class="account-hint">作業員アカウントを作成できます。<br>権限の変更は管理者用MAPのマイページから行えます。</p>
+            <div id="signupMsg" class="account-msg" aria-live="polite"></div>
+            <label class="account-label" for="signupUserId">スタッフID</label>
+            <input class="account-input" id="signupUserId" type="text" autocomplete="username" placeholder="例: tanaka">
+            <label class="account-label" for="signupUserName">表示名</label>
+            <input class="account-input" id="signupUserName" type="text" autocomplete="name" placeholder="例: 田中">
+            <label class="account-label" for="signupPassword">パスワード（4文字以上）</label>
+            <input class="account-input" id="signupPassword" type="password" autocomplete="new-password">
+            <label class="account-label" for="signupPasswordConfirm">パスワード（確認）</label>
+            <input class="account-input" id="signupPasswordConfirm" type="password" autocomplete="new-password">
+            <button type="button" class="btn btn-signup" id="signupBtn" onclick="submitSignup()" style="margin-bottom:8px;">登録する</button>
+            <button type="button" class="btn btn-muted" onclick="closeAccountModal()" style="margin-bottom:0;">閉じる</button>
         </div>
     </div>
 
@@ -219,18 +182,14 @@
       const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
       const PORTAL_ORG_ID = 'default';
 
-      let portalAdminSession = null;
-
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=portal', { scope: './' });
       }
 
-      // 🌟URLのパラメータ（共有機能で送られてきたテキスト）を取得
       const urlParams = new URLSearchParams(window.location.search);
       const sharedText = urlParams.get('text') || urlParams.get('url');
 
       if (sharedText) {
-        // モーダルは出さず、裏で自動的に適切なMAPへ遷移させる
         const role = localStorage.getItem('passionMapUserRole');
         if (role === '管理者') {
           window.location.replace('admin.html' + window.location.search);
@@ -239,20 +198,26 @@
         }
       }
 
-      function toggleAccountBox(forceOpen) {
-        const body = document.getElementById('accountBody');
-        const btn = document.getElementById('btnAccountToggle');
-        const label = document.getElementById('accountToggleLabel');
-        const chevron = document.getElementById('accountToggleChevron');
-        if (!body || !btn) return;
-        const open = typeof forceOpen === 'boolean'
-          ? forceOpen
-          : !body.classList.contains('is-open');
-        body.classList.toggle('is-open', open);
-        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        if (label) label.textContent = open ? '閉じる' : '開く';
-        if (chevron) chevron.textContent = open ? '▲' : '▼';
+      function openAccountModal() {
+        const modal = document.getElementById('accountModal');
+        if (!modal) return;
+        modal.classList.add('is-open');
+        const first = document.getElementById('signupUserId');
+        if (first) setTimeout(function() { first.focus(); }, 50);
       }
+
+      function closeAccountModal() {
+        const modal = document.getElementById('accountModal');
+        if (modal) modal.classList.remove('is-open');
+      }
+
+      function onAccountModalBackdrop(e) {
+        if (e.target === e.currentTarget) closeAccountModal();
+      }
+
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeAccountModal();
+      });
 
       function setMsg(elId, text, ok) {
         const el = document.getElementById(elId);
@@ -260,14 +225,6 @@
         el.textContent = text || '';
         el.classList.toggle('is-ok', !!ok);
         el.classList.toggle('is-error', !ok && !!text);
-      }
-
-      function switchAccountTab(which) {
-        const isSignup = which !== 'admin';
-        document.getElementById('tabSignup').classList.toggle('is-active', isSignup);
-        document.getElementById('tabAdminAdd').classList.toggle('is-active', !isSignup);
-        document.getElementById('panelSignup').classList.toggle('is-active', isSignup);
-        document.getElementById('panelAdmin').classList.toggle('is-active', !isSignup);
       }
 
       async function callPortalGAS(action, params) {
@@ -342,115 +299,6 @@
           if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
         }
       }
-
-      function renderAdminSession() {
-        const loginBlock = document.getElementById('adminLoginBlock');
-        const addBlock = document.getElementById('adminAddBlock');
-        const label = document.getElementById('adminSessionLabel');
-        if (portalAdminSession && portalAdminSession.role === '管理者') {
-          if (loginBlock) loginBlock.style.display = 'none';
-          if (addBlock) addBlock.style.display = 'block';
-          if (label) label.textContent = 'ログイン中: ' + (portalAdminSession.name || portalAdminSession.userId) + '（管理者）';
-        } else {
-          if (loginBlock) loginBlock.style.display = 'block';
-          if (addBlock) addBlock.style.display = 'none';
-        }
-      }
-
-      async function submitAdminLogin() {
-        const userId = (document.getElementById('adminLoginId').value || '').trim();
-        const password = document.getElementById('adminLoginPw').value || '';
-        const btn = document.getElementById('adminLoginBtn');
-        if (!userId || !password) {
-          setMsg('adminLoginMsg', '管理者IDとパスワードを入力してください', false);
-          return;
-        }
-        if (btn) { btn.disabled = true; btn.textContent = '確認中...'; }
-        setMsg('adminLoginMsg', '', true);
-        try {
-          const data = await callPortalGAS('login', { userId: userId, password: password });
-          if (!data || !data.success) {
-            setMsg('adminLoginMsg', (data && data.message) || 'ログインに失敗しました', false);
-            return;
-          }
-          if ((data.role || '作業員') !== '管理者') {
-            setMsg('adminLoginMsg', '管理者権限がありません', false);
-            return;
-          }
-          portalAdminSession = {
-            userId: userId,
-            password: password,
-            name: data.name || userId,
-            role: data.role,
-            spreadsheetId: data.spreadsheetId
-          };
-          setMsg('adminLoginMsg', '', true);
-          setMsg('adminAddMsg', '', true);
-          renderAdminSession();
-        } catch (e) {
-          setMsg('adminLoginMsg', e.message || String(e), false);
-        } finally {
-          if (btn) { btn.disabled = false; btn.textContent = '管理者ログイン'; }
-        }
-      }
-
-      function adminLogout() {
-        portalAdminSession = null;
-        document.getElementById('adminLoginPw').value = '';
-        setMsg('adminLoginMsg', '', true);
-        setMsg('adminAddMsg', '', true);
-        renderAdminSession();
-      }
-
-      async function submitAdminAddUser() {
-        if (!portalAdminSession || portalAdminSession.role !== '管理者') {
-          setMsg('adminAddMsg', '管理者ログインが必要です', false);
-          return;
-        }
-        const userId = (document.getElementById('addUserId').value || '').trim();
-        const userName = (document.getElementById('addUserName').value || '').trim();
-        const password = document.getElementById('addPassword').value || '';
-        const role = document.getElementById('addRole').value || '作業員';
-        const btn = document.getElementById('adminAddBtn');
-
-        if (!userId || !userName || !password) {
-          setMsg('adminAddMsg', 'スタッフID・表示名・パスワードを入力してください', false);
-          return;
-        }
-        if (password.length < 4) {
-          setMsg('adminAddMsg', 'パスワードは4文字以上で入力してください', false);
-          return;
-        }
-
-        if (btn) { btn.disabled = true; btn.textContent = '追加中...'; }
-        setMsg('adminAddMsg', '', true);
-        try {
-          const data = await callPortalGAS('adminAddUser', {
-            adminUserId: portalAdminSession.userId,
-            adminPassword: portalAdminSession.password,
-            userId: userId,
-            userName: userName,
-            password: password,
-            role: role,
-            spreadsheetId: portalAdminSession.spreadsheetId
-          });
-          if (!data || !data.success) {
-            setMsg('adminAddMsg', (data && data.message) || '追加に失敗しました', false);
-            return;
-          }
-          setMsg('adminAddMsg', '追加しました: ' + (data.name || userName) + '（' + (data.role || role) + '）', true);
-          document.getElementById('addUserId').value = '';
-          document.getElementById('addUserName').value = '';
-          document.getElementById('addPassword').value = '';
-          document.getElementById('addRole').value = '作業員';
-        } catch (e) {
-          setMsg('adminAddMsg', e.message || String(e), false);
-        } finally {
-          if (btn) { btn.disabled = false; btn.textContent = 'ユーザーを追加'; }
-        }
-      }
-
-      renderAdminSession();
     </script>
 </body>
 </html>

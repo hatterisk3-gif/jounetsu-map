@@ -1903,13 +1903,15 @@ function buildCpNumericSelectOptionsHtml(options, selectedVal) {
 function buildCpAreaSelectHtml(plan, disabled) {
     const opts = getCpAreaSelectOptions(plan.areaA);
     const bg = disabled ? '#f0f0f0' : '#fff';
-    return `<select id="area_${plan.id}" title="定植面積(a)" onchange="onCpPlanQtySelectChange('${plan.id}', 'area', this)" ${disabled ? 'disabled' : ''} style="flex:1; min-width:40px; width:0; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; background:${bg};">${buildCpNumericSelectOptionsHtml(opts, plan.areaA)}</select>`;
+    const hide = disabled ? 'display:none;' : '';
+    return `<select id="area_${plan.id}" title="定植面積(a)" onchange="onCpPlanQtySelectChange('${plan.id}', 'area', this)" ${disabled ? 'disabled' : ''} style="${hide}flex:1; min-width:40px; width:0; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; background:${bg};">${buildCpNumericSelectOptionsHtml(opts, plan.areaA)}</select>`;
 }
 
 function buildCpTraysSelectHtml(plan, disabled) {
     const opts = getCpTraysSelectOptions(plan.trays);
     const bg = disabled ? '#f0f0f0' : '#fff';
-    return `<select id="trays_${plan.id}" title="枚数/株数" onchange="onCpPlanQtySelectChange('${plan.id}', 'trays', this)" ${disabled ? 'disabled' : ''} style="flex:1; min-width:40px; width:0; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; background:${bg};">${buildCpNumericSelectOptionsHtml(opts, plan.trays)}</select>`;
+    const hide = disabled ? 'display:none;' : '';
+    return `<select id="trays_${plan.id}" title="枚数/株数" onchange="onCpPlanQtySelectChange('${plan.id}', 'trays', this)" ${disabled ? 'disabled' : ''} style="${hide}flex:1; min-width:40px; width:0; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; background:${bg};">${buildCpNumericSelectOptionsHtml(opts, plan.trays)}</select>`;
 }
 
 function ensureCpNumericSelectValue(selectEl, value, decimals) {
@@ -3438,13 +3440,9 @@ function addBlankCpPlanRow(options) {
     return plan;
 }
 
-/** カードが0件のときだけ空白カードを1枚用意する */
+/** カードが0件のときだけ空白カードを1枚用意する（現在は自動追加しない） */
 function ensureStarterCpPlanRow() {
-    if (!Array.isArray(cpPlans) || cpPlans.length > 0) return null;
-    const plan = addBlankCpPlanRow();
-    if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
-    else if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
-    return plan;
+    return null;
 }
 
 /** 空白スターターカードへ、上部で選んだ作物を反映 */
@@ -3512,19 +3510,16 @@ function renderCpPlanRow(plan, options) {
         <div style="margin-top:2px; min-width:0;">
             ${buildCpVarietySelectHtml(plan)}
         </div>
-        <div style="display:flex; flex-direction:column; gap:2px; margin-top:2px; font-size:10px;">
-            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; min-width:0;">
-              <input type="radio" name="cpInputMode_${plan.id}" id="inputModeArea_${plan.id}" value="area" ${modeArea ? 'checked' : ''} onchange="setCpPlanInputMode('${plan.id}', 'area')" style="margin:0; flex-shrink:0;">
-              <span style="flex-shrink:0; width:2em;">面積</span>
-              ${buildCpAreaSelectHtml(plan, !modeArea)}
-              <span style="flex-shrink:0;">a</span>
-            </label>
-            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; min-width:0;">
-              <input type="radio" name="cpInputMode_${plan.id}" id="inputModeTrays_${plan.id}" value="trays" ${modeArea ? '' : 'checked'} onchange="setCpPlanInputMode('${plan.id}', 'trays')" style="margin:0; flex-shrink:0;">
-              <span id="qtyLabel_${plan.id}" style="flex-shrink:0; width:2em;">${qtyWord}</span>
-              ${buildCpTraysSelectHtml(plan, modeArea)}
-              <span id="unitTraysInput_${plan.id}" style="flex-shrink:0;">${qtyWord}</span>
-            </label>
+        <div style="display:flex; align-items:center; gap:3px; margin-top:2px; font-size:10px; min-width:0;">
+            <select id="inputMode_${plan.id}" title="入力モード" onchange="setCpPlanInputMode('${plan.id}', this.value)" style="flex-shrink:0; width:4.2em; height:18px; font-size:11px; padding:0 1px; border:1px solid #ccc; border-radius:3px; background:#fff;">
+              <option value="area" ${modeArea ? 'selected' : ''}>面積</option>
+              <option value="trays" ${modeArea ? '' : 'selected'}>${qtyWord}</option>
+            </select>
+            ${buildCpAreaSelectHtml(plan, !modeArea)}
+            ${buildCpTraysSelectHtml(plan, modeArea)}
+            <span id="cpQtyUnit_${plan.id}" style="flex-shrink:0;">${modeArea ? 'a' : qtyWord}</span>
+            <span id="qtyLabel_${plan.id}" style="display:none;">${qtyWord}</span>
+            <span id="unitTraysInput_${plan.id}" style="display:none;">${qtyWord}</span>
         </div>
         <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:3px; font-size:10px; flex-direction:column; gap:2px; background:#fff; padding:3px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
           <div id="cpSeedProcure_${plan.id}" style="font-size:9px; color:#bf360c; font-weight:bold; line-height:1.25;"></div>
@@ -3684,6 +3679,10 @@ function copyCpPlanRow(sourcePlanId) {
     const traysEl = document.getElementById('trays_' + sourcePlanId);
     const yieldEl = document.getElementById('yieldRate_' + sourcePlanId);
     const successEl = document.getElementById('seedlingSuccess_' + sourcePlanId);
+    const modeEl = document.getElementById('inputMode_' + sourcePlanId);
+    const copiedMode = (modeEl && modeEl.value === 'trays')
+        ? 'trays'
+        : ((src.inputMode === 'trays') ? 'trays' : 'area');
 
     const newPlan = {
         id: 'plan_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
@@ -3703,7 +3702,7 @@ function copyCpPlanRow(sourcePlanId) {
         harvestRatios: [],
         trays: traysEl ? (parseFloat(traysEl.value) || 0) : (src.trays || 0),
         yield: 0,
-        inputMode: src.inputMode || 'area',
+        inputMode: copiedMode,
         tasks: { sowing: [], planting: [], harvesting: [] },
         sowing: [],
         planting: [],
@@ -4509,14 +4508,316 @@ function aggregateCpHarvestChart(plans, keyFn) {
     }));
 }
 
-function syncCpHarvestScroll(barsId, axisId) {
+function syncCpHarvestScroll(barsId, axisId, targetsId) {
     const bars = document.getElementById(barsId);
     const axis = document.getElementById(axisId);
-    if (!bars || !axis || bars._cpScrollBound) return;
+    const targets = targetsId ? document.getElementById(targetsId) : null;
+    if (!bars || !axis) return;
+    if (bars._cpScrollBound) {
+        // 目標行が後から付いた場合も同期対象に含める
+        if (targets && !bars._cpScrollTargets) {
+            bars._cpScrollTargets = targets;
+            bars.addEventListener('scroll', () => { targets.scrollLeft = bars.scrollLeft; });
+            targets.addEventListener('scroll', () => {
+                bars.scrollLeft = targets.scrollLeft;
+                axis.scrollLeft = targets.scrollLeft;
+            });
+        }
+        return;
+    }
     bars._cpScrollBound = true;
-    bars.addEventListener('scroll', () => { axis.scrollLeft = bars.scrollLeft; });
-    axis.addEventListener('scroll', () => { bars.scrollLeft = axis.scrollLeft; });
+    if (targets) bars._cpScrollTargets = targets;
+    const syncFrom = (src) => {
+        const left = src.scrollLeft;
+        if (bars !== src) bars.scrollLeft = left;
+        if (axis !== src) axis.scrollLeft = left;
+        if (targets && targets !== src) targets.scrollLeft = left;
+    };
+    bars.addEventListener('scroll', () => syncFrom(bars));
+    axis.addEventListener('scroll', () => syncFrom(axis));
+    if (targets) targets.addEventListener('scroll', () => syncFrom(targets));
 }
+
+function collectCpHarvestPeriodTotals(series) {
+    const totals = new Array(CP_HARVEST_PERIODS).fill(0);
+    (series || []).forEach(s => {
+        for (let i = 0; i < CP_HARVEST_PERIODS; i++) totals[i] += (s.values && s.values[i]) || 0;
+    });
+    return totals;
+}
+
+function rememberCpHarvestTargetInputs() {
+    if (!window._cpHarvestTargets) window._cpHarvestTargets = {};
+    document.querySelectorAll('#cpHarvestTargetInputs input.cp-harvest-target-input').forEach(inp => {
+        const idx = parseInt(inp.getAttribute('data-period'), 10);
+        if (isNaN(idx)) return;
+        const raw = String(inp.value || '').trim();
+        if (raw === '') delete window._cpHarvestTargets[idx];
+        else {
+            const n = parseFloat(raw);
+            if (isFinite(n) && n >= 0) window._cpHarvestTargets[idx] = n;
+            else delete window._cpHarvestTargets[idx];
+        }
+    });
+}
+
+function renderCpHarvestTargetInputs(series, options) {
+    const wrap = document.getElementById('cpHarvestTargetInputs');
+    if (!wrap) return;
+    rememberCpHarvestTargetInputs();
+    const opts = options || {};
+    const barW = opts.barWidth || 8;
+    const totals = collectCpHarvestPeriodTotals(series);
+    const active = [];
+    for (let i = 0; i < CP_HARVEST_PERIODS; i++) {
+        if ((totals[i] || 0) > 0) active.push(i);
+    }
+    if (!active.length) {
+        wrap.innerHTML = '<div style="color:#999; font-size:10px; text-align:center; padding-top:4px; width:100%;">収穫半旬がありません</div>';
+        return;
+    }
+    if (!window._cpHarvestTargets) window._cpHarvestTargets = {};
+    // 収穫が無くなった半旬の目標は破棄
+    Object.keys(window._cpHarvestTargets).forEach(k => {
+        const idx = parseInt(k, 10);
+        if (!(totals[idx] > 0)) delete window._cpHarvestTargets[idx];
+    });
+
+    const totalW = CP_HARVEST_PERIODS * barW;
+    let html = `<div style="display:flex; align-items:center; width:${totalW}px; min-width:${totalW}px; height:22px;">`;
+    for (let i = 0; i < CP_HARVEST_PERIODS; i++) {
+        const border = (i % 6 === 5) ? '1px solid #ccc' : '1px solid transparent';
+        if ((totals[i] || 0) > 0) {
+            const val = window._cpHarvestTargets[i];
+            const shown = (val != null && isFinite(val)) ? String(val) : '';
+            html += `<div style="width:${barW}px; box-sizing:border-box; border-right:${border}; padding:0 1px;">` +
+                `<input type="number" min="0" step="1" class="cp-harvest-target-input" data-period="${i}" value="${shown}" ` +
+                `title="半旬${i + 1} 目標（現状 ${Math.round(totals[i]).toLocaleString()}）" ` +
+                `style="width:100%; height:20px; font-size:9px; padding:0; border:1px solid #FFB74D; border-radius:2px; box-sizing:border-box; text-align:center; background:#fff;" ` +
+                `onchange="onCpHarvestTargetInputChange()" oninput="onCpHarvestTargetInputChange()">` +
+                `</div>`;
+        } else {
+            html += `<div style="width:${barW}px; height:20px; box-sizing:border-box; border-right:${border};"></div>`;
+        }
+    }
+    html += '</div>';
+    wrap.innerHTML = html;
+}
+
+function onCpHarvestTargetInputChange() {
+    rememberCpHarvestTargetInputs();
+    const msg = document.getElementById('cpHarvestTargetMsg');
+    if (msg && msg.dataset.sticky !== '1') msg.textContent = '';
+}
+window.onCpHarvestTargetInputChange = onCpHarvestTargetInputChange;
+
+/** 正規方程式を解く簡易ガウス＝ジョルダン（正方行列） */
+function solveLinearSystem_(A, b) {
+    const n = b.length;
+    if (!n) return [];
+    const M = A.map((row, i) => row.slice().concat([b[i]]));
+    for (let col = 0; col < n; col++) {
+        let pivot = col;
+        for (let r = col + 1; r < n; r++) {
+            if (Math.abs(M[r][col]) > Math.abs(M[pivot][col])) pivot = r;
+        }
+        if (Math.abs(M[pivot][col]) < 1e-12) return null;
+        if (pivot !== col) {
+            const tmp = M[col];
+            M[col] = M[pivot];
+            M[pivot] = tmp;
+        }
+        const div = M[col][col];
+        for (let c = col; c <= n; c++) M[col][c] /= div;
+        for (let r = 0; r < n; r++) {
+            if (r === col) continue;
+            const f = M[r][col];
+            if (Math.abs(f) < 1e-15) continue;
+            for (let c = col; c <= n; c++) M[r][c] -= f * M[col][c];
+        }
+    }
+    return M.map(row => row[n]);
+}
+
+/**
+ * 目標半旬に合わせて各品種スケールを最小二乗で求める。
+ * @returns {{ scales: number[], planIds: string[], periods: number[], residual: number }|null}
+ */
+function solveCpHarvestTargetScales(plans, targetsMap) {
+    const list = (plans || []).filter(p => p && String(p.variety || '').trim());
+    if (!list.length) return null;
+
+    const contrib = list.map(plan => computePlanHarvestByPeriod(plan));
+    const periods = Object.keys(targetsMap || {})
+        .map(k => parseInt(k, 10))
+        .filter(i => isFinite(i) && i >= 0 && i < CP_HARVEST_PERIODS && targetsMap[i] != null && isFinite(targetsMap[i]))
+        .sort((a, b) => a - b);
+    if (!periods.length) return null;
+
+    // 目標半旬に寄与がある品種だけ変数にする
+    const varIdx = [];
+    for (let v = 0; v < list.length; v++) {
+        let hit = false;
+        for (let p = 0; p < periods.length; p++) {
+            if ((contrib[v][periods[p]] || 0) > 0) { hit = true; break; }
+        }
+        if (hit) varIdx.push(v);
+    }
+    if (!varIdx.length) return null;
+
+    const m = periods.length;
+    const n = varIdx.length;
+    // A: m x n, A[i][j] = contrib[varIdx[j]][periods[i]]
+    // 正規方程式 (A^T A) s = A^T b
+    const AtA = Array.from({ length: n }, () => new Array(n).fill(0));
+    const Atb = new Array(n).fill(0);
+    for (let i = 0; i < m; i++) {
+        const period = periods[i];
+        const bi = Number(targetsMap[period]) || 0;
+        for (let j = 0; j < n; j++) {
+            const aij = contrib[varIdx[j]][period] || 0;
+            Atb[j] += aij * bi;
+            for (let k = 0; k < n; k++) {
+                AtA[j][k] += aij * (contrib[varIdx[k]][period] || 0);
+            }
+        }
+    }
+
+    // ランク不足対策: 対角に微小リidge
+    for (let j = 0; j < n; j++) AtA[j][j] += 1e-8;
+
+    let s = solveLinearSystem_(AtA, Atb);
+    if (!s) {
+        // フォールバック: 各品種を独立に、関係半旬の倍率の平均
+        s = varIdx.map(v => {
+            let num = 0;
+            let den = 0;
+            periods.forEach(period => {
+                const c = contrib[v][period] || 0;
+                if (c <= 0) return;
+                const t = Number(targetsMap[period]) || 0;
+                // その半旬の現状合計
+                let total = 0;
+                contrib.forEach(row => { total += row[period] || 0; });
+                if (total <= 0) return;
+                const share = c / total;
+                const desired = t * share;
+                num += desired;
+                den += c;
+            });
+            return den > 0 ? num / den : 1;
+        });
+    }
+
+    const scalesAll = list.map(() => 1);
+    varIdx.forEach((v, j) => {
+        let sv = s[j];
+        if (!isFinite(sv) || sv < 0) sv = 0;
+        scalesAll[v] = sv;
+    });
+
+    let residual = 0;
+    periods.forEach(period => {
+        let pred = 0;
+        list.forEach((plan, v) => { pred += scalesAll[v] * (contrib[v][period] || 0); });
+        const err = pred - (Number(targetsMap[period]) || 0);
+        residual += err * err;
+    });
+
+    return {
+        scales: scalesAll,
+        planIds: list.map(p => p.id),
+        periods: periods,
+        residual: residual,
+        plans: list
+    };
+}
+
+function applyCpHarvestTargetsToAreas() {
+    rememberCpHarvestTargetInputs();
+    const msg = document.getElementById('cpHarvestTargetMsg');
+    const setMsg = (text, ok) => {
+        if (!msg) return;
+        msg.dataset.sticky = '1';
+        msg.textContent = text || '';
+        msg.style.color = ok ? '#2e7d32' : '#c62828';
+    };
+
+    const targets = window._cpHarvestTargets || {};
+    const keys = Object.keys(targets);
+    if (!keys.length) {
+        setMsg('目標値が入力されていません。収穫がある半旬に数値を入れてください。', false);
+        return;
+    }
+
+    const plans = (typeof collectCurrentCpPlansFromDom === 'function')
+        ? collectCurrentCpPlansFromDom()
+        : (cpPlans || []);
+    const solved = solveCpHarvestTargetScales(plans, targets);
+    if (!solved) {
+        setMsg('調整できる品種・収穫データがありません。', false);
+        return;
+    }
+
+    const extreme = solved.scales.some(s => s > 50 || (s > 0 && s < 0.05));
+    if (extreme) {
+        const preview = solved.scales.map((s, i) => {
+            const p = solved.plans[i];
+            return `${p.variety || p.id}: ×${(Math.round(s * 100) / 100)}`;
+        }).join('\n');
+        if (!confirm('面積倍率が大きく変わる可能性があります。続行しますか？\n\n' + preview)) {
+            setMsg('キャンセルしました。', false);
+            return;
+        }
+    }
+
+    let changed = 0;
+    solved.plans.forEach((plan, i) => {
+        let s = solved.scales[i];
+        if (!isFinite(s)) return;
+        if (s < 0) s = 0;
+        if (s > 100) s = 100;
+        if (Math.abs(s - 1) < 1e-6) return;
+
+        const live = (cpPlans || []).find(p => p && p.id === plan.id) || plan;
+        const mode = live.inputMode === 'trays' ? 'trays' : 'area';
+        if (mode === 'trays') {
+            const next = Math.max(0, Math.round((Number(live.trays) || 0) * s));
+            live.trays = next;
+            const el = document.getElementById('trays_' + live.id);
+            if (el && typeof window.ensureCpNumericSelectValue === 'function') {
+                window.ensureCpNumericSelectValue(el, next, 0);
+            } else if (el) el.value = String(next);
+        } else {
+            const next = Math.max(0, Math.round((Number(live.areaA) || 0) * s * 10) / 10);
+            live.areaA = next;
+            const el = document.getElementById('area_' + live.id);
+            if (el && typeof window.ensureCpNumericSelectValue === 'function') {
+                window.ensureCpNumericSelectValue(el, next, 1);
+            } else if (el) el.value = String(next);
+        }
+        if (typeof window.updateRowCalculations === 'function') {
+            window.updateRowCalculations(live.id);
+        } else if (typeof updateRowCalculations === 'function') {
+            updateRowCalculations(live.id);
+        }
+        changed += 1;
+    });
+
+    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    if (typeof window.pushCpEditHistory === 'function') window.pushCpEditHistory();
+
+    const rmse = Math.sqrt(solved.residual / Math.max(1, solved.periods.length));
+    if (changed === 0) {
+        setMsg('面積の変更はありませんでした（すでに近い状態です）。', true);
+    } else if (rmse > 1) {
+        setMsg(`${changed}件の品種を調整しました。目標との平均誤差 約${Math.round(rmse).toLocaleString()}（作型・比率の都合で完全一致しない場合があります）。`, true);
+    } else {
+        setMsg(`${changed}件の品種面積／枚数を目標に合わせて調整しました。`, true);
+    }
+}
+window.applyCpHarvestTargetsToAreas = applyCpHarvestTargetsToAreas;
+window.renderCpHarvestTargetInputs = renderCpHarvestTargetInputs;
 
 function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
     const opts = options || {};
@@ -4542,6 +4843,11 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
     if (!seriesList.length || maxVal <= 0) {
         barsEl.innerHTML = `<div style="color:#999; font-size:11px; text-align:center; padding-top:${Math.max(8, barH / 2 - 8)}px; width:100%;">収穫データがありません</div>`;
         if (axisEl) axisEl.innerHTML = '';
+        const targetsEmpty = document.getElementById('cpHarvestTargetInputs');
+        if (targetsEmpty) {
+            rememberCpHarvestTargetInputs();
+            targetsEmpty.innerHTML = '<div style="color:#999; font-size:10px; text-align:center; padding-top:4px; width:100%;">収穫半旬がありません</div>';
+        }
         return { total: 0, maxVal: 0 };
     }
 
@@ -4576,7 +4882,7 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
         axisEl.innerHTML = axisHtml;
     }
 
-    return { total: total, maxVal: maxVal };
+    return { total: total, maxVal: maxVal, barWidth: barW };
 }
 
 function refreshCpHarvestChart() {
@@ -4596,13 +4902,14 @@ function refreshCpHarvestChart() {
         document.getElementById('cpHarvestChartAxis'),
         document.getElementById('cpHarvestChartLegend'),
         series,
-        { barHeight: 56, barWidth: 8 }
+        { barHeight: 56, barWidth: 24 }
     );
     const totalEl = document.getElementById('cpHarvestChartTotal');
     if (totalEl) {
         totalEl.textContent = result.total > 0 ? `合計 ${result.total.toLocaleString()}` : '';
     }
-    syncCpHarvestScroll('cpHarvestChartBars', 'cpHarvestChartAxis');
+    renderCpHarvestTargetInputs(series, { barWidth: result.barWidth || 8 });
+    syncCpHarvestScroll('cpHarvestChartBars', 'cpHarvestChartAxis', 'cpHarvestTargetInputs');
     if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') {
         scheduleRefreshCpWorkSchedulePanel();
     }
@@ -6035,7 +6342,7 @@ function updateCpFieldAttachBanner() {
     }
     banner.style.display = 'flex';
     if (textEl) {
-        textEl.textContent = `📍 「${att.label || '圃場'}」を紐づけ予定（面積 ${att.areaA || '-'}a）。空白カードへ自動セット、または作型追加時に反映されます。`;
+        textEl.textContent = `📍 「${att.label || '圃場'}」を紐づけ予定（面積 ${att.areaA || '-'}a）。作型を追加すると反映されます。`;
     }
 }
 
@@ -6102,7 +6409,6 @@ function openCultivationPlanModal(options) {
     updateCpDefaultPlanName();
     updateCpSaveButtonLabel();
     if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
-    ensureStarterCpPlanRow();
     
     // デフォルトを半自動に合わせ、ヒント表示を更新
     const semiRadio = document.querySelector('input[name="cpTool"][value="semiauto"]');
@@ -6114,14 +6420,6 @@ function openCultivationPlanModal(options) {
 
     if (opts.fieldAttach) {
         window.setCpPendingFieldAttach(opts.fieldAttach);
-        // 既に出した空白カードへ圃場を紐づけ
-        if (Array.isArray(cpPlans) && cpPlans.length === 1) {
-            applyCpPendingFieldAttach(cpPlans[0]);
-            if (typeof updateVarietyCardFieldsDisplay === 'function') {
-                updateVarietyCardFieldsDisplay(cpPlans[0].id);
-            }
-            if (typeof window.updateRowCalculations === 'function') window.updateRowCalculations(cpPlans[0].id);
-        }
     } else if (!opts.keepFieldAttach) {
         window.cpPendingFieldAttach = null;
         updateCpFieldAttachBanner();
@@ -6138,8 +6436,6 @@ function openCultivationPlanModal(options) {
             if (cond.indexOf('ハウス') >= 0) setChoiceValue('cpFieldCondition', 'ハウス', false);
             else if (cond.indexOf('露地') >= 0) setChoiceValue('cpFieldCondition', '露地', false);
         }
-        // 作物が決まっていれば空白カードへ反映
-        syncCropToBlankStarterCards();
         calcCp();
         refreshAllChoiceButtons();
         updateCpFieldAttachBanner();
@@ -6147,12 +6443,7 @@ function openCultivationPlanModal(options) {
         if (typeof onCpCropChangedForCost === 'function') onCpCropChangedForCost();
         if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') scheduleRefreshCpWorkSchedulePanel();
         if (!opts.skipDraft) {
-            offerRestoreCpDraft().then(() => {
-                ensureStarterCpPlanRow();
-                syncCropToBlankStarterCards();
-            });
-        } else {
-            ensureStarterCpPlanRow();
+            offerRestoreCpDraft();
         }
     });
     

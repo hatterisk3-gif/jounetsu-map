@@ -2220,6 +2220,9 @@ window.setCpPlanInputMode = function(planId, mode) {
     const plan = cpPlans.find(p => p.id === planId);
     if (!plan) return;
     plan.inputMode = (mode === 'trays') ? 'trays' : 'area';
+    const modeSel = document.getElementById('inputMode_' + planId);
+    if (modeSel) modeSel.value = plan.inputMode;
+    // 旧ラジオ互換
     const areaRadio = document.getElementById('inputModeArea_' + planId);
     const traysRadio = document.getElementById('inputModeTrays_' + planId);
     if (areaRadio) areaRadio.checked = plan.inputMode === 'area';
@@ -2235,17 +2238,25 @@ window.updateRowParams = function(planId, source) {
     const traysEl = document.getElementById('trays_' + planId);
     const yieldRateEl = document.getElementById('yieldRate_' + planId);
     const successEl = document.getElementById('seedlingSuccess_' + planId);
+    const modeSel = document.getElementById('inputMode_' + planId);
     const areaRadio = document.getElementById('inputModeArea_' + planId);
     const traysRadio = document.getElementById('inputModeTrays_' + planId);
 
     if (yieldRateEl) plan.yieldRate = parseFloat(yieldRateEl.value) || 0;
     if (successEl) plan.seedlingSuccess = parseFloat(successEl.value) || 0.1;
 
-    // ラジオが優先。無ければ従来どおり source / plan.inputMode
-    if (traysRadio && traysRadio.checked) plan.inputMode = 'trays';
-    else if (areaRadio && areaRadio.checked) plan.inputMode = 'area';
-    else if (source === 'trays' || source === 'area') plan.inputMode = source;
-    else if (!plan.inputMode) plan.inputMode = 'area';
+    // モードselect優先 → 旧ラジオ → source / plan.inputMode
+    if (modeSel && (modeSel.value === 'trays' || modeSel.value === 'area')) {
+        plan.inputMode = modeSel.value;
+    } else if (traysRadio && traysRadio.checked) {
+        plan.inputMode = 'trays';
+    } else if (areaRadio && areaRadio.checked) {
+        plan.inputMode = 'area';
+    } else if (source === 'trays' || source === 'area') {
+        plan.inputMode = source;
+    } else if (!plan.inputMode) {
+        plan.inputMode = 'area';
+    }
 
     if (plan.inputMode === 'trays' && traysEl) {
         plan.trays = Math.max(0, parseFloat(traysEl.value) || 0);
@@ -2319,17 +2330,26 @@ window.updateRowCalculations = function(planId) {
     const yieldEl = document.getElementById('calcYield_' + planId);
     const unitEl = document.getElementById('unitTrays_' + planId);
     const unitInputEl = document.getElementById('unitTraysInput_' + planId);
+    const modeSel = document.getElementById('inputMode_' + planId);
+    const qtyUnitEl = document.getElementById('cpQtyUnit_' + planId);
     const areaRadio = document.getElementById('inputModeArea_' + planId);
     const traysRadio = document.getElementById('inputModeTrays_' + planId);
     const unit = holes === 1 ? '株' : '枚';
     const qtyLabel = unit;
 
+    if (modeSel) {
+        modeSel.value = inputMode === 'trays' ? 'trays' : 'area';
+        const traysOpt = Array.from(modeSel.options).find(o => o.value === 'trays');
+        if (traysOpt) traysOpt.textContent = unit;
+    }
     if (areaRadio) areaRadio.checked = inputMode === 'area';
     if (traysRadio) traysRadio.checked = inputMode === 'trays';
+    if (qtyUnitEl) qtyUnitEl.textContent = inputMode === 'area' ? 'a' : unit;
 
-    // 選択中のみ編集可。もう一方は自動計算で上書き（プルダウンに計算値も載せる）
+    // 選択中のみ表示・編集可。もう一方は非表示（計算値は保持）
     if (areaInput) {
         areaInput.disabled = inputMode !== 'area';
+        areaInput.style.display = inputMode === 'area' ? '' : 'none';
         areaInput.style.background = inputMode === 'area' ? '#fff' : '#f0f0f0';
         if (inputMode !== 'area' || document.activeElement !== areaInput) {
             if (typeof window.ensureCpNumericSelectValue === 'function') {
@@ -2341,6 +2361,7 @@ window.updateRowCalculations = function(planId) {
     }
     if (traysInput) {
         traysInput.disabled = inputMode !== 'trays';
+        traysInput.style.display = inputMode === 'trays' ? '' : 'none';
         traysInput.style.background = inputMode === 'trays' ? '#fff' : '#f0f0f0';
         if (inputMode !== 'trays' || document.activeElement !== traysInput) {
             if (typeof window.ensureCpNumericSelectValue === 'function') {
