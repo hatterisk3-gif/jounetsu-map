@@ -1431,15 +1431,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
           throw new Error(`作物名「${cropName}」は既に登録されています`);
         }
       }
-      const effectiveTagCode = tagAbbreviation || cropName;
-      for (let i = 1; i < existing.length; i++) {
-        const otherName = String(existing[i][0] || '').trim();
-        if (!otherName) continue;
-        const otherCode = String(existing[i][3] || '').trim() || otherName;
-        if (otherCode === effectiveTagCode) {
-          throw new Error(`タグ略称「${effectiveTagCode}」は他の作物で使用されています`);
-        }
-      }
+      assertTagAbbreviationUnique_(tagAbbreviation || cropName, {});
       sheet.appendRow([cropName, density, '', tagAbbreviation]);
       syncCropNameInSeikuMaster_('', cropName, density); // 新規を生育記録マスタにも反映
     } else if (masterType === 'tool') {
@@ -1466,10 +1458,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
         throw new Error(`拠点名「${name}」は既に登録されています`);
       }
       const tagAbbreviation = String(loc.tagAbbreviation || '').trim();
-      const effectiveTagCode = tagAbbreviation || name;
-      if (existing.some(l => String(l.tagAbbreviation || l.name || '').trim() === effectiveTagCode)) {
-        throw new Error(`タグ略称「${effectiveTagCode}」は他の拠点で使用されています`);
-      }
+      assertTagAbbreviationUnique_(tagAbbreviation || name, {});
       const row = new Array(headers.length).fill('');
       row[0] = name;
       const prefIdx = headers.indexOf('県');
@@ -1568,19 +1557,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
           throw new Error(`拠点名「${newName}」は既に登録されています`);
         }
       }
-      const existing = readLocationMasterDetails_();
       const tagAbbreviation = String(loc.tagAbbreviation || '').trim();
-      const effectiveTagCode = tagAbbreviation || newName;
-      if (existing.some(l =>
-        l.name !== originalName &&
-        String(l.tagAbbreviation || l.name || '').trim() === effectiveTagCode
-      )) {
-        throw new Error(`タグ略称「${effectiveTagCode}」は他の拠点で使用されています`);
-      }
+      assertTagAbbreviationUnique_(tagAbbreviation || newName, { excludeLocationName: originalName });
       const prefIdx = headers.indexOf('県');
       const cityIdx = headers.indexOf('市');
       const climIdx = headers.indexOf('産地');
       const tagAbbrIdx = headers.indexOf('タグ略称');
+      let locFound = false;
       for (let i = 1; i < data.length; i++) {
         if (String(data[i][0] || '').trim() === originalName) {
           sheet.getRange(i + 1, 1).setValue(newName);
@@ -1592,9 +1575,11 @@ function manageMasterData(masterType, manageAction, value, userName) {
           }
           if (tagAbbrIdx >= 0) sheet.getRange(i + 1, tagAbbrIdx + 1).setValue(tagAbbreviation);
           writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
+          locFound = true;
           break;
         }
       }
+      if (!locFound) throw new Error('拠点「' + originalName + '」が拠点マスタにありません');
     } else if (masterType === 'machineGroup') {
       const originalName = String(value.originalName || '').trim();
       const newName = String((value.newData && value.newData.name) || value.name || '').trim();
@@ -1690,15 +1675,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
           tagAbbrToWrite = (newTagAbbreviation != null)
             ? newTagAbbreviation
             : String(data[i][3] || '').trim();
-          const effectiveTagCode = tagAbbrToWrite || newName;
-          for (let j = 1; j < data.length; j++) {
-            const otherName = String(data[j][0] || '').trim();
-            if (!otherName || otherName === originalName) continue;
-            const otherCode = String(data[j][3] || '').trim() || otherName;
-            if (otherCode === effectiveTagCode) {
-              throw new Error(`タグ略称「${effectiveTagCode}」は他の作物で使用されています`);
-            }
-          }
+          assertTagAbbreviationUnique_(tagAbbrToWrite || newName, { excludeCropName: originalName });
           sheet.getRange(i + 1, 1).setValue(newName);
           sheet.getRange(i + 1, 2).setValue(densityToWrite);
           if (colorToKeep) sheet.getRange(i + 1, 3).setValue(colorToKeep);
@@ -1711,15 +1688,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
         // 作物マスタに無い場合は追記（生育記録マスタ側だけの旧データ向け）
         densityToWrite = (newDensity != null) ? newDensity : 0;
         tagAbbrToWrite = (newTagAbbreviation != null) ? newTagAbbreviation : '';
-        const effectiveTagCode = tagAbbrToWrite || newName;
-        for (let j = 1; j < data.length; j++) {
-          const otherName = String(data[j][0] || '').trim();
-          if (!otherName) continue;
-          const otherCode = String(data[j][3] || '').trim() || otherName;
-          if (otherCode === effectiveTagCode) {
-            throw new Error(`タグ略称「${effectiveTagCode}」は他の作物で使用されています`);
-          }
-        }
+        assertTagAbbreviationUnique_(tagAbbrToWrite || newName, { excludeCropName: originalName });
         sheet.appendRow([newName, densityToWrite, '', tagAbbrToWrite]);
       }
       syncCropNameInSeikuMaster_(originalName, newName, densityToWrite);
@@ -2260,6 +2229,42 @@ function readCropTagAbbreviationMap_() {
     console.warn('作物タグ略称の読込に失敗:', e);
   }
   return map;
+}
+
+function normalizeTagAbbreviation_(s) {
+  let t = String(s || '').trim();
+  try { t = t.normalize('NFKC'); } catch (e) {}
+  return t.toLowerCase();
+}
+
+/**
+ * 作物・拠点を横断してタグ略称の重複を禁止する。
+ * excludeCropName / excludeLocationName は自分自身（編集中）を除外。
+ */
+function assertTagAbbreviationUnique_(code, options) {
+  const opts = options || {};
+  const raw = String(code || '').trim();
+  const n = normalizeTagAbbreviation_(raw);
+  if (!n) return;
+  const excludeCrop = String(opts.excludeCropName || '').trim();
+  const excludeLoc = String(opts.excludeLocationName || '').trim();
+
+  const cropMap = readCropTagAbbreviationMap_();
+  Object.keys(cropMap).forEach(name => {
+    if (excludeCrop && name === excludeCrop) return;
+    if (normalizeTagAbbreviation_(cropMap[name] || name) === n) {
+      throw new Error('タグ略称「' + raw + '」は作物「' + name + '」で使用されています');
+    }
+  });
+
+  (readLocationMasterDetails_() || []).forEach(loc => {
+    if (!loc || !loc.name) return;
+    if (excludeLoc && loc.name === excludeLoc) return;
+    const other = String(loc.tagAbbreviation || loc.name || '').trim();
+    if (normalizeTagAbbreviation_(other) === n) {
+      throw new Error('タグ略称「' + raw + '」は拠点「' + loc.name + '」で使用されています');
+    }
+  });
 }
 
 /** 生育記録マスタ + 作物マスタを統合した作物リスト */

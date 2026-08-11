@@ -1726,6 +1726,59 @@ function getCpMasterUserName_() {
         || '';
 }
 
+function normalizeCpTagAbbr_(s) {
+    let t = String(s || '').trim();
+    try { t = t.normalize('NFKC'); } catch (e) {}
+    return t.toLowerCase();
+}
+
+/** 作物・拠点を横断してタグ略称の重複を探す */
+function findCpTagAbbreviationConflict_(code, options) {
+    const opts = options || {};
+    const raw = String(code || '').trim();
+    const n = normalizeCpTagAbbr_(raw);
+    if (!n) return null;
+    const excludeCrop = String(opts.excludeCrop || '').trim();
+    const excludeLoc = String(opts.excludeLocation || '').trim();
+    const cropMap = (cpMasterData && cpMasterData.cropTagAbbreviations) || {};
+    const cropNames = {};
+    Object.keys(cropMap).forEach(name => { cropNames[name] = true; });
+    Object.keys((cpMasterData && cpMasterData.crops) || {}).forEach(name => { cropNames[name] = true; });
+    const cropKeys = Object.keys(cropNames);
+    for (let i = 0; i < cropKeys.length; i++) {
+        const name = cropKeys[i];
+        if (excludeCrop && name === excludeCrop) continue;
+        if (normalizeCpTagAbbr_(cropMap[name] || name) === n) {
+            return { kind: '作物', name: name };
+        }
+    }
+    const locs = (cpMasterData && cpMasterData.locationDetails) || [];
+    for (let i = 0; i < locs.length; i++) {
+        const loc = locs[i];
+        if (!loc || !loc.name) continue;
+        if (excludeLoc && loc.name === excludeLoc) continue;
+        if (normalizeCpTagAbbr_(loc.tagAbbreviation || loc.name) === n) {
+            return { kind: '拠点', name: loc.name };
+        }
+    }
+    return null;
+}
+
+function showCpTagAbbrSaveResult(ok, message) {
+    const el = document.getElementById('cpTagAbbrSaveStatus');
+    if (el) {
+        el.textContent = message;
+        el.style.color = ok ? '#2e7d32' : '#c62828';
+    }
+    if (!ok) alert(message);
+}
+
+function persistCpMasterDataCache() {
+    try {
+        if (cpMasterData) localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+    } catch (e) {}
+}
+
 async function saveCpLocationTagAbbreviation() {
     const location = getCpVal('cpLocation');
     if (!location) {
@@ -1733,6 +1786,11 @@ async function saveCpLocationTagAbbreviation() {
         return;
     }
     const abbr = String((document.getElementById('cpLocationTagAbbr') || {}).value || '').trim();
+    const conflict = findCpTagAbbreviationConflict_(abbr || location, { excludeLocation: location });
+    if (conflict) {
+        alert('タグ略称「' + (abbr || location) + '」は' + conflict.kind + '「' + conflict.name + '」で使われています。別の略称にしてください。');
+        return;
+    }
     const detail = getLocationDetailByName(location) || {};
     try {
         await callGAS('manageMaster', {
@@ -1750,15 +1808,19 @@ async function saveCpLocationTagAbbreviation() {
                 }
             }
         });
-        if (cpMasterData && Array.isArray(cpMasterData.locationDetails)) {
-            const d = cpMasterData.locationDetails.find(l => l && l.name === location);
-            if (d) d.tagAbbreviation = abbr;
+        if (!cpMasterData) cpMasterData = {};
+        if (!Array.isArray(cpMasterData.locationDetails)) cpMasterData.locationDetails = [];
+        let d = cpMasterData.locationDetails.find(l => l && l.name === location);
+        if (!d) {
+            d = { name: location };
+            cpMasterData.locationDetails.push(d);
         }
+        d.tagAbbreviation = abbr;
+        persistCpMasterDataCache();
         if (typeof assignCpPlanTags === 'function') assignCpPlanTags();
-        if (typeof flashCpPlanSortStatus === 'function') flashCpPlanSortStatus('✓ 拠点のタグ略称を保存しました');
-        else alert('拠点のタグ略称を保存しました');
+        showCpTagAbbrSaveResult(true, '✓ 拠点のタグ略称「' + (abbr || location) + '」をマスタに保存しました');
     } catch (e) {
-        alert((e && e.message) ? e.message : '拠点のタグ略称の保存に失敗しました');
+        showCpTagAbbrSaveResult(false, (e && e.message) ? e.message : '拠点のタグ略称の保存に失敗しました');
     }
 }
 
@@ -1769,6 +1831,11 @@ async function saveCpCropTagAbbreviation() {
         return;
     }
     const abbr = String((document.getElementById('cpCropTagAbbr') || {}).value || '').trim();
+    const conflict = findCpTagAbbreviationConflict_(abbr || crop, { excludeCrop: crop });
+    if (conflict) {
+        alert('タグ略称「' + (abbr || crop) + '」は' + conflict.kind + '「' + conflict.name + '」で使われています。別の略称にしてください。');
+        return;
+    }
     try {
         await callGAS('manageMaster', {
             masterType: 'crop',
@@ -1782,11 +1849,11 @@ async function saveCpCropTagAbbreviation() {
         if (!cpMasterData) cpMasterData = {};
         if (!cpMasterData.cropTagAbbreviations) cpMasterData.cropTagAbbreviations = {};
         cpMasterData.cropTagAbbreviations[crop] = abbr || crop;
+        persistCpMasterDataCache();
         if (typeof assignCpPlanTags === 'function') assignCpPlanTags();
-        if (typeof flashCpPlanSortStatus === 'function') flashCpPlanSortStatus('✓ 作物のタグ略称を保存しました');
-        else alert('作物のタグ略称を保存しました');
+        showCpTagAbbrSaveResult(true, '✓ 作物のタグ略称「' + (abbr || crop) + '」をマスタに保存しました');
     } catch (e) {
-        alert((e && e.message) ? e.message : '作物のタグ略称の保存に失敗しました');
+        showCpTagAbbrSaveResult(false, (e && e.message) ? e.message : '作物のタグ略称の保存に失敗しました');
     }
 }
 window.fillCpTagAbbreviationInputs = fillCpTagAbbreviationInputs;
