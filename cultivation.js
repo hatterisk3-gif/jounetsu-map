@@ -1785,45 +1785,10 @@ function buildCpVarietySelectHtml(plan) {
         const sel = String(v) === cur ? ' selected' : '';
         return `<option value="${esc}"${sel}>${esc}</option>`;
     }).join('');
-    return `<div style="display:flex; align-items:center; gap:3px; min-width:0;">
-      <select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="display:block; flex:1; min-width:0; height:20px; font-size:11px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${placeholder}${optionsHtml}<option value="__custom__">＋手入力…</option></select>
-      <span id="varietyOrdinal_${plan.id}" class="cp-variety-ordinal" style="flex-shrink:0; min-width:1.8em; height:18px; line-height:18px; text-align:center; font-size:10px; font-weight:bold; color:#1565C0; background:#BBDEFB; border-radius:9px; padding:0 5px; box-sizing:border-box;"></span>
-    </div>`;
+    return `<select id="varietySelect_${plan.id}" title="品種を変更" onchange="changeCpPlanVariety('${plan.id}', this.value)" style="display:block; width:100%; min-width:0; height:20px; font-size:11px; padding:0 2px; border:1px solid #90CAF9; border-radius:3px; color:#0d47a1; background:#fff; font-weight:bold; box-sizing:border-box;">${placeholder}${optionsHtml}<option value="__custom__">＋手入力…</option></select>`;
 }
 
-/** 同一品種を上から番号付け（表示は 1, 2, 3…） */
 function refreshCpVarietyOrdinals() {
-    if (!Array.isArray(cpPlans)) return;
-    const counts = {};
-    const indexes = {};
-    cpPlans.forEach(plan => {
-        if (!plan || !plan.id) return;
-        const name = String(plan.variety || '').trim();
-        if (!name) {
-            indexes[plan.id] = { n: 0, total: 0, name: '' };
-            return;
-        }
-        const key = String(plan.crop || '') + '\t' + name;
-        counts[key] = (counts[key] || 0) + 1;
-        indexes[plan.id] = { n: counts[key], total: 0, name: name, key: key };
-    });
-    cpPlans.forEach(plan => {
-        if (!plan || !plan.id) return;
-        const info = indexes[plan.id];
-        if (!info) return;
-        if (info.key) info.total = counts[info.key] || 0;
-        const el = document.getElementById('varietyOrdinal_' + plan.id);
-        if (!el) return;
-        if (!info.name || info.total < 1) {
-            el.textContent = '';
-            el.style.display = 'none';
-            el.title = '';
-            return;
-        }
-        el.style.display = 'inline-block';
-        el.textContent = String(info.n);
-        el.title = info.name + '：上から' + info.n + '番目';
-    });
     if (typeof assignCpPlanTags === 'function') assignCpPlanTags({ silent: true });
     if (typeof refreshCpVarietyGroupDividers === 'function') refreshCpVarietyGroupDividers();
 }
@@ -3627,7 +3592,25 @@ function openCpQuickVarietyPicker(anchorEl) {
     const pop = document.createElement('div');
     pop.id = 'cpQuickVarietyPopover';
     pop.style.cssText = 'position:fixed; z-index:12060; background:#fff; border:1px solid #1976D2; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.25); padding:8px; min-width:140px; max-width:220px; max-height:240px; overflow:auto;';
-    pop.innerHTML = '<div style="font-size:11px; font-weight:bold; color:#1565C0; margin-bottom:6px;">品種を選択</div>';
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex; align-items:center; gap:4px; margin-bottom:6px;';
+    const title = document.createElement('div');
+    title.textContent = '品種を選択';
+    title.style.cssText = 'font-size:11px; font-weight:bold; color:#1565C0; flex:1; min-width:0;';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = '×';
+    closeBtn.title = '閉じる';
+    closeBtn.setAttribute('aria-label', '品種選択を閉じる');
+    closeBtn.style.cssText = 'flex-shrink:0; width:20px; height:20px; padding:0; border:none; background:transparent; color:#546E7A; font-size:16px; font-weight:bold; line-height:1; cursor:pointer; border-radius:4px;';
+    closeBtn.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeCpQuickVarietyPopover();
+    };
+    head.appendChild(title);
+    head.appendChild(closeBtn);
+    pop.appendChild(head);
     opts.forEach(v => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -3650,7 +3633,10 @@ function openCpQuickVarietyPicker(anchorEl) {
 }
 
 function onCpAddVarietyCardClick() {
-    closeCpQuickVarietyPopover();
+    if (document.getElementById('cpQuickVarietyPopover')) {
+        closeCpQuickVarietyPopover();
+        return;
+    }
     if (!isCpInitialSettingsReady()) {
         if (typeof setCpInitialSettingsOpen === 'function') {
             setCpInitialSettingsOpen(true, { openStep: 1, openDefaultStep: true });
