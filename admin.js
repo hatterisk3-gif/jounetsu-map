@@ -6082,7 +6082,6 @@ window.shareFieldUrl = function(id, fieldName) {
     if (navigator.share) {
         navigator.share({
             title: title,
-            text: `📍 情熱MAP - ${title}`,
             url: url
         }).catch(err => {
             if (err && err.name !== 'AbortError') {
