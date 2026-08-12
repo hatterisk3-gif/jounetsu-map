@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>情熱MAP 総合案内所 v2.24</title>
+    <title>情熱MAP 総合案内所 v2.25</title>
     
     <link rel="apple-touch-icon" href="icon_index.png">
     <link rel="icon" href="icon_index.png">
@@ -136,6 +136,35 @@
             text-align: center;
         }
 
+        .account-session-box {
+            background: #1e2d24;
+            border: 1px solid #388e3c;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #c8e6c9;
+            line-height: 1.5;
+        }
+        .account-session-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .account-session-row:last-child { margin-bottom: 0; }
+        .account-session-label { font-size: 11px; color: #81c784; font-weight: bold; }
+        .account-session-value { font-weight: bold; color: #fff; word-break: break-all; }
+        .account-role-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+            color: #fff;
+        }
+
         .share-box { background: #333; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #444; }
         .share-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; background: #222; color: #fff; }
     </style>
@@ -148,8 +177,6 @@
         </div>
 
         <h1>情熱MAP 総合案内所 (v1.58)</h1>
-
-        <div id="currentUserBanner" style="margin-bottom:18px; padding:10px 14px; background:#1e2d24; border:1px solid #388e3c; border-radius:8px; font-size:13px; color:#c8e6c9; text-align:center;"></div>
         
         <a href="worker.html" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
         <a href="schedule.html" class="btn btn-schedule">📅 予定 MAP を開く</a>
@@ -166,8 +193,16 @@
                 <h2 id="accountModalTitle">🔐 アカウント認証</h2>
                 <button type="button" class="account-modal-close" onclick="closeAccountModal()" aria-label="閉じる">×</button>
             </div>
-            
-            <div style="display:flex; border-bottom:1px solid #444; margin-bottom:12px;">
+
+            <!-- ログイン済み：アカウント情報 -->
+            <div id="authSectionLoggedIn" style="display:none;">
+                <div id="loggedInInfo" class="account-session-box"></div>
+                <button type="button" class="btn btn-admin" id="logoutBtn" onclick="logoutFromIndex()" style="margin-bottom:8px;">🚪 サインアウト</button>
+            </div>
+
+            <!-- 未ログイン：ログイン / 新規登録 -->
+            <div id="authFormsWrap">
+            <div id="authTabsWrap" style="display:flex; border-bottom:1px solid #444; margin-bottom:12px;">
                 <button type="button" id="tabBtnLogin" onclick="switchAuthTab('login')" style="flex:1; padding:8px; border:none; background:transparent; color:#a5d6a7; font-weight:bold; border-bottom:2px solid #4CAF50; cursor:pointer;">🔑 ログイン</button>
                 <button type="button" id="tabBtnSignup" onclick="switchAuthTab('signup')" style="flex:1; padding:8px; border:none; background:transparent; color:#aaa; font-weight:normal; border-bottom:2px solid transparent; cursor:pointer;">👤 アカウント新規登録</button>
             </div>
@@ -196,6 +231,7 @@
                 <label class="account-label" for="signupPasswordConfirm">パスワード（確認）</label>
                 <input class="account-input" id="signupPasswordConfirm" type="password" autocomplete="new-password">
                 <button type="button" class="btn btn-signup" id="signupBtn" onclick="submitSignup()" style="margin-bottom:8px;">登録する</button>
+            </div>
             </div>
 
             <button type="button" class="btn btn-muted" onclick="closeAccountModal()" style="margin-bottom:0;">閉じる</button>
@@ -245,11 +281,69 @@
         }
       }
 
+      function escapeHtml(str) {
+        return String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function isLoggedInPortal() {
+        return !!(localStorage.getItem('passionMapUserId') || '').trim();
+      }
+
+      function showLoggedInAccountView() {
+        const loggedInSec = document.getElementById('authSectionLoggedIn');
+        const formsWrap = document.getElementById('authFormsWrap');
+        const title = document.getElementById('accountModalTitle');
+        const info = document.getElementById('loggedInInfo');
+        const userId = localStorage.getItem('passionMapUserId') || '';
+        const userName = localStorage.getItem('passionMapUserName') || '';
+        const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+        const roleColor = (userRole === '管理者') ? '#e53935' : '#4CAF50';
+
+        if (loggedInSec) loggedInSec.style.display = 'block';
+        if (formsWrap) formsWrap.style.display = 'none';
+        if (title) title.textContent = '👤 アカウント';
+        if (info) {
+          info.innerHTML = `
+            <div class="account-session-row">
+              <span class="account-session-label">表示名</span>
+              <span class="account-session-value">${escapeHtml(userName || userId)}</span>
+            </div>
+            <div class="account-session-row">
+              <span class="account-session-label">スタッフID</span>
+              <span class="account-session-value">${escapeHtml(userId)}</span>
+            </div>
+            <div class="account-session-row">
+              <span class="account-session-label">権限</span>
+              <span class="account-role-badge" style="background:${roleColor};">${escapeHtml(userRole)}</span>
+            </div>
+            <div style="font-size:11px; color:#81c784; margin-top:8px; line-height:1.4;">ログイン状態はすべてのMAPに引き継がれます。</div>
+          `;
+        }
+      }
+
+      function showAuthFormsView(initialTab) {
+        const loggedInSec = document.getElementById('authSectionLoggedIn');
+        const formsWrap = document.getElementById('authFormsWrap');
+        const title = document.getElementById('accountModalTitle');
+        if (loggedInSec) loggedInSec.style.display = 'none';
+        if (formsWrap) formsWrap.style.display = 'block';
+        if (title) title.textContent = '🔐 アカウント認証';
+        switchAuthTab(initialTab || 'login');
+      }
+
       function openAccountModal(initialTab) {
         const modal = document.getElementById('accountModal');
         if (!modal) return;
+        if (isLoggedInPortal()) {
+          showLoggedInAccountView();
+        } else {
+          showAuthFormsView(initialTab || 'login');
+        }
         modal.classList.add('is-open');
-        switchAuthTab(initialTab || 'login');
       }
 
       function closeAccountModal() {
@@ -322,50 +416,27 @@
           localStorage.removeItem('pMapAdminName');
         } catch (e) {}
         updateLoginDisplay();
+        closeAccountModal();
       }
 
       function updateLoginDisplay() {
         const userId = localStorage.getItem('passionMapUserId') || '';
         const userName = localStorage.getItem('passionMapUserName') || '';
-        const userRole = localStorage.getItem('passionMapUserRole') || '';
-
-        const banner = document.getElementById('currentUserBanner');
         const btnAuth = document.getElementById('btnAuthStatusToggle');
 
         if (userId) {
-          const roleColor = (userRole === '管理者') ? '#e53935' : '#4CAF50';
-          if (banner) {
-            banner.style.display = 'block';
-            banner.style.background = '#1e2d24';
-            banner.style.border = '1px solid #388e3c';
-            banner.style.color = '#c8e6c9';
-            banner.innerHTML = `
-              <div style="display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;">
-                <span>🔑 ログイン中: <strong>${userName || userId}</strong> (${userId})</span>
-                <span style="background:${roleColor}; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">${userRole || '作業員'}</span>
-                <button type="button" onclick="logoutFromIndex()" style="margin-left:6px; background:#444; color:#fff; border:none; border-radius:12px; padding:3px 10px; font-size:11px; font-weight:bold; cursor:pointer;">ログアウト</button>
-              </div>
-            `;
-          }
           if (btnAuth) {
             btnAuth.textContent = `👤 ${userName || userId}`;
             btnAuth.style.background = '#2e7d32';
+            btnAuth.style.borderColor = '#388e3c';
+            btnAuth.style.color = '#fff';
           }
         } else {
-          if (banner) {
-            banner.style.display = 'block';
-            banner.style.background = '#2c2214';
-            banner.style.border = '1px solid #f57c00';
-            banner.style.color = '#ffe0b2';
-            banner.innerHTML = `
-              <div style="font-weight:bold; margin-bottom:4px;">🔑 未ログイン状態です</div>
-              <div style="font-size:11px; color:#ffcc80; margin-bottom:6px;">ログインすると各MAPをアカウント引き継ぎ状態で開けます。</div>
-              <button type="button" onclick="openAccountModal('login')" style="background:#FF9800; color:#fff; border:none; border-radius:16px; padding:6px 16px; font-size:12px; font-weight:bold; cursor:pointer;">ログイン画面を開く</button>
-            `;
-          }
           if (btnAuth) {
             btnAuth.textContent = '🔑 ログイン / 登録';
-            btnAuth.style.background = '#FF9800';
+            btnAuth.style.background = '#333';
+            btnAuth.style.borderColor = '#555';
+            btnAuth.style.color = '#a5d6a7';
           }
         }
       }
@@ -400,6 +471,7 @@
 
           saveLoginLocal(userId, password, userName, userRole, spreadsheetId);
           setMsg('loginMsg', `ログイン完了 (${userName})`, true);
+          updateLoginDisplay();
 
           setTimeout(function() {
             closeAccountModal();

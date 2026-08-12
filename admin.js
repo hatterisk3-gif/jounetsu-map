@@ -5818,12 +5818,75 @@ document.getElementById('cancelShapeBtn').onclick = () => {
 
 window.executeNavigation = (id) => { const p = loadedPolygons[id]; let lat, lng; if (p.isMarker) { lat = p.marker.getPosition().lat(); lng = p.marker.getPosition().lng(); } else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); lat = b.getCenter().lat(); lng = b.getCenter().lng(); } window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank'); };
 
+window.copyFieldUrl = function(id) {
+    const input = document.getElementById('fieldShareUrl_' + id);
+    if (!input) return;
+    const url = input.value;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+            if (typeof customAlert === 'function') customAlert('📋 圃場のURLをコピーしました！');
+            else alert('📋 圃場のURLをコピーしました！');
+        }).catch(() => {
+            input.select();
+            document.execCommand('copy');
+            if (typeof customAlert === 'function') customAlert('📋 圃場のURLをコピーしました！');
+            else alert('📋 圃場のURLをコピーしました！');
+        });
+    } else {
+        input.select();
+        document.execCommand('copy');
+        if (typeof customAlert === 'function') customAlert('📋 圃場のURLをコピーしました！');
+        else alert('📋 圃場のURLをコピーしました！');
+    }
+};
+
+window.shareFieldUrl = function(id, fieldName) {
+    const input = document.getElementById('fieldShareUrl_' + id);
+    if (!input) return;
+    const url = input.value;
+    const title = fieldName || '圃場情報';
+    if (navigator.share) {
+        navigator.share({
+            title: title,
+            text: `📍 情熱MAP - ${title}`,
+            url: url
+        }).catch(err => {
+            if (err && err.name !== 'AbortError') {
+                copyFieldUrl(id);
+            }
+        });
+    } else {
+        copyFieldUrl(id);
+    }
+};
+
 window.openM = (id) => {
     const p = loadedPolygons[id], isU = (p.status === '未使用（返却）' || p.status === '未使用');
     const titleHtml = p.isMarker ? `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${p.color}</div><b>${p.name}</b>` : `<b>${p.name}</b>`;
 
     let ridgeStr = ''; if (!p.isMarker && p.ridgeDir && p.ridgeWidth) { const ridges = calcRidges(p.coords, p.ridgeDir, p.ridgeWidth); ridgeStr = `<br><span style="color:#2196F3; font-weight:bold;">📏 約${ridges}畝 (${p.ridgeDir} / ${p.ridgeWidth}cm)</span>`; }
-    let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:10px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + ' / ' + p.area + 'a' + ridgeStr + '<hr>' : ''}</div>`;
+
+    let centerLat = '', centerLng = '';
+    if (p.marker && typeof p.marker.getPosition === 'function' && p.marker.getPosition()) {
+        const pos = p.marker.getPosition();
+        centerLat = typeof pos.lat === 'function' ? pos.lat().toFixed(6) : parseFloat(pos.lat).toFixed(6);
+        centerLng = typeof pos.lng === 'function' ? pos.lng().toFixed(6) : parseFloat(pos.lng).toFixed(6);
+    }
+    const fieldUrl = `${window.location.origin}${window.location.pathname}?fieldId=${encodeURIComponent(id)}${centerLat ? `&lat=${centerLat}&lng=${centerLng}` : ''}`;
+    const safeName = String(p.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+    let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:8px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + ' / ' + p.area + 'a' + ridgeStr + '<hr style="margin:6px 0;">' : ''}</div>`;
+
+    h += `<div style="background:#f8f9fa; border:1px solid #e0e0e0; border-radius:6px; padding:6px; margin-bottom:8px; text-align:left;">`;
+    h += `<div style="font-size:11px; font-weight:bold; color:#1565C0; margin-bottom:4px;">🔗 圃場URL</div>`;
+    h += `<div style="display:flex; gap:4px; align-items:center;">`;
+    h += `<input type="text" readonly id="fieldShareUrl_${id}" value="${fieldUrl}" style="flex:1; font-size:10px; padding:5px 6px; border:1px solid #ccc; border-radius:4px; background:#fff; color:#333; min-width:0;" onclick="this.select()">`;
+    h += `<button type="button" onclick="copyFieldUrl('${id}')" style="background:#4CAF50; color:#fff; border:none; border-radius:4px; padding:5px 8px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">📋 コピー</button>`;
+    if (navigator.share) {
+        h += `<button type="button" onclick="shareFieldUrl('${id}', '${safeName}')" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:5px 8px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">📤 共有</button>`;
+    }
+    h += `</div>`;
+    h += `</div>`;
 
     if (!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="showToukiInfo('${id}')" style="background:#2196F3;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">📋登記情報</button><button onclick="openAddTouki('${id}')" style="background:#4CAF50;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">➕登記登録</button></div><div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="startMerge('${id}')" style="background:#FF9800;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜統合</button><button onclick="execDuplicate('${id}')" style="background:#9C27B0;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">✂️複製</button><button onclick="openAdvancedSplit('${id}')" style="background:#E91E63;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">✂️分割</button></div>`;
     h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button>`;
@@ -6302,6 +6365,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (attempt < 40) setTimeout(() => tryOpenCad(attempt + 1), 250);
                 };
                 setTimeout(() => tryOpenCad(0), 800);
+            }
+
+            // URL共有などで特定圃場（fieldId）が指定されている場合にフォーカスして詳細表示
+            const targetFieldId = urlParams.get('fieldId') || (!shouldOpenCad && urlParams.get('id') ? urlParams.get('id') : null);
+            if (targetFieldId) {
+                const tryFocusField = (attempt) => {
+                    const p = loadedPolygons[targetFieldId];
+                    if (p) {
+                        if (p.marker && typeof p.marker.getPosition === 'function' && p.marker.getPosition()) {
+                            map.setCenter(p.marker.getPosition());
+                            map.setZoom(18);
+                        } else if (p.polygon && typeof p.polygon.getPath === 'function') {
+                            const bounds = new google.maps.LatLngBounds();
+                            const path = p.polygon.getPath();
+                            if (path && typeof path.getArray === 'function') {
+                                path.getArray().forEach(pt => bounds.extend(pt));
+                                map.fitBounds(bounds);
+                            }
+                        }
+                        setTimeout(() => {
+                            if (typeof window.openM === 'function') window.openM(targetFieldId);
+                        }, 400);
+                        return;
+                    }
+                    if (attempt < 40) setTimeout(() => tryFocusField(attempt + 1), 250);
+                };
+                setTimeout(() => tryFocusField(0), 800);
             }
 
             // Workerから飛んできたバトン（パラメータ）を取得

@@ -2499,7 +2499,10 @@
     }
 
     let html = `<h3 style="margin-top:0; color:#E65100;">🍱 昼休憩登録</h3>`;
-    html += buildClockInEditHtml(clockInTime, workDate);
+    html += `<div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:10px 12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">`;
+    html += `  <div style="font-size:12px; color:#2e7d32; font-weight:bold;">出勤時間: <b>${clockInTime || '08:00'}</b> <span style="font-size:11px; font-weight:normal; color:#666;">(${workDate || ''})</span></div>`;
+    html += `  <button type="button" onclick="if(window.openClockInModal) window.openClockInModal();" style="background:#2E7D32; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">🔄 出勤処理に戻る</button>`;
+    html += `</div>`;
     html += `<div style="background:#fff8e1; border:1px solid #ffe082; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.04);">`;
     html += `<div style="font-weight:bold; color:#e65100; font-size:13px; margin-bottom:4px; display:flex; align-items:center; justify-content:space-between;">`;
     html += `<span>🍱 昼休憩の時間設定</span>`;
