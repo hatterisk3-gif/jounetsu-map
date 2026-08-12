@@ -4025,6 +4025,10 @@ function createSignboardMarker(name, pos, icon, id) {
             && typeof window.refreshTodayRestBreaksUI === 'function') {
           window.refreshTodayRestBreaksUI();
         }
+        // 作業日が変わったら「その日の前作業」基準で次作業予想を更新
+        if (typeof window.renderNextWorkPredictions === 'function') {
+          window.renderNextWorkPredictions();
+        }
       };
 
       window.isFieldCategory = (cat) => {
@@ -8404,6 +8408,85 @@ function createSignboardMarker(name, pos, icon, id) {
         box.style.display = 'block';
       };
 
+      /**
+       * 指定日の「直前の作業記録」（自分・休憩以外）を取得。
+       * カテゴリ／作物未選択でも、その日の前記録から次作業を予想するために使う。
+       */
+      window.getPreviousWorkForPrediction_ = (targetDateStr) => {
+        const normTarget = (typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr(targetDateStr)
+          : String(targetDateStr || '').trim();
+        if (!normTarget) return null;
+
+        const normUser = String(currentUser || localStorage.getItem('passionMapUserName') || '').replace(/\s+/g, '');
+        const getCanon = (name) => (typeof window.getCanonicalWorkName === 'function')
+          ? (window.getCanonicalWorkName(name) || name)
+          : name;
+        const seenIds = new Set();
+        const rows = [];
+
+        if (typeof loadedPolygons === 'undefined' || !loadedPolygons) return null;
+
+        Object.keys(loadedPolygons).forEach((id) => {
+          const p = loadedPolygons[id];
+          if (!p || !Array.isArray(p.photos)) return;
+          p.photos.forEach((ph) => {
+            if (!ph) return;
+            const isWork = (ph.type === 'work') || (ph.data && ph.data.workName);
+            if (!isWork) return;
+
+            const recId = ph.id || (ph.data && ph.data.recordId);
+            if (recId && seenIds.has(recId)) return;
+            if (recId) seenIds.add(recId);
+
+            const phAuthor = String(ph.author || '').replace(/\s+/g, '');
+            const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser
+              || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
+            if (!isAuthorMatch) return;
+
+            const phWorkDate = (typeof window.normalizeDateStr === 'function')
+              ? window.normalizeDateStr(ph.data && ph.data.workDate)
+              : String((ph.data && ph.data.workDate) || '').trim();
+            const phDate = (typeof window.normalizeDateStr === 'function')
+              ? window.normalizeDateStr(ph.date)
+              : String(ph.date || '').trim();
+            const recordYmd = phWorkDate || phDate;
+            if (recordYmd !== normTarget) return;
+
+            const rawName = String((ph.data && ph.data.workName) || ph.workName || '').trim();
+            if (!rawName || rawName.includes('休憩')) return;
+
+            const canon = getCanon(rawName);
+            const cropRaw = String((ph.data && ph.data.crop) || ph.crop || '').trim();
+            const crop = cropRaw.split(/[,、]/)[0].trim();
+            const category = String((ph.data && ph.data.category) || '').trim();
+            const endHm = (typeof window.normalizeTimeHm === 'function')
+              ? window.normalizeTimeHm((ph.data && ph.data.endTime) || (ph.data && ph.data.startTime) || ph.time || '')
+              : String((ph.data && ph.data.endTime) || (ph.data && ph.data.startTime) || ph.time || '').trim();
+            const startHm = (typeof window.normalizeTimeHm === 'function')
+              ? window.normalizeTimeHm((ph.data && ph.data.startTime) || ph.time || '')
+              : String((ph.data && ph.data.startTime) || ph.time || '').trim();
+            const endMins = (typeof window.timeHmToMinutes === 'function') ? (window.timeHmToMinutes(endHm) || 0) : 0;
+            const startMins = (typeof window.timeHmToMinutes === 'function') ? (window.timeHmToMinutes(startHm) || 0) : 0;
+
+            rows.push({
+              workName: canon || rawName,
+              rawName: rawName,
+              crop: crop,
+              category: category,
+              endHm: endHm,
+              startHm: startHm,
+              sortKey: (endMins * 10000) + startMins,
+              polygonId: id
+            });
+          });
+        });
+
+        if (!rows.length) return null;
+        rows.sort((a, b) => b.sortKey - a.sortKey);
+        return rows[0];
+      };
+
       window.buildNextWorkTransitionStats_ = (force) => {
         if (!force && window._nextWorkTransitionStatsCache) return window._nextWorkTransitionStatsCache;
         const transitions = { full: {}, work: {}, crop: {} };
@@ -8420,9 +8503,9 @@ function createSignboardMarker(name, pos, icon, id) {
               .map(ph => {
                 const rawName = String((ph.data && ph.data.workName) || ph.workName || '').trim();
                 const canon = getCanon(rawName);
-                const crop = String((ph.data && ph.data.crop) || ph.crop || '').trim();
+                const crop = String((ph.data && ph.data.crop) || ph.crop || '').split(/[,、]/)[0].trim();
                 const dStr = ph.data && ph.data.workDate ? ph.data.workDate : (ph.date || '');
-                const tStr = ph.data && ph.data.workTime ? ph.data.workTime : (ph.time || '');
+                const tStr = (ph.data && (ph.data.endTime || ph.data.startTime || ph.data.workTime)) || (ph.time || '');
                 let ts = 0;
                 if (dStr) {
                   try { ts = new Date(String(dStr).replace(/\//g, '-') + (tStr ? ('T' + tStr) : '')).getTime(); } catch(e) {}
@@ -8461,36 +8544,27 @@ function createSignboardMarker(name, pos, icon, id) {
         return transitions;
       };
 
-      window.getNextWorkPredictions_ = (crop, workName, polygonId) => {
+      /** その日の前の作業記録を起点に、次に行う作業名を予想する（カテゴリ／作物選択は不要） */
+      window.getNextWorkPredictions_ = () => {
+        const dateEl = document.getElementById('rec_work_date');
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const targetDate = (dateEl && dateEl.value)
+          ? ((typeof window.normalizeDateStr === 'function') ? window.normalizeDateStr(dateEl.value) : dateEl.value)
+          : todayStr;
+
+        const prev = (typeof window.getPreviousWorkForPrediction_ === 'function')
+          ? window.getPreviousWorkForPrediction_(targetDate)
+          : null;
+
+        if (!prev || !prev.workName) {
+          return { candidates: [], sourceReason: '', previous: null };
+        }
+
         const stats = window.buildNextWorkTransitionStats_();
-        crop = String(crop || '').trim();
-        workName = String(workName || '').trim();
-
-        let targetCrop = crop;
-        let targetWork = workName;
-        let sourceReason = '';
-
-        if (!targetWork && polygonId && typeof loadedPolygons !== 'undefined' && loadedPolygons[polygonId]) {
-          const p = loadedPolygons[polygonId];
-          if (p && Array.isArray(p.photos)) {
-            const works = p.photos.filter(ph => ph && ((ph.type === 'work') || (ph.data && ph.data.workName)))
-              .sort((a,b) => (b.date || '').localeCompare(a.date || ''));
-            if (works.length > 0) {
-              const last = works[0];
-              targetWork = String((last.data && last.data.workName) || last.workName || '').trim();
-              if (!targetCrop) targetCrop = String((last.data && last.data.crop) || last.crop || '').trim();
-              sourceReason = `前回の「${targetCrop ? (targetCrop + ' ') : ''}${targetWork}」から`;
-            }
-          }
-        }
-
-        if (!sourceReason) {
-          if (targetCrop && targetWork) sourceReason = `「${targetCrop} ${targetWork}」の次`;
-          else if (targetWork) sourceReason = `「${targetWork}」の次`;
-          else if (targetCrop) sourceReason = `「${targetCrop}」の一般的な順序`;
-          else sourceReason = '全体の作業傾向';
-        }
-
+        const targetCrop = String(prev.crop || '').trim();
+        const targetWork = String(prev.workName || '').trim();
+        const sourceReason = `直前の「${targetCrop ? (targetCrop + ' ') : ''}${targetWork}」から`;
         const fullKey = (targetCrop && !targetWork.includes(targetCrop)) ? `${targetCrop} ${targetWork}` : targetWork;
 
         let candCounts = null;
@@ -8521,49 +8595,49 @@ function createSignboardMarker(name, pos, icon, id) {
 
         if (!candidates.length) {
           const fallbacks = [
-            { key: '追肥', items: [{ crop: targetCrop || 'キャベツ', workName: '中耕', rate: 60 }, { crop: targetCrop || 'キャベツ', workName: '消毒', rate: 25 }, { crop: targetCrop || 'キャベツ', workName: '収穫', rate: 15 }] },
-            { key: '定植', items: [{ crop: targetCrop || 'キャベツ', workName: '追肥', rate: 55 }, { crop: targetCrop || 'キャベツ', workName: '消毒', rate: 30 }, { crop: targetCrop || 'キャベツ', workName: '中耕', rate: 15 }] },
-            { key: '播種', items: [{ crop: targetCrop || 'キャベツ', workName: '定植', rate: 60 }, { crop: targetCrop || 'キャベツ', workName: '追肥', rate: 25 }, { crop: targetCrop || 'キャベツ', workName: '消毒', rate: 15 }] },
-            { key: '中耕', items: [{ crop: targetCrop || 'キャベツ', workName: '消毒', rate: 50 }, { crop: targetCrop || 'キャベツ', workName: '追肥', rate: 30 }, { crop: targetCrop || 'キャベツ', workName: '収穫', rate: 20 }] },
-            { key: '消毒', items: [{ crop: targetCrop || 'キャベツ', workName: '収穫', rate: 50 }, { crop: targetCrop || 'キャベツ', workName: '追肥', rate: 30 }, { crop: targetCrop || 'キャベツ', workName: '中耕', rate: 20 }] },
-            { key: '耕起', items: [{ crop: targetCrop || 'キャベツ', workName: '定植', rate: 60 }, { crop: targetCrop || 'キャベツ', workName: '施肥', rate: 25 }, { crop: targetCrop || 'キャベツ', workName: '播種', rate: 15 }] },
-            { key: '畝立て', items: [{ crop: targetCrop || 'キャベツ', workName: '定植', rate: 60 }, { crop: targetCrop || 'キャベツ', workName: '施肥', rate: 25 }, { crop: targetCrop || 'キャベツ', workName: '播種', rate: 15 }] }
+            { key: '追肥', items: [{ crop: targetCrop, workName: '中耕', rate: 60 }, { crop: targetCrop, workName: '消毒', rate: 25 }, { crop: targetCrop, workName: '収穫', rate: 15 }] },
+            { key: '定植', items: [{ crop: targetCrop, workName: '追肥', rate: 55 }, { crop: targetCrop, workName: '消毒', rate: 30 }, { crop: targetCrop, workName: '中耕', rate: 15 }] },
+            { key: '播種', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '追肥', rate: 25 }, { crop: targetCrop, workName: '消毒', rate: 15 }] },
+            { key: '中耕', items: [{ crop: targetCrop, workName: '消毒', rate: 50 }, { crop: targetCrop, workName: '追肥', rate: 30 }, { crop: targetCrop, workName: '収穫', rate: 20 }] },
+            { key: '消毒', items: [{ crop: targetCrop, workName: '収穫', rate: 50 }, { crop: targetCrop, workName: '追肥', rate: 30 }, { crop: targetCrop, workName: '中耕', rate: 20 }] },
+            { key: '耕起', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '施肥', rate: 25 }, { crop: targetCrop, workName: '播種', rate: 15 }] },
+            { key: '畝立て', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '施肥', rate: 25 }, { crop: targetCrop, workName: '播種', rate: 15 }] },
+            { key: '準備', items: [{ crop: targetCrop, workName: targetWork.replace(/^準備[−\-\s]*/, '') || '定植', rate: 70 }] }
           ];
 
           const match = fallbacks.find(f => targetWork.includes(f.key) || fullKey.includes(f.key));
           if (match) {
-            candidates = match.items.map(it => ({
-              full: (it.crop ? (it.crop + ' ') : '') + it.workName,
-              crop: it.crop,
-              workName: it.workName,
-              count: 1,
-              rate: it.rate
-            }));
-          } else {
-            candidates = [
-              { full: (targetCrop ? (targetCrop + ' ') : '') + '追肥', crop: targetCrop || 'キャベツ', workName: '追肥', count: 1, rate: 50 },
-              { full: (targetCrop ? (targetCrop + ' ') : '') + '中耕', crop: targetCrop || 'キャベツ', workName: '中耕', count: 1, rate: 30 },
-              { full: (targetCrop ? (targetCrop + ' ') : '') + '消毒', crop: targetCrop || 'キャベツ', workName: '消毒', count: 1, rate: 20 }
-            ];
+            candidates = match.items
+              .filter(it => it.workName)
+              .map(it => ({
+                full: (it.crop ? (it.crop + ' ') : '') + it.workName,
+                crop: it.crop || '',
+                workName: it.workName,
+                count: 1,
+                rate: it.rate
+              }));
           }
         }
 
+        // 直前と同じ作業名だけの候補は除外（別作業を予想したい）
+        candidates = candidates.filter(c => c.workName && c.workName !== targetWork);
+
         const top3 = candidates.slice(0, 3);
-        return { candidates: top3, sourceReason: sourceReason };
+        return { candidates: top3, sourceReason: sourceReason, previous: prev };
       };
 
       window.renderNextWorkPredictions = () => {
         const container = document.getElementById('next_work_prediction_section');
         if (!container) return;
 
-        const cropKeys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
-          ? window.getSelectedWorkCropFilterKeys()
-          : [];
-        const rawCrop = cropKeys[0] || (document.getElementById('rec_work_crop_filter')?.value || '').split(',')[0] || '';
-        const cropName = (typeof window.getWorkCropLabel === 'function') ? window.getWorkCropLabel(rawCrop) : rawCrop;
-        const workName = (document.getElementById('rec_work_name')?.value || '').trim();
+        // 編集中は「次の作業」予想を出さない
+        if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) {
+          container.style.display = 'none';
+          container.innerHTML = '';
+          return;
+        }
 
-        const predData = window.getNextWorkPredictions_(cropName, workName, typeof activePolyId !== 'undefined' ? activePolyId : null);
+        const predData = window.getNextWorkPredictions_();
         const candidates = predData.candidates || [];
 
         if (!candidates.length) {
@@ -8575,12 +8649,12 @@ function createSignboardMarker(name, pos, icon, id) {
         const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
         let html = `
-          <div style="font-weight:bold; color:#1b5e20; font-size:13px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:6px;">
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span>🔮 次の作業予想（統計）</span>
+          <div style="font-weight:bold; color:#1b5e20; font-size:13px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <span>🔮 次の作業予想</span>
               <span style="font-size:11px; font-weight:normal; color:#4caf50;">(${esc(predData.sourceReason)})</span>
             </div>
-            <span style="font-size:10px; color:#81c784;">タップで選択</span>
+            <span style="font-size:10px; color:#81c784;">タップでセット</span>
           </div>
           <div style="display:flex; flex-wrap:wrap; gap:8px;">
         `;
@@ -8607,30 +8681,35 @@ function createSignboardMarker(name, pos, icon, id) {
       window.applyNextWorkPrediction = (cropName, workName) => {
         cropName = String(cropName || '').trim();
         workName = String(workName || '').trim();
+        if (!workName) return;
 
-        if (cropName) {
-          const category = document.getElementById('rec_work_category')?.value || 'すべて';
-          const p = (typeof loadedPolygons !== 'undefined' && typeof activePolyId !== 'undefined') ? loadedPolygons[activePolyId] : null;
-          const options = (typeof window.getCropOptionsForCategory === 'function') ? window.getCropOptionsForCategory(category, p) : [];
-          const matchedOpt = options.find(opt => opt.label === cropName || opt.key === cropName);
-          const cropKey = matchedOpt ? matchedOpt.key : cropName;
-
-          if (typeof window.applyWorkCropFilterSelection_ === 'function') {
-            window.applyWorkCropFilterSelection_([cropKey]);
-          }
+        // 作業チップ選択と同じ経路でカテゴリ・作物ゲート・作業名を一括セット
+        if (typeof window.selectWorkChip === 'function') {
+          window.selectWorkChip(workName);
+        } else if (typeof window.handleWorkNameChange === 'function') {
+          window.handleWorkNameChange(workName);
         }
 
-        if (workName) {
-          const sel = document.getElementById('rec_work_name');
-          if (sel) {
-            const opts = Array.from(sel.options);
-            const match = opts.find(o => o.value === workName || o.textContent.trim() === workName);
-            if (match) {
-              sel.value = match.value;
-            }
+        if (cropName) {
+          const p = (typeof loadedPolygons !== 'undefined' && typeof activePolyId !== 'undefined') ? loadedPolygons[activePolyId] : null;
+          const category = document.getElementById('rec_work_category')?.value || 'すべて';
+          const options = (typeof window.getCropOptionsForCategory === 'function')
+            ? window.getCropOptionsForCategory(category, p)
+            : [];
+          const matchedOpt = (options || []).find(opt => opt.label === cropName || opt.key === cropName);
+          const cropKey = matchedOpt
+            ? matchedOpt.key
+            : ((typeof window.normalizeWorkCropKey === 'function') ? window.normalizeWorkCropKey(cropName) : cropName);
+
+          if (cropKey && typeof window.applyWorkCropFilterSelection_ === 'function') {
+            window.applyWorkCropFilterSelection_([cropKey]);
+          } else if (cropKey && typeof window.selectWorkCropFilter === 'function') {
+            window.selectWorkCropFilter(cropKey);
           }
-          if (typeof window.handleWorkNameChange === 'function') {
-            window.handleWorkNameChange(workName);
+
+          // 作業名セクションが表示された後にチップ選択を再適用
+          if (typeof window.selectWorkChip === 'function') {
+            window.selectWorkChip(workName);
           }
         }
 
@@ -12939,6 +13018,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="linked_special_work_banner" style="display:none; border:1px solid #CE93D8; border-radius:8px; padding:10px 12px; margin:10px 0 12px; font-size:13px; font-weight:bold; line-height:1.4;"></div>
                   <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
                   ${timeUI}
+                  <div id="next_work_prediction_section" style="display:none; background:linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border:1px solid #a5d6a7; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(46,125,50,0.08);"></div>
                   <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:1px solid #9FA8DA; border-radius:10px; padding:12px; margin-bottom:12px;">
                   <label class="form-label" style="margin-top:0; color:#3949AB;">📁 カテゴリ</label>
                   <div id="work_category_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
@@ -12961,7 +13041,6 @@ function createSignboardMarker(name, pos, icon, id) {
                     ${allChipsHTML}
                   </div>
                   <div id="work_assoc_suggest" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
-                  <div id="next_work_prediction_section" style="display:none; background:linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border:1px solid #a5d6a7; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(46,125,50,0.08);"></div>
                   <div id="field_machinery_section" style="display:none; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="delivery_destination_section" style="display:none; background:#E1F5FE; border:2px solid #0288D1; border-radius:10px; padding:12px; margin-bottom:15px;"></div>
@@ -13169,6 +13248,8 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar('');
             if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
             if (typeof window.refreshLinkedSpecialWorkBanner === 'function') window.refreshLinkedSpecialWorkBanner();
+            // カテゴリ／作物を選ぶ前に、当日の前作業から次作業名を予想表示
+            if (typeof window.renderNextWorkPredictions === 'function') window.renderNextWorkPredictions();
         }, 50);
 
         if (currentRecordType === 'work') setTimeout(() => {
@@ -13915,6 +13996,8 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.applyOptimisticRecordItem_ = (opts) => {
         opts = opts || {};
+        // 作業遷移統計キャッシュを破棄（次の作業予想を最新にする）
+        try { window._nextWorkTransitionStatsCache = null; } catch (e) {}
         const targetIds = (opts.targetIds || []).map(String);
         const recordType = opts.recordType || 'work';
         const data = opts.data || {};
