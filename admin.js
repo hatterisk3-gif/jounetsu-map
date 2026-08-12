@@ -5871,8 +5871,26 @@ window.openM = (id) => {
         const pos = p.marker.getPosition();
         centerLat = typeof pos.lat === 'function' ? pos.lat().toFixed(6) : parseFloat(pos.lat).toFixed(6);
         centerLng = typeof pos.lng === 'function' ? pos.lng().toFixed(6) : parseFloat(pos.lng).toFixed(6);
+    } else if (p.polygon && typeof p.polygon.getPath === 'function') {
+        const b = new google.maps.LatLngBounds();
+        p.polygon.getPath().forEach(pt => b.extend(pt));
+        const c = b.getCenter();
+        centerLat = c.lat().toFixed(6);
+        centerLng = c.lng().toFixed(6);
+    } else if (Array.isArray(p.coords) && p.coords.length > 0) {
+        let latSum = 0, lngSum = 0;
+        p.coords.forEach(pt => {
+            const pLat = (typeof pt.lat === 'function') ? pt.lat() : parseFloat(pt.lat);
+            const pLng = (typeof pt.lng === 'function') ? pt.lng() : parseFloat(pt.lng);
+            latSum += pLat;
+            lngSum += pLng;
+        });
+        centerLat = (latSum / p.coords.length).toFixed(6);
+        centerLng = (lngSum / p.coords.length).toFixed(6);
     }
-    const fieldUrl = `${window.location.origin}${window.location.pathname}?fieldId=${encodeURIComponent(id)}${centerLat ? `&lat=${centerLat}&lng=${centerLng}` : ''}`;
+    const fieldUrl = (centerLat && centerLng)
+        ? `https://maps.google.com/?q=${centerLat},${centerLng}`
+        : `${window.location.origin}${window.location.pathname}?fieldId=${encodeURIComponent(id)}`;
     const safeName = String(p.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
     let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:8px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + ' / ' + p.area + 'a' + ridgeStr + '<hr style="margin:6px 0;">' : ''}</div>`;
