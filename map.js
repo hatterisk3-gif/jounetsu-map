@@ -708,6 +708,82 @@ function focusFieldFromSearch(pData) {
     setTimeout(() => openManureStatusModal(pData), 300);
 }
 
+/** 堆肥車数: 20aに1車・端数切り上げ */
+function calcCompostTrucksFromAreaA(areaA) {
+    const a = parseFloat(areaA) || 0;
+    if (a <= 0) return 0;
+    return Math.ceil(a / 20);
+}
+
+function getFieldGoogleMapsSearchUrl(pData) {
+    if (!pData) return '';
+    let lat = null, lng = null;
+    if (pData.coords && pData.coords.length > 0) {
+        try {
+            const center = getPolygonCenter(pData.coords);
+            if (center && typeof center.lat === 'function') {
+                lat = center.lat();
+                lng = center.lng();
+            } else if (center && center.lat != null) {
+                lat = Number(center.lat);
+                lng = Number(center.lng);
+            }
+        } catch (e) {}
+    }
+    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return '';
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`;
+}
+
+function resolveFieldAreaA(pData) {
+    let areaA = parseFloat(pData && pData.area) || 0;
+    if ((!areaA || areaA <= 0) && pData && pData.coords && pData.coords.length > 2 && typeof google === 'object' && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
+        try {
+            const latLngs = pData.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
+            const sqM = google.maps.geometry.spherical.computeArea(latLngs);
+            areaA = Math.round(sqM / 100 * 10) / 10;
+        } catch (e) {}
+    }
+    return areaA;
+}
+
+window.sharePigManureRequest = function(pData) {
+    const field = pData || currentEditPoly;
+    if (!field) {
+        alert('圃場情報がありません');
+        return;
+    }
+    const name = field.name || '圃場';
+    const areaA = resolveFieldAreaA(field);
+    const trucks = calcCompostTrucksFromAreaA(areaA);
+    const trucksLabel = trucks > 0 ? `${trucks}車` : '面積未設定';
+    const url = getFieldGoogleMapsSearchUrl(field);
+    const text = `${name}\n堆肥 ${trucksLabel}（20aに1車）`;
+    const sharePayload = url
+        ? { title: name, text: text, url: url }
+        : { title: name, text: text };
+
+    const fallbackCopy = () => {
+        const full = url ? `${text}\n${url}` : text;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(full).then(() => {
+                alert('📋 豚糞散布依頼の内容をコピーしました');
+            }).catch(() => {
+                prompt('以下をコピーしてください', full);
+            });
+        } else {
+            prompt('以下をコピーしてください', full);
+        }
+    };
+
+    if (navigator.share) {
+        navigator.share(sharePayload).catch(err => {
+            if (err && err.name !== 'AbortError') fallbackCopy();
+        });
+    } else {
+        fallbackCopy();
+    }
+};
+
 // ====== 生産管理ステータスモーダル ======
 let currentEditPoly = null;
 let currentEditCategoryId = null;
@@ -765,6 +841,7 @@ function openManureStatusModal(pData) {
                 <div style="font-size:13px; font-weight:bold; color:#2E7D32;">${areaStr}</div>
             </div>
             ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="width:100%; padding:8px; margin-bottom:10px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🚗 ナビ開始</button>` : ''}
+            <button type="button" onclick="sharePigManureRequest(currentEditPoly)" style="width:100%; padding:10px; margin-bottom:10px; border:none; border-radius:4px; background:#8D6E63; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🐷 豚糞散布依頼</button>
             
             <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:12px; ${isCompost ? '' : 'display:none;'}" id="compostHintBox">
                 <div style="font-weight:bold; color:#795548; margin-bottom:8px; font-size:14px; border-bottom:1px dashed #FFD54F; padding-bottom:4px; display:flex; align-items:center; gap:6px;">

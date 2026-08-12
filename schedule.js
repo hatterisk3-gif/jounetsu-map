@@ -1531,6 +1531,7 @@ async function fetchWeatherAndUpdateUI() {
         // 圃場の場合のみ「衛星写真で確認」ボタンを追加
         let satBtn = '';
         let cpBtn = '';
+        let manureBtn = '';
         if (!p.isMarker && p.coords && p.coords.length >= 3) {
           satBtn = `<div style="margin-top:8px; text-align:center;">
             <button onclick="openFieldSatForField('${p.id}')"
@@ -1544,6 +1545,12 @@ async function fetchWeatherAndUpdateUI() {
               border:none; border-radius:6px; font-weight:bold; font-size:13px;
               cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🌱 この圃場で栽培計画</button>
           </div>`;
+          manureBtn = `<div style="margin-top:6px; text-align:center;">
+            <button onclick="sharePigManureRequestFromSchedule('${p.id}')"
+              style="width:100%; padding:8px; background:#8D6E63; color:white;
+              border:none; border-radius:6px; font-weight:bold; font-size:13px;
+              cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🐷 豚糞散布依頼</button>
+          </div>`;
         }
 
         let h = `<div style="width:200px; padding:5px; font-family:sans-serif;">
@@ -1553,6 +1560,7 @@ async function fetchWeatherAndUpdateUI() {
                    <div style="background:#f9f9f9; padding:5px; border-radius:4px; max-height:150px; overflow-y:auto;">
                      ${tasksHtml}
                    </div>
+                   ${manureBtn}
                    ${cpBtn}
                    ${satBtn}
                  </div>`;
@@ -1560,6 +1568,74 @@ async function fetchWeatherAndUpdateUI() {
         infoWindow.setPosition(latLng);
         infoWindow.open(map);
       }
+
+      window.sharePigManureRequestFromSchedule = function(fieldId) {
+        const p = loadedPolygons[fieldId];
+        if (!p) {
+          if (typeof customAlert === 'function') customAlert('圃場が見つかりません。');
+          else alert('圃場が見つかりません。');
+          return;
+        }
+        let areaA = parseFloat(p.area) || 0;
+        if ((!areaA || areaA <= 0) && p.coords && p.coords.length > 2 && google.maps.geometry && google.maps.geometry.spherical) {
+          try {
+            const latLngs = p.coords.map(pt => new google.maps.LatLng(
+              (typeof pt.lat === 'function') ? pt.lat() : pt.lat,
+              (typeof pt.lng === 'function') ? pt.lng() : pt.lng
+            ));
+            areaA = Math.round(google.maps.geometry.spherical.computeArea(latLngs) / 100 * 10) / 10;
+          } catch (e) {}
+        }
+        const trucks = areaA > 0 ? Math.ceil(areaA / 20) : 0;
+        const trucksLabel = trucks > 0 ? `${trucks}車` : '面積未設定';
+        const name = p.name || '圃場';
+
+        let lat = null, lng = null;
+        if (p.marker && typeof p.marker.getPosition === 'function' && p.marker.getPosition()) {
+          const pos = p.marker.getPosition();
+          lat = pos.lat();
+          lng = pos.lng();
+        } else if (p.polygon && typeof p.polygon.getPath === 'function') {
+          const b = new google.maps.LatLngBounds();
+          p.polygon.getPath().forEach(pt => b.extend(pt));
+          const c = b.getCenter();
+          lat = c.lat();
+          lng = c.lng();
+        } else if (p.coords && p.coords.length) {
+          let latSum = 0, lngSum = 0, n = 0;
+          p.coords.forEach(pt => {
+            const pla = (typeof pt.lat === 'function') ? pt.lat() : parseFloat(pt.lat);
+            const pln = (typeof pt.lng === 'function') ? pt.lng() : parseFloat(pt.lng);
+            if (!isNaN(pla) && !isNaN(pln)) { latSum += pla; lngSum += pln; n++; }
+          });
+          if (n > 0) { lat = latSum / n; lng = lngSum / n; }
+        }
+        const url = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
+          ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`
+          : '';
+        const text = `${name}\n堆肥 ${trucksLabel}（20aに1車）`;
+        const sharePayload = url ? { title: name, text: text, url: url } : { title: name, text: text };
+
+        const fallbackCopy = () => {
+          const full = url ? `${text}\n${url}` : text;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(full).then(() => {
+              if (typeof customAlert === 'function') customAlert('📋 豚糞散布依頼の内容をコピーしました');
+              else alert('📋 豚糞散布依頼の内容をコピーしました');
+            }).catch(() => prompt('以下をコピーしてください', full));
+          } else {
+            prompt('以下をコピーしてください', full);
+          }
+        };
+
+        if (navigator.share) {
+          navigator.share(sharePayload).catch(err => {
+            if (err && err.name !== 'AbortError') fallbackCopy();
+          });
+        } else {
+          fallbackCopy();
+        }
+      };
 
       function formatDayPlansBadgeHtml(t) {
         const plans = (t && Array.isArray(t.dayPlans)) ? t.dayPlans : [];

@@ -6080,8 +6080,10 @@ window.shareFieldUrl = function(id, fieldName) {
     const url = input.value;
     const title = fieldName || '圃場情報';
     if (navigator.share) {
+        // 多くの共有先は title を無視するため、圃場名は text に入れる
         navigator.share({
             title: title,
+            text: title,
             url: url
         }).catch(err => {
             if (err && err.name !== 'AbortError') {
