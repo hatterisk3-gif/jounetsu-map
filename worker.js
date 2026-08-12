@@ -2367,7 +2367,16 @@ function createSignboardMarker(name, pos, icon, id) {
          document.getElementById('rightPanel').classList.add('open');
       };
 
-      window.editRecord = (id, type) => { currentEditRecordId = id; currentRecordType = type; renderRecordForm(); };
+      window.editRecord = (id, type) => {
+        currentEditRecordId = id;
+        currentRecordType = type;
+        renderRecordForm();
+        const rp = document.getElementById('rightPanel');
+        if (rp) {
+          rp.style.display = 'flex';
+          rp.classList.add('open');
+        }
+      };
 // 🌟作業記録・生育記録の削除処理🌟
       window.deleteRecord = async (recordId) => {
           if (!await customConfirm("本当にこの記録を削除しますか？\n※復元できません")) return;
@@ -5324,6 +5333,13 @@ function createSignboardMarker(name, pos, icon, id) {
       window.refreshWorkNameSectionVisibility = () => {
         const section = document.getElementById('work_name_section');
         const hint = document.getElementById('work_name_gate_hint');
+        // 編集中はゲートを通さず作業名欄を常に表示（マイページ編集で消えないように）
+        if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) {
+          if (section) section.style.display = 'block';
+          if (hint) hint.style.display = 'none';
+          if (typeof window.refreshFieldMachinerySectionVisibility === 'function') window.refreshFieldMachinerySectionVisibility();
+          return;
+        }
         const ready = typeof window.isWorkNameSelectionReady === 'function'
           ? window.isWorkNameSelectionReady()
           : false;
@@ -6968,14 +6984,18 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           const sel = document.getElementById('rec_work_name');
           if (sel) {
-              const exists = Array.from(sel.options).some(o => o.value === name);
-              if (!exists) {
-                  const opt = document.createElement('option');
-                  opt.value = name;
-                  opt.textContent = name;
-                  sel.appendChild(opt);
+              if (sel.tagName === 'SELECT') {
+                const exists = Array.from(sel.options).some(o => o.value === name);
+                if (!exists) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    sel.appendChild(opt);
+                }
+                sel.value = name;
+              } else {
+                sel.value = name;
               }
-              sel.value = name;
           }
           document.querySelectorAll('.work-chip').forEach(el => {
               const wNameChip = el.dataset.wname || '';
@@ -12855,15 +12875,24 @@ function createSignboardMarker(name, pos, icon, id) {
               }
             }
           }
-          if (!tgt && window.myWorkRecords && Array.isArray(window.myWorkRecords)) {
-            const foundRec = window.myWorkRecords.find(r => r.id === currentEditRecordId || r.recordId === currentEditRecordId);
+          if (!tgt && typeof window.collectMyWorkRecords === 'function') {
+            const foundRec = window.collectMyWorkRecords(null).find(r =>
+              r.id === currentEditRecordId
+              || r.recordId === currentEditRecordId
+              || (r.data && r.data.recordId === currentEditRecordId)
+            );
             if (foundRec) {
+              if (foundRec.polyId && typeof loadedPolygons !== 'undefined' && loadedPolygons[foundRec.polyId]) {
+                activePolyId = foundRec.polyId;
+                selectedPolyIds = [String(activePolyId)];
+              }
               tgt = {
                 id: foundRec.id || currentEditRecordId,
                 type: 'work',
-                author: currentUser,
-                date: foundRec.date || foundRec.workDate || todayStr,
-                time: foundRec.time || foundRec.startTime || '',
+                author: foundRec.author || currentUser,
+                date: foundRec.date || foundRec.recordYmd || (foundRec.data && foundRec.data.workDate) || '',
+                time: foundRec.time || (foundRec.data && foundRec.data.startTime) || '',
+                urls: foundRec.urls || (foundRec.url ? [foundRec.url] : []),
                 data: Object.assign({}, foundRec.data || foundRec)
               };
             }
@@ -13036,6 +13065,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="work_name_section" class="rec-zone rec-zone-workname" style="display:none; background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:12px; margin-bottom:15px;">
                   <label class="form-label" style="margin-top:0; color:#E65100;">🚜 作業名</label>
                   <div id="work_name_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
+                  <input type="hidden" id="rec_work_name" value="">
                   <div id="work_chips_wrapper">
                     ${recentChipsHTML}
                     ${allChipsHTML}
@@ -13283,7 +13313,8 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof renderWorkOptions === 'function') {
               renderWorkOptions(wCat, window.getSelectedWorkCropFilterKeys ? window.getSelectedWorkCropFilterKeys() : wCropKey);
             }
-            document.getElementById('rec_work_name').value = d.workName || '';
+            const workNameEl = document.getElementById('rec_work_name');
+            if (workNameEl) workNameEl.value = d.workName || '';
             if (d.crop && typeof window.setSelectedWorkCropsFromText === 'function') {
                 window.setSelectedWorkCropsFromText(d.crop);
             } else if (d.crop && typeof window.syncRecordCropFromFilter === 'function') {
@@ -18235,12 +18266,24 @@ window.closeRadarModal = function() {
 };
 
 // ====== マイページ ======
+window.openMyPageWorkRecordEdit = function(polyId, recordId, evt) {
+    if (evt) {
+        evt.stopPropagation();
+        evt.preventDefault();
+    }
+    window.editRecordFromMyPage(polyId, recordId);
+};
+
 window.editRecordFromMyPage = function(polyId, recordId) {
+    recordId = String(recordId || '').trim();
+    polyId = String(polyId || '').trim();
+    if (!recordId) return;
+
     if (polyId && typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]) {
         activePolyId = polyId;
     } else {
         activePolyId = null;
-        if (recordId && typeof loadedPolygons !== 'undefined') {
+        if (typeof loadedPolygons !== 'undefined') {
             for (let k in loadedPolygons) {
                 const item = loadedPolygons[k];
                 if (item && Array.isArray(item.photos) && item.photos.some(ph => ph && (ph.id === recordId || ph.url === recordId))) {
@@ -18249,7 +18292,16 @@ window.editRecordFromMyPage = function(polyId, recordId) {
                 }
             }
         }
+        if (!activePolyId && typeof window.collectMyWorkRecords === 'function') {
+            const found = window.collectMyWorkRecords(null).find(r =>
+                r.id === recordId || r.recordId === recordId || (r.data && r.data.recordId === recordId)
+            );
+            if (found && found.polyId && loadedPolygons[found.polyId]) {
+                activePolyId = found.polyId;
+            }
+        }
     }
+
     currentEditRecordId = recordId;
     currentRecordType = 'work';
 
@@ -18257,13 +18309,20 @@ window.editRecordFromMyPage = function(polyId, recordId) {
     if (typeof closeMyWorkHistoryDetail === 'function') closeMyWorkHistoryDetail();
     const modal = document.getElementById('modal');
     if (modal) modal.style.display = 'none';
-
-    if (typeof renderRecordForm === 'function') renderRecordForm();
+    const histModal = document.getElementById('myWorkHistoryModal');
+    if (histModal) histModal.style.display = 'none';
 
     const rightPanel = document.getElementById('rightPanel');
     if (rightPanel) {
         rightPanel.style.display = 'flex';
         rightPanel.classList.add('open');
+    }
+
+    try {
+        if (typeof renderRecordForm === 'function') renderRecordForm();
+    } catch (e) {
+        console.error('editRecordFromMyPage renderRecordForm:', e);
+        if (typeof customAlert === 'function') customAlert('編集画面の表示中にエラーが発生しました。');
     }
 };
 
@@ -18577,7 +18636,7 @@ window.renderMyWorkRecordCardHtml = function(rec) {
             ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
                 <span onclick="window.deleteRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
-                <span onclick="document.getElementById('modal').style.display='none'; closeMyWorkHistoryDetail(); window.editRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
+                <span onclick="openMyPageWorkRecordEdit('${safePolyId}', '${safeRecId}', event)" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
             </div>
         </div>
     `;
