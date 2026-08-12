@@ -136,12 +136,14 @@
   };
 
   window.refreshAccountNameButtons = function () {
-    const name = window.getPassionMapUserName() || 'アカウント';
+    const name = window.getPassionMapUserName() || 'マイページ';
     document.querySelectorAll('[data-account-name]').forEach(function (el) {
       el.textContent = name;
     });
     document.querySelectorAll('[data-account-name-btn]').forEach(function (el) {
-      el.textContent = '👤 ' + name;
+      if (!el.querySelector('[data-account-name]')) {
+        el.textContent = '👤 ' + (window.getPassionMapUserName() || 'アカウント');
+      }
     });
   };
 
@@ -518,6 +520,41 @@
     }, 400);
   };
 
+  window.adjustClockInTime = function (targetInputId, deltaMinutes) {
+    const input = document.getElementById(targetInputId);
+    if (!input) return;
+    const val = String(input.value || '').trim();
+    let mins = timeToMins(val);
+    if (mins == null) {
+      const now = new Date();
+      mins = now.getHours() * 60 + now.getMinutes();
+    }
+    let newMins = mins + parseInt(deltaMinutes, 10);
+    newMins = ((newMins % 1440) + 1440) % 1440;
+    const newTime = minsToHm(newMins);
+    input.value = newTime;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.style.background = '#e8f5e9';
+    setTimeout(function () {
+      if (input) input.style.background = '#fff';
+    }, 400);
+  };
+
+  function buildClockInAdjustmentButtonsHtml(targetInputId) {
+    const target = String(targetInputId || 'clockInTime').replace(/'/g, "\\'");
+    const btnPos = 'background:#f1f8e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:6px;padding:8px 4px;font-weight:bold;font-size:12px;cursor:pointer;text-align:center;';
+    const btnNeg = 'background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:6px;padding:8px 4px;font-weight:bold;font-size:12px;cursor:pointer;text-align:center;';
+    let html = '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;margin:0 0 10px;">';
+    html += '<button type="button" onclick="adjustClockInTime(\'' + target + '\', 60)" style="' + btnPos + '">+1時間</button>';
+    html += '<button type="button" onclick="adjustClockInTime(\'' + target + '\', 30)" style="' + btnPos + '">+30分</button>';
+    html += '<button type="button" onclick="adjustClockInTime(\'' + target + '\', 15)" style="' + btnPos + '">+15分</button>';
+    html += '<button type="button" onclick="adjustClockInTime(\'' + target + '\', -60)" style="' + btnNeg + '">-1時間</button>';
+    html += '<button type="button" onclick="adjustClockInTime(\'' + target + '\', -30)" style="' + btnNeg + '">-30分</button>';
+    html += '<button type="button" onclick="adjustClockInTime(\'' + target + '\', -15)" style="' + btnNeg + '">-15分</button>';
+    html += '</div>';
+    return html;
+  }
+
   /** 出勤モーダルを即表示（サーバー待ちなし） */
   function openClockInModal() {
     if (!navigator.geolocation) {
@@ -530,6 +567,7 @@
     html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
     html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
     html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+    html += buildClockInAdjustmentButtonsHtml('clockInTime');
     html += buildClockInPresetButtonsHtml();
     html += `<div style="display:flex; gap:10px;">`;
     html += `  <button id="confirmClockInBtn" onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
@@ -965,6 +1003,13 @@
         if (st && st.lat != null && st.lng != null) window.plotClockInMarker(st, false);
       }
     } catch (e) {}
+
+    // 作業記録モーダルが開いている場合、開始時刻に即時連動
+    try {
+      if (typeof window.syncWorkStartTimeWithClockIn === 'function') {
+        window.syncWorkStartTimeWithClockIn(pad);
+      }
+    } catch (e) {}
   }
 
   function buildClockInEditHtml(clockInTime, workDateYmd) {
@@ -973,10 +1018,11 @@
     let html = `<div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:10px; margin-bottom:12px;">`;
     html += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin-bottom:6px;">出勤時間（変更可）</div>`;
     html += `<input type="hidden" id="editClockInDateYmd" value="${d}">`;
-    html += `<div style="display:flex; gap:8px; align-items:center;">`;
+    html += `<div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">`;
     html += `<input type="text" id="editClockInTime" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:10px; font-size:16px; background:#fff; cursor:pointer;" value="${t}" onclick="if(window.openAppTimePicker) openAppTimePicker('editClockInTime', '出勤時間')">`;
     html += `<button type="button" onclick="applyClockInTimeChange()" style="flex-shrink:0; background:#2E7D32; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:13px; cursor:pointer;">変更</button>`;
     html += `</div>`;
+    html += buildClockInAdjustmentButtonsHtml('editClockInTime');
     html += `<div style="font-size:11px; color:#555; margin-top:6px;">勤務日: <b>${d || '—'}</b>　※間違えた出勤時間をここで直せます</div>`;
     html += `</div>`;
     return html;

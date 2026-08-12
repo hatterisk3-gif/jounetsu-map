@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>プロ情熱MAP [作業記録用] v2.55</title>
+  <title>プロ情熱MAP [作業記録用] v2.58</title>
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
   <link rel="manifest" href="manifest.json">
@@ -38,7 +38,7 @@
 
   <div id="loginScreen">
     <div class="login-box">
-      <h2 style="color:#4CAF50;">プロ情熱MAP (v2.55)</h2>
+      <h2 style="color:#4CAF50;">プロ情熱MAP (v2.58)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px;"></div>
       <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
       <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
@@ -289,16 +289,16 @@
       <button onclick="openFeedback()"
         style="background:#444; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️
         連絡</button>
-      <button onclick="openMyPage()"
-        style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤
-        <span data-account-name>マイページ</span></button>
       <div style="position:relative; display:inline-block;">
-        <button type="button" data-account-name-btn onclick="toggleAccountMenu(event)"
-          style="background:#fff; color:#1565c0; border:1px solid #90caf9; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤 アカウント</button>
+        <button type="button" onclick="toggleAccountMenu(event)"
+          style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤
+          <span data-account-name>マイページ</span> ▾</button>
         <div id="accountMenuDropdown" onclick="event.stopPropagation()"
-          style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:140px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
+          style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:150px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
+          <button type="button" onclick="closeAccountMenu(); openMyPage();"
+            style="width:100%; background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">👤 マイページ</button>
           <button type="button" onclick="closeAccountMenu(); executeLogout();"
-            style="width:100%; background:#F44336; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:12px; cursor:pointer;">🚪 ログアウト</button>
+            style="width:100%; background:#F44336; color:#fff; border:none; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; text-align:left;">🚪 ログアウト</button>
         </div>
       </div>
     </div>

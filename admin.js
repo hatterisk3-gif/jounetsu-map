@@ -7129,7 +7129,21 @@ window.handleStatusSelect = async (sel) => {
             html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
             html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
             html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
-            html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:15px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+            html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
+            if (typeof buildClockInAdjustmentButtonsHtml === 'function') {
+              html += buildClockInAdjustmentButtonsHtml('clockInTime');
+            } else {
+              const btnP = 'background:#f1f8e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:6px;padding:8px 4px;font-weight:bold;font-size:12px;cursor:pointer;text-align:center;';
+              const btnN = 'background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:6px;padding:8px 4px;font-weight:bold;font-size:12px;cursor:pointer;text-align:center;';
+              html += '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;margin:0 0 10px;">';
+              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 60)" style="' + btnP + '">+1時間</button>';
+              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 30)" style="' + btnP + '">+30分</button>';
+              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 15)" style="' + btnP + '">+15分</button>';
+              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -60)" style="' + btnN + '">-1時間</button>';
+              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -30)" style="' + btnN + '">-30分</button>';
+              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -15)" style="' + btnN + '">-15分</button>';
+              html += '</div>';
+            }
             html += `<div style="display:flex; gap:10px;">`;
             html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
             html += `  <button onclick="if(window.hideClockModal) window.hideClockModal(); else document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
