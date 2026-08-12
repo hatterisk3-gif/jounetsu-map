@@ -12834,7 +12834,7 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
 
-        const p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [], area: 0 };
+        const p = (activePolyId && typeof loadedPolygons !== 'undefined' && loadedPolygons[activePolyId]) ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [], area: 0 };
         const isEdit = !!currentEditRecordId;
         selectedPolyIds = activePolyId ? [String(activePolyId)] : []; pendingFiles = []; 
         const addBtnStyle = ''; // ★変更：編集時もボタンを常に表示する！
@@ -18236,14 +18236,35 @@ window.closeRadarModal = function() {
 
 // ====== マイページ ======
 window.editRecordFromMyPage = function(polyId, recordId) {
-    if (polyId && loadedPolygons[polyId]) {
+    if (polyId && typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]) {
         activePolyId = polyId;
+    } else {
+        activePolyId = null;
+        if (recordId && typeof loadedPolygons !== 'undefined') {
+            for (let k in loadedPolygons) {
+                const item = loadedPolygons[k];
+                if (item && Array.isArray(item.photos) && item.photos.some(ph => ph && (ph.id === recordId || ph.url === recordId))) {
+                    activePolyId = k;
+                    break;
+                }
+            }
+        }
     }
     currentEditRecordId = recordId;
     currentRecordType = 'work';
+
+    if (typeof closeAppModal === 'function') closeAppModal();
+    if (typeof closeMyWorkHistoryDetail === 'function') closeMyWorkHistoryDetail();
+    const modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+
     if (typeof renderRecordForm === 'function') renderRecordForm();
+
     const rightPanel = document.getElementById('rightPanel');
-    if (rightPanel) rightPanel.classList.add('open');
+    if (rightPanel) {
+        rightPanel.style.display = 'flex';
+        rightPanel.classList.add('open');
+    }
 };
 
 window.deleteRecordFromMyPage = async function(polyId, recordId) {

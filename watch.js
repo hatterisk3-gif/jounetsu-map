@@ -176,8 +176,19 @@ async function fetchNextJob() {
   return null;
 }
 
+let lastNotifiedRow = null;
+let lastNotifiedTime = 0;
+
 /** 完了／失敗を必ずシートへ返す（失敗すると行が「処理中」のまま残留する） */
 async function notifyJobComplete(rowIndex, summary, fullSummary, fileIds) {
+  const now = Date.now();
+  if (lastNotifiedRow === rowIndex && (now - lastNotifiedTime) < 15000) {
+    console.warn(`⚠️ row=${rowIndex} の完了通知は直前に送信済みのため重複送信をスキップします。`);
+    return true;
+  }
+  lastNotifiedRow = rowIndex;
+  lastNotifiedTime = now;
+
   const updatePayload = {
     action: 'update',
     row: rowIndex,
