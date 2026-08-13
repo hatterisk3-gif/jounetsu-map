@@ -7168,58 +7168,66 @@ async function saveCultivationPlan(options) {
             planName: planName,
             planDataArray: payloadPlans
         });
-        if (btn && !opts.silent) setCpSaveProgress(70, '作型マスタを更新しています...', 85);
 
-        if (croptypeParamsArray.length > 0) {
-            await callGAS('saveCroptypeDBBatch', { croptypes: croptypeParamsArray });
-        }
+        // 一覧はローカル即反映（getCultivationMaster / 全一覧再取得を待たない）
+        if (btn && !opts.silent) setCpSaveProgress(88, '保存を反映しています...', 98);
+        const saveLocations = [];
+        payloadPlans.forEach(p => {
+            const loc = String(p.location || '').trim();
+            if (loc && saveLocations.indexOf(loc) === -1) saveLocations.push(loc);
+        });
+        upsertCachedSavedPlanSummary_({
+            year: year,
+            crop: crop,
+            planType: planType,
+            planName: planName,
+            location: saveLocations.length === 1 ? saveLocations[0] : (saveLocations.join('・') || ''),
+            locations: saveLocations,
+            count: payloadPlans.length,
+            plannedCount: payloadPlans.filter(p => p.status !== 'executed').length,
+            executedCount: payloadPlans.filter(p => p.status === 'executed').length,
+            plans: payloadPlans.map(p => ({
+                variety: p.variety,
+                trays: p.trays,
+                holes: p.holes,
+                status: p.status,
+                location: p.location || '',
+                maker: (typeof lookupVarietyMeta === 'function' ? (lookupVarietyMeta(p.crop, p.variety).maker || '') : ''),
+                grainCount: (typeof lookupVarietyMeta === 'function' ? (lookupVarietyMeta(p.crop, p.variety).grainCount || '') : ''),
+                seedCount: (Number(p.holes) === 1)
+                    ? (Number(p.trays) || 0)
+                    : ((Number(p.trays) || 0) * (Number(p.holes) || 0))
+            })),
+            lastUpdated: new Date().toISOString()
+        });
 
-        if (btn && !opts.silent) setCpSaveProgress(88, '一覧を更新しています...', 95);
-        try {
-            const master = await callGAS('getCultivationMaster');
-            if (master) {
-                cpMasterData = master;
-                localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+        // 作型DB・マスタ・一覧の最新同期は裏で実施（保存完了を待たせない）
+        const bgSync = (async () => {
+            if (croptypeParamsArray.length > 0) {
+                try {
+                    await callGAS('saveCroptypeDBBatch', { croptypes: croptypeParamsArray });
+                } catch (e) {
+                    console.warn('作型マスタの裏同期失敗:', e);
+                }
             }
-        } catch (e) {
-            console.warn('栽培マスタ更新失敗:', e);
-            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData || {})); } catch (e2) {}
-        }
-        try {
-            const list = await callGAS('getSavedCultivationPlanList');
-            setCachedSavedPlanList_(list);
-        } catch (e) {
-            console.warn('計画一覧更新失敗:', e);
-            // 一覧取得失敗時だけローカル要約で補完
-            const saveLocations = [];
-            payloadPlans.forEach(p => {
-                const loc = String(p.location || '').trim();
-                if (loc && saveLocations.indexOf(loc) === -1) saveLocations.push(loc);
-            });
-            upsertCachedSavedPlanSummary_({
-                year: year,
-                crop: crop,
-                planType: planType,
-                planName: planName,
-                location: saveLocations.length === 1 ? saveLocations[0] : (saveLocations.join('・') || ''),
-                locations: saveLocations,
-                count: payloadPlans.length,
-                plannedCount: payloadPlans.filter(p => p.status !== 'executed').length,
-                executedCount: payloadPlans.filter(p => p.status === 'executed').length,
-                plans: payloadPlans.map(p => ({
-                    variety: p.variety,
-                    trays: p.trays,
-                    holes: p.holes,
-                    status: p.status,
-                    location: p.location || '',
-                    maker: (typeof lookupVarietyMeta === 'function' ? (lookupVarietyMeta(p.crop, p.variety).maker || '') : ''),
-                    grainCount: (typeof lookupVarietyMeta === 'function' ? (lookupVarietyMeta(p.crop, p.variety).grainCount || '') : ''),
-                    seedCount: (Number(p.holes) === 1)
-                        ? (Number(p.trays) || 0)
-                        : ((Number(p.trays) || 0) * (Number(p.holes) || 0))
-                })),
-                lastUpdated: new Date().toISOString()
-            });
+            try {
+                const master = await callGAS('getCultivationMaster');
+                if (master) {
+                    cpMasterData = master;
+                    localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+                }
+            } catch (e) {
+                console.warn('栽培マスタの裏同期失敗:', e);
+            }
+            try {
+                const list = await callGAS('getSavedCultivationPlanList');
+                setCachedSavedPlanList_(list);
+            } catch (e) {
+                console.warn('計画一覧の裏同期失敗:', e);
+            }
+        })();
+        if (typeof bgSync.then === 'function') {
+            bgSync.catch(e => console.warn('保存後の裏同期失敗:', e));
         }
 
         // 以前の未同期キューに同じ計画があれば除去
