@@ -3698,25 +3698,6 @@ function addCpPlanRow(options) {
         plan.fileUrl = '';
     }
 
-    // 播種ブロック分割などで既存枠から同一品種を複製するとき
-    if (opts.cloneFromPlan) {
-        const src = opts.cloneFromPlan;
-        if (src.crop) plan.crop = src.crop;
-        if (src.location) plan.location = src.location;
-        if (src.fieldCondition) plan.fieldCondition = src.fieldCondition;
-        if (src.holes != null) plan.holes = src.holes;
-        if (src.rows != null) plan.rows = src.rows;
-        if (src.pSpace != null) plan.pSpace = src.pSpace;
-        if (src.rSpace != null) plan.rSpace = src.rSpace;
-        if (src.yieldPerPlant != null) plan.yieldPerPlant = src.yieldPerPlant;
-        if (src.itemsPerPack != null) plan.itemsPerPack = src.itemsPerPack;
-        if (src.areaA != null) plan.areaA = src.areaA;
-        if (src.yieldRate != null) plan.yieldRate = src.yieldRate;
-        if (src.seedlingSuccess != null) plan.seedlingSuccess = src.seedlingSuccess;
-        if (src.inputMode) plan.inputMode = src.inputMode;
-        if (src.climate && !plan.climate) plan.climate = src.climate;
-    }
-
     // 空のスターターカードがあれば、最初の1件はそこに上書き
     const blankIdx = cpPlans.findIndex(p => p && (p.isBlankStarter || !String(p.variety || '').trim()));
     if (blankIdx >= 0 && !opts.forceNewRow) {
@@ -4792,100 +4773,9 @@ function restoreCpPaintRow(snapshot) {
 // ドラッグ塗り状態
 let cpPaintDrag = null;
 
-/** 定植は1点ずつ。播種・収穫などはドラッグ連続塗り可 */
+/** 播種・定植は1点ずつ。収穫などはドラッグ連続塗り可 */
 function isCpSinglePointPaintTool_(tool) {
-    return tool === 'planting';
-}
-
-/** 指定タスクの連続セルを1ブロックとして列挙 */
-function getCpContiguousTaskBlocks_(planId, task) {
-    const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
-    if (!tr) return [];
-    const cols = Array.from(tr.querySelectorAll(`td[data-task="${task}"]`))
-        .map(td => parseInt(td.dataset.colIdx, 10))
-        .filter(n => !isNaN(n))
-        .sort((a, b) => a - b);
-    const blocks = [];
-    cols.forEach(c => {
-        const last = blocks[blocks.length - 1];
-        if (!last || c > last.end + 1) {
-            blocks.push({ start: c, end: c, cols: [c] });
-        } else {
-            last.end = c;
-            last.cols.push(c);
-        }
-    });
-    return blocks;
-}
-
-function clearCpTaskColsExcept_(planId, task, keepCols) {
-    const keep = keepCols instanceof Set ? keepCols : new Set(keepCols || []);
-    const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
-    if (!tr) return;
-    tr.querySelectorAll(`td[data-task="${task}"]`).forEach(td => {
-        const c = parseInt(td.dataset.colIdx, 10);
-        if (!keep.has(c)) clearCpCellPaint(td);
-    });
-}
-
-function paintCpTaskCols_(planId, cols, tool) {
-    const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
-    if (!tr) return;
-    (cols || []).forEach(c => {
-        const td = tr.querySelector(`td[data-col-idx="${c}"]`);
-        if (td) forcePaintCpCell(td, tool);
-    });
-}
-
-let cpSplittingSowingFrames_ = false;
-
-/**
- * 同一行に播種が複数ブロックあるとき、先頭以外を同一品種の新枠へ分割する。
- * （ドラッグ複数塗りや離れたマスへの追加塗り後に呼ぶ）
- */
-function splitCpSowingBlocksIntoSameVarietyFrames_(planId) {
-    if (cpSplittingSowingFrames_) return false;
-    const plan = (Array.isArray(cpPlans) ? cpPlans : []).find(p => p && String(p.id) === String(planId));
-    if (!plan || !String(plan.variety || '').trim()) return false;
-
-    const blocks = getCpContiguousTaskBlocks_(planId, 'sowing');
-    if (blocks.length <= 1) return false;
-
-    cpSplittingSowingFrames_ = true;
-    let added = 0;
-    try {
-        clearCpTaskColsExcept_(planId, 'sowing', blocks[0].cols);
-        if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
-        if (typeof syncCpSemiAutoStepForPlan === 'function') syncCpSemiAutoStepForPlan(planId);
-
-        for (let i = 1; i < blocks.length; i++) {
-            const block = blocks[i];
-            const ok = addCpPlanRow({
-                variety: plan.variety,
-                forceNewRow: true,
-                silentHistory: true,
-                cloneFromPlan: plan,
-                croptypeData: {
-                    sowing: [],
-                    planting: [],
-                    harvesting: [],
-                    fileUrl: plan.fileUrl || '',
-                    climate: plan.climate
-                }
-            });
-            if (!ok) continue;
-            const newPlan = cpPlans[cpPlans.length - 1];
-            if (!newPlan) continue;
-            paintCpTaskCols_(newPlan.id, block.cols, 'sowing');
-            if (typeof updateRowCalculations === 'function') updateRowCalculations(newPlan.id);
-            if (typeof updateCpCellsText === 'function') updateCpCellsText(newPlan.id);
-            if (typeof syncCpSemiAutoStepForPlan === 'function') syncCpSemiAutoStepForPlan(newPlan.id);
-            added += 1;
-        }
-    } finally {
-        cpSplittingSowingFrames_ = false;
-    }
-    return added > 0;
+    return tool === 'sowing' || tool === 'planting';
 }
 
 function resolveCpPaintToolForPlan(planId) {
@@ -4948,7 +4838,7 @@ function bindCpCellPaintEvents(td, planId) {
             if (moved > 8) cpPaintDrag = null;
             return;
         }
-        // 定植はドラッグ連続塗りしない（1点ずつ）
+        // 播種・定植はドラッグ連続塗りしない（1点ずつ）
         if (cpPaintDrag.singlePoint) return;
 
         const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -4992,7 +4882,7 @@ function bindCpCellPaintEvents(td, planId) {
         try { td.releasePointerCapture(e.pointerId); } catch (err) {}
 
         if (!drag.dragged || drag.singlePoint) {
-            // クリックのみ、または定植 → 1点トグル
+            // クリックのみ、または播種・定植 → 1点トグル
             toggleCpCell(drag.startTd, planId);
             return;
         }
@@ -5010,10 +4900,6 @@ function bindCpCellPaintEvents(td, planId) {
             };
             syncCpSemiAutoStepForPlan(planId);
             updateCpSemiAutoHint(planId);
-        }
-        // 播種を複数ブロック塗った場合は、ブロックごとに同一品種枠へ分割
-        if (drag.tool === 'sowing') {
-            splitCpSowingBlocksIntoSameVarietyFrames_(planId);
         }
         if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
         if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
@@ -5042,12 +4928,9 @@ function toggleCpCell(td, planId) {
 
         // 塗りつぶし済みのマスは、工程や操作順に関係なくクリックで消す
         if (td.dataset.task) {
-            const clearedTask = td.dataset.task;
             clearCpCellPaint(td);
             if (last && isSameSemiAutoCell(last, cellKey)) delete cpSemiAutoLastPaint[planId];
             syncCpSemiAutoStepForPlan(planId);
-            // 播種の途中を消してブロックが分かれた場合も分割
-            if (clearedTask === 'sowing') splitCpSowingBlocksIntoSameVarietyFrames_(planId);
             updateCpCellsText(planId);
             updateCpSemiAutoHint(planId);
             if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
@@ -5069,20 +4952,14 @@ function toggleCpCell(td, planId) {
             stepBefore: step
         };
         syncCpSemiAutoStepForPlan(planId);
-        if (tool === 'sowing') splitCpSowingBlocksIntoSameVarietyFrames_(planId);
         updateCpCellsText(planId);
         updateCpSemiAutoHint(planId);
         if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
         return;
     }
     
-    const beforeTask = td.dataset.task || '';
     applyPaintTool(td, tool);
-    const afterTask = td.dataset.task || '';
     syncCpSemiAutoStepForPlan(planId);
-    if (tool === 'sowing' || tool === 'eraser' || beforeTask === 'sowing' || afterTask === 'sowing') {
-        splitCpSowingBlocksIntoSameVarietyFrames_(planId);
-    }
     updateCpCellsText(planId);
     if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint(planId);
     if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
