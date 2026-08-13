@@ -896,14 +896,11 @@
     <!-- 計画実行一覧は計画一覧に統合（互換のため残し非表示） -->
     <div id="executePlanListModal" style="display:none;"></div>
 
-    <!-- 計画一覧モーダル（読込・実行・削除・収穫グラフ） -->
+    <!-- 計画一覧モーダル（読込・実行・削除） -->
     <div id="historyListModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11000; align-items:center; justify-content:center;">
       <div style="background:#fff; width:94%; max-width:560px; border-radius:12px; padding:20px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column;">
         <h3 style="margin:0 0 8px 0; font-size:18px; color:#333; text-align:center; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">📂 計画一覧</h3>
         <p style="font-size:12px; color:#666; margin:0 0 10px 0; text-align:center;">読込・実行・削除／品種ごとのメーカー・種個数（調達確認）</p>
-        <div style="text-align:center; margin-bottom:10px;">
-          <button type="button" onclick="openCropHarvestChartModal()" style="padding:6px 12px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;">📊 作物別・半旬収穫グラフ</button>
-        </div>
         
         <div id="historyListContainer" style="overflow-y:auto; flex:1; margin-bottom: 15px; padding-right: 5px;">
         </div>

@@ -8297,30 +8297,7 @@ function getSavedCultivationPlanList() {
     const sheet = ss.getSheetByName('栽培計画');
     if (!sheet || sheet.getLastRow() <= 1) return [];
 
-    // 品種→メーカー・粒数（コート/生種）の参照
-    const metaMap = {};
-    const croptypeSheet = ss.getSheetByName('作型DB');
-    if (croptypeSheet && croptypeSheet.getLastRow() > 1) {
-      const dbData = croptypeSheet.getDataRange().getValues();
-      const headers = (dbData[0] || []).map(h => String(h || '').trim());
-      const makerCol = headers.indexOf('メーカー');
-      const grainCol = headers.indexOf('粒数');
-      for (let i = 1; i < dbData.length; i++) {
-        const r = dbData[i];
-        const crop = String(r[0] || '').trim();
-        const variety = String(r[1] || '').trim();
-        if (!crop || !variety) continue;
-        const key = crop + '\t' + variety;
-        const maker = makerCol !== -1 ? String(r[makerCol] || '').trim() : '';
-        const grainCount = grainCol !== -1 ? String(r[grainCol] || '').trim() : '';
-        if (!metaMap[key] || maker || grainCount) {
-          if (!metaMap[key]) metaMap[key] = { maker: '', grainCount: '' };
-          if (maker) metaMap[key].maker = maker;
-          if (grainCount) metaMap[key].grainCount = grainCount;
-        }
-      }
-    }
-
+    // 一覧表示用に軽量化：作型DB全走査はせず、メーカー等は端末側で補完
     const dataRowCount = Math.max(0, sheet.getLastRow() - 1);
     const data = dataRowCount > 0
       ? sheet.getRange(2, 1, dataRowCount, 6).getValues()
@@ -8355,10 +8332,9 @@ function getSavedCultivationPlanList() {
          location = String(planData.location || '').trim();
        }
        if (!vName) vName = '(品種未設定)';
-       if (!planName) planName = year + '年 ' + crop + ' ' + planType;
+       if (!planName) planName = resolveCultivationPlanName_(year, crop, planData || {}, planType, '');
 
        const seedCount = (holes === 1) ? trays : (trays * (holes > 0 ? holes : 0));
-       const meta = metaMap[crop + '\t' + vName] || { maker: '', grainCount: '' };
 
        const key = year + '_' + crop + '_' + planName;
        if (!map[key]) {
@@ -8396,8 +8372,8 @@ function getSavedCultivationPlanList() {
        map[key].plans.push({
          id: planId,
          variety: vName,
-         maker: meta.maker || '',
-         grainCount: meta.grainCount || '',
+         maker: '',
+         grainCount: '',
          trays: trays,
          holes: holes,
          areaA: areaA,

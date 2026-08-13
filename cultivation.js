@@ -6396,147 +6396,133 @@ async function showHistoryListModal() {
 
 let currentPlanListMode = 'manage';
 
-async function showPlanListModal(options) {
-    const requestedMode = options && options.mode;
-    if (requestedMode === 'load' || requestedMode === 'manage') {
-        currentPlanListMode = requestedMode;
-    }
-    const isLoadMode = currentPlanListMode === 'load';
-    const modal = document.getElementById('historyListModal');
-    if (!modal) {
-        alert('計画一覧の読み込み中です。数秒待ってから再度お試しください。');
-        return;
-    }
-    modal.style.display = 'flex';
-    const container = document.getElementById('historyListContainer');
-    const loading = window.AppLoading
-        ? AppLoading.inline(container, {
-            label: '栽培計画一覧を読み込み中...',
-            detail: '保存済みの計画を取得しています',
-            delay: 0
-        })
-        : null;
+/** 一覧用: 端末の品種マスタからメーカー・粒種を補完 */
+function enrichSavedPlanListMeta_(list) {
+    return (Array.isArray(list) ? list : []).map(item => {
+        const crop = item && item.crop;
+        const plans = (item && Array.isArray(item.plans) ? item.plans : []).map(p => {
+            if (!p) return p;
+            if (p.maker && p.grainCount) return p;
+            const meta = (typeof lookupVarietyMeta === 'function')
+                ? lookupVarietyMeta(crop, p.variety)
+                : { maker: '', grainCount: '' };
+            return Object.assign({}, p, {
+                maker: p.maker || meta.maker || '',
+                grainCount: p.grainCount || meta.grainCount || ''
+            });
+        });
+        return Object.assign({}, item, { plans: plans });
+    });
+}
 
-    try {
-        const list = await callGAS('getSavedCultivationPlanList');
-        setCachedSavedPlanList_(list);
-        if (!list || list.length === 0) {
-            if (loading) loading.done();
-            container.innerHTML = '<div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">保存済みの計画はありません。<br>「栽培計画を立てる」→「計画を保存」してください。</div>';
-            return;
+function renderSavedPlanListHtml_(list, isLoadMode) {
+    const esc = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const formatGrain = (g) => {
+        if (typeof formatGrainTypeLabel === 'function') {
+            const label = formatGrainTypeLabel(g);
+            if (label) return label;
+        }
+        const v = String(g || '').trim();
+        if (!v) return '';
+        if (v === 'コート' || v === '生種') return v;
+        return /^\d+(\.\d+)?$/.test(v) ? (v + '粒') : v;
+    };
+    const formatSeedLine = (p) => {
+        const seeds = Number(p.seedCount) || 0;
+        const trays = Number(p.trays) || 0;
+        const holes = Number(p.holes) || 0;
+        let detail = '';
+        if (holes === 1) {
+            detail = trays ? `（${trays.toLocaleString('ja-JP')}株）` : '';
+        } else if (trays && holes) {
+            detail = `（${trays.toLocaleString('ja-JP')}枚×${holes}穴）`;
+        }
+        return seeds.toLocaleString('ja-JP') + '粒' + detail;
+    };
+
+    let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+    list.forEach(item => {
+        const dateStr = item.lastUpdated
+            ? new Date(item.lastUpdated).toLocaleString('ja-JP', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })
+            : '';
+        const planned = (typeof item.plannedCount === 'number') ? item.plannedCount : item.count;
+        const executed = item.executedCount || 0;
+        const y = String(item.year).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const c = String(item.crop).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const pt = String(item.planType || (/試作\d*$/.test(String(item.planName || '')) ? '試作' : '本作'))
+            .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const pn = String(item.planName || (item.year + '年 ' + item.crop + ' ' + (item.planType || '本作')))
+            .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const canExec = planned > 0;
+        const locList = Array.isArray(item.locations) && item.locations.length
+            ? item.locations.filter(Boolean)
+            : (item.location ? [item.location] : []);
+        if (!locList.length && Array.isArray(item.plans)) {
+            item.plans.forEach(p => {
+                const loc = String(p && p.location || '').trim();
+                if (loc && locList.indexOf(loc) === -1) locList.push(loc);
+            });
+        }
+        const locationLabel = locList.length ? locList.join('・') : '拠点未設定';
+
+        const plans = Array.isArray(item.plans) ? item.plans : [];
+        let varietyHtml = '';
+        if (plans.length) {
+            const agg = {};
+            plans.forEach(p => {
+                const key = [p.variety || '', p.maker || '', p.grainCount || '', p.status || '', p.location || ''].join('\t');
+                if (!agg[key]) {
+                    agg[key] = {
+                        variety: p.variety || '(品種未設定)',
+                        maker: p.maker || '',
+                        grainCount: p.grainCount || '',
+                        location: p.location || '',
+                        status: p.status || 'planned',
+                        seedCount: 0,
+                        trays: 0,
+                        holes: Number(p.holes) || 0,
+                        planCount: 0
+                    };
+                }
+                agg[key].seedCount += Number(p.seedCount) || 0;
+                agg[key].trays += Number(p.trays) || 0;
+                if (!agg[key].holes && p.holes) agg[key].holes = Number(p.holes) || 0;
+                agg[key].planCount += 1;
+            });
+            const rows = Object.values(agg);
+            varietyHtml = '<details style="margin-top:6px; font-size:11px;">' +
+                '<summary style="color:#795548; cursor:pointer; font-weight:bold;">🌱 品種・メーカー等（' + rows.length + '件／種 ' + (Number(item.seedTotal) || 0).toLocaleString('ja-JP') + '粒）</summary>' +
+                '<div style="margin-top:5px; background:#fff8e1; border:1px solid #ffe082; border-radius:5px; padding:6px;">' +
+                rows.map(p => {
+                    const statusLabel = p.status === 'executed'
+                        ? '<span style="background:#e8f5e9;color:#2e7d32;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">実行済</span>'
+                        : '<span style="background:#fff3e0;color:#e65100;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">未実行</span>';
+                    const bits = [];
+                    if (p.location) bits.push(esc(p.location));
+                    if (p.maker) bits.push(esc(p.maker));
+                    const gLabel = formatGrain(p.grainCount);
+                    if (gLabel) bits.push(esc(gLabel));
+                    const meta = bits.length ? '<span style="color:#666; font-size:11px;"> ／ ' + bits.join(' ／ ') + '</span>' : '<span style="color:#bbb; font-size:11px;"> ／ メーカー未登録</span>';
+                    return '<div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start; padding:5px 0; border-bottom:1px solid #ffe0b2; font-size:12px;">' +
+                        '<div style="flex:1; min-width:0; line-height:1.35;">' +
+                        '<b style="color:#333;">' + esc(p.variety) + '</b>' + statusLabel + meta +
+                        (p.planCount > 1 ? '<div style="font-size:10px; color:#999; margin-top:1px;">計画 ' + p.planCount + '件合算</div>' : '') +
+                        '</div>' +
+                        '<div style="text-align:right; flex-shrink:0; font-weight:bold; color:#bf360c; white-space:nowrap; line-height:1.35;">' +
+                        formatSeedLine(p) +
+                        '</div></div>';
+                }).join('') +
+                '<div style="display:flex; justify-content:space-between; margin-top:5px; padding-top:5px; border-top:1px dashed #ffb74d; font-size:11px; font-weight:bold; color:#e65100;">' +
+                '<span>種 合計</span>' +
+                '<span>' + (Number(item.seedTotal) || 0).toLocaleString('ja-JP') + '粒' +
+                (item.seedPlannedTotal != null && item.seedPlannedTotal !== item.seedTotal
+                    ? ' <span style="font-weight:normal; color:#888; font-size:11px;">（未実行 ' + (Number(item.seedPlannedTotal) || 0).toLocaleString('ja-JP') + '粒）</span>'
+                    : '') +
+                '</span></div></div></details>';
         }
 
-        const esc = (s) => String(s == null ? '' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        const formatGrain = (g) => {
-            if (typeof formatGrainTypeLabel === 'function') {
-                const label = formatGrainTypeLabel(g);
-                if (label) return label;
-            }
-            const v = String(g || '').trim();
-            if (!v) return '';
-            if (v === 'コート' || v === '生種') return v;
-            return /^\d+(\.\d+)?$/.test(v) ? (v + '粒') : v;
-        };
-        const formatSeedLine = (p) => {
-            const seeds = Number(p.seedCount) || 0;
-            const trays = Number(p.trays) || 0;
-            const holes = Number(p.holes) || 0;
-            let detail = '';
-            if (holes === 1) {
-                detail = trays ? `（${trays.toLocaleString('ja-JP')}株）` : '';
-            } else if (trays && holes) {
-                detail = `（${trays.toLocaleString('ja-JP')}枚×${holes}穴）`;
-            }
-            return seeds.toLocaleString('ja-JP') + '粒' + detail;
-        };
-
-        let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
-        list.forEach(item => {
-            const dateStr = item.lastUpdated
-                ? new Date(item.lastUpdated).toLocaleString('ja-JP', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })
-                : '';
-            const planned = (typeof item.plannedCount === 'number') ? item.plannedCount : item.count;
-            const executed = item.executedCount || 0;
-            const y = String(item.year).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const c = String(item.crop).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const pt = String(item.planType || (/試作\d*$/.test(String(item.planName || '')) ? '試作' : '本作'))
-                .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const pn = String(item.planName || (item.year + '年 ' + item.crop + ' ' + (item.planType || '本作')))
-                .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const canExec = planned > 0;
-            const locList = Array.isArray(item.locations) && item.locations.length
-                ? item.locations.filter(Boolean)
-                : (item.location ? [item.location] : []);
-            // plans 内に拠点があれば補完
-            if (!locList.length && Array.isArray(item.plans)) {
-                item.plans.forEach(p => {
-                    const loc = String(p && p.location || '').trim();
-                    if (loc && locList.indexOf(loc) === -1) locList.push(loc);
-                });
-            }
-            const locationLabel = locList.length
-                ? locList.join('・')
-                : '拠点未設定';
-
-            const plans = Array.isArray(item.plans) ? item.plans : [];
-            let varietyHtml = '';
-            if (plans.length) {
-                // 種調達向け: 品種×メーカー×粒種で集計（未実行優先表示だが全件）
-                const agg = {};
-                plans.forEach(p => {
-                    const key = [p.variety || '', p.maker || '', p.grainCount || '', p.status || '', p.location || ''].join('\t');
-                    if (!agg[key]) {
-                        agg[key] = {
-                            variety: p.variety || '(品種未設定)',
-                            maker: p.maker || '',
-                            grainCount: p.grainCount || '',
-                            location: p.location || '',
-                            status: p.status || 'planned',
-                            seedCount: 0,
-                            trays: 0,
-                            holes: Number(p.holes) || 0,
-                            planCount: 0
-                        };
-                    }
-                    agg[key].seedCount += Number(p.seedCount) || 0;
-                    agg[key].trays += Number(p.trays) || 0;
-                    if (!agg[key].holes && p.holes) agg[key].holes = Number(p.holes) || 0;
-                    agg[key].planCount += 1;
-                });
-                const rows = Object.values(agg);
-                varietyHtml = '<details style="margin-top:6px; font-size:11px;">' +
-                    '<summary style="color:#795548; cursor:pointer; font-weight:bold;">🌱 品種・メーカー等（' + rows.length + '件／種 ' + (Number(item.seedTotal) || 0).toLocaleString('ja-JP') + '粒）</summary>' +
-                    '<div style="margin-top:5px; background:#fff8e1; border:1px solid #ffe082; border-radius:5px; padding:6px;">' +
-                    rows.map(p => {
-                        const statusLabel = p.status === 'executed'
-                            ? '<span style="background:#e8f5e9;color:#2e7d32;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">実行済</span>'
-                            : '<span style="background:#fff3e0;color:#e65100;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">未実行</span>';
-                        const bits = [];
-                        if (p.location) bits.push(esc(p.location));
-                        if (p.maker) bits.push(esc(p.maker));
-                        const gLabel = formatGrain(p.grainCount);
-                        if (gLabel) bits.push(esc(gLabel));
-                        const meta = bits.length ? '<span style="color:#666; font-size:11px;"> ／ ' + bits.join(' ／ ') + '</span>' : '<span style="color:#bbb; font-size:11px;"> ／ メーカー未登録</span>';
-                        return '<div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start; padding:5px 0; border-bottom:1px solid #ffe0b2; font-size:12px;">' +
-                            '<div style="flex:1; min-width:0; line-height:1.35;">' +
-                            '<b style="color:#333;">' + esc(p.variety) + '</b>' + statusLabel + meta +
-                            (p.planCount > 1 ? '<div style="font-size:10px; color:#999; margin-top:1px;">計画 ' + p.planCount + '件合算</div>' : '') +
-                            '</div>' +
-                            '<div style="text-align:right; flex-shrink:0; font-weight:bold; color:#bf360c; white-space:nowrap; line-height:1.35;">' +
-                            formatSeedLine(p) +
-                            '</div></div>';
-                    }).join('') +
-                    '<div style="display:flex; justify-content:space-between; margin-top:5px; padding-top:5px; border-top:1px dashed #ffb74d; font-size:11px; font-weight:bold; color:#e65100;">' +
-                    '<span>種 合計</span>' +
-                    '<span>' + (Number(item.seedTotal) || 0).toLocaleString('ja-JP') + '粒' +
-                    (item.seedPlannedTotal != null && item.seedPlannedTotal !== item.seedTotal
-                        ? ' <span style="font-weight:normal; color:#888; font-size:11px;">（未実行 ' + (Number(item.seedPlannedTotal) || 0).toLocaleString('ja-JP') + '粒）</span>'
-                        : '') +
-                    '</span></div></div></details>';
-            }
-
-            html += `
+        html += `
             <div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 12px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
                   <div style="flex:1; min-width:140px;">
@@ -6554,13 +6540,58 @@ async function showPlanListModal(options) {
                   </div>
                 </div>
             </div>`;
-        });
-        html += '</div>';
-        if (loading) loading.done();
-        container.innerHTML = html;
+    });
+    html += '</div>';
+    return html;
+}
+
+function paintSavedPlanList_(container, list, isLoadMode, syncNote) {
+    if (!container) return;
+    const enriched = enrichSavedPlanListMeta_(list);
+    if (!enriched.length) {
+        container.innerHTML = '<div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">保存済みの計画はありません。<br>「栽培計画を立てる」→「計画を保存」してください。</div>';
+        return;
+    }
+    const note = syncNote
+        ? `<div id="cpPlanListSyncNote" style="font-size:11px; color:#888; margin:0 0 8px; padding:6px 8px; background:#f5f5f5; border-radius:4px;">${syncNote}</div>`
+        : '';
+    container.innerHTML = note + renderSavedPlanListHtml_(enriched, isLoadMode);
+}
+
+async function showPlanListModal(options) {
+    const requestedMode = options && options.mode;
+    if (requestedMode === 'load' || requestedMode === 'manage') {
+        currentPlanListMode = requestedMode;
+    }
+    const isLoadMode = currentPlanListMode === 'load';
+    const modal = document.getElementById('historyListModal');
+    if (!modal) {
+        alert('計画一覧の読み込み中です。数秒待ってから再度お試しください。');
+        return;
+    }
+    modal.style.display = 'flex';
+    const container = document.getElementById('historyListContainer');
+    if (!container) return;
+
+    const cached = getCachedSavedPlanList_();
+    const hasCache = !!(cached && cached.length);
+    if (hasCache) {
+        paintSavedPlanList_(container, cached, isLoadMode, '端末キャッシュを表示中… 最新を取得しています');
+    } else {
+        container.innerHTML = '<div style="text-align:center; color:#666; font-size:14px; padding:28px;">栽培計画一覧を読み込み中...</div>';
+    }
+
+    try {
+        const list = await callGAS('getSavedCultivationPlanList');
+        setCachedSavedPlanList_(list);
+        paintSavedPlanList_(container, Array.isArray(list) ? list : [], isLoadMode, '');
     } catch (e) {
-        if (loading) loading.done();
-        container.innerHTML = '<div style="text-align: center; color: #d32f2f; font-size: 14px; padding: 20px;">一覧の取得に失敗しました。</div>';
+        console.warn('計画一覧の取得失敗:', e);
+        if (hasCache) {
+            paintSavedPlanList_(container, cached, isLoadMode, '最新の取得に失敗したため、前回の一覧を表示しています');
+        } else {
+            container.innerHTML = '<div style="text-align: center; color: #d32f2f; font-size: 14px; padding: 20px;">一覧の取得に失敗しました。</div>';
+        }
     }
 }
 
