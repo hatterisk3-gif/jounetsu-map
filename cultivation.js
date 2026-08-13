@@ -6770,7 +6770,14 @@ function getCpPlanType() {
 }
 
 function stripCpPlanTypeSuffix(value) {
-    return String(value || '').trim().replace(/\s+(?:本作|試作)\d*$/, '').trim();
+    let s = String(value || '').trim();
+    // 末尾の「本作」「試作」「本作2」「試作3」など
+    s = s.replace(/\s+(?:本作|試作)\d*$/, '').trim();
+    // 先頭の種別ラベル「試作 〜」「本作2 〜」
+    s = s.replace(/^(?:本作|試作)\d*\s+/, '').trim();
+    // 名称全体が種別だけの場合（例: 「試作」「試作2」）
+    if (/^(?:本作|試作)\d*$/.test(s)) return '';
+    return s;
 }
 
 function getCpPlanSeriesNumber(planName, planType) {
@@ -6786,6 +6793,8 @@ function buildCpPlanNameWithType(value, planType, seriesNum) {
     const n = Math.max(1, Number(seriesNum) || 1);
     const suffix = n > 1 ? (type + n) : type;
     if (!type) return base;
+    // 本体が空（名称が「試作」のみ等）なら種別だけ返す → 「試作 試作」を防ぐ
+    if (!base) return suffix;
     const maxBaseLength = Math.max(0, 80 - suffix.length - 1);
     return `${base.slice(0, maxBaseLength).trim()} ${suffix}`.trim();
 }
