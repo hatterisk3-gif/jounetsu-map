@@ -1166,7 +1166,14 @@ function openVarietyMetaDialog(opts) {
         return;
     }
 
-    _vmdState = { mode: mode, target: target, oldVariety: variety, planId: planId, crop: crop };
+    _vmdState = {
+        mode: mode,
+        target: target,
+        oldVariety: variety,
+        planId: planId,
+        crop: crop,
+        addCardAfter: !!opts.addCardAfter
+    };
 
     const dlg = document.getElementById('varietyMetaDialog');
     const title = document.getElementById('vmdTitle');
@@ -1214,11 +1221,64 @@ function closeVarietyMetaDialog() {
     if (dlg) dlg.style.display = 'none';
 }
 
+/** 品種メタのサーバー同期キュー（UIを止めない） */
+window._cpVarietyMetaSyncQueue = window._cpVarietyMetaSyncQueue || [];
+window._cpVarietyMetaSyncBusy = false;
+
+function enqueueVarietyMetaServerSync_(job) {
+    if (!job || typeof callGAS !== 'function') return;
+    const q = window._cpVarietyMetaSyncQueue;
+    const key = String(job.action || '') + '|' + String(job.crop || '') + '|' + String(job.variety || job.newName || '') + '|' + String(job.oldName || '');
+    // 同キーは新しい内容で置き換え
+    for (let i = q.length - 1; i >= 0; i--) {
+        if (q[i]._key === key) q.splice(i, 1);
+    }
+    job._key = key;
+    q.push(job);
+    flushVarietyMetaServerSync_();
+}
+
+async function flushVarietyMetaServerSync_() {
+    if (window._cpVarietyMetaSyncBusy) return;
+    window._cpVarietyMetaSyncBusy = true;
+    try {
+        while (window._cpVarietyMetaSyncQueue.length) {
+            const job = window._cpVarietyMetaSyncQueue.shift();
+            if (!job) continue;
+            try {
+                if (job.action === 'renameCultivationVariety') {
+                    await callGAS('renameCultivationVariety', {
+                        crop: job.crop,
+                        oldName: job.oldName,
+                        newName: job.newName
+                    });
+                } else if (job.action === 'updateVarietyMeta') {
+                    await callGAS('updateVarietyMeta', {
+                        crop: job.crop,
+                        variety: job.variety,
+                        maker: job.maker,
+                        grainCount: job.grainCount,
+                        climate: job.climate || ''
+                    });
+                }
+            } catch (e) {
+                console.warn('品種メタの裏同期失敗:', job, e);
+            }
+        }
+    } finally {
+        window._cpVarietyMetaSyncBusy = false;
+        if (window._cpVarietyMetaSyncQueue.length) {
+            setTimeout(flushVarietyMetaServerSync_, 50);
+        }
+    }
+}
+
 async function confirmVarietyMetaDialog() {
     const target = _vmdState.target || 'cp';
     const mode = _vmdState.mode || 'add';
     const oldVariety = String(_vmdState.oldVariety || '').trim();
     const planId = _vmdState.planId || null;
+    const addCardAfter = !!_vmdState.addCardAfter;
 
     const crop = String(_vmdState.crop || '').trim() || (target === 'cr'
         ? (document.getElementById('crCrop') ? document.getElementById('crCrop').value : '')
@@ -1247,15 +1307,15 @@ async function confirmVarietyMetaDialog() {
     const confirmBtn = document.getElementById('vmdConfirmBtn');
     const origText = confirmBtn ? confirmBtn.textContent : (mode === 'edit' ? '保存する' : '追加する');
     if (confirmBtn) {
-        confirmBtn.textContent = '保存中...';
+        confirmBtn.textContent = '反映中...';
         confirmBtn.disabled = true;
     }
 
     try {
         registerCropGrainCandidates(crop, grainCount);
-        // 改名が必要なら先にリネーム
+
+        // 改名は端末キャッシュを即反映し、サーバーは裏同期
         if (mode === 'edit' && oldVariety && oldVariety !== variety) {
-            // 重複チェック
             const existing = (cpMasterData && cpMasterData.crops && cpMasterData.crops[crop])
                 ? cpMasterData.crops[crop].map(v => String(v))
                 : [];
@@ -1263,7 +1323,6 @@ async function confirmVarietyMetaDialog() {
                 alert(`品種「${variety}」は既にあります。`);
                 return;
             }
-            // ローカル改名（サーバーも）
             if (cpMasterData && cpMasterData.crops) {
                 if (!Array.isArray(cpMasterData.crops[crop])) cpMasterData.crops[crop] = [];
                 cpMasterData.crops[crop] = cpMasterData.crops[crop].map(v =>
@@ -1282,25 +1341,21 @@ async function confirmVarietyMetaDialog() {
                 if (!customMap[crop].includes(variety)) customMap[crop].push(variety);
                 saveCustomVarietiesMap(customMap);
             }
-            try {
-                if (typeof callGAS === 'function') {
-                    await callGAS('renameCultivationVariety', {
-                        crop: crop, oldName: oldVariety, newName: variety
-                    });
-                }
-            } catch (e) {
-                console.warn('品種改名のサーバー同期失敗:', e);
-            }
+            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData)); } catch (e) {}
+            enqueueVarietyMetaServerSync_({
+                action: 'renameCultivationVariety',
+                crop: crop,
+                oldName: oldVariety,
+                newName: variety
+            });
         }
 
-        // メーカー・粒数を保存（既存 saveCpVarietyMeta ロジックを流用）
         const makerEl = document.getElementById('cpVarietyMaker');
         const grainEl = document.getElementById('cpVarietyGrainCount');
         if (makerEl) makerEl.value = maker;
         if (grainEl) grainEl.value = grainCount;
 
         if (target === 'cp') {
-            // 一時的に選択をセットして保存
             rememberCustomVariety(crop, variety);
             const vSel = document.getElementById('cpVariety');
             if (vSel && !Array.from(vSel.options).some(o => o.value === variety)) {
@@ -1314,8 +1369,10 @@ async function confirmVarietyMetaDialog() {
             if (getCpVal('cpCrop') === crop) {
                 setChoiceValue('cpVariety', variety, false);
             }
-            await saveCpVarietyMeta({
+            // 端末へ即反映 → UIクローズ。サーバーは裏同期
+            saveCpVarietyMeta({
                 silent: true,
+                background: true,
                 cropOverride: crop,
                 varietyOverride: variety,
                 makerOverride: maker,
@@ -1327,7 +1384,6 @@ async function confirmVarietyMetaDialog() {
                 refreshChoiceButtons('cpVariety');
                 syncCpVarietyMetaFields();
             }
-            // 計画カードの「＋手入力…」から開いた場合は、そのカードへ反映
             if (planId) {
                 applyCpPlanVariety(planId, variety);
                 refreshCpPlanVarietySelectsForCrop(crop);
@@ -1339,21 +1395,6 @@ async function confirmVarietyMetaDialog() {
             setCrVariety(variety);
             setSelectedMaker(maker);
             setGrainTypeValue('crGrainCount', 'crGrainCountBtns', grainCount, { accent: '#FF9800', accentDark: '#EF6C00' });
-            // サーバーにもメタ保存
-            try {
-                if (typeof callGAS === 'function') {
-                    await callGAS('updateVarietyMeta', {
-                        crop: crop,
-                        variety: variety,
-                        maker: maker,
-                        grainCount: grainCount,
-                        climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : ''
-                    });
-                }
-            } catch (e) {
-                console.warn('品種メタ保存失敗:', e);
-            }
-            // ローカルDBも更新
             if (!cpMasterData) cpMasterData = { crops: {}, croptypesDB: [] };
             if (!cpMasterData.crops) cpMasterData.crops = {};
             if (!Array.isArray(cpMasterData.crops[crop])) cpMasterData.crops[crop] = [];
@@ -1374,10 +1415,28 @@ async function confirmVarietyMetaDialog() {
                     maker, grainCount, harvestSeason: ''
                 });
             }
+            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData)); } catch (e) {}
+            enqueueVarietyMetaServerSync_({
+                action: 'updateVarietyMeta',
+                crop: crop,
+                variety: variety,
+                maker: maker,
+                grainCount: grainCount,
+                climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : ''
+            });
             renderCrVarietyBadges();
         }
 
         closeVarietyMetaDialog();
+
+        // ダイアログ閉鎖後にカード追加（裏同期と並行）
+        if (target === 'cp' && !planId && mode === 'add' && addCardAfter) {
+            if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
+            addCpPlanRow({
+                variety: variety,
+                croptypeData: (typeof pendingCroptypeData !== 'undefined' ? pendingCroptypeData : null)
+            });
+        }
     } finally {
         if (confirmBtn) {
             confirmBtn.textContent = origText;
@@ -1422,7 +1481,7 @@ async function saveCpVarietyMeta(opts) {
     if (maker) registerMaker(maker);
     registerCropGrainCandidates(crop, grainCount);
 
-    // ローカル反映
+    // ローカル反映（即時）
     if (!cpMasterData) cpMasterData = { crops: {}, croptypesDB: [] };
     if (!cpMasterData.crops) cpMasterData.crops = {};
     if (!Array.isArray(cpMasterData.crops[crop])) cpMasterData.crops[crop] = [];
@@ -1459,6 +1518,38 @@ async function saveCpVarietyMeta(opts) {
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
     } catch (e) {}
 
+    // 選択肢に追加して選択状態を維持（サーバー待ちしない）
+    const vSel = document.getElementById('cpVariety');
+    if (vSel && !Array.from(vSel.options).some(o => o.value === variety)) {
+        const opt = document.createElement('option');
+        opt.value = variety;
+        opt.text = variety;
+        const customOpt = Array.from(vSel.options).find(o => o.value === 'custom');
+        if (customOpt) vSel.insertBefore(opt, customOpt);
+        else vSel.appendChild(opt);
+    }
+    setChoiceValue('cpVariety', variety, true);
+    const vCustom = document.getElementById('cpVariety_custom');
+    if (vCustom) vCustom.style.display = 'none';
+    updateVarietyList();
+    setChoiceValue('cpVariety', variety, false);
+    syncCpVarietyMetaFields();
+    refreshChoiceButtons('cpVariety');
+
+    const syncPayload = {
+        action: 'updateVarietyMeta',
+        crop: crop,
+        variety: variety,
+        maker: maker,
+        grainCount: grainCount,
+        climate: climate || ''
+    };
+
+    if (opts.background) {
+        enqueueVarietyMetaServerSync_(syncPayload);
+        return;
+    }
+
     try {
         if (typeof callGAS === 'function') {
             await callGAS('updateVarietyMeta', {
@@ -1476,24 +1567,6 @@ async function saveCpVarietyMeta(opts) {
             alert('端末上には反映しましたが、サーバーへの保存に失敗しました。\n' + (e && e.message ? e.message : e));
         }
     }
-
-    // 選択肢に追加して選択状態を維持
-    const vSel = document.getElementById('cpVariety');
-    if (vSel && !Array.from(vSel.options).some(o => o.value === variety)) {
-        const opt = document.createElement('option');
-        opt.value = variety;
-        opt.text = variety;
-        const customOpt = Array.from(vSel.options).find(o => o.value === 'custom');
-        if (customOpt) vSel.insertBefore(opt, customOpt);
-        else vSel.appendChild(opt);
-    }
-    setChoiceValue('cpVariety', variety, true);
-    const vCustom = document.getElementById('cpVariety_custom');
-    if (vCustom) vCustom.style.display = 'none';
-    updateVarietyList();
-    setChoiceValue('cpVariety', variety, false);
-    syncCpVarietyMetaFields();
-    refreshChoiceButtons('cpVariety');
 }
 
 window.lookupVarietyMeta = lookupVarietyMeta;
@@ -1682,6 +1755,7 @@ function onCpLocationChange() {
         }
         updateVarietyList();
         checkCroptypeDB();
+        if (typeof updateCpDefaultPlanName === 'function') updateCpDefaultPlanName();
         return;
     }
 
@@ -1704,6 +1778,7 @@ function onCpLocationChange() {
     checkCroptypeDB();
     updatePresetList(getCpVal('cpCrop'));
     fillCpTagAbbreviationInputs();
+    if (typeof updateCpDefaultPlanName === 'function') updateCpDefaultPlanName();
 }
 
 function fillCpTagAbbreviationInputs() {
@@ -3795,19 +3870,19 @@ function addVarietyCardFromPick(variety) {
 
 function openCpQuickVarietyPicker(anchorEl) {
     const crop = getCpVal('cpCrop');
-    const opts = (typeof getVarietyOptionsForCrop === 'function') ? getVarietyOptionsForCrop(crop) : [];
-    if (!opts.length) {
-        alert('この作物の品種がマスタにありません。初期設定の「3. 品種登録」から追加してください。');
+    if (!crop || crop === 'custom') {
+        alert('先に作物を選択してください。');
         if (typeof setCpInitialSettingsOpen === 'function') {
-            setCpInitialSettingsOpen(true, { openStep: 3 });
+            setCpInitialSettingsOpen(true, { openStep: 1, openDefaultStep: true });
         }
         return;
     }
+    const opts = (typeof getVarietyOptionsForCrop === 'function') ? getVarietyOptionsForCrop(crop) : [];
 
     closeCpQuickVarietyPopover();
     const pop = document.createElement('div');
     pop.id = 'cpQuickVarietyPopover';
-    pop.style.cssText = 'position:relative; z-index:30; background:#fff; border:1px solid #1976D2; border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,0.2); padding:8px; width:100%; max-height:240px; overflow:auto; box-sizing:border-box; margin:0 0 4px;';
+    pop.style.cssText = 'position:relative; z-index:30; background:#fff; border:1px solid #1976D2; border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,0.2); padding:8px; width:100%; max-height:260px; overflow:auto; box-sizing:border-box; margin:0 0 4px;';
     const head = document.createElement('div');
     head.style.cssText = 'display:flex; align-items:center; gap:4px; margin-bottom:6px;';
     const title = document.createElement('div');
@@ -3827,14 +3902,33 @@ function openCpQuickVarietyPicker(anchorEl) {
     head.appendChild(title);
     head.appendChild(closeBtn);
     pop.appendChild(head);
-    opts.forEach(v => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = v;
-        b.style.cssText = 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #bbdefb; background:#e3f2fd; color:#0d47a1; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;';
-        b.onclick = function() { addVarietyCardFromPick(v); };
-        pop.appendChild(b);
-    });
+
+    // 先頭に「＋新規追加」
+    const addNewBtn = document.createElement('button');
+    addNewBtn.type = 'button';
+    addNewBtn.textContent = '＋ 新規追加';
+    addNewBtn.style.cssText = 'display:block; width:100%; text-align:left; padding:8px; margin:0 0 6px; border:1px dashed #FFB74D; background:#FFF3E0; color:#E65100; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;';
+    addNewBtn.onclick = function() {
+        closeCpQuickVarietyPopover();
+        openVarietyMetaDialog({ mode: 'add', target: 'cp', crop: crop, addCardAfter: true });
+    };
+    pop.appendChild(addNewBtn);
+
+    if (!opts.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'font-size:11px; color:#888; padding:4px 2px 2px;';
+        empty.textContent = '登録済み品種がありません。上の「＋ 新規追加」から追加できます。';
+        pop.appendChild(empty);
+    } else {
+        opts.forEach(v => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = v;
+            b.style.cssText = 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #bbdefb; background:#e3f2fd; color:#0d47a1; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;';
+            b.onclick = function() { addVarietyCardFromPick(v); };
+            pop.appendChild(b);
+        });
+    }
     const leftBody = document.getElementById('cpLeftBody');
     const btn = document.getElementById('cpAddVarietyCardBtn') || anchorEl;
     if (leftBody && btn && btn.parentNode === leftBody) {
@@ -5547,6 +5641,152 @@ let cpLoadedPlanKey = null;
 let cpPlanNameManuallyEdited = false;
 let cpSaveProgressTimer = null;
 let cpSaveProgressHideTimer = null;
+const CP_SAVED_PLAN_LIST_CACHE_KEY = 'cpSavedPlanListCache';
+const CP_PENDING_PLAN_SAVES_KEY = 'cpPendingPlanSaves';
+window._cpPlanSaveSyncBusy = false;
+
+function getCachedSavedPlanList_() {
+    try {
+        const raw = localStorage.getItem(CP_SAVED_PLAN_LIST_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && Array.isArray(parsed.list)) return parsed.list;
+    } catch (e) {}
+    return null;
+}
+
+function setCachedSavedPlanList_(list) {
+    try {
+        localStorage.setItem(CP_SAVED_PLAN_LIST_CACHE_KEY, JSON.stringify({
+            savedAt: Date.now(),
+            list: Array.isArray(list) ? list : []
+        }));
+    } catch (e) {}
+}
+
+function upsertCachedSavedPlanSummary_(summary) {
+    if (!summary) return;
+    const list = (getCachedSavedPlanList_() || []).slice();
+    const key = buildCpPlanSaveKey(summary.year, summary.crop, summary.planName);
+    const idx = list.findIndex(item =>
+        buildCpPlanSaveKey(item.year, item.crop, item.planName || '') === key
+    );
+    const next = Object.assign({}, (idx >= 0 ? list[idx] : {}), summary, {
+        lastUpdated: summary.lastUpdated || new Date().toISOString()
+    });
+    if (idx >= 0) list[idx] = next;
+    else list.unshift(next);
+    setCachedSavedPlanList_(list);
+}
+
+function getPendingPlanSaves_() {
+    try {
+        const raw = localStorage.getItem(CP_PENDING_PLAN_SAVES_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function setPendingPlanSaves_(arr) {
+    try {
+        localStorage.setItem(CP_PENDING_PLAN_SAVES_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+    } catch (e) {}
+}
+
+function queuePendingPlanSave_(entry) {
+    const q = getPendingPlanSaves_().filter(x => x && x.saveKey !== entry.saveKey);
+    q.push(entry);
+    setPendingPlanSaves_(q);
+}
+
+function removePendingPlanSave_(saveKey) {
+    setPendingPlanSaves_(getPendingPlanSaves_().filter(x => x && x.saveKey !== saveKey));
+}
+
+async function flushPendingCultivationPlanSaves_() {
+    if (window._cpPlanSaveSyncBusy) return;
+    if (typeof callGAS !== 'function') return;
+    const q = getPendingPlanSaves_();
+    if (!q.length) return;
+    window._cpPlanSaveSyncBusy = true;
+    try {
+        while (true) {
+            const pending = getPendingPlanSaves_();
+            if (!pending.length) break;
+            const job = pending[0];
+            try {
+                const saveResult = await callGAS('saveCultivationPlans', {
+                    year: job.year,
+                    crop: job.crop,
+                    planType: job.planType,
+                    planName: job.planName,
+                    planDataArray: job.payloadPlans
+                });
+                if (job.croptypeParamsArray && job.croptypeParamsArray.length > 0) {
+                    await callGAS('saveCroptypeDBBatch', { croptypes: job.croptypeParamsArray });
+                }
+                try {
+                    const master = await callGAS('getCultivationMaster');
+                    if (master) {
+                        cpMasterData = master;
+                        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
+                    }
+                } catch (e) {
+                    console.warn('栽培マスタ裏同期失敗:', e);
+                }
+                try {
+                    const list = await callGAS('getSavedCultivationPlanList');
+                    setCachedSavedPlanList_(list);
+                } catch (e) {
+                    console.warn('計画一覧キャッシュ更新失敗:', e);
+                }
+                removePendingPlanSave_(job.saveKey);
+
+                // 開いたままの画面へ実行済みタグ等を反映
+                if (saveResult && Array.isArray(saveResult.plans) && Array.isArray(cpPlans)) {
+                    const byId = {};
+                    saveResult.plans.forEach(p => {
+                        if (p && p.id != null) byId[String(p.id)] = p;
+                    });
+                    cpPlans.forEach(p => {
+                        const meta = byId[String(p.id)];
+                        if (!meta) return;
+                        p.status = meta.status || p.status;
+                        p.tag = meta.tag || '';
+                        p.executedAt = meta.executedAt || '';
+                        const tagDisplay = document.getElementById('tagDisplay_' + p.id);
+                        if (tagDisplay) tagDisplay.innerText = p.tag || '';
+                    });
+                }
+                if (typeof loadData === 'function') loadData();
+                else if (typeof fetchScheduleData === 'function') fetchScheduleData();
+            } catch (e) {
+                console.warn('栽培計画の裏同期失敗:', e);
+                if (!job._notifiedFail) {
+                    job._notifiedFail = true;
+                    const rest = getPendingPlanSaves_().map(x =>
+                        x.saveKey === job.saveKey ? Object.assign({}, x, { _notifiedFail: true }) : x
+                    );
+                    setPendingPlanSaves_(rest);
+                    const msg = '栽培計画は端末に保存済みですが、サーバー同期に失敗しました。\n通信環境を確認後、もう一度「計画を保存」してください。\n' + (e && e.message ? e.message : e);
+                    if (typeof customAlert === 'function') customAlert(msg);
+                    else alert(msg);
+                }
+                break; // 次は次回起動/保存時に再試行
+            }
+        }
+    } finally {
+        window._cpPlanSaveSyncBusy = false;
+    }
+}
+
+// 起動時に未同期の計画があれば裏同期
+setTimeout(() => {
+    try { flushPendingCultivationPlanSaves_(); } catch (e) {}
+}, 2500);
 
 function getCpPlanType() {
     const checked = document.querySelector('input[name="cpPlanType"]:checked');
@@ -5578,7 +5818,7 @@ function buildCpPlanSaveKey(year, crop, planName) {
     return String(year) + '\t' + String(crop) + '\t' + String(planName || '').trim();
 }
 
-function getNextCpPlanSeriesName(year, crop, planType, existingPlanNames) {
+function getNextCpPlanSeriesName(year, crop, planType, existingPlanNames, locationOverride) {
     const type = planType === '試作' ? '試作' : '本作';
     let max = 0;
     const re = new RegExp('\\s' + type + '(\\d*)$');
@@ -5589,7 +5829,7 @@ function getNextCpPlanSeriesName(year, crop, planType, existingPlanNames) {
         if (n > max) max = n;
     });
     const next = Math.max(2, max + 1);
-    return buildCpPlanNameWithType(`${year}年 ${crop}`, type, next);
+    return buildCpPlanNameWithType(buildCpPlanBaseName_(year, crop, locationOverride), type, next);
 }
 
 function chooseCpSaveConflictMode(existingName, newName) {
@@ -5650,11 +5890,26 @@ function onCpPlanTypeChange() {
     applyCpPlanTypeToName();
 }
 
-function getCpDefaultPlanName(yearOverride, cropOverride, planTypeOverride, seriesNum) {
+function getCpDefaultPlanName(yearOverride, cropOverride, planTypeOverride, seriesNum, locationOverride) {
     const year = String(yearOverride || getCpVal('cpYear', true) || new Date().getFullYear()).trim();
     const crop = String(cropOverride || getCpVal('cpCrop') || '').trim();
-    const baseName = crop ? `${year}年 ${crop}` : `${year}年 栽培計画`;
+    const baseName = buildCpPlanBaseName_(year, crop, locationOverride);
     return buildCpPlanNameWithType(baseName, planTypeOverride || getCpPlanType(), seriesNum || 1);
+}
+
+/** 計画名の本体（年度 ＋ 拠点 ＋ 作物） */
+function buildCpPlanBaseName_(year, crop, locationOverride) {
+    const y = String(year || '').trim() || String(new Date().getFullYear());
+    const loc = String(
+        locationOverride !== undefined && locationOverride !== null
+            ? locationOverride
+            : (typeof getCpVal === 'function' ? getCpVal('cpLocation') : '')
+    ).trim();
+    const c = String(crop || '').trim();
+    const parts = [y + '年'];
+    if (loc && loc !== 'custom') parts.push(loc);
+    parts.push(c || '栽培計画');
+    return parts.join(' ');
 }
 
 function updateCpDefaultPlanName() {
@@ -5784,17 +6039,26 @@ async function saveCultivationPlan(options) {
         let wasOverwrite = cpLoadedPlanKey === buildCpPlanSaveKey(year, crop, planName);
         if (!opts.silent && !opts.skipConflictCheck && !wasOverwrite) {
             let existingNames = [];
-            try {
-                const list = await callGAS('getSavedCultivationPlanList');
-                existingNames = (Array.isArray(list) ? list : [])
+            const cachedList = getCachedSavedPlanList_();
+            if (cachedList && cachedList.length) {
+                existingNames = cachedList
                     .filter(item => String(item.year) === String(year) && String(item.crop) === String(crop))
                     .map(item => String(item.planName || '').trim())
                     .filter(Boolean);
-            } catch (e) {
-                console.warn('既存計画名の取得に失敗:', e);
+            } else {
+                try {
+                    const list = await callGAS('getSavedCultivationPlanList');
+                    setCachedSavedPlanList_(list);
+                    existingNames = (Array.isArray(list) ? list : [])
+                        .filter(item => String(item.year) === String(year) && String(item.crop) === String(crop))
+                        .map(item => String(item.planName || '').trim())
+                        .filter(Boolean);
+                } catch (e) {
+                    console.warn('既存計画名の取得に失敗:', e);
+                }
             }
             if (existingNames.indexOf(planName) !== -1) {
-                const nextName = getNextCpPlanSeriesName(year, crop, planType, existingNames);
+                const nextName = getNextCpPlanSeriesName(year, crop, planType, existingNames, getCpVal('cpLocation'));
                 const mode = await chooseCpSaveConflictMode(planName, nextName);
                 if (!mode) return false;
                 if (mode === 'create') {
@@ -5853,9 +6117,9 @@ async function saveCultivationPlan(options) {
         }
 
         if (btn && !opts.silent) {
-            btn.innerHTML = '送信中...';
+            btn.innerHTML = '反映中...';
             btn.disabled = true;
-            setCpSaveProgress(8, '保存データを準備しています...', 18);
+            setCpSaveProgress(20, '端末に保存しています...', 40);
         }
 
         // 手入力作物・品種をローカルに記憶（作物＋産地に紐づけて候補化）
@@ -5874,19 +6138,6 @@ async function saveCultivationPlan(options) {
             if (plan.trays) rememberCpNumericCandidate(CP_TRAYS_CANDIDATES_KEY, plan.trays);
         });
 
-        // 品種マスタは saveCultivationPlans 内で一括同期する。
-        // ここで計画数分のGAS通信を並列実行すると、保存本体と競合して大幅に遅くなる。
-        if (!opts.silent) setCpSaveProgress(25, '計画データを送信しています...', 55);
-        const saveResult = await callGAS('saveCultivationPlans', {
-            year: year,
-            crop: crop,
-            planType: planType,
-            planName: planName,
-            planDataArray: payloadPlans
-        });
-        if (!opts.silent) setCpSaveProgress(60, '品種情報を整理しています...', 65);
-        
-        // 作型DBへ作物・品種・産地付きで保存（産地未選択時は拠点の各産地へ紐づけ）
         const croptypeParamsArray = [];
         payloadPlans.forEach(plan => {
             climatesForSave.forEach(climate => {
@@ -5909,57 +6160,65 @@ async function saveCultivationPlan(options) {
                 });
             });
         });
-        
-        if (croptypeParamsArray.length > 0) {
-            if (!opts.silent) setCpSaveProgress(68, '品種データベースを更新しています...', 82);
-            await callGAS('saveCroptypeDBBatch', { croptypes: croptypeParamsArray });
-        }
-        
-        if (!opts.silent) setCpSaveProgress(86, '最新データを確認しています...', 95);
-        cpMasterData = await callGAS('getCultivationMaster');
-        localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-        // 次回の「3. 品種登録」候補へ即反映（実行フローでは入力を維持）
-        if (opts.keepOpen) {
-            const keepCrop = getCpVal('cpCrop');
-            const keepVariety = getCpVal('cpVariety');
-            const keepLoc = getCpVal('cpLocation');
-            const keepClimate = document.getElementById('cpClimate')
-                ? document.getElementById('cpClimate').value : '';
-            applyCultivationMasterData();
-            if (keepLoc) setChoiceValue('cpLocation', keepLoc, false);
-            if (keepCrop) setChoiceValue('cpCrop', keepCrop, false);
-            rebuildCpClimateOptions(getLocationClimates(keepLoc), keepClimate);
-            updateVarietyList();
-            if (keepVariety) setChoiceValue('cpVariety', keepVariety, true);
-        } else {
-            applyCultivationMasterData();
-        }
+
+        // 端末へ即反映
+        try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData || {})); } catch (e) {}
+        const saveLocations = [];
+        payloadPlans.forEach(p => {
+            const loc = String(p.location || '').trim();
+            if (loc && saveLocations.indexOf(loc) === -1) saveLocations.push(loc);
+        });
+        upsertCachedSavedPlanSummary_({
+            year: year,
+            crop: crop,
+            planType: planType,
+            planName: planName,
+            location: saveLocations.length === 1 ? saveLocations[0] : (saveLocations.join('・') || ''),
+            locations: saveLocations,
+            count: payloadPlans.length,
+            plannedCount: payloadPlans.filter(p => p.status !== 'executed').length,
+            executedCount: payloadPlans.filter(p => p.status === 'executed').length,
+            plans: payloadPlans.map(p => ({
+                variety: p.variety,
+                trays: p.trays,
+                holes: p.holes,
+                status: p.status,
+                location: p.location || '',
+                maker: (typeof lookupVarietyMeta === 'function' ? (lookupVarietyMeta(p.crop, p.variety).maker || '') : ''),
+                grainCount: (typeof lookupVarietyMeta === 'function' ? (lookupVarietyMeta(p.crop, p.variety).grainCount || '') : ''),
+                seedCount: (Number(p.holes) === 1)
+                    ? (Number(p.trays) || 0)
+                    : ((Number(p.trays) || 0) * (Number(p.holes) || 0))
+            })),
+            lastUpdated: new Date().toISOString()
+        });
+
+        queuePendingPlanSave_({
+            saveKey: saveKey,
+            year: year,
+            crop: crop,
+            planType: planType,
+            planName: planName,
+            payloadPlans: payloadPlans,
+            croptypeParamsArray: croptypeParamsArray,
+            queuedAt: Date.now()
+        });
 
         clearCultivationPlanDraft();
+        cpLoadedPlanKey = saveKey;
 
-        // サーバ返却の status/tag を反映。未実行のみタグをクリア
-        const savedMetaById = {};
-        if (saveResult && Array.isArray(saveResult.plans)) {
-            saveResult.plans.forEach(p => {
-                if (p && p.id != null) savedMetaById[String(p.id)] = p;
-            });
-        }
-        const keepExecuted = !!(saveResult && saveResult.hasExecuted) || hadExecutedPlans;
-        cpPlans.forEach(p => {
-            const meta = savedMetaById[String(p.id)];
-            if (meta) {
-                p.status = meta.status || 'planned';
-                p.tag = meta.tag || '';
-                p.executedAt = meta.executedAt || '';
-            } else if (!keepExecuted) {
+        // 未実行分の表示はローカルで planned に揃える
+        if (!hadExecutedPlans) {
+            cpPlans.forEach(p => {
+                if (!String(p.variety || '').trim()) return;
                 p.status = 'planned';
                 p.tag = '';
                 p.executedAt = '';
-            }
-            const tagDisplay = document.getElementById('tagDisplay_' + p.id);
-            if (tagDisplay) tagDisplay.innerText = p.tag || '';
-        });
-        cpLoadedPlanKey = saveKey;
+                const tagDisplay = document.getElementById('tagDisplay_' + p.id);
+                if (tagDisplay) tagDisplay.innerText = '';
+            });
+        }
+
         if (!opts.silent) finishCpSaveProgress(true);
 
         if (!opts.keepOpen) {
@@ -5968,27 +6227,22 @@ async function saveCultivationPlan(options) {
         }
 
         if (!opts.silent) {
-            const sync = saveResult && saveResult.scheduleSync;
-            const scheduleTouched = !!(sync && ((sync.updated || 0) + (sync.created || 0) + (sync.deleted || 0) > 0));
-            if (keepExecuted) {
-                alert(`実行済みの栽培計画「${planName}」を保存しました。` +
-                    (scheduleTouched
-                        ? '\n播種・定植の変更に合わせて、作業予定の播種日程もずらしました。'
-                        : '') +
-                    '\n本作・試作や本作2などは別々に保存されます。');
-            } else {
-                alert((wasOverwrite
-                    ? `栽培計画「${planName}」を上書き保存しました。`
-                    : `未実行の栽培計画「${planName}」として保存しました。`) +
-                    '\n本作・試作や本作2などは別々に保存されます。\n「計画一覧」から実行すると、作業予定に播種が出ます。');
-            }
+            const baseMsg = wasOverwrite
+                ? `栽培計画「${planName}」を端末に保存しました。`
+                : `未実行の栽培計画「${planName}」として端末に保存しました。`;
+            const msg = baseMsg +
+                '\nサーバーへの同期はバックグラウンドで実行中です。' +
+                (hadExecutedPlans ? '\n実行済み計画の作業予定更新も裏で反映します。' : '') +
+                '\n本作・試作や本作2などは別々に保存されます。';
+            if (typeof customAlert === 'function') customAlert(msg);
+            else alert(msg);
         }
-
-        if (typeof loadData === 'function') loadData();
-        else if (typeof fetchScheduleData === 'function') fetchScheduleData();
 
         cpCropHarvestSummaryCache = null;
         if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+
+        // 裏同期（完了後に一覧・予定を更新）
+        flushPendingCultivationPlanSaves_();
 
         return true;
         
@@ -6070,6 +6324,7 @@ async function showPlanListModal(options) {
 
     try {
         const list = await callGAS('getSavedCultivationPlanList');
+        setCachedSavedPlanList_(list);
         if (!list || list.length === 0) {
             if (loading) loading.done();
             container.innerHTML = '<div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">保存済みの計画はありません。<br>「栽培計画を立てる」→「計画を保存」してください。</div>';
@@ -6115,6 +6370,19 @@ async function showPlanListModal(options) {
             const pn = String(item.planName || (item.year + '年 ' + item.crop + ' ' + (item.planType || '本作')))
                 .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const canExec = planned > 0;
+            const locList = Array.isArray(item.locations) && item.locations.length
+                ? item.locations.filter(Boolean)
+                : (item.location ? [item.location] : []);
+            // plans 内に拠点があれば補完
+            if (!locList.length && Array.isArray(item.plans)) {
+                item.plans.forEach(p => {
+                    const loc = String(p && p.location || '').trim();
+                    if (loc && locList.indexOf(loc) === -1) locList.push(loc);
+                });
+            }
+            const locationLabel = locList.length
+                ? locList.join('・')
+                : '拠点未設定';
 
             const plans = Array.isArray(item.plans) ? item.plans : [];
             let varietyHtml = '';
@@ -6122,12 +6390,13 @@ async function showPlanListModal(options) {
                 // 種調達向け: 品種×メーカー×粒種で集計（未実行優先表示だが全件）
                 const agg = {};
                 plans.forEach(p => {
-                    const key = [p.variety || '', p.maker || '', p.grainCount || '', p.status || ''].join('\t');
+                    const key = [p.variety || '', p.maker || '', p.grainCount || '', p.status || '', p.location || ''].join('\t');
                     if (!agg[key]) {
                         agg[key] = {
                             variety: p.variety || '(品種未設定)',
                             maker: p.maker || '',
                             grainCount: p.grainCount || '',
+                            location: p.location || '',
                             status: p.status || 'planned',
                             seedCount: 0,
                             trays: 0,
@@ -6149,6 +6418,7 @@ async function showPlanListModal(options) {
                             ? '<span style="background:#e8f5e9;color:#2e7d32;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">実行済</span>'
                             : '<span style="background:#fff3e0;color:#e65100;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">未実行</span>';
                         const bits = [];
+                        if (p.location) bits.push(esc(p.location));
                         if (p.maker) bits.push(esc(p.maker));
                         const gLabel = formatGrain(p.grainCount);
                         if (gLabel) bits.push(esc(gLabel));
@@ -6177,6 +6447,7 @@ async function showPlanListModal(options) {
                   <div style="flex:1; min-width:140px;">
                     <div style="font-size: 16px; font-weight: bold; color: #333; margin-bottom: 2px;">${esc(item.planName || (item.year + '年 ' + item.crop + ' ' + (item.planType || '本作')))}</div>
                     <div style="font-size: 11px; color: #666; margin-bottom: 4px;">${item.year}年度 ／ ${esc(item.crop)} ／ <b style="color:${/試作/.test(String(item.planType || item.planName || '')) ? '#ef6c00' : '#2e7d32'};">${esc(item.planType || pt || '本作')}</b></div>
+                    <div style="font-size: 12px; color:#1565C0; font-weight:bold; margin-bottom: 3px;">📍 拠点: ${esc(locationLabel)}</div>
                     <div style="font-size: 12px; color: #777;">作型: ${item.count}件（未実行 ${planned} / 実行済 ${executed}）</div>
                     <div style="font-size: 11px; color: #999; margin-top:2px;">最終更新 ${dateStr}</div>
                     ${varietyHtml}
@@ -7447,8 +7718,14 @@ function openCpBottomTab(key) {
     if (anyOpen && k === 'work' && typeof refreshCpWorkSchedulePanel === 'function') {
         refreshCpWorkSchedulePanel();
     }
-    if (anyOpen && k === 'cost' && typeof refreshCpCostSummaryBar_ === 'function') {
-        refreshCpCostSummaryBar_();
+    if (anyOpen && k === 'cost') {
+        if (typeof ensureCpCostProfileLoaded_ === 'function') {
+            Promise.resolve(ensureCpCostProfileLoaded_()).finally(() => {
+                if (typeof refreshCpCostSummaryBar_ === 'function') refreshCpCostSummaryBar_();
+            });
+        } else if (typeof refreshCpCostSummaryBar_ === 'function') {
+            refreshCpCostSummaryBar_();
+        }
     }
 }
 window.openCpBottomTab = openCpBottomTab;

@@ -8036,7 +8036,12 @@ function resolveCultivationPlanName_(year, crop, plan, planType, planName) {
   const explicit = String(planName || (plan && plan.planName) || '').trim();
   if (explicit) return explicit;
   const type = resolveCultivationPlanType_(planType || plan || '本作');
-  return String(year) + '年 ' + String(crop) + ' ' + type;
+  const location = String((plan && plan.location) || '').trim();
+  const parts = [String(year) + '年'];
+  if (location) parts.push(location);
+  parts.push(String(crop || '栽培計画'));
+  parts.push(type);
+  return parts.join(' ');
 }
 
 function parseCultivationPlanJson_(raw) {
@@ -8336,6 +8341,7 @@ function getSavedCultivationPlanList() {
        let vName = String(row[4] || '').trim();
        let planName = '';
        let planType = '本作';
+       let location = '';
        const planData = parseCultivationPlanJson_(row[5]);
        if (planData) {
          if (planData.status === 'executed') status = 'executed';
@@ -8346,6 +8352,7 @@ function getSavedCultivationPlanList() {
          if (!vName && planData.variety) vName = String(planData.variety || '').trim();
          if (planData.planName) planName = String(planData.planName || '').trim();
          planType = resolveCultivationPlanType_(planData);
+         location = String(planData.location || '').trim();
        }
        if (!vName) vName = '(品種未設定)';
        if (!planName) planName = year + '年 ' + crop + ' ' + planType;
@@ -8360,6 +8367,8 @@ function getSavedCultivationPlanList() {
              crop: crop,
              planType: planType,
              planName: planName,
+             location: '',
+             locations: [],
              count: 0,
              plannedCount: 0,
              executedCount: 0,
@@ -8372,6 +8381,14 @@ function getSavedCultivationPlanList() {
        map[key].count++;
        if (status === 'executed') map[key].executedCount++;
        else map[key].plannedCount++;
+       if (location) {
+         if (map[key].locations.indexOf(location) === -1) {
+           map[key].locations.push(location);
+         }
+         map[key].location = map[key].locations.length === 1
+           ? map[key].locations[0]
+           : map[key].locations.join('・');
+       }
        if (new Date(row[0]) > new Date(map[key].lastUpdated)) {
            map[key].lastUpdated = row[0];
            if (planName) map[key].planName = planName;
@@ -8387,7 +8404,8 @@ function getSavedCultivationPlanList() {
          seedCount: seedCount,
          status: status,
          planType: planType,
-         planName: planName
+         planName: planName,
+         location: location
        });
        map[key].seedTotal += seedCount;
        if (status !== 'executed') map[key].seedPlannedTotal += seedCount;

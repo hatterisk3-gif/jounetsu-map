@@ -256,7 +256,7 @@
     if (!el) return;
     const p = window._cpCostProfile;
     if (!p || !p.cropName) {
-      el.innerHTML = '<span style="color:#888;">作物を選ぶと原価プロファイルを読み込みます</span>';
+      el.innerHTML = '<span style="color:#888;">作物を選んでから、ここで原価プロファイルを読み込みます</span>';
       return;
     }
     const n = (p.entries && p.entries.length) || 0;
@@ -272,6 +272,11 @@
     el.innerHTML = '<span style="color:#2e7d32;">✓ ' + esc(p.cropName) + ' の原価プロファイル適用中</span> — ' + bits.join(' ／ ');
   };
 
+  function isCpCostTabOpen_() {
+    const panel = document.getElementById('cpBottomPanelCost');
+    return !!(panel && panel.classList.contains('is-open') && !panel.hidden);
+  }
+
   window.loadCpCostProfileForCrop = async function (cropName) {
     const crop = String(cropName || '').trim();
     const hint = document.getElementById('cpCostProfileHint');
@@ -286,7 +291,9 @@
       window.refreshAllCpPlanEconomics_();
       return window._cpCostProfile;
     }
-    const loading = hint && window.AppLoading
+    // 読み込み表示は原価タブが開いているときだけ出す
+    const showLoading = isCpCostTabOpen_() && hint && window.AppLoading;
+    const loading = showLoading
       ? AppLoading.inline(hint, {
           label: '原価プロファイルを読み込み中...',
           detail: crop,
@@ -331,7 +338,24 @@
 
   window.onCpCropChangedForCost = function () {
     const crop = (typeof getCpVal === 'function') ? getCpVal('cpCrop') : '';
-    window.loadCpCostProfileForCrop(crop);
+    // 作物変更時はキャッシュを切る。実ロードは原価タブ表示時に行う
+    if (window._cpCostProfile && window._cpCostProfile.cropName !== String(crop || '').trim()) {
+      window._cpCostProfile = null;
+    }
+    window._cpCostProfilePendingCrop = String(crop || '').trim();
+    window.updateCpCostProfileHint_();
+    if (isCpCostTabOpen_()) {
+      window.loadCpCostProfileForCrop(crop);
+    } else {
+      window.refreshAllCpPlanEconomics_();
+    }
+  };
+
+  window.ensureCpCostProfileLoaded_ = function () {
+    const crop = (typeof getCpVal === 'function')
+      ? getCpVal('cpCrop')
+      : (window._cpCostProfilePendingCrop || '');
+    return window.loadCpCostProfileForCrop(crop);
   };
 
   window.onCpCostSellPriceOverride = function () {

@@ -4589,8 +4589,11 @@ function initMap() {
             if (scale > 1) {
                 img.style.width = (256 * scale) + 'px';
                 img.style.height = (256 * scale) + 'px';
-                let offsetX = (coord.x % scale) * 256;
-                let offsetY = (coord.y % scale) * 256;
+                // JSの % は負になり得るので正の余りに揃える
+                let modX = ((coord.x % scale) + scale) % scale;
+                let modY = ((coord.y % scale) + scale) % scale;
+                let offsetX = modX * 256;
+                let offsetY = modY * 256;
                 img.style.left = `-${offsetX}px`;
                 img.style.top = `-${offsetY}px`;
                 img.style.imageRendering = 'pixelated';
@@ -4626,10 +4629,12 @@ function initMap() {
 
     try {
         map.mapTypes.set('hybrid_stretched', new StretchedMapType());
+        map.setMapTypeId('hybrid_stretched');
+        map.setOptions({ maxZoom: 30 });
     } catch (e) {
         console.warn('StretchedMapType 登録スキップ:', e);
+        try { map.setMapTypeId('hybrid'); } catch (e2) {}
     }
-    map.setMapTypeId('hybrid');
 
     // コンテナサイズが後から確定する場合に備えリサイズを通知
     setTimeout(() => {
@@ -5059,6 +5064,20 @@ document.getElementById('btnViewMode').onclick = () => {
     if (typeof updateMarkerLabels === 'function') updateMarkerLabels();
 };
 
+// 衛星タイルのCSS引き延ばし（ネイティブズーム超え）を有効化
+window.enableStretchedMapType = function() {
+    if (!map || !google || !google.maps) return false;
+    try {
+        if (!map.mapTypes.get('hybrid_stretched')) return false;
+        map.setMapTypeId('hybrid_stretched');
+        map.setOptions({ maxZoom: 30 });
+        return true;
+    } catch (e) {
+        console.warn('stretched map 切替失敗:', e);
+        return false;
+    }
+};
+
 // 🌟圃場ボタン
 document.getElementById('btnDrawMode').onclick = () => {
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -5069,7 +5088,10 @@ document.getElementById('btnDrawMode').onclick = () => {
     clearCustomDrawing();
     setFudeVisibility(false);
 
-    map.setOptions({ draggable: true, draggableCursor: pinCursor });
+    // 圃場作成時は限界ズームを超えてCSS引き延ばしできるようにする
+    if (typeof window.enableStretchedMapType === 'function') window.enableStretchedMapType();
+
+    map.setOptions({ draggable: true, draggableCursor: pinCursor, maxZoom: 30 });
 
     if (typeof preloadFudeData === 'function') preloadFudeData();
     if (typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加（ここで文字が消えます！）

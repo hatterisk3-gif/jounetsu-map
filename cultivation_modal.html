@@ -82,7 +82,6 @@
                 <input type="text" id="cpCropTagAbbr" maxlength="10" placeholder="例: キャ" title="作物のタグ略称" style="flex:1; min-width:0; padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px;">
                 <button type="button" onclick="saveCpCropTagAbbreviation()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">保存</button>
               </div>
-              <div id="cpCostProfileHint" style="font-size:10px; color:#666; margin-top:3px; line-height:1.35; min-height:14px;">作物を選ぶと原価プロファイルを読み込みます</div>
               <div id="cpTagAbbrSaveStatus" style="font-size:11px; font-weight:bold; margin-top:4px; min-height:14px;"></div>
             </div>
             <div style="width: 100%;">
@@ -543,6 +542,7 @@
                 </div>
               </div>
               <div id="cpBottomPanelCost" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabCost" hidden>
+                <div id="cpCostProfileHint" style="font-size:11px; color:#666; margin:0 0 8px; line-height:1.45; min-height:16px;">作物を選ぶと、ここで原価プロファイルを読み込みます</div>
                 <div id="cpCostSummaryBar" style="display:none; padding:0; background:transparent; border:none;">
                   <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; justify-content:space-between;">
                     <div style="font-size:12px; font-weight:bold; color:#e65100;">💰 原価・売上予測</div>
@@ -559,7 +559,7 @@
                   </div>
                   <div id="cpCostSumMeta" style="font-size:10px; color:#888; margin-top:4px;"></div>
                 </div>
-                <div id="cpCostSummaryEmpty" style="font-size:11px; color:#888; padding:8px 0;">作物を選ぶと原価・売上予測が表示されます</div>
+                <div id="cpCostSummaryEmpty" style="font-size:11px; color:#888; padding:8px 0;">原価タブを開くと、選択中の作物の原価・売上予測を表示します</div>
               </div>
               <div id="cpBottomPanelSave" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabSave" hidden>
                 <div style="width:min(100%, 520px); margin:0 auto 10px;">
@@ -570,9 +570,9 @@
                       <label style="display:flex; align-items:center; gap:3px; cursor:pointer;"><input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()" style="margin:0;">試作</label>
                     </div>
                   </div>
-                  <input type="text" id="cpPlanName" maxlength="80" oninput="onCpPlanNameInput()" onblur="applyCpPlanTypeToName()" placeholder="例: 2026年 キャベツ 秋冬作 本作"
+                  <input type="text" id="cpPlanName" maxlength="80" oninput="onCpPlanNameInput()" onblur="applyCpPlanTypeToName()" placeholder="例: 2026年 徳阿 キャベツ 本作"
                     style="width:100%; padding:9px 10px; border:1px solid #FFB74D; border-radius:6px; box-sizing:border-box; font-size:14px;">
-                  <div style="margin-top:3px; font-size:10px; color:#888;">未入力の場合は「年度＋作物＋計画属性」で自動設定されます。</div>
+                  <div style="margin-top:3px; font-size:10px; color:#888;">未入力の場合は「年度＋拠点＋作物＋計画属性」で自動設定されます。</div>
                 </div>
                 <div style="text-align: center; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px;">
                   <button type="button" id="btnCpDraftSave" onclick="saveCultivationPlanDraft()" style="padding: 10px 24px; background: #607D8B; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">一時保存</button>
