@@ -6605,6 +6605,13 @@ let cpSaveProgressHideTimer = null;
 const CP_SAVED_PLAN_LIST_CACHE_KEY = 'cpSavedPlanListCache';
 const CP_PENDING_PLAN_SAVES_KEY = 'cpPendingPlanSaves';
 window._cpPlanSaveSyncBusy = false;
+/** 計画一覧キャッシュの世代。削除後に古い裏同期で復活するのを防ぐ */
+let cpSavedPlanListCacheEpoch_ = 0;
+
+function bumpCpSavedPlanListCacheEpoch_() {
+    cpSavedPlanListCacheEpoch_ = (cpSavedPlanListCacheEpoch_ || 0) + 1;
+    return cpSavedPlanListCacheEpoch_;
+}
 
 function getCachedSavedPlanList_() {
     try {
@@ -6626,6 +6633,13 @@ function setCachedSavedPlanList_(list) {
     } catch (e) {}
 }
 
+/** epoch が一致するときだけ一覧キャッシュを更新（古い裏同期の書き戻し防止） */
+function setCachedSavedPlanListIfCurrent_(list, epoch) {
+    if (epoch != null && epoch !== cpSavedPlanListCacheEpoch_) return false;
+    setCachedSavedPlanList_(list);
+    return true;
+}
+
 function upsertCachedSavedPlanSummary_(summary) {
     if (!summary) return;
     const list = (getCachedSavedPlanList_() || []).slice();
@@ -6639,6 +6653,17 @@ function upsertCachedSavedPlanSummary_(summary) {
     if (idx >= 0) list[idx] = next;
     else list.unshift(next);
     setCachedSavedPlanList_(list);
+}
+
+/** 端末キャッシュから計画を除外（削除直後の再表示・裏同期復活を防ぐ） */
+function removeCachedSavedPlanSummary_(year, crop, planName) {
+    bumpCpSavedPlanListCacheEpoch_();
+    const key = buildCpPlanSaveKey(year, crop, planName);
+    const list = (getCachedSavedPlanList_() || []).filter(item =>
+        buildCpPlanSaveKey(item.year, item.crop, item.planName || '') !== key
+    );
+    setCachedSavedPlanList_(list);
+    return list;
 }
 
 function getPendingPlanSaves_() {
@@ -6699,8 +6724,9 @@ async function flushPendingCultivationPlanSaves_() {
                     console.warn('栽培マスタ裏同期失敗:', e);
                 }
                 try {
+                    const listEpoch = cpSavedPlanListCacheEpoch_;
                     const list = await callGAS('getSavedCultivationPlanList');
-                    setCachedSavedPlanList_(list);
+                    setCachedSavedPlanListIfCurrent_(list, listEpoch);
                 } catch (e) {
                     console.warn('計画一覧キャッシュ更新失敗:', e);
                 }
@@ -7202,6 +7228,7 @@ async function saveCultivationPlan(options) {
         });
 
         // 作型DB・マスタ・一覧の最新同期は裏で実施（保存完了を待たせない）
+        const listEpochAtSave = cpSavedPlanListCacheEpoch_;
         const bgSync = (async () => {
             if (croptypeParamsArray.length > 0) {
                 try {
@@ -7221,7 +7248,8 @@ async function saveCultivationPlan(options) {
             }
             try {
                 const list = await callGAS('getSavedCultivationPlanList');
-                setCachedSavedPlanList_(list);
+                // 削除などで世代が進んでいたら書き戻さない
+                setCachedSavedPlanListIfCurrent_(list, listEpochAtSave);
             } catch (e) {
                 console.warn('計画一覧の裏同期失敗:', e);
             }
@@ -7542,15 +7570,23 @@ async function showPlanListModal(options) {
     }
 
     try {
+        const listEpoch = cpSavedPlanListCacheEpoch_;
         const list = await callGAS('getSavedCultivationPlanList');
-        setCachedSavedPlanList_(list);
-        paintSavedPlanList_(container, Array.isArray(list) ? list : [], isLoadMode, '');
+        // 取得中に削除されていたら古い一覧で上書きしない
+        if (listEpoch === cpSavedPlanListCacheEpoch_) {
+            bumpCpSavedPlanListCacheEpoch_();
+            setCachedSavedPlanList_(list);
+            paintSavedPlanList_(container, Array.isArray(list) ? list : [], isLoadMode, '');
+        } else {
+            paintSavedPlanList_(container, getCachedSavedPlanList_() || [], isLoadMode, '');
+        }
     } catch (e) {
         console.warn('計画一覧の取得失敗:', e);
-        if (hasCache) {
-            paintSavedPlanList_(container, cached, isLoadMode, '最新の取得に失敗したため、前回の一覧を表示しています');
+        const latestCache = getCachedSavedPlanList_();
+        if (latestCache && latestCache.length) {
+            paintSavedPlanList_(container, latestCache, isLoadMode, '最新の取得に失敗したため、前回の一覧を表示しています');
         } else {
-            container.innerHTML = '<div style="text-align: center; color: #d32f2f; font-size: 14px; padding: 20px;">一覧の取得に失敗しました。</div>';
+            container.innerHTML = '<div style="text-align: center; color: #666; font-size: 14px; padding: 20px;">保存済みの計画はありません。<br>「栽培計画を立てる」→「計画を保存」してください。</div>';
         }
     }
 }
@@ -10783,8 +10819,12 @@ async function deleteSavedCultivationGroup(year, crop, planType, planName) {
             await showPlanListModal({ mode: currentPlanListMode });
             return;
         }
-        alert(res.message || '削除しました');
+        // 端末キャッシュから即除外（保存後の裏同期で復活させない）
+        removeCachedSavedPlanSummary_(y, c, n);
+        try { removePendingPlanSave_(buildCpPlanSaveKey(y, c, n)); } catch (e) {}
+        if (cpLoadedPlanKey === buildCpPlanSaveKey(y, c, n)) cpLoadedPlanKey = null;
         cpCropHarvestSummaryCache = null;
+        alert(res.message || '削除しました');
         await showPlanListModal({ mode: currentPlanListMode });
     } catch (e) {
         alert('削除エラー: ' + (e && e.message ? e.message : e));
