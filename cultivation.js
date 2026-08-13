@@ -6247,8 +6247,12 @@ async function saveCultivationPlan(options) {
                 '\nサーバーへの同期はバックグラウンドで実行中です。' +
                 (hadExecutedPlans ? '\n実行済み計画の作業予定更新も裏で反映します。' : '') +
                 '\n本作・試作や本作2などは別々に保存されます。';
-            if (typeof customAlert === 'function') customAlert(msg);
-            else alert(msg);
+            try {
+                if (typeof customAlert === 'function') customAlert(msg);
+                else alert(msg);
+            } catch (alertErr) {
+                alert(msg);
+            }
         }
 
         cpCropHarvestSummaryCache = null;

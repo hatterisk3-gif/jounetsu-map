@@ -799,9 +799,18 @@ async function fetchWeatherAndUpdateUI() {
       };
 
       window.customAlert = (msg) => {
-        document.getElementById('customAlertMessage').innerText = msg;
-        document.getElementById('customAlertModal').style.display = 'flex';
-        document.getElementById('customAlertOk').onclick = () => { document.getElementById('customAlertModal').style.display = 'none'; };
+        const messageEl = document.getElementById('customAlertMessage');
+        const modalEl = document.getElementById('customAlertModal');
+        const okBtn = document.getElementById('customAlertOk');
+        if (!messageEl || !modalEl) {
+          alert(msg);
+          return;
+        }
+        messageEl.innerText = msg;
+        modalEl.style.display = 'flex';
+        if (okBtn) {
+          okBtn.onclick = () => { modalEl.style.display = 'none'; };
+        }
       };
 
       async function callGAS(action, params = {}, retries = 2) {
@@ -920,9 +929,18 @@ async function fetchWeatherAndUpdateUI() {
       };
 
       window.customAlert = (msg) => {
-        document.getElementById('customAlertMessage').innerText = msg;
-        document.getElementById('customAlertModal').style.display = 'flex';
-        document.getElementById('customAlertOk').onclick = () => { document.getElementById('customAlertModal').style.display = 'none'; };
+        const messageEl = document.getElementById('customAlertMessage');
+        const modalEl = document.getElementById('customAlertModal');
+        const okBtn = document.getElementById('customAlertOk');
+        if (!messageEl || !modalEl) {
+          alert(msg);
+          return;
+        }
+        messageEl.innerText = msg;
+        modalEl.style.display = 'flex';
+        if (okBtn) {
+          okBtn.onclick = () => { modalEl.style.display = 'none'; };
+        }
       };
 
       async function callGAS(action, params = {}, retries = 2) {
