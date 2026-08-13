@@ -438,9 +438,9 @@
           <button type="button" id="cpUndoBtn" onclick="undoCpEdit()" disabled title="元に戻す (Ctrl+Z)" style="font-size: 11px; padding: 2px 10px; border: 1px solid #90A4AE; background: #ECEFF1; color: #37474F; border-radius: 4px; cursor: pointer; font-weight: bold;">↩ 元に戻す</button>
           <button type="button" id="cpRedoBtn" onclick="redoCpEdit()" disabled title="やり直し (Ctrl+Y)" style="font-size: 11px; padding: 2px 10px; border: 1px solid #90A4AE; background: #ECEFF1; color: #37474F; border-radius: 4px; cursor: pointer; font-weight: bold;">↪ 次へ</button>
           <span style="width:1px; height:18px; background:#ccc; margin:0 2px; flex-shrink:0;"></span>
-          <button type="button" onclick="sortCpPlansByPlanting()" title="定植セルが最も早い品種を上に並べ替えます" style="font-size: 11px; padding: 2px 10px; border: 1px solid #81C784; background: #E8F5E9; color: #2E7D32; border-radius: 4px; cursor: pointer; font-weight: bold;">🌱 定植早い順</button>
-          <button type="button" onclick="sortCpPlansByHarvesting()" title="収穫セルが最も早い品種を上に並べ替えます" style="font-size: 11px; padding: 2px 10px; border: 1px solid #FFB74D; background: #FFF3E0; color: #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🍊 収穫早い順</button>
-          <button type="button" onclick="groupCpPlansByVariety()" title="今の並びを保ったまま、同一品種を連続してまとめます（定植早い順・収穫早い順のあとに押す想定）" style="font-size: 11px; padding: 2px 10px; border: 1px solid #90CAF9; background: #E3F2FD; color: #1565C0; border-radius: 4px; cursor: pointer; font-weight: bold;">📦 品種でまとめる</button>
+          <button type="button" onclick="sortCpPlansByPlanting()" title="定植セルが最も早い品種を上に並べ替えます（品種の仕切りは非表示）" style="font-size: 11px; padding: 2px 10px; border: 1px solid #81C784; background: #E8F5E9; color: #2E7D32; border-radius: 4px; cursor: pointer; font-weight: bold;">🌱 定植早い順</button>
+          <button type="button" onclick="sortCpPlansByHarvesting()" title="収穫セルが最も早い品種を上に並べ替えます（品種の仕切りは非表示）" style="font-size: 11px; padding: 2px 10px; border: 1px solid #FFB74D; background: #FFF3E0; color: #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🍊 収穫早い順</button>
+          <button type="button" onclick="groupCpPlansByVariety()" title="今の並びを保ったまま同一品種を連続させ、仕切りを再表示します" style="font-size: 11px; padding: 2px 10px; border: 1px solid #90CAF9; background: #E3F2FD; color: #1565C0; border-radius: 4px; cursor: pointer; font-weight: bold;">📦 品種でまとめる</button>
         </div>
         
         <div id="cpTwoColContainer" style="flex: 1 1 120px; display: flex; border: 1px solid #ddd; overflow: hidden; min-height: 0;">

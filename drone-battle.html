@@ -744,7 +744,7 @@
         </button>
         <button type="button" class="cat-btn" id="catTechniqueBtn" data-cat="technique">
           🎯 テクニックモード
-          <small>レース・精密散布</small>
+          <small>レース・グランプリ・精密散布</small>
         </button>
       </div>
 
@@ -788,6 +788,10 @@
           <button type="button" class="mode-btn game-pick" id="pickRace" data-game="race">
             🏁 エアレース
             <small>ゲートを順番に通過するタイムアタック。最速クリアを目指せ。</small>
+          </button>
+          <button type="button" class="mode-btn game-pick" id="pickGrandPrix" data-game="grandprix">
+            🏎️ グランプリレース（12機）
+            <small>自分＋AI11機の同時レース。ゲート周回で1位を取れ。</small>
           </button>
           <button type="button" class="mode-btn game-pick" id="pickFertilizer" data-game="fertilizer">
             🌱 肥料散布
@@ -1067,6 +1071,13 @@ const DEFENSE_WAVES = [
 ];
 const RACE_LAPS = 1;
 const RACE_BEST_KEY = 'passionMapDroneRaceBest';
+const GRANDPRIX_TOTAL = 12;
+const GRANDPRIX_AI = GRANDPRIX_TOTAL - 1;
+const GRANDPRIX_LAPS = 1;
+const GRANDPRIX_COLORS = [
+  0xff5252, 0xffab40, 0xffee58, 0x69f0ae, 0x40c4ff, 0xb388ff,
+  0xf48fb1, 0x80cbc4, 0xffcc80, 0xce93d8, 0xa5d6a7
+];
 const FERT_COLS = 12;
 const FERT_ROWS = 10;
 const FERT_FIELD = { x: -22, z: 4, w: 28, d: 22 }; // makePaddy(-22,4,30,24) 付近
@@ -1101,14 +1112,19 @@ function normalizeGameType(raw) {
   const g = String(raw || 'dogfight');
   if (
     g === 'mission' || g === 'online' || g === 'musou' || g === 'deathmatch' || g === 'defense'
-    || g === 'race' || g === 'fertilizer' || g === 'airship' || g === 'airship_coop'
+    || g === 'race' || g === 'grandprix' || g === 'fertilizer' || g === 'airship' || g === 'airship_coop'
   ) return g;
   return 'dogfight';
 }
 
 function isTechniqueMode(g) {
   const t = g != null ? g : state.gameType;
-  return t === 'race' || t === 'fertilizer';
+  return t === 'race' || t === 'grandprix' || t === 'fertilizer';
+}
+
+function isGrandPrixMode(g) {
+  const t = g != null ? g : state.gameType;
+  return t === 'grandprix';
 }
 
 function isAirshipMode(g) {
@@ -1148,6 +1164,7 @@ const state = {
   waveIndex: 0,
   // race / fertilizer (technique)
   raceTime: 0,
+  racePlace: 0,
   fertCovered: 0,
   fertOverspray: 0,
   fertSprayCd: 0,
@@ -1949,7 +1966,7 @@ function refreshFireButtonLabel() {
     if (alt) alt.textContent = '散布';
     return;
   }
-  if (state.gameType === 'race') {
+  if (state.gameType === 'race' || state.gameType === 'grandprix') {
     if (btn) btn.textContent = '—';
     if (alt) alt.textContent = '—';
     return;
@@ -2153,6 +2170,7 @@ function openSetup(gameType) {
     defense: '防衛線モード',
     airship: '巨大飛行艇撃破',
     race: 'エアレース',
+    grandprix: 'グランプリレース',
     fertilizer: '肥料散布',
     dogfight: 'ドッグファイト'
   };
@@ -2163,6 +2181,7 @@ function openSetup(gameType) {
     defense: '拠点の防衛線を守れ。波状に襲来する敵の突破を防ぎ、全ウェーブ撃退で勝利。',
     airship: 'ギガント級の巨大飛行要塞。橙色のゴンドラ弱点を狙い、撃破せよ。',
     race: 'ゲートを順番に通過するタイムアタック。最速クリアを目指せ。',
+    grandprix: '全' + GRANDPRIX_TOTAL + '機同時スタート。ゲートを周回し1位でゴールせよ。',
     fertilizer: '適正高度を保ち、畑へムラなく肥料を散布せよ。',
     dogfight: '対CPUの空中ドッグファイト。先にHPを0にした方が勝ち。'
   };
@@ -2173,6 +2192,7 @@ function openSetup(gameType) {
     defense: '<strong>防衛線モード</strong><br>・拠点の防衛線（光る柵）を突破されると拠点HPが減る<br>・全 ' + DEFENSE_WAVES.length + ' ウェーブを撃退すれば勝利<br>・拠点HP0 または 自機撃破で敗北',
     airship: '<strong>巨大飛行艇撃破</strong><br>・ギガント級の超巨大翼付き飛行要塞<br>・橙色のゴンドラが弱点（ダメージ2.5倍）<br>・飛行艇からも反撃あり<br>・オンライン協力プレイも可（ONLINE → 飛行艇協力）',
     race: '<strong>エアレース</strong><br>・光るゲートを番号順に通過<br>・' + RACE_LAPS + ' 周でゴール／タイム計測<br>・墜落で失敗。低空に注意',
+    grandprix: '<strong>グランプリレース</strong><br>・自分＋AI ' + GRANDPRIX_AI + ' 機＝全 ' + GRANDPRIX_TOTAL + ' 機<br>・ゲートを番号順に通過し ' + GRANDPRIX_LAPS + ' 周でゴール<br>・1位ゴールで勝利／射撃なし・墜落でリタイア',
     fertilizer: '<strong>肥料散布</strong><br>・高度 約' + FERT_MIN_ALT + '〜' + FERT_MAX_ALT + 'm で散布ボタン<br>・畑のマスをムラなく緑に変えよ<br>・制限時間 ' + FERT_TIME + ' 秒／被覆率で評価',
     dogfight: '<strong>操作</strong><br>・タッチ: 左右スティック＋赤ボタン射撃<br>・キー: WASD＋矢印／Space射撃／Cカメラ／Hホバー<br>・地面衝突・弾命中でダメージ。先にHP0で敗北。<br>・相手の強さはセットアップで変更可。赤矢印が相手方向を示します。'
   };
@@ -2183,6 +2203,7 @@ function openSetup(gameType) {
     defense: '防衛開始',
     airship: '出撃（飛行艇）',
     race: 'レース開始',
+    grandprix: 'グランプリ開始',
     fertilizer: '散布開始',
     dogfight: '対戦開始（対CPU）'
   };
@@ -2203,6 +2224,7 @@ document.getElementById('pickDefense').addEventListener('click', () => openSetup
 document.getElementById('pickAirship').addEventListener('click', () => openSetup('airship'));
 document.getElementById('pickMission').addEventListener('click', () => openSetup('mission'));
 document.getElementById('pickRace').addEventListener('click', () => openSetup('race'));
+document.getElementById('pickGrandPrix').addEventListener('click', () => openSetup('grandprix'));
 document.getElementById('pickFertilizer').addEventListener('click', () => openSetup('fertilizer'));
 document.getElementById('pickOnline').addEventListener('click', () => openSetup('online'));
 
@@ -3683,7 +3705,7 @@ function setModeWorldVisible() {
   if (g === 'mission') {
     gateGroup.visible = true;
     pestGroup.visible = true;
-  } else if (g === 'race') {
+  } else if (g === 'race' || g === 'grandprix') {
     gateGroup.visible = true;
     pestGroup.visible = false;
   } else {
@@ -4299,11 +4321,189 @@ function tintSwarmCraft(craft, idx, mode) {
     ? [0xc62828, 0x6a1b9a, 0xef6c00, 0x00897b, 0x3949ab, 0xad1457, 0x558b2f]
     : mode === 'defense'
       ? [0xff6f00, 0xe65100, 0xbf360c, 0xff8f00, 0xd84315, 0xff3d00]
-      : [0xb71c1c, 0xd32f2f, 0xe53935, 0xc62828, 0xff5252];
+      : mode === 'grandprix'
+        ? GRANDPRIX_COLORS
+        : [0xb71c1c, 0xd32f2f, 0xe53935, 0xc62828, 0xff5252];
   const col = colors[idx % colors.length];
   if (craft.mesh && craft.mesh.userData && craft.mesh.userData.body && craft.mesh.userData.body.material) {
     craft.mesh.userData.body.material.color.setHex(col);
   }
+}
+
+function resetRaceProgress(craft) {
+  craft.raceGate = 0;
+  craft.raceLaps = 0;
+  craft.raceDone = false;
+  craft.raceFinishTime = 0;
+}
+
+function raceProgressScore(craft) {
+  if (!craft) return -1;
+  if (craft.raceDone) return 10000 + (1000 - Math.min(999, craft.raceFinishTime || 0));
+  const gi = craft.raceGate || 0;
+  const laps = craft.raceLaps || 0;
+  const gate = gates[gi];
+  let distBonus = 0;
+  if (gate && craft.pos) {
+    const d = craft.pos.distanceTo(gate.pos);
+    distBonus = Math.max(0, 1 - d / 80);
+  }
+  return laps * gates.length + gi + distBonus;
+}
+
+function computePlayerRacePlace() {
+  const myScore = raceProgressScore(player);
+  let place = 1;
+  swarm.forEach((c) => {
+    if (!c.alive && !c.raceDone) return;
+    if (raceProgressScore(c) > myScore + 1e-6) place++;
+  });
+  return place;
+}
+
+function spawnGrandPrixRacers() {
+  clearSwarm();
+  const g0 = GATE_PATH[0];
+  const g1 = GATE_PATH[1] || g0;
+  const startYaw = Math.atan2(-(g1.x - g0.x), -(g1.z - g0.z));
+  // 進行方向（機体の前方）
+  const flight = new THREE.Vector3(-Math.sin(startYaw), 0, -Math.cos(startYaw));
+  const right = new THREE.Vector3(Math.cos(startYaw), 0, -Math.sin(startYaw));
+  // スターティンググリッド：ゲート手前に2列×6
+  for (let i = 0; i < GRANDPRIX_AI; i++) {
+    const c = createCraft(false);
+    const row = Math.floor(i / 6);
+    const col = i % 6;
+    const lane = (col - 2.5) * 3.2;
+    const back = 12 + row * 5.5 + (col % 2) * 1.2;
+    c.pos.set(
+      g0.x - flight.x * back + right.x * lane,
+      10.5 + (i % 3) * 0.35,
+      g0.z - flight.z * back + right.z * lane
+    );
+    c.yaw = startYaw + (Math.random() - 0.5) * 0.08;
+    c.pitch = 0;
+    c.roll = 0;
+    c.vel.set(0, 0, 0);
+    c.hp = MAX_HP;
+    c.maxHp = MAX_HP;
+    c.atk = 0;
+    c.def = 0;
+    // 実力差で順位争いが生まれる
+    c.maxSpd = 24 + Math.random() * 8;
+    c.thrust = 40 + Math.random() * 10;
+    c.aiRaceSkill = 0.55 + Math.random() * 0.45;
+    c.aiAltBias = (Math.random() - 0.5) * 2.5;
+    c.aiPhase = Math.random() * Math.PI * 2;
+    c.fireCd = 99;
+    c.crashing = false;
+    c.id = 'gp_' + i;
+    resetRaceProgress(c);
+    tintSwarmCraft(c, i, 'grandprix');
+    c.mesh.visible = true;
+    c.mesh.position.copy(c.pos);
+    swarm.push(c);
+  }
+}
+
+/** ゲートへ向かうレースAI */
+function aiControlRace(craft, dt) {
+  if (!craft || !craft.alive) {
+    return { throttle: 0.5, yaw: 0, pitch: -0.1, roll: 0, fire: false };
+  }
+  if (craft.raceDone) {
+    return { throttle: 0.55, yaw: 0.15, pitch: -0.05, roll: 0.1, fire: false };
+  }
+  craft.aiPhase = (craft.aiPhase || 0) + dt;
+  const gi = craft.raceGate || 0;
+  const gate = gates[gi];
+  if (!gate) {
+    return { throttle: 0.6, yaw: 0, pitch: -0.1, roll: 0, fire: false };
+  }
+  const skill = craft.aiRaceSkill != null ? craft.aiRaceSkill : 0.75;
+  const aim = gate.pos.clone();
+  aim.y += (craft.aiAltBias || 0);
+  // 軽い蛇行で個性を出す
+  const side = Math.sin(craft.aiPhase * (1.1 + skill)) * (1.2 - skill) * 2.5;
+  aim.x += side;
+  const toAim = aim.clone().sub(craft.pos);
+  const dist = Math.max(0.1, toAim.length());
+  const desiredDir = toAim.clone().normalize();
+  const desiredYaw = Math.atan2(-desiredDir.x, -desiredDir.z);
+  let yawErr = desiredYaw - craft.yaw;
+  while (yawErr > Math.PI) yawErr -= Math.PI * 2;
+  while (yawErr < -Math.PI) yawErr += Math.PI * 2;
+
+  const targetAlt = Math.max(AI_MIN_ALT + 1, gate.pos.y + (craft.aiAltBias || 0) * 0.4);
+  const altErr = targetAlt - craft.pos.y;
+  let throttle = 0.72 + skill * 0.22 + THREE.MathUtils.clamp(altErr * 0.04, -0.2, 0.25);
+  if (dist > 22) throttle += 0.08;
+  if (dist < 6) throttle *= 0.92;
+
+  let avoidYaw = 0;
+  obstacles.forEach((ob) => {
+    const dx = craft.pos.x - ob.mesh.position.x;
+    const dz = craft.pos.z - ob.mesh.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < ob.radius + 5 && craft.pos.y < ob.yMax + 3) {
+      avoidYaw += Math.atan2(dx, dz) * 0.4;
+      throttle = Math.max(throttle, 0.88);
+    }
+  });
+  // 他機との簡易セパレーション
+  swarm.forEach((other) => {
+    if (other === craft || !other.alive) return;
+    const d = craft.pos.distanceTo(other.pos);
+    if (d < 4.5) {
+      const away = craft.pos.clone().sub(other.pos);
+      avoidYaw += Math.atan2(away.x, away.z) * 0.25;
+    }
+  });
+
+  let pitchCmd = THREE.MathUtils.clamp(-desiredDir.y * 0.95, -0.55, 0.4);
+  if (craft.pos.y < AI_MIN_ALT + 1.5) pitchCmd = Math.min(pitchCmd, -0.25);
+
+  return {
+    throttle: THREE.MathUtils.clamp(throttle, 0.4, 1),
+    yaw: THREE.MathUtils.clamp(yawErr * (1.4 + skill * 0.5) + avoidYaw, -1, 1),
+    pitch: pitchCmd,
+    roll: THREE.MathUtils.clamp(yawErr * 0.35, -0.7, 0.7),
+    fire: false
+  };
+}
+
+function advanceRacerGate(craft, isPlayer) {
+  if (!craft || craft.raceDone) return false;
+  craft.raceGate = (craft.raceGate || 0) + 1;
+  if (craft.raceGate >= gates.length) {
+    craft.raceGate = 0;
+    craft.raceLaps = (craft.raceLaps || 0) + 1;
+    const need = isGrandPrixMode() ? GRANDPRIX_LAPS : RACE_LAPS;
+    if (isPlayer) showToast('周回完了！ LAP ' + craft.raceLaps + '/' + need, 1200);
+    if (craft.raceLaps >= need) {
+      craft.raceDone = true;
+      craft.raceFinishTime = state.raceTime;
+      return true;
+    }
+  } else if (isPlayer) {
+    showToast('ゲート通過 ' + craft.raceGate + '/' + gates.length, 600);
+  }
+  if (isPlayer) {
+    state.nextGate = craft.raceGate;
+    state.laps = craft.raceLaps;
+    highlightGate(craft.raceGate);
+  }
+  return false;
+}
+
+function checkRacerGatePass(craft, isPlayer) {
+  if (!craft || !craft.alive || craft.raceDone) return false;
+  const g = gates[craft.raceGate || 0];
+  if (!g) return false;
+  if (craft.pos.distanceTo(g.pos) < g.radius) {
+    return advanceRacerGate(craft, isPlayer);
+  }
+  return false;
 }
 
 /** 無双モード用：機体ごとに違う挙動パターン */
@@ -4539,6 +4739,7 @@ function resetCrafts() {
   state.baseHp = DEFENSE_BASE_MAX_HP;
   state.waveIndex = 0;
   state.raceTime = 0;
+  state.racePlace = 0;
   state.fertCovered = 0;
   state.fertOverspray = 0;
   state.fertSprayCd = 0;
@@ -4564,6 +4765,19 @@ function resetCrafts() {
     player.pos.set(g0.x * 0.15, 11, g0.z + 14);
     player.yaw = Math.atan2(-(g1.x - player.pos.x), -(g1.z - player.pos.z));
     player.mesh.position.copy(player.pos);
+    resetRaceProgress(player);
+  } else if (state.gameType === 'grandprix') {
+    enemy.mesh.visible = false;
+    enemy.alive = false;
+    const g0 = GATE_PATH[0];
+    const g1 = GATE_PATH[1] || g0;
+    const startYaw = Math.atan2(-(g1.x - g0.x), -(g1.z - g0.z));
+    const flight = new THREE.Vector3(-Math.sin(startYaw), 0, -Math.cos(startYaw));
+    player.pos.set(g0.x - flight.x * 9, 11, g0.z - flight.z * 9);
+    player.yaw = startYaw;
+    player.mesh.position.copy(player.pos);
+    resetRaceProgress(player);
+    spawnGrandPrixRacers();
   } else if (state.gameType === 'fertilizer') {
     enemy.mesh.visible = false;
     enemy.alive = false;
@@ -4643,6 +4857,18 @@ function updateTechniqueHud() {
     const total = RACE_LAPS * gates.length;
     document.getElementById('enemyHpFill').style.width =
       Math.max(0, Math.min(100, (done / Math.max(1, total)) * 100)) + '%';
+  } else if (state.gameType === 'grandprix') {
+    missionPill.style.display = '';
+    timePill.style.display = '';
+    killPill.style.display = '';
+    hudRightLabel.textContent = 'RANK';
+    const place = state.racePlace || computePlayerRacePlace();
+    state.racePlace = place;
+    missionPill.textContent = 'GATE ' + ((player.raceGate || 0) + 1) + '/' + gates.length + ' · LAP ' + (player.raceLaps || 0) + '/' + GRANDPRIX_LAPS;
+    timePill.textContent = 'TIME ' + state.raceTime.toFixed(1) + 's';
+    killPill.textContent = place + ' / ' + GRANDPRIX_TOTAL + '位';
+    document.getElementById('enemyHpFill').style.width =
+      Math.max(0, Math.min(100, ((GRANDPRIX_TOTAL - place + 1) / GRANDPRIX_TOTAL) * 100)) + '%';
   } else if (state.gameType === 'fertilizer') {
     missionPill.style.display = '';
     timePill.style.display = '';
@@ -4658,7 +4884,7 @@ function updateTechniqueHud() {
 
 function updateMissionHud() {
   const isM = state.gameType === 'mission';
-  if (state.gameType === 'race' || state.gameType === 'fertilizer') {
+  if (state.gameType === 'race' || state.gameType === 'grandprix' || state.gameType === 'fertilizer') {
     updateTechniqueHud();
     return;
   }
@@ -4698,7 +4924,7 @@ function updateHpUi() {
   } else if (isAirshipMode()) {
     document.getElementById('enemyHpFill').style.width =
       Math.max(0, (airship.hp / Math.max(1, airship.maxHp)) * 100) + '%';
-  } else if (state.gameType === 'race' || state.gameType === 'fertilizer') {
+  } else if (state.gameType === 'race' || state.gameType === 'grandprix' || state.gameType === 'fertilizer') {
     updateTechniqueHud();
   } else if (isSwarmMode()) {
     const total = Math.max(1, swarm.length);
@@ -5213,6 +5439,19 @@ function updateBullets(dt) {
 }
 
 function updateGates() {
+  if (state.gameType === 'grandprix') {
+    const playerFinished = checkRacerGatePass(player, true);
+    swarm.forEach((c) => checkRacerGatePass(c, false));
+    state.nextGate = player.raceGate || 0;
+    state.laps = player.raceLaps || 0;
+    state.racePlace = computePlayerRacePlace();
+    updateTechniqueHud();
+    if (playerFinished) {
+      const place = state.racePlace;
+      endBattle(place === 1, place === 1 ? undefined : 'place');
+    }
+    return;
+  }
   if (state.gameType !== 'mission' && state.gameType !== 'race') return;
   const g = gates[state.nextGate];
   if (!g) return;
@@ -5887,6 +6126,7 @@ function endBattle(win, reason) {
   const isDm = state.gameType === 'deathmatch';
   const isDef = state.gameType === 'defense';
   const isRace = state.gameType === 'race';
+  const isGp = state.gameType === 'grandprix';
   const isFert = state.gameType === 'fertilizer';
   const isShip = isAirshipMode();
   if (win) {
@@ -5894,9 +6134,10 @@ function endBattle(win, reason) {
       : (isMusou ? '無双クリア'
         : (isDm ? 'サバイバル勝利'
           : (isDef ? '防衛成功'
-            : (isRace ? 'レースクリア'
-              : (isFert ? '散布完了'
-                : (isShip ? '飛行艇撃破' : '勝利'))))));
+            : (isGp ? '優勝！'
+              : (isRace ? 'レースクリア'
+                : (isFert ? '散布完了'
+                  : (isShip ? '飛行艇撃破' : '勝利')))))));
     title.className = 'result-title win';
     try {
       loadMeta();
@@ -5907,6 +6148,7 @@ function endBattle(win, reason) {
       else if (isDm) bonus = 40;
       else if (isDef) bonus = 38;
       else if (isShip) bonus = state.gameType === 'airship_coop' ? 55 : 45;
+      else if (isGp) bonus = 42;
       else if (isRace) {
         bonus = state.raceTime < 45 ? 35 : (state.raceTime < 70 ? 25 : 18);
         const prev = Number(localStorage.getItem(RACE_BEST_KEY) || '0');
@@ -5938,6 +6180,8 @@ function endBattle(win, reason) {
         msg.textContent = '防衛線を守り切った！ 撃墜 ' + state.kills + ' 機 / 拠点残 ' + Math.ceil(state.baseHp) + ' / +' + bonus + 'コイン。';
       } else if (isShip) {
         msg.textContent = (state.gameType === 'airship_coop' ? '協力成功！' : '') + '巨大飛行艇を撃墜！ +' + bonus + 'コイン。';
+      } else if (isGp) {
+        msg.textContent = 'グランプリ優勝！ ' + state.raceTime.toFixed(2) + ' 秒 / 全' + GRANDPRIX_TOTAL + '機中1位 / +' + bonus + 'コイン。';
       } else if (isRace) {
         const best = localStorage.getItem(RACE_BEST_KEY) || state.raceTime.toFixed(2);
         msg.textContent = 'ゴール！ ' + state.raceTime.toFixed(2) + ' 秒（ベスト ' + best + 's）/ +' + bonus + 'コイン。';
@@ -5953,9 +6197,10 @@ function endBattle(win, reason) {
   } else {
     title.textContent = isM ? 'ミッション失敗'
       : (isDef ? '防衛失敗'
-        : (isRace ? 'リタイア'
-          : (isFert ? '散布失敗'
-            : (isShip ? '出撃失敗' : (isMusou || isDm ? '撃破' : '敗北')))));
+        : (isGp ? ((reason === 'place') ? (state.racePlace + '位入賞') : 'リタイア')
+          : (isRace ? 'リタイア'
+            : (isFert ? '散布失敗'
+              : (isShip ? '出撃失敗' : (isMusou || isDm ? '撃破' : '敗北'))))));
     title.className = 'result-title lose';
     if (reason === 'time' && isFert) {
       const pct = Math.round(fertCoverageRatio() * 100);
@@ -5978,7 +6223,9 @@ function endBattle(win, reason) {
       msg.textContent = '乱闘の渦に散りました。生き残れるまで再挑戦！';
     } else if (isDef) {
       msg.textContent = '防衛中に機体が大破。拠点残 ' + Math.ceil(state.baseHp) + ' / 撃墜 ' + state.kills + '。再防衛しよう！';
-    } else if (isRace) {
+    } else if (isGp && reason === 'place') {
+      msg.textContent = 'ゴール！ 順位は ' + state.racePlace + ' / ' + GRANDPRIX_TOTAL + ' 位（' + state.raceTime.toFixed(2) + 's）。1位を目指して再レース！';
+    } else if (isGp || isRace) {
       msg.textContent = 'レース中に墜落。通過ゲートを意識して再挑戦！（経過 ' + state.raceTime.toFixed(1) + 's）';
     } else if (isFert) {
       msg.textContent = '散布中に機体大破。被覆率 ' + Math.round(fertCoverageRatio() * 100) + '%。高度管理を意識しよう。';
@@ -6014,6 +6261,7 @@ function startBattle() {
     defense: '防衛線モード開始！ WAVE 1/' + DEFENSE_WAVES.length,
     airship: 'ギガント級飛行要塞撃破！弱点（ゴンドラ）を狙え',
     race: 'エアレース開始！ゲートを走れ',
+    grandprix: 'グランプリ開始！全' + GRANDPRIX_TOTAL + '機レース',
     fertilizer: '肥料散布開始！適正高度でムラなく',
     dogfight: 'ドッグファイト開始！（' + getCpuDiffProfile(state.cpuDiff).label + '）'
   };
@@ -6108,6 +6356,16 @@ function tick() {
       });
       if (state.gameType === 'musou') resolveMusouCollisions(dt);
       if (state.gameType === 'defense') checkDefenseBreaches();
+    } else if (state.gameType === 'grandprix') {
+      swarm.forEach((c) => {
+        if (!c.alive) return;
+        if (c.crashing) {
+          updateCrashingCraft(c, dt);
+          return;
+        }
+        const ai = aiControlRace(c, dt);
+        applyFlight(c, ai, dt, true);
+      });
     } else if (state.gameType === 'online' || state.gameType === 'airship_coop') {
       enemy.pos.lerp(state.remoteTarget, 1 - Math.pow(0.0008, dt));
       enemy.yaw = THREE.MathUtils.lerp(enemy.yaw, state.remoteYaw, 0.2);
@@ -6140,7 +6398,8 @@ function tick() {
     state.playerFireCd = Math.max(0, state.playerFireCd - dt);
     if (state.gameType === 'fertilizer') {
       if (ctrl.fire && player.alive) sprayFertilizer(dt);
-    } else if (state.gameType !== 'race' && ctrl.fire && state.playerFireCd <= 0 && player.alive) {
+    } else if (ctrl.fire && state.playerFireCd <= 0 && player.alive
+      && state.gameType !== 'race' && state.gameType !== 'grandprix') {
       const profile = getWeaponProfile(player.weaponKind || 'beam', player.atk || 12);
       const q = player.mesh.quaternion;
       const muzzle = player.pos.clone().add(new THREE.Vector3(0, 0, -1.2).applyQuaternion(q));
@@ -6176,7 +6435,7 @@ function tick() {
       }
     } else if (isAirshipMode()) {
       // 巨大飛行艇モード（位置・砲撃等の更新は updateAirship(dt) で実施）
-    } else if (state.gameType === 'race') {
+    } else if (state.gameType === 'race' || state.gameType === 'grandprix') {
       state.raceTime += dt;
       updateGates();
       updateTechniqueHud();
