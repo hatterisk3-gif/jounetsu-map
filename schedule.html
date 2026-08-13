@@ -412,13 +412,14 @@
 
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
-    const cacheBust = '1786458400000';
+    // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
+    const cacheBust = '1786458500000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
       'cultivation.js', 'cost_calc.js', 'crop_work.js'
     ];
-    const bootstrapTotalSteps = bootstrapFiles.length + 3;
+    const bootstrapTotalSteps = bootstrapFiles.length;
     const bootstrapLoading = window.AppLoading
       ? AppLoading.start({
           label: '予定確認アプリを読み込み中...',
@@ -434,10 +435,12 @@
     let cultivationRegistrationOpened = false;
 
     window.scheduleBootstrapLoading = bootstrapLoading;
+    window.__scheduleBootstrapFinished = false;
 
     function finishScheduleBootstrapIfReady() {
       if (bootstrapFinished || loadedBootstrapFiles < bootstrapTotalSteps) return;
       bootstrapFinished = true;
+      window.__scheduleBootstrapFinished = true;
       if (bootstrapLoading) {
         bootstrapLoading.update({
           detail: bootstrapTotalSteps + ' / ' + bootstrapTotalSteps + ' — 読み込み完了',
@@ -468,11 +471,34 @@
       finishScheduleBootstrapIfReady();
     }
 
-    window.markScheduleInitialLoadStep = markBootstrapFileLoaded;
-    window.failScheduleInitialLoad = function(message) {
-      bootstrapFinished = true;
-      if (bootstrapLoading) bootstrapLoading.fail(message || 'アプリの読み込みに失敗しました');
+    // データ取得中の表示更新のみ（起動ブロックには使わない）
+    window.markScheduleInitialLoadStep = function(name) {
+      if (bootstrapFinished) return;
+      if (bootstrapLoading) {
+        bootstrapLoading.update({
+          detail: loadedBootstrapFiles + ' / ' + bootstrapTotalSteps + ' — ' + name,
+          current: Math.min(loadedBootstrapFiles, bootstrapTotalSteps),
+          total: bootstrapTotalSteps
+        });
+      }
     };
+    window.failScheduleInitialLoad = function(message) {
+      if (!bootstrapFinished) {
+        bootstrapFinished = true;
+        window.__scheduleBootstrapFinished = true;
+        if (bootstrapLoading) bootstrapLoading.fail(message || 'アプリの読み込みに失敗しました');
+      } else if (typeof customAlert === 'function') {
+        customAlert(message || 'スケジュールの読み込みに失敗しました');
+      }
+    };
+
+    // 万が一スクリプト読込が止まった場合でも画面を開ける
+    setTimeout(() => {
+      if (bootstrapFinished) return;
+      console.warn('schedule bootstrap timeout — forcing UI open');
+      loadedBootstrapFiles = bootstrapTotalSteps;
+      finishScheduleBootstrapIfReady();
+    }, 40000);
 
     function appendScript(src) {
       return new Promise((resolve, reject) => {

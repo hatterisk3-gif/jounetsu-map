@@ -5774,8 +5774,8 @@ async function flushPendingCultivationPlanSaves_() {
                         if (tagDisplay) tagDisplay.innerText = p.tag || '';
                     });
                 }
-                if (typeof loadData === 'function') loadData();
-                else if (typeof fetchScheduleData === 'function') fetchScheduleData();
+                if (typeof loadData === 'function' && window.__scheduleBootstrapFinished) loadData();
+                else if (typeof fetchScheduleData === 'function' && window.__scheduleBootstrapFinished) fetchScheduleData();
             } catch (e) {
                 console.warn('栽培計画の裏同期失敗:', e);
                 if (!job._notifiedFail) {
@@ -5785,8 +5785,13 @@ async function flushPendingCultivationPlanSaves_() {
                     );
                     setPendingPlanSaves_(rest);
                     const msg = '栽培計画は端末に保存済みですが、サーバー同期に失敗しました。\n通信環境を確認後、もう一度「計画を保存」してください。\n' + (e && e.message ? e.message : e);
-                    if (typeof customAlert === 'function') customAlert(msg);
-                    else alert(msg);
+                    const notify = () => {
+                        if (typeof customAlert === 'function') customAlert(msg);
+                        else alert(msg);
+                    };
+                    // 起動中は画面を塞がない
+                    if (window.__scheduleBootstrapFinished) setTimeout(notify, 300);
+                    else setTimeout(notify, 5000);
                 }
                 break; // 次は次回起動/保存時に再試行
             }
@@ -5796,10 +5801,20 @@ async function flushPendingCultivationPlanSaves_() {
     }
 }
 
-// 起動時に未同期の計画があれば裏同期
-setTimeout(() => {
-    try { flushPendingCultivationPlanSaves_(); } catch (e) {}
-}, 2500);
+/** 起動完了後に未同期計画を裏同期（起動中の GAS 通信とぶつからないようにする） */
+function schedulePendingCultivationPlanFlush_() {
+    const tryFlush = () => {
+        if (!window.__scheduleBootstrapFinished && window.scheduleBootstrapLoading) {
+            setTimeout(tryFlush, 800);
+            return;
+        }
+        setTimeout(() => {
+            try { flushPendingCultivationPlanSaves_(); } catch (e) {}
+        }, 1200);
+    };
+    setTimeout(tryFlush, 2500);
+}
+schedulePendingCultivationPlanFlush_();
 
 function getCpPlanType() {
     const checked = document.querySelector('input[name="cpPlanType"]:checked');
