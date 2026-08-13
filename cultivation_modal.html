@@ -11,12 +11,19 @@
       </div>
       <div id="cpPlanEditorSurface" style="background: #fff; color: #333; padding: 10px; border-radius: 0; width: 100%; max-width: 100%; box-shadow: none; height: 100%; max-height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;">
-          <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap;">
-            <h3 style="margin: 0; color: #4CAF50; white-space: nowrap;">🌱 栽培計画作成</h3>
+          <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; flex-wrap: nowrap;">
+            <h3 style="margin: 0; color: #4CAF50; white-space: nowrap; flex-shrink: 0;">🌱 栽培計画作成</h3>
             <button type="button" id="cpInitialSettingsBtn" class="cp-initial-settings-btn" aria-expanded="false" aria-controls="cpStepsRow" onclick="toggleCpInitialSettings()" title="基本設定・栽培パラメーター・品種登録">
               <span class="cp-initial-settings-btn-label">初期設定</span>
               <span class="cp-initial-settings-btn-chevron" aria-hidden="true">▾</span>
             </button>
+            <div id="cpHeaderContextBar" title="基本設定の内容" style="min-width:0; flex:1; overflow:hidden; display:flex; align-items:center; gap:6px; flex-wrap:nowrap;">
+              <span id="cpHeaderCtxLocation" class="cp-header-chip" style="display:none;"></span>
+              <span id="cpHeaderCtxFieldCond" class="cp-header-chip" style="display:none;"></span>
+              <span id="cpHeaderCtxCrop" class="cp-header-chip" style="display:none;"></span>
+              <span id="cpHeaderCtxYear" class="cp-header-chip" style="display:none;"></span>
+              <span id="cpHeaderCtxField" class="cp-header-chip cp-header-chip--field" style="display:none;"></span>
+            </div>
           </div>
           <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999; flex-shrink: 0;" onclick="closeCultivationPlanModal()">×</span>
         </div>
@@ -46,10 +53,10 @@
               <!-- ステップ1: 基本設定 -->
               <div id="cpStep1" class="cp-step-panel cp-step-panel--1" role="tabpanel" aria-labelledby="cpStepTab1" hidden>
                 <div class="cp-step-body">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: flex-end;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: start;">
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">年度</label>
-              <select id="cpYear" onchange="updateCpDefaultPlanName()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
+              <select id="cpYear" onchange="updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
                   <option value="2024">2024</option>
                   <option value="2025">2025</option>
                   <option value="2026" selected>2026</option>
@@ -58,7 +65,10 @@
               </select>
             </div>
             <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">拠点</label>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">
+                <label style="font-size: 11px; font-weight: bold; color: #555;">拠点</label>
+                <button type="button" onclick="openCpBasicMasterManager('location')" title="拠点の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
+              </div>
               <div style="display: flex; gap: 4px; width: 100%;">
                 <select id="cpLocation" onchange="checkCustomInput(this, 'cpLocation_custom'); onCpLocationChange()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
                   <option value="">選択...</option>
@@ -71,12 +81,24 @@
                 <input type="text" id="cpLocationTagAbbr" maxlength="10" placeholder="例: 徳阿" title="拠点のタグ略称" style="flex:1; min-width:0; padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px;">
                 <button type="button" onclick="saveCpLocationTagAbbreviation()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">保存</button>
               </div>
+              <div style="margin-top:6px; padding:6px 8px; background:#f7fbf1; border:1px solid #c8e6c9; border-radius:6px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:4px;">
+                  <label style="font-size:10px; font-weight:bold; color:#2e7d32;">拠点の産地設定</label>
+                  <button type="button" id="btnCpSaveLocationClimates" onclick="saveCpLocationClimates()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #81C784; background:#E8F5E9; color:#2e7d32; border-radius:4px; cursor:pointer;">産地を保存</button>
+                </div>
+                <div id="cpLocationClimateChecks" style="display:flex; flex-wrap:wrap; gap:6px 10px;"></div>
+                <div style="font-size:9px; color:#777; margin-top:4px; line-height:1.35;">拠点マスタへ保存します。品種・作型の絞り込みに使われます。「産地」の管理から候補の追加・編集・削除ができます。</div>
+                <div id="cpLocationClimateSaveStatus" style="font-size:10px; font-weight:bold; margin-top:3px; min-height:12px;"></div>
+              </div>
             </div>
             <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">作物</label>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">
+                <label style="font-size: 11px; font-weight: bold; color: #555;">作物</label>
+                <button type="button" onclick="openCpBasicMasterManager('crop')" title="作物の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
+              </div>
               <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName()" oninput="calcCp(); checkCroptypeDB(); updateCpDefaultPlanName()" onblur="onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
+                <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
+                <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" oninput="calcCp(); checkCroptypeDB(); updateCpDefaultPlanName()" onblur="onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
               </div>
               <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
                 <label style="font-size:10px; color:#888; white-space:nowrap;">タグ略称</label>
@@ -86,7 +108,10 @@
               <div id="cpTagAbbrSaveStatus" style="font-size:11px; font-weight:bold; margin-top:4px; min-height:14px;"></div>
             </div>
             <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">産地</label>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">
+                <label style="font-size: 11px; font-weight: bold; color: #555;">産地（絞り込み）</label>
+                <button type="button" onclick="openCpBasicMasterManager('climate')" title="産地の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
+              </div>
               <select id="cpClimate" onchange="updateVarietyList(); checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
                   <option value="">拠点の全産地</option>
                   <option value="暖地">暖地</option>
@@ -97,8 +122,11 @@
               <div id="cpLocationClimateHint" style="font-size:10px; color:#2e7d32; margin-top:2px; min-height:14px;"></div>
             </div>
             <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">圃場条件</label>
-              <select id="cpFieldCondition" onchange="checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">
+                <label style="font-size: 11px; font-weight: bold; color: #555;">圃場条件</label>
+                <button type="button" onclick="openCpBasicMasterManager('condition')" title="圃場条件の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
+              </div>
+              <select id="cpFieldCondition" onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
                   <option value="露地">露地</option>
                   <option value="ハウス">ハウス</option>
               </select>
@@ -128,7 +156,7 @@
             <div id="varietyFileLinkArea" style="font-size: 11px; white-space: nowrap; margin-left: 4px;"></div>
           </div>
           <div style="font-size:10px; color:#1565c0; margin:0 0 6px 2px;">※共通（全拠点）と拠点限定の両方を登録できます。穴数・畝間などを変えると、下の品種カードにも反映されます（面積モードは枚数を再計算）。</div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: flex-end; padding-top: 10px; margin-top: 5px; border-top: 1px dashed #eee;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: start; padding-top: 10px; margin-top: 5px; border-top: 1px dashed #eee;">
             <div style="width: 100%;">
               <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">穴数</label>
               <div style="display: flex; gap: 4px; width: 100%;">
@@ -253,6 +281,28 @@
           }
           .cp-initial-settings-btn.is-open .cp-initial-settings-btn-chevron {
             transform: rotate(180deg);
+          }
+          .cp-header-chip {
+            flex-shrink: 1;
+            min-width: 0;
+            max-width: 28%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 11px;
+            font-weight: bold;
+            line-height: 1.25;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid #c8e6c9;
+            background: #f1f8e9;
+            color: #33691e;
+          }
+          .cp-header-chip--field {
+            max-width: 36%;
+            border-color: #80deea;
+            background: #e0f7fa;
+            color: #006064;
           }
           .cp-steps { margin-bottom: 8px; }
           .cp-steps.is-collapsed {
@@ -487,7 +537,14 @@
                 border-bottom: 3px solid #1565C0 !important;
               }
             </style>
-            <div id="cpLeftHeader" style="height: 0px; position: sticky; top: 0; z-index: 5; background: #f5f5f5; flex-shrink: 0;"></div>
+            <div id="cpLeftHeader" style="height: 0px; position: sticky; top: 0; z-index: 5; background: #ECEFF1; flex-shrink: 0; box-sizing: border-box; border-bottom: 1px solid #CFD8DC; overflow: hidden;">
+              <div id="cpPlanLeftSummary" title="この計画の合計" style="height:100%; box-sizing:border-box; padding:3px 5px; display:flex; flex-direction:column; justify-content:center; gap:1px; font-size:10px; line-height:1.2; color:#37474F;">
+                <div style="font-size:9px; font-weight:bold; color:#546E7A; letter-spacing:0.02em;">計画合計</div>
+                <div style="display:flex; justify-content:space-between; gap:4px;"><span style="color:#666;">枚数</span><b id="cpPlanSumTrays" style="color:#1565C0;">-</b></div>
+                <div style="display:flex; justify-content:space-between; gap:4px;"><span style="color:#666;">面積</span><b id="cpPlanSumArea" style="color:#2e7d32;">-</b></div>
+                <div style="display:flex; justify-content:space-between; gap:4px;"><span style="color:#666;">収穫</span><b id="cpPlanSumYield" style="color:#e65100;">-</b></div>
+              </div>
+            </div>
             <div id="cpLeftBody"></div>
           </div>
           <div id="cpRightPanel" style="flex: 1; min-width:0; min-height:0; overflow-x:auto; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y;">
@@ -783,6 +840,28 @@
         <div style="text-align: right; margin-top: auto;">
           <button onclick="closeCroptypeRegistrationModal()" style="padding: 10px 20px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 14px; margin-right: 15px;">キャンセル</button>
           <button id="btnSaveCroptype" onclick="saveCroptypeData()" style="padding: 10px 40px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">リストの作型を一括で登録</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 基本設定マスタ管理（拠点・作物・産地・圃場条件） -->
+    <div id="cpBasicMasterModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); z-index:10040; align-items:center; justify-content:center;">
+      <div style="background:#fff; width:96%; max-width:520px; border-radius:12px; padding:16px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
+          <h3 style="margin:0; font-size:16px; color:#1565C0;" id="cpBasicMasterTitle">マスタ管理</h3>
+          <span style="cursor:pointer; font-size:22px; color:#999; line-height:1;" onclick="closeCpBasicMasterManager()">×</span>
+        </div>
+        <p id="cpBasicMasterHint" style="margin:0 0 10px 0; font-size:12px; color:#666; line-height:1.4;"></p>
+        <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+          <input type="text" id="cpBasicMasterNewName" placeholder="名称" style="flex:1; min-width:120px; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+          <input type="text" id="cpBasicMasterExtra1" placeholder="" style="display:none; width:90px; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+          <input type="text" id="cpBasicMasterExtra2" placeholder="" style="display:none; width:90px; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+          <button type="button" id="cpBasicMasterAddBtn" onclick="submitCpBasicMasterAdd()" style="padding:6px 14px; background:#1976D2; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">＋ 追加</button>
+        </div>
+        <div id="cpBasicMasterStatus" style="font-size:11px; font-weight:bold; min-height:14px; margin-bottom:6px;"></div>
+        <div id="cpBasicMasterList" style="flex:1; overflow-y:auto; min-height:140px; max-height:55vh; border:1px solid #eee; border-radius:8px; padding:8px; background:#fafafa;"></div>
+        <div style="text-align:right; margin-top:12px;">
+          <button type="button" onclick="closeCpBasicMasterManager()" style="padding:8px 16px; border:1px solid #ccc; background:#fff; border-radius:6px; cursor:pointer; font-size:13px;">閉じる</button>
         </div>
       </div>
     </div>

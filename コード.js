@@ -35,6 +35,12 @@ function doPost(e) {
     else if (action === "addFieldStatus") result = addFieldStatusToMaster(params.statusName);
     else if (action === "editFieldStatus") result = editFieldStatusInMaster(params.oldStatusName, params.newStatusName);
     else if (action === "deleteFieldStatus") result = deleteFieldStatusFromMaster(params.statusName);
+    else if (action === "addFieldCondition") result = addFieldConditionToMaster(params.conditionName);
+    else if (action === "editFieldCondition") result = editFieldConditionInMaster(params.oldConditionName, params.newConditionName);
+    else if (action === "deleteFieldCondition") result = deleteFieldConditionFromMaster(params.conditionName);
+    else if (action === "addClimateMaster") result = addClimateToMaster(params.climateName);
+    else if (action === "editClimateMaster") result = editClimateInMaster(params.oldClimateName, params.newClimateName);
+    else if (action === "deleteClimateMaster") result = deleteClimateFromMaster(params.climateName);
     else if (action === "addCrop") result = addCropToMaster(params.cropData);
     else if (action === "deleteCrop") result = deleteCropFromMaster(params.cropName);
     else if (action === "mergeFields") result = mergeFields(params.baseId, params.targetId, params.userName);
@@ -2188,6 +2194,220 @@ function deleteFieldStatusFromMaster(statusName) {
     }
   }
   return true;
+}
+
+/** 圃場設定マスタ（A:産地 / B:圃場条件 / C:稼働状況） */
+function ensureFieldSettingMasterSheet_() {
+  const ss = TENANT_SS;
+  if (!ss) throw new Error('スプレッドシート未設定');
+  let sheet = ss.getSheetByName('圃場設定マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('圃場設定マスタ');
+    sheet.appendRow(['産地', '圃場条件', '稼働状況']);
+    return sheet;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 3);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
+  if (!headers[0]) sheet.getRange(1, 1).setValue('産地');
+  if (!headers[1]) sheet.getRange(1, 2).setValue('圃場条件');
+  if (!headers[2]) sheet.getRange(1, 3).setValue('稼働状況');
+  return sheet;
+}
+
+function readFieldSettingColValues_(colIndex0) {
+  const sheet = ensureFieldSettingMasterSheet_();
+  const data = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    const n = String(data[i][colIndex0] || '').trim();
+    if (n && out.indexOf(n) < 0) out.push(n);
+  }
+  return out;
+}
+
+function appendFieldSettingColValue_(colIndex0, name) {
+  const sheet = ensureFieldSettingMasterSheet_();
+  const data = sheet.getDataRange().getValues();
+  const col = colIndex0 + 1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][colIndex0] || '').trim() === name) return name;
+  }
+  let emptyRow = 2;
+  while (emptyRow <= data.length && data[emptyRow - 1] && String(data[emptyRow - 1][colIndex0] || '').trim()) {
+    emptyRow++;
+  }
+  sheet.getRange(emptyRow, col).setValue(name);
+  return name;
+}
+
+function renameFieldSettingColValue_(colIndex0, oldName, newName) {
+  const sheet = ensureFieldSettingMasterSheet_();
+  const data = sheet.getDataRange().getValues();
+  const col = colIndex0 + 1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][colIndex0] || '').trim() === oldName) {
+      sheet.getRange(i + 1, col).setValue(newName);
+      return true;
+    }
+  }
+  return false;
+}
+
+function clearFieldSettingColValue_(colIndex0, name) {
+  const sheet = ensureFieldSettingMasterSheet_();
+  const data = sheet.getDataRange().getValues();
+  const col = colIndex0 + 1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][colIndex0] || '').trim() === name) {
+      sheet.getRange(i + 1, col).clearContent();
+      return true;
+    }
+  }
+  return false;
+}
+
+function getFieldConditionsList_() {
+  const list = readFieldSettingColValues_(1);
+  return list.length ? list : ['露地', 'ハウス'];
+}
+
+function getClimateMasterList_() {
+  const defaults = ['暖地', '温暖地', '一般地', '高冷地'];
+  let list = readFieldSettingColValues_(0);
+  if (!list.length) {
+    defaults.forEach(n => appendFieldSettingColValue_(0, n));
+    list = defaults.slice();
+  }
+  // 拠点マスタにだけある産地も候補に含める
+  try {
+    const locs = readLocationMasterDetails_();
+    locs.forEach(l => {
+      parseLocationClimates_(l && (l.climates != null ? l.climates : l.climate)).forEach(c => {
+        const n = String(c || '').trim();
+        if (n && list.indexOf(n) < 0) list.push(n);
+      });
+    });
+  } catch (e) {}
+  return list;
+}
+
+function addFieldConditionToMaster(conditionName) {
+  const name = String(conditionName || '').trim();
+  if (!name) throw new Error('圃場条件名を入力してください');
+  const existing = readFieldSettingColValues_(1);
+  if (existing.indexOf(name) >= 0) throw new Error(`圃場条件「${name}」は既に登録されています`);
+  appendFieldSettingColValue_(1, name);
+  return getFieldConditionsList_();
+}
+
+function editFieldConditionInMaster(oldConditionName, newConditionName) {
+  const oldName = String(oldConditionName || '').trim();
+  const newName = String(newConditionName || '').trim();
+  if (!oldName || !newName) throw new Error('圃場条件名を入力してください');
+  if (oldName !== newName) {
+    const existing = readFieldSettingColValues_(1);
+    if (existing.indexOf(newName) >= 0) throw new Error(`圃場条件「${newName}」は既に登録されています`);
+  }
+  if (!renameFieldSettingColValue_(1, oldName, newName)) {
+    appendFieldSettingColValue_(1, newName);
+  }
+  // 圃場マスタの条件列(D)も置換
+  try {
+    const ss = TENANT_SS;
+    const hojoSheet = ss.getSheetByName('圃場マスタ');
+    if (hojoSheet && hojoSheet.getLastRow() > 1) {
+      const hData = hojoSheet.getRange(2, 4, hojoSheet.getLastRow() - 1, 1).getValues();
+      for (let j = 0; j < hData.length; j++) {
+        if (String(hData[j][0] || '').trim() === oldName) {
+          hojoSheet.getRange(j + 2, 4).setValue(newName);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('圃場マスタの圃場条件更新エラー:', e);
+  }
+  return getFieldConditionsList_();
+}
+
+function deleteFieldConditionFromMaster(conditionName) {
+  const name = String(conditionName || '').trim();
+  if (!name) throw new Error('圃場条件名を指定してください');
+  clearFieldSettingColValue_(1, name);
+  return getFieldConditionsList_();
+}
+
+function renameClimateInLocationMaster_(oldName, newName) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('拠点マスタ');
+  if (!sheet || sheet.getLastRow() < 2) return;
+  const data = sheet.getDataRange().getValues();
+  const headers = (data[0] || []).map(h => String(h || '').trim());
+  const climIdx = headers.indexOf('産地');
+  if (climIdx < 0) return;
+  for (let i = 1; i < data.length; i++) {
+    const raw = data[i][climIdx];
+    const list = parseLocationClimates_(raw);
+    let changed = false;
+    const next = list.map(c => {
+      if (c === oldName) {
+        changed = true;
+        return newName;
+      }
+      return c;
+    }).filter((c, idx, arr) => c && arr.indexOf(c) === idx);
+    if (changed) {
+      sheet.getRange(i + 1, climIdx + 1).setValue(formatLocationClimates_(next));
+    }
+  }
+}
+
+function removeClimateFromLocationMaster_(climateName) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('拠点マスタ');
+  if (!sheet || sheet.getLastRow() < 2) return;
+  const data = sheet.getDataRange().getValues();
+  const headers = (data[0] || []).map(h => String(h || '').trim());
+  const climIdx = headers.indexOf('産地');
+  if (climIdx < 0) return;
+  for (let i = 1; i < data.length; i++) {
+    const list = parseLocationClimates_(data[i][climIdx]);
+    const next = list.filter(c => c !== climateName);
+    if (next.length !== list.length) {
+      sheet.getRange(i + 1, climIdx + 1).setValue(formatLocationClimates_(next));
+    }
+  }
+}
+
+function addClimateToMaster(climateName) {
+  const name = String(climateName || '').trim();
+  if (!name) throw new Error('産地名を入力してください');
+  const existing = getClimateMasterList_();
+  if (existing.indexOf(name) >= 0) throw new Error(`産地「${name}」は既に登録されています`);
+  appendFieldSettingColValue_(0, name);
+  return getClimateMasterList_();
+}
+
+function editClimateInMaster(oldClimateName, newClimateName) {
+  const oldName = String(oldClimateName || '').trim();
+  const newName = String(newClimateName || '').trim();
+  if (!oldName || !newName) throw new Error('産地名を入力してください');
+  if (oldName !== newName) {
+    const existing = getClimateMasterList_();
+    if (existing.indexOf(newName) >= 0) throw new Error(`産地「${newName}」は既に登録されています`);
+  }
+  if (!renameFieldSettingColValue_(0, oldName, newName)) {
+    appendFieldSettingColValue_(0, newName);
+  }
+  if (oldName !== newName) renameClimateInLocationMaster_(oldName, newName);
+  return getClimateMasterList_();
+}
+
+function deleteClimateFromMaster(climateName) {
+  const name = String(climateName || '').trim();
+  if (!name) throw new Error('産地名を指定してください');
+  clearFieldSettingColValue_(0, name);
+  removeClimateFromLocationMaster_(name);
+  return getClimateMasterList_();
 }
 
 function addCropToMaster(cropData) {
@@ -9280,6 +9500,16 @@ function getCultivationMaster() {
     master.locations = locationDetails.map(l => l.name);
     master.locationDetails = locationDetails;
     master.cropTagAbbreviations = readCropTagAbbreviationMap_();
+    try {
+      master.conditions = getFieldConditionsList_();
+    } catch (e) {
+      master.conditions = ['露地', 'ハウス'];
+    }
+    try {
+      master.climates = getClimateMasterList_();
+    } catch (e) {
+      master.climates = ['暖地', '温暖地', '一般地', '高冷地'];
+    }
     
     // データがない場合はマスタの反映処理をスキップしますが、プリセット取得処理には進みます
     for (let i = 1; i < data.length; i++) {
