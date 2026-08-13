@@ -257,6 +257,10 @@ async function executeLogin(isAuto = false) {
             localStorage.setItem('passionMapUserRole', result.role || '作業員');
             localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
+            if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+                await PassionMapTerms.ensureAccepted({ userId: id });
+            }
+
             updateAdminOnlyButtons();
 
             if (!isAuto) initMap();

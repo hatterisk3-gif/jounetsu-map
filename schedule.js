@@ -41,6 +41,10 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                   localStorage.setItem('passionMapUserName', result.data.name);
                   localStorage.setItem('passionMapUserRole', result.data.role || '管理者');
                   localStorage.setItem('spreadsheetId', result.data.spreadsheetId);
+
+                  if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+                      await PassionMapTerms.ensureAccepted({ userId: id });
+                  }
                   
                   // Reload or init map data
                   location.reload();
@@ -1656,7 +1660,7 @@ async function fetchWeatherAndUpdateUI() {
         let filteredSchedules = currentDept === 'すべて' ? globalSchedules : globalSchedules.filter(t => t.dept === currentDept);
 
         if (filteredSchedules.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">現在必要な作業はありません</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">現在必要な作業はありません</td></tr>';
         } else {
           let sorted = [...filteredSchedules].sort((a, b) => {
              if (!!a.isMidWork !== !!b.isMidWork) return a.isMidWork ? -1 : 1;
@@ -1668,7 +1672,7 @@ async function fetchWeatherAndUpdateUI() {
              return new Date(a.deadline) - new Date(b.deadline);
           });
 
-          tbody.innerHTML = sorted.map(t => {
+          tbody.innerHTML = sorted.map((t, idx) => {
             const isMid = !!t.isMidWork;
             const rowClass = isMid
               ? 'style="background-color:#fff8e1; color:#e65100;"'
@@ -1697,7 +1701,14 @@ async function fetchWeatherAndUpdateUI() {
                 }).join('') + '</div>'
               : '';
             const dayPlansHtml = formatDayPlansBadgeHtml(t);
-            return `<tr ${rowClass}>
+            const safeWork = String(t.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeField = String(t.fieldName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeCrop = String(t.cropName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeKey = String(t.scheduleKey || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const actionCell = isMid
+              ? '<span style="font-size:10px;color:#999;">途中</span>'
+              : `<button type="button" onclick="deleteScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}')" style="background:#ffebee;color:#c62828;border:1px solid #ef9a9a;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:bold;cursor:pointer;white-space:nowrap;">削除</button>`;
+            return `<tr ${rowClass} data-sched-idx="${idx}">
                       <td>${workLabel}${taskUsersHtml}${dayPlansHtml}</td>
                       <td>${t.dept || '-'}</td>
                       <td>${cropCell}</td>
@@ -1706,10 +1717,55 @@ async function fetchWeatherAndUpdateUI() {
                       <td>${isMid ? '-' : t.deadline}</td>
                       <td>${traysCell}</td>
                       <td>${tagCell}</td>
+                      <td style="text-align:center;">${actionCell}</td>
                     </tr>`;
           }).join('');
         }
         document.getElementById('scheduleModal').style.display = 'flex';
+      };
+
+      window.deleteScheduleFromList = async function(sheetRow, scheduleKey, workName, fieldName, cropName) {
+        const label = String(workName || 'この作業');
+        if (!confirm('「' + label + '」を作業一覧から削除しますか？\n（作業予定から消えます）')) return;
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          await callGAS('deleteWorkSchedule', {
+            sheetRow: sheetRow,
+            scheduleKey: scheduleKey || '',
+            workName: workName || '',
+            fieldName: fieldName || '',
+            cropName: cropName || '',
+            userName: userName
+          });
+          globalSchedules = (globalSchedules || []).filter(t => {
+            if (t.isMidWork) return true;
+            if (scheduleKey && t.scheduleKey === scheduleKey) return false;
+            if (sheetRow && t.sheetRow === sheetRow) return false;
+            return !(t.workName === workName && t.fieldName === fieldName && t.cropName === cropName);
+          });
+          try {
+            const cachedStr = localStorage.getItem('passionMapScheduleData');
+            if (cachedStr) {
+              const cached = JSON.parse(cachedStr);
+              cached.activeSchedules = globalSchedules;
+              localStorage.setItem('passionMapScheduleData', JSON.stringify(cached));
+            }
+          } catch (e) {}
+          if (typeof updateMapVisuals === 'function') updateMapVisuals();
+          openScheduleTable();
+          // 最新を裏で再取得
+          callGAS('getScheduleData').then(data => {
+            if (!data) return;
+            localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+            globalSchedules = data.activeSchedules || [];
+            if (typeof updateMapVisuals === 'function') updateMapVisuals();
+            if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
+              openScheduleTable();
+            }
+          }).catch(() => {});
+        } catch (e) {
+          alert('削除に失敗しました: ' + (e.message || e));
+        }
       };
 
       window.openSowingProgressModal = async () => {

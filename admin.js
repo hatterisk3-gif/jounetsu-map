@@ -590,6 +590,10 @@ async function executeLogin(isAuto = false) {
             localStorage.setItem('pMapAdminPw', pw);
             localStorage.setItem('pMapAdminName', res.name);
 
+            if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+                await PassionMapTerms.ensureAccepted({ userId: id });
+            }
+
             loadInitData();
             startLocationWatch();
             mapInitPromise.then(() => applyPendingMapDeepLink());

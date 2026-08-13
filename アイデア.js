@@ -270,21 +270,20 @@ function ideaCardHtml(item, tab) {
   return `
     <div class="idea ${cls}" onclick="ideaOpenDetail('${ideaJs(item.id)}')">
       <div class="idea-top">
-        <span class="cat">${ideaEsc(item.category || '未分類')}</span>
-        <span class="meta">${ideaEsc(st.label)}</span>
-      </div>
-      <div class="meta">${ideaEsc(item.author || '')}　${ideaEsc(item.date || '')}</div>
-      <div class="meta" style="margin-top:6px; color:#4527a0; font-weight:700;">📅 ${ideaEsc(ideaMoveHistoryLine(item))}</div>
-      ${item.issue ? `<div class="issue-tag">🎯 課題：${ideaEsc(item.issue)}</div>` : ''}
-      <div class="body">${ideaEsc(item.content || '')}</div>
-      <div class="progress" onclick="event.stopPropagation()">
-        <div>
+        <div class="idea-top-left">
+          <span class="cat">${ideaEsc(item.category || '未分類')}</span>
+          <div class="meta">${ideaEsc(item.author || '')}　${ideaEsc(item.date || '')}</div>
+        </div>
+        <div class="progress" onclick="event.stopPropagation()">
           <label>進捗</label>
-          <select onchange="ideaOnProgressChange('${ideaJs(item.id)}', this.value)">
+          <select aria-label="進捗" title="${ideaEsc(st.label)}" onchange="ideaOnProgressChange('${ideaJs(item.id)}', this.value)">
             ${opts}
           </select>
         </div>
       </div>
+      <div class="meta" style="margin-top:6px; color:#4527a0; font-weight:700;">📅 ${ideaEsc(ideaMoveHistoryLine(item))}</div>
+      ${item.issue ? `<div class="issue-tag">🎯 課題：${ideaEsc(item.issue)}</div>` : ''}
+      <div class="body">${ideaEsc(item.content || '')}</div>
       <div class="reject-box" id="reject_${ideaEsc(item.id)}" style="display:${showReject && tab === 'review' ? 'block' : 'none'};" onclick="event.stopPropagation()">
         <label>廃案の理由</label>
         <textarea id="reject_reason_${ideaEsc(item.id)}" placeholder="廃案にした理由を記入">${ideaEsc(reasonVal)}</textarea>

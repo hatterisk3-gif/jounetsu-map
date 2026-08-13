@@ -464,6 +464,10 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   localStorage.setItem('passionMapUserRole', result.role || '作業員');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
+                  if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+                      await PassionMapTerms.ensureAccepted({ userId: id });
+                  }
+
                   startLocationWatch();
                   // 作業開始時間ヒントを先行取得（getInitData完了を待たない）
                   if (typeof window.prefetchWorkTimeHints === 'function') {

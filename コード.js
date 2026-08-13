@@ -81,6 +81,7 @@ function doPost(e) {
     else if (action === "addMaterialToSign") result = addMaterialToSign(params); // ★これを追加
     else if (action === "getInventoryHistory") result = getInventoryHistory(params); // ★これを追加
     else if (action === "getScheduleData") result = getScheduleData();
+    else if (action === "deleteWorkSchedule") result = deleteWorkSchedule(params);
     else if (action === "delegateCompleteWork") result = delegateCompleteWork(params);
     else if (action === "saveReport") result = saveReportData(params.id, params.name, params.author, params.text, params.photos);
     else if (action === "deleteInventoryHistory") result = deleteInventoryHistory(params);
@@ -5178,6 +5179,8 @@ function getScheduleData() {
           tag: displayTag,
           periodLabel: periodLabel,
           scheduleKey: scheduleKey,
+          sheetRow: i + 1,
+          placeId: placeIdRaw,
           taskUsers: taskUsersMap[scheduleKey] || [],
           isMidWork: false,
           dayPlans: []
@@ -5281,6 +5284,60 @@ function delegateCompleteWork(params) {
 
   writeLog(userName, '委任完了', found.rowData[1] || polyId, '記録ID: ' + recordId + ' / 旧進捗: ' + prevStatus);
   return { success: true, photos: ex, recordId: recordId, progressStatus: '完了' };
+}
+
+/**
+ * 作業予定を一覧から削除する（作業予定シートの行削除）
+ * params: { sheetRow, scheduleKey, workName, fieldName, cropName, userName }
+ */
+function deleteWorkSchedule(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) throw new Error('作業予定シートがありません');
+
+  const data = schedSheet.getDataRange().getValues();
+  let targetRow = parseInt(params.sheetRow, 10);
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    targetRow = 0;
+    const wantKey = String(params.scheduleKey || '').trim();
+    const wantName = String(params.workName || '').trim();
+    const wantField = String(params.fieldName || '').trim();
+    const wantCrop = String(params.cropName || '').trim();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (String(row[8] || '').trim()) continue; // 完了済みは対象外
+      const key = buildWorkScheduleKey_(row[0], row[3], row[2], row[4], row[5]);
+      if (wantKey && key === wantKey) {
+        targetRow = i + 1;
+        break;
+      }
+      if (!wantKey && wantName
+          && String(row[0] || '').trim() === wantName
+          && String(row[3] || '').trim() === wantField
+          && String(row[2] || '').trim() === wantCrop) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    throw new Error('削除対象の作業予定が見つかりませんでした');
+  }
+
+  const rowData = data[targetRow - 1] || [];
+  const workName = String(rowData[0] || params.workName || '').trim();
+  const fieldName = String(rowData[3] || params.fieldName || '').trim();
+  // 完了済み行は消さない（一覧に出ない想定）
+  if (String(rowData[8] || '').trim()) {
+    throw new Error('この作業は既に完了済みです');
+  }
+
+  schedSheet.deleteRow(targetRow);
+  writeLog(userName, '作業予定削除', fieldName || workName, `作業名: ${workName}, 行: ${targetRow}`);
+  return { success: true, workName: workName, fieldName: fieldName, sheetRow: targetRow };
 }
 
 /**
