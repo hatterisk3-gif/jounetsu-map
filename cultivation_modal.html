@@ -75,20 +75,11 @@
                 </select>
                 <input type="text" id="cpLocation_custom" placeholder="手入力" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
               </div>
-              <div style="font-size:10px; color:#888; margin-top:2px;">※1つの計画＝1拠点。別拠点は保存後に拠点を切り替えて新たに計画します</div>
+              <div style="font-size:10px; color:#888; margin-top:2px;">※1つの計画＝1拠点。別拠点は保存後に拠点を切り替えて新たに計画します。産地の割当は「管理」から編集できます。</div>
               <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
                 <label style="font-size:10px; color:#888; white-space:nowrap;">タグ略称</label>
                 <input type="text" id="cpLocationTagAbbr" maxlength="10" placeholder="例: 徳阿" title="拠点のタグ略称" style="flex:1; min-width:0; padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px;">
                 <button type="button" onclick="saveCpLocationTagAbbreviation()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">保存</button>
-              </div>
-              <div style="margin-top:6px; padding:6px 8px; background:#f7fbf1; border:1px solid #c8e6c9; border-radius:6px;">
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:4px;">
-                  <label style="font-size:10px; font-weight:bold; color:#2e7d32;">拠点の産地設定</label>
-                  <button type="button" id="btnCpSaveLocationClimates" onclick="saveCpLocationClimates()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #81C784; background:#E8F5E9; color:#2e7d32; border-radius:4px; cursor:pointer;">産地を保存</button>
-                </div>
-                <div id="cpLocationClimateChecks" style="display:flex; flex-wrap:wrap; gap:6px 10px;"></div>
-                <div style="font-size:9px; color:#777; margin-top:4px; line-height:1.35;">拠点マスタへ保存します。品種・作型の絞り込みに使われます。「産地」の管理から候補の追加・編集・削除ができます。</div>
-                <div id="cpLocationClimateSaveStatus" style="font-size:10px; font-weight:bold; margin-top:3px; min-height:12px;"></div>
               </div>
             </div>
             <div style="width: 100%;">
@@ -857,6 +848,18 @@
           <input type="text" id="cpBasicMasterExtra1" placeholder="" style="display:none; width:90px; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
           <input type="text" id="cpBasicMasterExtra2" placeholder="" style="display:none; width:90px; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
           <button type="button" id="cpBasicMasterAddBtn" onclick="submitCpBasicMasterAdd()" style="padding:6px 14px; background:#1976D2; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">＋ 追加</button>
+        </div>
+        <div id="cpBasicMasterClimateAddWrap" style="display:none; margin-bottom:10px; padding:8px; background:#f7fbf1; border:1px solid #c8e6c9; border-radius:6px;">
+          <div style="font-size:11px; font-weight:bold; color:#2e7d32; margin-bottom:4px;">追加時の産地（任意）</div>
+          <div id="cpBasicMasterClimateAddChecks" style="display:flex; flex-wrap:wrap; gap:6px 10px;"></div>
+        </div>
+        <div id="cpBasicMasterLocClimatePanel" style="display:none; margin-bottom:10px; padding:10px; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+            <div style="font-size:12px; font-weight:bold; color:#2e7d32;">産地を編集: <span id="cpBasicMasterLocClimateName"></span></div>
+            <button type="button" onclick="cancelCpLocationClimateEditInManager()" style="padding:2px 8px; font-size:11px; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer;">キャンセル</button>
+          </div>
+          <div id="cpBasicMasterLocClimateChecks" style="display:flex; flex-wrap:wrap; gap:6px 10px; margin-bottom:8px;"></div>
+          <button type="button" id="cpBasicMasterLocClimateSaveBtn" onclick="saveCpLocationClimateEditInManager()" style="padding:6px 12px; font-size:12px; font-weight:bold; border:none; background:#43A047; color:#fff; border-radius:4px; cursor:pointer;">産地を保存</button>
         </div>
         <div id="cpBasicMasterStatus" style="font-size:11px; font-weight:bold; min-height:14px; margin-bottom:6px;"></div>
         <div id="cpBasicMasterList" style="flex:1; overflow-y:auto; min-height:140px; max-height:55vh; border:1px solid #eee; border-radius:8px; padding:8px; background:#fafafa;"></div>

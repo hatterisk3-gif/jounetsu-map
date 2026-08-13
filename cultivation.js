@@ -1705,14 +1705,18 @@ function getLocationClimates(detailOrName) {
 
 const ALL_CP_CLIMATES = ['暖地', '温暖地', '一般地', '高冷地'];
 
-/** 産地マスタ候補（固定＋サーバー＋拠点登録分） */
+/** 産地マスタ候補（サーバー優先。未取得時のみ固定初期値） */
 function getCpAllClimateOptions_() {
-    const set = new Set(ALL_CP_CLIMATES);
-    const fromMaster = (cpMasterData && Array.isArray(cpMasterData.climates)) ? cpMasterData.climates : [];
-    fromMaster.forEach(c => {
-        const n = String(c || '').trim();
-        if (n) set.add(n);
-    });
+    const set = new Set();
+    const fromMaster = (cpMasterData && Array.isArray(cpMasterData.climates)) ? cpMasterData.climates : null;
+    if (fromMaster && fromMaster.length) {
+        fromMaster.forEach(c => {
+            const n = String(c || '').trim();
+            if (n) set.add(n);
+        });
+    } else {
+        ALL_CP_CLIMATES.forEach(c => set.add(c));
+    }
     const details = (cpMasterData && cpMasterData.locationDetails) || [];
     details.forEach(d => {
         getLocationClimates(d).forEach(c => {
@@ -1794,11 +1798,10 @@ function onCpLocationChange() {
     if (!detail) {
         if (hint) {
             hint.textContent = location
-                ? 'この拠点はマスタ未登録、または産地未設定です。上の「拠点の産地設定」から登録できます'
+                ? 'この拠点はマスタ未登録、または産地未設定です。「拠点」の管理から産地を登録できます'
                 : '';
             hint.style.color = '#e65100';
         }
-        fillCpLocationClimateChecks();
         updateVarietyList();
         checkCroptypeDB();
         if (typeof updateCpDefaultPlanName === 'function') updateCpDefaultPlanName();
@@ -1817,15 +1820,14 @@ function onCpLocationChange() {
     } else if (hint) {
         hint.style.color = '#e65100';
         hint.textContent = bits.length
-            ? `拠点: ${bits.join(' ')}（産地未設定。上の「拠点の産地設定」から登録できます）`
-            : 'この拠点に産地が未設定です。上の「拠点の産地設定」から登録できます';
+            ? `拠点: ${bits.join(' ')}（産地未設定。「拠点」の管理から登録できます）`
+            : 'この拠点に産地が未設定です。「拠点」の管理から登録できます';
     }
 
     updateVarietyList();
     checkCroptypeDB();
     updatePresetList(getCpVal('cpCrop'));
     fillCpTagAbbreviationInputs();
-    fillCpLocationClimateChecks();
     if (typeof updateCpDefaultPlanName === 'function') updateCpDefaultPlanName();
     if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
 }
@@ -1844,23 +1846,9 @@ function fillCpTagAbbreviationInputs() {
     }
 }
 
-/** 栽培計画から拠点マスタの産地を編集するチェックボックスを描画 */
+/** @deprecated 基本設定のチェックUIは廃止。拠点管理モーダル側を使用 */
 function fillCpLocationClimateChecks() {
-    const wrap = document.getElementById('cpLocationClimateChecks');
-    if (!wrap) return;
-    const location = getCpVal('cpLocation');
-    const climates = getLocationClimates(location);
-    const selected = new Set(climates);
-    const opts = getCpAllClimateOptions_();
-    if (!location) {
-        wrap.innerHTML = '<span style="font-size:10px; color:#999;">拠点を選ぶと産地を設定できます</span>';
-        return;
-    }
-    wrap.innerHTML = opts.map(c => {
-        const checked = selected.has(c) ? ' checked' : '';
-        return `<label style="font-size:11px; display:inline-flex; align-items:center; gap:3px; cursor:pointer; white-space:nowrap; color:#333;">` +
-            `<input type="checkbox" class="cp-location-climate-cb" value="${escapeCpHtmlAttr(c)}"${checked}>${escapeCpHtmlAttr(c)}</label>`;
-    }).join('');
+    // no-op（互換のため残置）
 }
 
 function getCheckedCpLocationClimates_() {
@@ -1878,6 +1866,84 @@ function showCpLocationClimateSaveResult(ok, message) {
     if (!ok) alert(message);
 }
 
+/** 拠点マスタへ産地を保存（共通） */
+async function upsertCpLocationClimates_(location, climates, opts) {
+    const options = opts || {};
+    const detail = getLocationDetailByName(location) || {};
+    const abbrEl = document.getElementById('cpLocationTagAbbr');
+    const abbr = String(
+        (options.tagAbbreviation != null ? options.tagAbbreviation : null)
+        || (abbrEl && getCpVal('cpLocation') === location ? abbrEl.value : null)
+        || detail.tagAbbreviation
+        || ''
+    ).trim();
+    const existsInMaster = !!(detail && detail.name);
+    const climatesArr = Array.isArray(climates) ? climates.slice() : [];
+    if (existsInMaster) {
+        await callGAS('manageMaster', {
+            masterType: 'location',
+            manageAction: 'edit',
+            userName: getCpMasterUserName_(),
+            value: {
+                originalName: location,
+                newData: {
+                    name: location,
+                    prefecture: options.prefecture != null ? options.prefecture : (detail.prefecture || ''),
+                    city: options.city != null ? options.city : (detail.city || ''),
+                    climates: climatesArr,
+                    tagAbbreviation: abbr
+                }
+            }
+        });
+    } else {
+        await callGAS('manageMaster', {
+            masterType: 'location',
+            manageAction: 'add',
+            userName: getCpMasterUserName_(),
+            value: {
+                name: location,
+                prefecture: options.prefecture != null ? options.prefecture : '',
+                city: options.city != null ? options.city : '',
+                climates: climatesArr,
+                tagAbbreviation: abbr
+            }
+        });
+    }
+    if (!cpMasterData) cpMasterData = {};
+    if (!Array.isArray(cpMasterData.locationDetails)) cpMasterData.locationDetails = [];
+    if (!Array.isArray(cpMasterData.locations)) cpMasterData.locations = [];
+    let d = cpMasterData.locationDetails.find(l => l && l.name === location);
+    if (!d) {
+        d = { name: location };
+        cpMasterData.locationDetails.push(d);
+    }
+    d.climates = climatesArr.slice();
+    d.climate = climatesArr.join(',');
+    if (options.prefecture != null) d.prefecture = options.prefecture;
+    if (options.city != null) d.city = options.city;
+    if (abbr) d.tagAbbreviation = abbr;
+    if (cpMasterData.locations.indexOf(location) === -1) {
+        cpMasterData.locations.push(location);
+    }
+    persistCpMasterDataCache();
+    const locSel = document.getElementById('cpLocation');
+    if (locSel && !Array.from(locSel.options).some(o => o.value === location)) {
+        const opt = document.createElement('option');
+        opt.value = location;
+        opt.textContent = location;
+        const customOpt = Array.from(locSel.options).find(o => o.value === 'custom');
+        if (customOpt) locSel.insertBefore(opt, customOpt);
+        else locSel.appendChild(opt);
+    }
+    if (getCpVal('cpLocation') === location) {
+        onCpLocationChange();
+    } else {
+        const allowed = getLocationClimates(getCpVal('cpLocation'));
+        rebuildCpClimateOptions(allowed.length ? allowed : null, getCpVal('cpClimate'));
+    }
+    return climatesArr;
+}
+
 async function saveCpLocationClimates() {
     const location = getCpVal('cpLocation');
     if (!location) {
@@ -1888,10 +1954,6 @@ async function saveCpLocationClimates() {
     if (!climates.length) {
         if (!confirm('産地が未選択です。この拠点の産地設定を空にして保存しますか？')) return;
     }
-    const detail = getLocationDetailByName(location) || {};
-    const abbrEl = document.getElementById('cpLocationTagAbbr');
-    const abbr = String((abbrEl && abbrEl.value) || detail.tagAbbreviation || '').trim();
-    const existsInMaster = !!(detail && detail.name);
     const btn = document.getElementById('btnCpSaveLocationClimates');
     const prevBtnText = btn ? btn.textContent : '';
     if (btn) {
@@ -1899,63 +1961,7 @@ async function saveCpLocationClimates() {
         btn.textContent = '保存中…';
     }
     try {
-        if (existsInMaster) {
-            await callGAS('manageMaster', {
-                masterType: 'location',
-                manageAction: 'edit',
-                userName: getCpMasterUserName_(),
-                value: {
-                    originalName: location,
-                    newData: {
-                        name: location,
-                        prefecture: detail.prefecture || '',
-                        city: detail.city || '',
-                        climates: climates,
-                        tagAbbreviation: abbr
-                    }
-                }
-            });
-        } else {
-            await callGAS('manageMaster', {
-                masterType: 'location',
-                manageAction: 'add',
-                userName: getCpMasterUserName_(),
-                value: {
-                    name: location,
-                    prefecture: '',
-                    city: '',
-                    climates: climates,
-                    tagAbbreviation: abbr
-                }
-            });
-        }
-        if (!cpMasterData) cpMasterData = {};
-        if (!Array.isArray(cpMasterData.locationDetails)) cpMasterData.locationDetails = [];
-        if (!Array.isArray(cpMasterData.locations)) cpMasterData.locations = [];
-        let d = cpMasterData.locationDetails.find(l => l && l.name === location);
-        if (!d) {
-            d = { name: location };
-            cpMasterData.locationDetails.push(d);
-        }
-        d.climates = climates.slice();
-        d.climate = climates.join(',');
-        if (abbr) d.tagAbbreviation = abbr;
-        if (cpMasterData.locations.indexOf(location) === -1) {
-            cpMasterData.locations.push(location);
-        }
-        persistCpMasterDataCache();
-        // セレクトに拠点が無ければ追加
-        const locSel = document.getElementById('cpLocation');
-        if (locSel && !Array.from(locSel.options).some(o => o.value === location)) {
-            const opt = document.createElement('option');
-            opt.value = location;
-            opt.textContent = location;
-            const customOpt = Array.from(locSel.options).find(o => o.value === 'custom');
-            if (customOpt) locSel.insertBefore(opt, customOpt);
-            else locSel.appendChild(opt);
-        }
-        setChoiceValue('cpLocation', location, false);
-        onCpLocationChange();
+        await upsertCpLocationClimates_(location, climates);
         showCpLocationClimateSaveResult(
             true,
             climates.length
@@ -2116,12 +2122,13 @@ window.saveCpCropTagAbbreviation = saveCpCropTagAbbreviation;
 
 // ===== 基本設定マスタ管理（拠点・作物・産地・圃場条件） =====
 let cpBasicMasterKind_ = '';
+let cpBasicMasterEditingLocation_ = '';
 
 function getCpBasicMasterMeta_(kind) {
     const map = {
         location: {
             title: '拠点マスタ管理',
-            hint: '拠点の追加・名称変更・削除ができます。産地の割当は基本設定のチェックボックスから保存してください。',
+            hint: '拠点の追加・名称変更・削除と、各拠点の産地設定ができます。一覧の「産地」から割当を編集してください。',
             namePh: '拠点名',
             extra1Ph: '県（任意）',
             extra2Ph: '市（任意）',
@@ -2156,6 +2163,42 @@ function setCpBasicMasterStatus_(ok, message) {
     if (!el) return;
     el.textContent = message || '';
     el.style.color = ok ? '#2e7d32' : '#c62828';
+}
+
+function renderCpClimateCheckboxes_(wrapId, selectedList, className) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    const selected = new Set((selectedList || []).map(c => String(c || '').trim()).filter(Boolean));
+    const opts = getCpAllClimateOptions_();
+    const cls = className || 'cp-bm-climate-cb';
+    if (!opts.length) {
+        wrap.innerHTML = '<span style="font-size:11px; color:#999;">産地候補がありません。「産地」管理から追加してください</span>';
+        return;
+    }
+    wrap.innerHTML = opts.map(c => {
+        const checked = selected.has(c) ? ' checked' : '';
+        return `<label style="font-size:11px; display:inline-flex; align-items:center; gap:3px; cursor:pointer; white-space:nowrap; color:#333;">` +
+            `<input type="checkbox" class="${cls}" value="${escapeCpHtmlAttr(c)}"${checked}>${escapeCpHtmlAttr(c)}</label>`;
+    }).join('');
+}
+
+function getCheckedClimatesByClass_(className) {
+    return Array.from(document.querySelectorAll('input.' + className + ':checked'))
+        .map(el => String(el.value || '').trim())
+        .filter(Boolean);
+}
+
+function syncCpBasicMasterLocationClimateUi_(kind) {
+    const addWrap = document.getElementById('cpBasicMasterClimateAddWrap');
+    const editPanel = document.getElementById('cpBasicMasterLocClimatePanel');
+    if (kind === 'location') {
+        if (addWrap) addWrap.style.display = '';
+        renderCpClimateCheckboxes_('cpBasicMasterClimateAddChecks', [], 'cp-bm-climate-add-cb');
+    } else if (addWrap) {
+        addWrap.style.display = 'none';
+    }
+    if (editPanel) editPanel.style.display = 'none';
+    cpBasicMasterEditingLocation_ = '';
 }
 
 function getCpBasicMasterItemNames_(kind) {
@@ -2196,6 +2239,23 @@ function renderCpBasicMasterList_() {
     listEl.innerHTML = names.map(name => {
         const safe = escapeCpHtmlAttr(name);
         const safeJs = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        if (kind === 'location') {
+            const climates = getLocationClimates(name);
+            const climateLabel = climates.length
+                ? climates.map(c => escapeCpHtmlAttr(c)).join('・')
+                : '未設定';
+            const climateColor = climates.length ? '#2e7d32' : '#e65100';
+            return `<div style="padding:8px; background:#fff; border:1px solid #eee; border-radius:6px; margin-bottom:6px;">` +
+                `<div style="display:flex; align-items:flex-start; gap:6px;">` +
+                `<div style="flex:1; min-width:0;">` +
+                `<div style="font-size:13px; color:#333; font-weight:bold; word-break:break-all;">${safe}</div>` +
+                `<div style="font-size:11px; color:${climateColor}; margin-top:2px;">産地: ${climateLabel}</div>` +
+                `</div>` +
+                `<button type="button" onclick="editCpLocationClimatesInManager('${safeJs}')" style="padding:3px 8px; font-size:11px; border:1px solid #81C784; background:#E8F5E9; color:#2e7d32; border-radius:4px; cursor:pointer;">産地</button>` +
+                `<button type="button" onclick="editCpBasicMasterItem('${safeJs}')" style="padding:3px 8px; font-size:11px; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">名称</button>` +
+                `<button type="button" onclick="deleteCpBasicMasterItem('${safeJs}')" style="padding:3px 8px; font-size:11px; border:1px solid #EF9A9A; background:#FFEBEE; color:#C62828; border-radius:4px; cursor:pointer;">削除</button>` +
+                `</div></div>`;
+        }
         return `<div style="display:flex; align-items:center; gap:6px; padding:6px 8px; background:#fff; border:1px solid #eee; border-radius:6px; margin-bottom:6px;">` +
             `<span style="flex:1; min-width:0; font-size:13px; color:#333; word-break:break-all;">${safe}</span>` +
             `<button type="button" onclick="editCpBasicMasterItem('${safeJs}')" style="padding:3px 8px; font-size:11px; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">編集</button>` +
@@ -2221,11 +2281,7 @@ function openCpBasicMasterManager(kind) {
         nameInp.placeholder = meta.namePh || '名称';
     }
     if (ex1) {
-        if (meta.showExtra === true) {
-            ex1.style.display = '';
-            ex1.placeholder = meta.extra1Ph || '';
-            ex1.value = '';
-        } else if (meta.showExtra === 'crop') {
+        if (meta.showExtra === true || meta.showExtra === 'crop') {
             ex1.style.display = '';
             ex1.placeholder = meta.extra1Ph || '';
             ex1.value = '';
@@ -2244,6 +2300,7 @@ function openCpBasicMasterManager(kind) {
             ex2.value = '';
         }
     }
+    syncCpBasicMasterLocationClimateUi_(kind);
     setCpBasicMasterStatus_(true, '');
     renderCpBasicMasterList_();
     if (modal) {
@@ -2255,6 +2312,58 @@ function closeCpBasicMasterManager() {
     const modal = document.getElementById('cpBasicMasterModal');
     if (modal) modal.style.display = 'none';
     cpBasicMasterKind_ = '';
+    cpBasicMasterEditingLocation_ = '';
+    const editPanel = document.getElementById('cpBasicMasterLocClimatePanel');
+    if (editPanel) editPanel.style.display = 'none';
+}
+
+function editCpLocationClimatesInManager(locationName) {
+    const name = String(locationName || '').trim();
+    if (!name) return;
+    cpBasicMasterEditingLocation_ = name;
+    const panel = document.getElementById('cpBasicMasterLocClimatePanel');
+    const nameEl = document.getElementById('cpBasicMasterLocClimateName');
+    if (nameEl) nameEl.textContent = name;
+    renderCpClimateCheckboxes_('cpBasicMasterLocClimateChecks', getLocationClimates(name), 'cp-bm-climate-edit-cb');
+    if (panel) panel.style.display = '';
+    setCpBasicMasterStatus_(true, '産地を選んで「産地を保存」を押してください');
+}
+
+function cancelCpLocationClimateEditInManager() {
+    cpBasicMasterEditingLocation_ = '';
+    const panel = document.getElementById('cpBasicMasterLocClimatePanel');
+    if (panel) panel.style.display = 'none';
+    setCpBasicMasterStatus_(true, '');
+}
+
+async function saveCpLocationClimateEditInManager() {
+    const location = String(cpBasicMasterEditingLocation_ || '').trim();
+    if (!location) {
+        setCpBasicMasterStatus_(false, '編集対象の拠点がありません');
+        return;
+    }
+    const climates = getCheckedClimatesByClass_('cp-bm-climate-edit-cb');
+    if (!climates.length) {
+        if (!confirm('産地が未選択です。この拠点の産地設定を空にして保存しますか？')) return;
+    }
+    const btn = document.getElementById('cpBasicMasterLocClimateSaveBtn');
+    if (btn) btn.disabled = true;
+    setCpBasicMasterStatus_(true, '保存中…');
+    try {
+        await upsertCpLocationClimates_(location, climates);
+        cancelCpLocationClimateEditInManager();
+        renderCpBasicMasterList_();
+        setCpBasicMasterStatus_(
+            true,
+            climates.length
+                ? '✓ 「' + location + '」の産地（' + climates.join('・') + '）を保存しました'
+                : '✓ 「' + location + '」の産地設定を空で保存しました'
+        );
+    } catch (e) {
+        setCpBasicMasterStatus_(false, (e && e.message) ? e.message : '産地の保存に失敗しました');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 async function refreshCpMasterAfterBasicEdit_() {
@@ -2268,6 +2377,41 @@ async function refreshCpMasterAfterBasicEdit_() {
         }
     } catch (e) {}
     applyCultivationMasterData();
+}
+
+/** 産地マスタ変更をローカル反映（重い getCultivationMaster を避ける） */
+function patchCpClimateMasterLocal_(list, opts) {
+    if (!cpMasterData) cpMasterData = {};
+    if (Array.isArray(list)) cpMasterData.climates = list.slice();
+    const renameFrom = opts && opts.renameFrom;
+    const renameTo = opts && opts.renameTo;
+    const removeName = opts && opts.removeName;
+    const details = cpMasterData.locationDetails || [];
+    details.forEach(d => {
+        if (!d) return;
+        let climates = getLocationClimates(d);
+        if (renameFrom && renameTo) {
+            climates = climates
+                .map(c => (c === renameFrom ? renameTo : c))
+                .filter((c, idx, arr) => c && arr.indexOf(c) === idx);
+        }
+        if (removeName) climates = climates.filter(c => c !== removeName);
+        d.climates = climates;
+        d.climate = climates.join(',');
+    });
+    persistCpMasterDataCache();
+    const loc = getCpVal('cpLocation');
+    const allowed = getLocationClimates(loc);
+    rebuildCpClimateOptions(allowed.length ? allowed : null, getCpVal('cpClimate'));
+    if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
+}
+
+function patchCpConditionMasterLocal_(list) {
+    if (!cpMasterData) cpMasterData = {};
+    if (Array.isArray(list)) cpMasterData.conditions = list.slice();
+    persistCpMasterDataCache();
+    populateCpFieldConditionSelect();
+    if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
 }
 
 async function submitCpBasicMasterAdd() {
@@ -2284,12 +2428,40 @@ async function submitCpBasicMasterAdd() {
     setCpBasicMasterStatus_(true, '追加中…');
     try {
         if (kind === 'location') {
+            const climates = getCheckedClimatesByClass_('cp-bm-climate-add-cb');
             await callGAS('manageMaster', {
                 masterType: 'location',
                 manageAction: 'add',
                 userName: getCpMasterUserName_(),
-                value: { name: name, prefecture: ex1, city: ex2, climates: [], tagAbbreviation: '' }
+                value: { name: name, prefecture: ex1, city: ex2, climates: climates, tagAbbreviation: '' }
             });
+            if (!cpMasterData) cpMasterData = {};
+            if (!Array.isArray(cpMasterData.locationDetails)) cpMasterData.locationDetails = [];
+            if (!Array.isArray(cpMasterData.locations)) cpMasterData.locations = [];
+            cpMasterData.locationDetails.push({
+                name: name,
+                prefecture: ex1,
+                city: ex2,
+                climates: climates.slice(),
+                climate: climates.join(','),
+                tagAbbreviation: ''
+            });
+            if (cpMasterData.locations.indexOf(name) < 0) cpMasterData.locations.push(name);
+            persistCpMasterDataCache();
+            const locSel = document.getElementById('cpLocation');
+            if (locSel && !Array.from(locSel.options).some(o => o.value === name)) {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                locSel.appendChild(opt);
+            }
+            renderCpClimateCheckboxes_('cpBasicMasterClimateAddChecks', [], 'cp-bm-climate-add-cb');
+            // 拠点はローカル反映で十分（フル再取得はしない）
+            if (typeof applyCultivationMasterData === 'function' && cpMasterData.crops) {
+                const prevLoc = getCpVal('cpLocation');
+                populateSelect('cpLocation', cpMasterData.locations || [], []);
+                if (prevLoc) setChoiceValue('cpLocation', prevLoc, false);
+            }
         } else if (kind === 'crop') {
             await callGAS('manageMaster', {
                 masterType: 'crop',
@@ -2304,16 +2476,14 @@ async function submitCpBasicMasterAdd() {
                     localStorage.setItem('customCrops', JSON.stringify(custom));
                 }
             } catch (e) {}
+            await refreshCpMasterAfterBasicEdit_();
         } else if (kind === 'climate') {
             const list = await callGAS('addClimateMaster', { climateName: name });
-            if (!cpMasterData) cpMasterData = {};
-            if (Array.isArray(list)) cpMasterData.climates = list;
+            patchCpClimateMasterLocal_(Array.isArray(list) ? list : (getCpAllClimateOptions_().concat([name])));
         } else if (kind === 'condition') {
             const list = await callGAS('addFieldCondition', { conditionName: name });
-            if (!cpMasterData) cpMasterData = {};
-            if (Array.isArray(list)) cpMasterData.conditions = list;
+            patchCpConditionMasterLocal_(Array.isArray(list) ? list : null);
         }
-        await refreshCpMasterAfterBasicEdit_();
         const nameInp = document.getElementById('cpBasicMasterNewName');
         if (nameInp) nameInp.value = '';
         if (document.getElementById('cpBasicMasterExtra1')) document.getElementById('cpBasicMasterExtra1').value = '';
@@ -2359,6 +2529,7 @@ async function editCpBasicMasterItem(oldName) {
                 }
             });
             if (getCpVal('cpLocation') === name0) setChoiceValue('cpLocation', trimmed, false);
+            await refreshCpMasterAfterBasicEdit_();
         } else if (kind === 'crop') {
             await callGAS('manageMaster', {
                 masterType: 'crop',
@@ -2375,18 +2546,16 @@ async function editCpBasicMasterItem(oldName) {
                 localStorage.setItem('customCrops', JSON.stringify(custom));
             } catch (e) {}
             if (getCpVal('cpCrop') === name0) setChoiceValue('cpCrop', trimmed, false);
+            await refreshCpMasterAfterBasicEdit_();
         } else if (kind === 'climate') {
             const list = await callGAS('editClimateMaster', { oldClimateName: name0, newClimateName: trimmed });
-            if (!cpMasterData) cpMasterData = {};
-            if (Array.isArray(list)) cpMasterData.climates = list;
             if (getCpVal('cpClimate') === name0) setChoiceValue('cpClimate', trimmed, false);
+            patchCpClimateMasterLocal_(Array.isArray(list) ? list : null, { renameFrom: name0, renameTo: trimmed });
         } else if (kind === 'condition') {
             const list = await callGAS('editFieldCondition', { oldConditionName: name0, newConditionName: trimmed });
-            if (!cpMasterData) cpMasterData = {};
-            if (Array.isArray(list)) cpMasterData.conditions = list;
             if (getCpVal('cpFieldCondition') === name0) setChoiceValue('cpFieldCondition', trimmed, false);
+            patchCpConditionMasterLocal_(Array.isArray(list) ? list : null);
         }
-        await refreshCpMasterAfterBasicEdit_();
         renderCpBasicMasterList_();
         setCpBasicMasterStatus_(true, '✓ 「' + name0 + '」→「' + trimmed + '」に更新しました');
     } catch (e) {
@@ -2410,6 +2579,7 @@ async function deleteCpBasicMasterItem(name) {
                 value: { name: target }
             });
             if (getCpVal('cpLocation') === target) setChoiceValue('cpLocation', '', false);
+            await refreshCpMasterAfterBasicEdit_();
         } else if (kind === 'crop') {
             await callGAS('manageMaster', {
                 masterType: 'crop',
@@ -2425,20 +2595,18 @@ async function deleteCpBasicMasterItem(name) {
                 try { removeCropFromChoices(target); } catch (e) {}
             }
             if (getCpVal('cpCrop') === target) setChoiceValue('cpCrop', '', false);
+            await refreshCpMasterAfterBasicEdit_();
         } else if (kind === 'climate') {
             const list = await callGAS('deleteClimateMaster', { climateName: target });
-            if (!cpMasterData) cpMasterData = {};
-            if (Array.isArray(list)) cpMasterData.climates = list;
             if (getCpVal('cpClimate') === target) setChoiceValue('cpClimate', '', false);
+            patchCpClimateMasterLocal_(Array.isArray(list) ? list : null, { removeName: target });
         } else if (kind === 'condition') {
             const list = await callGAS('deleteFieldCondition', { conditionName: target });
-            if (!cpMasterData) cpMasterData = {};
-            if (Array.isArray(list)) cpMasterData.conditions = list;
             if (getCpVal('cpFieldCondition') === target) {
                 setChoiceValue('cpFieldCondition', '露地', false);
             }
+            patchCpConditionMasterLocal_(Array.isArray(list) ? list : null);
         }
-        await refreshCpMasterAfterBasicEdit_();
         renderCpBasicMasterList_();
         setCpBasicMasterStatus_(true, '✓ 「' + target + '」を削除しました');
     } catch (e) {
@@ -2451,6 +2619,9 @@ window.closeCpBasicMasterManager = closeCpBasicMasterManager;
 window.submitCpBasicMasterAdd = submitCpBasicMasterAdd;
 window.editCpBasicMasterItem = editCpBasicMasterItem;
 window.deleteCpBasicMasterItem = deleteCpBasicMasterItem;
+window.editCpLocationClimatesInManager = editCpLocationClimatesInManager;
+window.cancelCpLocationClimateEditInManager = cancelCpLocationClimateEditInManager;
+window.saveCpLocationClimateEditInManager = saveCpLocationClimateEditInManager;
 
 async function fetchCultivationMaster() {
     try {

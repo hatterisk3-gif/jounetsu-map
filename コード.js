@@ -2271,13 +2271,18 @@ function getFieldConditionsList_() {
   return list.length ? list : ['露地', 'ハウス'];
 }
 
-function getClimateMasterList_() {
+function getClimateMasterColList_() {
   const defaults = ['暖地', '温暖地', '一般地', '高冷地'];
   let list = readFieldSettingColValues_(0);
   if (!list.length) {
     defaults.forEach(n => appendFieldSettingColValue_(0, n));
-    list = defaults.slice();
+    return defaults.slice();
   }
+  return list;
+}
+
+function getClimateMasterList_() {
+  const list = getClimateMasterColList_().slice();
   // 拠点マスタにだけある産地も候補に含める
   try {
     const locs = readLocationMasterDetails_();
@@ -2336,55 +2341,55 @@ function deleteFieldConditionFromMaster(conditionName) {
   return getFieldConditionsList_();
 }
 
-function renameClimateInLocationMaster_(oldName, newName) {
+function rewriteLocationClimateColumn_(transformFn) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('拠点マスタ');
   if (!sheet || sheet.getLastRow() < 2) return;
   const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return;
   const headers = (data[0] || []).map(h => String(h || '').trim());
   const climIdx = headers.indexOf('産地');
   if (climIdx < 0) return;
+  const out = [];
+  let changed = false;
   for (let i = 1; i < data.length; i++) {
-    const raw = data[i][climIdx];
-    const list = parseLocationClimates_(raw);
-    let changed = false;
-    const next = list.map(c => {
-      if (c === oldName) {
-        changed = true;
-        return newName;
-      }
-      return c;
-    }).filter((c, idx, arr) => c && arr.indexOf(c) === idx);
-    if (changed) {
-      sheet.getRange(i + 1, climIdx + 1).setValue(formatLocationClimates_(next));
-    }
+    const prevList = parseLocationClimates_(data[i][climIdx]);
+    const nextList = transformFn(prevList.slice());
+    const prevStr = formatLocationClimates_(prevList);
+    const nextStr = formatLocationClimates_(nextList);
+    if (prevStr !== nextStr) changed = true;
+    out.push([nextStr]);
+  }
+  if (changed && out.length) {
+    sheet.getRange(2, climIdx + 1, data.length, climIdx + 1).setValues(out);
   }
 }
 
+function renameClimateInLocationMaster_(oldName, newName) {
+  rewriteLocationClimateColumn_(function (list) {
+    return list.map(function (c) {
+      return c === oldName ? newName : c;
+    }).filter(function (c, idx, arr) {
+      return c && arr.indexOf(c) === idx;
+    });
+  });
+}
+
 function removeClimateFromLocationMaster_(climateName) {
-  const ss = TENANT_SS;
-  const sheet = ss.getSheetByName('拠点マスタ');
-  if (!sheet || sheet.getLastRow() < 2) return;
-  const data = sheet.getDataRange().getValues();
-  const headers = (data[0] || []).map(h => String(h || '').trim());
-  const climIdx = headers.indexOf('産地');
-  if (climIdx < 0) return;
-  for (let i = 1; i < data.length; i++) {
-    const list = parseLocationClimates_(data[i][climIdx]);
-    const next = list.filter(c => c !== climateName);
-    if (next.length !== list.length) {
-      sheet.getRange(i + 1, climIdx + 1).setValue(formatLocationClimates_(next));
-    }
-  }
+  rewriteLocationClimateColumn_(function (list) {
+    return list.filter(function (c) {
+      return c !== climateName;
+    });
+  });
 }
 
 function addClimateToMaster(climateName) {
   const name = String(climateName || '').trim();
   if (!name) throw new Error('産地名を入力してください');
-  const existing = getClimateMasterList_();
+  const existing = getClimateMasterColList_();
   if (existing.indexOf(name) >= 0) throw new Error(`産地「${name}」は既に登録されています`);
   appendFieldSettingColValue_(0, name);
-  return getClimateMasterList_();
+  return getClimateMasterColList_();
 }
 
 function editClimateInMaster(oldClimateName, newClimateName) {
@@ -2392,14 +2397,14 @@ function editClimateInMaster(oldClimateName, newClimateName) {
   const newName = String(newClimateName || '').trim();
   if (!oldName || !newName) throw new Error('産地名を入力してください');
   if (oldName !== newName) {
-    const existing = getClimateMasterList_();
+    const existing = getClimateMasterColList_();
     if (existing.indexOf(newName) >= 0) throw new Error(`産地「${newName}」は既に登録されています`);
   }
   if (!renameFieldSettingColValue_(0, oldName, newName)) {
     appendFieldSettingColValue_(0, newName);
   }
   if (oldName !== newName) renameClimateInLocationMaster_(oldName, newName);
-  return getClimateMasterList_();
+  return getClimateMasterColList_();
 }
 
 function deleteClimateFromMaster(climateName) {
@@ -2407,7 +2412,7 @@ function deleteClimateFromMaster(climateName) {
   if (!name) throw new Error('産地名を指定してください');
   clearFieldSettingColValue_(0, name);
   removeClimateFromLocationMaster_(name);
-  return getClimateMasterList_();
+  return getClimateMasterColList_();
 }
 
 function addCropToMaster(cropData) {
