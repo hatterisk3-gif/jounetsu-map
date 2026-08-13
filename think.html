@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>情熱MAP 思考ボード</title>
+  <link rel="icon" href="icon.png">
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --panel: #ffffff;
+      --accent: #2563eb;
+      --accent-soft: #dbeafe;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; color: var(--ink); background: var(--bg); }
+    button, input, textarea, select { font: inherit; }
+    #app { height: 100%; display: grid; grid-template-rows: 52px 1fr; }
+
+    header {
+      display: flex; align-items: center; gap: 10px; padding: 0 12px;
+      background: #111827; color: #fff; z-index: 30;
+    }
+    header h1 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: .02em; white-space: nowrap; }
+    .hdr-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .hdr-btn {
+      border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #fff;
+      border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .hdr-btn:hover { background: rgba(255,255,255,.16); }
+    .hdr-btn.danger { background: #7f1d1d; border-color: #991b1b; }
+    a.back { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+
+    .stage { position: relative; overflow: hidden; }
+    #viewport {
+      position: absolute; inset: 0; cursor: default; background:
+        radial-gradient(circle at 1px 1px, #e5e7eb 1px, transparent 0) 0 0 / 24px 24px,
+        var(--bg);
+      touch-action: none;
+    }
+    #viewport.panning, #viewport.space { cursor: grab; }
+    #viewport.panning.down { cursor: grabbing; }
+    #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+    #wires { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+    #wires path { pointer-events: stroke; cursor: pointer; fill: none; stroke: #64748b; stroke-width: 2.4; }
+    #wires path.sel { stroke: var(--accent); stroke-width: 3.2; }
+
+    .item {
+      position: absolute; min-width: 40px; min-height: 28px; user-select: none;
+      box-shadow: 0 8px 18px rgba(15,23,42,.08); outline: none;
+    }
+    .item.sel { box-shadow: 0 0 0 2px var(--accent), 0 10px 22px rgba(37,99,235,.18); z-index: 5; }
+    .item .body {
+      width: 100%; height: 100%; padding: 10px 12px; overflow: hidden;
+      white-space: pre-wrap; word-break: break-word; line-height: 1.45; font-size: 14px;
+    }
+    .item textarea {
+      position: absolute; inset: 0; width: 100%; height: 100%; border: 0; resize: none;
+      padding: 10px 12px; background: transparent; outline: none; line-height: 1.45;
+    }
+    .sticky { border-radius: 4px; }
+    .shape { border: 2px solid #334155; background: #fff; }
+    .shape.rect { border-radius: 10px; }
+    .shape.ellipse { border-radius: 50%; }
+    .shape.diamond { border: 0; background: transparent; }
+    .shape.diamond .diamond-fill {
+      position: absolute; inset: 8%; background: #fff; border: 2px solid #334155;
+      transform: rotate(45deg); border-radius: 6px;
+    }
+    .shape.diamond .body { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
+    .textcard { background: transparent; box-shadow: none; min-width: 80px; }
+    .textcard .body { font-size: 22px; font-weight: 800; padding: 4px; }
+    .frame {
+      background: rgba(255,255,255,.35); border: 2px dashed #94a3b8; border-radius: 14px;
+      box-shadow: none;
+    }
+    .frame .label {
+      position: absolute; left: 10px; top: -22px; font-size: 12px; font-weight: 800; color: #475569;
+      background: #f8fafc; padding: 1px 8px; border-radius: 6px; border: 1px solid #e2e8f0;
+    }
+    .handle {
+      position: absolute; width: 9px; height: 9px; background: #fff; border: 2px solid var(--accent);
+      border-radius: 2px; z-index: 6;
+    }
+    .handle.nw { left: -5px; top: -5px; cursor: nwse-resize; }
+    .handle.ne { right: -5px; top: -5px; cursor: nesw-resize; }
+    .handle.sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+    .handle.se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
+    .marquee {
+      position: absolute; border: 1px dashed var(--accent); background: rgba(37,99,235,.08);
+      pointer-events: none; z-index: 20;
+    }
+
+    .tools {
+      position: absolute; left: 12px; top: 12px; z-index: 20;
+      display: flex; flex-direction: column; gap: 4px; padding: 6px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+      box-shadow: 0 10px 28px rgba(15,23,42,.12);
+    }
+    .tool {
+      width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent;
+      cursor: pointer; font-size: 18px; color: #334155;
+    }
+    .tool:hover { background: #f3f4f6; }
+    .tool.on { background: var(--accent-soft); color: var(--accent); }
+    .tool-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+
+    .palette {
+      position: absolute; left: 68px; top: 12px; z-index: 20; display: none;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px;
+      box-shadow: 0 10px 28px rgba(15,23,42,.12); min-width: 180px;
+    }
+    .palette.show { display: block; }
+    .palette .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .swatch { width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); cursor: pointer; }
+    .hint { font-size: 11px; color: var(--muted); margin: 0; }
+
+    .zoom-hud {
+      position: absolute; right: 12px; bottom: 12px; z-index: 20;
+      display: flex; align-items: center; gap: 6px; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+      box-shadow: 0 8px 18px rgba(15,23,42,.1);
+    }
+    .zoom-hud button { border: 0; background: #f3f4f6; border-radius: 8px; width: 32px; height: 28px; cursor: pointer; font-weight: 800; }
+    .zoom-hud span { min-width: 48px; text-align: center; font-size: 12px; font-weight: 800; color: #475569; }
+
+    .help {
+      position: absolute; left: 12px; bottom: 12px; z-index: 20; max-width: min(360px, calc(100% - 140px));
+      background: rgba(17,24,39,.86); color: #fff; border-radius: 12px; padding: 10px 12px;
+      font-size: 11px; line-height: 1.55;
+    }
+    .help b { color: #93c5fd; }
+
+    .modal {
+      display: none; position: fixed; inset: 0; z-index: 80; background: rgba(0,0,0,.5);
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal.show { display: flex; }
+    .modal-card { width: min(560px, 100%); background: #fff; border-radius: 14px; padding: 16px; }
+    .modal-card h3 { margin: 0 0 10px; }
+    .tpl { display: grid; gap: 8px; }
+    .tpl button {
+      text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 10px;
+      padding: 10px 12px; cursor: pointer;
+    }
+    .tpl button:hover { border-color: var(--accent); background: #eff6ff; }
+    .tpl small { display: block; color: var(--muted); margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <a class="back" href="index.html">← 案内所</a>
+      <h1>思考ボード</h1>
+      <input id="boardTitle" class="hdr-btn" style="background:#1f2937; min-width:140px; max-width:220px;" value="無題のボード">
+      <div class="hdr-actions">
+        <button class="hdr-btn" onclick="undo()">元に戻す</button>
+        <button class="hdr-btn" onclick="redo()">やり直す</button>
+        <button class="hdr-btn" onclick="openTemplates()">テンプレ</button>
+        <button class="hdr-btn" onclick="exportBoard()">書き出し</button>
+        <button class="hdr-btn" onclick="document.getElementById('importFile').click()">読込</button>
+        <input id="importFile" type="file" accept="application/json" hidden onchange="importBoard(event)">
+        <button class="hdr-btn danger" onclick="clearBoard()">全消去</button>
+      </div>
+    </header>
+    <div class="stage">
+      <div id="viewport">
+        <div id="world">
+          <svg id="wires"></svg>
+        </div>
+      </div>
+      <div class="tools">
+        <button class="tool on" data-tool="select" title="選択 (V)">↖</button>
+        <button class="tool" data-tool="pan" title="移動 (H / Space)">✋</button>
+        <div class="tool-sep"></div>
+        <button class="tool" data-tool="sticky" title="付箋 (N)">🗒</button>
+        <button class="tool" data-tool="text" title="テキスト (T)">T</button>
+        <button class="tool" data-tool="rect" title="四角">▢</button>
+        <button class="tool" data-tool="ellipse" title="丸">◯</button>
+        <button class="tool" data-tool="diamond" title="ひし形">◇</button>
+        <button class="tool" data-tool="frame" title="フレーム">⬚</button>
+        <button class="tool" data-tool="connect" title="矢印でつなぐ">→</button>
+        <div class="tool-sep"></div>
+        <button class="tool" title="複製" onclick="duplicateSel()">⧉</button>
+        <button class="tool" title="削除" onclick="deleteSel()">🗑</button>
+      </div>
+      <div id="palette" class="palette">
+        <p class="hint">色</p>
+        <div class="row" id="colorRow"></div>
+      </div>
+      <div class="zoom-hud">
+        <button onclick="zoomBy(1/1.15)">−</button>
+        <span id="zoomLabel">100%</span>
+        <button onclick="zoomBy(1.15)">＋</button>
+        <button onclick="fitView()" title="全体表示">⊡</button>
+      </div>
+      <div class="help">
+        ドラッグで移動 / ホイールで拡大縮小 / <b>Space</b> でキャンバス移動<br>
+        ダブルクリックで文字編集 / <b>Delete</b> 削除 / <b>Ctrl+D</b> 複製 / <b>Ctrl+Z</b> 戻す
+      </div>
+    </div>
+  </div>
+
+  <div id="tplModal" class="modal" onclick="if(event.target===this) closeTemplates()">
+    <div class="modal-card">
+      <h3>思考テンプレート</h3>
+      <div class="tpl">
+        <button onclick="applyTemplate('blank')"><b>空白ボード</b><small>何もないキャンバスから始める</small></button>
+        <button onclick="applyTemplate('swot')"><b>SWOT</b><small>強み・弱み・機会・脅威を四象限で整理</small></button>
+        <button onclick="applyTemplate('issue')"><b>課題 → 原因 → 打ち手</b><small>現場の困りごとを分解して次の一手を出す</small></button>
+        <button onclick="applyTemplate('kj')"><b>KJ法</b><small>付箋をばらまいてグルーピングする</small></button>
+        <button onclick="applyTemplate('5w1h')"><b>5W1H</b><small>誰が・何を・いつ・どこで・なぜ・どうやって</small></button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const COLORS = ['#FEF08A','#FECACA','#BBF7D0','#BFDBFE','#E9D5FF','#FED7AA','#FFFFFF','#1F2937'];
+const STORAGE_KEY = 'passionMapThinkBoard.v1';
+const viewport = document.getElementById('viewport');
+const world = document.getElementById('world');
+const wires = document.getElementById('wires');
+const palette = document.getElementById('palette');
+const colorRow = document.getElementById('colorRow');
+
+let state = emptyBoard();
+let tool = 'select';
+let cam = { x: 80, y: 60, z: 1 };
+let selected = new Set();
+let selectedWire = null;
+let editingId = null;
+let history = [];
+let future = [];
+let spaceDown = false;
+let dragging = null;
+let connectingFrom = null;
+let marquee = null;
+
+function uid() { return 'n' + Math.random().toString(36).slice(2, 9); }
+function emptyBoard() {
+  return { title: '無題のボード', items: [], wires: [] };
+}
+function snapshot() { return JSON.parse(JSON.stringify({ cam, state, selected: [...selected] })); }
+function pushHist() {
+  history.push(JSON.stringify({ state, cam }));
+  if (history.length > 80) history.shift();
+  future = [];
+}
+function undo() {
+  if (!history.length) return;
+  future.push(JSON.stringify({ state, cam }));
+  const prev = JSON.parse(history.pop());
+  state = prev.state; cam = prev.cam; selected.clear(); render();
+}
+function redo() {
+  if (!future.length) return;
+  history.push(JSON.stringify({ state, cam }));
+  const next = JSON.parse(future.pop());
+  state = next.state; cam = next.cam; selected.clear(); render();
+}
+
+function save() {
+  state.title = document.getElementById('boardTitle').value || '無題のボード';
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, cam })); } catch (e) {}
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed.state) state = parsed.state;
+    if (parsed.cam) cam = parsed.cam;
+    document.getElementById('boardTitle').value = state.title || '無題のボード';
+  } catch (e) {}
+}
+
+function worldPos(e) {
+  const r = viewport.getBoundingClientRect();
+  return { x: (e.clientX - r.left - cam.x) / cam.z, y: (e.clientY - r.top - cam.y) / cam.z };
+}
+function applyCam() {
+  world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`;
+  document.getElementById('zoomLabel').textContent = Math.round(cam.z * 100) + '%';
+}
+function zoomAt(clientX, clientY, factor) {
+  const r = viewport.getBoundingClientRect();
+  const mx = clientX - r.left, my = clientY - r.top;
+  const wx = (mx - cam.x) / cam.z, wy = (my - cam.y) / cam.z;
+  cam.z = Math.min(2.8, Math.max(0.18, cam.z * factor));
+  cam.x = mx - wx * cam.z;
+  cam.y = my - wy * cam.z;
+  applyCam(); save();
+}
+function zoomBy(f) {
+  const r = viewport.getBoundingClientRect();
+  zoomAt(r.left + r.width / 2, r.top + r.height / 2, f);
+}
+function fitView() {
+  if (!state.items.length) { cam = { x: 80, y: 60, z: 1 }; applyCam(); return; }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  state.items.forEach(it => {
+    minX = Math.min(minX, it.x); minY = Math.min(minY, it.y);
+    maxX = Math.max(maxX, it.x + it.w); maxY = Math.max(maxY, it.y + it.h);
+  });
+  const r = viewport.getBoundingClientRect();
+  const pad = 80;
+  const z = Math.min((r.width - pad) / (maxX - minX + 40), (r.height - pad) / (maxY - minY + 40), 1.4);
+  cam.z = Math.max(0.2, z);
+  cam.x = (r.width - (maxX + minX) * cam.z) / 2;
+  cam.y = (r.height - (maxY + minY) * cam.z) / 2;
+  applyCam(); save();
+}
+
+function setTool(next) {
+  tool = next;
+  connectingFrom = null;
+  document.querySelectorAll('.tool[data-tool]').forEach(btn => btn.classList.toggle('on', btn.dataset.tool === tool));
+  viewport.classList.toggle('panning', tool === 'pan');
+  palette.classList.toggle('show', ['sticky','rect','ellipse','diamond','text','frame'].includes(tool) || selected.size === 1);
+}
+
+function itemAt(p) {
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const it = state.items[i];
+    if (p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h) return it;
+  }
+  return null;
+}
+function selectOnly(id, additive) {
+  if (!additive) selected.clear();
+  if (id) selected.add(id);
+  selectedWire = null;
+  render();
+}
+function selectedItems() { return state.items.filter(it => selected.has(it.id)); }
+
+function defaultSize(type) {
+  if (type === 'sticky') return { w: 180, h: 160 };
+  if (type === 'text') return { w: 240, h: 56 };
+  if (type === 'frame') return { w: 420, h: 280 };
+  if (type === 'diamond') return { w: 160, h: 160 };
+  return { w: 200, h: 120 };
+}
+function defaultText(type) {
+  if (type === 'sticky') return '考えを書く';
+  if (type === 'text') return '見出し';
+  if (type === 'frame') return 'グループ';
+  return 'テキスト';
+}
+function addItem(type, x, y, extras) {
+  const size = defaultSize(type);
+  const item = Object.assign({
+    id: uid(), type, x, y, w: size.w, h: size.h,
+    text: defaultText(type),
+    color: type === 'sticky' ? '#FEF08A' : (type === 'text' ? 'transparent' : '#FFFFFF')
+  }, extras || {});
+  pushHist();
+  state.items.push(item);
+  selected = new Set([item.id]);
+  render();
+  save();
+  return item;
+}
+
+function startEdit(id) {
+  editingId = id;
+  render();
+  const ta = document.querySelector(`#item-${id} textarea`);
+  if (ta) { ta.focus(); ta.select(); }
+}
+function commitEdit(id, value) {
+  const it = state.items.find(x => x.id === id);
+  if (it) it.text = value;
+  editingId = null;
+  save();
+  render();
+}
+
+function deleteSel() {
+  if (selectedWire) {
+    pushHist();
+    state.wires = state.wires.filter(w => w.id !== selectedWire);
+    selectedWire = null; render(); save(); return;
+  }
+  if (!selected.size) return;
+  pushHist();
+  state.items = state.items.filter(it => !selected.has(it.id));
+  state.wires = state.wires.filter(w => !selected.has(w.from) && !selected.has(w.to));
+  selected.clear();
+  render(); save();
+}
+function duplicateSel() {
+  const items = selectedItems();
+  if (!items.length) return;
+  pushHist();
+  const created = [];
+  items.forEach(it => {
+    const copy = Object.assign({}, it, { id: uid(), x: it.x + 28, y: it.y + 28 });
+    state.items.push(copy);
+    created.push(copy.id);
+  });
+  selected = new Set(created);
+  render(); save();
+}
+
+function centerOf(it) { return { x: it.x + it.w / 2, y: it.y + it.h / 2 }; }
+function anchor(it, other) {
+  const a = centerOf(it), b = centerOf(other);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? { x: it.x + it.w, y: a.y } : { x: it.x, y: a.y };
+  }
+  return dy > 0 ? { x: a.x, y: it.y + it.h } : { x: a.x, y: it.y };
+}
+function renderWires() {
+  const byId = Object.fromEntries(state.items.map(it => [it.id, it]));
+  let maxX = 4000, maxY = 3000;
+  state.items.forEach(it => { maxX = Math.max(maxX, it.x + it.w + 400); maxY = Math.max(maxY, it.y + it.h + 400); });
+  wires.setAttribute('width', maxX);
+  wires.setAttribute('height', maxY);
+  wires.innerHTML = state.wires.map(w => {
+    const a = byId[w.from], b = byId[w.to];
+    if (!a || !b) return '';
+    const p1 = anchor(a, b), p2 = anchor(b, a);
+    const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const d = `M ${p1.x} ${p1.y} Q ${mid.x} ${mid.y} ${p2.x} ${p2.y}`;
+    return `<path data-id="${w.id}" class="${selectedWire === w.id ? 'sel' : ''}" d="${d}" marker-end="url(#arrow)"/>`;
+  }).join('');
+  if (!wires.querySelector('defs')) {
+    wires.insertAdjacentHTML('afterbegin', `<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>`);
+  }
+}
+
+function render() {
+  applyCam();
+  [...world.querySelectorAll('.item, .marquee')].forEach(n => n.remove());
+  state.items.forEach(it => {
+    const el = document.createElement('div');
+    el.className = 'item ' + (it.type === 'sticky' ? 'sticky' : it.type === 'text' ? 'textcard' : it.type === 'frame' ? 'frame' : 'shape ' + it.type);
+    el.id = 'item-' + it.id;
+    el.style.left = it.x + 'px';
+    el.style.top = it.y + 'px';
+    el.style.width = it.w + 'px';
+    el.style.height = it.h + 'px';
+    if (it.type === 'sticky' || it.type === 'rect' || it.type === 'ellipse' || it.type === 'diamond') {
+      el.style.background = it.type === 'diamond' ? 'transparent' : it.color;
+      if (it.color === '#1F2937') el.style.color = '#fff';
+    }
+    if (selected.has(it.id)) el.classList.add('sel');
+    if (it.type === 'diamond') el.innerHTML = '<div class="diamond-fill"></div>';
+    if (it.type === 'frame') {
+      const lab = document.createElement('div');
+      lab.className = 'label';
+      lab.textContent = it.text;
+      el.appendChild(lab);
+    }
+    if (editingId === it.id) {
+      const ta = document.createElement('textarea');
+      ta.value = it.text;
+      ta.addEventListener('mousedown', e => e.stopPropagation());
+      ta.addEventListener('blur', () => commitEdit(it.id, ta.value));
+      ta.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.preventDefault(); ta.blur(); }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ta.blur(); }
+      });
+      el.appendChild(ta);
+    } else {
+      const body = document.createElement('div');
+      body.className = 'body';
+      body.textContent = it.type === 'frame' ? '' : it.text;
+      el.appendChild(body);
+    }
+    if (selected.has(it.id) && selected.size === 1 && it.type !== 'text') {
+      ['nw','ne','sw','se'].forEach(dir => {
+        const h = document.createElement('div');
+        h.className = 'handle ' + dir;
+        h.addEventListener('mousedown', e => startResize(e, it.id, dir));
+        el.appendChild(h);
+      });
+    }
+    world.appendChild(el);
+  });
+  renderWires();
+  palette.classList.toggle('show', selected.size === 1 || ['sticky','rect','ellipse','diamond'].includes(tool));
+}
+
+colorRow.innerHTML = COLORS.map(c => `<button class="swatch" style="background:${c}" data-color="${c}"></button>`).join('');
+colorRow.addEventListener('click', e => {
+  const c = e.target.dataset.color;
+  if (!c) return;
+  const items = selectedItems();
+  if (items.length) {
+    pushHist();
+    items.forEach(it => { if (it.type !== 'text' && it.type !== 'frame') it.color = c; });
+    render(); save();
+  }
+});
+
+document.querySelectorAll('.tool[data-tool]').forEach(btn => {
+  btn.addEventListener('click', () => setTool(btn.dataset.tool));
+});
+
+viewport.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1/1.12);
+}, { passive: false });
+
+viewport.addEventListener('dblclick', e => {
+  const p = worldPos(e);
+  const it = itemAt(p);
+  if (it) startEdit(it.id);
+});
+
+viewport.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  if (e.target.closest('textarea') || e.target.classList.contains('handle')) return;
+  const p = worldPos(e);
+  const panMode = tool === 'pan' || spaceDown || e.button === 1;
+  viewport.classList.add('down');
+
+
+  if (panMode) {
+    dragging = { mode: 'pan', x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
+    return;
+  }
+
+  if (['sticky','text','rect','ellipse','diamond','frame'].includes(tool)) {
+    const it = addItem(tool, p.x, p.y);
+    startEdit(it.id);
+    setTool('select');
+    return;
+  }
+
+  if (tool === 'connect') {
+    const it = itemAt(p);
+    if (!it) return;
+    if (!connectingFrom) { connectingFrom = it.id; selectOnly(it.id); return; }
+    if (connectingFrom !== it.id) {
+      pushHist();
+      state.wires.push({ id: uid(), from: connectingFrom, to: it.id });
+      connectingFrom = null;
+      selected.clear();
+      render(); save();
+    }
+    return;
+  }
+
+  const it = itemAt(p);
+  if (it) {
+    if (!selected.has(it.id)) selectOnly(it.id, e.shiftKey);
+    const items = selectedItems().map(n => ({ id: n.id, x: n.x, y: n.y }));
+    dragging = { mode: 'move', x: p.x, y: p.y, items };
+    return;
+  }
+
+  if (!e.shiftKey) { selected.clear(); selectedWire = null; render(); }
+  marquee = { x: p.x, y: p.y, el: document.createElement('div') };
+  marquee.el.className = 'marquee';
+  world.appendChild(marquee.el);
+  dragging = { mode: 'marquee' };
+});
+
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  if (dragging.mode === 'pan') {
+    cam.x = dragging.cx + (e.clientX - dragging.x);
+    cam.y = dragging.cy + (e.clientY - dragging.y);
+    applyCam();
+    return;
+  }
+  const p = worldPos(e);
+  if (dragging.mode === 'move') {
+    const dx = p.x - dragging.x, dy = p.y - dragging.y;
+    dragging.items.forEach(s => {
+      const it = state.items.find(n => n.id === s.id);
+      if (it) { it.x = s.x + dx; it.y = s.y + dy; }
+    });
+    render();
+    return;
+  }
+  if (dragging.mode === 'resize') {
+    const it = state.items.find(n => n.id === dragging.id);
+    if (!it) return;
+    let x = dragging.ox, y = dragging.oy, w = dragging.ow, h = dragging.oh;
+    if (dragging.dir.includes('e')) w = Math.max(60, p.x - x);
+    if (dragging.dir.includes('s')) h = Math.max(40, p.y - y);
+    if (dragging.dir.includes('w')) { w = Math.max(60, dragging.ox + dragging.ow - p.x); x = p.x; }
+    if (dragging.dir.includes('n')) { h = Math.max(40, dragging.oy + dragging.oh - p.y); y = p.y; }
+    it.x = x; it.y = y; it.w = w; it.h = h;
+    render();
+    return;
+  }
+  if (dragging.mode === 'marquee' && marquee) {
+    const x = Math.min(marquee.x, p.x), y = Math.min(marquee.y, p.y);
+    const w = Math.abs(p.x - marquee.x), h = Math.abs(p.y - marquee.y);
+    marquee.el.style.left = x + 'px';
+    marquee.el.style.top = y + 'px';
+    marquee.el.style.width = w + 'px';
+    marquee.el.style.height = h + 'px';
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  viewport.classList.remove('down');
+  if (dragging && dragging.mode === 'move') { pushHist(); save(); }
+  if (dragging && dragging.mode === 'resize') { pushHist(); save(); }
+  if (dragging && dragging.mode === 'pan') save();
+  if (dragging && dragging.mode === 'marquee' && marquee) {
+    const p = worldPos(e);
+    const x1 = Math.min(marquee.x, p.x), y1 = Math.min(marquee.y, p.y);
+    const x2 = Math.max(marquee.x, p.x), y2 = Math.max(marquee.y, p.y);
+    selected.clear();
+    state.items.forEach(it => {
+      if (it.x < x2 && it.x + it.w > x1 && it.y < y2 && it.y + it.h > y1) selected.add(it.id);
+    });
+    marquee.el.remove();
+    marquee = null;
+    render();
+  }
+  dragging = null;
+});
+
+function startResize(e, id, dir) {
+  e.stopPropagation();
+  const it = state.items.find(n => n.id === id);
+  dragging = { mode: 'resize', id, dir, ox: it.x, oy: it.y, ow: it.w, oh: it.h };
+}
+
+window.addEventListener('keydown', e => {
+  if (e.target.matches('textarea, input')) return;
+  if (e.code === 'Space') { spaceDown = true; viewport.classList.add('space'); e.preventDefault(); }
+  if (e.key === 'v' || e.key === 'V') setTool('select');
+  if (e.key === 'h' || e.key === 'H') setTool('pan');
+  if (e.key === 'n' || e.key === 'N') setTool('sticky');
+  if (e.key === 't' || e.key === 'T') setTool('text');
+  if (e.key === 'Delete' || e.key === 'Backspace') deleteSel();
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); duplicateSel(); }
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'Space') { spaceDown = false; viewport.classList.remove('space'); }
+});
+
+function openTemplates() { document.getElementById('tplModal').classList.add('show'); }
+function closeTemplates() { document.getElementById('tplModal').classList.remove('show'); }
+function sticky(x, y, text, color) {
+  return { id: uid(), type: 'sticky', x, y, w: 180, h: 150, text, color };
+}
+function frame(x, y, w, h, text) {
+  return { id: uid(), type: 'frame', x, y, w, h, text, color: 'transparent' };
+}
+function title(x, y, text) {
+  return { id: uid(), type: 'text', x, y, w: 280, h: 48, text, color: 'transparent' };
+}
+function applyTemplate(name) {
+  closeTemplates();
+  pushHist();
+  if (name === 'blank') {
+    state = emptyBoard();
+    selected.clear();
+    cam = { x: 80, y: 60, z: 1 };
+    document.getElementById('boardTitle').value = state.title;
+    render(); save(); return;
+  }
+  if (name === 'swot') {
+    state.items = [
+      title(40, 20, 'SWOT'),
+      frame(40, 80, 360, 260, '強み Strength'),
+      frame(420, 80, 360, 260, '弱み Weakness'),
+      frame(40, 360, 360, 260, '機会 Opportunity'),
+      frame(420, 360, 360, 260, '脅威 Threat'),
+      sticky(70, 130, 'うまくいっていること', '#BBF7D0'),
+      sticky(450, 130, '足りないこと', '#FECACA'),
+      sticky(70, 410, 'これから使えそうな流れ', '#BFDBFE'),
+      sticky(450, 410, 'リスク・制約', '#FED7AA')
+    ];
+    state.wires = [];
+    state.title = 'SWOT';
+  }
+  if (name === 'issue') {
+    const a = sticky(60, 140, 'いま困っていること', '#FECACA');
+    const b = sticky(320, 140, 'なぜ起きている？', '#FED7AA');
+    const c = sticky(580, 140, '次に試す一手', '#BBF7D0');
+    state.items = [title(60, 40, '課題 → 原因 → 打ち手'), a, b, c];
+    state.wires = [{ id: uid(), from: a.id, to: b.id }, { id: uid(), from: b.id, to: c.id }];
+    state.title = '課題整理';
+  }
+  if (name === 'kj') {
+    const notes = ['播種が遅れる','人手が足りない','天気が読めない','資材が高い','品質がばらつく','記録が残らない','伝達漏れ','機械が止まる'];
+    state.items = [title(40, 20, 'KJ法：気になることを出す')].concat(
+      notes.map((t, i) => sticky(40 + (i % 4) * 210, 90 + Math.floor(i / 4) * 180, t, COLORS[i % 6]))
+    );
+    state.wires = [];
+    state.title = 'KJ法';
+  }
+  if (name === '5w1h') {
+    const labels = ['Who 誰が','What 何を','When いつ','Where どこで','Why なぜ','How どうやって'];
+    state.items = [title(40, 20, '5W1H')].concat(
+      labels.map((t, i) => sticky(40 + (i % 3) * 220, 90 + Math.floor(i / 3) * 190, t, COLORS[i % 6]))
+    );
+    state.wires = [];
+    state.title = '5W1H';
+  }
+  document.getElementById('boardTitle').value = state.title;
+  selected.clear();
+  render();
+  fitView();
+  save();
+}
+
+function exportBoard() {
+  const blob = new Blob([JSON.stringify({ state, cam }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (state.title || '思考ボード') + '.json';
+  a.click();
+}
+function importBoard(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      pushHist();
+      state = parsed.state || parsed;
+      cam = parsed.cam || cam;
+      document.getElementById('boardTitle').value = state.title || '無題のボード';
+      selected.clear();
+      render(); save();
+    } catch (err) { alert('読み込めませんでした'); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+function clearBoard() {
+  if (!confirm('ボードの内容をすべて消しますか？')) return;
+  applyTemplate('blank');
+}
+
+document.getElementById('boardTitle').addEventListener('change', save);
+wires.addEventListener('mousedown', e => {
+  const path = e.target.closest('path');
+  if (path && path.dataset.id) {
+    selectedWire = path.dataset.id;
+    selected.clear();
+    render();
+  }
+  e.stopPropagation();
+});
+
+load();
+if (!state.items.length) applyTemplate('issue');
+else render();
+</script>
+</body>
+</html>

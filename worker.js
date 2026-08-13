@@ -8430,36 +8430,8 @@ function createSignboardMarker(name, pos, icon, id) {
       window.renderWorkAssociationSuggestions_ = (workName) => {
         const box = document.getElementById('work_assoc_suggest');
         if (!box) return;
-        const sug = (typeof window.getWorkAssociationSuggestions_ === 'function')
-          ? window.getWorkAssociationSuggestions_(workName)
-          : { details: [], companions: [], sample: 0 };
-        if (!sug.details.length && !sug.companions.length) {
-          box.style.display = 'none';
-          box.innerHTML = '';
-          return;
-        }
-        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        const pct = (r) => Math.round((r || 0) * 100) + '%';
-        const jsArg = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        let html = `<div style="font-weight:bold; color:#2E7D32; font-size:13px; margin-bottom:6px;">📊 「${esc(workName)}」でよくある記録 <span style="font-weight:normal; font-size:11px; color:#66BB6A;">（過去${sug.sample}件）</span></div>`;
-        if (sug.details.length) {
-          html += `<div style="font-size:11px; color:#558B2F; margin-bottom:4px;">よく一緒に記録される詳細</div>`;
-          html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">`;
-          sug.details.forEach((d) => {
-            html += `<button type="button" onclick="applyStatDetailSuggestion('${jsArg(d.name)}')" style="background:#fff; color:#1B5E20; border:1px solid #81C784; border-radius:16px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">${esc(d.name)} <span style="color:#2E7D32; font-size:10px;">${pct(d.rate)}</span></button>`;
-          });
-          html += `</div>`;
-        }
-        if (sug.companions.length) {
-          html += `<div style="font-size:11px; color:#558B2F; margin-bottom:4px;">同じ圃場・同じ日によくある作業</div>`;
-          html += `<div style="display:flex; flex-wrap:wrap; gap:6px;">`;
-          sug.companions.forEach((d) => {
-            html += `<button type="button" onclick="applyStatDetailSuggestion('${jsArg(d.name)}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:16px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">${esc(d.name)} <span style="color:#1976D2; font-size:10px;">${pct(d.rate)}</span></button>`;
-          });
-          html += `</div>`;
-        }
-        box.innerHTML = html;
-        box.style.display = 'block';
+        box.style.display = 'none';
+        box.innerHTML = '';
       };
 
       /**
@@ -9751,11 +9723,11 @@ function createSignboardMarker(name, pos, icon, id) {
           window.renderWorkCategoryButtons(category);
         }
 
-        // 作物セット
+        // 作物セット: 作物名は固定せず未選択（全表示）にして後から自由に選べるようにする
         const cropInput = document.getElementById('rec_work_crop_filter');
-        if (cropInput) cropInput.value = crop;
+        if (cropInput) cropInput.value = '';
         if (typeof window.renderCropFilterButtons === 'function') {
-          window.renderCropFilterButtons(crop);
+          window.renderCropFilterButtons('');
         }
 
         // 作業名セット
@@ -11118,9 +11090,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const looksLikeMaint = (s) => {
           const t = String(s || '');
           if (!t) return false;
-          // 「圃場整備」など圃場作業は除外
-          if (t.includes('圃場') && (t.includes('整備') || t.includes('修理'))) return false;
-          return t.includes('整備') || t.includes('修理') || t.includes('点検');
+          return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
         };
 
         if (looksLikeMaint(name)) return true;

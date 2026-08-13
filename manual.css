@@ -284,8 +284,9 @@ body {
 
 .photo-action-overlay {
   position: absolute;
+  left: 0;
+  right: 0;
   bottom: 0;
-  inset-x: 0;
   background: rgba(0,0,0,0.65);
   display: flex;
   justify-content: space-around;
@@ -387,6 +388,9 @@ body {
 }
 
 .manual-meta-chip {
+  border: 1px solid var(--border-color);
+  background: #fff;
+  color: var(--text-main);
   border-radius: 20px;
   padding: 6px 12px;
   font-size: 12px;
