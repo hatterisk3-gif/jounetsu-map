@@ -5944,6 +5944,238 @@ function resolveCpPaintToolForPlan(planId) {
     return { mode: mode, tool: mode };
 }
 
+const CP_PAINT_QTY_HOLD_MS = 450;
+
+function canEditCpPaintBlockQty_(td) {
+    const task = td && td.dataset.task;
+    return task === 'sowing' || task === 'planting';
+}
+
+function clearCpPaintQtyHoldTimer_(drag) {
+    if (!drag || !drag.qtyHoldTimer) return;
+    clearTimeout(drag.qtyHoldTimer);
+    drag.qtyHoldTimer = 0;
+}
+
+function computeCpLinkedQty_(plan, kind, value) {
+    const pSpaceM = (parseFloat(plan && plan.pSpace) || 0) / 100;
+    const rSpaceM = (parseFloat(plan && plan.rSpace) || 0) / 100;
+    const rows = parseFloat(plan && plan.rows) || 0;
+    const holes = parseFloat(plan && plan.holes) || 1;
+    const seedlingSuccess = Math.max(0.01, parseFloat(plan && plan.seedlingSuccess) || 0.9);
+    const canGeom = pSpaceM > 0 && rSpaceM > 0 && rows > 0;
+    const areaPerPlant = canGeom ? (rSpaceM / rows) * pSpaceM : 0;
+    const unit = holes === 1 ? '株' : '枚';
+
+    if (kind === 'trays') {
+        const trays = Math.max(0, Number(value) || 0);
+        let areaA = Number(plan && plan.areaA) || 0;
+        if (canGeom && areaPerPlant > 0) {
+            const requiredSeedlings = (holes === 1) ? trays : (trays * holes);
+            const totalPlants = Math.floor(requiredSeedlings * seedlingSuccess);
+            areaA = Math.round((totalPlants * areaPerPlant / 100) * 10) / 10;
+        }
+        return { trays: trays, areaA: areaA, unit: unit, canGeom: canGeom };
+    }
+
+    const areaA = Math.max(0, Math.round((Number(value) || 0) * 10) / 10);
+    let trays = Number(plan && plan.trays) || 0;
+    if (canGeom && areaPerPlant > 0 && areaA > 0) {
+        const areaM2 = areaA * 100;
+        const totalPlants = Math.floor(areaM2 / areaPerPlant);
+        const requiredSeedlings = Math.ceil(totalPlants / seedlingSuccess);
+        trays = (holes === 1) ? requiredSeedlings : Math.ceil(requiredSeedlings / holes);
+    }
+    return { trays: trays, areaA: areaA, unit: unit, canGeom: canGeom };
+}
+
+function closeCpPaintQtyEditor() {
+    const pop = document.getElementById('cpPaintQtyPop');
+    if (pop) pop.remove();
+    document.removeEventListener('keydown', onCpPaintQtyEditorKeydown_, true);
+    if (window._cpPaintQtyDocClose) {
+        document.removeEventListener('pointerdown', window._cpPaintQtyDocClose, true);
+        window._cpPaintQtyDocClose = null;
+    }
+}
+window.closeCpPaintQtyEditor = closeCpPaintQtyEditor;
+
+function onCpPaintQtyEditorKeydown_(e) {
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        closeCpPaintQtyEditor();
+    }
+}
+
+function applyCpPaintBlockQty_(planId, kind, value) {
+    const plan = (cpPlans || []).find(p => p && p.id === planId);
+    if (!plan) return false;
+    const decimals = kind === 'trays' ? 0 : 1;
+    const parsed = normalizeCpSelectNumber(value, decimals);
+    if (parsed == null || parsed <= 0) {
+        alert('0より大きい数値を入力してください。');
+        return false;
+    }
+
+    plan.inputMode = kind === 'trays' ? 'trays' : 'area';
+    if (kind === 'trays') plan.trays = parsed;
+    else plan.areaA = parsed;
+
+    const modeSel = document.getElementById('inputMode_' + planId);
+    if (modeSel) modeSel.value = plan.inputMode;
+
+    const el = document.getElementById((kind === 'trays' ? 'trays_' : 'area_') + planId);
+    if (el && typeof window.ensureCpNumericSelectValue === 'function') {
+        window.ensureCpNumericSelectValue(el, parsed, decimals);
+    } else if (el) {
+        el.value = String(parsed);
+    }
+
+    if (typeof rememberCpNumericCandidate === 'function') {
+        rememberCpNumericCandidate(
+            kind === 'trays' ? CP_TRAYS_CANDIDATES_KEY : CP_AREA_CANDIDATES_KEY,
+            parsed
+        );
+    }
+    if (typeof window.updateRowParams === 'function') {
+        window.updateRowParams(planId, kind);
+    } else if (typeof updateRowParams === 'function') {
+        updateRowParams(planId, kind);
+    }
+    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    if (typeof refreshCpPlanLeftSummary === 'function') refreshCpPlanLeftSummary();
+    return true;
+}
+
+function updateCpPaintQtyPreview_(plan, kind, inputEl, followEl) {
+    if (!inputEl || !followEl) return;
+    const raw = String(inputEl.value || '').trim();
+    if (raw === '') {
+        followEl.textContent = '数値を入力すると、もう一方が追随します';
+        followEl.style.color = '#888';
+        return;
+    }
+    const decimals = kind === 'trays' ? 0 : 1;
+    const parsed = normalizeCpSelectNumber(raw, decimals);
+    if (parsed == null || parsed <= 0) {
+        followEl.textContent = '0より大きい数値を入力してください';
+        followEl.style.color = '#c62828';
+        return;
+    }
+    const linked = computeCpLinkedQty_(plan, kind, parsed);
+    if (kind === 'trays') {
+        followEl.textContent = linked.canGeom
+            ? ('定植面積 → ' + linked.areaA + 'a')
+            : '株間・畝間が未設定のため、面積は現状のままです';
+    } else {
+        followEl.textContent = linked.canGeom
+            ? ('播種' + linked.unit + ' → ' + Number(linked.trays).toLocaleString())
+            : '株間・畝間が未設定のため、枚数は現状のままです';
+    }
+    followEl.style.color = '#2e7d32';
+}
+
+function openCpPaintBlockQtyEditor(td, planId) {
+    const plan = (cpPlans || []).find(p => p && p.id === planId);
+    if (!plan || !td) return;
+    const task = td.dataset.task;
+    const kind = task === 'sowing' ? 'trays' : (task === 'planting' ? 'area' : '');
+    if (!kind) return;
+
+    closeCpPaintQtyEditor();
+    clearCpPaintQtyHoldTimer_(cpPaintDrag);
+    cpPaintDrag = null;
+
+    const holes = parseFloat(plan.holes) || 1;
+    const unit = holes === 1 ? '株' : '枚';
+    const isTrays = kind === 'trays';
+    const current = isTrays ? (plan.trays || '') : (plan.areaA || '');
+    const title = isTrays ? ('播種 ' + unit) : '定植 面積(a)';
+
+    const pop = document.createElement('div');
+    pop.id = 'cpPaintQtyPop';
+    pop.style.cssText = 'position:fixed; z-index:10060; background:#fff; border:1px solid #90CAF9; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.22); padding:10px 12px; width:min(260px, calc(100vw - 24px)); box-sizing:border-box; font-family:sans-serif;';
+    pop.innerHTML =
+        '<div style="font-size:12px; font-weight:bold; color:#1565C0; margin-bottom:6px;">' + title + ' を変更</div>' +
+        '<input type="number" id="cpPaintQtyInput" min="0" step="' + (isTrays ? '1' : '0.1') + '" value="' + current + '" style="width:100%; height:32px; padding:4px 8px; border:1px solid #90CAF9; border-radius:6px; font-size:16px; box-sizing:border-box;">' +
+        '<div id="cpPaintQtyFollow" style="font-size:11px; color:#2e7d32; margin-top:6px; line-height:1.35;"></div>' +
+        '<div style="display:flex; gap:6px; margin-top:10px;">' +
+        '<button type="button" id="cpPaintQtyCancel" style="flex:1; height:30px; border:1px solid #ccc; background:#fff; color:#666; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>' +
+        '<button type="button" id="cpPaintQtyOk" style="flex:1; height:30px; border:none; background:#1976D2; color:#fff; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">反映</button>' +
+        '</div>' +
+        '<button type="button" id="cpPaintQtyErase" style="width:100%; margin-top:6px; height:26px; border:none; background:transparent; color:#c62828; font-size:11px; font-weight:bold; cursor:pointer;">このマスを消す</button>';
+
+    document.body.appendChild(pop);
+    const rect = td.getBoundingClientRect();
+    const popRect = pop.getBoundingClientRect();
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    if (left + popRect.width > window.innerWidth - 8) left = window.innerWidth - popRect.width - 8;
+    if (left < 8) left = 8;
+    if (top + popRect.height > window.innerHeight - 8) top = Math.max(8, rect.top - popRect.height - 6);
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+
+    const inputEl = document.getElementById('cpPaintQtyInput');
+    const followEl = document.getElementById('cpPaintQtyFollow');
+    updateCpPaintQtyPreview_(plan, kind, inputEl, followEl);
+    if (inputEl) {
+        inputEl.addEventListener('input', function() { updateCpPaintQtyPreview_(plan, kind, inputEl, followEl); });
+        inputEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (applyCpPaintBlockQty_(planId, kind, inputEl.value)) closeCpPaintQtyEditor();
+            }
+        });
+        setTimeout(function() {
+            try { inputEl.focus(); inputEl.select(); } catch (err) {}
+        }, 30);
+    }
+    const okBtn = document.getElementById('cpPaintQtyOk');
+    const cancelBtn = document.getElementById('cpPaintQtyCancel');
+    const eraseBtn = document.getElementById('cpPaintQtyErase');
+    if (okBtn) okBtn.onclick = function() {
+        if (applyCpPaintBlockQty_(planId, kind, inputEl && inputEl.value)) closeCpPaintQtyEditor();
+    };
+    if (cancelBtn) cancelBtn.onclick = function() { closeCpPaintQtyEditor(); };
+    if (eraseBtn) eraseBtn.onclick = function() {
+        const cellKey = { monthIndex: td.dataset.monthIndex, period: td.dataset.period };
+        const last = cpSemiAutoLastPaint[planId];
+        clearCpCellPaint(td);
+        if (last && isSameSemiAutoCell(last, cellKey)) delete cpSemiAutoLastPaint[planId];
+        syncCpSemiAutoStepForPlan(planId);
+        updateCpCellsText(planId);
+        updateCpSemiAutoHint(planId);
+        if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
+        closeCpPaintQtyEditor();
+    };
+
+    const onDoc = function(e) {
+        if (pop.contains(e.target)) return;
+        closeCpPaintQtyEditor();
+    };
+    window._cpPaintQtyDocClose = onDoc;
+    setTimeout(function() {
+        document.addEventListener('pointerdown', onDoc, true);
+    }, 0);
+    document.addEventListener('keydown', onCpPaintQtyEditorKeydown_, true);
+}
+window.openCpPaintBlockQtyEditor = openCpPaintBlockQtyEditor;
+
+function startCpPaintQtyHold_(td, planId, drag) {
+    if (!drag || !canEditCpPaintBlockQty_(td)) return;
+    clearCpPaintQtyHoldTimer_(drag);
+    drag.qtyHoldTimer = setTimeout(function() {
+        if (!cpPaintDrag || cpPaintDrag !== drag) return;
+        drag.qtyHoldTimer = 0;
+        drag.qtyEdit = true;
+        drag.touchTap = false;
+        drag.dragged = true;
+        try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) {}
+        openCpPaintBlockQtyEditor(td, planId);
+    }, CP_PAINT_QTY_HOLD_MS);
+}
+
 function bindCpCellPaintEvents(td, planId) {
     td.onpointerdown = function(e) {
         if (e.button != null && e.button !== 0) return;
@@ -5959,8 +6191,11 @@ function bindCpCellPaintEvents(td, planId) {
                 startX: e.clientX,
                 startY: e.clientY,
                 dragged: false,
-                singlePoint: false
+                singlePoint: false,
+                qtyHoldTimer: 0,
+                qtyEdit: false
             };
+            startCpPaintQtyHold_(td, planId, cpPaintDrag);
             return;
         }
         // スクロールとの競合を抑えつつドラッグ塗りを開始
@@ -5978,20 +6213,36 @@ function bindCpCellPaintEvents(td, planId) {
             tool: resolved.tool,
             singlePoint: singlePoint,
             rowSnapshot: singlePoint ? null : captureCpPaintRow(planId),
-            dragged: false
+            dragged: false,
+            startX: e.clientX,
+            startY: e.clientY,
+            qtyHoldTimer: 0,
+            qtyEdit: false
         };
+        startCpPaintQtyHold_(td, planId, cpPaintDrag);
     };
 
     td.onpointermove = function(e) {
         if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
         if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
+        if (cpPaintDrag.qtyEdit) return;
         if (cpPaintDrag.touchTap) {
             const moved = Math.hypot(
                 e.clientX - cpPaintDrag.startX,
                 e.clientY - cpPaintDrag.startY
             );
-            if (moved > 8) cpPaintDrag = null;
+            if (moved > 8) {
+                clearCpPaintQtyHoldTimer_(cpPaintDrag);
+                cpPaintDrag = null;
+            }
             return;
+        }
+        if (cpPaintDrag.startX != null && cpPaintDrag.startY != null) {
+            const moved = Math.hypot(
+                e.clientX - cpPaintDrag.startX,
+                e.clientY - cpPaintDrag.startY
+            );
+            if (moved > 6) clearCpPaintQtyHoldTimer_(cpPaintDrag);
         }
         // 播種・定植はドラッグ連続塗りしない（1点ずつ）
         if (cpPaintDrag.singlePoint) return;
@@ -6007,6 +6258,7 @@ function bindCpCellPaintEvents(td, planId) {
 
         if (!cpPaintDrag.dragged) {
             if (col === cpPaintDrag.startCol) return;
+            clearCpPaintQtyHoldTimer_(cpPaintDrag);
             // 隣の枠へ動いたらドラッグ塗り開始（始点も強制塗り）
             cpPaintDrag.dragged = true;
             restoreCpPaintRow(cpPaintDrag.rowSnapshot);
@@ -6029,7 +6281,9 @@ function bindCpCellPaintEvents(td, planId) {
         if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
         if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
         const drag = cpPaintDrag;
+        clearCpPaintQtyHoldTimer_(drag);
         cpPaintDrag = null;
+        if (drag.qtyEdit) return;
         if (drag.touchTap) {
             toggleCpCell(drag.startTd, planId);
             return;
@@ -6065,7 +6319,14 @@ function bindCpCellPaintEvents(td, planId) {
     td.onpointercancel = function(e) {
         if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
         if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
+        clearCpPaintQtyHoldTimer_(cpPaintDrag);
         cpPaintDrag = null;
+    };
+    td.oncontextmenu = function(e) {
+        if (!canEditCpPaintBlockQty_(td)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openCpPaintBlockQtyEditor(td, planId);
     };
 }
 window.bindCpCellPaintEvents = bindCpCellPaintEvents;
@@ -6080,6 +6341,12 @@ function toggleCpCell(td, planId) {
         tool = getSemiAutoTool(step);
         const cellKey = { monthIndex: td.dataset.monthIndex, period: td.dataset.period };
         const last = cpSemiAutoLastPaint[planId];
+
+        // 播種・定植ブロックはクリックで数値変更（短押しで消さない）
+        if (td.dataset.task === 'sowing' || td.dataset.task === 'planting') {
+            openCpPaintBlockQtyEditor(td, planId);
+            return;
+        }
 
         // 塗りつぶし済みのマスは、工程や操作順に関係なくクリックで消す
         if (td.dataset.task) {
@@ -6122,6 +6389,11 @@ function toggleCpCell(td, planId) {
         if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
         return;
     }
+
+    if (td.dataset.task === 'sowing' || td.dataset.task === 'planting') {
+        openCpPaintBlockQtyEditor(td, planId);
+        return;
+    }
     
     applyPaintTool(td, tool, planId);
     syncCpSemiAutoStepForPlan(planId);
@@ -6148,6 +6420,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                 div.innerHTML = plan.trays > 0
                     ? `<span style="color:#fff; font-size:10px; font-weight:bold; line-height:1.1;">${plan.trays}${plan.holes === 1 ? '株' : '枚'}</span>`
                     : '';
+                td.title = 'クリック／長押しで' + (plan.holes === 1 ? '株数' : '枚数') + 'を変更（定植面積も追随）';
             });
             
             const plantingCells = tr.querySelectorAll('td[data-task="planting"]');
@@ -6160,6 +6433,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                 div.innerHTML = plan.areaA > 0
                     ? `<span style="color:#fff; font-size:10px; font-weight:bold; line-height:1.1;">${plan.areaA}a</span>`
                     : '';
+                td.title = 'クリック／長押しで面積を変更（播種枚数も追随）';
             });
             
             const harvestCells = tr.querySelectorAll('td[data-task="harvesting"]');
