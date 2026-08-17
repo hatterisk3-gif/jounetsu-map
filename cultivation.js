@@ -5112,7 +5112,7 @@ function renderCpPlanRow(plan, options) {
         <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
             <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0; font-weight:bold;">${escapeCpHtmlAttr(plan.crop || '作物未設定')}</span>
             ${fileLinkHtml}
-            <span id="cpHarvestPeriodCount_${plan.id}" title="" style="display:none; flex-shrink:0; font-size:9px; font-weight:bold; color:#E65100; line-height:1; font-variant-numeric:tabular-nums;"></span>
+            <span id="cpHarvestPeriodCount_${plan.id}" title="" style="display:none; flex-shrink:0; min-width:14px; height:14px; padding:0 4px; box-sizing:border-box; border-radius:7px; background:#FFE0B2; color:#E65100; border:1px solid #FFB74D; font-size:9px; font-weight:bold; line-height:12px; text-align:center; font-variant-numeric:tabular-nums;"></span>
             <span id="tagDisplay_${plan.id}" title="${escapeCpHtmlAttr(plan.tag || '')}" style="color:#e91e63; font-size:8px; font-weight:bold; margin-left:auto; min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; letter-spacing:-0.04em;">${plan.tag || ''}</span>
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:13px; line-height:1; padding:0; width:14px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
@@ -6075,6 +6075,34 @@ function updateCpPaintQtyPreview_(plan, kind, inputEl, followEl) {
     followEl.style.color = '#2e7d32';
 }
 
+function buildCpPaintQtySelectOptionsHtml_(kind, currentVal) {
+    const opts = kind === 'trays'
+        ? (typeof getCpTraysSelectOptions === 'function' ? getCpTraysSelectOptions(currentVal) : [])
+        : (typeof getCpAreaSelectOptions === 'function' ? getCpAreaSelectOptions(currentVal) : []);
+    const selected = (currentVal === '' || currentVal == null) ? null : Number(currentVal);
+    let html = '<option value="">リストから選ぶ</option>';
+    (opts || []).forEach(v => {
+        const num = Number(v);
+        if (!isFinite(num) || num <= 0) return;
+        const sel = (selected != null && isFinite(selected) && num === selected) ? ' selected' : '';
+        const style = (typeof styleForCpNumericOption_ === 'function') ? styleForCpNumericOption_(num) : '';
+        html += '<option value="' + num + '"' + sel + style + '>' + num + '</option>';
+    });
+    return html;
+}
+
+function syncCpPaintQtySelectToInput_(sel, inputEl, decimals) {
+    if (!sel || !inputEl) return;
+    const parsed = normalizeCpSelectNumber(inputEl.value, decimals);
+    if (parsed == null) {
+        sel.value = '';
+        return;
+    }
+    const key = String(parsed);
+    if (Array.from(sel.options).some(o => o.value === key)) sel.value = key;
+    else sel.value = '';
+}
+
 function openCpPaintBlockQtyEditor(td, planId) {
     const plan = (cpPlans || []).find(p => p && p.id === planId);
     if (!plan || !td) return;
@@ -6089,21 +6117,39 @@ function openCpPaintBlockQtyEditor(td, planId) {
     const holes = parseFloat(plan.holes) || 1;
     const unit = holes === 1 ? '株' : '枚';
     const isTrays = kind === 'trays';
+    const decimals = isTrays ? 0 : 1;
     const current = isTrays ? (plan.trays || '') : (plan.areaA || '');
-    const title = isTrays ? ('播種 ' + unit) : '定植 面積(a)';
+    const title = isTrays ? ('播種 ' + unit) : '定植 面積 (a)';
+    const headerBg = isTrays ? '#EFEBE9' : '#E8F5E9';
+    const headerFg = isTrays ? '#5D4037' : '#2E7D32';
+    const headerBd = isTrays ? '#D7CCC8' : '#C8E6C9';
+    const accent = isTrays ? '#6D4C41' : '#2E7D32';
 
     const pop = document.createElement('div');
     pop.id = 'cpPaintQtyPop';
-    pop.style.cssText = 'position:fixed; z-index:10060; background:#fff; border:1px solid #90CAF9; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.22); padding:10px 12px; width:min(260px, calc(100vw - 24px)); box-sizing:border-box; font-family:sans-serif;';
+    pop.style.cssText = 'position:fixed; z-index:10060; background:#fff; border:1px solid ' + headerBd + '; border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,0.22); width:min(300px, calc(100vw - 24px)); box-sizing:border-box; font-family:sans-serif; overflow:hidden;';
     pop.innerHTML =
-        '<div style="font-size:12px; font-weight:bold; color:#1565C0; margin-bottom:6px;">' + title + ' を変更</div>' +
-        '<input type="number" id="cpPaintQtyInput" min="0" step="' + (isTrays ? '1' : '0.1') + '" value="' + current + '" style="width:100%; height:32px; padding:4px 8px; border:1px solid #90CAF9; border-radius:6px; font-size:16px; box-sizing:border-box;">' +
-        '<div id="cpPaintQtyFollow" style="font-size:11px; color:#2e7d32; margin-top:6px; line-height:1.35;"></div>' +
-        '<div style="display:flex; gap:6px; margin-top:10px;">' +
-        '<button type="button" id="cpPaintQtyCancel" style="flex:1; height:30px; border:1px solid #ccc; background:#fff; color:#666; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>' +
-        '<button type="button" id="cpPaintQtyOk" style="flex:1; height:30px; border:none; background:#1976D2; color:#fff; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">反映</button>' +
+        '<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; background:' + headerBg + '; border-bottom:1px solid ' + headerBd + ';">' +
+          '<div style="font-size:13px; font-weight:bold; color:' + headerFg + ';">' + title + '</div>' +
+          '<button type="button" id="cpPaintQtyCloseX" title="閉じる" style="width:28px; height:28px; border:none; background:transparent; color:#888; font-size:20px; line-height:1; cursor:pointer; border-radius:6px;">×</button>' +
         '</div>' +
-        '<button type="button" id="cpPaintQtyErase" style="width:100%; margin-top:6px; height:26px; border:none; background:transparent; color:#c62828; font-size:11px; font-weight:bold; cursor:pointer;">このマスを消す</button>';
+        '<div style="padding:12px;">' +
+          '<label style="display:block; font-size:11px; font-weight:bold; color:#666; margin-bottom:4px;">リストから選択</label>' +
+          '<select id="cpPaintQtySelect" style="width:100%; height:34px; padding:4px 8px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; background:#fff;">' +
+            buildCpPaintQtySelectOptionsHtml_(kind, current) +
+          '</select>' +
+          '<label style="display:block; font-size:11px; font-weight:bold; color:#666; margin:10px 0 4px;">手入力</label>' +
+          '<div style="display:flex; align-items:center; gap:6px;">' +
+            '<input type="number" id="cpPaintQtyInput" min="0" step="' + (isTrays ? '1' : '0.1') + '" value="' + current + '" inputmode="decimal" style="flex:1; min-width:0; height:34px; padding:4px 8px; border:1px solid #90CAF9; border-radius:8px; font-size:16px; box-sizing:border-box;">' +
+            '<span style="flex-shrink:0; font-size:12px; font-weight:bold; color:#555;">' + (isTrays ? unit : 'a') + '</span>' +
+          '</div>' +
+          '<div id="cpPaintQtyFollow" style="font-size:11px; color:#2e7d32; margin-top:8px; min-height:16px; line-height:1.4;"></div>' +
+          '<div style="display:flex; gap:8px; margin-top:12px;">' +
+            '<button type="button" id="cpPaintQtyCancel" style="flex:1; height:36px; border:1px solid #ccc; background:#fff; color:#555; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer;">閉じる</button>' +
+            '<button type="button" id="cpPaintQtyOk" style="flex:1.4; height:36px; border:none; background:' + accent + '; color:#fff; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer;">反映する</button>' +
+          '</div>' +
+          '<button type="button" id="cpPaintQtyErase" style="width:100%; margin-top:8px; height:34px; border:1px solid #EF9A9A; background:#FFEBEE; color:#C62828; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">このマスを消す</button>' +
+        '</div>';
 
     document.body.appendChild(pop);
     const rect = td.getBoundingClientRect();
@@ -6117,10 +6163,24 @@ function openCpPaintBlockQtyEditor(td, planId) {
     pop.style.top = top + 'px';
 
     const inputEl = document.getElementById('cpPaintQtyInput');
+    const selectEl = document.getElementById('cpPaintQtySelect');
     const followEl = document.getElementById('cpPaintQtyFollow');
-    updateCpPaintQtyPreview_(plan, kind, inputEl, followEl);
+    const refreshPreview = function() {
+        updateCpPaintQtyPreview_(plan, kind, inputEl, followEl);
+    };
+    refreshPreview();
+    if (selectEl) {
+        selectEl.addEventListener('change', function() {
+            if (!selectEl.value) return;
+            if (inputEl) inputEl.value = selectEl.value;
+            refreshPreview();
+        });
+    }
     if (inputEl) {
-        inputEl.addEventListener('input', function() { updateCpPaintQtyPreview_(plan, kind, inputEl, followEl); });
+        inputEl.addEventListener('input', function() {
+            syncCpPaintQtySelectToInput_(selectEl, inputEl, decimals);
+            refreshPreview();
+        });
         inputEl.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -6133,11 +6193,13 @@ function openCpPaintBlockQtyEditor(td, planId) {
     }
     const okBtn = document.getElementById('cpPaintQtyOk');
     const cancelBtn = document.getElementById('cpPaintQtyCancel');
+    const closeX = document.getElementById('cpPaintQtyCloseX');
     const eraseBtn = document.getElementById('cpPaintQtyErase');
     if (okBtn) okBtn.onclick = function() {
         if (applyCpPaintBlockQty_(planId, kind, inputEl && inputEl.value)) closeCpPaintQtyEditor();
     };
     if (cancelBtn) cancelBtn.onclick = function() { closeCpPaintQtyEditor(); };
+    if (closeX) closeX.onclick = function() { closeCpPaintQtyEditor(); };
     if (eraseBtn) eraseBtn.onclick = function() {
         const cellKey = { monthIndex: td.dataset.monthIndex, period: td.dataset.period };
         const last = cpSemiAutoLastPaint[planId];
@@ -6152,6 +6214,7 @@ function openCpPaintBlockQtyEditor(td, planId) {
 
     const onDoc = function(e) {
         if (pop.contains(e.target)) return;
+        if (selectEl && (e.target === selectEl || document.activeElement === selectEl)) return;
         closeCpPaintQtyEditor();
     };
     window._cpPaintQtyDocClose = onDoc;
@@ -6443,7 +6506,9 @@ function updateCpCellsText(planId, forceRatioRebuild) {
             const periodCountEl = document.getElementById('cpHarvestPeriodCount_' + plan.id);
             if (periodCountEl) {
                 if (harvestCount > 0) {
-                    periodCountEl.style.display = 'inline';
+                    periodCountEl.style.display = 'inline-flex';
+                    periodCountEl.style.alignItems = 'center';
+                    periodCountEl.style.justifyContent = 'center';
                     periodCountEl.textContent = String(harvestCount);
                     periodCountEl.title = '収穫 ' + harvestCount + '半旬';
                 } else {
