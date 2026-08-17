@@ -413,11 +413,11 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1786464000000';
+    const cacheBust = '1786649400000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
-      'cultivation.js', 'cost_calc.js', 'crop_work.js'
+      'variety_maker_catalog.js', 'cultivation.js', 'cost_calc.js', 'crop_work.js'
     ];
     const bootstrapTotalSteps = bootstrapFiles.length;
     const bootstrapLoading = window.AppLoading
@@ -525,6 +525,7 @@
       .then(() => appendScript('attendance-calendar.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('attendance-calendar.js')))
       .then(() => appendScript('market.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('market.js')))
       .then(() => appendScript('tracking.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('tracking.js')))
+      .then(() => appendScript('variety_maker_catalog.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('variety_maker_catalog.js')))
       .then(() => appendScript('cultivation.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cultivation.js')))
       .then(() => appendScript('cost_calc.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cost_calc.js')))
       .then(() => appendScript('crop_work.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('crop_work.js')))
