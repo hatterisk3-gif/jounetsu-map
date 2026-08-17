@@ -191,6 +191,8 @@ function doPost(e) {
     else if (action === "getAttendanceCalendar") result = getAttendanceCalendar(params);
     else if (action === "setLeaveDay") result = setLeaveDay(params);
     else if (action === "clearLeaveDay") result = clearLeaveDay(params);
+    else if (action === "saveWeeklyOffDays") result = saveWeeklyOffDays(params);
+    else if (action === "setWorkDayException") result = setWorkDayException(params);
     else if (action === "getAttendanceSettings") result = getAttendanceSettings(params);
     else if (action === "saveAttendanceSettings") result = saveAttendanceSettings(params);
     else if (action === "updateStaffHireDate") result = updateStaffHireDate(params);
@@ -12427,6 +12429,123 @@ function setAttendanceSettingValue_(key, value) {
   sheet.appendRow([key, value]);
 }
 
+function ensureWeeklyOffSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('週定休設定');
+  if (!sheet) {
+    sheet = ss.insertSheet('週定休設定');
+    sheet.appendRow(['スタッフID', 'ユーザー名', '定休曜日', '出勤例外', '更新者', '更新日時']);
+    return sheet;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let hasEx = false;
+  for (let c = 0; c < headers.length; c++) {
+    if (String(headers[c] || '').trim() === '出勤例外') hasEx = true;
+  }
+  if (!hasEx) {
+    sheet.getRange(1, lastCol + 1).setValue('出勤例外');
+  }
+  return sheet;
+}
+
+function parseCsvWeekdays_(s) {
+  const out = [];
+  String(s || '').split(/[,、\s]+/).forEach(function (x) {
+    const n = parseInt(x, 10);
+    if (!isNaN(n) && n >= 0 && n <= 6 && out.indexOf(n) < 0) out.push(n);
+  });
+  out.sort(function (a, b) { return a - b; });
+  return out;
+}
+
+function parseCsvYmdList_(s) {
+  const out = [];
+  String(s || '').split(/[,、\s]+/).forEach(function (x) {
+    const ymd = attFormatYmd_(attParseYmd_(x));
+    if (ymd && out.indexOf(ymd) < 0) out.push(ymd);
+  });
+  return out;
+}
+
+function normalizeWeekdayList_(raw) {
+  const src = Array.isArray(raw) ? raw : parseCsvWeekdays_(raw);
+  const out = [];
+  src.forEach(function (x) {
+    const n = parseInt(x, 10);
+    if (!isNaN(n) && n >= 0 && n <= 6 && out.indexOf(n) < 0) out.push(n);
+  });
+  out.sort(function (a, b) { return a - b; });
+  return out;
+}
+
+function loadWeeklyOff_(userId, userName) {
+  const sheet = ensureWeeklyOffSheet_();
+  const empty = { weeklyOffDays: [], workExceptions: [], sheetRow: 0 };
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return empty;
+  const lastCol = Math.max(sheet.getLastColumn(), 6);
+  const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const uid = String(userId || '').trim();
+  const uname = String(userName || '').trim();
+  for (let i = 0; i < values.length; i++) {
+    const rowUid = String(values[i][0] || '').trim();
+    const rowName = String(values[i][1] || '').trim();
+    let match = false;
+    if (uid) {
+      if (rowUid) match = (rowUid === uid);
+      else if (uname) match = (rowName === uname);
+    } else if (uname) {
+      match = (rowName === uname);
+    }
+    if (!match) continue;
+    return {
+      weeklyOffDays: parseCsvWeekdays_(values[i][2]),
+      workExceptions: parseCsvYmdList_(values[i][3]),
+      sheetRow: i + 2
+    };
+  }
+  return empty;
+}
+
+function writeWeeklyOffRow_(target, weeklyOffDays, workExceptions, actor, sheetRow) {
+  const sheet = ensureWeeklyOffSheet_();
+  const days = normalizeWeekdayList_(weeklyOffDays);
+  const keptEx = [];
+  (workExceptions || []).forEach(function (ymd) {
+    const d = attParseYmd_(ymd);
+    if (!d) return;
+    if (days.indexOf(d.getDay()) < 0) return;
+    const formatted = attFormatYmd_(d);
+    if (keptEx.indexOf(formatted) < 0) keptEx.push(formatted);
+  });
+  const row = [
+    target.userId,
+    target.userName,
+    days.join(','),
+    keptEx.join(','),
+    actor,
+    new Date()
+  ];
+  if (sheetRow) {
+    sheet.getRange(sheetRow, 1, 1, 6).setValues([row]);
+  } else {
+    sheet.appendRow(row);
+  }
+  return { weeklyOffDays: days, workExceptions: keptEx };
+}
+
+function resolveAttendanceTarget_(requesterId, targetUserId, targetUserName) {
+  const requester = findMeiboUser_(requesterId, '');
+  const target = findMeiboUser_(targetUserId, targetUserName);
+  if (!target) return { error: { success: false, message: '対象ユーザーが見つかりません' } };
+  const isAdmin = requester && attIsAdminRole_(requester.role);
+  if (!requester || (requester.userId !== target.userId && !isAdmin)) {
+    return { error: { success: false, message: '設定する権限がありません' } };
+  }
+  return { requester: requester, target: target, isAdmin: isAdmin };
+}
+
 /** 労基法の年次有給付与日数（週5日以上想定） */
 function calcStatutoryPaidLeaveDays_(hireDate, asOfDate) {
   if (!hireDate || !asOfDate) return 0;
@@ -12672,6 +12791,7 @@ function getAttendanceCalendar(params) {
   }
   const asOf = new Date();
   const leaveRows = loadLeaveRows_(target.userId, target.userName);
+  const weeklyOff = loadWeeklyOff_(target.userId, target.userName);
   const attendanceDays = loadAttendanceDaysFromTracking_(target.userName, year, month);
   const settings = getAttendanceSettingsMap_();
   const monthCounts = countLeavesInMonth_(leaveRows, year, month);
@@ -12698,7 +12818,9 @@ function getAttendanceCalendar(params) {
     unpaidYearlyLimit: settings.unpaidYearlyLimit,
     attendanceDays: attendanceDays,
     leaveDays: monthLeaves,
-    allLeaveDays: leaveRows
+    allLeaveDays: leaveRows,
+    weeklyOffDays: weeklyOff.weeklyOffDays,
+    workExceptions: weeklyOff.workExceptions
   };
 }
 
@@ -12712,6 +12834,13 @@ function setLeaveDay(params) {
   if (!dateYmd) return { success: false, message: '日付が不正です' };
   if (['有給', '公休', 'その他'].indexOf(leaveType) < 0) {
     return { success: false, message: '休暇種別が不正です' };
+  }
+  if (leaveType === '有給' && !note) {
+    return {
+      success: false,
+      message: '有給を設定するには理由を入力してください',
+      code: 'PAID_LEAVE_REASON_REQUIRED'
+    };
   }
   const requester = findMeiboUser_(requesterId, '');
   const target = findMeiboUser_(targetUserId, params && params.targetUserName);
@@ -12759,13 +12888,17 @@ function setLeaveDay(params) {
   const sheet = ensureAttendanceLeaveSheet_();
   const actor = requester.userName || requesterId;
   if (existing) {
-    sheet.getRange(existing.sheetRow, 1, existing.sheetRow, 7).setValues([[
+    sheet.getRange(existing.sheetRow, 1, 1, 7).setValues([[
       target.userId, target.userName, dateYmd, leaveType, note, actor, new Date()
     ]]);
   } else {
     sheet.appendRow([target.userId, target.userName, dateYmd, leaveType, note, actor, new Date()]);
   }
   writeLog(actor, '休暇設定', target.userName, dateYmd + ' ' + leaveType);
+  const weekly = loadWeeklyOff_(target.userId, target.userName);
+  if (weekly.workExceptions.indexOf(dateYmd) >= 0) {
+    writeWeeklyOffRow_(target, weekly.weeklyOffDays, weekly.workExceptions.filter(function (d) { return d !== dateYmd; }), actor, weekly.sheetRow);
+  }
   return { success: true, message: '休みを設定しました' };
 }
 
@@ -12787,6 +12920,62 @@ function clearLeaveDay(params) {
   ensureAttendanceLeaveSheet_().deleteRow(existing.sheetRow);
   writeLog(requester.userName || requesterId, '休暇削除', target.userName, dateYmd);
   return { success: true, message: '休みを解除しました' };
+}
+
+function saveWeeklyOffDays(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const targetUserId = String((params && params.targetUserId) || requesterId).trim();
+  const resolved = resolveAttendanceTarget_(requesterId, targetUserId, params && params.targetUserName);
+  if (resolved.error) return resolved.error;
+  const target = resolved.target;
+  const actor = resolved.requester.userName || requesterId;
+  const rec = loadWeeklyOff_(target.userId, target.userName);
+  const saved = writeWeeklyOffRow_(target, params && params.weeklyOffDays, rec.workExceptions, actor, rec.sheetRow);
+  writeLog(actor, '週定休設定', target.userName, (saved.weeklyOffDays || []).join(',') || '(なし)');
+  return {
+    success: true,
+    message: '毎週の定休日を保存しました',
+    weeklyOffDays: saved.weeklyOffDays,
+    workExceptions: saved.workExceptions
+  };
+}
+
+function setWorkDayException(params) {
+  const requesterId = String((params && params.requesterId) || '').trim();
+  const targetUserId = String((params && params.targetUserId) || requesterId).trim();
+  const dateYmd = attFormatYmd_(attParseYmd_(params && params.date));
+  if (!dateYmd) return { success: false, message: '日付が不正です' };
+  const resolved = resolveAttendanceTarget_(requesterId, targetUserId, params && params.targetUserName);
+  if (resolved.error) return resolved.error;
+  const target = resolved.target;
+  const actor = resolved.requester.userName || requesterId;
+  const rec = loadWeeklyOff_(target.userId, target.userName);
+  const d = attParseYmd_(dateYmd);
+  const rawWork = params && params.isWork;
+  const isWork = rawWork === true || rawWork === 'true' || rawWork === 1 || rawWork === '1';
+  if (isWork && rec.weeklyOffDays.indexOf(d.getDay()) < 0) {
+    return { success: false, message: '定休日ではないため出勤例外は不要です' };
+  }
+  const leaveRows = loadLeaveRows_(target.userId, target.userName);
+  const existingLeave = leaveRows.filter(function (r) { return r.date === dateYmd; })[0];
+  if (isWork && existingLeave) {
+    ensureAttendanceLeaveSheet_().deleteRow(existingLeave.sheetRow);
+  }
+  let ex = rec.workExceptions.slice();
+  const idx = ex.indexOf(dateYmd);
+  if (isWork) {
+    if (idx < 0) ex.push(dateYmd);
+  } else if (idx >= 0) {
+    ex.splice(idx, 1);
+  }
+  const saved = writeWeeklyOffRow_(target, rec.weeklyOffDays, ex, actor, rec.sheetRow);
+  writeLog(actor, isWork ? '定休出勤' : '定休復帰', target.userName, dateYmd);
+  return {
+    success: true,
+    message: isWork ? 'この日を出勤日にしました' : 'この日を定休に戻しました',
+    weeklyOffDays: saved.weeklyOffDays,
+    workExceptions: saved.workExceptions
+  };
 }
 
 function getAttendanceSettings(params) {

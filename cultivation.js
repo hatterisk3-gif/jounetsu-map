@@ -5112,6 +5112,7 @@ function renderCpPlanRow(plan, options) {
         <div style="display:flex; align-items:center; gap:3px; min-height:18px;">
             <span style="background:#1976D2; color:#fff; padding:0 4px; border-radius:7px; font-size:9px; flex-shrink:0; font-weight:bold;">${escapeCpHtmlAttr(plan.crop || '作物未設定')}</span>
             ${fileLinkHtml}
+            <span id="cpHarvestPeriodCount_${plan.id}" title="" style="display:none; flex-shrink:0; font-size:9px; font-weight:bold; color:#E65100; line-height:1; font-variant-numeric:tabular-nums;"></span>
             <span id="tagDisplay_${plan.id}" title="${escapeCpHtmlAttr(plan.tag || '')}" style="color:#e91e63; font-size:8px; font-weight:bold; margin-left:auto; min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; letter-spacing:-0.04em;">${plan.tag || ''}</span>
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:13px; line-height:1; padding:0; width:14px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
@@ -5129,7 +5130,6 @@ function renderCpPlanRow(plan, options) {
             <span id="qtyLabel_${plan.id}" style="display:none;">${qtyWord}</span>
             <span id="unitTraysInput_${plan.id}" style="display:none;">${qtyWord}</span>
         </div>
-        <div id="cpHarvestPeriodCount_${plan.id}" style="display:none; margin-top:2px; font-size:10px; font-weight:bold; color:#E65100; line-height:1.2;"></div>
         <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:3px; font-size:10px; flex-direction:column; gap:2px; background:#fff; padding:3px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
           <div id="cpSeedProcure_${plan.id}" style="font-size:9px; color:#bf360c; font-weight:bold; line-height:1.25;"></div>
           <div id="cpFinance_${plan.id}" style="font-size:9px; line-height:1.3; font-weight:bold;"></div>
@@ -6165,13 +6165,13 @@ function updateCpCellsText(planId, forceRatioRebuild) {
             const harvestCells = tr.querySelectorAll('td[data-task="harvesting"]');
             const harvestCount = harvestCells.length;
 
-            // 品種カード上（収穫期間の直上）に半旬数を表示
+            // 作物バッジ横に半旬数だけ（行を増やさない）
             const periodCountEl = document.getElementById('cpHarvestPeriodCount_' + plan.id);
             if (periodCountEl) {
                 if (harvestCount > 0) {
-                    periodCountEl.style.display = 'block';
-                    periodCountEl.textContent = '収穫期間 ' + harvestCount + '半旬';
-                    periodCountEl.title = 'この品種カードで塗った収穫半旬の数';
+                    periodCountEl.style.display = 'inline';
+                    periodCountEl.textContent = String(harvestCount);
+                    periodCountEl.title = '収穫 ' + harvestCount + '半旬';
                 } else {
                     periodCountEl.style.display = 'none';
                     periodCountEl.textContent = '';
@@ -6194,7 +6194,6 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                 if (needRebuild) {
                     let html = '';
                     if (harvestCount > 0) {
-                        html += `<div id="harvestPeriodCountLabel_${plan.id}" style="width:100%; font-size:10px; font-weight:bold; color:#E65100; margin-bottom:2px;">収穫期間 ${harvestCount}半旬</div>`;
                         html += `<div id="harvestRatioLabel_${plan.id}" style="width:100%; font-size:10px; color:${colorStyle}; margin-bottom:2px;">収穫割合:${ratioText}</div>`;
                         for (let i = 0; i < harvestCount; i++) {
                             let usedBefore = 0;
@@ -6210,8 +6209,6 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                     ratioContainer.dataset.harvestCount = String(harvestCount);
                 } else if (harvestCount > 0) {
                     // 枠数は同じ → ラベルだけ更新（DOM再生成でスクロールが飛ぶのを防ぐ）
-                    const periodLabel = document.getElementById('harvestPeriodCountLabel_' + plan.id);
-                    if (periodLabel) periodLabel.textContent = '収穫期間 ' + harvestCount + '半旬';
                     const label = document.getElementById('harvestRatioLabel_' + plan.id);
                     if (label) {
                         label.textContent = '収穫割合:' + ratioText;

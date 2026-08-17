@@ -9,7 +9,8 @@
     works: [],
     categories: ['圃場作業', '圃場農機作業', '事務作業', '保全・整備'],
     drag: null,
-    draft: null
+    draft: null,
+    attendance: null
   };
 
   function formatYmd(d) {
@@ -75,9 +76,68 @@
     return localStorage.getItem('passionMapUserId') || '';
   }
 
-  function userName() {
-    return localStorage.getItem('passionMapUserName') || '';
+  function dpDayStatus(ymd) {
+    const att = window._dayPlan.attendance;
+    if (!att) return { kind: 'unknown' };
+    const leave = (att.allLeaveDays || att.leaveDays || []).filter(function (r) { return r.date === ymd; })[0];
+    if (leave) return { kind: 'leave', leaveType: leave.leaveType, note: leave.note || '' };
+    const weekly = att.weeklyOffDays || [];
+    const exceptions = att.workExceptions || [];
+    const p = String(ymd || '').split('-').map(Number);
+    const wd = (p.length >= 3) ? new Date(p[0], p[1] - 1, p[2]).getDay() : -1;
+    if (wd >= 0 && weekly.indexOf(wd) >= 0 && exceptions.indexOf(ymd) < 0) return { kind: 'weeklyOff' };
+    return { kind: 'planned' };
   }
+
+  window.dpRenderAttendBar = function () {
+    const bar = document.getElementById('dpAttendBar');
+    if (!bar) return;
+    const ymd = window._dayPlan.date;
+    const st = dpDayStatus(ymd);
+    let cls = 'dp-attend-bar';
+    let text = '出勤予定の日です。時間ブロックを置けます。';
+    if (st.kind === 'leave') {
+      cls += ' leave';
+      text = (st.leaveType || '休み') + ' の日です' + (st.note ? '（' + st.note + '）' : '');
+    } else if (st.kind === 'weeklyOff') {
+      cls += ' off';
+      text = '定休日です。個別に出勤へ変更する場合は出勤カレンダーから設定できます。';
+    } else if (st.kind === 'unknown') {
+      text = '出勤日・定休は「出勤カレンダー」で設定できます。';
+    }
+    bar.innerHTML = '<div class="' + cls + '">' + esc(text) +
+      ' <button type="button" class="dp-chip" style="margin-left:6px;" onclick="closeDayPlanner(); if(typeof openAttendanceCalendar===\'function\') openAttendanceCalendar();">出勤カレンダーを開く</button></div>';
+  };
+
+  window.dpLoadAttendance = async function () {
+    const ymd = window._dayPlan.date || tomorrowYmd();
+    const p = String(ymd).split('-').map(Number);
+    const year = p[0] || new Date().getFullYear();
+    const month = p[1] || (new Date().getMonth() + 1);
+    const cached = window._dayPlan.attendance;
+    if (cached && cached.year === year && cached.month === month && cached.userId === userId()) {
+      window.dpRenderDateChips();
+      window.dpRenderAttendBar();
+      return;
+    }
+    try {
+      const res = await callGAS('getAttendanceCalendar', {
+        requesterId: userId(),
+        targetUserId: userId(),
+        targetUserName: userName(),
+        year: year,
+        month: month
+      });
+      if (res && res.success !== false) {
+        window._dayPlan.attendance = res;
+        window._dayPlan.attendance.userId = userId();
+      }
+    } catch (e) {
+      window._dayPlan.attendance = window._dayPlan.attendance || null;
+    }
+    window.dpRenderDateChips();
+    window.dpRenderAttendBar();
+  };
 
   function yFromEvent(ev, grid) {
     const rect = grid.getBoundingClientRect();
@@ -89,6 +149,7 @@
     const modal = document.getElementById('dayPlannerModal');
     if (!modal) return;
     window._dayPlan.date = dateYmd || tomorrowYmd();
+    window._dayPlan.attendance = null;
     modal.style.display = 'flex';
     const dateEl = document.getElementById('dpDate');
     if (dateEl) {
@@ -96,6 +157,8 @@
       dateEl.value = window._dayPlan.date;
     }
     window.dpRenderDateChips();
+    window.dpRenderAttendBar();
+    await window.dpLoadAttendance();
     await window.dpLoadOptions();
     await window.dpLoad();
   };
@@ -110,6 +173,7 @@
       dateEl.value = window._dayPlan.date;
     }
     window.dpRenderDateChips();
+    window.dpLoadAttendance();
     window.dpLoad();
   };
 
@@ -128,7 +192,9 @@
     for (let i = 0; i < 14; i++) {
       const ymd = addYmd(today, i);
       const on = ymd === selected;
-      html += '<button type="button" class="dp-chip' + (on ? ' on' : '') + '" onclick="dpGotoDate(\'' + ymd + '\')">' + dateChipLabel(ymd) + '</button>';
+      const st = dpDayStatus(ymd);
+      const extra = st.kind === 'leave' ? ' leave' : (st.kind === 'weeklyOff' ? ' off' : '');
+      html += '<button type="button" class="dp-chip' + (on ? ' on' : '') + extra + '" onclick="dpGotoDate(\'' + ymd + '\')">' + dateChipLabel(ymd) + '</button>';
     }
     wrap.innerHTML = html;
   };
@@ -150,6 +216,7 @@
     const dateEl = document.getElementById('dpDate');
     if (dateEl && dateEl.value) window._dayPlan.date = dateEl.value;
     window.dpRenderDateChips();
+    window.dpRenderAttendBar();
     const grid = document.getElementById('dpGrid');
     if (grid) grid.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">読み込み中...</div>';
     try {
