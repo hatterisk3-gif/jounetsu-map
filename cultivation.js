@@ -63,16 +63,41 @@ function refreshChoiceButtons(selectId) {
         const canDeleteCrop = (selectId === 'cpCrop' || selectId === 'crCrop') && !isCustom;
         const canManageVariety = (selectId === 'cpVariety') && !isCustom;
         const showSideActions = canDeleteCrop || canManageVariety;
-        btn.style.cssText = isCpVarietyAdd
-            ? 'padding:5px 10px;border:1px dashed #FFB74D;border-radius:4px;background:#FFF3E0;color:#E65100;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;'
-            : (isActive
-            ? `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`
-            : `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid #ccc;border-radius:4px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`);
+        const cropForMeta = (selectId === 'cpVariety')
+            ? (typeof getCpVal === 'function' ? getCpVal('cpCrop') : '')
+            : '';
+        const varietyMeta = (canManageVariety && cropForMeta && typeof lookupVarietyMeta === 'function')
+            ? lookupVarietyMeta(cropForMeta, opt.value)
+            : null;
+        const hasMaker = !canManageVariety || !!(varietyMeta && String(varietyMeta.maker || '').trim());
+
+        if (isCpVarietyAdd) {
+            btn.style.cssText = 'padding:5px 10px;border:1px dashed #FFB74D;border-radius:4px;background:#FFF3E0;color:#E65100;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;';
+        } else if (isActive) {
+            btn.style.cssText = `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+        } else if (!hasMaker) {
+            btn.style.cssText = `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid #ef9a9a;border-radius:4px;background:#fff8f8;color:#c62828;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            btn.title = 'メーカー未登録（✎で登録）';
+        } else {
+            btn.style.cssText = `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid #ccc;border-radius:4px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            if (varietyMeta && varietyMeta.maker) btn.title = 'メーカー: ' + String(varietyMeta.maker);
+        }
 
         const label = document.createElement('span');
         // 品種バッジは品種名のみ。その他は「＋ 新規追加」
         label.textContent = isCpVarietyAdd ? '＋ 新規追加' : (opt.textContent || opt.value);
         btn.appendChild(label);
+
+        if (canManageVariety && !hasMaker) {
+            const warn = document.createElement('span');
+            warn.textContent = '!';
+            warn.title = 'メーカー未登録';
+            warn.setAttribute('aria-label', 'メーカー未登録');
+            warn.style.cssText = isActive
+                ? 'display:inline-flex;align-items:center;justify-content:center;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:rgba(0,0,0,0.2);font-size:10px;font-weight:bold;line-height:1;'
+                : 'display:inline-flex;align-items:center;justify-content:center;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:#ef5350;color:#fff;font-size:10px;font-weight:bold;line-height:1;';
+            btn.appendChild(warn);
+        }
 
         if (canManageVariety) {
             const edit = document.createElement('span');
@@ -127,10 +152,10 @@ function refreshChoiceButtons(selectId) {
         }
 
         btn.onmouseenter = function() {
-            if (!isActive && !isCpVarietyAdd) btn.style.borderColor = accent;
+            if (!isActive && !isCpVarietyAdd) btn.style.borderColor = hasMaker ? accent : '#e53935';
         };
         btn.onmouseleave = function() {
-            if (!isActive && !isCpVarietyAdd) btn.style.borderColor = '#ccc';
+            if (!isActive && !isCpVarietyAdd) btn.style.borderColor = hasMaker ? '#ccc' : '#ef9a9a';
         };
         btn.onclick = function() {
             if (isCpVarietyAdd) {
@@ -4978,8 +5003,15 @@ function openCpQuickVarietyPicker(anchorEl) {
         opts.forEach(v => {
             const b = document.createElement('button');
             b.type = 'button';
-            b.textContent = v;
-            b.style.cssText = 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #bbdefb; background:#e3f2fd; color:#0d47a1; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;';
+            const meta = (typeof lookupVarietyMeta === 'function') ? lookupVarietyMeta(crop, v) : null;
+            const hasMaker = !!(meta && String(meta.maker || '').trim());
+            b.textContent = hasMaker ? v : (v + ' ⚠');
+            b.title = hasMaker
+                ? ('メーカー: ' + String(meta.maker))
+                : 'メーカー未登録（追加後に✎で登録できます）';
+            b.style.cssText = hasMaker
+                ? 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #bbdefb; background:#e3f2fd; color:#0d47a1; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;'
+                : 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #ef9a9a; background:#fff8f8; color:#c62828; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;';
             b.onclick = function() { addVarietyCardFromPick(v); };
             pop.appendChild(b);
         });
@@ -5097,6 +5129,7 @@ function renderCpPlanRow(plan, options) {
             <span id="qtyLabel_${plan.id}" style="display:none;">${qtyWord}</span>
             <span id="unitTraysInput_${plan.id}" style="display:none;">${qtyWord}</span>
         </div>
+        <div id="cpHarvestPeriodCount_${plan.id}" style="display:none; margin-top:2px; font-size:10px; font-weight:bold; color:#E65100; line-height:1.2;"></div>
         <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:3px; font-size:10px; flex-direction:column; gap:2px; background:#fff; padding:3px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
           <div id="cpSeedProcure_${plan.id}" style="font-size:9px; color:#bf360c; font-weight:bold; line-height:1.25;"></div>
           <div id="cpFinance_${plan.id}" style="font-size:9px; line-height:1.3; font-weight:bold;"></div>
@@ -6130,6 +6163,21 @@ function updateCpCellsText(planId, forceRatioRebuild) {
             });
             
             const harvestCells = tr.querySelectorAll('td[data-task="harvesting"]');
+            const harvestCount = harvestCells.length;
+
+            // 品種カード上（収穫期間の直上）に半旬数を表示
+            const periodCountEl = document.getElementById('cpHarvestPeriodCount_' + plan.id);
+            if (periodCountEl) {
+                if (harvestCount > 0) {
+                    periodCountEl.style.display = 'block';
+                    periodCountEl.textContent = '収穫期間 ' + harvestCount + '半旬';
+                    periodCountEl.title = 'この品種カードで塗った収穫半旬の数';
+                } else {
+                    periodCountEl.style.display = 'none';
+                    periodCountEl.textContent = '';
+                    periodCountEl.title = '';
+                }
+            }
             
             const ratioContainer = document.getElementById(`ratios_${plan.id}`);
             if (ratioContainer) {
@@ -6140,13 +6188,13 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                 let hasAnyRatio = ratios.some(r => r > 0);
                 let ratioText = hasAnyRatio ? `(残り${remaining})` : '均等';
                 let colorStyle = remaining < 0 ? 'red' : '#666';
-                const harvestCount = harvestCells.length;
                 const prevCount = parseInt(ratioContainer.dataset.harvestCount || '-1', 10);
                 const needRebuild = forceRatioRebuild || prevCount !== harvestCount;
 
                 if (needRebuild) {
                     let html = '';
                     if (harvestCount > 0) {
+                        html += `<div id="harvestPeriodCountLabel_${plan.id}" style="width:100%; font-size:10px; font-weight:bold; color:#E65100; margin-bottom:2px;">収穫期間 ${harvestCount}半旬</div>`;
                         html += `<div id="harvestRatioLabel_${plan.id}" style="width:100%; font-size:10px; color:${colorStyle}; margin-bottom:2px;">収穫割合:${ratioText}</div>`;
                         for (let i = 0; i < harvestCount; i++) {
                             let usedBefore = 0;
@@ -6162,11 +6210,16 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                     ratioContainer.dataset.harvestCount = String(harvestCount);
                 } else if (harvestCount > 0) {
                     // 枠数は同じ → ラベルだけ更新（DOM再生成でスクロールが飛ぶのを防ぐ）
+                    const periodLabel = document.getElementById('harvestPeriodCountLabel_' + plan.id);
+                    if (periodLabel) periodLabel.textContent = '収穫期間 ' + harvestCount + '半旬';
                     const label = document.getElementById('harvestRatioLabel_' + plan.id);
                     if (label) {
                         label.textContent = '収穫割合:' + ratioText;
                         label.style.color = colorStyle;
                     }
+                } else {
+                    ratioContainer.innerHTML = '';
+                    ratioContainer.dataset.harvestCount = '0';
                 }
             }
 
@@ -6397,8 +6450,6 @@ window.setCpGraphMetric = setCpGraphMetric;
 function updateCpGraphMetricChrome_(metric, crop) {
     const titleEl = document.getElementById('cpGraphMetricTitle');
     const hintEl = document.getElementById('cpGraphMetricHint');
-    const targetBlock = document.getElementById('cpHarvestTargetBlock');
-    const applyBtn = document.getElementById('cpHarvestTargetApplyBtn');
     const bars = document.getElementById('cpHarvestChartBars');
     const axis = document.getElementById('cpHarvestChartAxis');
     const makerPanel = document.getElementById('cpMakerRatioPanel');
@@ -6417,9 +6468,6 @@ function updateCpGraphMetricChrome_(metric, crop) {
     if (titleEl) titleEl.textContent = titles[metric] || titles.harvest;
     if (hintEl) hintEl.textContent = hints[metric] || hints.harvest;
     const isMaker = metric === 'maker';
-    const isHarvest = metric === 'harvest';
-    if (targetBlock) targetBlock.style.display = isHarvest ? '' : 'none';
-    if (applyBtn) applyBtn.style.display = isHarvest ? '' : 'none';
     if (bars) bars.style.display = isMaker ? 'none' : '';
     if (axis) axis.style.display = isMaker ? 'none' : '';
     if (makerPanel) makerPanel.style.display = isMaker ? '' : 'none';
@@ -6514,70 +6562,467 @@ function collectCpHarvestPeriodTotals(series) {
     return totals;
 }
 
-function rememberCpHarvestTargetInputs() {
-    if (!window._cpHarvestTargets) window._cpHarvestTargets = {};
-    document.querySelectorAll('#cpHarvestTargetInputs input.cp-harvest-target-input').forEach(inp => {
+const CP_HARVEST_PERIOD_LABELS = ['上前', '上後', '中前', '中後', '下前', '下後'];
+
+function getCpMonthLabel_(mIdx) {
+    const months = getCpCalendarMonths();
+    const m = months[mIdx];
+    if (mIdx === 0) return '今年 ' + m + '月';
+    if (mIdx === 12) return '来年 ' + m + '月';
+    return m + '月';
+}
+
+function getCpPeriodShortLabel_(flatIdx) {
+    return CP_HARVEST_PERIOD_LABELS[flatIdx % 6] || String((flatIdx % 6) + 1);
+}
+
+function getCpPeriodFullLabel_(flatIdx) {
+    return getCpMonthLabel_(Math.floor(flatIdx / 6)) + ' ' + getCpPeriodShortLabel_(flatIdx);
+}
+
+function collectCpHarvestTotalsFromPlans_(plans) {
+    const totals = new Array(CP_HARVEST_PERIODS).fill(0);
+    (plans || []).forEach(plan => {
+        const amounts = computePlanHarvestByPeriod(plan);
+        for (let i = 0; i < CP_HARVEST_PERIODS; i++) totals[i] += amounts[i] || 0;
+    });
+    return totals;
+}
+
+function formatCpPlanHarvestRange_(plan) {
+    const cells = getCpPlanTaskCells_(plan, 'harvesting');
+    if (!cells.length) return '収穫なし';
+    let min = cells[0].flatIndex;
+    let max = cells[0].flatIndex;
+    cells.forEach(c => {
+        if (c.flatIndex < min) min = c.flatIndex;
+        if (c.flatIndex > max) max = c.flatIndex;
+    });
+    if (min === max) return getCpPeriodFullLabel_(min);
+    return getCpPeriodFullLabel_(min) + '〜' + getCpPeriodShortLabel_(max);
+}
+
+function setCpHarvestTargetApproveEnabled_(on) {
+    const btn = document.getElementById('cpHtpApproveBtn');
+    if (btn) btn.disabled = !on;
+}
+
+function invalidateCpHarvestTargetPreview_(msg) {
+    window._cpHarvestTargetPreview = null;
+    setCpHarvestTargetApproveEnabled_(false);
+    const el = document.getElementById('cpHtpSimSection');
+    if (!el) return;
+    el.innerHTML = msg
+        ? `<div style="font-size:12px; color:#888; background:#fafafa; border:1px dashed #ddd; border-radius:8px; padding:10px;">${msg}</div>`
+        : '';
+}
+
+function readCpHtpTargetsFromDom_() {
+    const targets = {};
+    document.querySelectorAll('#cpHtpInputSection input.cp-htp-period').forEach(inp => {
         const idx = parseInt(inp.getAttribute('data-period'), 10);
         if (isNaN(idx)) return;
         const raw = String(inp.value || '').trim();
-        if (raw === '') delete window._cpHarvestTargets[idx];
-        else {
-            const n = parseFloat(raw);
-            if (isFinite(n) && n >= 0) window._cpHarvestTargets[idx] = n;
-            else delete window._cpHarvestTargets[idx];
-        }
+        if (raw === '') return;
+        const n = parseFloat(raw);
+        if (isFinite(n) && n >= 0) targets[idx] = n;
     });
+    window._cpHarvestTargets = targets;
+    return targets;
 }
 
-function renderCpHarvestTargetInputs(series, options) {
-    const wrap = document.getElementById('cpHarvestTargetInputs');
+function syncCpHtpMonthSum_(mIdx) {
+    const monthInp = document.querySelector(`#cpHtpInputSection input.cp-htp-month-total[data-month="${mIdx}"]`);
+    if (!monthInp) return;
+    let sum = 0;
+    let filled = 0;
+    for (let p = 0; p < 6; p++) {
+        const inp = document.querySelector(`#cpHtpInputSection input.cp-htp-period[data-period="${mIdx * 6 + p}"]`);
+        if (!inp) continue;
+        const raw = String(inp.value || '').trim();
+        if (raw === '') continue;
+        const n = parseFloat(raw);
+        if (!isFinite(n) || n < 0) continue;
+        sum += n;
+        filled += 1;
+    }
+    monthInp.value = filled ? String(Math.round(sum)) : '';
+}
+
+function onCpHtpPeriodInput(flatIdx) {
+    syncCpHtpMonthSum_(Math.floor(Number(flatIdx) / 6));
+    readCpHtpTargetsFromDom_();
+    invalidateCpHarvestTargetPreview_('目標を変更したので、もう一度シミュレーションしてください。');
+}
+window.onCpHtpPeriodInput = onCpHtpPeriodInput;
+
+function onCpHtpMonthInput(mIdx) {
+    mIdx = Number(mIdx);
+    const monthInp = document.querySelector(`#cpHtpInputSection input.cp-htp-month-total[data-month="${mIdx}"]`);
+    const raw = monthInp ? String(monthInp.value || '').trim() : '';
+    const current = window._cpHtpCurrentTotals || new Array(CP_HARVEST_PERIODS).fill(0);
+    const idxs = [];
+    for (let p = 0; p < 6; p++) {
+        const i = mIdx * 6 + p;
+        if ((current[i] || 0) > 0) idxs.push(i);
+    }
+    if (!idxs.length) return;
+    if (raw === '') {
+        idxs.forEach(i => {
+            const inp = document.querySelector(`#cpHtpInputSection input.cp-htp-period[data-period="${i}"]`);
+            if (inp) inp.value = '';
+        });
+    } else {
+        const total = parseFloat(raw);
+        if (!isFinite(total) || total < 0) return;
+        const weightSum = idxs.reduce((s, i) => s + (current[i] || 0), 0);
+        let assigned = 0;
+        idxs.forEach((i, n) => {
+            const inp = document.querySelector(`#cpHtpInputSection input.cp-htp-period[data-period="${i}"]`);
+            if (!inp) return;
+            let v;
+            if (n === idxs.length - 1) v = Math.max(0, Math.round(total - assigned));
+            else v = weightSum > 0
+                ? Math.round(total * (current[i] / weightSum))
+                : Math.round(total / idxs.length);
+            assigned += v;
+            inp.value = String(v);
+        });
+    }
+    readCpHtpTargetsFromDom_();
+    invalidateCpHarvestTargetPreview_('目標を変更したので、もう一度シミュレーションしてください。');
+}
+window.onCpHtpMonthInput = onCpHtpMonthInput;
+
+function renderCpHarvestTargetPlanInputs_(plans) {
+    const wrap = document.getElementById('cpHtpInputSection');
     if (!wrap) return;
-    rememberCpHarvestTargetInputs();
-    const opts = options || {};
-    const barW = opts.barWidth || 8;
-    const totals = collectCpHarvestPeriodTotals(series);
-    const active = [];
-    for (let i = 0; i < CP_HARVEST_PERIODS; i++) {
-        if ((totals[i] || 0) > 0) active.push(i);
-    }
-    if (!active.length) {
-        wrap.innerHTML = '<div style="color:#999; font-size:10px; text-align:center; padding-top:4px; width:100%;">収穫半旬がありません</div>';
-        return;
-    }
+    const totals = collectCpHarvestTotalsFromPlans_(plans);
+    window._cpHtpCurrentTotals = totals;
     if (!window._cpHarvestTargets) window._cpHarvestTargets = {};
-    // 収穫が無くなった半旬の目標は破棄
     Object.keys(window._cpHarvestTargets).forEach(k => {
         const idx = parseInt(k, 10);
         if (!(totals[idx] > 0)) delete window._cpHarvestTargets[idx];
     });
 
-    const totalW = CP_HARVEST_PERIODS * barW;
-    let html = `<div style="display:flex; align-items:center; width:${totalW}px; min-width:${totalW}px; height:22px;">`;
-    for (let i = 0; i < CP_HARVEST_PERIODS; i++) {
-        const border = (i % 6 === 5) ? '1px solid #ccc' : '1px solid transparent';
-        if ((totals[i] || 0) > 0) {
-            const val = window._cpHarvestTargets[i];
-            const shown = (val != null && isFinite(val)) ? String(val) : '';
-            html += `<div style="width:${barW}px; box-sizing:border-box; border-right:${border}; padding:0 1px;">` +
-                `<input type="number" min="0" step="1" class="cp-harvest-target-input" data-period="${i}" value="${shown}" ` +
-                `title="半旬${i + 1} 目標（現状 ${Math.round(totals[i]).toLocaleString()}）" ` +
-                `style="width:100%; height:20px; font-size:9px; padding:0; border:1px solid #FFB74D; border-radius:2px; box-sizing:border-box; text-align:center; background:#fff;" ` +
-                `onchange="onCpHarvestTargetInputChange()" oninput="onCpHarvestTargetInputChange()">` +
-                `</div>`;
-        } else {
-            html += `<div style="width:${barW}px; height:20px; box-sizing:border-box; border-right:${border};"></div>`;
-        }
+    const activeCount = totals.filter(v => v > 0).length;
+    if (!activeCount) {
+        wrap.innerHTML = '<div style="font-size:13px; color:#c62828; background:#ffebee; border:1px solid #ef9a9a; border-radius:8px; padding:12px;">収穫を塗った品種カードがありません。先に作型の収穫期間を塗ってから、目標収穫量を入れてください。</div>';
+        return;
     }
-    html += '</div>';
+
+    const yearBlocks = [
+        { title: '今年', start: 0, end: 12 },
+        { title: '来年', start: 12, end: 18 }
+    ];
+    let html = `<div style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:8px;">1. 期間別の目標収穫量</div>`;
+    yearBlocks.forEach(block => {
+        html += `<div style="font-size:11px; font-weight:bold; color:#888; margin:10px 0 6px;">${block.title}</div>`;
+        html += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:8px;">`;
+        for (let mIdx = block.start; mIdx < block.end; mIdx++) {
+            const monthCurrent = totals.slice(mIdx * 6, mIdx * 6 + 6).reduce((s, v) => s + (v || 0), 0);
+            const hasHarvest = monthCurrent > 0;
+            let monthTargetSum = 0;
+            let monthFilled = 0;
+            for (let p = 0; p < 6; p++) {
+                const t = window._cpHarvestTargets[mIdx * 6 + p];
+                if (t == null || !isFinite(t)) continue;
+                monthTargetSum += t;
+                monthFilled += 1;
+            }
+            html += `<div class="cp-htp-month${hasHarvest ? '' : ' is-disabled'}">`;
+            html += `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">`;
+            html += `<div style="font-size:12px; font-weight:bold; color:#333;">${getCpMonthLabel_(mIdx)}</div>`;
+            html += `<div style="font-size:10px; color:#888;">現状 ${Math.round(monthCurrent).toLocaleString()}</div>`;
+            html += `</div>`;
+            if (!hasHarvest) {
+                html += `<div style="font-size:10px; color:#aaa; margin-top:6px;">収穫期間なし</div>`;
+            } else {
+                html += `<label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; color:#555;">月目標`;
+                html += `<input type="number" min="0" step="1" class="cp-htp-month-total" data-month="${mIdx}" value="${monthFilled ? Math.round(monthTargetSum) : ''}" placeholder="按分" onchange="onCpHtpMonthInput(${mIdx})" style="flex:1; min-width:0; height:26px; padding:2px 6px; border:1px solid #FFB74D; border-radius:4px; font-size:12px; box-sizing:border-box;">`;
+                html += `</label>`;
+                html += `<div class="cp-htp-period-grid">`;
+                for (let p = 0; p < 6; p++) {
+                    const i = mIdx * 6 + p;
+                    const cur = totals[i] || 0;
+                    const enabled = cur > 0;
+                    const shown = (window._cpHarvestTargets[i] != null && isFinite(window._cpHarvestTargets[i]))
+                        ? String(window._cpHarvestTargets[i]) : '';
+                    html += `<label style="display:flex; flex-direction:column; gap:2px; font-size:9px; color:${enabled ? '#666' : '#bbb'};">`;
+                    html += `<span>${getCpPeriodShortLabel_(i)}</span>`;
+                    html += `<input type="number" min="0" step="1" class="cp-htp-period" data-period="${i}" value="${shown}" ${enabled ? '' : 'disabled'} placeholder="${enabled ? Math.round(cur) : '-'}" title="${getCpPeriodFullLabel_(i)} 現状 ${Math.round(cur).toLocaleString()}" onchange="onCpHtpPeriodInput(${i})" style="width:100%; height:24px; padding:0 2px; border:1px solid ${enabled ? '#FFCC80' : '#eee'}; border-radius:3px; font-size:11px; text-align:center; box-sizing:border-box; background:${enabled ? '#fff' : '#f5f5f5'};">`;
+                    html += `</label>`;
+                }
+                html += `</div>`;
+            }
+            html += `</div>`;
+        }
+        html += `</div>`;
+    });
     wrap.innerHTML = html;
 }
 
-function onCpHarvestTargetInputChange() {
-    rememberCpHarvestTargetInputs();
-    const msg = document.getElementById('cpHarvestTargetMsg');
-    if (msg && msg.dataset.sticky !== '1') msg.textContent = '';
+function previewScaledPlanQty_(plan, scale) {
+    let s = Number(scale);
+    if (!isFinite(s) || s < 0) s = 0;
+    if (s > 100) s = 100;
+    const mode = plan.inputMode === 'trays' ? 'trays' : 'area';
+    const curArea = Number(plan.areaA) || 0;
+    const curTrays = Number(plan.trays) || 0;
+    const curYield = Number(plan.yield) || 0;
+    if (mode === 'trays') {
+        const nextTrays = Math.max(0, Math.round(curTrays * s));
+        const ratio = curTrays > 0 ? (nextTrays / curTrays) : s;
+        return {
+            mode: mode,
+            scale: s,
+            curArea: curArea,
+            nextArea: Math.max(0, Math.round(curArea * ratio * 10) / 10),
+            curTrays: curTrays,
+            nextTrays: nextTrays,
+            curYield: curYield,
+            nextYield: Math.max(0, Math.round(curYield * ratio))
+        };
+    }
+    const nextArea = Math.max(0, Math.round(curArea * s * 10) / 10);
+    const ratio = curArea > 0 ? (nextArea / curArea) : s;
+    return {
+        mode: mode,
+        scale: s,
+        curArea: curArea,
+        nextArea: nextArea,
+        curTrays: curTrays,
+        nextTrays: Math.max(0, Math.round(curTrays * ratio)),
+        curYield: curYield,
+        nextYield: Math.max(0, Math.round(curYield * ratio))
+    };
 }
-window.onCpHarvestTargetInputChange = onCpHarvestTargetInputChange;
+
+function buildCpHarvestTargetPreview_(plans, targets) {
+    const solved = solveCpHarvestTargetScales(plans, targets);
+    if (!solved) return null;
+    const contrib = solved.plans.map(plan => computePlanHarvestByPeriod(plan));
+    const rows = solved.plans.map((plan, i) => {
+        const qty = previewScaledPlanQty_(plan, solved.scales[i]);
+        return {
+            planId: plan.id,
+            variety: String(plan.variety || '未設定'),
+            range: formatCpPlanHarvestRange_(plan),
+            ...qty
+        };
+    });
+    const periodRows = solved.periods.map(period => {
+        let current = 0;
+        let predicted = 0;
+        contrib.forEach((row, v) => {
+            current += row[period] || 0;
+            predicted += solved.scales[v] * (row[period] || 0);
+        });
+        return {
+            period: period,
+            label: getCpPeriodFullLabel_(period),
+            target: Number(targets[period]) || 0,
+            current: current,
+            predicted: predicted
+        };
+    });
+    const monthMap = {};
+    periodRows.forEach(r => {
+        const mIdx = Math.floor(r.period / 6);
+        if (!monthMap[mIdx]) {
+            monthMap[mIdx] = { mIdx: mIdx, label: getCpMonthLabel_(mIdx), target: 0, current: 0, predicted: 0 };
+        }
+        monthMap[mIdx].target += r.target;
+        monthMap[mIdx].current += r.current;
+        monthMap[mIdx].predicted += r.predicted;
+    });
+    const rmse = Math.sqrt(solved.residual / Math.max(1, solved.periods.length));
+    return { rows: rows, periodRows: periodRows, months: Object.keys(monthMap).map(k => monthMap[k]), rmse: rmse, solved: solved, targets: Object.assign({}, targets) };
+}
+
+function renderCpHarvestTargetSimulation_(preview, errorText) {
+    const el = document.getElementById('cpHtpSimSection');
+    if (!el) return;
+    if (errorText) {
+        el.innerHTML = `<div style="font-size:12px; color:#c62828; background:#ffebee; border:1px solid #ef9a9a; border-radius:8px; padding:10px;">${errorText}</div>`;
+        return;
+    }
+    if (!preview) {
+        el.innerHTML = '';
+        return;
+    }
+    const fmt = (n, digits) => {
+        const v = Number(n) || 0;
+        return (digits ? (Math.round(v * 10) / 10) : Math.round(v)).toLocaleString('ja-JP');
+    };
+    const varietyRows = preview.rows.map(r => {
+        const scale = Math.round(r.scale * 100) / 100;
+        return `<tr>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; font-weight:bold;">${escapeCpHtmlAttr(r.variety)}</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; color:#888; font-size:11px; white-space:nowrap;">${escapeCpHtmlAttr(r.range)}</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right;">${fmt(r.curArea, 1)}a</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right; font-weight:bold; color:#2e7d32;">${fmt(r.nextArea, 1)}a</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right;">${fmt(r.curYield)}</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right; font-weight:bold; color:#E65100;">${fmt(r.nextYield)}</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right;">×${scale}</td>
+        </tr>`;
+    }).join('');
+    const monthRows = preview.months.map(m => {
+        const diff = Math.round(m.predicted - m.target);
+        const diffColor = Math.abs(diff) <= 1 ? '#2e7d32' : '#c62828';
+        return `<tr>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8;">${escapeCpHtmlAttr(m.label)}</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right;">${fmt(m.current)}</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right; font-weight:bold;">${fmt(m.target)}</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right;">${fmt(m.predicted)}</td>
+          <td style="padding:6px 8px; border-bottom:1px solid #f0e6d8; text-align:right; color:${diffColor};">${diff > 0 ? '+' : ''}${fmt(diff)}</td>
+        </tr>`;
+    }).join('');
+    const rmseNote = preview.rmse > 1
+        ? `目標との平均誤差 約${Math.round(preview.rmse).toLocaleString()}（作型の重なりにより完全一致しない場合があります）`
+        : '目標期間に対して近い面積配分です';
+    el.innerHTML = `
+      <div style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:8px;">2. シミュレーション結果（まだ反映していません）</div>
+      <div style="font-size:11px; color:#666; margin-bottom:8px;">${rmseNote}</div>
+      <div style="overflow:auto; border:1px solid #ffe0b2; border-radius:8px; margin-bottom:10px;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead><tr style="background:#FFF3E0; color:#E65100;">
+            <th style="padding:6px 8px; text-align:left;">品種</th>
+            <th style="padding:6px 8px; text-align:left;">収穫期間</th>
+            <th style="padding:6px 8px; text-align:right;">現状面積</th>
+            <th style="padding:6px 8px; text-align:right;">計画面積</th>
+            <th style="padding:6px 8px; text-align:right;">現状収穫</th>
+            <th style="padding:6px 8px; text-align:right;">計画収穫</th>
+            <th style="padding:6px 8px; text-align:right;">倍率</th>
+          </tr></thead>
+          <tbody>${varietyRows}</tbody>
+        </table>
+      </div>
+      <div style="overflow:auto; border:1px solid #ffe0b2; border-radius:8px;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead><tr style="background:#FFF8E1; color:#F57F17;">
+            <th style="padding:6px 8px; text-align:left;">期間</th>
+            <th style="padding:6px 8px; text-align:right;">現状</th>
+            <th style="padding:6px 8px; text-align:right;">目標</th>
+            <th style="padding:6px 8px; text-align:right;">計画</th>
+            <th style="padding:6px 8px; text-align:right;">差</th>
+          </tr></thead>
+          <tbody>${monthRows}</tbody>
+        </table>
+      </div>
+      <div style="font-size:11px; color:#888; margin-top:8px;">承認すると、各品種カードの面積（または枚数）が計画値に書き込まれます。元に戻すで取り消せます。</div>`;
+}
+
+function openCpHarvestTargetPlanDialog() {
+    const dlg = document.getElementById('cpHarvestTargetPlanDialog');
+    if (!dlg) {
+        alert('画面の読み込み中です。少し待って再度お試しください。');
+        return;
+    }
+    const plans = (typeof collectCurrentCpPlansFromDom === 'function')
+        ? collectCurrentCpPlansFromDom()
+        : (cpPlans || []);
+    renderCpHarvestTargetPlanInputs_(plans);
+    invalidateCpHarvestTargetPreview_('期間別の目標を入れて「シミュレーション」を押すと、品種ごとの面積が出ます。');
+    dlg.style.display = 'flex';
+}
+window.openCpHarvestTargetPlanDialog = openCpHarvestTargetPlanDialog;
+
+function closeCpHarvestTargetPlanDialog() {
+    const dlg = document.getElementById('cpHarvestTargetPlanDialog');
+    if (dlg) dlg.style.display = 'none';
+}
+window.closeCpHarvestTargetPlanDialog = closeCpHarvestTargetPlanDialog;
+
+function runCpHarvestTargetSimulation() {
+    const targets = readCpHtpTargetsFromDom_();
+    if (!Object.keys(targets).length) {
+        window._cpHarvestTargetPreview = null;
+        setCpHarvestTargetApproveEnabled_(false);
+        renderCpHarvestTargetSimulation_(null, '目標値が入力されていません。収穫がある月または半旬に数値を入れてください。');
+        return;
+    }
+    const plans = (typeof collectCurrentCpPlansFromDom === 'function')
+        ? collectCurrentCpPlansFromDom()
+        : (cpPlans || []);
+    const preview = buildCpHarvestTargetPreview_(plans, targets);
+    if (!preview) {
+        window._cpHarvestTargetPreview = null;
+        setCpHarvestTargetApproveEnabled_(false);
+        renderCpHarvestTargetSimulation_(null, '調整できる品種・収穫データがありません。収穫を塗った品種カードがあるか確認してください。');
+        return;
+    }
+    window._cpHarvestTargetPreview = preview;
+    setCpHarvestTargetApproveEnabled_(true);
+    renderCpHarvestTargetSimulation_(preview);
+    const simEl = document.getElementById('cpHtpSimSection');
+    if (simEl && typeof simEl.scrollIntoView === 'function') {
+        simEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+window.runCpHarvestTargetSimulation = runCpHarvestTargetSimulation;
+
+function applyCpHarvestTargetPreview_(preview) {
+    if (!preview || !preview.rows) return 0;
+    let changed = 0;
+    preview.rows.forEach(row => {
+        const live = (cpPlans || []).find(p => p && p.id === row.planId);
+        if (!live) return;
+        const mode = live.inputMode === 'trays' ? 'trays' : 'area';
+        if (mode === 'trays') {
+            const next = Math.max(0, Math.round(Number(row.nextTrays) || 0));
+            if (Math.round(Number(live.trays) || 0) === next) return;
+            live.trays = next;
+            const el = document.getElementById('trays_' + live.id);
+            if (el && typeof window.ensureCpNumericSelectValue === 'function') {
+                window.ensureCpNumericSelectValue(el, next, 0);
+            } else if (el) el.value = String(next);
+        } else {
+            const next = Math.max(0, Math.round((Number(row.nextArea) || 0) * 10) / 10);
+            if (Math.round((Number(live.areaA) || 0) * 10) / 10 === next) return;
+            live.areaA = next;
+            const el = document.getElementById('area_' + live.id);
+            if (el && typeof window.ensureCpNumericSelectValue === 'function') {
+                window.ensureCpNumericSelectValue(el, next, 1);
+            } else if (el) el.value = String(next);
+        }
+        if (typeof window.updateRowCalculations === 'function') {
+            window.updateRowCalculations(live.id);
+        } else if (typeof updateRowCalculations === 'function') {
+            updateRowCalculations(live.id);
+        }
+        changed += 1;
+    });
+    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    if (typeof refreshCpPlanLeftSummary === 'function') refreshCpPlanLeftSummary();
+    if (typeof window.pushCpEditHistory === 'function') window.pushCpEditHistory();
+    return changed;
+}
+
+function approveCpHarvestTargetPlan() {
+    const preview = window._cpHarvestTargetPreview;
+    if (!preview) {
+        alert('先にシミュレーションしてください。');
+        return;
+    }
+    const extreme = preview.rows.some(r => r.scale > 50 || (r.scale > 0 && r.scale < 0.05));
+    if (extreme) {
+        const list = preview.rows.map(r => `${r.variety}: ×${Math.round(r.scale * 100) / 100}`).join('\n');
+        if (!confirm('面積倍率が大きく変わる可能性があります。承認して反映しますか？\n\n' + list)) return;
+    } else if (!confirm('シミュレーション結果の面積を計画に反映しますか？')) {
+        return;
+    }
+    const changed = applyCpHarvestTargetPreview_(preview);
+    closeCpHarvestTargetPlanDialog();
+    window._cpHarvestTargetPreview = null;
+    setCpHarvestTargetApproveEnabled_(false);
+    const msg = changed === 0
+        ? '面積の変更はありませんでした（すでに近い状態です）。'
+        : `${changed}件の品種面積／枚数を目標収穫量に合わせて反映しました。`;
+    if (typeof customAlert === 'function') customAlert(msg);
+    else alert(msg);
+}
+window.approveCpHarvestTargetPlan = approveCpHarvestTargetPlan;
 
 /** 正規方程式を解く簡易ガウス＝ジョルダン（正方行列） */
 function solveLinearSystem_(A, b) {
@@ -6701,92 +7146,6 @@ function solveCpHarvestTargetScales(plans, targetsMap) {
     };
 }
 
-function applyCpHarvestTargetsToAreas() {
-    rememberCpHarvestTargetInputs();
-    const msg = document.getElementById('cpHarvestTargetMsg');
-    const setMsg = (text, ok) => {
-        if (!msg) return;
-        msg.dataset.sticky = '1';
-        msg.textContent = text || '';
-        msg.style.color = ok ? '#2e7d32' : '#c62828';
-    };
-
-    const targets = window._cpHarvestTargets || {};
-    const keys = Object.keys(targets);
-    if (!keys.length) {
-        setMsg('目標値が入力されていません。収穫がある半旬に数値を入れてください。', false);
-        return;
-    }
-
-    const plans = (typeof collectCurrentCpPlansFromDom === 'function')
-        ? collectCurrentCpPlansFromDom()
-        : (cpPlans || []);
-    const solved = solveCpHarvestTargetScales(plans, targets);
-    if (!solved) {
-        setMsg('調整できる品種・収穫データがありません。', false);
-        return;
-    }
-
-    const extreme = solved.scales.some(s => s > 50 || (s > 0 && s < 0.05));
-    if (extreme) {
-        const preview = solved.scales.map((s, i) => {
-            const p = solved.plans[i];
-            return `${p.variety || p.id}: ×${(Math.round(s * 100) / 100)}`;
-        }).join('\n');
-        if (!confirm('面積倍率が大きく変わる可能性があります。続行しますか？\n\n' + preview)) {
-            setMsg('キャンセルしました。', false);
-            return;
-        }
-    }
-
-    let changed = 0;
-    solved.plans.forEach((plan, i) => {
-        let s = solved.scales[i];
-        if (!isFinite(s)) return;
-        if (s < 0) s = 0;
-        if (s > 100) s = 100;
-        if (Math.abs(s - 1) < 1e-6) return;
-
-        const live = (cpPlans || []).find(p => p && p.id === plan.id) || plan;
-        const mode = live.inputMode === 'trays' ? 'trays' : 'area';
-        if (mode === 'trays') {
-            const next = Math.max(0, Math.round((Number(live.trays) || 0) * s));
-            live.trays = next;
-            const el = document.getElementById('trays_' + live.id);
-            if (el && typeof window.ensureCpNumericSelectValue === 'function') {
-                window.ensureCpNumericSelectValue(el, next, 0);
-            } else if (el) el.value = String(next);
-        } else {
-            const next = Math.max(0, Math.round((Number(live.areaA) || 0) * s * 10) / 10);
-            live.areaA = next;
-            const el = document.getElementById('area_' + live.id);
-            if (el && typeof window.ensureCpNumericSelectValue === 'function') {
-                window.ensureCpNumericSelectValue(el, next, 1);
-            } else if (el) el.value = String(next);
-        }
-        if (typeof window.updateRowCalculations === 'function') {
-            window.updateRowCalculations(live.id);
-        } else if (typeof updateRowCalculations === 'function') {
-            updateRowCalculations(live.id);
-        }
-        changed += 1;
-    });
-
-    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
-    if (typeof window.pushCpEditHistory === 'function') window.pushCpEditHistory();
-
-    const rmse = Math.sqrt(solved.residual / Math.max(1, solved.periods.length));
-    if (changed === 0) {
-        setMsg('面積の変更はありませんでした（すでに近い状態です）。', true);
-    } else if (rmse > 1) {
-        setMsg(`${changed}件の品種を調整しました。目標との平均誤差 約${Math.round(rmse).toLocaleString()}（作型・比率の都合で完全一致しない場合があります）。`, true);
-    } else {
-        setMsg(`${changed}件の品種面積／枚数を目標に合わせて調整しました。`, true);
-    }
-}
-window.applyCpHarvestTargetsToAreas = applyCpHarvestTargetsToAreas;
-window.renderCpHarvestTargetInputs = renderCpHarvestTargetInputs;
-
 function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
     const opts = options || {};
     const barH = opts.barHeight || 56;
@@ -6812,13 +7171,6 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
         const emptyMsg = opts.emptyMessage || 'データがありません';
         barsEl.innerHTML = `<div style="color:#999; font-size:11px; text-align:center; padding-top:${Math.max(8, barH / 2 - 8)}px; width:100%;">${emptyMsg}</div>`;
         if (axisEl) axisEl.innerHTML = '';
-        if (opts.showTargets !== false) {
-            const targetsEmpty = document.getElementById('cpHarvestTargetInputs');
-            if (targetsEmpty) {
-                rememberCpHarvestTargetInputs();
-                targetsEmpty.innerHTML = '<div style="color:#999; font-size:10px; text-align:center; padding-top:4px; width:100%;">収穫半旬がありません</div>';
-            }
-        }
         return { total: 0, maxVal: 0 };
     }
 
@@ -6891,8 +7243,7 @@ function refreshCpHarvestChart() {
         {
             barHeight: 56,
             barWidth: 24,
-            emptyMessage: emptyMessages[metric] || emptyMessages.harvest,
-            showTargets: metric === 'harvest'
+            emptyMessage: emptyMessages[metric] || emptyMessages.harvest
         }
     );
     const totalEl = document.getElementById('cpHarvestChartTotal');
@@ -6906,12 +7257,7 @@ function refreshCpHarvestChart() {
             totalEl.textContent = '';
         }
     }
-    if (metric === 'harvest') {
-        renderCpHarvestTargetInputs(series, { barWidth: result.barWidth || 8 });
-        syncCpHarvestScroll('cpHarvestChartBars', 'cpHarvestChartAxis', 'cpHarvestTargetInputs');
-    } else {
-        syncCpHarvestScroll('cpHarvestChartBars', 'cpHarvestChartAxis', null);
-    }
+    syncCpHarvestScroll('cpHarvestChartBars', 'cpHarvestChartAxis', null);
     if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') {
         scheduleRefreshCpWorkSchedulePanel();
     }
@@ -7723,8 +8069,7 @@ async function saveCultivationPlan(options) {
                 ? `栽培計画「${planName}」を保存しました。`
                 : `未実行の栽培計画「${planName}」として保存しました。`;
             const msg = baseMsg +
-                (hadExecutedPlans ? '\n実行済み計画の作業予定も更新しました。' : '') +
-                '\n本作・試作や本作2などは別々に保存されます。';
+                (hadExecutedPlans ? '\n実行済み計画の作業予定も更新しました。' : '');
             try {
                 if (typeof customAlert === 'function') customAlert(msg);
                 else alert(msg);
@@ -9740,9 +10085,13 @@ function renderRegisteredCroptypeList() {
     const isSearch = window._regCtMode === 'search';
     if (countEl) {
         const total = (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) ? cpMasterData.croptypesDB.length : 0;
-        countEl.textContent = isSearch
+        const noMaker = filtered.filter(item => !(item && String(item.maker || '').trim())).length;
+        const base = isSearch
             ? `検索結果 ${filtered.length} 件（登録合計 ${total} 件）`
             : `表示 ${filtered.length} 件 / 登録合計 ${total} 件`;
+        countEl.innerHTML = noMaker > 0
+            ? `${base} ／ <span style="color:#c62828; font-weight:bold;">メーカー未登録 ${noMaker} 件</span>`
+            : base;
     }
 
     if (filtered.length === 0) {
@@ -9759,9 +10108,6 @@ function renderRegisteredCroptypeList() {
     filtered.forEach((item) => {
         const sourceIndex = (cpMasterData.croptypesDB || []).indexOf(item);
         const div = document.createElement('div');
-        div.style.cssText = isSearch
-            ? 'padding:10px; background:#fffaf0; border:1px solid #ffe082; border-radius:8px; margin-bottom:8px;'
-            : 'padding:10px; background:#fff; border:1px solid #ddd; border-radius:8px; margin-bottom:8px;';
 
         let filesText = '';
         if (item.fileUrl) {
@@ -9770,9 +10116,10 @@ function renderRegisteredCroptypeList() {
                 ` <a href="${escapeCpHtmlAttr(u)}" target="_blank" rel="noopener" style="font-size:10px; color:#1976d2; background:#e3f2fd; padding:2px 4px; border-radius:2px; text-decoration:none;">📎 資料${urls.length > 1 ? (i + 1) : ''}</a>`
             ).join('');
         }
-        const makerText = item.maker
+        const hasMaker = !!(item.maker && String(item.maker).trim());
+        const makerText = hasMaker
             ? ` <span style="font-size:10px; color:#388e3c; background:#e8f5e9; padding:2px 4px; border-radius:2px;">🏢 ${escapeCpHtmlAttr(item.maker)}</span>`
-            : '';
+            : ` <span style="font-size:10px; color:#c62828; background:#ffebee; padding:2px 6px; border-radius:2px; font-weight:bold; border:1px solid #ef9a9a;">⚠ メーカー未登録</span>`;
         const grainText = item.grainCount
             ? ` <span style="font-size:10px; color:#6a1b9a; background:#f3e5f5; padding:2px 4px; border-radius:2px;">🔢 ${escapeCpHtmlAttr(formatGrainTypeLabel(item.grainCount))}</span>`
             : '';
@@ -9800,6 +10147,12 @@ function renderRegisteredCroptypeList() {
               <button type="button" onclick="applyRegisteredCroptypeToPlan(${sourceIndex})" style="background:#4CAF50; color:#fff; border:none; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">🌱 計画にセット</button>
               ${actionBtns}`;
         }
+
+        div.style.cssText = hasMaker
+            ? (isSearch
+                ? 'padding:10px; background:#fffaf0; border:1px solid #ffe082; border-radius:8px; margin-bottom:8px;'
+                : 'padding:10px; background:#fff; border:1px solid #ddd; border-radius:8px; margin-bottom:8px;')
+            : 'padding:10px; background:#fff8f8; border:1px solid #ef9a9a; border-left:4px solid #e53935; border-radius:8px; margin-bottom:8px;';
 
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
@@ -10248,14 +10601,32 @@ function renderCrVarietyBadges() {
 
     opts.forEach(tag => {
         const isOn = selected === tag;
+        const meta = (typeof lookupVarietyMeta === 'function') ? lookupVarietyMeta(crop, tag) : null;
+        const hasMaker = !!(meta && String(meta.maker || '').trim());
         const btn = document.createElement('button');
         btn.type = 'button';
+        btn.title = hasMaker
+            ? (`メーカー: ` + String(meta.maker))
+            : 'メーカー未登録（✎で登録）';
         btn.style.cssText = isOn
             ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #EF6C00;border-radius:4px;background:#FF9800;color:#fff;cursor:pointer;font-size:11px;font-weight:bold;line-height:1.2;'
-            : 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:11px;line-height:1.2;';
+            : (hasMaker
+                ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:11px;line-height:1.2;'
+                : 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ef9a9a;border-radius:4px;background:#fff8f8;color:#c62828;cursor:pointer;font-size:11px;line-height:1.2;');
         const label = document.createElement('span');
         label.textContent = tag;
         btn.appendChild(label);
+
+        let warn = null;
+        if (!hasMaker) {
+            warn = document.createElement('span');
+            warn.textContent = '!';
+            warn.title = 'メーカー未登録';
+            warn.style.cssText = isOn
+                ? 'display:inline-flex;align-items:center;justify-content:center;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:rgba(0,0,0,0.2);font-size:10px;font-weight:bold;line-height:1;'
+                : 'display:inline-flex;align-items:center;justify-content:center;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:#ef5350;color:#fff;font-size:10px;font-weight:bold;line-height:1;';
+            btn.appendChild(warn);
+        }
 
         const edit = document.createElement('span');
         edit.textContent = '✎';
@@ -10291,7 +10662,7 @@ function renderCrVarietyBadges() {
         btn.appendChild(del);
 
         btn.onclick = function(e) {
-            if (e.target === del || e.target === edit) return;
+            if (e.target === del || e.target === edit || (warn && e.target === warn)) return;
             setCrVariety(isOn ? '' : tag);
         };
         wrap.appendChild(btn);

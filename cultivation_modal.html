@@ -476,6 +476,28 @@
             color: #fff;
             border-color: #F57C00;
           }
+          #cpHtpApproveBtn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+          }
+          .cp-htp-month {
+            border: 1px solid #ffe0b2;
+            border-radius: 8px;
+            background: #fffdf8;
+            padding: 8px;
+            box-sizing: border-box;
+          }
+          .cp-htp-month.is-disabled {
+            background: #fafafa;
+            border-color: #eee;
+            opacity: 0.72;
+          }
+          .cp-htp-period-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 4px;
+            margin-top: 6px;
+          }
           @media (max-width: 560px) {
             .cp-bottom-tab { font-size: 10px; padding: 5px 2px; }
             #cpLeftPanel {
@@ -491,7 +513,7 @@
 
         <div style="margin-bottom: 6px; padding: 6px 10px; background: #fafafa; border-radius: 4px; border: 1px solid #ddd; display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap; flex-shrink: 0;">
           <input type="radio" name="cpTool" value="semiauto" checked hidden aria-hidden="true">
-          <button type="button" onclick="clearCpColumnHighlights()" title="ハイライト選択した半旬列をすべて解除" style="font-size: 11px; padding: 2px 8px; border: 1px solid #FFCA28; background: #FFF8E1; color: #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🧹 列ハイライト解除</button>
+          <button type="button" onclick="openCpHarvestTargetPlanDialog()" title="期間別の目標収穫量から、品種ごとの面積を算出します" style="font-size: 11px; padding: 2px 8px; border: 1px solid #FFB74D; background: #FFF3E0; color: #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🍊 目標収穫量から計画を作成</button>
           <span style="width:1px; height:18px; background:#ccc; margin:0 2px; flex-shrink:0;"></span>
           <button type="button" id="cpUndoBtn" onclick="undoCpEdit()" disabled title="元に戻す (Ctrl+Z)" style="font-size: 11px; padding: 2px 10px; border: 1px solid #90A4AE; background: #ECEFF1; color: #37474F; border-radius: 4px; cursor: pointer; font-weight: bold;">↩ 元に戻す</button>
           <button type="button" id="cpRedoBtn" onclick="redoCpEdit()" disabled title="やり直し (Ctrl+Y)" style="font-size: 11px; padding: 2px 10px; border: 1px solid #90A4AE; background: #ECEFF1; color: #37474F; border-radius: 4px; cursor: pointer; font-weight: bold;">↪ 次へ</button>
@@ -579,10 +601,7 @@
                       <span id="cpHarvestChartCrop" style="font-weight:normal; color:#666;"></span>
                       <span id="cpHarvestChartTotal" style="margin-left:6px; color:#bf360c;"></span>
                     </div>
-                    <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
-                      <div id="cpHarvestChartLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555;"></div>
-                      <button type="button" id="cpHarvestTargetApplyBtn" onclick="applyCpHarvestTargetsToAreas()" style="font-size:11px; padding:3px 8px; border:1px solid #FFB74D; background:#FFF3E0; color:#E65100; border-radius:4px; cursor:pointer; font-weight:bold; white-space:nowrap;">目標に合わせて面積調整</button>
-                    </div>
+                    <div id="cpHarvestChartLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555;"></div>
                   </div>
                   <div id="cpGraphMetricTabs" role="tablist" aria-label="グラフの表示内容" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
                     <button type="button" class="cp-graph-metric-btn is-active" data-metric="harvest" onclick="setCpGraphMetric('harvest')">🍊 収穫量</button>
@@ -595,12 +614,7 @@
                     <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">グラフタブを開くとここに表示されます</div>
                   </div>
                   <div id="cpMakerRatioPanel" style="display:none; border:1px solid #ffe082; border-radius:4px; background:#fff; padding:8px 10px; min-height:72px;"></div>
-                  <div id="cpHarvestTargetBlock">
-                    <div style="font-size:10px; color:#888; margin-top:4px; margin-bottom:2px;">目標収穫（収穫がある半旬のみ入力・空欄は制約なし）</div>
-                    <div id="cpHarvestTargetInputs" style="overflow-x:auto; overflow-y:hidden; height:26px; border:1px solid #ffe082; border-radius:4px; background:#fffaf0; padding:2px;"></div>
-                  </div>
                   <div id="cpHarvestChartAxis" style="overflow-x:auto; overflow-y:hidden; height:16px; margin-top:2px;"></div>
-                  <div id="cpHarvestTargetMsg" style="font-size:11px; color:#666; margin-top:4px; min-height:14px;"></div>
                 </div>
               </div>
               <div id="cpBottomPanelWork" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabWork" hidden>
@@ -1124,6 +1138,27 @@
           </div>
           <div id="costCalcStatus" style="font-size:12px; color:#888; margin-bottom:8px;"></div>
           <div id="costCalcResult"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="cpHarvestTargetPlanDialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); z-index:10055; align-items:center; justify-content:center; padding:12px; box-sizing:border-box;">
+      <div style="background:#fff; width:100%; max-width:920px; max-height:92vh; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.3); display:flex; flex-direction:column; overflow:hidden;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#E65100; color:#fff;">
+          <h3 style="margin:0; font-size:16px;">🍊 目標収穫量から計画を作成</h3>
+          <button type="button" onclick="closeCpHarvestTargetPlanDialog()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; font-size:20px; width:36px; height:36px; border-radius:6px; cursor:pointer;">×</button>
+        </div>
+        <div style="padding:10px 16px 0; font-size:12px; color:#555; line-height:1.5;">
+          品種カードに塗った収穫期間を前提に、期間別の目標収穫量から品種ごとの面積を算出します。<b>シミュレーション → 承認して反映</b> の順で実装します。空欄の期間は制約しません。
+        </div>
+        <div id="cpHtpBody" style="padding:12px 16px 16px; overflow:auto; flex:1; min-height:0;">
+          <div id="cpHtpInputSection"></div>
+          <div id="cpHtpSimSection" style="margin-top:14px;"></div>
+        </div>
+        <div style="display:flex; gap:8px; padding:12px 16px; border-top:1px solid #eee; background:#fafafa;">
+          <button type="button" onclick="closeCpHarvestTargetPlanDialog()" style="padding:10px 14px; background:#fff; color:#666; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">閉じる</button>
+          <button type="button" onclick="runCpHarvestTargetSimulation()" style="flex:1; padding:10px 14px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">シミュレーション</button>
+          <button type="button" id="cpHtpApproveBtn" onclick="approveCpHarvestTargetPlan()" disabled style="flex:1; padding:10px 14px; background:#E65100; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">承認して反映</button>
         </div>
       </div>
     </div>
