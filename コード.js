@@ -10053,6 +10053,7 @@ function renameCultivationVariety(params) {
     let updatedMaster = 0;
     let updatedCroptype = 0;
     let updatedPreset = 0;
+    let updatedPlans = 0;
 
     // 栽培計画マスタ: A作物 B品種
     const masterSheet = ss.getSheetByName('栽培計画マスタ');
@@ -10107,12 +10108,49 @@ function renameCultivationVariety(params) {
       }
     } catch (e) {}
 
+    // 保存済み栽培計画: 品種列 ＋ JSON内の variety
+    try {
+      const planSheet = ss.getSheetByName('栽培計画');
+      if (planSheet && planSheet.getLastRow() > 1) {
+        const lastRow = planSheet.getLastRow();
+        const data = planSheet.getRange(2, 1, lastRow - 1, 6).getValues();
+        let changed = false;
+        for (let i = 0; i < data.length; i++) {
+          const rowCrop = String(data[i][3] || '').trim();
+          const rowVariety = String(data[i][4] || '').trim();
+          let rowChanged = false;
+          if (rowCrop === crop && rowVariety === oldName) {
+            data[i][4] = newName;
+            rowChanged = true;
+          }
+          const plan = parseCultivationPlanJson_(data[i][5]);
+          if (plan) {
+            const pCrop = String(plan.crop || rowCrop || '').trim();
+            if (pCrop === crop && String(plan.variety || '').trim() === oldName) {
+              plan.variety = newName;
+              data[i][4] = newName;
+              data[i][5] = JSON.stringify(plan);
+              rowChanged = true;
+            }
+          }
+          if (rowChanged) {
+            updatedPlans++;
+            changed = true;
+          }
+        }
+        if (changed) {
+          planSheet.getRange(2, 1, data.length, 6).setValues(data);
+        }
+      }
+    } catch (e) {}
+
     return {
       success: true,
       message: '品種名を更新しました',
       updatedMaster: updatedMaster,
       updatedCroptype: updatedCroptype,
-      updatedPreset: updatedPreset
+      updatedPreset: updatedPreset,
+      updatedPlans: updatedPlans
     };
   } catch (e) {
     return { success: false, message: e.message || String(e) };
