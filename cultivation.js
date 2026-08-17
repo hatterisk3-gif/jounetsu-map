@@ -4134,32 +4134,32 @@ window.refreshCpPlanLeftSummary = refreshCpPlanLeftSummary;
 function withPreservedCpPanelScroll(fn) {
     const leftPanel = document.getElementById('cpLeftPanel');
     const rightPanel = document.getElementById('cpRightPanel');
-    // ユーザー操作中の高さ同期でスクロール位置を奪わない
+    // ユーザー操作中は位置を触らず高さだけ合わせる
     if (window._cpPanelUserScrolling) {
-        fn();
+        window._cpPanelHeightSyncing = true;
+        try { fn(); } finally { window._cpPanelHeightSyncing = false; }
         return;
     }
     const leftTop = leftPanel ? leftPanel.scrollTop : 0;
     const rightTop = rightPanel ? rightPanel.scrollTop : 0;
     const rightLeft = rightPanel ? rightPanel.scrollLeft : 0;
-    // 遅延 restore が、その後のユーザー操作／意図的スクロールを巻き戻さないよう世代番号で無効化
     const gen = (window._cpScrollPreserveGen = (window._cpScrollPreserveGen || 0) + 1);
-    const restore = function() {
-        if (gen !== window._cpScrollPreserveGen) return;
-        if (window._cpPanelUserScrolling) return;
-        if (leftPanel) leftPanel.scrollTop = leftTop;
-        if (rightPanel) {
-            rightPanel.scrollTop = rightTop;
-            rightPanel.scrollLeft = rightLeft;
-        }
-    };
-    fn();
-    restore();
-    // レイアウト再計算後にもう一度戻す（高さ同期で上に飛ぶ対策）
-    requestAnimationFrame(function() {
-        restore();
-        requestAnimationFrame(restore);
-    });
+    window._cpPanelHeightSyncing = true;
+    try {
+        fn();
+    } finally {
+        window._cpPanelHeightSyncing = false;
+    }
+    // 遅延 rAF 復元はユーザー操作と競合して巻き戻すため、同期後に1回だけ戻す
+    if (gen !== window._cpScrollPreserveGen || window._cpPanelUserScrolling) return;
+    if (leftPanel) {
+        // 高さ変更でブラウザが位置を動かした場合のみ戻す。ユーザーが既に動かしていれば触らない
+        if (Math.abs(leftPanel.scrollTop - leftTop) > 1) leftPanel.scrollTop = leftTop;
+    }
+    if (rightPanel) {
+        if (Math.abs(rightPanel.scrollTop - rightTop) > 1) rightPanel.scrollTop = rightTop;
+        if (Math.abs(rightPanel.scrollLeft - rightLeft) > 1) rightPanel.scrollLeft = rightLeft;
+    }
 }
 
 let cpSyncRowHeightsTimer = null;
@@ -4193,6 +4193,11 @@ function scheduleSyncAllRowHeights(delayMs) {
     if (cpSyncRowHeightsTimer) clearTimeout(cpSyncRowHeightsTimer);
     cpSyncRowHeightsTimer = setTimeout(() => {
         cpSyncRowHeightsTimer = null;
+        // ユーザー操作中は少し待って再スケジュール
+        if (window._cpPanelUserScrolling) {
+            scheduleSyncAllRowHeights(120);
+            return;
+        }
         syncAllRowHeights();
     }, delay);
 }
@@ -4233,11 +4238,11 @@ function invalidateCpScrollPreserve_(holdMs) {
     window._cpPanelUserScrollTimer = setTimeout(() => {
         window._cpPanelUserScrolling = false;
         window._cpPanelUserScrollTimer = null;
-    }, holdMs == null ? 280 : holdMs);
+    }, holdMs == null ? 400 : holdMs);
 }
 
 function markCpPanelUserScrolling_() {
-    invalidateCpScrollPreserve_(280);
+    invalidateCpScrollPreserve_(400);
 }
 
 function setupCpPlanPanelScrollSync() {
@@ -4254,17 +4259,15 @@ function setupCpPlanPanelScrollSync() {
     let syncing = false;
     const syncTop = function(source, target) {
         if (syncing) return;
+        // 高さ合わせ中に相手側へ書くと、操作中の位置が飛ぶ
+        if (window._cpPanelHeightSyncing) return;
         syncing = true;
         markCpPanelUserScrolling_();
-        const sMax = Math.max(0, source.scrollHeight - source.clientHeight);
-        const tMax = Math.max(0, target.scrollHeight - target.clientHeight);
-        if (tMax <= 0) {
-            target.scrollTop = 0;
-        } else if (sMax <= 0) {
-            target.scrollTop = 0;
-        } else {
-            // 左右の内容高が少し違っても追従できるよう比例同期
-            target.scrollTop = (source.scrollTop / sMax) * tMax;
+        // 行高さを揃えた前提なので、比例ではなく同じ scrollTop で同期する
+        // （比例同期は高さ補正のたびに位置が巻き戻る原因だった）
+        const next = source.scrollTop;
+        if (Math.abs(target.scrollTop - next) > 0.5) {
+            target.scrollTop = next;
         }
         requestAnimationFrame(function() { syncing = false; });
     };
@@ -4293,7 +4296,7 @@ function scrollCpPanelsToPlan_(planId, options) {
     if (!leftPanel || !leftEl) return;
 
     // 直後の高さ同期が位置を戻さないよう、しばらく保護（保留中の restore も無効化）
-    invalidateCpScrollPreserve_(700);
+    invalidateCpScrollPreserve_(900);
 
     const align = function() {
         try {
@@ -4302,11 +4305,7 @@ function scrollCpPanelsToPlan_(planId, options) {
             const delta = (elRect.top - panelRect.top) - (opts.margin == null ? 8 : opts.margin);
             const nextTop = Math.max(0, leftPanel.scrollTop + delta);
             leftPanel.scrollTop = nextTop;
-            if (rightPanel) {
-                const sMax = Math.max(0, leftPanel.scrollHeight - leftPanel.clientHeight);
-                const tMax = Math.max(0, rightPanel.scrollHeight - rightPanel.clientHeight);
-                rightPanel.scrollTop = sMax > 0 ? (nextTop / sMax) * tMax : 0;
-            }
+            if (rightPanel) rightPanel.scrollTop = nextTop;
         } catch (e) {}
     };
     requestAnimationFrame(() => {
@@ -4326,6 +4325,8 @@ function waitForCpPlanLayoutReady() {
                 if (leftPanel) leftPanel.style.overflowY = 'auto';
                 if (rightPanel) rightPanel.style.overflowY = 'auto';
                 setupCpPlanPanelScrollSync();
+                // 読み込み直後の自動高さ合わせが、ユーザーのスクロールを奪わないようにする
+                invalidateCpScrollPreserve_(2000);
                 requestAnimationFrame(resolve);
             });
         });
@@ -6201,7 +6202,9 @@ function updateCpCellsText(planId, forceRatioRebuild) {
     // 一括読込中は各行ごとの全体再計算を避け、最後に1回だけ実行する。
     if (!window.cpBulkPlanLoadInProgress) {
         if (typeof assignCpPlanTags === 'function') assignCpPlanTags();
-        setTimeout(() => { syncAllRowHeights(); }, 50);
+        if (!window._cpPanelUserScrolling) {
+            scheduleSyncAllRowHeights(80);
+        }
         if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
         if (typeof refreshCpPlanLeftSummary === 'function') refreshCpPlanLeftSummary();
     }
@@ -11153,6 +11156,8 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
             if (typeof refreshCpPlanLeftSummary === 'function') refreshCpPlanLeftSummary();
             if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
             finishCpLoadProgress(true, `${plans.length}件の計画（${resolvedName}）を読み込みました`);
+            // 読み込み直後の自動レイアウトがスクロールを奪わないよう保護
+            invalidateCpScrollPreserve_(2500);
             // グラフ・詳細レイアウトは完了表示のあとで調整
             Promise.resolve().then(async () => {
                 try {
@@ -11177,6 +11182,7 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
                     }
                     if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
                     await waitForCpPlanLayoutReady();
+                    invalidateCpScrollPreserve_(2000);
                 } catch (e) {}
             });
         } else {

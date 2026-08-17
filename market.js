@@ -6,7 +6,8 @@
   'use strict';
 
   const MAFF_DAILY_GRAPH = 'https://www.maff.go.jp/j/tokei/syohi/oroshi_kakaku/seika.html';
-  const TOKYO_SHIJOU_URL = 'https://www.shijou-tokei.metro.tokyo.lg.jp/';
+  // 旧ドメイン shijou-tokei.metro.tokyo.lg.jp は廃止（解決不可）。現行は shijou.metro.tokyo.lg.jp
+  const TOKYO_SHIJOU_URL = 'https://www.shijou.metro.tokyo.lg.jp/torihiki/';
   const OSAKA_CITY_SHIJOU_URL = 'https://www.shijou.city.osaka.jp/sikyomap/sikyo';
   const OSAKA_PREF_SHIJOU_URL = 'https://osakafu-ichiba.jp/statistics/';
 
