@@ -624,7 +624,7 @@ window.renderMasterSection = () => {
               <button onclick="execMaster('fertilizer', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:8px; font-weight:bold;">肥料を追加</button>
             </div>`;
         }
-        else if (type === 'work') { const cropOpts = '<option value="" selected>選択してください</option><option value="共通">共通</option>' + (pdlCrops || []).map(c => `<option value="${c.name}">${c.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><select id="add_work_category" class="form-input" style="flex:1; margin-bottom:0; padding:6px;"><option value="圃場作業">圃場作業</option><option value="事務作業">事務作業</option><option value="保全・整備">保全・整備</option></select><select id="add_work_crop" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${cropOpts}</select><input type="text" id="add_work_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作業名"></div><div style="display:flex; gap:5px; margin-bottom:5px;"><input type="text" id="add_work_details" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="詳細作業 (カンマ区切り)"></div><button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; width:100%; border-radius:4px; border:none; padding:8px; font-weight:bold; margin-bottom:5px;">作業マスタを追加</button>`; }
+        else if (type === 'work') { const cropOpts = '<option value="" selected>選択してください</option><option value="共通">共通</option>' + (pdlCrops || []).map(c => `<option value="${c.name}">${c.name}</option>`).join(''); html += `<div style="display:flex; gap:5px; margin-top:5px; margin-bottom:5px;"><select id="add_work_category" class="form-input" style="flex:1; margin-bottom:0; padding:6px;"><option value="圃場作業">圃場作業</option><option value="事務作業">事務作業</option><option value="保全・整備">保全・整備</option></select><select id="add_work_crop" class="form-input" style="flex:1; margin-bottom:0; padding:6px;">${cropOpts}</select><input type="text" id="add_work_name" class="form-input" style="flex:2; margin-bottom:0; padding:6px;" placeholder="作業名"></div><div style="display:flex; gap:5px; margin-bottom:5px;"><input type="text" id="add_work_details" class="form-input" style="flex:1; margin-bottom:0; padding:6px;" placeholder="詳細作業 (カンマ区切り)"></div><label style="display:flex; align-items:center; gap:6px; font-size:12px; margin:4px 0;"><input type="checkbox" id="add_work_show_machine"> 農機マスタを出す</label><label style="display:flex; align-items:center; gap:6px; font-size:12px; margin:4px 0;"><input type="checkbox" id="add_work_show_material"> 資材マスタを出す</label><label style="display:flex; align-items:center; gap:6px; font-size:12px; margin:4px 0;"><input type="checkbox" id="add_work_show_pesticide"> 薬剤（農薬マスタ）を出す</label><button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; width:100%; border-radius:4px; border:none; padding:8px; font-weight:bold; margin-bottom:5px;">作業マスタを追加</button>`; }
 
         html += `<div style="max-height:140px; overflow-y:auto; border:1px solid #ddd; background:#fff; border-radius:4px; padding:5px;">`;
         if (list.length === 0) html += `<div style="color:#888; font-size:12px; text-align:center;">データがありません</div>`;
@@ -717,7 +717,15 @@ window.execMaster = async (type, act, val) => {
                 customAlert(`作業名「${name}」は既に登録されています`);
                 return;
             }
-            value = { name: name, category: document.getElementById('add_work_category').value, cropName: document.getElementById('add_work_crop').value, detailWorks: document.getElementById('add_work_details').value.trim() };
+            value = {
+                name: name,
+                category: document.getElementById('add_work_category').value,
+                cropName: document.getElementById('add_work_crop').value,
+                detailWorks: document.getElementById('add_work_details').value.trim(),
+                showMachine: !!document.getElementById('add_work_show_machine')?.checked,
+                showMaterial: !!document.getElementById('add_work_show_material')?.checked,
+                showPesticide: !!document.getElementById('add_work_show_pesticide')?.checked
+            };
         }
     } else { if (!await customConfirm(`削除しますか？`)) return; value = { id: val }; }
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";

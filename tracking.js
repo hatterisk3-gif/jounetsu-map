@@ -297,11 +297,25 @@
     return todayYmd();
   }
 
+  function lunchStorageKey() {
+    const user = String(localStorage.getItem('passionMapUserName') || '').replace(/\s+/g, '');
+    return user ? (LUNCH_KEY + ':' + user) : LUNCH_KEY;
+  }
+
   function loadLunchBreak(dateYmd) {
     try {
-      const raw = localStorage.getItem(LUNCH_KEY);
-      if (!raw) return null;
-      const data = JSON.parse(raw);
+      const keys = [lunchStorageKey()];
+      if (keys[0] !== LUNCH_KEY) keys.push(LUNCH_KEY);
+      let data = null;
+      for (let i = 0; i < keys.length; i++) {
+        const raw = localStorage.getItem(keys[i]);
+        if (!raw) continue;
+        try { data = JSON.parse(raw); } catch (e) { data = null; }
+        if (data) break;
+      }
+      if (!data && typeof window.getCachedLunchHint === 'function') {
+        data = window.getCachedLunchHint(dateYmd || getActiveClockInDateYmd());
+      }
       if (!data) return null;
       const y = dateYmd || getActiveClockInDateYmd();
       if (data.dateYmd && data.dateYmd !== y) return null;
@@ -313,14 +327,38 @@
 
   function saveLunchBreak(data) {
     try {
-      localStorage.setItem(LUNCH_KEY, JSON.stringify(data));
+      const payload = data ? Object.assign({}, data) : data;
+      localStorage.setItem(lunchStorageKey(), JSON.stringify(payload));
+      if (lunchStorageKey() !== LUNCH_KEY) {
+        try { localStorage.removeItem(LUNCH_KEY); } catch (e2) {}
+      }
+      if (payload && typeof window.saveCachedLunchHint === 'function') {
+        window.saveCachedLunchHint({
+          dateYmd: payload.dateYmd || getActiveClockInDateYmd(),
+          registered: payload.registered !== false,
+          enabled: !!payload.enabled,
+          start: payload.start || '',
+          end: payload.end || ''
+        });
+      }
     } catch (e) {}
   }
 
   function clearLunchBreak() {
     try {
+      localStorage.removeItem(lunchStorageKey());
       localStorage.removeItem(LUNCH_KEY);
     } catch (e) {}
+    try {
+      const cache = (typeof window.loadCachedWorkTimeHints === 'function')
+        ? window.loadCachedWorkTimeHints()
+        : null;
+      if (cache && cache.lunch) {
+        delete cache.lunch;
+        cache.updatedAt = Date.now();
+        localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache));
+      }
+    } catch (e2) {}
   }
 
   function saveLastClockOutSnapshot(pending) {
@@ -706,11 +744,28 @@
       btn.title = forgot ? '退勤処理（未完了の出勤あり）' : '退勤処理';
       btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">退勤</span>';
     }
+    try {
+      const near = typeof window.isNearClockOutTime_ === 'function' && window.isNearClockOutTime_();
+      if (near && mode !== 'clockIn') {
+        btn.classList.add('clock-out-nudge');
+        btn.title = '退勤時間が近づいています';
+        btn.style.backgroundColor = '#E53935';
+        btn.style.color = 'white';
+        btn.innerHTML = '🏃‍♂️<br><span style="font-size:10px; line-height:1;">退勤</span>';
+      } else {
+        btn.classList.remove('clock-out-nudge');
+      }
+    } catch (e) {}
+    if (typeof window.refreshClockOutNudgeUI_ === 'function') {
+      try { window.refreshClockOutNudgeUI_(); } catch (e) {}
+    }
   }
   window.getTrackingMode = getTrackingMode;
   window.loadLunchBreak = loadLunchBreak;
+  window.saveLunchBreak = saveLunchBreak;
   window.refreshTrackingModeUI = refreshTrackingModeUI;
   window.getActiveClockInDateYmd = getActiveClockInDateYmd;
+  window.getForgotClockOutInfo = getForgotClockOutInfo;
 
   /**
    * サーバーの出勤中状態をこの端末の localStorage / ボタン表示へ反映する。
@@ -1149,6 +1204,93 @@
     return '';
   }
 
+  function getLoadedPolygons_() {
+    try {
+      if (window.loadedPolygons) return window.loadedPolygons;
+    } catch (e) {}
+    try {
+      if (typeof loadedPolygons !== 'undefined' && loadedPolygons) return loadedPolygons;
+    } catch (e2) {}
+    return null;
+  }
+
+  /** 作業記録シートから取得した指定日の区間（予定確認画面など地図未読込時の補完） */
+  const sheetWorkIntervalCache_ = {};
+
+  function sheetWorkCacheKey_(user, workDateYmd) {
+    return String(user || '').replace(/\s+/g, '') + '|' + normalizeDateKey(workDateYmd);
+  }
+
+  function intervalsFromAnalysisRecords_(records, user, workDateYmd) {
+    const targetKey = normalizeDateKey(workDateYmd);
+    const normUser = String(user || '').replace(/\s+/g, '');
+    const out = [];
+    (records || []).forEach((r) => {
+      if (!r) return;
+      const key = normalizeDateKey(r.workDate);
+      if (!key || key !== targetKey) return;
+      const phAuthor = String(r.author || '').replace(/\s+/g, '');
+      const isAuthorMatch =
+        !normUser ||
+        !phAuthor ||
+        phAuthor === normUser ||
+        normUser.includes(phAuthor) ||
+        phAuthor.includes(normUser);
+      if (!isAuthorMatch) return;
+      const s = timeToMins(r.startTime);
+      let e = timeToMins(r.endTime);
+      if (s == null) return;
+      if (e == null) e = s;
+      if (e <= s && r.endTime) e += 24 * 60;
+      const workName = String(r.workName || '作業').trim() || '作業';
+      const recId = String(r.recordId || '').trim();
+      out.push({
+        start: s,
+        end: e,
+        name: workName,
+        polyName: r.fieldName || '',
+        polyId: '',
+        multiFieldNames: String(r.fieldName || '').trim(),
+        totalTime: r.totalTime || '',
+        breakMins: 0,
+        recId: recId,
+        isLocal: !recId,
+        fingerprint: [
+          key,
+          String(r.startTime || ''),
+          String(r.endTime || ''),
+          workName,
+          '0',
+          phAuthor || normUser
+        ].join('|'),
+        workDateYmd: key
+      });
+    });
+    return out;
+  }
+
+  async function ensureSheetWorkIntervals_(user, workDateYmd, force) {
+    const u = String(user || getCurrentUserName() || '').trim();
+    const ymd = normalizeDateKey(workDateYmd);
+    if (!u || !ymd || typeof callGAS !== 'function') return [];
+    const ck = sheetWorkCacheKey_(u, ymd);
+    if (!force && sheetWorkIntervalCache_[ck]) return sheetWorkIntervalCache_[ck];
+    try {
+      const res = await callGAS('getWorkRecordAnalysis', {
+        fromYmd: ymd,
+        toYmd: ymd,
+        author: u,
+        includeRecords: true
+      });
+      const intervals = intervalsFromAnalysisRecords_((res && res.records) || [], u, ymd);
+      sheetWorkIntervalCache_[ck] = intervals;
+      return intervals;
+    } catch (e) {
+      console.warn('作業記録シート取得に失敗:', e);
+      return sheetWorkIntervalCache_[ck] || [];
+    }
+  }
+
   function mergeIntervals(intervals) {
     if (!intervals.length) return [];
     const sorted = intervals.slice().sort((a, b) => a.start - b.start);
@@ -1204,18 +1346,15 @@
 
   function collectUserWorkIntervals(user, workDateYmd) {
     const intervals = [];
-    let polys = null;
-    try {
-      if (typeof loadedPolygons !== 'undefined' && loadedPolygons) polys = loadedPolygons;
-      else if (window.loadedPolygons) polys = window.loadedPolygons;
-    } catch (e) {}
-    if (!polys || !user) return intervals;
-
-    const normUser = String(user || '').replace(/\s+/g, '');
+    const resolvedUser = String(user || getCurrentUserName() || '').trim();
+    const polys = getLoadedPolygons_();
+    const normUser = resolvedUser.replace(/\s+/g, '');
     const targetKey = normalizeDateKey(workDateYmd);
     if (!targetKey) return intervals;
 
     const candidates = [];
+    if (polys && resolvedUser) {
+
     for (const id in polys) {
       const p = polys[id];
       if (!p || !p.photos) continue;
@@ -1272,6 +1411,13 @@
         });
       });
     }
+    }
+
+    const cachedSheet = resolvedUser ? sheetWorkIntervalCache_[sheetWorkCacheKey_(resolvedUser, targetKey)] : null;
+    if (cachedSheet && cachedSheet.length) {
+      cachedSheet.forEach((c) => candidates.push(c));
+    }
+    if (!resolvedUser && !candidates.length) return intervals;
 
     // 1) 同一レコードID（複数圃場に同一ID）で統合
     // 2) IDが違っても同一指紋（時間・作業名・休憩が同じ）なら統合
@@ -1852,15 +1998,17 @@
   }
 
   function loadPending() {
-    if (window._pendingClockOut) return window._pendingClockOut;
-    try {
-      const raw = localStorage.getItem(PENDING_KEY) || sessionStorage.getItem(PENDING_KEY);
-      if (raw) {
-        window._pendingClockOut = JSON.parse(raw);
-        return window._pendingClockOut;
-      }
-    } catch (e) {}
-    return null;
+    let pending = window._pendingClockOut;
+    if (!pending) {
+      try {
+        const raw = localStorage.getItem(PENDING_KEY) || sessionStorage.getItem(PENDING_KEY);
+        if (raw) pending = JSON.parse(raw);
+      } catch (e) {}
+    }
+    if (!pending) return null;
+    if (!pending.user) pending.user = getCurrentUserName();
+    window._pendingClockOut = pending;
+    return pending;
   }
 
   function clearPending() {
@@ -1872,7 +2020,7 @@
     } catch (e) {}
   }
 
-  function showReconcileUI() {
+  function renderReconcileUI_() {
     const pending = loadPending();
     if (!pending) {
       alertMsg('退勤情報がありません。もう一度退勤処理を行ってください。');
@@ -1955,7 +2103,7 @@
       html += `<button onclick="finalizeClockOut()" style="background:#4CAF50; color:white; width:100%; padding:14px; border-radius:4px; border:none; font-weight:bold; cursor:pointer; font-size:15px;">退勤を確定する</button>`;
     } else {
       html += `<button disabled style="background:#a5d6a7; color:white; width:100%; padding:14px; border-radius:4px; border:none; font-weight:bold; opacity:0.7;">退勤を確定する（時間一致後に有効）</button>`;
-      html += `<button onclick="showReconcileUI()" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer;">🔄 再集計する</button>`;
+      html += `<button onclick="showReconcileUI({forceSheet:true})" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer;">🔄 再集計する</button>`;
     }
     html += `<button onclick="backToClockOutSettings()" style="background:#fff; color:#1565c0; width:100%; padding:10px; border-radius:4px; border:1px solid #1565c0; font-weight:bold; cursor:pointer; font-size:13px;">◀ 戻る（退勤時刻を修正）</button>`;
     html += `<button onclick="cancelPendingClockOut()" style="background:#eee; color:#333; width:100%; padding:10px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">退勤をやめる（出勤継続）</button>`;
@@ -1963,6 +2111,33 @@
     html += `<p style="font-size:11px; color:#888; margin:10px 0 0;">出勤〜退勤から昼休憩・作業中休憩を除いた時間が、作業記録の実作業時間（開始〜終了 − 作業内休憩）の合計と一致する必要があります。作業中の休憩は「☕ 休憩登録」から休憩記録として登録・修正してください。</p>`;
 
     showClockModal(html);
+  }
+
+  function showReconcileUI(opts) {
+    opts = opts || {};
+    const pending = loadPending();
+    if (!pending) {
+      alertMsg('退勤情報がありません。もう一度退勤処理を行ってください。');
+      return;
+    }
+    const user = pending.user || getCurrentUserName();
+    pending.user = user;
+    const ymd = pending.workDateYmd || pending.clockInDateYmd;
+    const local = collectUserWorkIntervals(user, ymd);
+    const needFetch = !!opts.forceSheet || !local.length;
+    if (needFetch && typeof callGAS === 'function') {
+      showClockModal(
+        '<h3 style="margin-top:0; color:#4CAF50;">⏱️ 勤務時間の確認</h3>' +
+        '<div style="text-align:center; padding:18px 8px; color:#555; font-size:14px;">作業記録を読み込んでいます...</div>'
+      );
+      ensureSheetWorkIntervals_(user, ymd, !!opts.forceSheet).then(() => {
+        pending.midBreakMins = sumWorkRecordBreakMins(user, ymd);
+        persistPending(pending);
+        renderReconcileUI_();
+      });
+      return;
+    }
+    renderReconcileUI_();
   }
 
   window.showReconcileUI = showReconcileUI;
@@ -2077,6 +2252,10 @@
 
     // 同日の退勤取り消し用にスナップショットを残す
     saveLastClockOutSnapshot(pending);
+    if (typeof window.rememberUsualClockOutTime_ === 'function') {
+      try { window.rememberUsualClockOutTime_(pending.clockOutTime); } catch (e) {}
+    }
+    try { localStorage.removeItem('passionMapClockOutNudgeSnoozeUntil'); } catch (e) {}
 
     hideClockModal();
     clearWatchers();
@@ -2183,7 +2362,7 @@
       });
     } catch (e) {}
 
-    const user = typeof currentUser !== 'undefined' ? currentUser : '';
+    const user = getCurrentUserName();
     const forgotInfo = getForgotClockOutInfo();
     const workDateYmd =
       (forgotInfo && forgotInfo.clockInDateYmd) ||
@@ -2223,7 +2402,7 @@
     }
 
     persistPending(pending);
-    showReconcileUI();
+    showReconcileUI({ forceSheet: !collectUserWorkIntervals(user, workDateYmd).length });
   };
 
   window.getUserTodayWorkRecordsCount = function (userName) {
@@ -2398,7 +2577,7 @@
     if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
     if (typeof window.refreshTrackingModeUI === 'function') refreshTrackingModeUI();
 
-    const user = typeof currentUser !== 'undefined' ? currentUser : '';
+    const user = getCurrentUserName();
     let gasSent = false;
     const sendGas_ = (lat, lng) => {
       if (gasSent || !user || typeof callGAS !== 'function') return;
@@ -2737,26 +2916,32 @@
     showClockModal(html);
     // 作業中休憩の入力UIは撤去済み（作業記録の合計のみ参照）
 
-    // 退勤忘れ時: 地図データ未読込だと最終終了時間が取れないため、読み込み後に再セット
+    // 退勤忘れ時: 地図データ未読込だと最終終了時間が取れないため、シート／読み込み後に再セット
     if (isForgot && !options.defaultTime) {
-      const user =
-        (typeof currentUser !== 'undefined' && currentUser) ||
-        localStorage.getItem('passionMapUserName') ||
-        '';
+      const user = getCurrentUserName();
       const workDateYmd = forgotInfo.clockInDateYmd;
       const initialOutTime = outTime;
       let tries = 0;
-      const refreshOutTime = () => {
-        tries += 1;
+      const applyLatest = () => {
         const input = document.getElementById('clockOutTime');
-        if (!input) return;
-        // ユーザーが既に手で変えた場合は上書きしない
-        if (input.value !== initialOutTime) return;
+        if (!input) return false;
+        if (input.value !== initialOutTime) return true;
         const latest = getLastWorkEndTime(user, workDateYmd);
         if (latest) {
           input.value = latest;
-          return;
+          if (typeof window.refreshClockOutBreakSummary === 'function') {
+            window.refreshClockOutBreakSummary();
+          }
+          return true;
         }
+        return false;
+      };
+      ensureSheetWorkIntervals_(user, workDateYmd, false).then(() => {
+        applyLatest();
+      });
+      const refreshOutTime = () => {
+        tries += 1;
+        if (applyLatest()) return;
         if (tries < 8) setTimeout(refreshOutTime, 800);
       };
       setTimeout(refreshOutTime, 800);
@@ -3265,5 +3450,13 @@
     const modal = document.getElementById('assignScheduleModal');
     if (modal) modal.remove();
   };
+
+  try {
+    if (typeof window.hydrateLunchAndRestFromCache_ === 'function') {
+      window.hydrateLunchAndRestFromCache_();
+    } else if (typeof refreshTrackingModeUI === 'function') {
+      refreshTrackingModeUI();
+    }
+  } catch (e) {}
 })();
 

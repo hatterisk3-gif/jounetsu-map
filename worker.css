@@ -194,3 +194,30 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes clockOutNudgePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 3px 8px rgba(229,57,53,0.35); }
+  50% { transform: scale(1.08); box-shadow: 0 6px 16px rgba(229,57,53,0.55); }
+}
+#btnTracking.clock-out-nudge {
+  background: #E53935 !important;
+  color: #fff !important;
+  animation: clockOutNudgePulse 1.2s ease-in-out infinite;
+}
+#clockOutNudgeBanner {
+  position: fixed;
+  left: 10px;
+  right: 68px;
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  z-index: 1990;
+  display: none;
+  background: #fff;
+  border: 2px solid #E53935;
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 18px rgba(229,57,53,0.28);
+}
+.map-action-bar.map-selecting-mode ~ #clockOutNudgeBanner,
+body.map-selecting-mode #clockOutNudgeBanner {
+  display: none !important;
+}
+

@@ -1,9 +1,10 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
       let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
       let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], pdlContentUnits = [], activeLots = [];
-      let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
+      let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlPesticides = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
       let pdlDeliveryDestinations = [];
       let pdlNurseryLocations = [], pdlCropCultSettings = [];
+      let pdlCostItems = [], pdlCropCostPlans = [];
       let selectedPolyIds = [], isMapSelecting = false, backupSelectedPolyIds = [];
       let pendingFiles = [];
       let latestUserPos = null;
@@ -699,9 +700,14 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           pdlTools=data.pdl.tools||[];
           pdlMaterials=data.pdl.materials||[];
           pdlMachines=data.pdl.machines||[];
+          pdlPesticides=data.pdl.pesticides||[];
           pdlSymptoms=data.pdl.symptoms||[];
           pdlNurseryLocations = data.pdl.nurseryLocations || [];
           pdlCropCultSettings = data.pdl.cropCultSettings || [];
+          pdlCostItems = data.pdl.costItems || [];
+          pdlCropCostPlans = data.pdl.cropCostPlans || [];
+          window.pdlCostItems = pdlCostItems;
+          window.pdlCropCostPlans = pdlCropCostPlans;
           pdlDeliveryDestinations = data.pdl.deliveryDestinations || [];
           window.pdlDeliveryDestinations = pdlDeliveryDestinations;
           window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
@@ -735,11 +741,18 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               });
               updateWorkerLegend();
           }
-          // 地図データ反映後、今日の最遅終了を端末キャッシュへ温める
+          // 地図データ反映後、今日の最遅終了・休憩を端末キャッシュへ温める
           try {
               const now = new Date();
               const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
               if (typeof window.getLatestEndTimeForDate === 'function') window.getLatestEndTimeForDate(todayStr);
+              if (typeof window.collectRestBreakRecordsForDate === 'function'
+                  && typeof window.saveCachedRestBreaks === 'function') {
+                window.saveCachedRestBreaks(todayStr, window.collectRestBreakRecordsForDate(todayStr));
+              }
+              if (typeof window.hydrateLunchAndRestFromCache_ === 'function') {
+                window.hydrateLunchAndRestFromCache_();
+              }
           } catch (e) {}
           try {
             if (typeof window.refreshHarvestPendingBadge === 'function') window.refreshHarvestPendingBadge();
@@ -2220,7 +2233,11 @@ function createSignboardMarker(name, pos, icon, id) {
                  if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
                  if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime||'--:--'} 〜 ${item.data.endTime||'--:--'} ➔ 計: <b>${item.data.totalTime||'--'}</b>${(parseInt(item.data.breakMins, 10) > 0) ? ` <span style="color:#e65100;">（休憩${parseInt(item.data.breakMins, 10)}分）</span>` : ''}</span>`;
                  if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
-                 if (item.data.usedMaterials) h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
+                 if (typeof window.formatUsedItemsHistoryHtml_ === 'function') {
+                   h += window.formatUsedItemsHistoryHtml_(item.data);
+                 } else if (item.data.usedMaterials) {
+                   h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
+                 }
                  if (item.data.maintenanceTool) {
                     h += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
                             <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
@@ -2342,7 +2359,11 @@ function createSignboardMarker(name, pos, icon, id) {
                  if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
                  if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime||'--:--'} 〜 ${item.data.endTime||'--:--'} ➔ 計: <b>${item.data.totalTime||'--'}</b>${(parseInt(item.data.breakMins, 10) > 0) ? ` <span style="color:#e65100;">（休憩${parseInt(item.data.breakMins, 10)}分）</span>` : ''}</span>`;
                  if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
-                 if (item.data.usedMaterials) h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
+                 if (typeof window.formatUsedItemsHistoryHtml_ === 'function') {
+                   h += window.formatUsedItemsHistoryHtml_(item.data);
+                 } else if (item.data.usedMaterials) {
+                   h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
+                 }
                  if (item.data.maintenanceTool) {
                     h += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
                             <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
@@ -2751,13 +2772,20 @@ function createSignboardMarker(name, pos, icon, id) {
           disp.innerHTML = `<span style="color:#999; font-size:13px; font-weight:bold; padding:4px 0;">対象なし（任意）</span>`;
         } else { 
           disp.innerHTML = selectedPolyIds.map(id => {
-            const name = (loadedPolygons[id] && loadedPolygons[id].name) ? loadedPolygons[id].name : "不明な圃場";
-            return `<span style="display:inline-flex; align-items:center; gap:4px; background:#e8f0fe; color:#1a73e8; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid #aecbfa; margin-top:4px;">
-              ${name}
+            const p = loadedPolygons[id];
+            const name = (p && p.name) ? p.name : "不明な圃場";
+            const around = typeof window.isSurroundingField_ === 'function' && window.isSurroundingField_(p);
+            const bg = around ? '#FFF3E0' : '#e8f0fe';
+            const fg = around ? '#E65100' : '#1a73e8';
+            const bd = around ? '#FFB74D' : '#aecbfa';
+            const mark = around ? '<span style="font-size:10px; font-weight:bold;">周辺地</span>' : '';
+            return `<span style="display:inline-flex; align-items:center; gap:4px; background:${bg}; color:${fg}; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid ${bd}; margin-top:4px;">
+              ${name}${mark}
               <span onclick="removeSelectedPoly('${id}')" style="cursor:pointer; font-weight:bold; color:#d32f2f; margin-left:2px; font-size:14px; line-height:1;" title="対象から外す">×</span>
             </span>`;
           }).join(''); 
         }
+        if (typeof window.refreshSurroundingFieldWarning_ === 'function') window.refreshSurroundingFieldWarning_();
 
         // 圃場が選択されている場合、その圃場の最新の進捗状況を反省
         if (typeof currentEditRecordId === 'undefined' || !currentEditRecordId) {
@@ -2774,6 +2802,57 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
         if (typeof window.refreshProgressStatusVisibility === 'function') window.refreshProgressStatusVisibility();
         if (typeof window.refreshFieldLinkedDetailWorks_ === 'function') window.refreshFieldLinkedDetailWorks_();
+        if (typeof window.refreshWorkCostHintUI_ === 'function') window.refreshWorkCostHintUI_();
+      };
+
+      /** 圃場名／稼働状況／圃場条件に「周辺地」が含まれるか */
+      window.isSurroundingField_ = (p) => {
+        if (!p || p.isMarker) return false;
+        const text = [p.name, p.status, p.condition].map(v => String(v || '')).join(' ');
+        return text.indexOf('周辺地') >= 0;
+      };
+
+      window.getSelectedSurroundingFields_ = () => {
+        const ids = (typeof selectedPolyIds !== 'undefined' && Array.isArray(selectedPolyIds)) ? selectedPolyIds : [];
+        const seen = {};
+        const list = [];
+        ids.forEach((id) => {
+          const key = String(id || '');
+          if (!key || seen[key]) return;
+          const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[key] : null;
+          if (!p || !window.isSurroundingField_(p)) return;
+          seen[key] = true;
+          list.push({ id: key, name: p.name || '周辺地' });
+        });
+        return list;
+      };
+
+      window.refreshSurroundingFieldWarning_ = () => {
+        const disp = document.getElementById('selected_polys_display');
+        const section = document.getElementById('field_target_section');
+        let box = document.getElementById('surrounding_field_warning');
+        if (!disp && !section) {
+          if (box) box.style.display = 'none';
+          return;
+        }
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'surrounding_field_warning';
+          box.setAttribute('role', 'alert');
+          box.style.cssText = 'display:none; margin-top:8px; padding:10px 12px; background:#FFF3E0; border:2px solid #FF9800; border-radius:8px; color:#E65100; font-size:13px; font-weight:bold; line-height:1.45;';
+          if (disp && disp.parentNode) disp.parentNode.insertBefore(box, disp.nextSibling);
+          else if (section) section.appendChild(box);
+        }
+        const rows = window.getSelectedSurroundingFields_();
+        if (!rows.length || (section && section.style.display === 'none')) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        const names = rows.map(r => String(r.name || '').replace(/</g, '&lt;')).join('、');
+        box.style.display = 'block';
+        box.innerHTML = `⚠️ 選んでいる圃場が<strong>周辺地</strong>です（${names}）。`
+          + `<div style="font-size:11px; font-weight:normal; color:#BF360C; margin-top:4px;">栽培している本番の圃場と間違えて記録していないか、確認してください。</div>`;
       };
 
       window.getCadUneCount = (poly) => {
@@ -3401,20 +3480,30 @@ function createSignboardMarker(name, pos, icon, id) {
             });
           }
         }
+        // 地図キャッシュにまだ無い場合は、休憩の端末キャッシュも最遅終了の候補にする
+        if (!latestEnd && typeof window.getCachedRestBreaks === 'function') {
+          (window.getCachedRestBreaks(normTarget) || []).forEach(r => {
+            if (!r) return;
+            const recTime = window.normalizeTimeHm(r.end || r.start);
+            if (recTime && window.isTimeHmLater(recTime, latestEnd)) {
+              latestEnd = recTime;
+              latestName = String(r.workName || '休憩');
+              latestIsRest = true;
+            }
+          });
+        }
         // ※12:00→13:00 の丸めは「次作業の開始候補」用。実終了時刻の参照では行わない
         //   （休憩セット時に「終了が今より未来」扱いになりエラーになるのを防ぐ）
         if (latestEnd) {
           window.saveCachedLatestWorkEnd(normTarget, latestEnd, { force: true });
         } else {
-          // 当日分が無いのに別日終了がキャッシュに残っていると、出勤時刻より優先されてしまう
-          try {
-            const cache = window.loadCachedWorkTimeHints();
-            if (cache.ends && cache.ends[normTarget]) {
-              delete cache.ends[normTarget];
-              cache.updatedAt = Date.now();
-              localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache));
-            }
-          } catch (e) {}
+          // 地図データがまだ古いときは、サーバー同期済みの終了キャッシュを消さない
+          const cachedEnd = (typeof window.getCachedLatestWorkEnd === 'function')
+            ? window.getCachedLatestWorkEnd(normTarget)
+            : '';
+          if (cachedEnd) {
+            latestEnd = cachedEnd;
+          }
         }
         return { end: latestEnd, isRest: latestIsRest, workName: latestName };
       };
@@ -3496,6 +3585,119 @@ function createSignboardMarker(name, pos, icon, id) {
         return (cache.ends && cache.ends[ymd]) ? cache.ends[ymd] : '';
       };
 
+      window.saveCachedLunchHint = (lunch) => {
+        if (!lunch) return;
+        const ymd = window.normalizeDateStr(lunch.dateYmd);
+        if (!ymd) return;
+        const cache = window.loadCachedWorkTimeHints();
+        cache.lunch = {
+          dateYmd: ymd,
+          registered: lunch.registered !== false,
+          enabled: !!lunch.enabled,
+          start: String(lunch.start || '').trim(),
+          end: String(lunch.end || '').trim()
+        };
+        cache.updatedAt = Date.now();
+        try { localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache)); } catch (e) {}
+      };
+
+      window.getCachedLunchHint = (dateYmd) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        if (!ymd) return null;
+        const cache = window.loadCachedWorkTimeHints();
+        if (!cache.lunch || cache.lunch.dateYmd !== ymd) return null;
+        return cache.lunch;
+      };
+
+      window.saveCachedRestBreaks = (dateYmd, rows) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        if (!ymd) return;
+        const cache = window.loadCachedWorkTimeHints();
+        if (!cache.rests) cache.rests = {};
+        cache.rests[ymd] = Array.isArray(rows) ? rows.slice() : [];
+        cache.updatedAt = Date.now();
+        try { localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache)); } catch (e) {}
+      };
+
+      window.upsertCachedRestBreak = (row) => {
+        if (!row) return;
+        const ymd = window.normalizeDateStr(row.dateYmd);
+        if (!ymd) return;
+        const cache = window.loadCachedWorkTimeHints();
+        if (!cache.rests) cache.rests = {};
+        const list = Array.isArray(cache.rests[ymd]) ? cache.rests[ymd].slice() : [];
+        const id = String(row.id || '');
+        const start = String(row.start || '');
+        const end = String(row.end || '');
+        const workName = String(row.workName || '休憩');
+        const next = {
+          id: id,
+          workName: workName,
+          start: start,
+          end: end,
+          totalTime: String(row.totalTime || '')
+        };
+        const idx = list.findIndex(r => {
+          if (!r) return false;
+          if (id && r.id && String(r.id) === id) return true;
+          return String(r.workName || '') === workName && String(r.start || '') === start && String(r.end || '') === end;
+        });
+        if (idx >= 0) list[idx] = Object.assign({}, list[idx], next);
+        else list.push(next);
+        cache.rests[ymd] = list;
+        cache.updatedAt = Date.now();
+        try { localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache)); } catch (e) {}
+      };
+
+      window.getCachedRestBreaks = (dateYmd) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        const cache = window.loadCachedWorkTimeHints();
+        return (cache.rests && Array.isArray(cache.rests[ymd])) ? cache.rests[ymd] : [];
+      };
+
+      window.mergeCachedRestBreaksFromServer_ = (dateYmd, rows) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        if (!ymd) return;
+        const incoming = Array.isArray(rows) ? rows : [];
+        const existing = window.getCachedRestBreaks(ymd) || [];
+        if (!incoming.length && !existing.length) return;
+        const byKey = {};
+        const keyOf = (r) => {
+          if (!r) return '';
+          if (r.id) return 'id:' + String(r.id);
+          return [String(r.workName || '休憩'), String(r.start || ''), String(r.end || '')].join('|');
+        };
+        existing.forEach(r => {
+          const k = keyOf(r);
+          if (k) byKey[k] = r;
+        });
+        incoming.forEach(r => {
+          const k = keyOf(r);
+          if (!k) return;
+          byKey[k] = Object.assign({}, byKey[k] || {}, r);
+        });
+        window.saveCachedRestBreaks(ymd, Object.keys(byKey).map(k => byKey[k]));
+      };
+
+      window.hydrateLunchAndRestFromCache_ = () => {
+        try {
+          const now = new Date();
+          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+          const ymd = (typeof window.getActiveClockInDateYmd === 'function')
+            ? (window.getActiveClockInDateYmd() || todayStr)
+            : todayStr;
+          const lunch = window.getCachedLunchHint(ymd);
+          if (lunch && lunch.registered && typeof window.loadLunchBreak === 'function') {
+            const local = window.loadLunchBreak(ymd);
+            if (!local || local.registered !== true) {
+              if (typeof window.saveLunchBreak === 'function') window.saveLunchBreak(lunch);
+            }
+          }
+          if (typeof window.refreshTrackingModeUI === 'function') window.refreshTrackingModeUI();
+          else if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+        } catch (e) {}
+      };
+
       /** 端末の出勤情報から今日の出勤時刻を取る（date / dateYmd 両対応） */
       window.getLocalClockInTimeForDate = (dateYmd) => {
         const ymd = window.normalizeDateStr(dateYmd);
@@ -3558,6 +3760,18 @@ function createSignboardMarker(name, pos, icon, id) {
         const nowMins = now.getHours() * 60 + now.getMinutes();
         const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const forBreak = !!opts.forBreak || (typeof window.isRestWorkNameSelected === 'function' && window.isRestWorkNameSelected());
+        if (window._pendingNextWorkStart) {
+          const pending = window.normalizeTimeHm
+            ? (window.normalizeTimeHm(window._pendingNextWorkStart) || String(window._pendingNextWorkStart))
+            : String(window._pendingNextWorkStart);
+          window._pendingNextWorkStart = '';
+          return {
+            start: pending,
+            source: 'latestEnd',
+            syncClockIn: false,
+            isFallback: false
+          };
+        }
         const finalizeStart = (result) => {
           if (!result || ymd !== todayStr) return result;
           // 出勤時刻や前作業・休憩の終了時刻が確定している場合は、その時刻を優先
@@ -3929,7 +4143,25 @@ function createSignboardMarker(name, pos, icon, id) {
         return callGAS('getWorkRecordTimeHints', { userName: user, dateYmd: ymd }).then(hints => {
           if (reqId !== window._workTimeHintsReqId) return hints;
           if (!hints) return null;
-          if (hints.latestEndTime) window.saveCachedLatestWorkEnd(ymd, hints.latestEndTime);
+          if (hints.latestEndTime) window.saveCachedLatestWorkEnd(ymd, hints.latestEndTime, { force: !!hints.latestIsRest });
+          if (hints.lunchRegistered && typeof window.saveCachedLunchHint === 'function') {
+            window.saveCachedLunchHint({
+              dateYmd: hints.clockInDateYmd || ymd,
+              registered: true,
+              enabled: !!hints.lunchEnabled,
+              start: hints.lunchStart || '',
+              end: hints.lunchEnd || ''
+            });
+          }
+          if (typeof window.mergeCachedRestBreaksFromServer_ === 'function') {
+            window.mergeCachedRestBreaksFromServer_(ymd, hints.restBreaks || []);
+          }
+          if (typeof window.refreshTodayRestBreaksUI === 'function') {
+            try { window.refreshTodayRestBreaksUI(); } catch (e) {}
+          }
+          if (typeof window.refreshTrackingModeUI === 'function') {
+            try { window.refreshTrackingModeUI(); } catch (e2) {}
+          }
           if (hints.clockInTime && hints.clockInDateYmd) {
             window.saveCachedClockInHint(hints.clockInDateYmd, hints.clockInTime);
             // 端末の出勤キャッシュが空なら補完（別端末出勤対策）
@@ -3988,6 +4220,15 @@ function createSignboardMarker(name, pos, icon, id) {
                     lunchStart: hints.lunchStart || '',
                     lunchEnd: hints.lunchEnd || ''
                   });
+                } else if (hints.lunchRegistered && typeof window.saveLunchBreak === 'function') {
+                  window.saveLunchBreak({
+                    registered: true,
+                    enabled: !!hints.lunchEnabled,
+                    dateYmd: hints.clockInDateYmd || ymd,
+                    start: hints.lunchStart || '',
+                    end: hints.lunchEnd || ''
+                  });
+                  if (typeof window.refreshTrackingModeUI === 'function') window.refreshTrackingModeUI();
                 }
               } else if (hints.open === false && localStorage.getItem('passionMapClockIn')) {
                 // 作業ヒント上は閉じている場合は resolveForgot に任せる（ここでは消さない）
@@ -4082,16 +4323,17 @@ function createSignboardMarker(name, pos, icon, id) {
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
         const isRest = wName.includes('休憩');
 
-        // 🌟 圃場カテゴリ、または修理・点検・整備などの作業・カテゴリの場合に圃場選択エリアを表示（入力は任意）
+        // 🌟 作業名を選んだあと、圃場カテゴリ／修理・点検・整備などで圃場選択エリアを表示（入力は任意）
         const isFieldCat = window.isFieldCategory(cat);
         const isMaint = (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wName))
           || wName.includes('修理') || wName.includes('点検') || wName.includes('整備')
           || cat.includes('整備') || cat.includes('保全');
 
-        const show = (isFieldCat || isMaint) && !isRest;
+        const show = !!wName && (isFieldCat || isMaint) && !isRest;
         box.style.display = show ? 'block' : 'none';
 
         if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+        if (typeof window.refreshSurroundingFieldWarning_ === 'function') window.refreshSurroundingFieldWarning_();
         if (typeof window.refreshLastWorkFieldButton === 'function') window.refreshLastWorkFieldButton();
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
         if (typeof window.refreshProgressStatusVisibility === 'function') window.refreshProgressStatusVisibility();
@@ -5108,6 +5350,58 @@ function createSignboardMarker(name, pos, icon, id) {
             });
           });
         }
+        if (Array.isArray(window._recordSyncQueue)) {
+          window._recordSyncQueue.forEach((job) => {
+            if (!job || job.recordType !== 'work' || !job.data) return;
+            const wName = String(job.data.workName || '').trim();
+            if (!wName.includes('休憩')) return;
+            const recId = job.localId || job.editId || '';
+            if (recId && seen.has(recId)) return;
+            const jobAuthor = String(job.userName || normUser || '').replace(/\s+/g, '');
+            const authorOk = !normUser || !jobAuthor || jobAuthor === normUser || normUser === 'システム';
+            if (!authorOk) return;
+            const recordYmd = (typeof window.normalizeDateStr === 'function')
+              ? window.normalizeDateStr(job.data.workDate)
+              : String(job.data.workDate || '').slice(0, 10);
+            if (recordYmd !== ymd) return;
+            if (recId) seen.add(recId);
+            const start = (typeof window.normalizeTimeHm === 'function')
+              ? (window.normalizeTimeHm(job.data.startTime) || '')
+              : String(job.data.startTime || '');
+            const end = (typeof window.normalizeTimeHm === 'function')
+              ? (window.normalizeTimeHm(job.data.endTime) || '')
+              : String(job.data.endTime || '');
+            list.push({
+              id: recId,
+              polyId: job.activePolyId || '',
+              workName: wName,
+              start: start,
+              end: end,
+              totalTime: job.data.totalTime || ''
+            });
+          });
+        }
+        if (typeof window.getCachedRestBreaks === 'function') {
+          (window.getCachedRestBreaks(ymd) || []).forEach((r) => {
+            if (!r) return;
+            const recId = String(r.id || '');
+            const start = String(r.start || '');
+            const end = String(r.end || '');
+            const wName = String(r.workName || '休憩');
+            if (recId && seen.has(recId)) return;
+            const dup = list.some(x => String(x.start || '') === start && String(x.end || '') === end && String(x.workName || '') === wName);
+            if (dup) return;
+            if (recId) seen.add(recId);
+            list.push({
+              id: recId,
+              polyId: '',
+              workName: wName,
+              start: start,
+              end: end,
+              totalTime: r.totalTime || ''
+            });
+          });
+        }
         list.sort((a, b) => {
           const am = (typeof window.timeHmToMinutes === 'function') ? window.timeHmToMinutes(a.start) : 0;
           const bm = (typeof window.timeHmToMinutes === 'function') ? window.timeHmToMinutes(b.start) : 0;
@@ -5356,6 +5650,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.refreshFieldMachinerySectionVisibility === 'function') window.refreshFieldMachinerySectionVisibility();
         }
         if (typeof window.renderNextWorkPredictions === 'function') window.renderNextWorkPredictions();
+        if (typeof window.refreshWorkCostHintUI_ === 'function') window.refreshWorkCostHintUI_();
       };
 
       /** カテゴリ・作物が揃っているときだけ作業名を出す。準備の次作業セット時は作物なしでも作業名を残す */
@@ -5687,13 +5982,95 @@ function createSignboardMarker(name, pos, icon, id) {
         section.innerHTML = html;
       };
 
+      window.findWorkMasterByName_ = (workName) => {
+        const n = String(workName || '').trim();
+        if (!n) return null;
+        const list = pdlWorkMaster || [];
+        const exact = list.find(w => String(w.name || '').trim() === n);
+        if (exact) return exact;
+        return list.find(w => {
+          const aliases = Array.isArray(w.aliases)
+            ? w.aliases
+            : String(w.aliasNames || '').split(/[,、\n]/);
+          return aliases.some(a => String(a || '').trim() === n);
+        }) || null;
+      };
+
+      window.parseWorkUiFlagValue_ = (v) => {
+        if (v === true || v === 1) return true;
+        if (v === false || v === 0) return false;
+        if (typeof v === 'number' && !isNaN(v)) return v !== 0;
+        const s = String(v == null ? '' : v).trim().toLowerCase();
+        if (!s) return null;
+        if (['1', 'true', 'yes', 'on', 'はい', '有', '☑', '✓', '✔'].includes(s)) return true;
+        if (['0', 'false', 'no', 'off', 'いいえ', '無', 'なし'].includes(s)) return false;
+        return null;
+      };
+
+      window.inferWorkRecordUiFlags_ = (workName, category) => {
+        const n = String(workName || '').trim();
+        const c = String(category || '').trim();
+        return {
+          showMachine: c === '圃場農機作業' || c.includes('農機'),
+          showMaterial: /資材|肥料|マルチ|堆肥|石灰|被覆/.test(n),
+          showPesticide: /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n)
+        };
+      };
+
+      window.getWorkExtraUiFlags_ = (workName) => {
+        const combined = String(workName || '').trim();
+        const mainName = String(document.getElementById('rec_work_name')?.value || combined).trim();
+        const w = (typeof window.findWorkMasterByName_ === 'function')
+          ? (window.findWorkMasterByName_(mainName) || window.findWorkMasterByName_(combined))
+          : null;
+        const cat = String((w && w.category) || (document.getElementById('rec_work_category')?.value || '')).trim();
+        const inferred = window.inferWorkRecordUiFlags_(combined || mainName, cat);
+        const pick = (saved, fallback) => {
+          const parsed = window.parseWorkUiFlagValue_(saved);
+          return parsed == null ? fallback : parsed;
+        };
+        return {
+          showMachine: pick(w && w.showMachine, inferred.showMachine),
+          showMaterial: pick(w && w.showMaterial, inferred.showMaterial),
+          showPesticide: pick(w && w.showPesticide, inferred.showPesticide)
+        };
+      };
+
+      window.buildWorkRecordUiFlagsHtml_ = (prefix, flags) => {
+        const f = flags || {};
+        const row = (id, checked, label, hint) => `
+          <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; color:#333; cursor:pointer; background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:8px 10px;">
+            <input type="checkbox" id="${prefix}_${id}" ${checked ? 'checked' : ''} style="margin-top:2px; transform:scale(1.15);">
+            <span><b>${label}</b><br><span style="font-size:11px; color:#777; font-weight:normal;">${hint}</span></span>
+          </label>`;
+        return `<div style="margin:4px 0 10px; background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px; padding:10px;">
+          <div style="font-size:12px; font-weight:bold; color:#33691E; margin-bottom:4px;">記録画面に出すマスタ</div>
+          <div style="font-size:11px; color:#558B2F; margin-bottom:8px; line-height:1.4;">作業記録で、チェックした項目の選択欄を出します。防除・除草は薬剤が自動でオンになります。</div>
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
+            ${row('show_material', !!f.showMaterial, '📦 資材マスタを出す', '肥料・マルチなどの資材を選べます')}
+            ${row('show_pesticide', !!f.showPesticide, '🧪 薬剤（農薬マスタ）を出す', '使った薬剤名を記入・選択できます')}
+          </div>
+        </div>`;
+      };
+
+      window.collectWorkRecordUiFlagsFromForm_ = (prefix) => ({
+        showMachine: !!document.getElementById(prefix + '_show_machine')?.checked,
+        showMaterial: !!document.getElementById(prefix + '_show_material')?.checked,
+        showPesticide: !!document.getElementById(prefix + '_show_pesticide')?.checked
+      });
+
       window.refreshFieldMachinerySectionVisibility = () => {
         const section = document.getElementById('field_machinery_section');
         if (!section) return;
         const cat = (document.getElementById('rec_work_category')?.value || '').trim();
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        const flags = (typeof window.getWorkExtraUiFlags_ === 'function')
+          ? window.getWorkExtraUiFlags_(wName)
+          : { showMachine: false };
         const isPullWork = typeof window.isCurrentPullWork_ === 'function' && window.isCurrentPullWork_();
         const isMachineryCat = (cat === '圃場農機作業' || cat.includes('農機'));
-        const show = isPullWork || isMachineryCat;
+        const show = isPullWork || isMachineryCat || !!flags.showMachine;
         section.style.display = show ? 'block' : 'none';
         if (!show && typeof window.syncFieldMachineryFuelPairing_ === 'function') {
           const wNameNow = (document.getElementById('rec_work_name')?.value || '').trim();
@@ -6671,6 +7048,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.refreshMaintenanceSection === 'function') window.refreshMaintenanceSection(combined);
           if (typeof window.refreshFieldMachinerySectionVisibility === 'function') window.refreshFieldMachinerySectionVisibility();
           if (typeof window.renderUsedItems === 'function') window.renderUsedItems(combined);
+          if (typeof window.renderUsedPesticidesSection === 'function') window.renderUsedPesticidesSection();
         };
 
 
@@ -6822,6 +7200,587 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshDetailWorkAutoMinutes === 'function') {
           window.refreshDetailWorkAutoMinutes();
         }
+        if (typeof window.renderTimeBasedWorkSuggestions === 'function') {
+          window.renderTimeBasedWorkSuggestions();
+        }
+        if (typeof window.refreshPlannedEndTimeUI_ === 'function') {
+          window.refreshPlannedEndTimeUI_();
+        }
+        if (typeof window.refreshWorkCostHintUI_ === 'function') {
+          window.refreshWorkCostHintUI_();
+        }
+      };
+
+      window.parseRecordDurationMins_ = (data) => {
+        const d = data || {};
+        const t = String(d.totalTime || '').trim();
+        if (t) {
+          const hm = t.match(/(\d+)\s*時間/);
+          const mm = t.match(/(\d+)\s*分/);
+          let mins = (hm ? parseInt(hm[1], 10) * 60 : 0) + (mm ? parseInt(mm[1], 10) : 0);
+          if (mins > 0) return mins;
+          const asNum = parseInt(t, 10);
+          if (!isNaN(asNum) && String(asNum) === t) return Math.max(0, asNum);
+        }
+        const st = window.normalizeTimeHm ? window.normalizeTimeHm(d.startTime) : String(d.startTime || '');
+        const et = window.normalizeTimeHm ? window.normalizeTimeHm(d.endTime) : String(d.endTime || '');
+        if (st && et && window.timeHmToMinutes) {
+          let diff = window.timeHmToMinutes(et) - window.timeHmToMinutes(st);
+          if (diff < 0) diff += 24 * 60;
+          const br = Math.max(0, parseInt(d.breakMins, 10) || 0);
+          return Math.max(0, diff - br);
+        }
+        return 0;
+      };
+
+      window.addMinutesToHm_ = (hm, addMins) => {
+        const base = window.normalizeTimeHm ? window.normalizeTimeHm(hm) : String(hm || '');
+        const startM = window.timeHmToMinutes ? window.timeHmToMinutes(base) : null;
+        const add = parseInt(addMins, 10);
+        if (startM == null || isNaN(add)) return '';
+        let tot = startM + add;
+        tot = ((tot % (24 * 60)) + (24 * 60)) % (24 * 60);
+        return `${String(Math.floor(tot / 60)).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}`;
+      };
+
+      window.formatDurationMinsLabel_ = (mins) => {
+        const n = parseInt(mins, 10) || 0;
+        if (n < 60) return n + '分';
+        const h = Math.floor(n / 60);
+        const m = n % 60;
+        return m ? (h + '時間' + m + '分') : (h + '時間');
+      };
+
+      window.loadDayPlanItemsCache_ = () => {
+        if (Array.isArray(window._psDayPlanItems) && window._psDayPlanItems.length) return window._psDayPlanItems;
+        try {
+          const user = localStorage.getItem('passionMapUserId') || '';
+          const raw = JSON.parse(localStorage.getItem('passionMapDayPlanCache:' + (user || 'anon')) || 'null');
+          if (raw && Array.isArray(raw.items)) {
+            window._psDayPlanItems = raw.items;
+            return raw.items;
+          }
+        } catch (e) {}
+        return window._psDayPlanItems || [];
+      };
+
+      window.saveDayPlanItemsCache_ = (items) => {
+        const list = Array.isArray(items) ? items : [];
+        window._psDayPlanItems = list;
+        try {
+          const user = localStorage.getItem('passionMapUserId') || '';
+          localStorage.setItem('passionMapDayPlanCache:' + (user || 'anon'), JSON.stringify({ items: list, at: Date.now() }));
+        } catch (e) {}
+      };
+
+      window.findTodayPlannedWorkBlock_ = (workName, workDate) => {
+        const name = String(workName || '').trim();
+        if (!name) return null;
+        const ymd = window.normalizeDateStr
+          ? (window.normalizeDateStr(workDate) || '')
+          : String(workDate || '');
+        const today = (() => {
+          const n = new Date();
+          return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+        })();
+        const dateKey = ymd || today;
+        const items = window.loadDayPlanItemsCache_() || [];
+        const hits = items.filter(it => {
+          const d = window.normalizeDateStr ? window.normalizeDateStr(it.date) : String(it.date || '');
+          return d === dateKey && String(it.workName || '').trim() === name;
+        });
+        if (!hits.length) return null;
+        hits.sort((a, b) => String(a.startTime || '').localeCompare(String(b.startTime || '')));
+        return hits[0];
+      };
+
+      window.findUpcomingDayPlanBlock_ = (afterHm, workDate) => {
+        const ymd = window.normalizeDateStr
+          ? (window.normalizeDateStr(workDate) || '')
+          : String(workDate || '');
+        const today = (() => {
+          const n = new Date();
+          return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+        })();
+        const dateKey = ymd || today;
+        const after = window.normalizeTimeHm ? (window.normalizeTimeHm(afterHm) || '') : String(afterHm || '');
+        const items = (window.loadDayPlanItemsCache_() || []).filter(it => {
+          const d = window.normalizeDateStr ? window.normalizeDateStr(it.date) : String(it.date || '');
+          return d === dateKey && String(it.workName || '').trim();
+        });
+        items.sort((a, b) => String(a.startTime || '').localeCompare(String(b.startTime || '')));
+        if (!after) return items[0] || null;
+        return items.find(it => {
+          const st = window.normalizeTimeHm ? window.normalizeTimeHm(it.startTime) : String(it.startTime || '');
+          return st && st >= after;
+        }) || items.find(it => {
+          const et = window.normalizeTimeHm ? window.normalizeTimeHm(it.endTime) : String(it.endTime || '');
+          return et && et > after;
+        }) || null;
+      };
+
+      window.getLocalWorkDurationEstimate_ = (workName) => {
+        const name = String(workName || '').trim();
+        if (!name || name.includes('休憩')) return null;
+        const samples = [];
+        const addData = (data) => {
+          if (!data || String(data.workName || '').trim() !== name) return;
+          const mins = window.parseRecordDurationMins_(data);
+          if (mins >= 5 && mins <= 12 * 60) samples.push(mins);
+        };
+        try {
+          if (typeof loadedPolygons !== 'undefined') {
+            Object.keys(loadedPolygons || {}).forEach(id => {
+              const photos = loadedPolygons[id] && loadedPolygons[id].photos;
+              if (!Array.isArray(photos)) return;
+              photos.forEach(ph => {
+                if (ph && ph.type === 'work' && ph.author === currentUser) addData(ph.data);
+              });
+            });
+          }
+        } catch (e) {}
+        try {
+          if (typeof window.collectMyWorkRecords === 'function') {
+            window.collectMyWorkRecords(null).forEach(r => addData(r && r.data));
+          }
+        } catch (e) {}
+        if (!samples.length) return null;
+        const sorted = samples.slice().sort((a, b) => a - b);
+        const mid = sorted[Math.floor(sorted.length / 2)];
+        const avgMins = Math.max(15, Math.round(mid / 5) * 5);
+        return { avgMins, count: samples.length, source: 'local' };
+      };
+
+      window.getCachedGasWorkDurationEstimate_ = (workName) => {
+        const name = String(workName || '').trim();
+        if (!name) return null;
+        try {
+          const cache = JSON.parse(localStorage.getItem('passionMapWorkDurationEst') || '{}') || {};
+          const hit = cache[name];
+          if (hit && hit.avgMins && hit.at && (Date.now() - hit.at) < 7 * 24 * 60 * 60 * 1000) return hit;
+        } catch (e) {}
+        return null;
+      };
+
+      window.fetchWorkDurationEstimate_ = (workName, category) => {
+        const name = String(workName || '').trim();
+        if (!name || typeof callGAS !== 'function') return Promise.resolve(null);
+        const cached = window.getCachedGasWorkDurationEstimate_(name);
+        if (cached) return Promise.resolve(cached);
+        return callGAS('estimateWorkDuration', { workName: name, category: category || '' }).then(res => {
+          if (res && res.avgMins) {
+            const packed = { avgMins: res.avgMins, count: res.count || 0, source: res.source || 'gas', label: res.label || '', at: Date.now() };
+            try {
+              const cache = JSON.parse(localStorage.getItem('passionMapWorkDurationEst') || '{}') || {};
+              cache[name] = packed;
+              localStorage.setItem('passionMapWorkDurationEst', JSON.stringify(cache));
+            } catch (e) {}
+            return packed;
+          }
+          return null;
+        }).catch(() => null);
+      };
+
+      window.ensureDayPlanCacheForPlannedEnd_ = () => {
+        if (window._dayPlanPrefetchStarted) return;
+        window._dayPlanPrefetchStarted = true;
+        const staffId = localStorage.getItem('passionMapUserId') || '';
+        if (!staffId || typeof callGAS !== 'function') return;
+        const n = new Date();
+        const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        callGAS('dayPlan_list', { userId: staffId, fromYmd: ymd(n), toYmd: ymd(n) }).then(res => {
+          if (res && Array.isArray(res.items)) window.saveDayPlanItemsCache_(res.items);
+          if (typeof window.refreshPlannedEndTimeUI_ === 'function') window.refreshPlannedEndTimeUI_();
+        }).catch(() => {});
+      };
+
+      window.applyPlannedEndToForm_ = () => {
+        const box = document.getElementById('rec_planned_end_box');
+        const hm = box && box.getAttribute('data-planned-hm');
+        const endEl = document.getElementById('rec_end_time');
+        if (!hm || !endEl) return;
+        endEl.value = hm;
+        if (typeof calcTotalTime === 'function') calcTotalTime();
+        if (typeof window.showRecordSyncToast === 'function') {
+          window.showRecordSyncToast('終了予定 ' + hm + ' を入れました', 'ok');
+        }
+      };
+
+      window.refreshPlannedEndTimeUI_ = () => {
+        const box = document.getElementById('rec_planned_end_box');
+        if (!box) return;
+        const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
+        if (!wName || wName.includes('休憩')) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
+        const startHm = window.normalizeTimeHm
+          ? (window.normalizeTimeHm(document.getElementById('rec_start_time')?.value) || '')
+          : String(document.getElementById('rec_start_time')?.value || '');
+        const workDate = document.getElementById('rec_work_date')?.value || '';
+        const plan = window.findTodayPlannedWorkBlock_(wName, workDate);
+        const localEst = window.getLocalWorkDurationEstimate_(wName);
+        const gasEst = window.getCachedGasWorkDurationEstimate_(wName);
+        const est = (gasEst && gasEst.avgMins) ? gasEst : localEst;
+        const planEnd = plan && (window.normalizeTimeHm ? window.normalizeTimeHm(plan.endTime) : plan.endTime);
+        const planStart = plan && (window.normalizeTimeHm ? window.normalizeTimeHm(plan.startTime) : plan.startTime);
+        const avgEnd = (startHm && est && est.avgMins) ? window.addMinutesToHm_(startHm, est.avgMins) : '';
+        const plannedHm = planEnd || avgEnd;
+        if (!plannedHm && !(est && est.avgMins) && !plan) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          const cat = document.getElementById('rec_work_category')?.value || '';
+          if (!window._plannedEndFetching || window._plannedEndFetching !== wName) {
+            window._plannedEndFetching = wName;
+            window.fetchWorkDurationEstimate_(wName, cat).then(res => {
+              if (res && document.getElementById('rec_work_name')?.value === wName) window.refreshPlannedEndTimeUI_();
+            });
+          }
+          return;
+        }
+        box.setAttribute('data-planned-hm', plannedHm || '');
+        const lines = [];
+        if (planEnd) {
+          lines.push(`<div style="font-size:14px; font-weight:bold; color:#0D47A1;">📅 作業終了予定 <span style="font-size:20px; letter-spacing:0.04em;">${planEnd}</span></div>`);
+          lines.push(`<div style="font-size:11px; color:#1565C0; margin-top:2px;">今日の時間予定「${String(wName).replace(/</g, '&lt;')}」${planStart ? (planStart + '〜') : ''}${planEnd}${plan.durationMins ? '（' + plan.durationMins + '分）' : ''}</div>`);
+        } else if (avgEnd) {
+          lines.push(`<div style="font-size:14px; font-weight:bold; color:#E65100;">⏱️ 作業終了予定 <span style="font-size:20px; letter-spacing:0.04em;">${avgEnd}</span></div>`);
+          lines.push(`<div style="font-size:11px; color:#F57C00; margin-top:2px;">過去平均 ${window.formatDurationMinsLabel_(est.avgMins)}（${est.count || ''}件）から算出</div>`);
+        } else if (est && est.avgMins) {
+          lines.push(`<div style="font-size:13px; font-weight:bold; color:#E65100;">⏱️ 目安 ${window.formatDurationMinsLabel_(est.avgMins)}</div>`);
+          lines.push(`<div style="font-size:11px; color:#888; margin-top:2px;">開始時間を入れると終了予定が出ます</div>`);
+        }
+        if (planEnd && avgEnd && planEnd !== avgEnd) {
+          lines.push(`<div style="font-size:11px; color:#888; margin-top:4px;">過去平均なら ${avgEnd} ごろ（${window.formatDurationMinsLabel_(est.avgMins)}）</div>`);
+        }
+        const applyBtn = plannedHm
+          ? `<button type="button" onclick="applyPlannedEndToForm_()" style="margin-top:8px; width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer;">終了予定 ${plannedHm} を入れる</button>`
+          : '';
+        box.innerHTML = lines.join('') + applyBtn;
+        box.style.display = 'block';
+        if (!gasEst && (!localEst || (localEst.count || 0) < 3)) {
+          const cat = document.getElementById('rec_work_category')?.value || '';
+          if (!window._plannedEndFetching || window._plannedEndFetching !== wName) {
+            window._plannedEndFetching = wName;
+            window.fetchWorkDurationEstimate_(wName, cat).then(res => {
+              if (res && document.getElementById('rec_work_name')?.value === wName) window.refreshPlannedEndTimeUI_();
+            });
+          }
+        }
+      };
+
+      window._cropCostPlanFetch_ = window._cropCostPlanFetch_ || {};
+
+      window.escapeWorkCostHtml_ = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+      window.formatWorkCostYen_ = (n) => {
+        const v = Number(n);
+        if (isNaN(v)) return '-';
+        return Math.round(v).toLocaleString('ja-JP') + '円';
+      };
+
+      window.getWorkCostBaseLabel_ = (base) => {
+        if (base === 'area_a') return 'aあたり';
+        if (base === 'tray') return 'トレーあたり';
+        if (base === 'plant') return '本あたり';
+        if (base === 'yield_pack') return '出荷単位あたり';
+        return '固定';
+      };
+
+      window.getWorkRecordCropNamesForCost_ = () => {
+        const names = [];
+        const add = (n) => {
+          const s = String(n || '').trim();
+          if (!s || s === '共通' || s === '__common__' || s === 'すべて' || s === '全て' || s === '全作物') return;
+          if (s.indexOf('field:') === 0 || s === '__field_common__') return;
+          if (names.indexOf(s) < 0) names.push(s);
+        };
+        (window.selectedWorkCrops || []).forEach(add);
+        const keys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
+          ? window.getSelectedWorkCropFilterKeys()
+          : [];
+        keys.forEach(k => {
+          add((typeof window.getWorkCropLabel === 'function') ? window.getWorkCropLabel(k) : k);
+        });
+        return names;
+      };
+
+      window.getWorkRecordAreaA_ = () => {
+        const ids = (typeof selectedPolyIds !== 'undefined' && selectedPolyIds && selectedPolyIds.length)
+          ? selectedPolyIds
+          : (activePolyId ? [activePolyId] : []);
+        let sum = 0;
+        ids.forEach(id => {
+          const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+          if (!p || p.isMarker) return;
+          const a = Number(p.area);
+          if (!isNaN(a) && a > 0) sum += a;
+        });
+        return Math.round(sum * 1000) / 1000;
+      };
+
+      window.getWorkRecordPlantCount_ = (cropName, areaA) => {
+        const crop = (typeof pdlCrops !== 'undefined' ? pdlCrops : []).find(c => c && String(c.name) === String(cropName));
+        const dens = crop ? Number(crop.density) : 0;
+        if (!dens || !areaA) return 0;
+        return Math.floor((Number(areaA) / 10) * dens);
+      };
+
+      window.getWorkRecordTrayCount_ = () => {
+        const sow = parseFloat(document.getElementById('sow_trays')?.value || '');
+        if (!isNaN(sow) && sow > 0) return sow;
+        const plant = parseFloat(document.getElementById('plant_trays')?.value || '');
+        if (!isNaN(plant) && plant > 0) return plant;
+        return 0;
+      };
+
+      window.getWorkRecordYieldPacks_ = () => {
+        const n = parseFloat(document.getElementById('wh_container_count')?.value || '');
+        return (!isNaN(n) && n > 0) ? n : 0;
+      };
+
+      window.getWorkRecordHours_ = () => {
+        const s = document.getElementById('rec_start_time')?.value;
+        const e = document.getElementById('rec_end_time')?.value;
+        if (!s || !e) return 0;
+        const sMins = parseInt(s.split(':')[0], 10) * 60 + parseInt(s.split(':')[1], 10);
+        const eMins = parseInt(e.split(':')[0], 10) * 60 + parseInt(e.split(':')[1], 10);
+        if (isNaN(sMins) || isNaN(eMins)) return 0;
+        let diff = eMins - sMins;
+        if (diff < 0) diff += 24 * 60;
+        const breakEl = document.getElementById('rec_break_mins');
+        let breakMins = breakEl ? Math.max(0, parseInt(breakEl.value, 10) || 0) : 0;
+        if (breakMins > diff) breakMins = diff;
+        return Math.max(0, diff - breakMins) / 60;
+      };
+
+      window.costCategoriesForWorkName_ = (workName) => {
+        const n = String(workName || '');
+        const cats = [];
+        const add = (c) => { if (c && cats.indexOf(c) < 0) cats.push(c); };
+        if (/防除|消毒|農薬|散布|殺虫|殺菌|除草剤/.test(n)) add('農薬');
+        if (/除草|草刈|草抜き/.test(n)) { add('農薬'); add('資材'); add('機械'); add('燃料'); }
+        if (/施肥|追肥|肥料|土作り|堆肥|元肥|液肥/.test(n)) add('肥料');
+        if (/播種|種まき|種蒔|播き/.test(n)) add('種');
+        if (/定植|移植|鉢上げ/.test(n)) { add('種'); add('資材'); }
+        if (/耕起|畝立|畝立て|中耕|ロータリー|代かき|耕うん|耕耘|プラウ/.test(n)) { add('機械'); add('燃料'); }
+        if (/収穫|選別|出荷|梱包|調製/.test(n)) add('資材');
+        if (/かん水|灌水|潅水|散水/.test(n)) { add('燃料'); add('資材'); }
+        if (/農機|トラクタ/.test(n)) { add('機械'); add('燃料'); }
+        return cats;
+      };
+
+      window.costNameLoose_ = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+
+      window.costNamesOverlap_ = (a, b) => {
+        const x = window.costNameLoose_(a);
+        const y = window.costNameLoose_(b);
+        if (!x || !y) return false;
+        if (x === y) return true;
+        if (x.length >= 2 && y.indexOf(x) >= 0) return true;
+        if (y.length >= 2 && x.indexOf(y) >= 0) return true;
+        return false;
+      };
+
+      window.isHourlyLaborCost_ = (item) => {
+        const u = [item && item.priceUnit, item && item.note, item && item.spec, item && item.name]
+          .map(v => String(v || '')).join(' ');
+        return /時間|時給|\/h|\/時|hあたり|１時間|1時間/.test(u);
+      };
+
+      window.collectUsedNamesForCost_ = () => {
+        const names = [];
+        const add = (n) => {
+          const s = String(n || '').trim();
+          if (s && names.indexOf(s) < 0) names.push(s);
+        };
+        document.querySelectorAll('.used-machine-check:checked').forEach(el => add(el.getAttribute('data-name') || el.value));
+        document.querySelectorAll('.used-mat-check:checked').forEach(el => add(el.value));
+        const pests = Array.isArray(window._selectedPesticides) ? window._selectedPesticides : [];
+        pests.forEach(p => add(p && p.name));
+        return names;
+      };
+
+      window.findCropCostPlanLocal_ = (cropName) => {
+        const name = String(cropName || '').trim();
+        if (!name) return null;
+        const plans = (typeof pdlCropCostPlans !== 'undefined' && Array.isArray(pdlCropCostPlans)) ? pdlCropCostPlans : [];
+        return plans.find(p => p && String(p.cropName || '').trim() === name) || null;
+      };
+
+      window.ensureCropCostPlanLoaded_ = (cropName) => {
+        const name = String(cropName || '').trim();
+        if (!name) return;
+        const plan = window.findCropCostPlanLocal_(name);
+        if (plan && Array.isArray(plan.entries)) return;
+        if (!plan || !Number(plan.entryCount)) return;
+        if (window._cropCostPlanFetch_[name]) return;
+        if (typeof callGAS !== 'function') return;
+        window._cropCostPlanFetch_[name] = true;
+        callGAS('getCropCostPlan', { cropName: name }).then(res => {
+          const fetched = res && res.plan;
+          if (!fetched) return;
+          const plans = (typeof pdlCropCostPlans !== 'undefined' && Array.isArray(pdlCropCostPlans)) ? pdlCropCostPlans : [];
+          const idx = plans.findIndex(p => p && String(p.cropName || '').trim() === name);
+          if (idx >= 0) plans[idx] = Object.assign({}, plans[idx], fetched, { entryCount: (fetched.entries || []).length });
+          else plans.push(fetched);
+          pdlCropCostPlans = plans;
+          window.pdlCropCostPlans = plans;
+          if (typeof window.refreshWorkCostHintUI_ === 'function') window.refreshWorkCostHintUI_();
+        }).catch(() => {}).finally(() => {
+          window._cropCostPlanFetch_[name] = false;
+        });
+      };
+
+      window.buildWorkCostLinesForCrop_ = (cropName, ctx) => {
+        const plan = window.findCropCostPlanLocal_(cropName);
+        if (!plan || !(Number(plan.entryCount) > 0 || (Array.isArray(plan.entries) && plan.entries.length))) {
+          return { cropName, loading: false, lines: [], unmatched: false, total: 0, hasPlan: false };
+        }
+        const entries = Array.isArray(plan.entries) ? plan.entries : [];
+        if (!entries.length) {
+          window.ensureCropCostPlanLoaded_(cropName);
+          return { cropName, loading: true, lines: [], unmatched: false, total: 0, hasPlan: true, entryCount: Number(plan.entryCount) || 0 };
+        }
+        const masterList = (typeof pdlCostItems !== 'undefined' && Array.isArray(pdlCostItems)) ? pdlCostItems : [];
+        const masterMap = {};
+        masterList.forEach(m => { if (m && m.id) masterMap[String(m.id)] = m; });
+        const areaA = ctx.areaA || 0;
+        const trays = ctx.trays || 0;
+        const plants = window.getWorkRecordPlantCount_(cropName, areaA);
+        const yieldPack = ctx.yieldPack || 0;
+        const workHours = ctx.workHours || 0;
+        const scaleOf = (base, hourly) => {
+          if (hourly) return workHours;
+          if (base === 'area_a') return areaA;
+          if (base === 'tray') return trays;
+          if (base === 'plant') return plants;
+          if (base === 'yield_pack') return yieldPack;
+          return 1;
+        };
+        const scaleReady = (base, hourly) => {
+          if (hourly) return workHours > 0;
+          if (base === 'area_a') return areaA > 0;
+          if (base === 'tray') return trays > 0;
+          if (base === 'plant') return plants > 0;
+          if (base === 'yield_pack') return yieldPack > 0;
+          return true;
+        };
+        const missingHint = (base, hourly) => {
+          if (hourly) return '時間を入れると換算';
+          if (base === 'area_a') return '圃場を選ぶと面積換算';
+          if (base === 'tray') return 'トレー数を入れると換算';
+          if (base === 'plant') return '栽植密度があれば本数換算';
+          if (base === 'yield_pack') return '収穫個数を入れると換算';
+          return '';
+        };
+        const lines = [];
+        entries.forEach(e => {
+          const m = e.costItemId ? masterMap[String(e.costItemId)] : null;
+          const unitPrice = m ? Number(m.unitPrice || 0) : Number(e.unitPrice || 0);
+          const priceUnit = (m && m.priceUnit) ? m.priceUnit : (e.priceUnit || '円');
+          const category = (m && m.category) ? m.category : (e.category || '');
+          const name = (m && m.name) ? m.name : (e.costItemName || '');
+          const spec = m ? (m.spec || '') : '';
+          const note = e.note || (m && m.note) || '';
+          const base = e.base || (m && m.base) || 'fixed';
+          const qtyPerBase = Number(e.qtyPerBase != null ? e.qtyPerBase : ((m && m.defaultQty !== '' && m.defaultQty != null) ? m.defaultQty : 1)) || 0;
+          const item = { name, category, spec, note, priceUnit, unitPrice, base, qtyPerBase };
+          const hourly = category === '労務' && window.isHourlyLaborCost_(item);
+          const usedHit = (ctx.usedNames || []).some(n => window.costNamesOverlap_(n, name) || window.costNamesOverlap_(n, note));
+          const nameHit = ctx.workName && (
+            window.costNamesOverlap_(ctx.workName, name) || window.costNamesOverlap_(ctx.workName, note)
+          );
+          const catHit = (ctx.categories || []).indexOf(category) >= 0;
+          const laborHit = hourly && workHours > 0;
+          if (!usedHit && !nameHit && !catHit && !laborHit) return;
+          const ready = scaleReady(base, hourly);
+          const scale = ready ? scaleOf(base, hourly) : 0;
+          const qty = qtyPerBase * (ready ? scale : 1);
+          const amount = ready ? (qty * unitPrice) : 0;
+          lines.push({
+            name, category, spec, note, base, hourly,
+            qtyPerBase, scale, qty: Math.round(qty * 1000) / 1000,
+            unitPrice, priceUnit, amount: Math.round(amount),
+            ready, hint: ready ? '' : missingHint(base, hourly),
+            match: usedHit ? 'used' : (nameHit ? 'name' : (laborHit ? 'labor' : 'category'))
+          });
+        });
+        const total = lines.filter(l => l.ready).reduce((s, l) => s + l.amount, 0);
+        return {
+          cropName,
+          loading: false,
+          lines,
+          unmatched: lines.length === 0,
+          total: Math.round(total),
+          hasPlan: true,
+          entryCount: entries.length
+        };
+      };
+
+      window.refreshWorkCostHintUI_ = () => {
+        const box = document.getElementById('rec_work_cost_box');
+        if (!box) return;
+        const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
+        if (!wName || wName.includes('休憩') || currentRecordType !== 'work') {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        const crops = window.getWorkRecordCropNamesForCost_();
+        const ctx = {
+          workName: wName,
+          categories: window.costCategoriesForWorkName_(wName),
+          usedNames: window.collectUsedNamesForCost_(),
+          areaA: window.getWorkRecordAreaA_(),
+          trays: window.getWorkRecordTrayCount_(),
+          yieldPack: window.getWorkRecordYieldPacks_(),
+          workHours: window.getWorkRecordHours_()
+        };
+        const blocks = crops.map(c => window.buildWorkCostLinesForCrop_(c, ctx)).filter(b => b.hasPlan);
+        if (!blocks.length) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        const esc = window.escapeWorkCostHtml_;
+        const yen = window.formatWorkCostYen_;
+        const areaLabel = ctx.areaA > 0 ? (ctx.areaA + 'a') : '面積未選択';
+        let html = `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap;">
+          <div style="font-size:13px; font-weight:bold; color:#E65100;">💰 原価目安</div>
+          <div style="font-size:11px; color:#888;">対象 ${esc(areaLabel)}</div>
+        </div>`;
+        blocks.forEach(b => {
+          html += `<div style="margin-top:8px; text-align:left;">`;
+          html += `<div style="font-size:12px; font-weight:bold; color:#BF360C;">🌱 ${esc(b.cropName)}</div>`;
+          if (b.loading) {
+            html += `<div style="font-size:12px; color:#888; margin-top:4px;">原価設定を読み込み中...</div>`;
+          } else if (b.unmatched) {
+            html += `<div style="font-size:12px; color:#888; margin-top:4px;">この作物に原価設定あり（${b.entryCount}項目）。この作業に合う費目はありません。</div>`;
+          } else {
+            html += b.lines.map(l => {
+              const cat = l.category ? `<span style="font-size:10px; background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; border-radius:8px; padding:1px 6px; margin-right:4px;">${esc(l.category)}</span>` : '';
+              const detail = l.ready
+                ? `${esc(String(l.qtyPerBase))} × ${esc(window.getWorkCostBaseLabel_(l.base))}${l.hourly ? '（時間）' : ''} → ${yen(l.amount)}`
+                : `${yen(l.unitPrice)} / ${esc(window.getWorkCostBaseLabel_(l.base))}　${esc(l.hint)}`;
+              return `<div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start; background:#fff; border:1px solid #FFE0B2; border-radius:6px; padding:6px 8px; margin-top:4px;">
+                <div style="min-width:0;">
+                  ${cat}<b style="font-size:12px; color:#333;">${esc(l.name)}</b>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">${detail}</div>
+                </div>
+                <div style="font-size:13px; font-weight:bold; color:${l.ready ? '#E65100' : '#999'}; white-space:nowrap;">${l.ready ? yen(l.amount) : '—'}</div>
+              </div>`;
+            }).join('');
+            html += `<div style="text-align:right; margin-top:6px; font-size:13px; font-weight:bold; color:#BF360C;">合計 ${yen(b.total)}</div>`;
+          }
+          html += `</div>`;
+        });
+        html += `<div style="font-size:10px; color:#999; margin-top:8px; text-align:left;">品目別原価設定に基づく目安です。記録には保存されません。</div>`;
+        box.innerHTML = html;
+        box.style.display = 'block';
       };
 
       // スマホでネイティブ time ピッカーの「設定」が見切れる対策（独自ピッカー）
@@ -6871,6 +7830,9 @@ function createSignboardMarker(name, pos, icon, id) {
           input.value = `${hourSel.value}:${minSel.value}`;
           input.dispatchEvent(new Event('change', { bubbles: true }));
           if (typeof calcTotalTime === 'function') calcTotalTime();
+          if (_timePickerTargetId === 'after_save_next_start' && typeof window.refreshAfterSavePlannedEndHint_ === 'function') {
+            window.refreshAfterSavePlannedEndHint_();
+          }
         }
         window.closeAppTimePicker();
       };
@@ -7809,6 +8771,9 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof renderWorkOptions === 'function') renderWorkOptions(cat, crop);
           if (selectedName && typeof selectWorkChip === 'function') selectWorkChip(selectedName);
           else if (typeof handleWorkNameChange === 'function') handleWorkNameChange('');
+          if (typeof window.refreshPrepTargetWorkSection === 'function') {
+              window.refreshPrepTargetWorkSection(window.selectedPrepTargetWork || '');
+          }
           if (document.getElementById('workMasterManagerModal')) {
               window.renderWorkMasterManagerList();
           }
@@ -7908,31 +8873,40 @@ function createSignboardMarker(name, pos, icon, id) {
           if (m) m.remove();
       };
 
-      window.openWorkNameEditorModal = (mode, originalName) => {
+      window.openWorkNameEditorModal = (mode, originalName, presetCat, presetCrop, opts) => {
           if (!window.isWorkerAdmin()) {
               if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
               return;
           }
           window.closeWorkNameEditorModal();
+          opts = opts || {};
+          window._workNameEditorOpts = opts;
+
           const existing = (mode === 'edit')
               ? (pdlWorkMaster || []).find(w => String(w.name || '').trim() === String(originalName || '').trim())
               : null;
-          const catNow = document.getElementById('rec_work_category')?.value || '';
-          const cropNow = document.getElementById('rec_work_crop_filter')?.value || '';
+          const catNow = presetCat || document.getElementById('rec_work_category')?.value || '';
+          const cropNow = presetCrop || document.getElementById('rec_work_crop_filter')?.value || '';
           const defaultCat = (existing && existing.category)
               || (catNow && catNow !== 'すべて' ? catNow : (pdlWorkCategories[0] || '圃場作業'));
-          const defaultCrop = (existing && existing.cropName) || (cropNow && cropNow !== '__common__' ? cropNow : '');
+          const defaultCrop = (existing && existing.cropName) || (cropNow && cropNow !== '__common__' && cropNow !== 'すべて' ? cropNow : '');
           const catOpts = window.getWorkCategoryOptionsForUI_({ includeAll: false }).map(c =>
               `<option value="${String(c).replace(/"/g, '&quot;')}" ${c === defaultCat ? 'selected' : ''}>${c}</option>`
           ).join('');
           const cropNames = (pdlCrops || []).map(c => c.name);
           if (defaultCrop && !cropNames.includes(defaultCrop)) cropNames.unshift(defaultCrop);
-          const cropOpts = `<option value="" ${!defaultCrop ? 'selected' : ''}>-- 未選択 --</option><option value="__common__">共通（全作物）</option>` + cropNames.map(name =>
+          const cropOpts = `<option value="" ${!defaultCrop ? 'selected' : ''}>-- 未選択 --</option><option value="__common__" ${defaultCrop === '__common__' ? 'selected' : ''}>共通（全作物）</option>` + cropNames.map(name =>
               `<option value="${String(name).replace(/"/g, '&quot;')}" ${name === defaultCrop ? 'selected' : ''}>${name}</option>`
           ).join('');
-          const title = mode === 'edit' ? '作業マスタを編集' : '作業マスタを追加';
+          const title = mode === 'edit' ? '作業マスタを編集' : (opts.isPrepTarget ? '準備対象の作業名を追加' : '作業マスタを追加');
           const existingAliases = (existing && (existing.aliasNames || (Array.isArray(existing.aliases) ? existing.aliases.join(', ') : ''))) || '';
           const detailsHtml = window.buildWorkerDetailWorksHtml('wn_edit_details_list', (existing && existing.detailWorks) || '');
+          const flagSource = (mode === 'edit' && existing)
+            ? window.getWorkExtraUiFlags_(existing.name || originalName)
+            : window.inferWorkRecordUiFlags_(existing && existing.name, defaultCat);
+          const flagsHtml = (typeof window.buildWorkRecordUiFlagsHtml_ === 'function')
+            ? window.buildWorkRecordUiFlagsHtml_('wn_edit', flagSource)
+            : '';
           const modal = document.createElement('div');
           modal.id = 'workNameEditorModal';
           modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12100; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
@@ -7952,12 +8926,36 @@ function createSignboardMarker(name, pos, icon, id) {
               <div style="font-size:11px; color:#666; margin-bottom:10px; line-height:1.35;">※地域特有の呼称や表記ゆれをカンマ区切りで登録すると、同じ作業として連動します。</div>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（各枠に1つ）</label>
               ${detailsHtml}
+              ${flagsHtml}
               <div style="display:flex; gap:8px; margin-top:12px;">
                 <button type="button" onclick="closeWorkNameEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
                 <button type="button" onclick="submitWorkNameEditor('${mode}', '${String(originalName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="flex:1; background:#FF9800; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${mode === 'edit' ? '更新する' : '追加する'}</button>
               </div>
             </div>`;
           document.body.appendChild(modal);
+          window._workExtraFlagsTouched = (mode === 'edit');
+          const bindFlagTouch = () => {
+            ['wn_edit_show_machine', 'wn_edit_show_material', 'wn_edit_show_pesticide'].forEach(id => {
+              const el = document.getElementById(id);
+              if (el) el.addEventListener('change', () => { window._workExtraFlagsTouched = true; });
+            });
+          };
+          const syncFlagDefaults = () => {
+            if (window._workExtraFlagsTouched) return;
+            const inferred = window.inferWorkRecordUiFlags_(
+              document.getElementById('wn_edit_name')?.value || '',
+              document.getElementById('wn_edit_category')?.value || ''
+            );
+            const m = document.getElementById('wn_edit_show_machine');
+            const mat = document.getElementById('wn_edit_show_material');
+            const p = document.getElementById('wn_edit_show_pesticide');
+            if (m) m.checked = !!inferred.showMachine;
+            if (mat) mat.checked = !!inferred.showMaterial;
+            if (p) p.checked = !!inferred.showPesticide;
+          };
+          bindFlagTouch();
+          document.getElementById('wn_edit_name')?.addEventListener('input', syncFlagDefaults);
+          document.getElementById('wn_edit_category')?.addEventListener('change', syncFlagDefaults);
           setTimeout(() => {
               const input = document.getElementById('wn_edit_name');
               if (input) { input.focus(); input.select(); }
@@ -8015,6 +9013,9 @@ function createSignboardMarker(name, pos, icon, id) {
           const cropName = String(document.getElementById('wn_edit_crop')?.value || '').trim();
           const aliasNames = String(document.getElementById('wn_edit_aliases')?.value || '').trim();
           const detailWorks = window.collectWorkerDetailWorks('wn_edit_details_list');
+          const uiFlags = (typeof window.collectWorkRecordUiFlagsFromForm_ === 'function')
+            ? window.collectWorkRecordUiFlagsFromForm_('wn_edit')
+            : {};
           if (!name) {
               if (typeof customAlert === 'function') customAlert('作業名を入力してください。');
               return;
@@ -8044,7 +9045,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   updatedList = await callGAS('manageMaster', {
                       masterType: 'work',
                       manageAction: 'add',
-                      value: { name, category, cropName, detailWorks, aliasNames },
+                      value: { name, category, cropName, detailWorks, aliasNames, ...uiFlags },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
               } else {
@@ -8053,7 +9054,7 @@ function createSignboardMarker(name, pos, icon, id) {
                       manageAction: 'edit',
                       value: {
                           originalName: orig,
-                          newData: { name, category, cropName, detailWorks, aliasNames }
+                          newData: { name, category, cropName, detailWorks, aliasNames, ...uiFlags }
                       },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
@@ -8061,8 +9062,22 @@ function createSignboardMarker(name, pos, icon, id) {
               if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
               localStorage.removeItem('passionMapInitData');
               localStorage.removeItem('pMapAdminInitData');
+
+              const isPrepTarget = !!(window._workNameEditorOpts && window._workNameEditorOpts.isPrepTarget);
+              window._workNameEditorOpts = null;
               window.closeWorkNameEditorModal();
-              window.refreshWorkChipsAfterMasterChange(name);
+
+              const currentWork = document.getElementById('rec_work_name')?.value || '';
+              if (isPrepTarget || (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(currentWork))) {
+                  if (typeof window.onPrepTargetWorkChange === 'function') {
+                      window.onPrepTargetWorkChange(name);
+                  } else if (typeof window.refreshPrepTargetWorkSection === 'function') {
+                      window.refreshPrepTargetWorkSection(name);
+                  }
+              } else {
+                  window.refreshWorkChipsAfterMasterChange(name);
+              }
+
               if (typeof customAlert === 'function') customAlert(mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！');
           } catch (e) {
               if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました。');
@@ -8914,6 +9929,220 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
+      /**
+       * ⏰ 指定された時刻（または開始時刻/現在時刻）によく行われている作業候補を取得
+       */
+      window.getTimeBasedWorkSuggestions_ = (baseTimeStr) => {
+        let timeStr = String(baseTimeStr || '').trim();
+        if (!timeStr) {
+          const startInput = document.getElementById('rec_start_time');
+          timeStr = (startInput && startInput.value) ? startInput.value.trim() : '';
+        }
+        if (!timeStr) {
+          const now = new Date();
+          timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        }
+        let m2 = timeStr.match(/^(\d{1,2}):(\d{2})/);
+        if (!m2) {
+          const now = new Date();
+          timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          m2 = timeStr.match(/^(\d{1,2}):(\d{2})/);
+        }
+        const baseHour = m2 ? parseInt(m2[1], 10) : 9;
+        const baseMinute = m2 ? parseInt(m2[2], 10) : 0;
+        const baseTotalMin = baseHour * 60 + baseMinute;
+
+        // 過去の作業記録を収集
+        const records = (typeof window.collectMyWorkRecords === 'function')
+          ? window.collectMyWorkRecords(null)
+          : [];
+
+        const scoreMap = new Map();
+
+        const processRecord = (ph, isMyRecord) => {
+          if (!ph) return;
+          const data = ph.data || ph;
+          const wName = String(data.workName || '').trim();
+          if (!wName || wName === '休憩' || wName.includes('休憩')) return;
+
+          // 編集中の自分自身の記録は除外
+          if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId && (ph.id === currentEditRecordId || (ph.data && ph.data.recordId === currentEditRecordId))) {
+            return;
+          }
+
+          const rTime = String(data.startTime || ph.time || '').trim();
+          const rMatch = rTime.match(/^(\d{1,2}):(\d{2})/);
+          if (!rMatch) return;
+
+          const rH = parseInt(rMatch[1], 10);
+          const rM = parseInt(rMatch[2], 10);
+          const rTotalMin = rH * 60 + rM;
+
+          let diff = Math.abs(rTotalMin - baseTotalMin);
+          if (diff > 720) diff = 1440 - diff;
+
+          // 2.5時間（150分）以内を「この時間帯」の対象とする
+          if (diff > 150) return;
+
+          let proximityScore = 1;
+          if (diff <= 30) proximityScore = 10;
+          else if (diff <= 60) proximityScore = 6;
+          else if (diff <= 90) proximityScore = 4;
+          else if (diff <= 120) proximityScore = 2;
+
+          if (isMyRecord) proximityScore *= 1.5;
+
+          const rawCrop = String(data.crop || '').split(/[,、]/)[0].trim();
+          const cropNorm = rawCrop ? window.normalizeWorkCropKey(rawCrop) : '';
+          const fullKey = (cropNorm && cropNorm !== '__common__') ? `${cropNorm}___${wName}` : wName;
+
+          const current = scoreMap.get(fullKey) || {
+            fullKey: fullKey,
+            workName: wName,
+            crop: (cropNorm && cropNorm !== '__common__') ? rawCrop : '',
+            score: 0,
+            count: 0,
+            minDiff: diff
+          };
+          current.score += proximityScore;
+          current.count += 1;
+          if (diff < current.minDiff) current.minDiff = diff;
+          scoreMap.set(fullKey, current);
+        };
+
+        // 1) 自分の過去記録
+        records.forEach(r => processRecord(r, true));
+
+        // 2) 記録が少ない場合（3件未満）、現場全体の記録もフォールバック
+        if (scoreMap.size < 3 && typeof loadedPolygons !== 'undefined') {
+          for (let pid in loadedPolygons) {
+            const p = loadedPolygons[pid];
+            if (!p || !p.photos) continue;
+            p.photos.forEach(ph => {
+              if (ph.type === 'work' || (ph.data && ph.data.workName)) {
+                processRecord(ph, false);
+              }
+            });
+          }
+        }
+
+        // 3) スコア順ソートして上位4件を返す
+        const sorted = Array.from(scoreMap.values())
+          .sort((a, b) => b.score - a.score || a.minDiff - b.minDiff || b.count - a.count)
+          .slice(0, 4);
+
+        return {
+          suggestions: sorted,
+          baseHour: baseHour,
+          baseMinute: baseMinute,
+          timeStr: timeStr
+        };
+      };
+
+      /**
+       * ⏰ 時間帯に応じた作業候補チップを描画
+       */
+      window.renderTimeBasedWorkSuggestions = (baseTimeStr) => {
+        const containers = [
+          document.getElementById('time_work_suggestion_section'),
+          document.getElementById('time_suggest_chips_container')
+        ].filter(Boolean);
+
+        if (!containers.length) return;
+
+        // 休憩専用フォーム表示中、または生育記録中は非表示
+        if (window._openingRestBreak || (typeof currentRecordType !== 'undefined' && currentRecordType !== 'work')) {
+          containers.forEach(c => { c.style.display = 'none'; c.innerHTML = ''; });
+          return;
+        }
+
+        // 編集時でも時間変更に応じた候補が見られるよう対応
+        const res = window.getTimeBasedWorkSuggestions_(baseTimeStr);
+        const suggestions = res.suggestions || [];
+
+        if (!suggestions.length) {
+          containers.forEach(c => { c.style.display = 'none'; c.innerHTML = ''; });
+          return;
+        }
+
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const hourStr = `${res.baseHour}時頃`;
+
+        containers.forEach(container => {
+          const isTopSection = container.id === 'time_work_suggestion_section';
+          let chipsHtml = '';
+          suggestions.forEach((item, idx) => {
+            const jsCrop = String(item.crop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const jsWork = String(item.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const displayLabel = item.crop ? `${item.crop} ${item.workName}` : item.workName;
+            const safeAttr = String(item.workName || '').replace(/"/g, '&quot;');
+
+            chipsHtml += `
+              <button type="button" class="work-chip time-suggest-chip" data-wname="${safeAttr}" onclick="applyTimeBasedWorkSuggestion('${jsCrop}', '${jsWork}')"
+                style="background:#ffffff; color:#0d47a1; border:1.5px solid #42a5f5; border-radius:20px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 1px 3px rgba(33,150,243,0.15); transition:all 0.15s ease;">
+                <span style="font-size:13px;">✨</span><span>${esc(displayLabel)}</span>
+              </button>
+            `;
+          });
+
+          const headerHtml = `
+            <div style="font-weight:bold; color:#0d47a1; font-size:12px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                <span>⏰</span> <span>この時間帯（${esc(hourStr)}）によく行う作業</span>
+              </div>
+              <span style="font-size:10px; color:#1976d2; background:#e3f2fd; padding:2px 8px; border-radius:10px; font-weight:bold; border:1px solid #bbdefb;">タップで自動セット</span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+              ${chipsHtml}
+            </div>
+          `;
+
+          container.innerHTML = headerHtml;
+          container.style.display = 'block';
+        });
+      };
+
+      /**
+       * ⏰ 時間帯おすすめ作業をワンタップで適用
+       */
+      window.applyTimeBasedWorkSuggestion = (cropName, workName) => {
+        cropName = String(cropName || '').trim();
+        workName = String(workName || '').trim();
+        if (!workName) return;
+
+        if (typeof window.selectWorkChip === 'function') {
+          window.selectWorkChip(workName);
+        } else if (typeof window.handleWorkNameChange === 'function') {
+          window.handleWorkNameChange(workName);
+        }
+
+        if (cropName) {
+          const p = (typeof loadedPolygons !== 'undefined' && typeof activePolyId !== 'undefined') ? loadedPolygons[activePolyId] : null;
+          const category = document.getElementById('rec_work_category')?.value || 'すべて';
+          const options = (typeof window.getCropOptionsForCategory === 'function')
+            ? window.getCropOptionsForCategory(category, p)
+            : [];
+          const matchedOpt = (options || []).find(opt => opt.label === cropName || opt.key === cropName);
+          const cropKey = matchedOpt
+            ? matchedOpt.key
+            : ((typeof window.normalizeWorkCropKey === 'function') ? window.normalizeWorkCropKey(cropName) : cropName);
+
+          if (cropKey && typeof window.applyWorkCropFilterSelection_ === 'function') {
+            window.applyWorkCropFilterSelection_([cropKey]);
+          } else if (cropKey && typeof window.selectWorkCropFilter === 'function') {
+            window.selectWorkCropFilter(cropKey);
+          }
+
+          if (typeof window.selectWorkChip === 'function') {
+            window.selectWorkChip(workName);
+          }
+        }
+
+        if (typeof window.showRecordSyncToast === 'function') {
+          window.showRecordSyncToast(`⏰ この時間の候補「${cropName ? (cropName + ' ') : ''}${workName}」をセットしました！`, 'ok');
+        }
+      };
+
       window.renderDetailWorksSection = (wName) => {
          const detailSec = document.getElementById('detailed_works_section');
          if (!detailSec) return;
@@ -9580,6 +10809,9 @@ function createSignboardMarker(name, pos, icon, id) {
             '#work_name_gate_hint',
             '#detailed_works_section',
             '#usedItemsContainer',
+            '#used_pesticides_section',
+            '#rec_planned_end_box',
+            '#rec_work_cost_box',
             '#lot_use_section',
             '#extra_record_buttons',
             '#ridge_progress_section',
@@ -9613,6 +10845,7 @@ function createSignboardMarker(name, pos, icon, id) {
             '#work_chips_wrapper',
             '#detailed_works_section',
             '#usedItemsContainer',
+            '#used_pesticides_section',
             '#extra_record_buttons'
           ];
           showSelectors.forEach(selStr => {
@@ -9651,6 +10884,9 @@ function createSignboardMarker(name, pos, icon, id) {
         } else {
           window.renderUsedItems(wName);
           if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+          if (typeof window.renderUsedPesticidesSection === 'function') {
+            window.renderUsedPesticidesSection();
+          }
         }
         if (typeof window.refreshExtraRecordButtons === 'function') {
           window.refreshExtraRecordButtons();
@@ -9661,6 +10897,15 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.renderNextWorkPredictions === 'function') {
           window.renderNextWorkPredictions();
         }
+        if (typeof window.refreshFieldTargetUI === 'function') {
+          window.refreshFieldTargetUI();
+        }
+        if (typeof window.refreshPlannedEndTimeUI_ === 'function') {
+          window.refreshPlannedEndTimeUI_();
+        }
+        if (typeof window.refreshWorkCostHintUI_ === 'function') {
+          window.refreshWorkCostHintUI_();
+        }
       };
 
       window.isPrepWorkName = (name) => {
@@ -9670,6 +10915,16 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.selectedPrepTargetWork = '';
+
+      window.adminAddPrepTargetWork = () => {
+        if (!window.isWorkerAdmin()) {
+          if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+          return;
+        }
+        const cat = (window.selectedPrepCategory && window.selectedPrepCategory !== 'すべて') ? window.selectedPrepCategory : '圃場作業';
+        const crop = (window.selectedPrepCrop && window.selectedPrepCrop !== 'すべて') ? window.selectedPrepCrop : '';
+        window.openWorkNameEditorModal('add', '', cat, crop, { isPrepTarget: true });
+      };
 
       window.refreshPrepTargetWorkSection = (preset) => {
         const box = document.getElementById('prep_target_work_section');
@@ -9775,13 +11030,20 @@ function createSignboardMarker(name, pos, icon, id) {
                ⚠ 準備対象の作業を必ず選んでください（未選択では保存できません）
              </div>`;
 
+        const adminAddBtn = (typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin())
+          ? `<button type="button" onclick="adminAddPrepTargetWork()" style="background:#2e7d32; color:#fff; border:none; border-radius:6px; padding:5px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 1px 3px rgba(46,125,50,0.25); transition:all 0.15s ease;">＋ 作業名を追加</button>`
+          : '';
+
         box.style.display = 'block';
         box.style.cssText = 'background:#F1F8E9; border:2px solid #66BB6A; border-radius:10px; padding:12px; margin-bottom:15px;';
         box.innerHTML = `
-          <div style="font-weight:bold; color:#2E7D32; margin-bottom:6px; font-size:14px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-            📋 何の作業の準備ですか？
-            <span style="font-size:11px; font-weight:bold; color:#fff; background:#C62828; padding:2px 8px; border-radius:10px;">必須</span>
-            <span style="font-size:11px; font-weight:normal; color:#4CAF50;">（段階的に絞り込み選択）</span>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+            <div style="font-weight:bold; color:#2E7D32; font-size:14px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              📋 何の作業の準備ですか？
+              <span style="font-size:11px; font-weight:bold; color:#fff; background:#C62828; padding:2px 8px; border-radius:10px;">必須</span>
+              <span style="font-size:11px; font-weight:normal; color:#4CAF50;">（段階的に絞り込み選択）</span>
+            </div>
+            ${adminAddBtn}
           </div>
           <div style="font-size:11px; color:#555; margin-bottom:4px; font-weight:bold;">1. カテゴリを選択:</div>
           ${catBtnsHTML}
@@ -10540,7 +11802,7 @@ function createSignboardMarker(name, pos, icon, id) {
           <div style="display:flex; gap:8px;">
             <div style="flex:1;">
               <label class="form-label">枚数</label>
-              <input type="number" id="sow_trays" class="form-input" min="0" step="1" value="${p.trays != null ? p.trays : ''}" placeholder="枚">
+              <input type="number" id="sow_trays" class="form-input" min="0" step="1" value="${p.trays != null ? p.trays : ''}" placeholder="枚" oninput="if(window.refreshWorkCostHintUI_) window.refreshWorkCostHintUI_()">
             </div>
             <div style="flex:1;">
               <label class="form-label">穴数</label>
@@ -10657,7 +11919,7 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
             <div style="flex:1;">
               <label class="form-label">使用トレイ枚数</label>
-              <input type="number" id="plant_trays" class="form-input" min="0" step="1" value="${p.trays != null ? p.trays : ''}" placeholder="枚">
+              <input type="number" id="plant_trays" class="form-input" min="0" step="1" value="${p.trays != null ? p.trays : ''}" placeholder="枚" oninput="if(window.refreshWorkCostHintUI_) window.refreshWorkCostHintUI_()">
             </div>
           </div>
           <label class="form-label">メモ</label>
@@ -10731,6 +11993,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const el = document.getElementById('wh_total_display');
         if (!el) return;
         const count = parseFloat(document.getElementById('wh_container_count')?.value || '0') || 0;
+        if (typeof window.refreshWorkCostHintUI_ === 'function') window.refreshWorkCostHintUI_();
         const qty = parseFloat(document.getElementById('wh_content_qty')?.value || '0') || 0;
         const unit = (document.getElementById('wh_content_unit')?.value || '').trim();
         const unitStr = unit ? ` ${unit}` : '';
@@ -12995,8 +14258,13 @@ function createSignboardMarker(name, pos, icon, id) {
 
          const isPullWork = (typeof window.isCurrentPullWork_ === 'function' && window.isCurrentPullWork_())
            || (typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(workName));
-         // 引き上げの機械選択＋新規登録は field_machinery_section 側で表示する
-         const pullShownAbove = isPullWork && document.getElementById('field_machinery_section');
+         const flags = (typeof window.getWorkExtraUiFlags_ === 'function')
+           ? window.getWorkExtraUiFlags_(workName)
+           : { showMachine: false, showMaterial: false };
+         const machineSection = document.getElementById('field_machinery_section');
+         const machineShownAbove = !!(machineSection && machineSection.style.display !== 'none');
+         // 引き上げ／作業マスタ「農機を出す」の機械選択は field_machinery_section 側
+         const pullShownAbove = (isPullWork || flags.showMachine) && machineShownAbove;
          
          const isMatch = (catStr) => {
             if (!catStr) return false;
@@ -13007,10 +14275,12 @@ function createSignboardMarker(name, pos, icon, id) {
             });
          };
          
-         const matchMats = pdlMaterials.filter(m => isMatch(m.workCategory));
-         let matchMachines = (isPullWork && pullShownAbove)
+         const matchMats = flags.showMaterial
+            ? (Array.isArray(pdlMaterials) ? pdlMaterials.slice() : [])
+            : pdlMaterials.filter(m => isMatch(m.workCategory));
+         let matchMachines = (pullShownAbove)
             ? []
-            : (isPullWork
+            : (isPullWork || flags.showMachine
             ? (Array.isArray(pdlMachines) ? pdlMachines.slice() : [])
             : pdlMachines.filter(m => isMatch(m.workCategory)));
          // 潅水作業のポンプは専用UI（設置中ボタン）で扱うため、ここでは除外
@@ -13022,11 +14292,11 @@ function createSignboardMarker(name, pos, icon, id) {
             matchMachines = [];
          }
 
-         if (matchMats.length === 0 && matchMachines.length === 0 && !isPullWork) { container.innerHTML = ""; return; }
+         if (matchMats.length === 0 && matchMachines.length === 0 && !isPullWork && !flags.showMaterial && !flags.showMachine) { container.innerHTML = ""; return; }
 
          let html = `<div style="font-size:13px; font-weight:bold; color:#4CAF50; margin-bottom:5px;">🛠️ 使ったもの記録</div><div style="max-height:350px; overflow-y:auto; border:1px solid #81c784; padding:8px; background:#f1f8e9; border-radius:6px; margin-bottom:15px;">`;
          
-         if (isPullWork || matchMachines.length > 0) { 
+         if (isPullWork || flags.showMachine || matchMachines.length > 0) { 
             html += `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
               <div style="font-size:11px; font-weight:bold; color:#1976d2;">🚜 ${isPullWork ? '引き上げる機械と片づけ場所' : '使用した農機と片づけ場所'}</div>
               <button type="button" onclick="addNewMachineFromWorkRecord()" style="flex-shrink:0; background:#2196F3; color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 機械を新規登録</button>
@@ -13090,7 +14360,7 @@ function createSignboardMarker(name, pos, icon, id) {
                html += `
                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; background:#fff; padding:8px; border-radius:4px; border:1px solid #ffe0b2;">
                    <label style="font-size:13px; color:#333; display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
-                     <input type="checkbox" class="used-mat-check" value="${m.name}" data-unit="${unitStr}" onchange="document.getElementById('mat_num_${m.id}').disabled = !this.checked; if(this.checked) document.getElementById('mat_num_${m.id}').focus();" style="transform:scale(1.2);">
+                     <input type="checkbox" class="used-mat-check" value="${m.name}" data-unit="${unitStr}" onchange="document.getElementById('mat_num_${m.id}').disabled = !this.checked; if(this.checked) document.getElementById('mat_num_${m.id}').focus(); if(window.refreshWorkCostHintUI_) window.refreshWorkCostHintUI_();" style="transform:scale(1.2);">
                      <b>${m.name}</b>
                    </label>
                     <div id="progress_status_section" style="display:none;"></div>
@@ -13100,9 +14370,212 @@ function createSignboardMarker(name, pos, icon, id) {
                  </div>
                `;
             });
+         } else if (flags.showMaterial) {
+            html += `<div style="font-size:11px; font-weight:bold; color:#e65100; margin-top:12px; margin-bottom:4px;">📦 使用した資材</div>`;
+            html += `<div style="font-size:12px; color:#888; background:#fff; padding:8px; border-radius:4px;">資材マスタに登録がありません。管理者画面から追加できます。</div>`;
          }
          html += `</div>`; 
          container.innerHTML = html;
+      };
+
+      window.escapeWorkUiHtml_ = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+      window.formatPesticideUsageLine_ = (p) => {
+        if (!p || !p.name) return '';
+        const bits = [String(p.name).trim()];
+        if (p.amount) bits.push(String(p.amount) + String(p.unit || ''));
+        if (p.dilution) bits.push(String(p.dilution));
+        return bits.join(' ');
+      };
+
+      window.syncSelectedPesticidesFromDom_ = () => {
+        const list = document.getElementById('used_pesticides_list');
+        if (!list) return;
+        window._selectedPesticides = Array.from(list.querySelectorAll('.used-pest-row')).map(row => ({
+          name: String(row.getAttribute('data-name') || row.querySelector('.used-pest-name')?.value || '').trim(),
+          amount: String(row.querySelector('.used-pest-amount')?.value || '').trim(),
+          unit: String(row.querySelector('.used-pest-unit')?.value || '').trim(),
+          dilution: String(row.querySelector('.used-pest-dilution')?.value || '').trim()
+        })).filter(p => p.name);
+      };
+
+      window.parseUsedPesticidesFromRecord_ = (d) => {
+        const data = d || {};
+        if (Array.isArray(data.usedPesticides) && data.usedPesticides.length) {
+          return data.usedPesticides.map(p => ({
+            name: String((p && (p.name || p.農薬名)) || '').trim(),
+            amount: String((p && p.amount) || '').trim(),
+            unit: String((p && p.unit) || '').trim(),
+            dilution: String((p && (p.dilution || p.希釈倍率)) || '').trim()
+          })).filter(p => p.name);
+        }
+        const text = String(data.usedMaterials || '');
+        const idx = text.indexOf('【使用薬剤】');
+        if (idx < 0) return [];
+        const rest = text.slice(idx + '【使用薬剤】'.length);
+        const next = rest.search(/\n【/);
+        const block = next >= 0 ? rest.slice(0, next) : rest;
+        return block.split('\n').map(line => {
+          const s = String(line || '').replace(/^[・\-\s]+/, '').trim();
+          if (!s) return null;
+          const m = s.match(/^(.+?)(?:\s+(\d+(?:\.\d+)?)(ml|mL|L|g|kg|本|袋|個))?(?:\s+(\S+倍))?$/);
+          if (!m) return { name: s, amount: '', unit: '', dilution: '' };
+          return { name: m[1].trim(), amount: m[2] || '', unit: m[3] || '', dilution: m[4] || '' };
+        }).filter(Boolean);
+      };
+
+      window.collectUsedPesticidesForSave_ = () => {
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        const flags = (typeof window.getWorkExtraUiFlags_ === 'function')
+          ? window.getWorkExtraUiFlags_(wName)
+          : { showPesticide: false };
+        if (!flags.showPesticide) return [];
+        window.syncSelectedPesticidesFromDom_();
+        return Array.isArray(window._selectedPesticides) ? window._selectedPesticides.filter(p => p && p.name) : [];
+      };
+
+      window.addSelectedPesticide_ = (name, extras) => {
+        const n = String(name || '').trim();
+        if (!n) return;
+        window.syncSelectedPesticidesFromDom_();
+        if (!Array.isArray(window._selectedPesticides)) window._selectedPesticides = [];
+        if (window._selectedPesticides.some(p => p.name === n)) {
+          if (typeof customAlert === 'function') customAlert(`「${n}」はすでに追加されています。`);
+          return;
+        }
+        const extra = extras || {};
+        window._selectedPesticides.push({
+          name: n,
+          amount: extra.amount || '',
+          unit: extra.unit || '',
+          dilution: extra.dilution || extra.希釈倍率 || ''
+        });
+        window._pestSearchQ = '';
+        if (typeof window.renderUsedPesticidesSection === 'function') window.renderUsedPesticidesSection();
+      };
+
+      window.removeSelectedPesticide_ = (name) => {
+        window.syncSelectedPesticidesFromDom_();
+        const n = String(name || '').trim();
+        window._selectedPesticides = (window._selectedPesticides || []).filter(p => p.name !== n);
+        if (typeof window.renderUsedPesticidesSection === 'function') window.renderUsedPesticidesSection({ keepSearch: true });
+      };
+
+      window.addCustomPesticideFromInput_ = () => {
+        const input = document.getElementById('used_pest_custom_name');
+        const name = String(input?.value || '').trim();
+        if (!name) {
+          if (typeof customAlert === 'function') customAlert('薬剤名を入力してください。');
+          return;
+        }
+        window.addSelectedPesticide_(name);
+        if (input) input.value = '';
+      };
+
+      window.onUsedPesticideSearchInput_ = () => {
+        window._pestSearchQ = String(document.getElementById('used_pest_search')?.value || '');
+        window.syncSelectedPesticidesFromDom_();
+        if (typeof window.renderUsedPesticidesSection === 'function') window.renderUsedPesticidesSection({ keepSearch: true });
+      };
+
+      window.renderUsedPesticidesSection = (opts) => {
+        const container = document.getElementById('used_pesticides_section');
+        if (!container) return;
+        opts = opts || {};
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        const flags = (typeof window.getWorkExtraUiFlags_ === 'function')
+          ? window.getWorkExtraUiFlags_(wName)
+          : { showPesticide: /防除|除草|農薬|散布/.test(wName) };
+        if (!flags.showPesticide) {
+          if (!opts.fromRestore) window.syncSelectedPesticidesFromDom_();
+          container.style.display = 'none';
+          container.innerHTML = '';
+          return;
+        }
+        container.style.display = 'block';
+        if (!opts.fromRestore) window.syncSelectedPesticidesFromDom_();
+        const selected = Array.isArray(window._selectedPesticides) ? window._selectedPesticides : [];
+        window._selectedPesticides = selected;
+        const q = opts.keepSearch ? String(window._pestSearchQ || '') : '';
+        if (!opts.keepSearch) window._pestSearchQ = '';
+        const esc = window.escapeWorkUiHtml_;
+        const selectedHtml = selected.length
+          ? selected.map(p => {
+              const safeName = String(p.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              return `<div class="used-pest-row" data-name="${esc(p.name)}" style="background:#fff; border:1px solid #c8e6c9; border-radius:8px; padding:8px; margin-bottom:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+                  <b style="font-size:14px; color:#2e7d32;">${esc(p.name)}</b>
+                  <button type="button" onclick="removeSelectedPesticide_('${safeName}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+                </div>
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                  <input type="number" class="used-pest-amount" value="${esc(p.amount)}" placeholder="量" inputmode="decimal" oninput="syncSelectedPesticidesFromDom_()" style="width:72px; padding:6px; border:1px solid #ccc; border-radius:4px; text-align:right;">
+                  <select class="used-pest-unit" onchange="syncSelectedPesticidesFromDom_()" style="padding:6px; border:1px solid #ccc; border-radius:4px;">
+                    ${['', 'ml', 'L', 'g', 'kg', '本', '袋', '個'].map(u => `<option value="${u}" ${String(p.unit || '') === u ? 'selected' : ''}>${u || '単位'}</option>`).join('')}
+                  </select>
+                  <input type="text" class="used-pest-dilution" value="${esc(p.dilution)}" placeholder="希釈 例:1000倍" oninput="syncSelectedPesticidesFromDom_()" style="flex:1; min-width:110px; padding:6px; border:1px solid #ccc; border-radius:4px;">
+                </div>
+              </div>`;
+            }).join('')
+          : `<div style="font-size:12px; color:#666; background:#fff; padding:8px; border-radius:6px; margin-bottom:8px;">まだ薬剤が選ばれていません。下の農薬マスタから選ぶか、名前を直接入力してください。</div>`;
+
+        const master = Array.isArray(pdlPesticides) ? pdlPesticides : [];
+        const qn = q.trim().toLowerCase();
+        const matches = master.filter(item => {
+          const name = String(item.name || '').trim();
+          if (!name) return false;
+          if (selected.some(p => p.name === name)) return false;
+          if (!qn) return true;
+          const hay = [item.name, item.activeIngredient, item.manufacturer, item.cropName].map(x => String(x || '').toLowerCase()).join(' ');
+          return hay.indexOf(qn) >= 0;
+        }).slice(0, 12);
+        const matchHtml = master.length === 0
+          ? `<div style="font-size:12px; color:#888;">農薬マスタが空です。管理者画面から登録するか、下に名前を直接入力できます。</div>`
+          : (matches.length
+            ? matches.map(item => {
+                const safeName = String(item.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const sub = [item.activeIngredient, item.manufacturer].filter(Boolean).join(' / ');
+                return `<button type="button" onclick="addSelectedPesticide_('${safeName}')" style="display:block; width:100%; text-align:left; background:#fff; border:1px solid #a5d6a7; border-radius:6px; padding:8px 10px; margin-bottom:5px; cursor:pointer;">
+                  <b style="color:#1b5e20;">${esc(item.name)}</b>${sub ? `<div style="font-size:11px; color:#666;">${esc(sub)}</div>` : ''}
+                </button>`;
+              }).join('')
+            : `<div style="font-size:12px; color:#888;">${qn ? '該当する農薬マスタがありません。下に直接入力できます。' : '農薬マスタから選んでください。'}</div>`);
+
+        container.innerHTML = `
+          <div style="font-size:13px; font-weight:bold; color:#2e7d32; margin-bottom:6px;">🧪 使用した薬剤</div>
+          <div style="border:1px solid #81c784; padding:10px; background:#e8f5e9; border-radius:8px; margin-bottom:15px;">
+            <div id="used_pesticides_list">${selectedHtml}</div>
+            <div style="font-size:11px; font-weight:bold; color:#33691E; margin:8px 0 4px;">農薬マスタから選ぶ</div>
+            <input type="text" id="used_pest_search" value="${esc(q)}" placeholder="農薬名・成分で検索" oninput="onUsedPesticideSearchInput_()" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #a5d6a7; border-radius:6px; margin-bottom:8px;">
+            <div style="max-height:180px; overflow-y:auto;">${matchHtml}</div>
+            <div style="display:flex; gap:6px; margin-top:8px;">
+              <input type="text" id="used_pest_custom_name" placeholder="マスタにない薬剤名を直接入力" style="flex:1; padding:8px; border:1px solid #a5d6a7; border-radius:6px;">
+              <button type="button" onclick="addCustomPesticideFromInput_()" style="background:#43A047; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">追加</button>
+            </div>
+          </div>`;
+        if (typeof window.refreshWorkCostHintUI_ === 'function') window.refreshWorkCostHintUI_();
+      };
+
+      window.restoreUsedPesticidesFromRecord_ = (d) => {
+        window._selectedPesticides = window.parseUsedPesticidesFromRecord_(d);
+        if (typeof window.renderUsedPesticidesSection === 'function') {
+          window.renderUsedPesticidesSection({ fromRestore: true });
+        }
+      };
+
+      window.formatUsedItemsHistoryHtml_ = (data) => {
+        if (!data) return '';
+        const esc = window.escapeWorkUiHtml_ || (s => String(s || ''));
+        let html = '';
+        const pests = Array.isArray(data.usedPesticides) ? data.usedPesticides : [];
+        if (pests.length) {
+          const t = pests.map(p => window.formatPesticideUsageLine_(p)).filter(Boolean).join('、');
+          html += `<div style="font-size:12px;color:#2e7d32;margin-bottom:5px;background:#e8f5e9;padding:4px 6px;border-radius:4px;border:1px solid #a5d6a7;">🧪 使用薬剤: ${esc(t)}</div>`;
+        }
+        let mats = String(data.usedMaterials || '');
+        if (pests.length) mats = mats.replace(/\n*\n?【使用薬剤】[\s\S]*?(?=\n【|$)/, '').trim();
+        if (mats) html += `<div style="font-size:12px;color:#555;margin-bottom:5px;white-space:pre-wrap;">📦 資材・農機: ${esc(mats)}</div>`;
+        return html;
       };
 
       window.getUsedItemsText = () => {
@@ -13124,6 +14597,12 @@ function createSignboardMarker(name, pos, icon, id) {
             });
             text += "\n\n【使用資材】\n・" + usedMats.join('\n・');
          }
+         const pests = (typeof window.collectUsedPesticidesForSave_ === 'function')
+           ? window.collectUsedPesticidesForSave_()
+           : [];
+         if (pests.length) {
+            text += "\n\n【使用薬剤】\n・" + pests.map(p => window.formatPesticideUsageLine_(p)).filter(Boolean).join('\n・');
+         }
          return text;
       };
 
@@ -13132,6 +14611,11 @@ function createSignboardMarker(name, pos, icon, id) {
         window.selectedWorkCrops = [];
         window.selectedWorkCropFilterKeys = [];
         window.recordExtraDetailWorks = [];
+        window._selectedPesticides = [];
+        window._pestSearchQ = '';
+        if (typeof window.refreshClockOutNudgeUI_ === 'function') {
+          setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 0);
+        }
 
         // ☕ 休憩ボタンから開かれた場合：不要な要素や圃場連動警告を一切排除し、時間＋登録ボタン専用の超シンプルフォームを単独生成する！
         if (window._openingRestBreak) {
@@ -13288,7 +14772,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const lastFieldBtn = `<button type="button" id="btn_select_last_fields" onclick="selectLastWorkFields()" style="display:none; background:#FFF8E1; color:#F57F17; border:1px solid #FFB74D; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">↩️ 前回の圃場</button>`;
         if (currentRecordType === 'work' && !p.isMarker) {
-           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:block; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 圃場記録対象 ${placeInfoBtn} <span style="font-size:11px; color:#66BB6A; font-weight:normal; margin-left:4px;">（自動選択）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:none; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 圃場記録対象 ${placeInfoBtn} <span style="font-size:11px; color:#66BB6A; font-weight:normal; margin-left:4px;">（自動選択）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
         } else if (currentRecordType === 'work') {
            // 看板起点でも圃場を追加選択できる
            targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:none; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 圃場記録対象 ${placeInfoBtn} <span style="font-size:11px; color:#66BB6A; font-weight:normal; margin-left:4px;">（任意・複数可）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
@@ -13346,6 +14830,7 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
           </div>
           <div id="rec_start_time_hint" style="display:none; font-size:11px; margin-bottom:0; font-weight:bold;"></div>
+          <div id="rec_planned_end_box" style="display:none; margin-top:10px; background:#fff; border:1px dashed #90CAF9; border-radius:8px; padding:10px; text-align:center;"></div>
           </div>
         `;
 
@@ -13411,13 +14896,13 @@ function createSignboardMarker(name, pos, icon, id) {
                   <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
                   ${timeUI}
                   <div id="next_work_prediction_section" style="display:none; background:linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border:1px solid #a5d6a7; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(46,125,50,0.08);"></div>
+                  <div id="time_work_suggestion_section" style="display:none; background:linear-gradient(135deg, #e3f2fd 0%, #e8f5e9 100%); border:1px solid #90caf9; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(21,101,192,0.08);"></div>
                   <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:1px solid #9FA8DA; border-radius:10px; padding:12px; margin-bottom:12px;">
                   <label class="form-label" style="margin-top:0; color:#3949AB;">📁 カテゴリ</label>
                   <div id="work_category_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_category" value="${defaultWorkCat}">
                   <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;"></div>
                   </div>
-                  ${targetSection}
                   <div class="rec-zone rec-zone-crop" style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;">
                   <label class="form-label" style="margin-top:0; color:#2E7D32;">🌱 作物名 <span style="font-size:11px; color:#558B2F; font-weight:normal;">（複数選択可・詳細作業は作物別）</span></label>
                   <div id="work_crop_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
@@ -13425,20 +14910,25 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="work_crop_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;"></div>
                   </div>
                   <div id="work_name_gate_hint" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:14px 12px; margin-bottom:15px; color:#757575; font-size:13px; text-align:center; font-weight:bold;">カテゴリと作物を選ぶと、作業名が表示されます</div>
-                  <div id="work_name_section" class="rec-zone rec-zone-workname" style="display:none; background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:12px; margin-bottom:15px;">
+                  <div id="work_name_section" style="display:none;">
+                  <div class="rec-zone rec-zone-workname" style="background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:12px; margin-bottom:15px;">
                   <label class="form-label" style="margin-top:0; color:#E65100;">🚜 作業名</label>
                   <div id="work_name_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_name" value="">
                   <div id="work_chips_wrapper">
+                    <div id="time_suggest_chips_container" style="display:none; margin-bottom:10px; background:linear-gradient(135deg, #e3f2fd 0%, #e8f5e9 100%); border:1px solid #90caf9; border-radius:10px; padding:10px 12px;"></div>
                     ${recentChipsHTML}
                     ${allChipsHTML}
                   </div>
+                  </div>
+                  ${targetSection}
                   <div id="work_assoc_suggest" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="field_machinery_section" style="display:none; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="delivery_destination_section" style="display:none; background:#E1F5FE; border:2px solid #0288D1; border-radius:10px; padding:12px; margin-bottom:15px;"></div>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
                   ${workTimeUI}
+                  <div id="rec_work_cost_box" style="display:none; margin-bottom:15px; background:#FFF8E1; border:1px dashed #FFCC80; border-radius:10px; padding:10px;"></div>
                   <div id="extra_record_buttons" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffcc80;">
                     <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:13px;">🔧 整備・修理・点検の詳細（機械・車両・道具マスタ連動）</div>
@@ -13545,6 +15035,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="lot_use_section" class="lot-section"><b>📦 ロット使用</b><br><div style="max-height:100px; overflow-y:auto; background:#fff; border:1px solid #ccc; padding:5px; border-radius:4px; margin-bottom:5px;">${lotsHtml}</div><div style="display:flex; gap:5px;"><input type="number" id="rec_lot_use_remain" class="form-input" placeholder="残コンテナ数" style="flex:1; margin-bottom:0;"><select id="rec_lot_use_status" class="form-input" style="flex:1; margin-bottom:0;"><option value="使用中">途中</option><option value="完了">完了</option></select></div></div>
                   <label class="form-label" style="margin-top:10px;">💬 コメント</label>
                   <textarea id="rec_work_comment" class="form-input" rows="3" placeholder="伝達事項・メモなど"></textarea>
+                  <div id="used_pesticides_section" style="display:none;"></div>
                   <div id="used_items_section"></div>
                    <div id="progress_status_section" style="display:none;">
                      <input type="hidden" id="rec_progress_status" value="">
@@ -13643,6 +15134,8 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof window.refreshLinkedSpecialWorkBanner === 'function') window.refreshLinkedSpecialWorkBanner();
             // カテゴリ／作物を選ぶ前に、当日の前作業から次作業名を予想表示
             if (typeof window.renderNextWorkPredictions === 'function') window.renderNextWorkPredictions();
+            // ⏰ この時間帯によく行う作業候補を描画
+            if (typeof window.renderTimeBasedWorkSuggestions === 'function') window.renderTimeBasedWorkSuggestions();
         }, 50);
 
         if (currentRecordType === 'work') setTimeout(() => {
@@ -13830,9 +15323,9 @@ function createSignboardMarker(name, pos, icon, id) {
             }
             
            // ★追加：使ったもの（農機・資材）のチェックと数値を復元する処理
-             if (d.usedMaterials) {
+             if (d.usedMaterials || d.usedPesticides) {
                 setTimeout(() => {
-                   const usedStr = d.usedMaterials;
+                   const usedStr = d.usedMaterials || '';
                    
                    // 使用農機の復元
                    document.querySelectorAll('.used-machine-check').forEach(chk => {
@@ -13862,6 +15355,9 @@ function createSignboardMarker(name, pos, icon, id) {
                          }
                       }
                    });
+                   if (typeof window.restoreUsedPesticidesFromRecord_ === 'function') {
+                      window.restoreUsedPesticidesFromRecord_(d);
+                   }
                 }, 100); // リストの描画が終わるのを待つため少し遅延させる
              }
            if (d.workName && (typeof window.isMaintenanceRelatedWork === 'function'
@@ -14635,6 +16131,272 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
+      window.getUsualClockOutTime_ = () => {
+        try {
+          const user = (localStorage.getItem('passionMapUserName') || currentUser || '').replace(/\s+/g, '');
+          const raw = JSON.parse(localStorage.getItem('passionMapUsualClockOut:' + (user || 'anon')) || 'null');
+          if (raw && raw.time) {
+            const t = window.normalizeTimeHm ? window.normalizeTimeHm(raw.time) : String(raw.time);
+            if (t) return t;
+          }
+        } catch (e) {}
+        return '17:00';
+      };
+
+      window.rememberUsualClockOutTime_ = (time) => {
+        const t = window.normalizeTimeHm ? window.normalizeTimeHm(time) : String(time || '').trim();
+        if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return;
+        const user = (localStorage.getItem('passionMapUserName') || currentUser || '').replace(/\s+/g, '');
+        const key = 'passionMapUsualClockOut:' + (user || 'anon');
+        let samples = [];
+        try {
+          const prev = JSON.parse(localStorage.getItem(key) || 'null');
+          if (prev && Array.isArray(prev.samples)) samples = prev.samples.slice();
+        } catch (e) {}
+        samples.push(t);
+        if (samples.length > 14) samples = samples.slice(-14);
+        const mins = samples.map(s => {
+          const p = String(s).split(':');
+          return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
+        }).filter(n => !isNaN(n)).sort((a, b) => a - b);
+        const mid = mins.length ? mins[Math.floor(mins.length / 2)] : (17 * 60);
+        const usual = `${String(Math.floor(mid / 60)).padStart(2, '0')}:${String(mid % 60).padStart(2, '0')}`;
+        try {
+          localStorage.setItem(key, JSON.stringify({ time: usual, samples: samples, updatedAt: Date.now() }));
+        } catch (e) {}
+      };
+
+      window.isLocallyClockedInNow_ = () => {
+        try {
+          const s = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null');
+          return !!(s && s.active);
+        } catch (e) { return false; }
+      };
+
+      window.isNearClockOutTime_ = () => {
+        if (!window.isLocallyClockedInNow_()) return false;
+        try {
+          if (typeof window.getForgotClockOutInfo === 'function' && window.getForgotClockOutInfo()) return true;
+        } catch (e) {}
+        try {
+          const snooze = parseInt(localStorage.getItem('passionMapClockOutNudgeSnoozeUntil') || '0', 10);
+          if (snooze && Date.now() < snooze) return false;
+        } catch (e) {}
+        const usual = window.getUsualClockOutTime_() || '17:00';
+        const now = new Date();
+        const nowMins = now.getHours() * 60 + now.getMinutes();
+        const parts = String(usual).split(':');
+        const usualMins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+        if (isNaN(usualMins)) return nowMins >= (16 * 60 + 15);
+        return nowMins >= (usualMins - 45);
+      };
+
+      window.snoozeClockOutNudge_ = (mins) => {
+        const m = Math.max(5, parseInt(mins, 10) || 25);
+        try { localStorage.setItem('passionMapClockOutNudgeSnoozeUntil', String(Date.now() + m * 60 * 1000)); } catch (e) {}
+        window.refreshClockOutNudgeUI_();
+      };
+
+      window.ensureClockOutNudgeBanner_ = () => {
+        let el = document.getElementById('clockOutNudgeBanner');
+        if (el) return el;
+        el = document.createElement('div');
+        el.id = 'clockOutNudgeBanner';
+        document.body.appendChild(el);
+        return el;
+      };
+
+      window.refreshClockOutNudgeUI_ = () => {
+        const banner = window.ensureClockOutNudgeBanner_();
+        const btn = document.getElementById('btnTracking');
+        const near = typeof window.isNearClockOutTime_ === 'function' && window.isNearClockOutTime_();
+        const panelOpen = !!document.getElementById('rightPanel')?.classList.contains('open');
+        const contOpen = document.getElementById('afterWorkSaveContinueModal')?.style.display === 'flex';
+        if (btn) {
+          if (near) btn.classList.add('clock-out-nudge');
+          else btn.classList.remove('clock-out-nudge');
+        }
+        if (!near || panelOpen || contOpen) {
+          banner.style.display = 'none';
+          banner.innerHTML = '';
+          return;
+        }
+        const usual = window.getUsualClockOutTime_() || '17:00';
+        banner.innerHTML = `
+          <div style="font-size:13px; font-weight:bold; color:#C62828; margin-bottom:6px;">🏃 退勤時間が近づいています</div>
+          <div style="font-size:11px; color:#666; margin-bottom:8px; line-height:1.4;">いつもの退勤は <b>${usual}</b> ごろです。退勤を記録してください。</div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" onclick="if(typeof toggleTracking==='function') toggleTracking();" style="flex:1; background:#E53935; color:#fff; border:none; border-radius:8px; padding:10px; font-weight:bold; cursor:pointer;">退勤を記録する</button>
+            <button type="button" onclick="snoozeClockOutNudge_(25)" style="background:#fff; color:#666; border:1px solid #ccc; border-radius:8px; padding:10px 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">あとで</button>
+          </div>`;
+        banner.style.display = 'block';
+      };
+
+      window.startClockOutNudgeWatcher_ = () => {
+        if (window._clockOutNudgeTimer) return;
+        window.refreshClockOutNudgeUI_();
+        window._clockOutNudgeTimer = setInterval(() => {
+          try { window.refreshClockOutNudgeUI_(); } catch (e) {}
+        }, 60000);
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') window.refreshClockOutNudgeUI_();
+        });
+      };
+
+      window.closeAfterWorkSaveContinueModal_ = () => {
+        const m = document.getElementById('afterWorkSaveContinueModal');
+        if (m) m.style.display = 'none';
+        if (typeof window.refreshClockOutNudgeUI_ === 'function') {
+          setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 40);
+        }
+      };
+
+      window.openNextWorkRecordAfterSave_ = (startTime, polyIds) => {
+        window.closeAfterWorkSaveContinueModal_();
+        const t = window.normalizeTimeHm ? (window.normalizeTimeHm(startTime) || String(startTime || '').trim()) : String(startTime || '').trim();
+        window._pendingNextWorkStart = t;
+        currentEditRecordId = null;
+        currentRecordType = 'work';
+        const ids = Array.isArray(polyIds) ? polyIds.map(String).filter(Boolean) : [];
+        if (ids.length) {
+          selectedPolyIds = ids.slice();
+          activePolyId = ids[0];
+        }
+        if (typeof directOpenForm === 'function') {
+          directOpenForm(ids.length ? ids[0] : (activePolyId || null), 'work');
+        } else if (typeof renderRecordForm === 'function') {
+          renderRecordForm();
+          const panel = document.getElementById('rightPanel');
+          if (panel) panel.classList.add('open');
+        }
+        const applyTimes = () => {
+          if (!t) return;
+          if (typeof window.applyStartTimeToForm === 'function') {
+            window.applyStartTimeToForm(t, { clearAutofill: true, syncClockIn: false, source: 'latestEnd', force: true });
+          }
+          const startEl = document.getElementById('rec_start_time');
+          if (startEl) startEl.value = t;
+          const now = new Date();
+          const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          const endEl = document.getElementById('rec_end_time');
+          if (endEl) {
+            const startM = window.timeHmToMinutes ? window.timeHmToMinutes(t) : null;
+            const nowM = window.timeHmToMinutes ? window.timeHmToMinutes(nowHm) : null;
+            endEl.value = (startM != null && nowM != null && nowM <= startM) ? '' : nowHm;
+          }
+          if (typeof calcTotalTime === 'function') calcTotalTime();
+          if (typeof window.refreshPlannedEndTimeUI_ === 'function') window.refreshPlannedEndTimeUI_();
+        };
+        setTimeout(applyTimes, 80);
+        setTimeout(applyTimes, 280);
+      };
+
+      window.startClockOutFromAfterSave_ = () => {
+        window.closeAfterWorkSaveContinueModal_();
+        if (typeof window.toggleTracking === 'function') window.toggleTracking();
+      };
+
+      window.adjustAfterSaveNextStart_ = (deltaMins) => {
+        const el = document.getElementById('after_save_next_start');
+        if (!el) return;
+        const cur = window.normalizeTimeHm ? (window.normalizeTimeHm(el.value) || el.value) : el.value;
+        const mins = window.timeHmToMinutes ? window.timeHmToMinutes(cur) : null;
+        if (mins == null) return;
+        let next = mins + (parseInt(deltaMins, 10) || 0);
+        if (next < 0) next = 0;
+        if (next > 23 * 60 + 59) next = 23 * 60 + 59;
+        el.value = `${String(Math.floor(next / 60)).padStart(2, '0')}:${String(next % 60).padStart(2, '0')}`;
+        if (typeof window.refreshAfterSavePlannedEndHint_ === 'function') window.refreshAfterSavePlannedEndHint_();
+      };
+
+      window.refreshAfterSavePlannedEndHint_ = () => {
+        const hint = document.getElementById('after_save_planned_end_hint');
+        if (!hint) return;
+        const startEl = document.getElementById('after_save_next_start');
+        const startHm = window.normalizeTimeHm
+          ? (window.normalizeTimeHm(startEl?.value) || '')
+          : String(startEl?.value || '');
+        const saved = window._afterSaveWorkMeta || {};
+        const workDate = saved.workDate || '';
+        const upcoming = typeof window.findUpcomingDayPlanBlock_ === 'function'
+          ? window.findUpcomingDayPlanBlock_(startHm, workDate)
+          : null;
+        const parts = [];
+        if (upcoming && (upcoming.endTime || upcoming.startTime)) {
+          const uEnd = window.normalizeTimeHm ? (window.normalizeTimeHm(upcoming.endTime) || upcoming.endTime) : upcoming.endTime;
+          const uStart = window.normalizeTimeHm ? (window.normalizeTimeHm(upcoming.startTime) || upcoming.startTime) : upcoming.startTime;
+          parts.push(`📅 次の予定「${String(upcoming.workName || '').replace(/</g, '&lt;')}」終了予定 <b>${uEnd || '--:--'}</b>${uStart ? `（${uStart}〜）` : ''}`);
+        }
+        const nextName = String(upcoming && upcoming.workName || saved.nextWorkHint || '').trim();
+        const estName = nextName || String(saved.workName || '').trim();
+        if (estName && estName.indexOf('休憩') < 0 && typeof window.getLocalWorkDurationEstimate_ === 'function') {
+          const est = window.getCachedGasWorkDurationEstimate_(estName) || window.getLocalWorkDurationEstimate_(estName);
+          if (est && est.avgMins && startHm) {
+            const avgEnd = window.addMinutesToHm_(startHm, est.avgMins);
+            if (avgEnd) {
+              const label = nextName ? String(estName).replace(/</g, '&lt;') : ('同じ「' + String(estName).replace(/</g, '&lt;') + '」');
+              parts.push(`⏱️ ${label} 平均${window.formatDurationMinsLabel_(est.avgMins)}なら 終了予定 <b>${avgEnd}</b>`);
+            }
+          }
+        }
+        if (!parts.length) {
+          hint.style.display = 'none';
+          hint.innerHTML = '';
+          return;
+        }
+        hint.style.display = 'block';
+        hint.innerHTML = parts.join('<br>');
+      };
+
+      window.showAfterWorkSaveContinueModal_ = (opts) => {
+        opts = opts || {};
+        const data = opts.data || {};
+        const polyIds = opts.polyIds || [];
+        const endTime = window.normalizeTimeHm
+          ? (window.normalizeTimeHm(data.endTime) || String(data.endTime || '').trim())
+          : String(data.endTime || '').trim();
+        const now = new Date();
+        const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const startDefault = endTime || nowHm;
+        const workName = String(data.workName || '作業');
+        const near = typeof window.isNearClockOutTime_ === 'function' && window.isNearClockOutTime_();
+        const clockedIn = typeof window.isLocallyClockedInNow_ === 'function' && window.isLocallyClockedInNow_();
+        const showClockOut = near || (clockedIn && (() => {
+          const m = window.timeHmToMinutes ? window.timeHmToMinutes(endTime || nowHm) : null;
+          return m != null && m >= (16 * 60);
+        })());
+        window._afterSaveNextPolyIds = Array.isArray(polyIds) ? polyIds.slice() : [];
+        window._afterSaveWorkMeta = {
+          workDate: data.workDate || '',
+          workName: workName,
+          endTime: startDefault
+        };
+        if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
+        const usual = window.getUsualClockOutTime_() || '17:00';
+        modal.innerHTML = `
+          <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28);">
+            <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">✅ 記録を保存しました</div>
+            <div style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.4;">「${String(workName).replace(/</g, '&lt;')}」の終了は <b>${startDefault || '--:--'}</b> です。続けて次の作業開始を入れられます。</div>
+            <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">次の作業の開始時間</label>
+            <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
+              <input type="text" id="after_save_next_start" class="form-input app-time-input" readonly inputmode="none" value="${startDefault}" style="flex:1; margin:0; padding:10px; font-size:18px; font-weight:bold; text-align:center; background:#fff; cursor:pointer;" onclick="if(window.openAppTimePicker) openAppTimePicker('after_save_next_start', '次の作業開始')">
+            </div>
+            <div style="display:flex; gap:6px; margin-bottom:8px;">
+              <button type="button" onclick="adjustAfterSaveNextStart_(-15)" style="flex:1; background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer;">-15分</button>
+              <button type="button" onclick="adjustAfterSaveNextStart_(15)" style="flex:1; background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer;">+15分</button>
+            </div>
+            <div id="after_save_planned_end_hint" style="display:none; background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:8px 10px; margin-bottom:12px; font-size:12px; color:#0D47A1; line-height:1.45;"></div>
+            <button type="button" onclick="openNextWorkRecordAfterSave_(document.getElementById('after_save_next_start').value, window._afterSaveNextPolyIds)" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🚜 次の作業を記録する</button>
+            ${showClockOut ? `<button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を記録する${near ? `（${usual}ごろ）` : ''}</button>` : ''}
+            <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+          </div>`;
+        modal.style.display = 'flex';
+        setTimeout(() => {
+          try { window.refreshAfterSavePlannedEndHint_(); } catch (e) {}
+          try { window.refreshClockOutNudgeUI_(); } catch (e) {}
+        }, 50);
+      };
+
       async function submitRecord() {
         // 紐づけ先の解決（圃場作業のときだけ圃場必須）
         const catVal = document.getElementById('rec_work_category')?.value || '';
@@ -14697,6 +16459,19 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         }
         selectedPolyIds = targetIds;
+        if (currentRecordType === 'work' && !technicalFallbackParent && typeof window.isSurroundingField_ === 'function') {
+          const around = targetIds
+            .map(id => loadedPolygons[id])
+            .filter(p => p && window.isSurroundingField_(p));
+          if (around.length) {
+            const names = around.map(p => p.name || '周辺地').join('、');
+            const msg = `選んでいる圃場が周辺地です。\n${names}\n\n栽培している本番の圃場と間違えていないか確認してください。\nこのまま保存しますか？`;
+            let ok = true;
+            if (typeof customConfirm === 'function') ok = await customConfirm(msg);
+            else ok = window.confirm(msg);
+            if (!ok) return;
+          }
+        }
         // 進捗状況は画面から撤去されたため必須チェックを行わない
         const btn = document.getElementById('submitBtn'), p = activePolyId ? loadedPolygons[activePolyId] : { name: "未選択", isMarker: false, photos: [] };
         const isEditBtn = !!currentEditRecordId;
@@ -14848,6 +16623,9 @@ function createSignboardMarker(name, pos, icon, id) {
               usedTools: "", 
               usedMachines: usedMachines,
               usedMaterials: usedItemsText,
+              usedPesticides: (typeof window.collectUsedPesticidesForSave_ === 'function')
+                ? window.collectUsedPesticidesForSave_()
+                : [],
               workedRidges: firstRidge.workedRidges || "",
               nextRidge: firstRidge.nextRidge || "",
               ridgeProgress: ridgeProgress,
@@ -15126,6 +16904,17 @@ function createSignboardMarker(name, pos, icon, id) {
           if (workDateAfterSave && typeof window.recomputeCachedLatestWorkEnd === 'function') {
             window.recomputeCachedLatestWorkEnd(workDateAfterSave);
           }
+          if (recordTypeSnap === 'work' && data && String(data.workName || '').includes('休憩')
+              && typeof window.upsertCachedRestBreak === 'function') {
+            window.upsertCachedRestBreak({
+              id: localId || editIdSnap || '',
+              dateYmd: workDateAfterSave,
+              workName: data.workName,
+              start: data.startTime || '',
+              end: data.endTime || '',
+              totalTime: data.totalTime || ''
+            });
+          }
 
           const resumeClock = typeof window.resumeClockOutAfterWorkSave === 'function' && sessionStorage.getItem('passionMapPendingClockOut');
           const savedWasRest = recordTypeSnap === 'work'
@@ -15194,9 +16983,20 @@ function createSignboardMarker(name, pos, icon, id) {
               window.openWorkRecordWithSpecialSet();
             } else {
               window._linkedSpecialWorkSet = null;
+              if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
+                window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
+              }
             }
           } else if (clearingLinkedAfterFollowUp) {
             window._linkedSpecialWorkSet = null;
+            if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
+              window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
+            }
+          } else if (!isEditBtn && recordTypeSnap === 'work' && typeof window.showAfterWorkSaveContinueModal_ === 'function') {
+            window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
+          }
+          if (typeof window.refreshClockOutNudgeUI_ === 'function') {
+            setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 80);
           }
         } catch(e) {
           console.error("submitRecord error:", e);
@@ -16486,6 +18286,9 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           document.getElementById('rightPanel').classList.remove('open'); 
           if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
+          if (typeof window.refreshClockOutNudgeUI_ === 'function') {
+            setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 40);
+          }
       }
       window.openLightbox = (u) => { document.getElementById('lightbox-img').src = u.replace('sz=w800','sz=w1600'); document.getElementById('lightbox').style.display = 'flex'; };
       // ==========================================
@@ -18546,6 +20349,9 @@ window.executeAutoRecord = async () => {
                   }
               } catch(e) { console.warn("Clock-in restore error", e); }
           }
+          if (typeof window.startClockOutNudgeWatcher_ === 'function') {
+            setTimeout(() => { try { window.startClockOutNudgeWatcher_(); } catch (e) {} }, 1500);
+          }
           const id = localStorage.getItem('passionMapUserId');
           const pw = localStorage.getItem('passionMapUserPw');
           
@@ -18599,7 +20405,11 @@ window.executeAutoRecord = async () => {
                           if (typeof window.prefetchWorkTimeHints === 'function') {
                               const now = new Date();
                               const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                              window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
+                              window.prefetchWorkTimeHints(todayStr, { applyToForm: true }).then(() => {
+                                if (typeof window.hydrateLunchAndRestFromCache_ === 'function') {
+                                  window.hydrateLunchAndRestFromCache_();
+                                }
+                              });
                           }
                           // ログイン＋最新データは裏で取得（操作はブロックしない）
                           executeLogin(true, { fromCache: true });
@@ -19326,6 +21136,15 @@ function summarizeMyAttendanceList(rows, userName) {
         if (a.dateYmd !== b.dateYmd) return a.dateYmd < b.dateYmd ? 1 : -1;
         return a.sortKey - b.sortKey;
     });
+    try {
+      const user = (userName || '').replace(/\s+/g, '');
+      const raw = JSON.parse(localStorage.getItem('passionMapUsualClockOut:' + (user || 'anon')) || 'null');
+      if ((!raw || !Array.isArray(raw.samples) || raw.samples.length < 3) && typeof window.rememberUsualClockOutTime_ === 'function') {
+        sessions.filter(s => !s.open && s.outTime && s.outTime !== '未登録' && s.outTime !== '—')
+          .slice(0, 8)
+          .forEach(s => window.rememberUsualClockOutTime_(s.outTime));
+      }
+    } catch (e) {}
     return sessions;
 }
 
@@ -20439,6 +22258,9 @@ window.renderPersonalSchedulePanel = async function() {
     const notes = (data && data.notes) || [];
     window._psLastTasks = tasks;
     window._psLastNotes = notes;
+    if (dayPlanRes && Array.isArray(dayPlanRes.items) && typeof window.saveDayPlanItemsCache_ === 'function') {
+      window.saveDayPlanItemsCache_(dayPlanRes.items);
+    }
 
     const renderList = (items, category) => {
       if (!items.length) {

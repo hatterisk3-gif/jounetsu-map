@@ -1371,6 +1371,7 @@ async function fetchWeatherAndUpdateUI() {
              p.isMarker = p.coords && p.coords.length === 1;
              loadedPolygons[p.id] = { ...p };
           });
+          window.loadedPolygons = loadedPolygons;
           buildDeptFilter();
           updateMapVisuals();
         };

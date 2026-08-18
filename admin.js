@@ -1442,15 +1442,17 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <div id="fertCatalogSearchResult" style="font-size:12px; color:#666;"></div>
             </div>`;
         } else if (type === 'work') {
+            window._adminWorkExtraFlagsTouched = false;
             const catOpts = pdlWorkCategories.map(c => `<option value="${c}">${c}</option>`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">作業カテゴリ</label>
-                <select id="add_work_category" class="form-input" style="margin-bottom:0; padding:8px;">${catOpts}</select>
+                <select id="add_work_category" class="form-input" style="margin-bottom:0; padding:8px;" onchange="syncAdminWorkUiFlagDefaults_('add_work')">${catOpts}</select>
                 <label style="font-size:12px; font-weight:bold; color:#555;">作業名（正順名）</label>
-                <input type="text" id="add_work_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 畝つぶし">
+                <input type="text" id="add_work_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 畝つぶし" oninput="syncAdminWorkUiFlagDefaults_('add_work')">
                 <label style="font-size:12px; font-weight:bold; color:#555;">類似作業名（地域呼称・別名など）</label>
                 <input type="text" id="add_work_aliases" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 畝戻し, すき込み (カンマ区切り)">
                 <div style="font-size:11px; color:#666; margin-top:-4px;">※地域ごとの呼称や表記ゆれを登録すると、同じ作業として連動します。</div>
+                ${buildWorkRecordUiFlagsHtml_('add_work', inferWorkRecordUiFlags_('', (pdlWorkCategories && pdlWorkCategories[0]) || '圃場作業'))}
                 <label style="font-size:12px; font-weight:bold; color:#555;">対象作物（複数選択可）</label>
                 ${buildWorkCropsCheckboxesHtml('add_work', ['__common__'])}
                 ${buildPerCropDetailWorksEditorHtml('add_work', ['__common__'], {})}
@@ -3442,6 +3444,80 @@ window.collectPerCropDetailWorks = (prefix) => {
     };
 };
 
+function parseWorkUiFlagValue_(v) {
+    if (v === true || v === 1) return true;
+    if (v === false || v === 0) return false;
+    const s = String(v == null ? '' : v).trim().toLowerCase();
+    if (!s) return null;
+    if (['1', 'true', 'yes', 'on', 'はい', '有', '☑', '✓', '✔'].includes(s)) return true;
+    if (['0', 'false', 'no', 'off', 'いいえ', '無', 'なし'].includes(s)) return false;
+    return null;
+}
+
+function inferWorkRecordUiFlags_(workName, category) {
+    const n = String(workName || '').trim();
+    const c = String(category || '').trim();
+    return {
+        showMachine: c === '圃場農機作業' || c.includes('農機'),
+        showMaterial: /資材|肥料|マルチ|堆肥|石灰|被覆/.test(n),
+        showPesticide: /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n)
+    };
+}
+
+function resolveWorkRecordUiFlags_(work) {
+    const w = work || {};
+    const inferred = inferWorkRecordUiFlags_(w.name, w.category);
+    const pick = (saved, fallback) => {
+        const parsed = parseWorkUiFlagValue_(saved);
+        return parsed == null ? fallback : parsed;
+    };
+    return {
+        showMachine: pick(w.showMachine, inferred.showMachine),
+        showMaterial: pick(w.showMaterial, inferred.showMaterial),
+        showPesticide: pick(w.showPesticide, inferred.showPesticide)
+    };
+}
+
+function buildWorkRecordUiFlagsHtml_(prefix, flags) {
+    const f = flags || {};
+    const row = (id, checked, label, hint) => `
+        <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; color:#333; cursor:pointer; background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:8px 10px;">
+            <input type="checkbox" id="${prefix}_${id}" ${checked ? 'checked' : ''} onchange="window._adminWorkExtraFlagsTouched=true" style="margin-top:2px; transform:scale(1.15);">
+            <span><b>${label}</b><br><span style="font-size:11px; color:#777; font-weight:normal;">${hint}</span></span>
+        </label>`;
+    return `<div style="margin:4px 0 8px; background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px; padding:10px;">
+        <div style="font-size:12px; font-weight:bold; color:#33691E; margin-bottom:4px;">記録画面に出すマスタ</div>
+        <div style="font-size:11px; color:#558B2F; margin-bottom:8px; line-height:1.4;">作業記録で、チェックした項目の選択欄を出します。防除・除草は薬剤が自動でオンになります。</div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+            ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
+            ${row('show_material', !!f.showMaterial, '📦 資材マスタを出す', '肥料・マルチなどの資材を選べます')}
+            ${row('show_pesticide', !!f.showPesticide, '🧪 薬剤（農薬マスタ）を出す', '使った薬剤名を記入・選択できます')}
+        </div>
+    </div>`;
+}
+
+function collectWorkRecordUiFlagsFromForm_(prefix) {
+    return {
+        showMachine: !!document.getElementById(prefix + '_show_machine')?.checked,
+        showMaterial: !!document.getElementById(prefix + '_show_material')?.checked,
+        showPesticide: !!document.getElementById(prefix + '_show_pesticide')?.checked
+    };
+}
+
+window.syncAdminWorkUiFlagDefaults_ = (prefix) => {
+    if (window._adminWorkExtraFlagsTouched) return;
+    const inferred = inferWorkRecordUiFlags_(
+        document.getElementById(prefix + '_name')?.value || '',
+        document.getElementById(prefix + '_category')?.value || ''
+    );
+    const m = document.getElementById(prefix + '_show_machine');
+    const mat = document.getElementById(prefix + '_show_material');
+    const p = document.getElementById(prefix + '_show_pesticide');
+    if (m) m.checked = !!inferred.showMachine;
+    if (mat) mat.checked = !!inferred.showMaterial;
+    if (p) p.checked = !!inferred.showPesticide;
+};
+
 window.openEditWorkMaster = (encodedStr) => {
     try {
         const v = typeof encodedStr === 'string' ? JSON.parse(decodeURIComponent(encodedStr)) : encodedStr;
@@ -3490,8 +3566,10 @@ window.openWorkMasterEditModal = (v) => {
 
         <div style="margin-bottom:16px;">
           <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">作業名</label>
-          <input type="text" id="edit_work_name" class="form-input" style="width:100%; box-sizing:border-box; padding:9px; border-radius:6px; border:1px solid #ccc; font-size:14px;" value="${safeName}">
+          <input type="text" id="edit_work_name" class="form-input" style="width:100%; box-sizing:border-box; padding:9px; border-radius:6px; border:1px solid #ccc; font-size:14px;" value="${safeName}" oninput="window._adminWorkExtraFlagsTouched=true">
         </div>
+
+        ${buildWorkRecordUiFlagsHtml_('edit_work', resolveWorkRecordUiFlags_(v))}
 
         <div style="margin-bottom:16px; background:#fafafa; border:1px solid #eee; border-radius:8px; padding:12px;">
           ${buildWorkCropsCheckboxesHtml('edit_work', selectedCrops)}
@@ -3512,6 +3590,7 @@ window.openWorkMasterEditModal = (v) => {
 
     modal.innerHTML = html;
     modal.style.display = 'flex';
+    window._adminWorkExtraFlagsTouched = true;
 };
 
 window.closeWorkMasterEditModal = () => {
@@ -3547,6 +3626,7 @@ window.openEditWorkMasterLegacy = (encodedStr) => {
             <label class="form-label">類似作業名（地域呼称・別名など）</label>
             <input type="text" id="edit_work_aliases" class="form-input" value="${safeAliases}" placeholder="例: 畝戻し, すき込み (カンマ区切り)">
             <div style="font-size:11px; color:#666; margin-top:-4px; margin-bottom:8px;">※地域ごとの呼称や表記ゆれを登録すると、同じ作業として連動します。</div>
+            ${buildWorkRecordUiFlagsHtml_('edit_work', resolveWorkRecordUiFlags_(v))}
             <label class="form-label">対象作物（複数選択可）</label>
             ${buildWorkCropsCheckboxesHtml('edit_work', selectedCrops)}
             ${buildPerCropDetailWorksEditorHtml('edit_work', selectedCrops, v.cropDetails || { detailWorks: v.detailWorks })}
@@ -3915,6 +3995,7 @@ window.execMaster = async (type, act, val) => {
             }
             const aliasNames = (document.getElementById('add_work_aliases')?.value || '').trim();
             const perCropData = collectPerCropDetailWorks('add_work');
+            const uiFlags = collectWorkRecordUiFlagsFromForm_('add_work');
             value = {
                 name: name,
                 category: document.getElementById('add_work_category').value,
@@ -3922,7 +4003,8 @@ window.execMaster = async (type, act, val) => {
                 crops: perCropData.crops,
                 cropName: perCropData.cropName,
                 cropDetails: perCropData.cropDetails,
-                detailWorks: perCropData.detailWorks
+                detailWorks: perCropData.detailWorks,
+                ...uiFlags
             };
         }
     } else if (act === 'edit') {
@@ -3953,6 +4035,7 @@ window.execMaster = async (type, act, val) => {
             }
             const aliasNames = (document.getElementById('edit_work_aliases')?.value || '').trim();
             const perCropData = collectPerCropDetailWorks('edit_work');
+            const uiFlags = collectWorkRecordUiFlagsFromForm_('edit_work');
             value = {
                 originalName: originalName,
                 newData: {
@@ -3962,7 +4045,8 @@ window.execMaster = async (type, act, val) => {
                     crops: perCropData.crops,
                     cropName: perCropData.cropName,
                     cropDetails: perCropData.cropDetails,
-                    detailWorks: perCropData.detailWorks
+                    detailWorks: perCropData.detailWorks,
+                    ...uiFlags
                 }
             };
         } else if (type === 'machineGroup') {

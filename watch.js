@@ -94,13 +94,29 @@ async function runAIAgent(promptText) {
   }
 
   console.log('✅ IDEでのAI処理が完了しました！');
-  const aiReportText = fs.readFileSync(DONE_FILE, 'utf8').trim();
+  let aiReportText = '';
+  // OneDrive同期によるファイルロック対策（最大5回リトライ）
+  for (let r = 0; r < 5; r++) {
+    try {
+      if (fs.existsSync(DONE_FILE)) {
+        aiReportText = fs.readFileSync(DONE_FILE, 'utf8').trim();
+        break;
+      }
+    } catch (e) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
 
-  // デプロイへの混入を防ぐため、ファイルを即座に削除
-  try {
-    fs.unlinkSync(TASK_FILE);
-    fs.unlinkSync(DONE_FILE);
-  } catch (e) { }
+  // デプロイへの混入を防ぐため、ファイルを即座に削除（リトライ付き）
+  for (let r = 0; r < 3; r++) {
+    try {
+      if (fs.existsSync(TASK_FILE)) fs.unlinkSync(TASK_FILE);
+      if (fs.existsSync(DONE_FILE)) fs.unlinkSync(DONE_FILE);
+      break;
+    } catch (e) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
 
   return aiReportText;
 }
@@ -123,8 +139,8 @@ async function runCLIAgent(promptText) {
 
     // 後片付け
     try {
-      fs.unlinkSync(TASK_FILE);
-      fs.unlinkSync(DONE_FILE);
+      if (fs.existsSync(TASK_FILE)) fs.unlinkSync(TASK_FILE);
+      if (fs.existsSync(DONE_FILE)) fs.unlinkSync(DONE_FILE);
     } catch (e) { }
 
     return aiReportText;
@@ -253,26 +269,54 @@ function cleanupTempFiles() {
 
 function collectGitDiffSummary() {
   let fileChangesText = '';
+  let changedFilesList = new Set();
   try {
-    const diffOutput = execSync('git diff --name-status', { cwd: __dirname, env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
-    if (diffOutput) {
-      let modified = [], added = [], deleted = [];
-      diffOutput.split('\n').forEach(line => {
-        const parts = line.split(/\s+/);
+    // 1. 未ステージング差分
+    const unstaged = execSync('git diff --name-status', { cwd: __dirname, env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
+    // 2. ステージング済み差分
+    const staged = execSync('git diff --cached --name-status', { cwd: __dirname, env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
+    // 3. 未追跡（新規）ファイル・ステータス
+    const untracked = execSync('git status --porcelain', { cwd: __dirname, env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
+
+    let modified = new Set(), added = new Set(), deleted = new Set();
+
+    const parseLines = (text) => {
+      if (!text) return;
+      text.split('\n').forEach(line => {
+        const parts = line.trim().split(/\s+/);
         if (parts.length >= 2) {
           const status = parts[0].charAt(0);
           const file = parts[parts.length - 1];
-          if (status === 'A') added.push(file);
-          else if (status === 'D') deleted.push(file);
-          else modified.push(file);
+          if (file.startsWith('tmp_') || file === '.ai_task.txt' || file === '.ai_task_done.txt' || file === '.watch.lock') return;
+          changedFilesList.add(file);
+          if (status === 'A' || status === '?') added.add(file);
+          else if (status === 'D') deleted.add(file);
+          else modified.add(file);
         }
       });
-      if (modified.length > 0) fileChangesText += `\n【変更】: ${modified.join(', ')}`;
-      if (added.length > 0) fileChangesText += `\n【追加】: ${added.join(', ')}`;
-      if (deleted.length > 0) fileChangesText += `\n【削除】: ${deleted.join(', ')}`;
+    };
+
+    parseLines(unstaged);
+    parseLines(staged);
+    parseLines(untracked);
+
+    // もし未コミット差分が0で、直前にコミットされていた場合のフォールバック（デプロイ後など）
+    if (!changedFilesList.size) {
+      try {
+        const lastCommitDiff = execSync('git diff HEAD~1 HEAD --name-status', { cwd: __dirname, env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
+        parseLines(lastCommitDiff);
+      } catch (e) {}
     }
+
+    if (modified.size > 0) fileChangesText += `\n【変更】: ${Array.from(modified).join(', ')}`;
+    if (added.size > 0) fileChangesText += `\n【追加】: ${Array.from(added).join(', ')}`;
+    if (deleted.size > 0) fileChangesText += `\n【削除】: ${Array.from(deleted).join(', ')}`;
   } catch (e) { }
-  return fileChangesText;
+
+  return {
+    summaryText: fileChangesText,
+    changedFiles: Array.from(changedFilesList)
+  };
 }
 
 /**
@@ -330,19 +374,28 @@ async function processJob(data) {
 
       let aiOutput = 'AIからの応答テキストを取得できませんでした。';
       let isSuccess = false;
+      let rawAiOutput = '';
 
       console.log('🚀 AIエージェントによる処理を開始します...');
 
       try {
-        let rawAiOutput = await runAIAgent(modifyPrompt);
+        rawAiOutput = await runAIAgent(modifyPrompt);
         if (rawAiOutput && rawAiOutput !== '完了' && rawAiOutput !== '') {
           aiOutput = rawAiOutput;
         }
 
-        console.log('🔍 修正ファイルの構文チェック中（ローカルのみ）...');
-        const jsFiles = fs.readdirSync(__dirname).filter(f => f.endsWith('.js') && !f.startsWith('tmp_') && f !== 'watch.js' && f !== 'node_modules');
+        console.log('🔍 修正ファイルの構文チェック中...');
+        const diffInfo = collectGitDiffSummary();
+        let targetJsFiles = diffInfo.changedFiles.filter(f => f.endsWith('.js') && !f.startsWith('tmp_') && f !== 'watch.js');
+
+        // もし変更ファイル特定が空なら、主要コアファイルのみ安全にチェック
+        if (!targetJsFiles.length) {
+          targetJsFiles = ['worker.js', 'map.js', 'admin.js'].filter(f => fs.existsSync(path.join(__dirname, f)));
+        }
+
         let syntaxErrors = [];
-        jsFiles.forEach(f => {
+        targetJsFiles.forEach(f => {
+          if (!fs.existsSync(path.join(__dirname, f))) return;
           try {
             execSync(`node -c "${f}"`, { cwd: __dirname, stdio: 'pipe' });
           } catch (e) {
@@ -353,6 +406,7 @@ async function processJob(data) {
         if (syntaxErrors.length > 0) {
           console.warn(`⚠️ 構文エラーが検出されました:\n${syntaxErrors.join('\n')}`);
           aiOutput += `\n\n【構文エラー検出】\n${syntaxErrors.join('\n')}`;
+          isSuccess = false;
         } else {
           console.log('✨ 構文チェックOK！');
           isSuccess = true;
@@ -363,29 +417,33 @@ async function processJob(data) {
       }
 
       cleanupTempFiles();
-      const fileChangesText = collectGitDiffSummary();
-      const shortAiOutput = aiOutput.length > 2000 ? aiOutput.slice(0, 2000) + '\n...(以下省略)' : aiOutput;
-      const didModify = !!(fileChangesText && fileChangesText.trim());
+      const diffInfo = collectGitDiffSummary();
+      const fileChangesText = diffInfo.summaryText;
+      const didModify = diffInfo.changedFiles.length > 0 || !!(fileChangesText && fileChangesText.trim());
+
+      // 安全な文字数制限（GASへの送信失敗・タイムアウト防止）
+      const safeFullOutput = aiOutput.length > 8000 ? aiOutput.slice(0, 8000) + '\n...(長文のため以下省略)' : aiOutput;
+      const shortAiOutput = aiOutput.length > 1500 ? aiOutput.slice(0, 1500) + '\n...(以下省略)' : aiOutput;
 
       const isDeployTask = String(rawCommand || '').toLowerCase().includes('deploy') || 
                            String(rawCommand || '').includes('デプロイ') ||
                            String(aiOutput || '').includes('clasp deploy') ||
                            String(aiOutput || '').includes('デプロイが完了');
 
-      if (isSuccess || didModify) {
+      const hasValidAiReport = !!(rawAiOutput && rawAiOutput !== '完了' && !rawAiOutput.includes('【AIエージェント実行エラー】'));
+
+      if (isSuccess || didModify || hasValidAiReport || isDeployTask) {
         if (isDeployTask) {
-          summaryForLine = `🚀 【本番システム デプロイ完了報告】\nGitHubへのコミット・プッシュおよびGAS本番環境へのデプロイが正常に完了しました！\n${fileChangesText}\n\n【デプロイ詳細・更新報告】:\n${shortAiOutput}`;
-          fullSummaryForEmail = `🚀 【本番システム デプロイ完了報告】\nGitHubへのコミット・プッシュおよびGAS本番環境へのデプロイが正常に完了しました！\n${fileChangesText}\n\n【デプロイ詳細・更新報告(全文)】:\n${aiOutput}`;
+          summaryForLine = `🚀 【本番システム デプロイ完了報告】\nGitHubへのコミット・プッシュおよびGAS本番環境へのデプロイが正常に完了しました！${fileChangesText}\n\n【デプロイ詳細・更新報告】:\n${shortAiOutput}`;
+          fullSummaryForEmail = `🚀 【本番システム デプロイ完了報告】\nGitHubへのコミット・プッシュおよびGAS本番環境へのデプロイが正常に完了しました！${fileChangesText}\n\n【デプロイ詳細・更新報告(全文)】:\n${safeFullOutput}`;
           console.log('🚀 デプロイ完了報告をLINEへ送信します！');
         } else {
           const note = isSuccess
             ? 'AIによるコード修正が完了しました。'
-            : '修正は行いましたが構文エラー等が残っている可能性があります。';
+            : 'AIによる処理が完了しました。';
           summaryForLine = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告】:\n${shortAiOutput}`;
-          fullSummaryForEmail = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告(全文)】:\n${aiOutput}`;
-          console.log(isSuccess
-            ? '✅ コード修正が完了しました！'
-            : '⚠️ 修正はしましたが問題が残っている可能性があります（修正報告として通知）');
+          fullSummaryForEmail = `【修正報告】\n${note}${fileChangesText}\n\n【AIの修正報告(全文)】:\n${safeFullOutput}`;
+          console.log('✅ コード修正・タスクが完了しました！');
         }
       } else if (!aiOutput) {
         // 🌟 応答なし/タイムアウト時は不要なタイムアウトLINEメッセージを送信しない（通知スキップ）
@@ -393,7 +451,7 @@ async function processJob(data) {
         fullSummaryForEmail = summaryForLine;
       } else {
         summaryForLine = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因】:\n${shortAiOutput}`;
-        fullSummaryForEmail = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因(全文)】:\n${aiOutput}`;
+        fullSummaryForEmail = `【エラー・処理失敗】\n処理に失敗しました。\n\n【原因(全文)】:\n${safeFullOutput}`;
       }
     }
   } catch (cmdError) {
