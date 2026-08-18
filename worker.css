@@ -113,6 +113,10 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   pointer-events: none;
   box-sizing: border-box;
 }
+/* 圃場・マップ選択中は現在地ボタンのみ残して他ボタンを撤去（非表示） */
+.map-action-bar.map-selecting-mode .map-action-btn:not(#btnCurrentLocation) {
+  display: none !important;
+}
 .map-action-btn {
   pointer-events: auto;
   width: 50px;

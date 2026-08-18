@@ -6012,6 +6012,20 @@ function paintCpCellRange(planId, colA, colB, tool) {
     if (blocked && tool === 'harvesting') notifyCpHarvestBeforePlantingBlocked_();
 }
 
+/** ドラッグ消し: 範囲内の指定工程セルのみクリア（収穫ドラッグ消し用） */
+function eraseCpCellRange(planId, colA, colB, taskType) {
+    const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
+    if (!tr) return;
+    const lo = Math.min(colA, colB);
+    const hi = Math.max(colA, colB);
+    for (let c = lo; c <= hi; c++) {
+        const td = tr.querySelector(`td[data-col-idx="${c}"]`);
+        if (!td) continue;
+        if (taskType && td.dataset.task !== taskType) continue;
+        clearCpCellPaint(td);
+    }
+}
+
 function captureCpPaintRow(planId) {
     const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${planId}"]`);
     if (!tr) return [];
@@ -6043,9 +6057,14 @@ function restoreCpPaintRow(snapshot) {
 // ドラッグ塗り状態
 let cpPaintDrag = null;
 
-/** 播種・定植は1点ずつ。収穫などはドラッグ連続塗り可 */
+/** 播種・定植は1点ずつ。収穫はドラッグ連続塗り／消し可 */
 function isCpSinglePointPaintTool_(tool) {
     return tool === 'sowing' || tool === 'planting';
+}
+
+/** 収穫ペイント済みセルからのドラッグは消しモード */
+function isCpHarvestEraseDragStart_(td) {
+    return !!(td && td.dataset.task === 'harvesting');
 }
 
 function resolveCpPaintToolForPlan(planId) {
@@ -6358,6 +6377,7 @@ function bindCpCellPaintEvents(td, planId) {
     td.onpointerdown = function(e) {
         if (e.button != null && e.button !== 0) return;
         const startCol = parseInt(td.dataset.colIdx, 10);
+        const eraseHarvest = isCpHarvestEraseDragStart_(td);
         if (e.pointerType === 'touch') {
             cpPaintDrag = {
                 planId: planId,
@@ -6365,22 +6385,25 @@ function bindCpCellPaintEvents(td, planId) {
                 startCol: startCol,
                 lastCol: startCol,
                 pointerId: e.pointerId,
-                touchTap: true,
+                touchTap: !eraseHarvest,
                 startX: e.clientX,
                 startY: e.clientY,
                 dragged: false,
                 singlePoint: false,
+                eraseHarvest: eraseHarvest,
+                tool: eraseHarvest ? 'eraser' : '',
+                rowSnapshot: eraseHarvest ? captureCpPaintRow(planId) : null,
                 qtyHoldTimer: 0,
                 qtyEdit: false
             };
-            startCpPaintQtyHold_(td, planId, cpPaintDrag);
+            if (!eraseHarvest) startCpPaintQtyHold_(td, planId, cpPaintDrag);
             return;
         }
         // スクロールとの競合を抑えつつドラッグ塗りを開始
         e.preventDefault();
         try { td.setPointerCapture(e.pointerId); } catch (err) {}
         const resolved = resolveCpPaintToolForPlan(planId);
-        const singlePoint = isCpSinglePointPaintTool_(resolved.tool);
+        const singlePoint = eraseHarvest ? false : isCpSinglePointPaintTool_(resolved.tool);
         cpPaintDrag = {
             planId: planId,
             startTd: td,
@@ -6388,7 +6411,8 @@ function bindCpCellPaintEvents(td, planId) {
             lastCol: startCol,
             pointerId: e.pointerId,
             mode: resolved.mode,
-            tool: resolved.tool,
+            tool: eraseHarvest ? 'eraser' : resolved.tool,
+            eraseHarvest: eraseHarvest,
             singlePoint: singlePoint,
             rowSnapshot: singlePoint ? null : captureCpPaintRow(planId),
             dragged: false,
@@ -6397,7 +6421,7 @@ function bindCpCellPaintEvents(td, planId) {
             qtyHoldTimer: 0,
             qtyEdit: false
         };
-        startCpPaintQtyHold_(td, planId, cpPaintDrag);
+        if (!eraseHarvest) startCpPaintQtyHold_(td, planId, cpPaintDrag);
     };
 
     td.onpointermove = function(e) {
@@ -6411,7 +6435,13 @@ function bindCpCellPaintEvents(td, planId) {
             );
             if (moved > 8) {
                 clearCpPaintQtyHoldTimer_(cpPaintDrag);
-                cpPaintDrag = null;
+                if (cpPaintDrag.eraseHarvest) {
+                    cpPaintDrag.touchTap = false;
+                    cpPaintDrag.dragged = false;
+                    try { td.setPointerCapture(e.pointerId); } catch (err) {}
+                } else {
+                    cpPaintDrag = null;
+                }
             }
             return;
         }
@@ -6434,13 +6464,17 @@ function bindCpCellPaintEvents(td, planId) {
         const col = parseInt(overTd.dataset.colIdx, 10);
         if (isNaN(col)) return;
 
+        const applyRange = cpPaintDrag.eraseHarvest
+            ? function(fromCol, toCol) { eraseCpCellRange(planId, fromCol, toCol, 'harvesting'); }
+            : function(fromCol, toCol) { paintCpCellRange(planId, fromCol, toCol, cpPaintDrag.tool); };
+
         if (!cpPaintDrag.dragged) {
             if (col === cpPaintDrag.startCol) return;
             clearCpPaintQtyHoldTimer_(cpPaintDrag);
-            // 隣の枠へ動いたらドラッグ塗り開始（始点も強制塗り）
+            // 隣の枠へ動いたらドラッグ開始（始点も含めて範囲適用）
             cpPaintDrag.dragged = true;
             restoreCpPaintRow(cpPaintDrag.rowSnapshot);
-            paintCpCellRange(planId, cpPaintDrag.startCol, col, cpPaintDrag.tool);
+            applyRange(cpPaintDrag.startCol, col);
             cpPaintDrag.lastCol = col;
             if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
             return;
@@ -6450,7 +6484,7 @@ function bindCpCellPaintEvents(td, planId) {
         // 毎回ドラッグ開始時の状態へ戻してから現在範囲を描く。
         // これにより、伸ばしすぎた後にカーソルを戻すと余分なセルが消える。
         restoreCpPaintRow(cpPaintDrag.rowSnapshot);
-        paintCpCellRange(planId, cpPaintDrag.startCol, col, cpPaintDrag.tool);
+        applyRange(cpPaintDrag.startCol, col);
         cpPaintDrag.lastCol = col;
         if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
     };
@@ -6475,7 +6509,11 @@ function bindCpCellPaintEvents(td, planId) {
         }
 
         // ドラッグ終了: 半自動状態・履歴をまとめて更新
-        if (drag.mode === 'semiauto') {
+        if (drag.eraseHarvest) {
+            delete cpSemiAutoLastPaint[planId];
+            syncCpSemiAutoStepForPlan(planId);
+            updateCpSemiAutoHint(planId);
+        } else if (drag.mode === 'semiauto') {
             const endTd = document.querySelector(
                 `#cpTableBody tr[data-plan-id="${planId}"] td[data-col-idx="${drag.lastCol}"]`
             ) || drag.startTd;

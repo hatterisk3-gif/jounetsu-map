@@ -821,7 +821,11 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       window.resetWorkMapSelectionVisuals = (opts) => {
         opts = opts || {};
         try {
-          isMapSelecting = false;
+          if (typeof window.setMapSelectingMode_ === 'function') {
+            window.setMapSelectingMode_(false);
+          } else {
+            isMapSelecting = false;
+          }
           window.workMapSelectingRidgesForFieldId = null;
           if (typeof window.clearWorkDrawnRidges === 'function') window.clearWorkDrawnRidges();
           const selectUI = document.getElementById('mapSelectUI');
@@ -2536,10 +2540,22 @@ function createSignboardMarker(name, pos, icon, id) {
       
       window.removePendingPhoto = (idx) => { pendingFiles.splice(idx, 1); renderPendingPhotos(); };
 
+      window.setMapSelectingMode_ = (isSelecting) => {
+        isMapSelecting = !!isSelecting;
+        const bar = document.getElementById('mapActionBar');
+        if (bar) {
+          if (isSelecting) {
+            bar.classList.add('map-selecting-mode');
+          } else {
+            bar.classList.remove('map-selecting-mode');
+          }
+        }
+      };
+
       window.openMapSelect = () => {
         backupSelectedPolyIds = [...selectedPolyIds];
         window._backupWorkMapRidgeSelections = JSON.parse(JSON.stringify(window.workMapRidgeSelections || {}));
-        isMapSelecting = true;
+        window.setMapSelectingMode_(true);
         window.workMapSelectingRidgesForFieldId = null;
         window.clearWorkDrawnRidges();
         infoWindow.close();
@@ -2563,7 +2579,7 @@ function createSignboardMarker(name, pos, icon, id) {
         try {
           window.exitWorkRidgeSelectionView(true);
         } catch (e) {}
-        isMapSelecting = false;
+        window.setMapSelectingMode_(false);
         document.getElementById('rightPanel').style.display = 'flex';
         document.getElementById('mapSelectUI').style.display = 'none';
         updateMapSelectVisuals();
@@ -2579,7 +2595,7 @@ function createSignboardMarker(name, pos, icon, id) {
         try {
           window.exitWorkRidgeSelectionView(true);
         } catch (e) {}
-        isMapSelecting = false;
+        window.setMapSelectingMode_(false);
         document.getElementById('rightPanel').style.display = 'flex';
         document.getElementById('mapSelectUI').style.display = 'none';
         updateMapSelectVisuals();
@@ -8267,7 +8283,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.fieldDetailKey_ = (polyId) => window.FIELD_DETAIL_PREFIX_ + String(polyId || '');
 
-      /** 修理・点検・整備は詳細作業を作物ではなく圃場に紐づける */
+      /** 圃場に紐づく詳細作業（修理・点検・整備、または圃場別詳細を持つ作業）かを判定 */
       window.isFieldLinkedDetailWork_ = (workName) => {
         const n = String(workName || '').trim();
         if (!n || n.includes('休憩')) return false;
@@ -8276,7 +8292,17 @@ function createSignboardMarker(name, pos, icon, id) {
         if (n.includes('修理') || n.includes('点検') || n.includes('整備')) return true;
         const catEl = document.getElementById('rec_work_category');
         const cat = catEl ? String(catEl.value || '').trim() : '';
-        return cat === '保全・整備' || cat.includes('整備') || cat.includes('保全');
+        if (cat === '保全・整備' || cat.includes('整備') || cat.includes('保全')) return true;
+
+        // 作業マスタの cropDetails に圃場キー（field: または __field_common__）が存在する場合
+        const w = (typeof window.findWorkMasterByName_ === 'function') ? window.findWorkMasterByName_(n) : null;
+        if (w && w.cropDetails && typeof w.cropDetails === 'object') {
+          const keys = Object.keys(w.cropDetails);
+          if (keys.some(k => k === window.FIELD_DETAIL_COMMON_KEY_ || (typeof window.isFieldDetailKey_ === 'function' && window.isFieldDetailKey_(k)))) {
+            return true;
+          }
+        }
+        return false;
       };
 
       window.getSelectedFieldsForDetailWorks_ = () => {
@@ -8296,7 +8322,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.refreshFieldLinkedDetailWorks_ = () => {
         if (window._refreshingFieldLinkedDetails) return;
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
-        if (!wName || typeof window.isFieldLinkedDetailWork_ !== 'function' || !window.isFieldLinkedDetailWork_(wName)) return;
+        if (!wName) return;
         if (typeof window.renderDetailWorksSection !== 'function') return;
         window._refreshingFieldLinkedDetails = true;
         try {
@@ -8314,12 +8340,15 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.getCropsForDetailWorks = () => {
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
-        if (typeof window.isFieldLinkedDetailWork_ === 'function' && window.isFieldLinkedDetailWork_(wName)) {
-          const fields = (typeof window.getSelectedFieldsForDetailWorks_ === 'function')
-            ? window.getSelectedFieldsForDetailWorks_()
-            : [];
+        const isFieldLinked = typeof window.isFieldLinkedDetailWork_ === 'function' && window.isFieldLinkedDetailWork_(wName);
+        const fields = (typeof window.getSelectedFieldsForDetailWorks_ === 'function')
+          ? window.getSelectedFieldsForDetailWorks_()
+          : [];
+
+        if (isFieldLinked) {
           return [{ key: window.FIELD_DETAIL_COMMON_KEY_, label: '全圃場共通' }].concat(fields);
         }
+
         const keys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
           ? window.getSelectedWorkCropFilterKeys()
           : [];
@@ -8329,9 +8358,17 @@ function createSignboardMarker(name, pos, icon, id) {
             key: window.normalizeWorkCropKey(k),
             label: window.getWorkCropLabel(k)
           }));
-        if (real.length) return real;
-        // 共通のみ／未選択時は共通セクション1つ
-        return [{ key: '__common__', label: '共通' }];
+        let list = real.length ? real : [{ key: '__common__', label: '共通' }];
+
+        // 通常作業でも圃場が選択されていれば、その圃場ブロックを詳細作業セクションに追加
+        if (fields.length > 0) {
+          fields.forEach(f => {
+            if (!list.some(item => item.key === f.key)) {
+              list.push(f);
+            }
+          });
+        }
+        return list;
       };
 
       window.findWorkMasterForNameAndCrop_ = (wName, cropKey) => {
@@ -11067,37 +11104,112 @@ function createSignboardMarker(name, pos, icon, id) {
           const title = isEdit ? '詳細作業名を編集' : '新しい詳細作業を追加';
           const safeNameAttr = String(wName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           const safeCropAttr = String(resolvedCrop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          const scopeLabel = isPrep
-              ? `準備 − ${prepTarget}`
-              : `${window.getWorkCropLabel(resolvedCrop)} ／ ${String(wName || '')}`;
-          const scopeHint = isPrep
-              ? `（準備作業「${String(wName || '').replace(/</g,'&lt;')}」の組み合わせ別）`
-              : (isFieldKey
-                ? (resolvedCrop === window.FIELD_DETAIL_COMMON_KEY_
-                  ? '選んだすべての圃場で表示されます'
-                  : 'この圃場でのみ表示されます')
-                : 'この作物でのみ表示されます');
-          const namePlaceholder = isFieldKey ? '例: フェンス補修' : '例: 苗の選別';
+
+          // 圃場選択肢の構築
+          const selectedFields = (typeof window.getSelectedFieldsForDetailWorks_ === 'function')
+            ? window.getSelectedFieldsForDetailWorks_()
+            : [];
+          const allPolys = Object.keys(loadedPolygons || {}).map(id => loadedPolygons[id]).filter(p => p && !p.isMarker);
+          allPolys.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+
+          let fieldOptionsHtml = `<option value="${window.FIELD_DETAIL_COMMON_KEY_}" ${resolvedCrop === window.FIELD_DETAIL_COMMON_KEY_ ? 'selected' : ''}>🌐 全圃場共通（すべての圃場で表示）</option>`;
+          if (selectedFields.length > 0) {
+            fieldOptionsHtml += `<optgroup label="📍 選択中の圃場">` + selectedFields.map(f => {
+              const sel = (resolvedCrop === f.key) ? 'selected' : '';
+              return `<option value="${f.key}" ${sel}>📍 ${String(f.label).replace(/</g, '&lt;')}</option>`;
+            }).join('') + `</optgroup>`;
+          }
+          if (allPolys.length > 0) {
+            fieldOptionsHtml += `<optgroup label="🗺️ すべての圃場から選択">` + allPolys.map(p => {
+              const key = window.fieldDetailKey_(p.id);
+              const sel = (resolvedCrop === key && !selectedFields.some(sf => sf.key === key)) ? 'selected' : '';
+              return `<option value="${key}" ${sel}>${String(p.name || '圃場').replace(/</g, '&lt;')}</option>`;
+            }).join('') + `</optgroup>`;
+          }
+
+          const isFieldChecked = isFieldKey || (selectedFields.length > 0 && (!resolvedCrop || resolvedCrop === '__common__'));
 
           const modal = document.createElement('div');
           modal.id = 'detailWorkEditorModal';
-          modal.dataset.cropKey = resolvedCrop || '';
+          modal.dataset.origCropKey = resolvedCrop || '';
+          modal.dataset.wName = wName || '';
+          modal.dataset.mode = mode || 'add';
+          modal.dataset.index = String(index);
           modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12200; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
-          modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:400px; border-radius:10px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
+          modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:420px; border-radius:10px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
               <h3 style="margin:0 0 8px; font-size:16px; color:#1565c0;">${title}</h3>
-              <div style="font-size:12px; color:#666; margin-bottom:12px;">登録先: <b>${String(scopeLabel).replace(/</g, '&lt;')}</b>${isPrep ? `<div style="margin-top:4px; color:#2E7D32;">${scopeHint}</div>` : `<div style="margin-top:4px; color:#2E7D32;">${scopeHint}</div>`}</div>
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業名</label>
-              <input type="text" id="dw_edit_name_input" value="${String(targetVal).replace(/"/g, '&quot;')}" placeholder="${namePlaceholder}" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:14px; font-size:15px;" onkeydown="if(event.key==='Enter') submitDetailWorkEditor('${mode}', '${safeNameAttr}', ${index}, '${safeCropAttr}')">
+              <div style="font-size:12px; color:#666; margin-bottom:10px;">作業名: <b style="color:#333;">${String(wName || '').replace(/</g, '&lt;')}</b></div>
+              
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業名 <span style="color:#d32f2f;">*</span></label>
+              <input type="text" id="dw_edit_name_input" value="${String(targetVal).replace(/"/g, '&quot;')}" placeholder="例: 境界の草刈り, 苗の選別" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:12px; font-size:15px;" onkeydown="if(event.key==='Enter') submitDetailWorkEditor('${mode}', '${safeNameAttr}', ${index}, '${safeCropAttr}')">
+
+              ${!isPrep ? `
+              <div style="background:#f8fbff; border:1px solid #bbdefb; border-radius:8px; padding:10px 12px; margin-bottom:14px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:bold; color:#1565c0; user-select:none;">
+                  <input type="checkbox" id="dw_edit_field_linked_cb" ${isFieldChecked ? 'checked' : ''} onchange="window.toggleDetailWorkFieldLinkUI_()" style="width:18px; height:18px; cursor:pointer;">
+                  <span>🗺️ 圃場と紐付ける（圃場選択時に表示）</span>
+                </label>
+                <div id="dw_edit_field_select_wrap" style="margin-top:8px; display:${isFieldChecked ? 'block' : 'none'};">
+                  <div style="font-size:11px; color:#555; margin-bottom:4px; font-weight:bold;">紐付ける圃場:</div>
+                  <select id="dw_edit_field_select" style="width:100%; padding:8px; border:1px solid #90caf9; border-radius:6px; font-size:13px; background:#fff;" onchange="window.updateDetailWorkScopeHint_()">
+                    ${fieldOptionsHtml}
+                  </select>
+                  <div id="dw_edit_field_hint" style="font-size:11px; color:#2e7d32; margin-top:4px; line-height:1.4;"></div>
+                </div>
+                <div id="dw_edit_crop_wrap" style="margin-top:8px; display:${!isFieldChecked ? 'block' : 'none'}; font-size:12px; color:#666;">
+                  登録先作物: <b>${window.getWorkCropLabel(resolvedCrop)}</b>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">この作物でのみ表示されます</div>
+                </div>
+              </div>` : `
+              <div style="font-size:12px; color:#666; margin-bottom:12px;">登録先: <b>準備 − ${prepTarget}</b></div>
+              `}
+
               <div style="display:flex; gap:8px;">
                 <button type="button" onclick="closeDetailWorkEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
                 <button type="button" onclick="submitDetailWorkEditor('${mode}', '${safeNameAttr}', ${index}, '${safeCropAttr}')" style="flex:1; background:#1565c0; color:#fff; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">${isEdit ? '更新する' : '追加する'}</button>
               </div>
             </div>`;
           document.body.appendChild(modal);
+          if (typeof window.updateDetailWorkScopeHint_ === 'function') {
+            window.updateDetailWorkScopeHint_();
+          }
           setTimeout(() => {
               const input = document.getElementById('dw_edit_name_input');
               if (input) { input.focus(); input.select(); }
           }, 50);
+      };
+
+      window.toggleDetailWorkFieldLinkUI_ = () => {
+          const cb = document.getElementById('dw_edit_field_linked_cb');
+          const fWrap = document.getElementById('dw_edit_field_select_wrap');
+          const cWrap = document.getElementById('dw_edit_crop_wrap');
+          if (cb && fWrap && cWrap) {
+              fWrap.style.display = cb.checked ? 'block' : 'none';
+              cWrap.style.display = cb.checked ? 'none' : 'block';
+          }
+          if (typeof window.updateDetailWorkScopeHint_ === 'function') {
+              window.updateDetailWorkScopeHint_();
+          }
+      };
+
+      window.updateDetailWorkScopeHint_ = () => {
+          const cb = document.getElementById('dw_edit_field_linked_cb');
+          const sel = document.getElementById('dw_edit_field_select');
+          const hint = document.getElementById('dw_edit_field_hint');
+          if (!hint) return;
+          if (!cb || !cb.checked || !sel) {
+              hint.textContent = '';
+              return;
+          }
+          const val = sel.value;
+          if (val === window.FIELD_DETAIL_COMMON_KEY_) {
+              hint.textContent = '💡 すべての圃場が選ばれた時に共通して表示されます。';
+          } else if (val && val.indexOf('field:') === 0) {
+              const polyId = val.slice(6);
+              const p = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[polyId] : null;
+              const name = p ? p.name : '対象圃場';
+              hint.textContent = `💡 作業記録で「${name}」が選択された時にのみ表示されます。`;
+          }
       };
 
       window.submitDetailWorkEditor = async (mode, wName, index, cropKey) => {
@@ -11109,29 +11221,62 @@ function createSignboardMarker(name, pos, icon, id) {
               return;
           }
           const modal = document.getElementById('detailWorkEditorModal');
-          const resolvedCrop = (cropKey != null && String(cropKey).trim() !== '')
+          const origCropKey = (cropKey != null && String(cropKey).trim() !== '')
             ? cropKey
-            : (modal && modal.dataset ? modal.dataset.cropKey : '');
-          let details = window.getAdminEditableDetailNames_(wName, resolvedCrop);
+            : (modal && modal.dataset ? modal.dataset.origCropKey : '');
+          const isPrep = typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName);
+
+          let targetCropKey = origCropKey;
+          if (!isPrep) {
+              const cb = document.getElementById('dw_edit_field_linked_cb');
+              const fSel = document.getElementById('dw_edit_field_select');
+              if (cb && cb.checked && fSel && fSel.value) {
+                  targetCropKey = fSel.value;
+              } else if (cb && !cb.checked) {
+                  // 圃場紐付けチェックOFFの場合：もし元が圃場キーなら通常作物キーへ
+                  if (targetCropKey === window.FIELD_DETAIL_COMMON_KEY_ || (typeof window.isFieldDetailKey_ === 'function' && window.isFieldDetailKey_(targetCropKey))) {
+                      const crops = (typeof window.getCropsForDetailWorks === 'function') ? window.getCropsForDetailWorks() : [];
+                      const real = crops.find(c => c && c.key && c.key !== '__common__' && c.key !== window.FIELD_DETAIL_COMMON_KEY_ && !window.isFieldDetailKey_(c.key));
+                      targetCropKey = real ? real.key : '__common__';
+                  }
+              }
+          }
 
           if (mode === 'add') {
+              let details = window.getAdminEditableDetailNames_(wName, targetCropKey);
               if (details.includes(newVal)) {
                   if (typeof customAlert === 'function') customAlert(`「${newVal}」は既に追加されています。`);
                   return;
               }
               details.push(newVal);
               window.closeDetailWorkEditorModal();
-              await window.saveAdminDetailWorks(wName, details, '追加', resolvedCrop);
+              await window.saveAdminDetailWorks(wName, details, '追加', targetCropKey);
           } else if (mode === 'edit') {
-              if (index < 0 || index >= details.length) return;
-              const oldVal = details[index];
-              if (newVal !== oldVal && details.includes(newVal)) {
-                  if (typeof customAlert === 'function') customAlert(`「${newVal}」は既に存在します。`);
-                  return;
+              if (origCropKey === targetCropKey) {
+                  let details = window.getAdminEditableDetailNames_(wName, targetCropKey);
+                  if (index < 0 || index >= details.length) return;
+                  const oldVal = details[index];
+                  if (newVal !== oldVal && details.includes(newVal)) {
+                      if (typeof customAlert === 'function') customAlert(`「${newVal}」は既に存在します。`);
+                      return;
+                  }
+                  details[index] = newVal;
+                  window.closeDetailWorkEditorModal();
+                  await window.saveAdminDetailWorks(wName, details, '更新', targetCropKey);
+              } else {
+                  // 登録先が変更された場合：旧登録先から削除し、新登録先に追加
+                  let oldDetails = window.getAdminEditableDetailNames_(wName, origCropKey);
+                  if (index >= 0 && index < oldDetails.length) {
+                      oldDetails.splice(index, 1);
+                      await window.saveAdminDetailWorks(wName, oldDetails, '移動', origCropKey);
+                  }
+                  let newDetails = window.getAdminEditableDetailNames_(wName, targetCropKey);
+                  if (!newDetails.includes(newVal)) {
+                      newDetails.push(newVal);
+                  }
+                  window.closeDetailWorkEditorModal();
+                  await window.saveAdminDetailWorks(wName, newDetails, '更新', targetCropKey);
               }
-              details[index] = newVal;
-              window.closeDetailWorkEditorModal();
-              await window.saveAdminDetailWorks(wName, details, '更新', resolvedCrop);
           }
       };
 
@@ -16350,7 +16495,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.openMachineLocSelect = (machineId) => {
           window.selectingMachineIdForLoc = machineId;
-          isMapSelecting = true;
+          window.setMapSelectingMode_(true);
           infoWindow.close();
           document.getElementById('rightPanel').style.display = 'none';
           
@@ -16377,7 +16522,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.cancelMachineLocSelect = () => {
           window.selectingMachineIdForLoc = null;
-          isMapSelecting = false;
+          window.setMapSelectingMode_(false);
           document.getElementById('mapSelectUI').style.display = 'none';
           document.getElementById('rightPanel').style.display = 'flex';
           
