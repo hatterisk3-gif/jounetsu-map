@@ -10289,6 +10289,7 @@ async function loadCultivationPlanDraft(options) {
         plans: draft.plans || []
     });
     resetCpEditHistory();
+    if (typeof syncCpInitialSettingsForExistingCards_ === 'function') syncCpInitialSettingsForExistingCards_();
     if (draft.loadedPlanKey) {
         cpLoadedPlanKey = draft.loadedPlanKey;
         if (typeof updateCpSaveButtonLabel === 'function') updateCpSaveButtonLabel();
@@ -10857,6 +10858,14 @@ async function sendVarietyToGAS(params, btn, originalText) {
     } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
+    }
+}
+
+/** 品種カードがあるときは初期設定を閉じて、ペイント領域を広くする */
+function syncCpInitialSettingsForExistingCards_() {
+    if (typeof setCpInitialSettingsOpen !== 'function') return;
+    if (Array.isArray(cpPlans) && cpPlans.length > 0) {
+        setCpInitialSettingsOpen(false);
     }
 }
 
@@ -12906,6 +12915,7 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
             window.cpBulkPlanLoadInProgress = false;
             if (typeof refreshCpPlanLeftSummary === 'function') refreshCpPlanLeftSummary();
             if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
+            if (typeof syncCpInitialSettingsForExistingCards_ === 'function') syncCpInitialSettingsForExistingCards_();
             finishCpLoadProgress(true, `${plans.length}件の計画（${resolvedName}）を読み込みました`);
             // 読み込み直後の自動レイアウトがスクロールを奪わないよう保護
             invalidateCpScrollPreserve_(2500);
