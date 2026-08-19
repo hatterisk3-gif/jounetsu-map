@@ -5230,13 +5230,15 @@ function renderCpPlanRow(plan, options) {
             <span id="tagDisplay_${plan.id}" title="${escapeCpHtmlAttr(plan.tag || '')}" style="color:#e91e63; font-size:8px; font-weight:bold; margin-left:auto; min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; letter-spacing:-0.04em;">${plan.tag || ''}</span>
             <button type="button" onclick="removeCpPlanRow('${plan.id}')" style="background:none; border:none; color:#d32f2f; cursor:pointer; font-size:13px; line-height:1; padding:0; width:14px; flex-shrink:0; font-weight:bold;">×</button>
         </div>
-        <div style="margin-top:1px; min-width:0; display:flex; align-items:center; gap:3px;">
-            <div style="flex:1; min-width:0;">${buildCpVarietySelectHtml(plan)}</div>
+        <div style="margin-top:1px; min-width:0;">
+            ${buildCpVarietySelectHtml(plan)}
+        </div>
+        <div style="margin-top:2px; display:flex; align-items:center; gap:3px;">
             <button type="button" id="cpCardDetailsBtn_${plan.id}" onclick="toggleCpCardDetails('${plan.id}')" title="詳細を開閉"
-              style="height:18px; padding:0 5px; font-size:9px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap; flex-shrink:0;">詳細</button>
+              style="flex:1; height:18px; padding:0 5px; font-size:9px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:3px; cursor:pointer; font-weight:bold; white-space:nowrap;">詳細</button>
             <button type="button" id="cpCardAddBtn_${plan.id}" title="コピーして下に品種を追加" aria-label="品種カードをコピーして追加"
               onclick="copyCpPlanRow('${plan.id}')"
-              style="width:20px; height:18px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:12px; font-weight:bold; line-height:1; padding:0; flex-shrink:0;">＋</button>
+              style="width:28px; height:18px; box-sizing:border-box; background:#fff; color:#1565C0; border:1px dashed #1976D2; border-radius:3px; cursor:pointer; font-size:12px; font-weight:bold; line-height:1; padding:0; flex-shrink:0;">＋</button>
         </div>
         <div id="cpCardDetails_${plan.id}" style="display:none; margin-top:3px; font-size:10px; flex-direction:column; gap:2px; background:#fff; padding:3px; border-radius:4px; border:1px solid #bbdefb; box-sizing:border-box;">
           <div id="cpSeedProcure_${plan.id}" style="font-size:9px; color:#bf360c; font-weight:bold; line-height:1.25;"></div>
