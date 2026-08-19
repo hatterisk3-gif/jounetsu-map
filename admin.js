@@ -3989,10 +3989,6 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'work') {
             const name = document.getElementById('add_work_name').value.trim();
             if (!name) { customAlert("作業名を入力してください"); return; }
-            if (pdlWorkMaster.some(w => String(w.name || "").trim() === name)) {
-                customAlert(`作業名「${name}」は既に登録されています`);
-                return;
-            }
             const aliasNames = (document.getElementById('add_work_aliases')?.value || '').trim();
             const perCropData = collectPerCropDetailWorks('add_work');
             const uiFlags = collectWorkRecordUiFlagsFromForm_('add_work');
@@ -4006,6 +4002,10 @@ window.execMaster = async (type, act, val) => {
                 detailWorks: perCropData.detailWorks,
                 ...uiFlags
             };
+            if (pdlWorkMaster.some(w => String(w.name || "").trim() === name)) {
+                if (!await customConfirm(`作業名「${name}」は既に登録されています。\n\n既存の内容と、いまの設定を1件に統合して登録しますか？\n（作業名は「${name}」の1つになります）`)) return;
+                act = 'merge';
+            }
         }
     } else if (act === 'edit') {
         if (!await customConfirm(`更新しますか？`)) return;
@@ -4029,15 +4029,12 @@ window.execMaster = async (type, act, val) => {
             const originalName = document.getElementById('edit_work_original_name').value;
             const newName = document.getElementById('edit_work_name').value.trim();
             if (!newName) { customAlert("作業名を入力してください"); return; }
-            if (newName !== String(originalName || "").trim() && pdlWorkMaster.some(w => String(w.name || "").trim() === newName)) {
-                customAlert(`作業名「${newName}」は既に登録されています`);
-                return;
-            }
             const aliasNames = (document.getElementById('edit_work_aliases')?.value || '').trim();
             const perCropData = collectPerCropDetailWorks('edit_work');
             const uiFlags = collectWorkRecordUiFlagsFromForm_('edit_work');
             value = {
                 originalName: originalName,
+                name: newName,
                 newData: {
                     name: newName,
                     category: document.getElementById('edit_work_category').value,
@@ -4049,6 +4046,10 @@ window.execMaster = async (type, act, val) => {
                     ...uiFlags
                 }
             };
+            if (newName !== String(originalName || "").trim() && pdlWorkMaster.some(w => String(w.name || "").trim() === newName)) {
+                if (!await customConfirm(`作業名「${newName}」は既に登録されています。\n\n既存の内容と「${originalName}」の設定を1件に統合しますか？\n「${originalName}」の行は削除し、類似作業名に残します。\n（作業名は「${newName}」の1つになります）`)) return;
+                act = 'merge';
+            }
         } else if (type === 'machineGroup') {
             const originalName = document.getElementById('edit_machineGroup_original_name').value;
             const newName = document.getElementById('edit_machineGroup_name').value.trim();
@@ -4237,7 +4238,7 @@ window.execMaster = async (type, act, val) => {
             window['_' + type + 'MasterActiveTab'] = 'registered';
         }
         renderMasterSection();
-        customAlert(act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！"));
+        customAlert(act === 'merge' ? "✅ 同じ作業名に統合して登録しました！" : (act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！")));
     } catch (e) { customAlert(e.message || "エラーが発生しました。再度お試しください。"); renderMasterSection(); }
 };
 

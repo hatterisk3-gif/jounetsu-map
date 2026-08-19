@@ -713,10 +713,6 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'work') {
             const name = document.getElementById('add_work_name').value.trim();
             if (!name) { customAlert("作業名を入力してください"); return; }
-            if (pdlWorkMaster.some(w => String(w.name || "").trim() === name)) {
-                customAlert(`作業名「${name}」は既に登録されています`);
-                return;
-            }
             value = {
                 name: name,
                 category: document.getElementById('add_work_category').value,
@@ -726,6 +722,10 @@ window.execMaster = async (type, act, val) => {
                 showMaterial: !!document.getElementById('add_work_show_material')?.checked,
                 showPesticide: !!document.getElementById('add_work_show_pesticide')?.checked
             };
+            if (pdlWorkMaster.some(w => String(w.name || "").trim() === name)) {
+                if (!await customConfirm(`作業名「${name}」は既に登録されています。\n\n既存の内容と、いまの設定を1件に統合して登録しますか？\n（作業名は「${name}」の1つになります）`)) return;
+                act = 'merge';
+            }
         }
     } else { if (!await customConfirm(`削除しますか？`)) return; value = { id: val }; }
     document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
@@ -735,7 +735,7 @@ window.execMaster = async (type, act, val) => {
         // 再読み込み時に古い値が表示されないよう、初期データキャッシュを破棄して次回は最新を取得させる
         localStorage.removeItem('pMapAdminInitData');
         renderMasterSection();
-        customAlert(act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！"));
+        customAlert(act === 'merge' ? "✅ 同じ作業名に統合して登録しました！" : (act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！")));
     } catch (e) { customAlert(e.message || "エラーが発生しました。再度お試しください。"); renderMasterSection(); }
 };
 

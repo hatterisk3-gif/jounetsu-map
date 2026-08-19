@@ -18,7 +18,7 @@
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; overflow: hidden; font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; color: var(--ink); background: var(--bg); }
     button, input, textarea, select { font: inherit; }
-    #app { height: 100%; display: grid; grid-template-rows: 52px 1fr; }
+    #app { height: 100%; display: grid; grid-template-rows: 52px 36px 1fr; }
 
     header {
       display: flex; align-items: center; gap: 10px; padding: 0 12px;
@@ -33,6 +33,37 @@
     .hdr-btn:hover { background: rgba(255,255,255,.16); }
     .hdr-btn.danger { background: #7f1d1d; border-color: #991b1b; }
     a.back { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+
+    .tabbar {
+      display: flex; align-items: stretch; background: #0b1220;
+      border-top: 1px solid #374151; overflow-x: auto; overflow-y: hidden;
+    }
+    .tabbar::-webkit-scrollbar { height: 4px; }
+    .tab {
+      flex: 0 1 auto; display: flex; align-items: center; gap: 6px;
+      min-width: 88px; max-width: 220px; height: 100%;
+      padding: 0 4px 0 12px; border-right: 1px solid #374151;
+      background: transparent; color: #9ca3af; cursor: pointer;
+      font-size: 12px; font-weight: 700; box-sizing: border-box;
+    }
+    .tab:hover { background: #1f2937; color: #e5e7eb; }
+    .tab.on { background: var(--bg); color: var(--ink); }
+    .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; text-align: left; }
+    .tab-close {
+      flex: none; width: 18px; height: 18px; border: 0; border-radius: 4px;
+      background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; opacity: .5;
+    }
+    .tab-close:hover { background: rgba(255,255,255,.12); opacity: 1; }
+    .tab.on .tab-close:hover { background: #e5e7eb; }
+    .tab-add {
+      flex: none; width: 36px; border: 0; background: transparent;
+      color: #e5e7eb; font-size: 20px; font-weight: 800; cursor: pointer;
+    }
+    .tab-add:hover { background: #1f2937; color: #fff; }
+    .tab-rename {
+      width: 140px; border: 1px solid var(--accent); border-radius: 4px;
+      padding: 2px 6px; font-size: 12px; font-weight: 700; background: #fff; color: #111;
+    }
 
     .stage { position: relative; overflow: hidden; }
     #viewport {
@@ -52,7 +83,7 @@
       position: absolute; min-width: 40px; min-height: 28px; user-select: none;
       box-shadow: 0 8px 18px rgba(15,23,42,.08); outline: none;
     }
-    .item.sel { box-shadow: 0 0 0 2px var(--accent), 0 10px 22px rgba(37,99,235,.18); z-index: 5; }
+    .item.sel { box-shadow: 0 0 0 2px var(--accent), 0 10px 22px rgba(37,99,235,.18); }
     .item .body {
       width: 100%; height: 100%; padding: 10px 12px; overflow: hidden;
       white-space: pre-wrap; word-break: break-word; line-height: 1.45; font-size: 14px;
@@ -118,6 +149,12 @@
     .palette .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
     .swatch { width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); cursor: pointer; }
     .hint { font-size: 11px; color: var(--muted); margin: 0; }
+    .layer-row { margin-top: 8px; }
+    .layer-btn {
+      flex: 1; min-width: 0; border: 1px solid var(--line); background: #f8fafc; color: #334155;
+      border-radius: 8px; padding: 6px 4px; font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+    .layer-btn:hover { border-color: var(--accent); background: #eff6ff; color: var(--accent); }
 
     .zoom-hud {
       position: absolute; right: 12px; bottom: 12px; z-index: 20;
@@ -156,17 +193,16 @@
     <header>
       <a class="back" href="index.html">← 案内所</a>
       <h1>思考ボード</h1>
-      <input id="boardTitle" class="hdr-btn" style="background:#1f2937; min-width:140px; max-width:220px;" value="無題のボード">
       <div class="hdr-actions">
         <button class="hdr-btn" onclick="undo()">元に戻す</button>
         <button class="hdr-btn" onclick="redo()">やり直す</button>
-        <button class="hdr-btn" onclick="openTemplates()">テンプレ</button>
         <button class="hdr-btn" onclick="exportBoard()">書き出し</button>
         <button class="hdr-btn" onclick="document.getElementById('importFile').click()">読込</button>
         <input id="importFile" type="file" accept="application/json" hidden onchange="importBoard(event)">
         <button class="hdr-btn danger" onclick="clearBoard()">全消去</button>
       </div>
     </header>
+    <div id="tabbar" class="tabbar"></div>
     <div class="stage">
       <div id="viewport">
         <div id="world">
@@ -187,10 +223,22 @@
         <div class="tool-sep"></div>
         <button class="tool" title="複製" onclick="duplicateSel()">⧉</button>
         <button class="tool" title="削除" onclick="deleteSel()">🗑</button>
+        <div class="tool-sep"></div>
+        <button class="tool" title="最前面 (Ctrl+])" onclick="bringToFront()">⬆</button>
+        <button class="tool" title="前面へ (])" onclick="bringForward()">↑</button>
+        <button class="tool" title="背面へ ([)" onclick="sendBackward()">↓</button>
+        <button class="tool" title="最背面 (Ctrl+[)" onclick="sendToBack()">⬇</button>
       </div>
       <div id="palette" class="palette">
         <p class="hint">色</p>
         <div class="row" id="colorRow"></div>
+        <p class="hint" style="margin-top:10px">階層</p>
+        <div class="row layer-row">
+          <button class="layer-btn" onclick="sendToBack()" title="最背面 (Ctrl+[)">最背面</button>
+          <button class="layer-btn" onclick="sendBackward()" title="背面へ ([)">背面</button>
+          <button class="layer-btn" onclick="bringForward()" title="前面へ (])">前面</button>
+          <button class="layer-btn" onclick="bringToFront()" title="最前面 (Ctrl+])">最前面</button>
+        </div>
       </div>
       <div class="zoom-hud">
         <button onclick="zoomBy(1/1.15)">−</button>
@@ -200,7 +248,9 @@
       </div>
       <div class="help">
         ドラッグで移動 / ホイールで拡大縮小 / <b>Space</b> でキャンバス移動<br>
-        ダブルクリックで文字編集 / <b>Delete</b> 削除 / <b>Ctrl+D</b> 複製 / <b>Ctrl+Z</b> 戻す
+        ダブルクリックで文字編集 / <b>Delete</b> 削除 / <b>Ctrl+D</b> 複製 / <b>Ctrl+Z</b> 戻す<br>
+        <b>+</b> で新しいボード / タブをダブルクリックで名前変更<br>
+        <b>PageUp</b> <b>PageDown</b> で階層移動 / <b>Ctrl+PageDown</b> で最背面
       </div>
     </div>
   </div>
@@ -220,13 +270,18 @@
 
 <script>
 const COLORS = ['#FEF08A','#FECACA','#BBF7D0','#BFDBFE','#E9D5FF','#FED7AA','#FFFFFF','#1F2937'];
-const STORAGE_KEY = 'passionMapThinkBoard.v1';
+const STORAGE_KEY = 'passionMapThinkBoard.v2';
+const STORAGE_KEY_LEGACY = 'passionMapThinkBoard.v1';
 const viewport = document.getElementById('viewport');
 const world = document.getElementById('world');
 const wires = document.getElementById('wires');
 const palette = document.getElementById('palette');
 const colorRow = document.getElementById('colorRow');
+const tabbar = document.getElementById('tabbar');
 
+let boards = [];
+let activeId = null;
+let histMap = {};
 let state = emptyBoard();
 let tool = 'select';
 let cam = { x: 80, y: 60, z: 1 };
@@ -241,9 +296,152 @@ let connectingFrom = null;
 let marquee = null;
 
 function uid() { return 'n' + Math.random().toString(36).slice(2, 9); }
+function boardUid() { return 'b' + Math.random().toString(36).slice(2, 9); }
 function emptyBoard() {
   return { title: '無題のボード', items: [], wires: [] };
 }
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function persistCurrent() {
+  if (!activeId) return;
+  const packed = {
+    id: activeId,
+    title: state.title || '無題のボード',
+    items: state.items,
+    wires: state.wires,
+    cam: { x: cam.x, y: cam.y, z: cam.z }
+  };
+  const idx = boards.findIndex(b => b.id === activeId);
+  if (idx >= 0) boards[idx] = packed;
+  else boards.push(packed);
+}
+function unpackBoard(b) {
+  activeId = b.id;
+  state = { title: b.title || '無題のボード', items: b.items || [], wires: b.wires || [] };
+  cam = Object.assign({ x: 80, y: 60, z: 1 }, b.cam);
+  selected.clear();
+  selectedWire = null;
+  editingId = null;
+  connectingFrom = null;
+  dragging = null;
+  const h = histMap[activeId] || { history: [], future: [] };
+  history = h.history;
+  future = h.future;
+}
+function stashHist() {
+  if (activeId) histMap[activeId] = { history, future };
+}
+function nextUntitled() {
+  const names = new Set(boards.map(b => b.title));
+  if (!names.has('無題のボード')) return '無題のボード';
+  let i = 2;
+  while (names.has('無題のボード ' + i)) i++;
+  return '無題のボード ' + i;
+}
+function renderTabs() {
+  persistCurrent();
+  tabbar.innerHTML = boards.map(b => {
+    const on = b.id === activeId ? ' on' : '';
+    const title = b.title || '無題のボード';
+    const close = boards.length > 1
+      ? `<button type="button" class="tab-close" data-close="${b.id}" title="閉じる">×</button>`
+      : '';
+    return `<div class="tab${on}" data-id="${b.id}" title="${escapeHtml(title)}（ダブルクリックで名前変更）"><span class="tab-name">${escapeHtml(title)}</span>${close}</div>`;
+  }).join('') + `<button type="button" class="tab-add" title="新しいボード">+</button>`;
+}
+function switchBoard(id) {
+  if (!id || id === activeId) return;
+  persistCurrent();
+  stashHist();
+  const b = boards.find(x => x.id === id);
+  if (!b) return;
+  unpackBoard(b);
+  renderTabs();
+  render();
+  save();
+}
+function addBoard() {
+  persistCurrent();
+  stashHist();
+  const b = {
+    id: boardUid(),
+    title: nextUntitled(),
+    items: [],
+    wires: [],
+    cam: { x: 80, y: 60, z: 1 }
+  };
+  boards.push(b);
+  unpackBoard(b);
+  history = [];
+  future = [];
+  renderTabs();
+  render();
+  save();
+}
+function closeBoard(id) {
+  if (boards.length <= 1) return;
+  persistCurrent();
+  const b = boards.find(x => x.id === id);
+  if (!b) return;
+  const count = (b.items && b.items.length) || 0;
+  const msg = count
+    ? `「${b.title}」を閉じますか？ このボードの内容は消えます。`
+    : `「${b.title}」を閉じますか？`;
+  if (!confirm(msg)) return;
+  const idx = boards.findIndex(x => x.id === id);
+  boards.splice(idx, 1);
+  delete histMap[id];
+  if (activeId === id) {
+    unpackBoard(boards[Math.min(idx, boards.length - 1)]);
+  }
+  renderTabs();
+  render();
+  save();
+}
+function startRename(id) {
+  if (id !== activeId) switchBoard(id);
+  const tab = tabbar.querySelector(`.tab[data-id="${id}"]`);
+  if (!tab) return;
+  const name = tab.querySelector('.tab-name');
+  if (!name) return;
+  const original = state.title || '無題のボード';
+  const input = document.createElement('input');
+  input.className = 'tab-rename';
+  input.value = original;
+  name.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    const next = input.value.trim() || '無題のボード';
+    state.title = next;
+    persistCurrent();
+    renderTabs();
+    save();
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.value = original; input.blur(); }
+  });
+}
+tabbar.addEventListener('click', e => {
+  const close = e.target.closest('[data-close]');
+  if (close) { e.stopPropagation(); closeBoard(close.dataset.close); return; }
+  if (e.target.closest('.tab-add')) { addBoard(); return; }
+  const tab = e.target.closest('.tab[data-id]');
+  if (tab) switchBoard(tab.dataset.id);
+});
+tabbar.addEventListener('dblclick', e => {
+  const tab = e.target.closest('.tab[data-id]');
+  if (tab) startRename(tab.dataset.id);
+});
+
 function snapshot() { return JSON.parse(JSON.stringify({ cam, state, selected: [...selected] })); }
 function pushHist() {
   history.push(JSON.stringify({ state, cam }));
@@ -254,28 +452,58 @@ function undo() {
   if (!history.length) return;
   future.push(JSON.stringify({ state, cam }));
   const prev = JSON.parse(history.pop());
-  state = prev.state; cam = prev.cam; selected.clear(); render();
+  state = prev.state; cam = prev.cam; selected.clear(); render(); save();
 }
 function redo() {
   if (!future.length) return;
   history.push(JSON.stringify({ state, cam }));
   const next = JSON.parse(future.pop());
-  state = next.state; cam = next.cam; selected.clear(); render();
+  state = next.state; cam = next.cam; selected.clear(); render(); save();
 }
 
 function save() {
-  state.title = document.getElementById('boardTitle').value || '無題のボード';
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, cam })); } catch (e) {}
+  persistCurrent();
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, activeId, boards })); } catch (e) {}
 }
 function load() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+    if (!raw) {
+      const b = { id: boardUid(), title: '無題のボード', items: [], wires: [], cam: { x: 80, y: 60, z: 1 } };
+      boards = [b];
+      unpackBoard(b);
+      return 'fresh';
+    }
     const parsed = JSON.parse(raw);
-    if (parsed.state) state = parsed.state;
-    if (parsed.cam) cam = parsed.cam;
-    document.getElementById('boardTitle').value = state.title || '無題のボード';
+    if (parsed.boards && parsed.boards.length) {
+      boards = parsed.boards.map(b => ({
+        id: b.id || boardUid(),
+        title: b.title || (b.state && b.state.title) || '無題のボード',
+        items: b.items || (b.state && b.state.items) || [],
+        wires: b.wires || (b.state && b.state.wires) || [],
+        cam: b.cam || { x: 80, y: 60, z: 1 }
+      }));
+      const aid = parsed.activeId && boards.some(x => x.id === parsed.activeId) ? parsed.activeId : boards[0].id;
+      unpackBoard(boards.find(x => x.id === aid));
+      return 'ok';
+    }
+    if (parsed.state) {
+      const b = {
+        id: boardUid(),
+        title: parsed.state.title || '無題のボード',
+        items: parsed.state.items || [],
+        wires: parsed.state.wires || [],
+        cam: parsed.cam || { x: 80, y: 60, z: 1 }
+      };
+      boards = [b];
+      unpackBoard(b);
+      return 'migrated';
+    }
   } catch (e) {}
+  const b = { id: boardUid(), title: '無題のボード', items: [], wires: [], cam: { x: 80, y: 60, z: 1 } };
+  boards = [b];
+  unpackBoard(b);
+  return 'fresh';
 }
 
 function worldPos(e) {
@@ -320,7 +548,7 @@ function setTool(next) {
   connectingFrom = null;
   document.querySelectorAll('.tool[data-tool]').forEach(btn => btn.classList.toggle('on', btn.dataset.tool === tool));
   viewport.classList.toggle('panning', tool === 'pan');
-  palette.classList.toggle('show', ['sticky','rect','ellipse','diamond','text','frame'].includes(tool) || selected.size === 1);
+  palette.classList.toggle('show', ['sticky','rect','ellipse','diamond','text','frame'].includes(tool) || selected.size > 0);
 }
 
 function itemAt(p) {
@@ -346,7 +574,7 @@ function defaultSize(type) {
   return { w: 200, h: 120 };
 }
 function defaultText(type) {
-  if (type === 'sticky') return '考えを書く';
+  if (type === 'sticky') return '';
   if (type === 'text') return '見出し';
   if (type === 'frame') return 'グループ';
   return 'テキスト';
@@ -359,11 +587,51 @@ function addItem(type, x, y, extras) {
     color: type === 'sticky' ? '#FEF08A' : (type === 'text' ? 'transparent' : '#FFFFFF')
   }, extras || {});
   pushHist();
-  state.items.push(item);
+  if (type === 'frame') state.items.unshift(item);
+  else state.items.push(item);
   selected = new Set([item.id]);
   render();
   save();
   return item;
+}
+
+function bringToFront() {
+  if (!selected.size) return;
+  pushHist();
+  const moving = state.items.filter(it => selected.has(it.id));
+  const rest = state.items.filter(it => !selected.has(it.id));
+  state.items = rest.concat(moving);
+  render(); save();
+}
+function sendToBack() {
+  if (!selected.size) return;
+  pushHist();
+  const moving = state.items.filter(it => selected.has(it.id));
+  const rest = state.items.filter(it => !selected.has(it.id));
+  state.items = moving.concat(rest);
+  render(); save();
+}
+function bringForward() {
+  if (!selected.size) return;
+  pushHist();
+  const items = state.items;
+  for (let i = items.length - 2; i >= 0; i--) {
+    if (selected.has(items[i].id) && !selected.has(items[i + 1].id)) {
+      const tmp = items[i]; items[i] = items[i + 1]; items[i + 1] = tmp;
+    }
+  }
+  render(); save();
+}
+function sendBackward() {
+  if (!selected.size) return;
+  pushHist();
+  const items = state.items;
+  for (let i = 1; i < items.length; i++) {
+    if (selected.has(items[i].id) && !selected.has(items[i - 1].id)) {
+      const tmp = items[i]; items[i] = items[i - 1]; items[i - 1] = tmp;
+    }
+  }
+  render(); save();
 }
 
 function startEdit(id) {
@@ -438,7 +706,7 @@ function renderWires() {
 function render() {
   applyCam();
   [...world.querySelectorAll('.item, .marquee')].forEach(n => n.remove());
-  state.items.forEach(it => {
+  state.items.forEach((it, i) => {
     const el = document.createElement('div');
     el.className = 'item ' + (it.type === 'sticky' ? 'sticky' : it.type === 'text' ? 'textcard' : it.type === 'frame' ? 'frame' : 'shape ' + it.type);
     el.id = 'item-' + it.id;
@@ -446,6 +714,7 @@ function render() {
     el.style.top = it.y + 'px';
     el.style.width = it.w + 'px';
     el.style.height = it.h + 'px';
+    el.style.zIndex = String(i + 1);
     if (it.type === 'sticky' || it.type === 'rect' || it.type === 'ellipse' || it.type === 'diamond') {
       el.style.background = it.type === 'diamond' ? 'transparent' : it.color;
       if (it.color === '#1F2937') el.style.color = '#fff';
@@ -485,7 +754,7 @@ function render() {
     world.appendChild(el);
   });
   renderWires();
-  palette.classList.toggle('show', selected.size === 1 || ['sticky','rect','ellipse','diamond'].includes(tool));
+  palette.classList.toggle('show', selected.size > 0 || ['sticky','rect','ellipse','diamond','text','frame'].includes(tool));
 }
 
 colorRow.innerHTML = COLORS.map(c => `<button class="swatch" style="background:${c}" data-color="${c}"></button>`).join('');
@@ -530,8 +799,8 @@ viewport.addEventListener('mousedown', e => {
 
   if (['sticky','text','rect','ellipse','diamond','frame'].includes(tool)) {
     const it = addItem(tool, p.x, p.y);
-    startEdit(it.id);
-    setTool('select');
+    if (tool !== 'sticky') startEdit(it.id);
+    if (tool !== 'sticky') setTool('select');
     return;
   }
 
@@ -638,6 +907,16 @@ window.addEventListener('keydown', e => {
   if (e.key === 'n' || e.key === 'N') setTool('sticky');
   if (e.key === 't' || e.key === 'T') setTool('text');
   if (e.key === 'Delete' || e.key === 'Backspace') deleteSel();
+  if (e.code === 'BracketRight' || e.key === ']' || e.key === 'PageUp') {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) bringToFront();
+    else bringForward();
+  }
+  if (e.code === 'BracketLeft' || e.key === '[' || e.key === 'PageDown') {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) sendToBack();
+    else sendBackward();
+  }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); duplicateSel(); }
@@ -664,7 +943,7 @@ function applyTemplate(name) {
     state = emptyBoard();
     selected.clear();
     cam = { x: 80, y: 60, z: 1 };
-    document.getElementById('boardTitle').value = state.title;
+    renderTabs();
     render(); save(); return;
   }
   if (name === 'swot') {
@@ -706,8 +985,8 @@ function applyTemplate(name) {
     state.wires = [];
     state.title = '5W1H';
   }
-  document.getElementById('boardTitle').value = state.title;
   selected.clear();
+  renderTabs();
   render();
   fitView();
   save();
@@ -727,23 +1006,46 @@ function importBoard(ev) {
   reader.onload = () => {
     try {
       const parsed = JSON.parse(reader.result);
+      if (parsed.boards && parsed.boards.length) {
+        persistCurrent();
+        stashHist();
+        boards = parsed.boards.map(b => ({
+          id: b.id || boardUid(),
+          title: b.title || (b.state && b.state.title) || '無題のボード',
+          items: b.items || (b.state && b.state.items) || [],
+          wires: b.wires || (b.state && b.state.wires) || [],
+          cam: b.cam || { x: 80, y: 60, z: 1 }
+        }));
+        histMap = {};
+        const aid = parsed.activeId && boards.some(x => x.id === parsed.activeId) ? parsed.activeId : boards[0].id;
+        unpackBoard(boards.find(x => x.id === aid));
+        renderTabs();
+        render();
+        save();
+        return;
+      }
       pushHist();
-      state = parsed.state || parsed;
+      const next = parsed.state || parsed;
+      state = { title: next.title || state.title || '無題のボード', items: next.items || [], wires: next.wires || [] };
       cam = parsed.cam || cam;
-      document.getElementById('boardTitle').value = state.title || '無題のボード';
       selected.clear();
-      render(); save();
+      renderTabs();
+      render();
+      save();
     } catch (err) { alert('読み込めませんでした'); }
   };
   reader.readAsText(file);
   ev.target.value = '';
 }
 function clearBoard() {
-  if (!confirm('ボードの内容をすべて消しますか？')) return;
+  if (!confirm('このボードの内容をすべて消しますか？')) return;
+  const keepTitle = state.title;
   applyTemplate('blank');
+  state.title = keepTitle;
+  renderTabs();
+  save();
 }
 
-document.getElementById('boardTitle').addEventListener('change', save);
 wires.addEventListener('mousedown', e => {
   const path = e.target.closest('path');
   if (path && path.dataset.id) {
@@ -755,8 +1057,8 @@ wires.addEventListener('mousedown', e => {
 });
 
 load();
-if (!state.items.length) applyTemplate('issue');
-else render();
+renderTabs();
+render();
 </script>
 </body>
 </html>

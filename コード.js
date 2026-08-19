@@ -1446,7 +1446,11 @@ function manageMasterData(masterType, manageAction, value, userName) {
 
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
 
-  if (manageAction === 'add') {
+  if (manageAction === 'merge') {
+    if (masterType !== 'work') throw new Error('統合できるのは作業マスタのみです');
+    mergeWorkMasterConflict_(sheet, value, userName);
+  }
+  else if (manageAction === 'add') {
     if (masterType === 'crop') {
       const cropName = String((value && value.name) || '').trim();
       if (!cropName) throw new Error('作物名を入力してください');
@@ -1917,6 +1921,131 @@ function workMasterNameExists_(sheet, headers, name, excludeName) {
     if (n === target) return true;
   }
   return false;
+}
+
+function splitWorkMasterTokens_(s) {
+  return String(s == null ? '' : s).split(/[,、\n]/).map(function (x) {
+    return String(x || '').trim();
+  }).filter(Boolean);
+}
+
+function uniqWorkMasterTokens_(arr) {
+  const seen = {};
+  const out = [];
+  (arr || []).forEach(function (p) {
+    const t = String(p || '').trim();
+    if (!t || seen[t]) return;
+    seen[t] = true;
+    out.push(t);
+  });
+  return out;
+}
+
+function mergeWorkMasterDetailStr_(a, b) {
+  return uniqWorkMasterTokens_(splitWorkMasterTokens_(a).concat(splitWorkMasterTokens_(b))).join('、');
+}
+
+function mergeWorkMasterCropDetailsMaps_(maps) {
+  const out = {};
+  (maps || []).forEach(function (m) {
+    if (!m) return;
+    let obj = m;
+    if (typeof m === 'string') {
+      try { obj = JSON.parse(m); } catch (e) { obj = null; }
+    }
+    if (!obj || typeof obj !== 'object') return;
+    Object.keys(obj).forEach(function (k) {
+      out[k] = mergeWorkMasterDetailStr_(out[k], obj[k]);
+    });
+  });
+  return out;
+}
+
+function orWorkMasterFlag_(a, b, c) {
+  const vals = [a, b, c].map(parseWorkUiFlagValue_);
+  if (vals.some(function (v) { return v === true; })) return true;
+  const first = vals.find(function (v) { return v !== null; });
+  return first == null ? null : first;
+}
+
+function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
+  keepObj = keepObj || {};
+  origObj = origObj || null;
+  incoming = incoming || {};
+  const keepName = String(incoming.name || keepObj.name || '').trim();
+  const crops = uniqWorkMasterTokens_([]
+    .concat(keepObj.crops || splitWorkMasterTokens_(keepObj.cropName))
+    .concat(origObj ? (origObj.crops || splitWorkMasterTokens_(origObj.cropName)) : [])
+    .concat(incoming.crops || splitWorkMasterTokens_(incoming.cropName)));
+  const cropDetails = mergeWorkMasterCropDetailsMaps_([
+    keepObj.cropDetails,
+    origObj && origObj.cropDetails,
+    incoming.cropDetails
+  ]);
+  const detailWorks = mergeWorkMasterDetailStr_(
+    mergeWorkMasterDetailStr_(keepObj.detailWorks, origObj && origObj.detailWorks),
+    incoming.detailWorks
+  );
+  const aliasParts = []
+    .concat(keepObj.aliases || splitWorkMasterTokens_(keepObj.aliasNames))
+    .concat(origObj ? (origObj.aliases || splitWorkMasterTokens_(origObj.aliasNames)) : [])
+    .concat(splitWorkMasterTokens_(incoming.aliasNames))
+    .concat(incoming.aliases || []);
+  if (originalName && originalName !== keepName) aliasParts.push(originalName);
+  const aliases = uniqWorkMasterTokens_(aliasParts).filter(function (a) { return a !== keepName; });
+  const category = String(incoming.category || (origObj && origObj.category) || keepObj.category || '圃場作業').trim() || '圃場作業';
+  return {
+    name: keepName,
+    category: category,
+    cropName: crops.join(','),
+    crops: crops,
+    cropDetails: cropDetails,
+    detailWorks: detailWorks,
+    aliasNames: aliases.join(', '),
+    aliases: aliases,
+    showMachine: orWorkMasterFlag_(keepObj.showMachine, origObj && origObj.showMachine, incoming.showMachine),
+    showMaterial: orWorkMasterFlag_(keepObj.showMaterial, origObj && origObj.showMaterial, incoming.showMaterial),
+    showPesticide: orWorkMasterFlag_(keepObj.showPesticide, origObj && origObj.showPesticide, incoming.showPesticide)
+  };
+}
+
+/** 同名の作業マスタへ作物・詳細・別名を統合し、元の行があれば削除する */
+function mergeWorkMasterConflict_(sheet, value, userName) {
+  const workHeaders = ensureWorkMasterHeaders_(sheet);
+  const incoming = (value && value.newData) ? value.newData : (value || {});
+  const keepName = String(incoming.name || (value && value.name) || '').trim();
+  const originalName = String((value && value.originalName) || '').trim();
+  if (!keepName) throw new Error('作業名を入力してください');
+
+  const list = readWorkMasterList_(sheet) || [];
+  const keepObj = list.find(function (w) { return w && String(w.name || '').trim() === keepName; }) || null;
+  const origObj = (originalName && originalName !== keepName)
+    ? (list.find(function (w) { return w && String(w.name || '').trim() === originalName; }) || null)
+    : null;
+  if (!keepObj) throw new Error(`作業名「${keepName}」が見つかりません`);
+
+  const merged = mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName);
+  const data = sheet.getDataRange().getValues();
+  const keyIdx = workHeaders.indexOf('作業名');
+  let keepRow = -1;
+  let origRow = -1;
+  for (let i = 1; i < data.length; i++) {
+    const n = String(data[i][keyIdx] || '').trim();
+    if (n === keepName && keepRow < 0) keepRow = i;
+    if (originalName && n === originalName && origRow < 0) origRow = i;
+  }
+  if (keepRow < 0) throw new Error(`作業名「${keepName}」が見つかりません`);
+
+  const rowVals = data[keepRow].slice();
+  while (rowVals.length < workHeaders.length) rowVals.push('');
+  applyWorkMasterValuesToRow_(rowVals, workHeaders, merged);
+  const outRow = rowVals.slice(0, workHeaders.length);
+  sheet.getRange(keepRow + 1, 1, 1, outRow.length).setValues([outRow]);
+
+  if (origRow >= 0 && origRow !== keepRow) {
+    sheet.deleteRow(origRow + 1);
+  }
+  writeLog(userName, "作業マスタ統合", keepName, originalName && originalName !== keepName ? (`元: ${originalName}`) : '既存へ統合');
 }
 
 const WORK_UI_FLAG_HEADERS_ = {

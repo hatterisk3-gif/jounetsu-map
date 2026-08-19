@@ -9347,11 +9347,22 @@ function createSignboardMarker(name, pos, icon, id) {
               return;
           }
           const orig = String(originalName || '').trim();
-          if (mode === 'add' || (mode === 'edit' && name !== orig)) {
-              if ((pdlWorkMaster || []).some(w => String(w.name || '').trim() === name)) {
-                  if (typeof customAlert === 'function') customAlert(`作業名「${name}」は既に登録されています。`);
-                  return;
-              }
+          let manageAction = (mode === 'add') ? 'add' : 'edit';
+          const isDup = (pdlWorkMaster || []).some(w => {
+            const n = String(w.name || '').trim();
+            if (!n || n !== name) return false;
+            if (mode === 'edit' && n === orig) return false;
+            return true;
+          });
+          if (isDup) {
+              const extra = (mode === 'edit' && orig && orig !== name)
+                ? `\n「${orig}」の行は削除し、類似作業名に残します。`
+                : '';
+              const ok = (typeof customConfirm === 'function')
+                ? await customConfirm(`作業名「${name}」は既に登録されています。\n\n既存の内容と、いまの設定を1件に統合して登録しますか？${extra}\n（作業名は「${name}」の1つになります）`)
+                : true;
+              if (!ok) return;
+              manageAction = 'merge';
           }
 
           // 🌟 ボタンの連打防止・二重押しガード ＆ 「追加しています…」表示
@@ -9362,16 +9373,24 @@ function createSignboardMarker(name, pos, icon, id) {
               submitBtn.disabled = true;
               submitBtn.style.pointerEvents = 'none';
               submitBtn.style.opacity = '0.65';
-              submitBtn.innerText = (mode === 'edit') ? '⏳ 更新しています…' : '⏳ 追加しています…';
+              submitBtn.innerText = (manageAction === 'merge') ? '⏳ 統合しています…' : ((mode === 'edit') ? '⏳ 更新しています…' : '⏳ 追加しています…');
           }
 
           try {
               let updatedList;
-              if (mode === 'add') {
+              const payload = { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags };
+              if (manageAction === 'merge') {
+                  updatedList = await callGAS('manageMaster', {
+                      masterType: 'work',
+                      manageAction: 'merge',
+                      value: { originalName: orig, name: name, newData: payload },
+                      userName: localStorage.getItem('passionMapUserName') || currentUser
+                  });
+              } else if (mode === 'add') {
                   updatedList = await callGAS('manageMaster', {
                       masterType: 'work',
                       manageAction: 'add',
-                      value: { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags },
+                      value: payload,
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
               } else {
@@ -9380,7 +9399,7 @@ function createSignboardMarker(name, pos, icon, id) {
                       manageAction: 'edit',
                       value: {
                           originalName: orig,
-                          newData: { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags }
+                          newData: payload
                       },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
@@ -9404,7 +9423,11 @@ function createSignboardMarker(name, pos, icon, id) {
                   window.refreshWorkChipsAfterMasterChange(name);
               }
 
-              if (typeof customAlert === 'function') customAlert(mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！');
+              if (typeof customAlert === 'function') {
+                customAlert(manageAction === 'merge'
+                  ? `✅ 「${name}」に統合して登録しました！`
+                  : (mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！'));
+              }
           } catch (e) {
               if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました。');
               // エラー発生時はボタンを活性化状態に復元
@@ -10081,8 +10104,116 @@ function createSignboardMarker(name, pos, icon, id) {
         return transitions;
       };
 
-      /** その日の前の作業記録を起点に、次に行う作業名を予想する（カテゴリ／作物選択は不要） */
-      window.getNextWorkPredictions_ = () => {
+      window.buildNextWorkTimeStats_ = (force) => {
+        if (!force && window._nextWorkTimeStatsCache) return window._nextWorkTimeStatsCache;
+        const byHour = {};
+        const getCanon = (name) => (typeof window.getCanonicalWorkName === 'function')
+          ? (window.getCanonicalWorkName(name) || name)
+          : name;
+        const normUser = String(currentUser || localStorage.getItem('passionMapUserName') || '').replace(/\s+/g, '');
+        const seenIds = new Set();
+        if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
+          Object.keys(loadedPolygons).forEach((id) => {
+            const p = loadedPolygons[id];
+            if (!p || !Array.isArray(p.photos)) return;
+            p.photos.forEach((ph) => {
+              if (!ph) return;
+              const isWork = (ph.type === 'work') || (ph.data && ph.data.workName);
+              if (!isWork) return;
+              const recId = ph.id || (ph.data && ph.data.recordId);
+              if (recId && seenIds.has(recId)) return;
+              if (recId) seenIds.add(recId);
+              const phAuthor = String(ph.author || '').replace(/\s+/g, '');
+              const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser
+                || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
+              if (!isAuthorMatch) return;
+              const rawName = String((ph.data && ph.data.workName) || ph.workName || '').trim();
+              const canon = getCanon(rawName);
+              if (!canon || canon.includes('休憩')) return;
+              const crop = String((ph.data && ph.data.crop) || ph.crop || '').split(/[,、]/)[0].trim();
+              const full = (crop && !canon.includes(crop)) ? `${crop} ${canon}` : canon;
+              const startHm = (typeof window.normalizeTimeHm === 'function')
+                ? window.normalizeTimeHm((ph.data && ph.data.startTime) || ph.time || '')
+                : String((ph.data && ph.data.startTime) || ph.time || '').trim();
+              const mins = (typeof window.timeHmToMinutes === 'function') ? window.timeHmToMinutes(startHm) : NaN;
+              if (mins == null || isNaN(mins)) return;
+              const hour = Math.floor(mins / 60) % 24;
+              if (!byHour[hour]) byHour[hour] = {};
+              byHour[hour][full] = (byHour[hour][full] || 0) + 1;
+            });
+          });
+        }
+        window._nextWorkTimeStatsCache = byHour;
+        return byHour;
+      };
+
+      window.getPredictionAnchorTimeHm_ = () => {
+        const recStart = document.getElementById('rec_start_time');
+        if (recStart && recStart.value && typeof window.normalizeTimeHm === 'function') {
+          const hm = window.normalizeTimeHm(recStart.value);
+          if (hm) return hm;
+        }
+        const after = window._afterSaveWorkMeta && window._afterSaveWorkMeta.endTime;
+        if (after && typeof window.normalizeTimeHm === 'function') {
+          const hm = window.normalizeTimeHm(after);
+          if (hm) return hm;
+        }
+        const now = new Date();
+        return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      };
+
+      window.splitPredictedWorkFull_ = (full, defaultCrop) => {
+        const s = String(full || '').trim();
+        let cName = String(defaultCrop || '').trim();
+        let wName = s;
+        if (s.includes(' ')) {
+          const parts = s.split(' ');
+          cName = parts[0];
+          wName = parts.slice(1).join(' ');
+        }
+        return { crop: cName, workName: wName, full: s };
+      };
+
+      window.getTimeOfDayWorkPredictions_ = (atHm) => {
+        const hm = (typeof window.normalizeTimeHm === 'function')
+          ? (window.normalizeTimeHm(atHm) || atHm)
+          : atHm;
+        const mins = (typeof window.timeHmToMinutes === 'function') ? window.timeHmToMinutes(hm) : NaN;
+        const hour = (mins == null || isNaN(mins)) ? (new Date().getHours()) : (Math.floor(mins / 60) % 24);
+        const byHour = window.buildNextWorkTimeStats_();
+        const weighted = {};
+        let total = 0;
+        for (let d = -2; d <= 2; d++) {
+          const h = (hour + d + 24) % 24;
+          const w = d === 0 ? 1 : (Math.abs(d) === 1 ? 0.6 : 0.25);
+          const bucket = byHour[h] || {};
+          Object.keys(bucket).forEach((full) => {
+            const add = bucket[full] * w;
+            weighted[full] = (weighted[full] || 0) + add;
+            total += add;
+          });
+        }
+        if (!total) return { hour: hour, candidates: [] };
+        const candidates = Object.keys(weighted).map((full) => {
+          const parts = window.splitPredictedWorkFull_(full, '');
+          const count = Math.round(weighted[full]);
+          return {
+            full: full,
+            crop: parts.crop,
+            workName: parts.workName,
+            count: count,
+            rate: Math.round((weighted[full] / total) * 100),
+            source: 'time'
+          };
+        }).filter(c => c.workName && c.rate > 0)
+          .sort((a, b) => b.rate - a.rate || b.count - a.count)
+          .slice(0, 5);
+        return { hour: hour, candidates: candidates };
+      };
+
+      /** その日の前の作業記録と、この時間帯によくやる作業から次作業を予想する */
+      window.getNextWorkPredictions_ = (opts) => {
+        opts = opts || {};
         const dateEl = document.getElementById('rec_work_date');
         const now = new Date();
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -10094,73 +10225,103 @@ function createSignboardMarker(name, pos, icon, id) {
           ? window.getPreviousWorkForPrediction_(targetDate)
           : null;
 
-        if (!prev || !prev.workName) {
-          return { candidates: [], sourceReason: '', previous: null };
-        }
+        const atHm = opts.atHm || window.getPredictionAnchorTimeHm_();
+        const timePred = window.getTimeOfDayWorkPredictions_(atHm);
+        const hourLabel = `${timePred.hour}時前後`;
 
-        const stats = window.buildNextWorkTransitionStats_();
-        const targetCrop = String(prev.crop || '').trim();
-        const targetWork = String(prev.workName || '').trim();
-        const sourceReason = `直前の「${targetCrop ? (targetCrop + ' ') : ''}${targetWork}」から`;
-        const fullKey = (targetCrop && !targetWork.includes(targetCrop)) ? `${targetCrop} ${targetWork}` : targetWork;
+        let prevCandidates = [];
+        let sourceReason = hourLabel + 'によくやる作業';
+        if (prev && prev.workName) {
+          const stats = window.buildNextWorkTransitionStats_();
+          const targetCrop = String(prev.crop || '').trim();
+          const targetWork = String(prev.workName || '').trim();
+          sourceReason = `直前の「${targetCrop ? (targetCrop + ' ') : ''}${targetWork}」から / ${hourLabel}`;
+          const fullKey = (targetCrop && !targetWork.includes(targetCrop)) ? `${targetCrop} ${targetWork}` : targetWork;
 
-        let candCounts = null;
-        if (fullKey && stats.full[fullKey]) {
-          candCounts = stats.full[fullKey];
-        } else if (targetWork && stats.work[targetWork]) {
-          candCounts = stats.work[targetWork];
-        } else if (targetCrop && stats.crop[targetCrop]) {
-          candCounts = stats.crop[targetCrop];
-        }
-
-        let candidates = [];
-        if (candCounts && Object.keys(candCounts).length > 0) {
-          const total = Object.values(candCounts).reduce((a, b) => a + b, 0);
-          candidates = Object.keys(candCounts).map(full => {
-            const cnt = candCounts[full];
-            const rate = Math.round((cnt / total) * 100);
-            let cName = targetCrop;
-            let wName = full;
-            if (full.includes(' ')) {
-              const parts = full.split(' ');
-              cName = parts[0];
-              wName = parts.slice(1).join(' ');
-            }
-            return { full: full, crop: cName, workName: wName, count: cnt, rate: rate };
-          }).sort((a,b) => b.rate - a.rate || b.count - a.count);
-        }
-
-        if (!candidates.length) {
-          const fallbacks = [
-            { key: '追肥', items: [{ crop: targetCrop, workName: '中耕', rate: 60 }, { crop: targetCrop, workName: '消毒', rate: 25 }, { crop: targetCrop, workName: '収穫', rate: 15 }] },
-            { key: '定植', items: [{ crop: targetCrop, workName: '追肥', rate: 55 }, { crop: targetCrop, workName: '消毒', rate: 30 }, { crop: targetCrop, workName: '中耕', rate: 15 }] },
-            { key: '播種', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '追肥', rate: 25 }, { crop: targetCrop, workName: '消毒', rate: 15 }] },
-            { key: '中耕', items: [{ crop: targetCrop, workName: '消毒', rate: 50 }, { crop: targetCrop, workName: '追肥', rate: 30 }, { crop: targetCrop, workName: '収穫', rate: 20 }] },
-            { key: '消毒', items: [{ crop: targetCrop, workName: '収穫', rate: 50 }, { crop: targetCrop, workName: '追肥', rate: 30 }, { crop: targetCrop, workName: '中耕', rate: 20 }] },
-            { key: '耕起', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '施肥', rate: 25 }, { crop: targetCrop, workName: '播種', rate: 15 }] },
-            { key: '畝立て', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '施肥', rate: 25 }, { crop: targetCrop, workName: '播種', rate: 15 }] },
-            { key: '準備', items: [{ crop: targetCrop, workName: targetWork.replace(/^準備[−\-\s]*/, '') || '定植', rate: 70 }] }
-          ];
-
-          const match = fallbacks.find(f => targetWork.includes(f.key) || fullKey.includes(f.key));
-          if (match) {
-            candidates = match.items
-              .filter(it => it.workName)
-              .map(it => ({
-                full: (it.crop ? (it.crop + ' ') : '') + it.workName,
-                crop: it.crop || '',
-                workName: it.workName,
-                count: 1,
-                rate: it.rate
-              }));
+          let candCounts = null;
+          if (fullKey && stats.full[fullKey]) {
+            candCounts = stats.full[fullKey];
+          } else if (targetWork && stats.work[targetWork]) {
+            candCounts = stats.work[targetWork];
+          } else if (targetCrop && stats.crop[targetCrop]) {
+            candCounts = stats.crop[targetCrop];
           }
+
+          if (candCounts && Object.keys(candCounts).length > 0) {
+            const total = Object.values(candCounts).reduce((a, b) => a + b, 0);
+            prevCandidates = Object.keys(candCounts).map(full => {
+              const cnt = candCounts[full];
+              const parts = window.splitPredictedWorkFull_(full, targetCrop);
+              return {
+                full: full,
+                crop: parts.crop,
+                workName: parts.workName,
+                count: cnt,
+                rate: Math.round((cnt / total) * 100),
+                source: 'prev'
+              };
+            }).sort((a,b) => b.rate - a.rate || b.count - a.count);
+          }
+
+          if (!prevCandidates.length) {
+            const fallbacks = [
+              { key: '追肥', items: [{ crop: targetCrop, workName: '中耕', rate: 60 }, { crop: targetCrop, workName: '消毒', rate: 25 }, { crop: targetCrop, workName: '収穫', rate: 15 }] },
+              { key: '定植', items: [{ crop: targetCrop, workName: '追肥', rate: 55 }, { crop: targetCrop, workName: '消毒', rate: 30 }, { crop: targetCrop, workName: '中耕', rate: 15 }] },
+              { key: '播種', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '追肥', rate: 25 }, { crop: targetCrop, workName: '消毒', rate: 15 }] },
+              { key: '中耕', items: [{ crop: targetCrop, workName: '消毒', rate: 50 }, { crop: targetCrop, workName: '追肥', rate: 30 }, { crop: targetCrop, workName: '収穫', rate: 20 }] },
+              { key: '消毒', items: [{ crop: targetCrop, workName: '収穫', rate: 50 }, { crop: targetCrop, workName: '追肥', rate: 30 }, { crop: targetCrop, workName: '中耕', rate: 20 }] },
+              { key: '耕起', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '施肥', rate: 25 }, { crop: targetCrop, workName: '播種', rate: 15 }] },
+              { key: '畝立て', items: [{ crop: targetCrop, workName: '定植', rate: 60 }, { crop: targetCrop, workName: '施肥', rate: 25 }, { crop: targetCrop, workName: '播種', rate: 15 }] },
+              { key: '準備', items: [{ crop: targetCrop, workName: targetWork.replace(/^準備[−\-\s]*/, '') || '定植', rate: 70 }] }
+            ];
+            const match = fallbacks.find(f => targetWork.includes(f.key) || fullKey.includes(f.key));
+            if (match) {
+              prevCandidates = match.items
+                .filter(it => it.workName)
+                .map(it => ({
+                  full: (it.crop ? (it.crop + ' ') : '') + it.workName,
+                  crop: it.crop || '',
+                  workName: it.workName,
+                  count: 1,
+                  rate: it.rate,
+                  source: 'prev'
+                }));
+            }
+          }
+          prevCandidates = prevCandidates.filter(c => c.workName && c.workName !== targetWork).slice(0, 5);
         }
 
-        // 直前と同じ作業名だけの候補は除外（別作業を予想したい）
-        candidates = candidates.filter(c => c.workName && c.workName !== targetWork);
+        const timeCandidates = (timePred.candidates || []).slice(0, 5);
+        const mergedMap = {};
+        const addMerged = (c, source) => {
+          if (!c || !c.workName) return;
+          const key = String(c.crop || '') + '\t' + c.workName;
+          const cur = mergedMap[key];
+          if (!cur) {
+            mergedMap[key] = Object.assign({}, c, { source: source });
+            return;
+          }
+          cur.source = (cur.source !== source) ? 'both' : cur.source;
+          cur.rate = Math.max(cur.rate || 0, c.rate || 0);
+          cur.count = Math.max(cur.count || 0, c.count || 0);
+        };
+        prevCandidates.forEach(c => addMerged(c, 'prev'));
+        timeCandidates.forEach(c => addMerged(c, 'time'));
+        const sourceRank = { both: 0, prev: 1, time: 2 };
+        const candidates = Object.values(mergedMap).sort((a, b) => {
+          const sr = (sourceRank[a.source] || 9) - (sourceRank[b.source] || 9);
+          if (sr) return sr;
+          return (b.rate || 0) - (a.rate || 0);
+        }).slice(0, 8);
 
-        const top3 = candidates.slice(0, 3);
-        return { candidates: top3, sourceReason: sourceReason, previous: prev };
+        return {
+          candidates: candidates,
+          prevCandidates: prevCandidates.slice(0, 3),
+          timeCandidates: timeCandidates.slice(0, 3),
+          sourceReason: sourceReason,
+          previous: prev,
+          timeLabel: hourLabel
+        };
       };
 
       window.renderNextWorkPredictions = () => {
@@ -10175,42 +10336,42 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         const predData = window.getNextWorkPredictions_();
-        const candidates = predData.candidates || [];
-
-        if (!candidates.length) {
+        const prevCands = predData.prevCandidates || [];
+        const timeCands = predData.timeCandidates || [];
+        if (!prevCands.length && !timeCands.length) {
           container.style.display = 'none';
           container.innerHTML = '';
           return;
         }
 
         const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-
-        let html = `
-          <div style="font-weight:bold; color:#1b5e20; font-size:13px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
-            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-              <span>🔮 次の作業予想</span>
-              <span style="font-size:11px; font-weight:normal; color:#4caf50;">(${esc(predData.sourceReason)})</span>
-            </div>
-            <span style="font-size:10px; color:#81c784;">タップでセット</span>
-          </div>
-          <div style="display:flex; flex-wrap:wrap; gap:8px;">
-        `;
-
-        candidates.forEach((cand, i) => {
+        const renderChips = (list, badgeBg, badgeFg) => list.map((cand, i) => {
           const label = (cand.crop ? (cand.crop + ' ') : '') + cand.workName;
           const jsCrop = String(cand.crop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           const jsWork = String(cand.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          const rankBadge = `<span style="background:#2e7d32; color:#fff; border-radius:10px; padding:1px 6px; font-size:10px; font-weight:bold; margin-right:4px;">${i + 1}</span>`;
-          const rateBadge = `<span style="background:#e8f5e9; color:#1b5e20; border:1px solid #81c784; border-radius:10px; padding:1px 6px; font-size:10px; font-weight:bold; margin-left:5px;">${cand.rate}%</span>`;
-
-          html += `
-            <button type="button" onclick="applyNextWorkPrediction('${jsCrop}', '${jsWork}')" style="background:#ffffff; color:#1b5e20; border:1.5px solid #81c784; border-radius:20px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; box-shadow:0 1px 3px rgba(0,0,0,0.06); transition:all 0.15s ease;">
+          const rankBadge = `<span style="background:${badgeBg}; color:${badgeFg}; border-radius:10px; padding:1px 6px; font-size:10px; font-weight:bold; margin-right:4px;">${i + 1}</span>`;
+          const rateBadge = `<span style="background:#fff; color:${badgeBg}; border:1px solid ${badgeBg}; border-radius:10px; padding:1px 6px; font-size:10px; font-weight:bold; margin-left:5px;">${cand.rate}%</span>`;
+          return `
+            <button type="button" onclick="applyNextWorkPrediction('${jsCrop}', '${jsWork}')" style="background:#ffffff; color:#1b5e20; border:1.5px solid #81c784; border-radius:20px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
               ${rankBadge}🚜 ${esc(label)} ${rateBadge}
-            </button>
-          `;
-        });
+            </button>`;
+        }).join('');
 
-        html += `</div>`;
+        let html = `
+          <div style="font-weight:bold; color:#1b5e20; font-size:13px; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
+            <span>🔮 次の作業予想</span>
+            <span style="font-size:10px; color:#81c784;">タップでセット</span>
+          </div>`;
+        if (prevCands.length) {
+          html += `
+            <div style="font-size:11px; color:#2e7d32; font-weight:bold; margin-bottom:4px;">前の作業から${predData.previous && predData.previous.workName ? `（${esc((predData.previous.crop ? predData.previous.crop + ' ' : '') + predData.previous.workName)}のあと）` : ''}</div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">${renderChips(prevCands, '#2e7d32', '#fff')}</div>`;
+        }
+        if (timeCands.length) {
+          html += `
+            <div style="font-size:11px; color:#1565c0; font-weight:bold; margin-bottom:4px;">この時間によくやる作業（${esc(predData.timeLabel || '')}）</div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">${renderChips(timeCands, '#1565c0', '#fff')}</div>`;
+        }
         container.innerHTML = html;
         container.style.display = 'block';
       };
@@ -15918,6 +16079,9 @@ function createSignboardMarker(name, pos, icon, id) {
 
           const userId = getTempWorkRecordUserId_();
           if (userId && typeof callGAS === 'function') {
+              if (typeof window.beginBackgroundSync_ === 'function') {
+                window.beginBackgroundSync_('temp', '☁️ 一時保存を同期中…');
+              }
               callGAS('saveTempWorkRecord', {
                   userId: userId,
                   userName: payload.userName,
@@ -15929,8 +16093,11 @@ function createSignboardMarker(name, pos, icon, id) {
                   selectedPolyIds: payload.selectedPolyIds || [],
                   savedAt: payload.savedAt,
                   savedAtMs: payload.savedAtMs
+              }).then(() => {
+                  if (typeof window.endBackgroundSync_ === 'function') window.endBackgroundSync_('temp', 'ok');
               }).catch(e => {
                   console.warn('一時保存クラウド同期失敗:', e);
+                  if (typeof window.endBackgroundSync_ === 'function') window.endBackgroundSync_('temp', 'error');
               });
           }
       };
@@ -16065,6 +16232,81 @@ function createSignboardMarker(name, pos, icon, id) {
           // 復元後、一時保存データは送信完了まで残す（安全のため）
           if(typeof customAlert !== 'undefined') customAlert("✅ 一時保存データを復元しました！");
           else alert("✅ 一時保存データを復元しました！");
+      };
+
+      window.ensureRecordSyncBanner_ = () => {
+        let el = document.getElementById('recordSyncBanner');
+        if (el) return el;
+        el = document.createElement('div');
+        el.id = 'recordSyncBanner';
+        el.setAttribute('aria-live', 'polite');
+        el.innerHTML = '<span class="rss-spin" aria-hidden="true"></span><span id="recordSyncBannerText">☁️ 記録を同期中…</span>';
+        document.body.appendChild(el);
+        return el;
+      };
+
+      window.setRecordSyncBanner_ = (state, msg) => {
+        const el = window.ensureRecordSyncBanner_();
+        const text = document.getElementById('recordSyncBannerText');
+        if (text && msg) text.textContent = msg;
+        el.classList.remove('is-ok', 'is-error');
+        if (!state || state === 'hide') {
+          el.classList.remove('is-visible');
+          return;
+        }
+        if (state === 'ok') el.classList.add('is-ok');
+        if (state === 'error') el.classList.add('is-error');
+        el.classList.add('is-visible');
+      };
+
+      window.refreshRecordSyncBanner_ = (opts) => {
+        opts = opts || {};
+        clearTimeout(window._recordSyncBannerHideTimer);
+        const queueLen = (window._recordSyncQueue || []).length;
+        const running = !!window._recordSyncRunning;
+        const extra = window._bgSyncLabels || {};
+        const extraKeys = Object.keys(extra);
+        const pending = queueLen + (running ? 1 : 0);
+        if (opts.error && !running && !queueLen && !extraKeys.length) {
+          window.setRecordSyncBanner_('error', opts.error);
+          window._recordSyncBannerHideTimer = setTimeout(() => window.setRecordSyncBanner_('hide'), 8000);
+          return;
+        }
+        if (pending > 0) {
+          const job = window._recordSyncCurrentJob;
+          const hasPhotos = !!(job && Array.isArray(job.files) && job.files.length);
+          const rest = pending > 1 ? `（残り${pending}件）` : '';
+          const msg = hasPhotos
+            ? `☁️ 写真つき記録を同期中…${rest}`
+            : `☁️ 記録を同期中…${rest}`;
+          window.setRecordSyncBanner_('syncing', msg);
+          return;
+        }
+        if (extraKeys.length) {
+          window.setRecordSyncBanner_('syncing', extra[extraKeys[0]] || '☁️ 同期中…');
+          return;
+        }
+        if (opts.justFinished) {
+          window.setRecordSyncBanner_('ok', '☁️ 同期が完了しました');
+          window._recordSyncBannerHideTimer = setTimeout(() => window.setRecordSyncBanner_('hide'), 1800);
+          return;
+        }
+        window.setRecordSyncBanner_('hide');
+      };
+
+      window.beginBackgroundSync_ = (key, label) => {
+        window._bgSyncLabels = window._bgSyncLabels || {};
+        window._bgSyncLabels[String(key || 'sync')] = label || '☁️ 同期中…';
+        window.refreshRecordSyncBanner_();
+      };
+
+      window.endBackgroundSync_ = (key, result) => {
+        window._bgSyncLabels = window._bgSyncLabels || {};
+        delete window._bgSyncLabels[String(key || 'sync')];
+        window.refreshRecordSyncBanner_({
+          justFinished: result === 'ok',
+          error: result === 'error' ? '⚠️ 同期に失敗しました' : ''
+        });
       };
 
       /** 記録同期の簡易トースト */
@@ -16213,7 +16455,10 @@ function createSignboardMarker(name, pos, icon, id) {
       window.applyOptimisticRecordItem_ = (opts) => {
         opts = opts || {};
         // 作業遷移統計キャッシュを破棄（次の作業予想を最新にする）
-        try { window._nextWorkTransitionStatsCache = null; } catch (e) {}
+        try {
+          window._nextWorkTransitionStatsCache = null;
+          window._nextWorkTimeStatsCache = null;
+        } catch (e) {}
         const targetIds = (opts.targetIds || []).map(String);
         const recordType = opts.recordType || 'work';
         const data = opts.data || {};
@@ -16333,14 +16578,20 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.enqueueRecordSync_ = (job) => {
         window._recordSyncQueue.push(job);
+        if (typeof window.refreshRecordSyncBanner_ === 'function') window.refreshRecordSyncBanner_();
         window.pumpRecordSyncQueue_();
       };
 
       window.pumpRecordSyncQueue_ = async () => {
         if (window._recordSyncRunning) return;
         window._recordSyncRunning = true;
+        if (typeof window.refreshRecordSyncBanner_ === 'function') window.refreshRecordSyncBanner_();
+        let hadError = false;
+        let errorMsg = '';
         while (window._recordSyncQueue.length) {
           const job = window._recordSyncQueue.shift();
+          window._recordSyncCurrentJob = job;
+          if (typeof window.refreshRecordSyncBanner_ === 'function') window.refreshRecordSyncBanner_();
           const t0 = Date.now();
           try {
             await window.runRecordSyncJob_(job);
@@ -16349,6 +16600,8 @@ function createSignboardMarker(name, pos, icon, id) {
               window.showRecordSyncToast('☁️ 記録の同期が完了しました', 'ok');
             }
           } catch (e) {
+            hadError = true;
+            errorMsg = (e && e.message) ? e.message : String(e || '');
             console.error('record sync failed', e);
             if (job && job.localId) {
               window.markOptimisticRecordFailed_(job.localId, job.targetIds || []);
@@ -16360,7 +16613,13 @@ function createSignboardMarker(name, pos, icon, id) {
             }
           }
         }
+        window._recordSyncCurrentJob = null;
         window._recordSyncRunning = false;
+        if (typeof window.refreshRecordSyncBanner_ === 'function') {
+          window.refreshRecordSyncBanner_(hadError
+            ? { error: '⚠️ 同期に失敗しました' + (errorMsg ? ('\n' + errorMsg) : '') }
+            : { justFinished: true });
+        }
       };
 
       window.runRecordSyncJob_ = async (job) => {
@@ -16852,7 +17111,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         const startHm = window.getAfterSaveNextWorkStartHm_() || '--:--';
         const pred = (typeof window.getNextWorkPredictions_ === 'function')
-          ? window.getNextWorkPredictions_()
+          ? window.getNextWorkPredictions_({ atHm: startHm })
           : { candidates: [] };
         const candidates = Array.isArray(pred.candidates) ? pred.candidates : [];
         const seen = new Set();
@@ -16872,7 +17131,11 @@ function createSignboardMarker(name, pos, icon, id) {
           const on = selectedName === name && selectedCrop === String(crop || '');
           chips.push(`<button type="button" class="after-save-work-chip" data-work="${String(name).replace(/"/g, '&quot;')}" data-crop="${String(crop || '').replace(/"/g, '&quot;')}" data-search="${search}" onclick="selectAfterSaveNextWork_('${safeName}', '${safeCrop}')" style="background:${on ? '#FF9800' : '#fff'}; color:${on ? '#fff' : '#1b5e20'}; border:1.5px solid ${on ? '#F57C00' : '#81c784'}; border-radius:18px; padding:7px 12px; font-size:13px; font-weight:bold; cursor:pointer;">🚜 ${label}${extraLabel ? ` <span style="font-size:10px; opacity:.85;">${String(extraLabel).replace(/</g, '&lt;')}</span>` : ''}</button>`);
         };
-        candidates.forEach((c, i) => pushChip(c.workName, c.crop || saved.crop || '', (c.rate != null ? (c.rate + '%') : ('予想' + (i + 1)))));
+        candidates.forEach((c, i) => {
+          const src = c.source === 'time' ? 'この時間' : (c.source === 'both' ? '前＋時間' : '前の作業');
+          const extra = (c.rate != null) ? `${src} ${c.rate}%` : src;
+          pushChip(c.workName, c.crop || saved.crop || '', extra);
+        });
         const cropNow = String(saved.crop || '').trim();
         (pdlWorkMaster || []).forEach(w => {
           const wName = String(w && w.name || '').trim();
