@@ -2607,6 +2607,13 @@ function createSignboardMarker(name, pos, icon, id) {
         updateSelectedPolysDisplay();
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
         if (typeof window.refreshLastWorkFieldButton === 'function') window.refreshLastWorkFieldButton();
+        if (window._afterSavePickingField) {
+          window._afterSavePickingField = false;
+          window._afterSaveDraftPolyIds = Array.isArray(selectedPolyIds) ? selectedPolyIds.slice() : [];
+          setTimeout(() => {
+            if (typeof window.showAfterSaveNextWorkPicker_ === 'function') window.showAfterSaveNextWorkPicker_();
+          }, 30);
+        }
       };
       window.cancelMapSelect = () => {
         selectedPolyIds = [...backupSelectedPolyIds];
@@ -2620,6 +2627,12 @@ function createSignboardMarker(name, pos, icon, id) {
         document.getElementById('rightPanel').style.display = 'flex';
         document.getElementById('mapSelectUI').style.display = 'none';
         updateMapSelectVisuals();
+        if (window._afterSavePickingField) {
+          window._afterSavePickingField = false;
+          setTimeout(() => {
+            if (typeof window.showAfterSaveNextWorkPicker_ === 'function') window.showAfterSaveNextWorkPicker_();
+          }, 30);
+        }
       };
       
       window.updateMapSelectVisuals = () => {
@@ -5286,6 +5299,40 @@ function createSignboardMarker(name, pos, icon, id) {
         return s;
       };
 
+      /** 作業マスタ1件に紐づく作物キー（共通含む） */
+      window.getWorkMasterCropKeys = (w) => {
+        if (!w) return ['__common__'];
+        let list = [];
+        if (w.crops && Array.isArray(w.crops) && w.crops.length) {
+          list = w.crops.map(c => String(c || '').trim()).filter(Boolean);
+        } else if (w.cropName) {
+          list = String(w.cropName).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        }
+        if (!list.length) return ['__common__'];
+        const keys = [];
+        list.forEach(c => {
+          const k = window.normalizeWorkCropKey(c);
+          if (k && keys.indexOf(k) < 0) keys.push(k);
+        });
+        return keys.length ? keys : ['__common__'];
+      };
+
+      window.getWorkMasterCropDetailsMap = (w) => {
+        const map = {};
+        if (w && w.cropDetails && typeof w.cropDetails === 'object') {
+          Object.keys(w.cropDetails).forEach(k => {
+            const key = window.normalizeWorkCropKey(k);
+            map[key] = w.cropDetails[k];
+          });
+        }
+        if (w && String(w.detailWorks || '').trim()) {
+          const keys = window.getWorkMasterCropKeys(w);
+          if (keys.length === 1 && map[keys[0]] == null) map[keys[0]] = w.detailWorks;
+          else if (keys.includes('__common__') && map['__common__'] == null) map['__common__'] = w.detailWorks;
+        }
+        return map;
+      };
+
       window.getBaseWorksForPoly = (p) => {
         let list = pdlWorkMaster ? [...pdlWorkMaster] : [];
         const hasRest = list.some(w => w && String(w.name || '').trim().includes('休憩'));
@@ -5530,7 +5577,9 @@ function createSignboardMarker(name, pos, icon, id) {
         const keys = new Set();
         // 全てのカテゴリで全般・共通作業用として「共通」を選択可能にする
         keys.add('__common__');
-        works.forEach(w => keys.add(window.normalizeWorkCropKey(w && w.cropName)));
+        works.forEach(w => {
+          window.getWorkMasterCropKeys(w).forEach(k => keys.add(k));
+        });
         // 作物マスタにだけある作物も選択できるようにする
         (pdlCrops || []).forEach(c => {
           const n = String((c && c.name) || '').trim();
@@ -7351,6 +7400,104 @@ function createSignboardMarker(name, pos, icon, id) {
         return { avgMins, count: samples.length, source: 'local' };
       };
 
+      window.medianNumber_ = (arr) => {
+        const s = (arr || []).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
+        if (!s.length) return 0;
+        return s[Math.floor(s.length / 2)];
+      };
+
+      window.roundMins5_ = (mins) => {
+        const n = Number(mins) || 0;
+        if (n <= 0) return 0;
+        return Math.max(5, Math.round(n / 5) * 5);
+      };
+
+      window.getPolyAreaA_ = (polyId) => {
+        const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[polyId] : null;
+        if (!p || p.isMarker) return 0;
+        const a = Number(p.area);
+        return (!isNaN(a) && a > 0) ? a : 0;
+      };
+
+      window.getPolyIdsAreaA_ = (polyIds) => {
+        let sum = 0;
+        (polyIds || []).forEach(id => { sum += window.getPolyAreaA_(id); });
+        return Math.round(sum * 1000) / 1000;
+      };
+
+      window.collectWorkDurationSamples_ = (workName) => {
+        const name = String(workName || '').trim();
+        const samples = [];
+        if (!name || name.includes('休憩')) return samples;
+        const add = (data, polyId) => {
+          if (!data || String(data.workName || '').trim() !== name) return;
+          const mins = window.parseRecordDurationMins_(data);
+          if (mins < 5 || mins > 12 * 60) return;
+          const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[polyId] : null;
+          const areaA = (p && !p.isMarker) ? window.getPolyAreaA_(polyId) : 0;
+          samples.push({
+            mins,
+            polyId: String(polyId || ''),
+            polyName: (p && p.name) || '',
+            areaA
+          });
+        };
+        try {
+          Object.keys(loadedPolygons || {}).forEach(id => {
+            const photos = loadedPolygons[id] && loadedPolygons[id].photos;
+            if (!Array.isArray(photos)) return;
+            photos.forEach(ph => {
+              if (ph && ph.type === 'work' && ph.data) add(ph.data, id);
+            });
+          });
+        } catch (e) {}
+        return samples;
+      };
+
+      window.estimateWorkMinsByFieldRecords_ = (workName, polyIds) => {
+        const ids = (polyIds || []).map(String).filter(Boolean);
+        if (!ids.length) return { mins: 0, count: 0, perField: [] };
+        const samples = window.collectWorkDurationSamples_(workName);
+        const perField = [];
+        let total = 0;
+        let count = 0;
+        ids.forEach(id => {
+          const p = loadedPolygons[id];
+          if (!p || p.isMarker) return;
+          const fieldSamples = samples.filter(s => String(s.polyId) === String(id)).map(s => s.mins);
+          const mins = window.roundMins5_(window.medianNumber_(fieldSamples));
+          perField.push({
+            polyId: id,
+            name: p.name || id,
+            areaA: window.getPolyAreaA_(id),
+            mins,
+            count: fieldSamples.length
+          });
+          if (mins > 0) {
+            total += mins;
+            count += fieldSamples.length;
+          }
+        });
+        return { mins: total, count, perField };
+      };
+
+      window.estimateWorkMinsBy10a_ = (workName, targetAreaA) => {
+        const area = Number(targetAreaA) || 0;
+        const samples = window.collectWorkDurationSamples_(workName).filter(s => s.areaA > 0);
+        if (!samples.length || area <= 0) {
+          return { mins: 0, count: 0, minsPer10a: 0, areaA: area };
+        }
+        const rates = samples.map(s => (s.mins * 10) / s.areaA);
+        const minsPer10a = window.medianNumber_(rates);
+        const mins = window.roundMins5_(minsPer10a * (area / 10));
+        return {
+          mins,
+          count: samples.length,
+          minsPer10a: Math.round(minsPer10a * 10) / 10,
+          areaA: area
+        };
+      };
+
       window.getCachedGasWorkDurationEstimate_ = (workName) => {
         const name = String(workName || '').trim();
         if (!name) return null;
@@ -8764,6 +8911,143 @@ function createSignboardMarker(name, pos, icon, id) {
             <button type="button" onclick="addWorkerDetailWorkRow('${containerId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ 詳細作業を追加</button>`;
       };
 
+      window.buildWorkCropsCheckboxesHtml = (prefix, selectedCropsArray) => {
+          const crops = (pdlCrops || []).map(c => String((c && c.name) || '').trim()).filter(Boolean);
+          let normSelected = Array.isArray(selectedCropsArray)
+            ? selectedCropsArray.map(s => String(s || '').trim()).filter(Boolean)
+            : String(selectedCropsArray || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+          normSelected = normSelected.map(c => window.normalizeWorkCropKey(c));
+          if (!normSelected.length) normSelected = ['__common__'];
+          const isCommonChecked = normSelected.includes('__common__');
+          let html = `<div id="${prefix}_crops_container" style="display:flex; flex-wrap:wrap; gap:8px; padding:10px; background:#fafafa; border:1px solid #ddd; border-radius:6px;">`;
+          html += `<label style="display:inline-flex; align-items:center; gap:4px; font-size:13px; font-weight:bold; background:${isCommonChecked ? '#e3f2fd' : '#fff'}; border:1px solid ${isCommonChecked ? '#2196F3' : '#ccc'}; padding:4px 10px; border-radius:15px; cursor:pointer;">
+            <input type="checkbox" class="${prefix}_crop_cb" value="__common__" ${isCommonChecked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}')"> 🌐 共通
+          </label>`;
+          crops.forEach(cName => {
+            const key = window.normalizeWorkCropKey(cName);
+            const checked = normSelected.includes(key);
+            html += `<label style="display:inline-flex; align-items:center; gap:4px; font-size:13px; background:${checked ? '#e8f5e9' : '#fff'}; border:1px solid ${checked ? '#4CAF50' : '#ccc'}; padding:4px 10px; border-radius:15px; cursor:pointer;">
+              <input type="checkbox" class="${prefix}_crop_cb" value="${String(cName).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}')"> 🌱 ${String(cName).replace(/</g, '&lt;')}
+            </label>`;
+          });
+          html += `</div>
+            <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">複数選択可。共通＋作物別を同時に持てます。詳細作業は下のタブで作物ごとに分けて登録できます。</div>`;
+          return html;
+      };
+
+      window.getSelectedWorkCrops = (prefix) => {
+          const cbs = document.querySelectorAll('.' + prefix + '_crop_cb:checked');
+          const list = Array.from(cbs).map(cb => cb.value).filter(Boolean);
+          return list.length ? list : ['__common__'];
+      };
+
+      window.onWorkCropsChange = (prefix) => {
+          const selected = window.getSelectedWorkCrops(prefix);
+          const tabsBox = document.getElementById(prefix + '_crop_tabs');
+          if (!tabsBox) return;
+          let activeTab = tabsBox.getAttribute('data-active-tab') || '__common__';
+          if (!selected.includes(activeTab) && !selected.includes(window.normalizeWorkCropKey(activeTab))) {
+            activeTab = selected[0] || '__common__';
+          }
+          tabsBox.innerHTML = selected.map(cKey => {
+            const label = (cKey === '__common__' || cKey === '共通') ? '🌐 共通' : ('🌱 ' + cKey);
+            const isActive = (cKey === activeTab || window.normalizeWorkCropKey(cKey) === window.normalizeWorkCropKey(activeTab));
+            const safeKey = String(cKey).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            return `<button type="button" onclick="switchWorkCropTab('${prefix}', '${safeKey}')" style="background:${isActive ? '#2196F3' : '#f5f5f5'}; color:${isActive ? '#fff' : '#444'}; border:1px solid ${isActive ? '#1976D2' : '#ccc'}; border-bottom:none; border-radius:6px 6px 0 0; padding:6px 14px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px; white-space:nowrap;">${label.replace(/</g, '&lt;')}</button>`;
+          }).join('');
+          tabsBox.setAttribute('data-active-tab', activeTab);
+
+          const detailsBox = document.getElementById(prefix + '_details_panels');
+          selected.forEach(cKey => {
+            const panelId = prefix + '_panel_' + cKey;
+            let panel = document.getElementById(panelId);
+            if (!panel && detailsBox) {
+              panel = document.createElement('div');
+              panel.id = panelId;
+              panel.className = prefix + '_detail_panel';
+              panel.setAttribute('data-crop-key', cKey);
+              const labelName = (cKey === '__common__' || cKey === '共通') ? '共通' : cKey;
+              panel.innerHTML = `<div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">【${String(labelName).replace(/</g, '&lt;')}】の詳細作業</div>` +
+                window.buildWorkerDetailWorksHtml(prefix + '_details_' + cKey, '');
+              detailsBox.appendChild(panel);
+            }
+            if (panel) {
+              const isActive = (cKey === activeTab || window.normalizeWorkCropKey(cKey) === window.normalizeWorkCropKey(activeTab));
+              panel.style.display = isActive ? 'block' : 'none';
+            }
+          });
+          document.querySelectorAll('.' + prefix + '_detail_panel').forEach(p => {
+            const pk = p.getAttribute('data-crop-key');
+            if (selected.indexOf(pk) < 0) p.style.display = 'none';
+          });
+          document.querySelectorAll('.' + prefix + '_crop_cb').forEach(cb => {
+            const lab = cb.closest('label');
+            if (!lab) return;
+            const on = !!cb.checked;
+            const isCommon = cb.value === '__common__';
+            lab.style.background = on ? (isCommon ? '#e3f2fd' : '#e8f5e9') : '#fff';
+            lab.style.borderColor = on ? (isCommon ? '#2196F3' : '#4CAF50') : '#ccc';
+          });
+      };
+
+      window.switchWorkCropTab = (prefix, cKey) => {
+          const tabsBox = document.getElementById(prefix + '_crop_tabs');
+          if (tabsBox) tabsBox.setAttribute('data-active-tab', cKey);
+          window.onWorkCropsChange(prefix);
+      };
+
+      window.buildPerCropDetailWorksEditorHtml = (prefix, selectedCropsArray, cropDetailsMap) => {
+          let normSelected = Array.isArray(selectedCropsArray)
+            ? selectedCropsArray.map(s => String(s || '').trim()).filter(Boolean)
+            : String(selectedCropsArray || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+          if (!normSelected.length) normSelected = ['__common__'];
+          const map = cropDetailsMap || {};
+          const activeTab = normSelected[0] || '__common__';
+          const tabsHtml = normSelected.map(cKey => {
+            const label = (cKey === '__common__' || cKey === '共通') ? '🌐 共通' : ('🌱 ' + cKey);
+            const isActive = (cKey === activeTab);
+            const safeKey = String(cKey).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            return `<button type="button" onclick="switchWorkCropTab('${prefix}', '${safeKey}')" style="background:${isActive ? '#2196F3' : '#f5f5f5'}; color:${isActive ? '#fff' : '#444'}; border:1px solid ${isActive ? '#1976D2' : '#ccc'}; border-bottom:none; border-radius:6px 6px 0 0; padding:6px 14px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px; white-space:nowrap;">${String(label).replace(/</g, '&lt;')}</button>`;
+          }).join('');
+          const panelsHtml = normSelected.map(cKey => {
+            const isActive = (cKey === activeTab);
+            const nKey = window.normalizeWorkCropKey(cKey);
+            const detailStr = (map[cKey] != null) ? map[cKey] : (map[nKey] != null ? map[nKey] : (cKey === '__common__' ? (map.detailWorks || '') : ''));
+            const labelName = (cKey === '__common__' || cKey === '共通') ? '共通' : cKey;
+            return `<div id="${prefix}_panel_${cKey}" class="${prefix}_detail_panel" data-crop-key="${String(cKey).replace(/"/g, '&quot;')}" style="display:${isActive ? 'block' : 'none'};">
+              <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">【${String(labelName).replace(/</g, '&lt;')}】の詳細作業</div>
+              ${window.buildWorkerDetailWorksHtml(prefix + '_details_' + cKey, detailStr)}
+            </div>`;
+          }).join('');
+          return `<div style="margin-top:4px;">
+            <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（作物別）</div>
+            <div id="${prefix}_crop_tabs" data-active-tab="${activeTab}" style="display:flex; border-bottom:1px solid #ccc; margin-bottom:0; overflow-x:auto;">${tabsHtml}</div>
+            <div id="${prefix}_details_panels" style="background:#fff; border:1px solid #e0e0e0; border-radius:0 0 6px 6px; padding:10px;">${panelsHtml}</div>
+          </div>`;
+      };
+
+      window.collectPerCropDetailWorks = (prefix) => {
+          const selectedCrops = window.getSelectedWorkCrops(prefix);
+          const cropDetailsMap = {};
+          let commonDetailsStr = '';
+          selectedCrops.forEach(cKey => {
+            const str = window.collectWorkerDetailWorks(prefix + '_details_' + cKey);
+            const nKey = window.normalizeWorkCropKey(cKey);
+            cropDetailsMap[nKey] = str;
+            if (nKey === '__common__') commonDetailsStr = str;
+          });
+          const realCrops = selectedCrops
+            .map(c => window.normalizeWorkCropKey(c))
+            .filter(c => c && c !== '__common__')
+            .map(c => window.getWorkCropLabel(c));
+          return {
+            crops: realCrops,
+            cropName: realCrops.length ? realCrops.join(', ') : (selectedCrops.some(c => window.normalizeWorkCropKey(c) === '__common__') ? '共通' : ''),
+            cropDetails: cropDetailsMap,
+            detailWorks: commonDetailsStr || Object.values(cropDetailsMap)[0] || ''
+          };
+      };
+
       window.refreshWorkChipsAfterMasterChange = (selectedName) => {
           const cat = document.getElementById('rec_work_category')?.value || 'すべて';
           const crop = document.getElementById('rec_work_crop_filter')?.value || '';
@@ -8829,8 +9113,24 @@ function createSignboardMarker(name, pos, icon, id) {
           let works = Array.isArray(pdlWorkMaster) ? [...pdlWorkMaster] : [];
           works.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
           if (catF) works = works.filter(w => (w.category || '圃場作業') === catF);
-          if (cropF) works = works.filter(w => window.normalizeWorkCropKey(w.cropName) === cropF);
-          if (q) works = works.filter(w => String(w.name || '').toLowerCase().includes(q) || String(w.detailWorks || '').toLowerCase().includes(q) || String(w.cropName || '').toLowerCase().includes(q));
+          if (cropF) {
+              const cropFNorm = window.normalizeWorkCropKey(cropF);
+              works = works.filter(w => {
+                const keys = window.getWorkMasterCropKeys(w);
+                if (cropFNorm === '__common__') return keys.includes('__common__');
+                return keys.includes(cropFNorm) || keys.includes(cropF);
+              });
+          }
+          if (q) works = works.filter(w => {
+              const hay = [
+                w.name,
+                w.detailWorks,
+                w.cropName,
+                Array.isArray(w.crops) ? w.crops.join(' ') : '',
+                w.cropDetails ? JSON.stringify(w.cropDetails) : ''
+              ].join(' ').toLowerCase();
+              return hay.includes(q);
+          });
 
           if (!works.length) {
               list.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">該当する作業がありません</div>`;
@@ -8840,14 +9140,25 @@ function createSignboardMarker(name, pos, icon, id) {
           list.innerHTML = works.map(w => {
               const name = String(w.name || '');
               const safe = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-              const details = String(w.detailWorks || '').trim();
+              const detailsMap = window.getWorkMasterCropDetailsMap(w);
+              const detailKeys = Object.keys(detailsMap).filter(k => String(detailsMap[k] || '').trim());
+              const cropKeys = window.getWorkMasterCropKeys(w);
               const aliasStr = String(w.aliasNames || (Array.isArray(w.aliases) ? w.aliases.join(', ') : '')).trim();
               const aliasPreview = aliasStr
                   ? `<div style="font-size:11px; color:#E65100; margin-top:2px; font-weight:bold;">🏷️ 別名/類似名: ${aliasStr.replace(/</g, '&lt;')}</div>`
                   : '';
-              const detailPreview = details
-                  ? `<div style="font-size:11px; color:#666; margin-top:4px; line-height:1.35;">詳細: ${details.split(/[,、]/).map(s => s.trim()).filter(Boolean).slice(0, 6).join(' / ')}${details.split(/[,、]/).filter(s => s.trim()).length > 6 ? ' …' : ''}</div>`
-                  : `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし</div>`;
+              let detailPreview;
+              if (detailKeys.length) {
+                const parts = detailKeys.map(k => {
+                  const label = window.getWorkCropLabel(k);
+                  const items = String(detailsMap[k] || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+                  return `[${label}] ${items.slice(0, 4).join(' / ')}${items.length > 4 ? ' …' : ''}`;
+                });
+                detailPreview = `<div style="font-size:11px; color:#666; margin-top:4px; line-height:1.35;">詳細: ${parts.join('<br>')}</div>`;
+              } else {
+                detailPreview = `<div style="font-size:11px; color:#bbb; margin-top:4px;">詳細作業なし</div>`;
+              }
+              const cropChips = cropKeys.map(k => `<span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px;">${window.getWorkCropLabel(k).replace(/</g, '&lt;')}</span>`).join('');
               return `<div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; margin-bottom:8px; background:#fafafa;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div style="min-width:0; flex:1;">
@@ -8855,7 +9166,7 @@ function createSignboardMarker(name, pos, icon, id) {
                     ${aliasPreview}
                     <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">
                       <span style="font-size:11px; background:#d0e4f5; color:#0b5394; padding:2px 6px; border-radius:4px;">${(w.category || '圃場作業').replace(/</g, '&lt;')}</span>
-                      <span style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 6px; border-radius:4px;">${window.getWorkCropLabel(w.cropName).replace(/</g, '&lt;')}</span>
+                      ${cropChips}
                     </div>
                     ${detailPreview}
                   </div>
@@ -8889,18 +9200,24 @@ function createSignboardMarker(name, pos, icon, id) {
           const cropNow = presetCrop || document.getElementById('rec_work_crop_filter')?.value || '';
           const defaultCat = (existing && existing.category)
               || (catNow && catNow !== 'すべて' ? catNow : (pdlWorkCategories[0] || '圃場作業'));
-          const defaultCrop = (existing && existing.cropName) || (cropNow && cropNow !== '__common__' && cropNow !== 'すべて' ? cropNow : '');
+          let selectedCrops = [];
+          if (existing) {
+              selectedCrops = window.getWorkMasterCropKeys(existing);
+          } else if (cropNow) {
+              String(cropNow).split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(k => {
+                const n = window.normalizeWorkCropKey(k);
+                if (n && selectedCrops.indexOf(n) < 0) selectedCrops.push(n === '__common__' ? '__common__' : window.getWorkCropLabel(n));
+              });
+          }
+          if (!selectedCrops.length) selectedCrops = ['__common__'];
           const catOpts = window.getWorkCategoryOptionsForUI_({ includeAll: false }).map(c =>
               `<option value="${String(c).replace(/"/g, '&quot;')}" ${c === defaultCat ? 'selected' : ''}>${c}</option>`
           ).join('');
-          const cropNames = (pdlCrops || []).map(c => c.name);
-          if (defaultCrop && !cropNames.includes(defaultCrop)) cropNames.unshift(defaultCrop);
-          const cropOpts = `<option value="" ${!defaultCrop ? 'selected' : ''}>-- 未選択 --</option><option value="__common__" ${defaultCrop === '__common__' ? 'selected' : ''}>共通（全作物）</option>` + cropNames.map(name =>
-              `<option value="${String(name).replace(/"/g, '&quot;')}" ${name === defaultCrop ? 'selected' : ''}>${name}</option>`
-          ).join('');
           const title = mode === 'edit' ? '作業マスタを編集' : (opts.isPrepTarget ? '準備対象の作業名を追加' : '作業マスタを追加');
           const existingAliases = (existing && (existing.aliasNames || (Array.isArray(existing.aliases) ? existing.aliases.join(', ') : ''))) || '';
-          const detailsHtml = window.buildWorkerDetailWorksHtml('wn_edit_details_list', (existing && existing.detailWorks) || '');
+          const detailsMap = existing ? window.getWorkMasterCropDetailsMap(existing) : {};
+          const cropsHtml = window.buildWorkCropsCheckboxesHtml('wn_edit', selectedCrops);
+          const detailsHtml = window.buildPerCropDetailWorksEditorHtml('wn_edit', selectedCrops, detailsMap);
           const flagSource = (mode === 'edit' && existing)
             ? window.getWorkExtraUiFlags_(existing.name || originalName)
             : window.inferWorkRecordUiFlags_(existing && existing.name, defaultCat);
@@ -8914,18 +9231,17 @@ function createSignboardMarker(name, pos, icon, id) {
               <h3 style="margin:0 0 12px; font-size:16px; color:#FF9800;">${title}</h3>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">カテゴリ</label>
               <select id="wn_edit_category" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:14px;">${catOpts}</select>
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作物名</label>
-              <div style="display:flex; gap:6px; margin-bottom:10px;">
-                <select id="wn_edit_crop" style="flex:1; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; font-size:14px;">${cropOpts}</select>
-                <button type="button" onclick="addNewCropFromWorkMaster()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:0 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋</button>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作物（複数可）</label>
+              <div id="wn_edit_crops_wrap" style="margin-bottom:8px;">${cropsHtml}</div>
+              <div style="margin-bottom:10px;">
+                <button type="button" onclick="addNewCropFromWorkMaster()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-weight:bold; cursor:pointer; font-size:12px;">＋ 作物を追加</button>
               </div>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業名（正順名）</label>
               <input type="text" id="wn_edit_name" value="${String((existing && existing.name) || '').replace(/"/g, '&quot;')}" placeholder="例: 畝つぶし" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:15px;">
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">類似作業名（地域呼称・別名など）</label>
               <input type="text" id="wn_edit_aliases" value="${String(existingAliases).replace(/"/g, '&quot;')}" placeholder="例: 畝戻し, すき込み, 畝立て直し" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:4px; font-size:14px;">
               <div style="font-size:11px; color:#666; margin-bottom:10px; line-height:1.35;">※地域特有の呼称や表記ゆれをカンマ区切りで登録すると、同じ作業として連動します。</div>
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（各枠に1つ）</label>
-              ${detailsHtml}
+              <div id="wn_edit_details_host">${detailsHtml}</div>
               ${flagsHtml}
               <div style="display:flex; gap:8px; margin-top:12px;">
                 <button type="button" onclick="closeWorkNameEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:6px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
@@ -8967,7 +9283,13 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!n || !String(n).trim()) return;
           const name = String(n).trim();
           if ((pdlCrops || []).some(c => c.name === name)) {
-              document.getElementById('wn_edit_crop').value = name;
+              const selected = window.getSelectedWorkCrops('wn_edit');
+              if (selected.indexOf(name) < 0) selected.push(name);
+              const wrap = document.getElementById('wn_edit_crops_wrap');
+              const host = document.getElementById('wn_edit_details_host');
+              const detailsMap = window.collectPerCropDetailWorks('wn_edit').cropDetails;
+              if (wrap) wrap.innerHTML = window.buildWorkCropsCheckboxesHtml('wn_edit', selected);
+              if (host) host.innerHTML = window.buildPerCropDetailWorksEditorHtml('wn_edit', selected, detailsMap);
               return;
           }
           if (typeof window.showRecordSyncToast === 'function') {
@@ -8984,14 +9306,15 @@ function createSignboardMarker(name, pos, icon, id) {
               else pdlCrops.push({ name: name, density: 0 });
               localStorage.removeItem('passionMapInitData');
               localStorage.removeItem('pMapAdminInitData');
-              const sel = document.getElementById('wn_edit_crop');
-              if (sel) {
-                  const opt = document.createElement('option');
-                  opt.value = name;
-                  opt.textContent = name;
-                  sel.appendChild(opt);
-                  sel.value = name;
-              }
+              const wrap = document.getElementById('wn_edit_crops_wrap');
+              const host = document.getElementById('wn_edit_details_host');
+              const selected = window.getSelectedWorkCrops('wn_edit');
+              if (selected.indexOf(name) < 0) selected.push(name);
+              const detailsMap = (typeof window.collectPerCropDetailWorks === 'function')
+                ? window.collectPerCropDetailWorks('wn_edit').cropDetails
+                : {};
+              if (wrap) wrap.innerHTML = window.buildWorkCropsCheckboxesHtml('wn_edit', selected);
+              if (host) host.innerHTML = window.buildPerCropDetailWorksEditorHtml('wn_edit', selected, detailsMap);
               if (typeof window.renderCropFilterButtons === 'function') {
                   window.renderCropFilterButtons(document.getElementById('rec_work_crop_filter')?.value || '');
               }
@@ -9010,9 +9333,12 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           const name = String(document.getElementById('wn_edit_name')?.value || '').trim();
           const category = document.getElementById('wn_edit_category')?.value || '圃場作業';
-          const cropName = String(document.getElementById('wn_edit_crop')?.value || '').trim();
           const aliasNames = String(document.getElementById('wn_edit_aliases')?.value || '').trim();
-          const detailWorks = window.collectWorkerDetailWorks('wn_edit_details_list');
+          const perCrop = window.collectPerCropDetailWorks('wn_edit');
+          const cropName = perCrop.cropName;
+          const crops = perCrop.crops;
+          const cropDetails = perCrop.cropDetails;
+          const detailWorks = perCrop.detailWorks;
           const uiFlags = (typeof window.collectWorkRecordUiFlagsFromForm_ === 'function')
             ? window.collectWorkRecordUiFlagsFromForm_('wn_edit')
             : {};
@@ -9045,7 +9371,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   updatedList = await callGAS('manageMaster', {
                       masterType: 'work',
                       manageAction: 'add',
-                      value: { name, category, cropName, detailWorks, aliasNames, ...uiFlags },
+                      value: { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
               } else {
@@ -9054,7 +9380,7 @@ function createSignboardMarker(name, pos, icon, id) {
                       manageAction: 'edit',
                       value: {
                           originalName: orig,
-                          newData: { name, category, cropName, detailWorks, aliasNames, ...uiFlags }
+                          newData: { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags }
                       },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
@@ -16253,101 +16579,362 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-      window.openNextWorkRecordAfterSave_ = (startTime, polyIds) => {
-        window.closeAfterWorkSaveContinueModal_();
-        const t = window.normalizeTimeHm ? (window.normalizeTimeHm(startTime) || String(startTime || '').trim()) : String(startTime || '').trim();
-        window._pendingNextWorkStart = t;
-        currentEditRecordId = null;
-        currentRecordType = 'work';
-        const ids = Array.isArray(polyIds) ? polyIds.map(String).filter(Boolean) : [];
-        if (ids.length) {
-          selectedPolyIds = ids.slice();
-          activePolyId = ids[0];
-        }
-        if (typeof directOpenForm === 'function') {
-          directOpenForm(ids.length ? ids[0] : (activePolyId || null), 'work');
-        } else if (typeof renderRecordForm === 'function') {
-          renderRecordForm();
-          const panel = document.getElementById('rightPanel');
-          if (panel) panel.classList.add('open');
-        }
-        const applyTimes = () => {
-          if (!t) return;
-          if (typeof window.applyStartTimeToForm === 'function') {
-            window.applyStartTimeToForm(t, { clearAutofill: true, syncClockIn: false, source: 'latestEnd', force: true });
-          }
-          const startEl = document.getElementById('rec_start_time');
-          if (startEl) startEl.value = t;
-          const now = new Date();
-          const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-          const endEl = document.getElementById('rec_end_time');
-          if (endEl) {
-            const startM = window.timeHmToMinutes ? window.timeHmToMinutes(t) : null;
-            const nowM = window.timeHmToMinutes ? window.timeHmToMinutes(nowHm) : null;
-            endEl.value = (startM != null && nowM != null && nowM <= startM) ? '' : nowHm;
-          }
-          if (typeof calcTotalTime === 'function') calcTotalTime();
-          if (typeof window.refreshPlannedEndTimeUI_ === 'function') window.refreshPlannedEndTimeUI_();
+      window.getAfterSaveNextWorkStartHm_ = () => {
+        const saved = window._afterSaveWorkMeta || {};
+        return window.normalizeTimeHm
+          ? (window.normalizeTimeHm(saved.endTime) || String(saved.endTime || '').trim())
+          : String(saved.endTime || '').trim();
+      };
+
+      window.formatAfterSaveFieldNames_ = (polyIds) => {
+        const names = [];
+        (polyIds || []).forEach(id => {
+          const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+          if (!p || p.isMarker) return;
+          const area = window.getPolyAreaA_(id);
+          names.push(p.name + (area > 0 ? ` (${area}a)` : ''));
+        });
+        return names;
+      };
+
+      window.estimateAfterSavePlannedEnds_ = (workName, startHm, polyIds) => {
+        const name = String(workName || '').trim();
+        const start = window.normalizeTimeHm ? (window.normalizeTimeHm(startHm) || startHm) : startHm;
+        const ids = (polyIds || []).map(String).filter(Boolean);
+        const areaA = window.getPolyIdsAreaA_ ? window.getPolyIdsAreaA_(ids) : 0;
+        const add = (mins) => {
+          if (!start || !mins || typeof window.addMinutesToHm_ !== 'function') return '';
+          return window.addMinutesToHm_(start, mins) || '';
         };
-        setTimeout(applyTimes, 80);
-        setTimeout(applyTimes, 280);
+        const field = (typeof window.estimateWorkMinsByFieldRecords_ === 'function')
+          ? window.estimateWorkMinsByFieldRecords_(name, ids)
+          : { mins: 0, count: 0, perField: [] };
+        const per10a = (typeof window.estimateWorkMinsBy10a_ === 'function')
+          ? window.estimateWorkMinsBy10a_(name, areaA)
+          : { mins: 0, count: 0, minsPer10a: 0, areaA };
+        return {
+          start,
+          areaA,
+          field: Object.assign({}, field, { plannedEnd: add(field.mins) }),
+          per10a: Object.assign({}, per10a, { plannedEnd: add(per10a.mins) })
+        };
+      };
+
+      window.estimateAfterSavePlannedEnd_ = (workName, startHm) => {
+        const dual = window.estimateAfterSavePlannedEnds_(workName, startHm, window._afterSaveDraftPolyIds || window._afterSaveNextPolyIds || []);
+        return {
+          plannedEnd: dual.field.plannedEnd || dual.per10a.plannedEnd || '',
+          avgMins: dual.field.mins || dual.per10a.mins || 0,
+          source: dual.field.mins ? 'field' : (dual.per10a.mins ? '10a' : '')
+        };
+      };
+
+      window.renderAfterSaveEstimateHtml_ = (workName, polyIds, startHm) => {
+        const ids = polyIds || [];
+        const names = window.formatAfterSaveFieldNames_(ids);
+        const fieldLine = names.length
+          ? names.join('、')
+          : '未選択（マップまたは候補から選んでください）';
+        if (!String(workName || '').trim()) {
+          return `<div style="font-size:12px; color:#666; line-height:1.5;">予定圃場: ${fieldLine.replace(/</g, '&lt;')}<br>作業名を選ぶと、終了予定を2種類表示します。</div>`;
+        }
+        const dual = window.estimateAfterSavePlannedEnds_(workName, startHm, ids);
+        const fmt = (mins) => (mins && typeof window.formatDurationMinsLabel_ === 'function')
+          ? window.formatDurationMinsLabel_(mins) : (mins ? (mins + '分') : '');
+        const fieldEnd = dual.field.plannedEnd
+          ? `<div style="font-size:18px; font-weight:bold; color:#E65100;">⏱️ ${dual.field.plannedEnd}</div>
+             <div style="font-size:11px; color:#666;">この圃場の記録 ${dual.field.count}件 ／ ${fmt(dual.field.mins) || '—'}</div>`
+          : `<div style="font-size:12px; color:#888;">この圃場に同じ作業の時間記録がまだありません</div>`;
+        const per10aEnd = dual.per10a.plannedEnd
+          ? `<div style="font-size:18px; font-weight:bold; color:#1565C0;">⏱️ ${dual.per10a.plannedEnd}</div>
+             <div style="font-size:11px; color:#666;">10aあたり ${dual.per10a.minsPer10a}分 × ${dual.areaA}a ／ ${fmt(dual.per10a.mins)}（${dual.per10a.count}件）</div>`
+          : `<div style="font-size:12px; color:#888;">面積または10aあたりの記録が足りません</div>`;
+        return `
+          <div style="font-size:12px; color:#2E7D32; font-weight:bold; margin-bottom:6px;">📍 ${fieldLine.replace(/</g, '&lt;')}</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:8px;">
+              <div style="font-size:10px; color:#F57C00; font-weight:bold; margin-bottom:4px;">① 圃場の記録から</div>
+              ${fieldEnd}
+            </div>
+            <div style="background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:8px;">
+              <div style="font-size:10px; color:#1565C0; font-weight:bold; margin-bottom:4px;">② 10aあたりから</div>
+              ${per10aEnd}
+            </div>
+          </div>
+          <div style="font-size:11px; color:#888; margin-top:6px;">開始 ${startHm || '--:--'}</div>`;
+      };
+
+      window.getAfterSaveDraftPolyIds_ = () => {
+        if (Array.isArray(window._afterSaveDraftPolyIds)) return window._afterSaveDraftPolyIds.slice();
+        return Array.isArray(window._afterSaveNextPolyIds) ? window._afterSaveNextPolyIds.slice() : [];
+      };
+
+      window.toggleAfterSaveDraftField_ = (polyId) => {
+        const id = String(polyId || '');
+        if (!id) return;
+        const ids = window.getAfterSaveDraftPolyIds_().map(String);
+        const i = ids.indexOf(id);
+        if (i >= 0) ids.splice(i, 1);
+        else ids.push(id);
+        window._afterSaveDraftPolyIds = ids;
+        window.refreshAfterSaveNextWorkPreview_();
+      };
+
+      window.openAfterSaveFieldMapSelect_ = () => {
+        window._afterSavePickingField = true;
+        window._afterSaveDraftPolyIds = window.getAfterSaveDraftPolyIds_();
+        const modalEl = document.getElementById('modal');
+        if (modalEl) modalEl.style.display = 'none';
+        try {
+          selectedPolyIds = window._afterSaveDraftPolyIds.slice();
+        } catch (e) {}
+        if (typeof window.openMapSelect === 'function') window.openMapSelect();
+      };
+
+      window.selectAfterSaveNextWork_ = (workName, crop) => {
+        window._afterSaveDraftWorkName = String(workName || '').trim();
+        window._afterSaveDraftCrop = String(crop || '').trim();
+        window.refreshAfterSaveNextWorkPreview_();
+        document.querySelectorAll('.after-save-work-chip').forEach(btn => {
+          const on = btn.getAttribute('data-work') === window._afterSaveDraftWorkName
+            && btn.getAttribute('data-crop') === window._afterSaveDraftCrop;
+          btn.style.background = on ? '#FF9800' : '#fff';
+          btn.style.color = on ? '#fff' : '#1b5e20';
+          btn.style.borderColor = on ? '#F57C00' : '#81c784';
+        });
+      };
+
+      window.refreshAfterSaveNextWorkPreview_ = () => {
+        const box = document.getElementById('after_save_est_box');
+        if (!box) return;
+        const startHm = window.getAfterSaveNextWorkStartHm_() || '--:--';
+        box.innerHTML = window.renderAfterSaveEstimateHtml_(
+          window._afterSaveDraftWorkName || '',
+          window.getAfterSaveDraftPolyIds_(),
+          startHm
+        );
+        document.querySelectorAll('.after-save-field-chip').forEach(btn => {
+          const on = window.getAfterSaveDraftPolyIds_().map(String).includes(String(btn.getAttribute('data-pid') || ''));
+          btn.style.background = on ? '#2E7D32' : '#fff';
+          btn.style.color = on ? '#fff' : '#2E7D32';
+        });
+      };
+
+      window.saveAfterSaveNextWorkNameOnly_ = (workName, crop) => {
+        const name = String(workName || window._afterSaveDraftWorkName || '').trim();
+        if (!name) return null;
+        const saved = window._afterSaveWorkMeta || {};
+        const startHm = window.getAfterSaveNextWorkStartHm_();
+        const polyIds = window.getAfterSaveDraftPolyIds_();
+        window._afterSaveNextPolyIds = polyIds.slice();
+        const dual = window.estimateAfterSavePlannedEnds_(name, startHm, polyIds);
+        const payload = {
+          workName: name,
+          crop: String(crop || window._afterSaveDraftCrop || saved.crop || '').trim(),
+          workDate: saved.workDate || '',
+          startTime: startHm,
+          plannedEnd: dual.field.plannedEnd || dual.per10a.plannedEnd || '',
+          plannedEndField: dual.field.plannedEnd || '',
+          plannedEnd10a: dual.per10a.plannedEnd || '',
+          fieldMins: dual.field.mins || 0,
+          per10aMins: dual.per10a.mins || 0,
+          minsPer10a: dual.per10a.minsPer10a || 0,
+          areaA: dual.areaA || 0,
+          fieldCount: dual.field.count || 0,
+          per10aCount: dual.per10a.count || 0,
+          polyIds: polyIds.slice(),
+          polyNames: window.formatAfterSaveFieldNames_(polyIds),
+          at: Date.now(),
+          nameOnly: true
+        };
+        window._pendingNextWorkNameOnly = payload;
+        try {
+          localStorage.setItem('passionMapPendingNextWorkName', JSON.stringify(payload));
+        } catch (e) {}
+        return payload;
+      };
+
+      window.renderAfterSaveNextWorkConfirm_ = (payload) => {
+        const modalEl = document.getElementById('modal');
+        if (!modalEl || !payload) return;
+        const name = String(payload.workName || '').replace(/</g, '&lt;');
+        const crop = String(payload.crop || '').replace(/</g, '&lt;');
+        const fields = (payload.polyNames && payload.polyNames.length)
+          ? payload.polyNames.join('、').replace(/</g, '&lt;')
+          : '圃場未指定';
+        const fmt = (mins) => (mins && typeof window.formatDurationMinsLabel_ === 'function')
+          ? window.formatDurationMinsLabel_(mins) : '';
+        const fieldHtml = payload.plannedEndField
+          ? `<div style="font-size:20px; font-weight:bold; color:#E65100;">⏱️ ${payload.plannedEndField}</div>
+             <div style="font-size:11px; color:#666;">${payload.fieldCount || 0}件 ／ ${fmt(payload.fieldMins) || '—'}</div>`
+          : `<div style="font-size:12px; color:#888;">この圃場の記録から算出できません</div>`;
+        const a10Html = payload.plannedEnd10a
+          ? `<div style="font-size:20px; font-weight:bold; color:#1565C0;">⏱️ ${payload.plannedEnd10a}</div>
+             <div style="font-size:11px; color:#666;">10aあたり ${payload.minsPer10a || 0}分 × ${payload.areaA || 0}a ／ ${fmt(payload.per10aMins) || '—'}</div>`
+          : `<div style="font-size:12px; color:#888;">10aあたりから算出できません</div>`;
+        modalEl.innerHTML = `
+          <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+            <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">✅ 次の作業を登録しました</div>
+            <div style="font-size:12px; color:#888; margin-bottom:10px;">作業名と予定圃場の登録です。作業記録としては本登録していません。</div>
+            <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:12px; margin-bottom:10px;">
+              <div style="font-size:12px; color:#F57C00; font-weight:bold; margin-bottom:4px;">次の作業</div>
+              <div style="font-size:18px; font-weight:bold; color:#333;">${crop ? crop + ' ／ ' : ''}${name}</div>
+              <div style="font-size:12px; color:#2E7D32; margin-top:4px;">📍 ${fields}</div>
+              <div style="font-size:11px; color:#888; margin-top:4px;">開始 ${payload.startTime || '--:--'}</div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px;">
+              <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:8px;">
+                <div style="font-size:10px; color:#F57C00; font-weight:bold; margin-bottom:4px;">① 圃場の記録から</div>
+                ${fieldHtml}
+              </div>
+              <div style="background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:8px;">
+                <div style="font-size:10px; color:#1565C0; font-weight:bold; margin-bottom:4px;">② 10aあたりから</div>
+                ${a10Html}
+              </div>
+            </div>
+            <button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を登録</button>
+            <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+          </div>`;
+        modalEl.style.display = 'flex';
+        modalEl.onclick = (evt) => {
+          if (evt.target === modalEl) closeAfterWorkSaveContinueModal_();
+        };
+      };
+
+      window.registerAfterSaveNextWorkName_ = (workName, crop) => {
+        if (workName) window.selectAfterSaveNextWork_(workName, crop);
+        const payload = window.saveAfterSaveNextWorkNameOnly_(
+          workName || window._afterSaveDraftWorkName,
+          crop || window._afterSaveDraftCrop
+        );
+        if (!payload) {
+          if (typeof customAlert === 'function') customAlert('作業名を選んでください。');
+          return;
+        }
+        window.renderAfterSaveNextWorkConfirm_(payload);
+      };
+
+      window.filterAfterSaveNextWorkChips_ = () => {
+        const q = String(document.getElementById('after_save_work_q')?.value || '').trim().toLowerCase();
+        document.querySelectorAll('.after-save-work-chip').forEach(btn => {
+          const hay = String(btn.getAttribute('data-search') || '').toLowerCase();
+          btn.style.display = (!q || hay.indexOf(q) >= 0) ? '' : 'none';
+        });
+      };
+
+      window.collectAfterSaveFieldChipIds_ = () => {
+        const ids = [];
+        const seen = new Set();
+        const add = (id) => {
+          const s = String(id || '');
+          if (!s || seen.has(s)) return;
+          const p = loadedPolygons[s];
+          if (!p || p.isMarker) return;
+          seen.add(s);
+          ids.push(s);
+        };
+        window.getAfterSaveDraftPolyIds_().forEach(add);
+        (window._afterSaveNextPolyIds || []).forEach(add);
+        try {
+          if (typeof window.collectMyWorkRecords === 'function') {
+            window.collectMyWorkRecords(null).forEach(r => add(r && r.polyId));
+          }
+        } catch (e) {}
+        return ids.slice(0, 16);
+      };
+
+      window.showAfterSaveNextWorkPicker_ = () => {
+        const modalEl = document.getElementById('modal');
+        if (!modalEl) return;
+        const saved = window._afterSaveWorkMeta || {};
+        if (!Array.isArray(window._afterSaveDraftPolyIds)) {
+          window._afterSaveDraftPolyIds = Array.isArray(window._afterSaveNextPolyIds) ? window._afterSaveNextPolyIds.slice() : [];
+        }
+        const startHm = window.getAfterSaveNextWorkStartHm_() || '--:--';
+        const pred = (typeof window.getNextWorkPredictions_ === 'function')
+          ? window.getNextWorkPredictions_()
+          : { candidates: [] };
+        const candidates = Array.isArray(pred.candidates) ? pred.candidates : [];
+        const seen = new Set();
+        const chips = [];
+        const selectedName = String(window._afterSaveDraftWorkName || '');
+        const selectedCrop = String(window._afterSaveDraftCrop || '');
+        const pushChip = (workName, crop, extraLabel) => {
+          const name = String(workName || '').trim();
+          if (!name) return;
+          const key = String(crop || '') + '\t' + name;
+          if (seen.has(key)) return;
+          seen.add(key);
+          const safeName = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const safeCrop = String(crop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const label = ((crop ? crop + ' ' : '') + name).replace(/</g, '&lt;');
+          const search = ((crop || '') + ' ' + name + ' ' + (extraLabel || '')).replace(/"/g, '&quot;');
+          const on = selectedName === name && selectedCrop === String(crop || '');
+          chips.push(`<button type="button" class="after-save-work-chip" data-work="${String(name).replace(/"/g, '&quot;')}" data-crop="${String(crop || '').replace(/"/g, '&quot;')}" data-search="${search}" onclick="selectAfterSaveNextWork_('${safeName}', '${safeCrop}')" style="background:${on ? '#FF9800' : '#fff'}; color:${on ? '#fff' : '#1b5e20'}; border:1.5px solid ${on ? '#F57C00' : '#81c784'}; border-radius:18px; padding:7px 12px; font-size:13px; font-weight:bold; cursor:pointer;">🚜 ${label}${extraLabel ? ` <span style="font-size:10px; opacity:.85;">${String(extraLabel).replace(/</g, '&lt;')}</span>` : ''}</button>`);
+        };
+        candidates.forEach((c, i) => pushChip(c.workName, c.crop || saved.crop || '', (c.rate != null ? (c.rate + '%') : ('予想' + (i + 1)))));
+        const cropNow = String(saved.crop || '').trim();
+        (pdlWorkMaster || []).forEach(w => {
+          const wName = String(w && w.name || '').trim();
+          if (!wName || wName.indexOf('休憩') >= 0) return;
+          let cropMatch = true;
+          if (cropNow && typeof window.getWorkMasterCropKeys === 'function') {
+            const keys = window.getWorkMasterCropKeys(w);
+            const nCrop = window.normalizeWorkCropKey ? window.normalizeWorkCropKey(cropNow) : cropNow;
+            cropMatch = keys.includes('__common__') || keys.includes(nCrop) || keys.includes(cropNow);
+          }
+          if (cropMatch) pushChip(wName, cropNow, '');
+        });
+        (pdlWorkMaster || []).forEach(w => {
+          const wName = String(w && w.name || '').trim();
+          if (!wName || wName.indexOf('休憩') >= 0) return;
+          pushChip(wName, '', '');
+        });
+        const chipHtml = chips.length
+          ? chips.join('')
+          : '<div style="font-size:12px; color:#888; padding:8px 0;">作業マスタに作業名がありません</div>';
+        const selectedSet = new Set(window.getAfterSaveDraftPolyIds_().map(String));
+        const fieldChips = window.collectAfterSaveFieldChipIds_().map(id => {
+          const p = loadedPolygons[id];
+          const area = window.getPolyAreaA_(id);
+          const label = ((p && p.name) || id).replace(/</g, '&lt;') + (area > 0 ? ` ${area}a` : '');
+          const on = selectedSet.has(String(id));
+          const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" class="after-save-field-chip" data-pid="${String(id).replace(/"/g, '&quot;')}" onclick="toggleAfterSaveDraftField_('${safeId}')" style="background:${on ? '#2E7D32' : '#fff'}; color:${on ? '#fff' : '#2E7D32'}; border:1.5px solid #66BB6A; border-radius:16px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📍 ${label}</button>`;
+        }).join('');
+        const estHtml = window.renderAfterSaveEstimateHtml_(window._afterSaveDraftWorkName || '', window.getAfterSaveDraftPolyIds_(), startHm);
+        modalEl.innerHTML = `
+          <div style="background:#fff; width:100%; max-width:400px; max-height:88vh; overflow:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+            <div style="font-size:16px; font-weight:bold; color:#FF9800; margin-bottom:6px;">🚜 次の作業を登録</div>
+            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">作業名と予定圃場を登録します（本登録しません）。開始は前作業の終了 <b>${startHm}</b> です。</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <div style="font-size:13px; font-weight:bold; color:#2E7D32;">📍 作業予定圃場</div>
+              <button type="button" onclick="openAfterSaveFieldMapSelect_()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:16px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗺️ マップから選ぶ</button>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${fieldChips || '<span style="font-size:12px; color:#888;">候補がありません。マップから選んでください。</span>'}</div>
+            <div id="after_save_est_box" style="margin-bottom:12px;">${estHtml}</div>
+            <input type="search" id="after_save_work_q" placeholder="作業名で検索..." oninput="filterAfterSaveNextWorkChips_()" style="width:100%; box-sizing:border-box; padding:9px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; margin-bottom:10px;">
+            <div style="display:flex; flex-wrap:wrap; gap:8px; max-height:28vh; overflow-y:auto; margin-bottom:12px;">${chipHtml}</div>
+            <button type="button" onclick="registerAfterSaveNextWorkName_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">この内容で登録</button>
+            <button type="button" onclick="showAfterWorkSaveContinueModal_({ data: window._afterSaveWorkMeta || {}, polyIds: window._afterSaveNextPolyIds || [] })" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">戻る</button>
+          </div>`;
+        modalEl.style.display = 'flex';
+        modalEl.onclick = (evt) => {
+          if (evt.target === modalEl) closeAfterWorkSaveContinueModal_();
+        };
+        setTimeout(() => {
+          const q = document.getElementById('after_save_work_q');
+          if (q) q.focus();
+        }, 40);
+      };
+
+      window.openNextWorkRecordAfterSave_ = (startTime, polyIds) => {
+        window.showAfterSaveNextWorkPicker_();
       };
 
       window.startClockOutFromAfterSave_ = () => {
         window.closeAfterWorkSaveContinueModal_();
         if (typeof window.toggleTracking === 'function') window.toggleTracking();
-      };
-
-      window.adjustAfterSaveNextStart_ = (deltaMins) => {
-        const el = document.getElementById('after_save_next_start');
-        if (!el) return;
-        const cur = window.normalizeTimeHm ? (window.normalizeTimeHm(el.value) || el.value) : el.value;
-        const mins = window.timeHmToMinutes ? window.timeHmToMinutes(cur) : null;
-        if (mins == null) return;
-        let next = mins + (parseInt(deltaMins, 10) || 0);
-        if (next < 0) next = 0;
-        if (next > 23 * 60 + 59) next = 23 * 60 + 59;
-        el.value = `${String(Math.floor(next / 60)).padStart(2, '0')}:${String(next % 60).padStart(2, '0')}`;
-        if (typeof window.refreshAfterSavePlannedEndHint_ === 'function') window.refreshAfterSavePlannedEndHint_();
-      };
-
-      window.refreshAfterSavePlannedEndHint_ = () => {
-        const hint = document.getElementById('after_save_planned_end_hint');
-        if (!hint) return;
-        const startEl = document.getElementById('after_save_next_start');
-        const startHm = window.normalizeTimeHm
-          ? (window.normalizeTimeHm(startEl?.value) || '')
-          : String(startEl?.value || '');
-        const saved = window._afterSaveWorkMeta || {};
-        const workDate = saved.workDate || '';
-        const upcoming = typeof window.findUpcomingDayPlanBlock_ === 'function'
-          ? window.findUpcomingDayPlanBlock_(startHm, workDate)
-          : null;
-        const parts = [];
-        if (upcoming && (upcoming.endTime || upcoming.startTime)) {
-          const uEnd = window.normalizeTimeHm ? (window.normalizeTimeHm(upcoming.endTime) || upcoming.endTime) : upcoming.endTime;
-          const uStart = window.normalizeTimeHm ? (window.normalizeTimeHm(upcoming.startTime) || upcoming.startTime) : upcoming.startTime;
-          parts.push(`📅 次の予定「${String(upcoming.workName || '').replace(/</g, '&lt;')}」終了予定 <b>${uEnd || '--:--'}</b>${uStart ? `（${uStart}〜）` : ''}`);
-        }
-        const nextName = String(upcoming && upcoming.workName || saved.nextWorkHint || '').trim();
-        const estName = nextName || String(saved.workName || '').trim();
-        if (estName && estName.indexOf('休憩') < 0 && typeof window.getLocalWorkDurationEstimate_ === 'function') {
-          const est = window.getCachedGasWorkDurationEstimate_(estName) || window.getLocalWorkDurationEstimate_(estName);
-          if (est && est.avgMins && startHm) {
-            const avgEnd = window.addMinutesToHm_(startHm, est.avgMins);
-            if (avgEnd) {
-              const label = nextName ? String(estName).replace(/</g, '&lt;') : ('同じ「' + String(estName).replace(/</g, '&lt;') + '」');
-              parts.push(`⏱️ ${label} 平均${window.formatDurationMinsLabel_(est.avgMins)}なら 終了予定 <b>${avgEnd}</b>`);
-            }
-          }
-        }
-        if (!parts.length) {
-          hint.style.display = 'none';
-          hint.innerHTML = '';
-          return;
-        }
-        hint.style.display = 'block';
-        hint.innerHTML = parts.join('<br>');
       };
 
       window.showAfterWorkSaveContinueModal_ = (opts) => {
@@ -16361,45 +16948,30 @@ function createSignboardMarker(name, pos, icon, id) {
         const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const startDefault = endTime || nowHm;
         const workName = String(data.workName || '作業');
-        const near = typeof window.isNearClockOutTime_ === 'function' && window.isNearClockOutTime_();
-        const clockedIn = typeof window.isLocallyClockedInNow_ === 'function' && window.isLocallyClockedInNow_();
-        const showClockOut = near || (clockedIn && (() => {
-          const m = window.timeHmToMinutes ? window.timeHmToMinutes(endTime || nowHm) : null;
-          return m != null && m >= (16 * 60);
-        })());
         window._afterSaveNextPolyIds = Array.isArray(polyIds) ? polyIds.slice() : [];
         window._afterSaveWorkMeta = {
           workDate: data.workDate || '',
           workName: workName,
+          crop: data.crop || '',
+          category: data.category || '',
           endTime: startDefault
         };
         if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
-        const usual = window.getUsualClockOutTime_() || '17:00';
         const modalEl = document.getElementById('modal');
         if (!modalEl) return;
         modalEl.innerHTML = `
           <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-            <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">✅ 記録を保存しました</div>
-            <div style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.4;">「${String(workName).replace(/</g, '&lt;')}」の終了は <b>${startDefault || '--:--'}</b> です。続けて次の作業開始を入れられます。</div>
-            <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">次の作業の開始時間</label>
-            <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
-              <input type="text" id="after_save_next_start" class="form-input app-time-input" readonly inputmode="none" value="${startDefault}" style="flex:1; margin:0; padding:10px; font-size:18px; font-weight:bold; text-align:center; background:#fff; cursor:pointer;" onclick="if(window.openAppTimePicker) openAppTimePicker('after_save_next_start', '次の作業開始')">
-            </div>
-            <div style="display:flex; gap:6px; margin-bottom:8px;">
-              <button type="button" onclick="adjustAfterSaveNextStart_(-15)" style="flex:1; background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer;">-15分</button>
-              <button type="button" onclick="adjustAfterSaveNextStart_(15)" style="flex:1; background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer;">+15分</button>
-            </div>
-            <div id="after_save_planned_end_hint" style="display:none; background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:8px 10px; margin-bottom:12px; font-size:12px; color:#0D47A1; line-height:1.45;"></div>
-            <button type="button" onclick="openNextWorkRecordAfterSave_(document.getElementById('after_save_next_start').value, window._afterSaveNextPolyIds)" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🚜 次の作業を記録する</button>
-            ${showClockOut ? `<button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を記録する${near ? `（${usual}ごろ）` : ''}</button>` : ''}
-            <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+            <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">✅ 記録を保存しました</div>
+            <div style="font-size:13px; color:#555; margin-bottom:16px; line-height:1.45;">「${String(workName).replace(/</g, '&lt;')}」を保存しました。次の操作を選んでください。</div>
+            <button type="button" onclick="showAfterSaveNextWorkPicker_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🚜 次の作業を登録</button>
+            <button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を登録</button>
+            <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
           </div>`;
         modalEl.style.display = 'flex';
         modalEl.onclick = (evt) => {
           if (evt.target === modalEl) closeAfterWorkSaveContinueModal_();
         };
         setTimeout(() => {
-          try { window.refreshAfterSavePlannedEndHint_(); } catch (e) {}
           try { window.refreshClockOutNudgeUI_(); } catch (e) {}
         }, 50);
       };
