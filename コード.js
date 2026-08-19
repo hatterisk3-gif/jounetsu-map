@@ -110,6 +110,7 @@ function doPost(e) {
     else if (action === "previewCultivationPlanTags") result = previewCultivationPlanTags(params);
     else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
     else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
+    else if (action === "getFarmBoardData") result = getFarmBoardData();
     else if (action === "deleteSavedCultivationPlans") result = deleteSavedCultivationPlans(params.year, params.crop, params.planType, params.planName);
     else if (action === "getCultivationHarvestSummary") result = getCultivationHarvestSummary(params.year);
     else if (action === "getCultivationRidgeParamsForField") result = getCultivationRidgeParamsForField(params.fieldId || params.id);
@@ -5394,6 +5395,7 @@ function getScheduleData() {
   if (schedSheet) {
     const sData = schedSheet.getDataRange().getValues();
     let scheduleUpdates = [];
+    const completedProcurePlaceIds = {};
     for (let i = 1; i < sData.length; i++) {
       const workName = sData[i][0];
       let dept = sData[i][1];
@@ -5414,6 +5416,9 @@ function getScheduleData() {
           dept = workDeptMap[workName] || '未設定';
           if ((!dept || dept === '未設定') && String(workName).indexOf('播種') === 0 && workDeptMap.__SOWING__) {
             dept = workDeptMap.__SOWING__;
+          }
+          if ((!dept || dept === '未設定') && String(workName).trim() === '調達') {
+            dept = workDeptMap['調達'] || workDeptMap.__SOWING__ || dept;
           }
         }
         // 判定した部署をシート(B列=2)に書き込むよう予約
@@ -5438,12 +5443,20 @@ function getScheduleData() {
         const scheduleKey = buildWorkScheduleKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw);
         const placeIdRaw = String(sData[i][10] || '');
         const isCultivation = placeIdRaw.indexOf('cp:') === 0;
+        const isProcure = placeIdRaw.indexOf('cp:procure:') === 0;
+        if (isProcure && (compDate || (!compDate && completedWorks[key]))) {
+          completedProcurePlaceIds[placeIdRaw] = true;
+        }
         let varietyName = '';
         let periodLabel = '';
         let displayCrop = cropName;
         let displayTag = person;
         let displayTrays = hours;
-        if (isCultivation) {
+        if (isProcure) {
+          varietyName = fieldName;
+          periodLabel = '播種の7日前まで';
+          displayTrays = hours;
+        } else if (isCultivation) {
           if (!globalCpPlanLookup_) globalCpPlanLookup_ = buildCultivationPlanLookupById_();
           const planId = placeIdRaw.split('|')[0].replace(/^cp:/, '');
           const plan = globalCpPlanLookup_[planId];
@@ -5485,6 +5498,9 @@ function getScheduleData() {
     if (scheduleUpdates.length > 0) {
       scheduleUpdates.forEach(upd => schedSheet.getRange(upd.row, upd.col).setValue(upd.val));
     }
+    try {
+      ensureSowingAfterCompletedProcure_(sData, completedProcurePlaceIds);
+    } catch (eProcureSow) {}
   }
 
   // 途中作業を予定一覧へ追加
@@ -8451,6 +8467,247 @@ function upsertCultivationSowingSchedule_(year, plans) {
   return result;
 }
 
+function parseCpGrainMetaGas_(raw) {
+  const empty = { type: '', count: 0 };
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const type = String(raw.type || '').trim();
+    const count = Number(raw.count);
+    return { type: type, count: (isFinite(count) && count > 0) ? Math.round(count) : 0 };
+  }
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return empty;
+  if (s.charAt(0) === '{') {
+    try {
+      return parseCpGrainMetaGas_(JSON.parse(s));
+    } catch (e) { return empty; }
+  }
+  const typed = s.match(/^(コート|生種)\s*[:：]\s*([\d,]+)/);
+  if (typed) {
+    const count = Math.round(Number(String(typed[2]).replace(/,/g, '')));
+    return { type: typed[1], count: (isFinite(count) && count > 0) ? count : 0 };
+  }
+  if (s === 'コート' || s === '生種') return { type: s, count: 0 };
+  if (/^[\d,]+$/.test(s)) {
+    const count = Math.round(Number(s.replace(/,/g, '')));
+    return { type: '', count: (isFinite(count) && count > 0) ? count : 0 };
+  }
+  return empty;
+}
+
+function formatCpGrainSpecLabelGas_(meta) {
+  const m = meta || { type: '', count: 0 };
+  if (m.type && m.count > 0) return m.type + ' ' + Number(m.count).toLocaleString('ja-JP') + '粒';
+  if (m.count > 0) return Number(m.count).toLocaleString('ja-JP') + '粒';
+  if (m.type) return m.type;
+  return '';
+}
+
+function cpPlanSeedNeedCount_(plan) {
+  const trays = Number(plan && plan.trays) || 0;
+  const holes = Number(plan && plan.holes) || 0;
+  if (!(trays > 0)) return 0;
+  return holes === 1 ? trays : (holes > 0 ? trays * holes : trays);
+}
+
+function cpLookupGrainCountFromCroptypeDb_(crop, variety) {
+  const sheet = TENANT_SS.getSheetByName('作型DB');
+  if (!sheet || sheet.getLastRow() < 2) return '';
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cropCol = headers.indexOf('作物');
+  const varCol = headers.indexOf('品種');
+  const grainCol = headers.indexOf('粒数');
+  if (cropCol < 0 || varCol < 0 || grainCol < 0) return '';
+  const cropName = String(crop || '').trim();
+  const varietyName = String(variety || '').trim();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][cropCol] || '').trim() !== cropName) continue;
+    if (String(data[i][varCol] || '').trim() !== varietyName) continue;
+    const g = String(data[i][grainCol] || '').trim();
+    if (g) return g;
+  }
+  return '';
+}
+
+function cpResolvePlanGrainRaw_(plan, grainCache) {
+  const cache = grainCache || {};
+  let raw = plan && plan.grainCount ? String(plan.grainCount) : '';
+  if (raw) return raw;
+  const crop = String((plan && plan.crop) || '').trim();
+  const variety = String((plan && plan.variety) || '').trim();
+  const key = crop + '\t' + variety;
+  if (cache[key] !== undefined) return cache[key];
+  cache[key] = cpLookupGrainCountFromCroptypeDb_(crop, variety);
+  return cache[key];
+}
+
+/** 播種の前に置く種の調達作業。実行バッチごとに分け、規格粒数で切り上げた袋数を出す。 */
+function parseCpProcurePlanIds_(placeId) {
+  const s = String(placeId || '');
+  if (s.indexOf('cp:procure:') !== 0) return [];
+  const pipe = s.indexOf('|');
+  const idPart = pipe >= 0 ? s.slice(pipe + 1) : '';
+  if (idPart) return idPart.split(',').filter(Boolean);
+  const marker = pipe >= 0 ? s.slice(0, pipe) : s;
+  const dbl = marker.lastIndexOf('::');
+  if (dbl >= 0) return marker.slice(dbl + 2).split(',').filter(Boolean);
+  return [];
+}
+
+function upsertCultivationProcureSchedule_(year, plans) {
+  const result = { updated: 0, created: 0, deleted: 0 };
+  if (!plans || plans.length === 0) return result;
+
+  const ss = TENANT_SS;
+  let schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) {
+    schedSheet = ss.insertSheet('作業予定');
+    schedSheet.appendRow(['作業名', '担当部署', '作物名', '圃場名', '予定日', '期限日', '時間', '適合者', '完了日', '写真URL', '場所ID']);
+  }
+
+  const grainCache = {};
+  const groups = {};
+  const targetPlanIds = {};
+  plans.forEach(function(plan) {
+    if (!plan || !plan.id) return;
+    targetPlanIds[String(plan.id)] = true;
+    const sowing = (plan.tasks && plan.tasks.sowing) ? plan.tasks.sowing : [];
+    if (!sowing.length) return;
+    const seeds = cpPlanSeedNeedCount_(plan);
+    if (!(seeds > 0)) return;
+    const grainRaw = cpResolvePlanGrainRaw_(plan, grainCache);
+    const meta = parseCpGrainMetaGas_(grainRaw);
+    const specLabel = formatCpGrainSpecLabelGas_(meta) || '規格未登録';
+    const crop = String(plan.crop || '').trim();
+    const variety = String(plan.variety || '').trim() || '(品種未設定)';
+    const maker = String(plan.maker || '').trim();
+    const groupKey = [crop, variety, maker, meta.type || '', String(meta.count || 0)].join('\t');
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        crop: crop,
+        variety: variety,
+        maker: maker,
+        specLabel: specLabel,
+        specCount: meta.count || 0,
+        seeds: 0,
+        planIds: [],
+        sowingStart: null,
+        tags: []
+      };
+    }
+    const g = groups[groupKey];
+    g.seeds += seeds;
+    if (g.planIds.indexOf(String(plan.id)) < 0) g.planIds.push(String(plan.id));
+    if (plan.tag && g.tags.indexOf(plan.tag) < 0) g.tags.push(plan.tag);
+    const parts = sowing.map(function(c) { return cpCellToDateParts(year, c); });
+    parts.sort(function(a, b) { return a.start - b.start; });
+    if (parts.length && (!g.sowingStart || parts[0].start < g.sowingStart)) {
+      g.sowingStart = parts[0].start;
+    }
+  });
+
+  const groupKeys = Object.keys(groups);
+  groupKeys.forEach(function(k) {
+    const g = groups[k];
+    g.packs = g.specCount > 0 ? Math.ceil(g.seeds / g.specCount) : 0;
+    g.planIds.sort();
+    g.marker = 'cp:procure:' + encodeURIComponent(k) + '::' + g.planIds.join(',');
+  });
+
+  const preserved = {};
+  if (schedSheet.getLastRow() > 1) {
+    const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow(), 11).getValues();
+    for (let i = sData.length - 1; i >= 0; i--) {
+      const placeId = String(sData[i][10] || '');
+      if (placeId.indexOf('cp:procure:') !== 0) continue;
+      if (sData[i][8]) continue; // 完了済みの調達は残す（後からの別実行と混ぜない）
+      const marker = placeId.split('|')[0];
+      const ids = parseCpProcurePlanIds_(placeId);
+      let hit = false;
+      for (let j = 0; j < ids.length; j++) {
+        if (targetPlanIds[ids[j]]) { hit = true; break; }
+      }
+      if (!hit) continue;
+      if (!preserved[marker]) {
+        preserved[marker] = { completed: sData[i][8] || '', photo: sData[i][9] || '' };
+      }
+      schedSheet.deleteRow(i + 2);
+      result.deleted++;
+    }
+  }
+
+  groupKeys.forEach(function(k) {
+    const g = groups[k];
+    if (!g.sowingStart) return;
+    const deadline = g.sowingStart;
+    const startDate = new Date(deadline.getTime());
+    startDate.setDate(startDate.getDate() - 7);
+    const qtyLabel = g.specCount > 0
+      ? (g.packs + '袋（' + (g.maker ? g.maker + ' ' : '') + g.specLabel + '）')
+      : (Number(g.seeds).toLocaleString('ja-JP') + '粒（規格未登録）');
+    const placeId = g.marker + '|' + g.planIds.join(',');
+    const keep = preserved[g.marker] || { completed: '', photo: '' };
+    schedSheet.appendRow([
+      '調達',
+      '',
+      g.crop,
+      g.variety,
+      startDate,
+      deadline,
+      qtyLabel,
+      g.tags.join(' ') || '',
+      keep.completed,
+      keep.photo,
+      placeId
+    ]);
+    if (preserved[g.marker]) result.updated++;
+    else result.created++;
+  });
+
+  return result;
+}
+
+function collectExistingCpSowingPlanIds_(sData) {
+  const ids = {};
+  (sData || []).forEach(function(row) {
+    if (String(row[0] || '').trim() !== '播種') return;
+    const placeId = String(row[10] || '');
+    if (placeId.indexOf('cp:procure:') === 0) return;
+    if (placeId.indexOf('cp:') !== 0) return;
+    const id = placeId.split('|')[0].replace(/^cp:/, '');
+    if (id) ids[id] = true;
+  });
+  return ids;
+}
+
+/** 調達が完了した計画だけ、播種を作業予定へ出す */
+function ensureSowingAfterCompletedProcure_(sData, extraCompletedPlaceIds) {
+  extraCompletedPlaceIds = extraCompletedPlaceIds || {};
+  const existingSowing = collectExistingCpSowingPlanIds_(sData);
+  const lookup = buildCultivationPlanLookupById_();
+  const byYear = {};
+  (sData || []).forEach(function(row) {
+    if (String(row[0] || '').trim() !== '調達') return;
+    const placeId = String(row[10] || '');
+    if (placeId.indexOf('cp:procure:') !== 0) return;
+    const done = !!(row[8] || extraCompletedPlaceIds[placeId]);
+    if (!done) return;
+    parseCpProcurePlanIds_(placeId).forEach(function(id) {
+      if (existingSowing[id]) return;
+      const plan = lookup[id];
+      if (!plan) return;
+      const year = String(plan.year || '');
+      if (!year) return;
+      if (!byYear[year]) byYear[year] = [];
+      byYear[year].push(plan);
+      existingSowing[id] = true;
+    });
+  });
+  Object.keys(byYear).forEach(function(year) {
+    upsertCultivationSowingSchedule_(year, byYear[year]);
+  });
+}
+
 /** 対象計画の行だけ差し替える（シート全体の作り直しを避ける） */
 function replaceCultivationPlanSheetRows_(sheet, matchingIndices, newRows) {
   const idxs = (matchingIndices || []).slice().sort(function(a, b) { return a - b; });
@@ -8593,10 +8850,21 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
 
     let scheduleSync = { updated: 0, created: 0, deleted: 0 };
     if (hasExecuted && !opts.skipScheduleSync) {
-      // 定植順のタグを再割当し、実行済み分の播種予定を日付ごと更新
       assignCultivationPlanTags_(plans, { year: year });
       const executedPlans = plans.filter(p => p.status === 'executed');
-      scheduleSync = upsertCultivationSowingSchedule_(year, executedPlans);
+      let sowingIds = {};
+      try {
+        const schedSheet = ss.getSheetByName('作業予定');
+        if (schedSheet && schedSheet.getLastRow() > 1) {
+          sowingIds = collectExistingCpSowingPlanIds_(
+            schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues()
+          );
+        }
+      } catch (eSowIds) {}
+      const toSow = executedPlans.filter(p => sowingIds[String(p.id)]);
+      const toProcure = executedPlans.filter(p => !sowingIds[String(p.id)]);
+      if (toSow.length) scheduleSync = upsertCultivationSowingSchedule_(year, toSow);
+      if (toProcure.length) upsertCultivationProcureSchedule_(year, toProcure);
     }
 
     const newRows = plans.map(function(plan) {
@@ -8766,7 +9034,8 @@ function getSavedCultivationPlanList() {
          status: status,
          planType: planType,
          planName: planName,
-         location: location
+         location: location,
+         tag: planData && planData.tag ? String(planData.tag || '').trim() : ''
        });
        map[key].seedTotal += seedCount;
        if (status !== 'executed') map[key].seedPlannedTotal += seedCount;
@@ -8782,6 +9051,191 @@ function getSavedCultivationPlanList() {
   } catch(e) {
     throw new Error("栽培計画リスト取得エラー: " + e.message);
   }
+}
+
+function farmBoardHasCompleteDate_(v) {
+  if (v === true || v === 1) return true;
+  const s = String(v == null ? '' : v).trim();
+  if (!s || s === 'false' || s === '0' || s === '未完了') return false;
+  return true;
+}
+
+function farmBoardTaskKind_(workName) {
+  const w = String(workName || '');
+  if (/^調達/.test(w) || /資材調達/.test(w)) return 'procure';
+  if (/^播種/.test(w) || /セル成型|播種機/.test(w)) return 'sow';
+  if (/^定植/.test(w)) return 'plant';
+  if (/チッパー|ディスク/.test(w)) return 'chipper';
+  if (/畝つぶし/.test(w)) return 'ridge_crush';
+  if (/堆肥散布/.test(w)) return 'compost';
+  if (/苦土石灰/.test(w)) return 'dolomite';
+  if (/肥料散布/.test(w)) return 'fertilizer';
+  if (/正転引き/.test(w)) return 'forward_pull';
+  if (/畝立て/.test(w)) return 'ridge_make';
+  return '';
+}
+
+function farmBoardParseQty_(hours) {
+  const s = String(hours || '');
+  const trays = s.match(/(\d+)\s*枚/);
+  const bags = s.match(/(\d+)\s*袋/);
+  const grains = s.match(/([\d,]+)\s*粒/);
+  return {
+    trays: trays ? Number(trays[1]) : 0,
+    bags: bags ? Number(bags[1]) : 0,
+    grains: grains ? Number(String(grains[1]).replace(/,/g, '')) : 0,
+    label: s
+  };
+}
+
+function farmBoardFmtDate_(v) {
+  if (v == null || v === '') return '';
+  try {
+    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+      return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+    }
+  } catch (e) {}
+  return String(v).trim();
+}
+
+function farmBoardCol_(idx, row, names, fallbackIndex) {
+  for (let i = 0; i < names.length; i++) {
+    if (idx[names[i]] !== undefined) return row[idx[names[i]]];
+  }
+  if (fallbackIndex !== undefined && row.length > fallbackIndex) return row[fallbackIndex];
+  return '';
+}
+
+function farmBoardParsePlanIds_(placeId) {
+  const s = String(placeId || '');
+  if (s.indexOf('cp:procure:') === 0) return parseCpProcurePlanIds_(s);
+  if (s.indexOf('cp:') === 0) {
+    const id = s.split('|')[0].replace(/^cp:/, '');
+    return id ? [id] : [];
+  }
+  return [];
+}
+
+/**
+ * ダッシュボード（カンバン）用の軽量データ。
+ * 栽培計画・圃場・作業予定（調達/播種/定植/圃場準備）を返す。
+ */
+function getFarmBoardData() {
+  const ss = TENANT_SS;
+  if (!ss) throw new Error('スプレッドシートが設定されていません');
+
+  const plans = getSavedCultivationPlanList() || [];
+  const planById = {};
+  plans.forEach(function(g) {
+    (g.plans || []).forEach(function(p) {
+      if (!p || !p.id) return;
+      planById[String(p.id)] = {
+        year: g.year || '',
+        crop: g.crop || '',
+        planName: g.planName || '',
+        tag: p.tag || '',
+        variety: p.variety || ''
+      };
+    });
+  });
+
+  const polygonsRaw = getSavedPolygons() || [];
+  const fields = polygonsRaw.map(function(p) {
+    return {
+      id: p.id || '',
+      name: p.name || '',
+      year: p.year || '',
+      area: p.area || 0,
+      location: p.location || '',
+      origin: p.origin || '',
+      catStatuses: p.catStatuses || {}
+    };
+  });
+
+  let prodCategories = [];
+  try { prodCategories = getProdMgmtCategories() || []; } catch (e) {}
+
+  const completedWorks = {};
+  const workSheet = ss.getSheetByName('作業記録');
+  if (workSheet && workSheet.getLastRow() >= 2) {
+    const wData = workSheet.getDataRange().getValues();
+    for (let i = 1; i < wData.length; i++) {
+      if (String(wData[i][10] || '').trim() !== '完了') continue;
+      const workName = String(wData[i][4] || '');
+      if (!farmBoardTaskKind_(workName)) continue;
+      const primaryField = String(wData[i][1] || '').split(',')[0].trim();
+      const cropName = String(wData[i][5] || '');
+      const key = primaryField + '_' + workName + '_' + cropName;
+      const workDate = wData[i][3];
+      if (!completedWorks[key] || new Date(workDate) > new Date(completedWorks[key])) {
+        completedWorks[key] = workDate;
+      }
+    }
+  }
+
+  const tasks = [];
+  const sheet = ss.getSheetByName('作業予定');
+  if (sheet && sheet.getLastRow() >= 2) {
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(function(h) { return String(h).trim(); });
+    const idx = {};
+    headers.forEach(function(h, i) { idx[h] = i; });
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const workName = String(farmBoardCol_(idx, row, ['作業名'], 0) || '');
+      const kind = farmBoardTaskKind_(workName);
+      if (!kind) continue;
+      const hoursRaw = farmBoardCol_(idx, row, ['枚数・時間', '時間', '予定時間'], 6);
+      const qty = farmBoardParseQty_(hoursRaw);
+      const completeRaw = farmBoardCol_(idx, row, ['完了日'], 8);
+      const fieldName = String(farmBoardCol_(idx, row, ['圃場名'], 3) || '');
+      const crop = String(farmBoardCol_(idx, row, ['作物名', '作物'], 2) || '');
+      const recKey = String(fieldName).split(',')[0].trim() + '_' + workName + '_' + crop;
+      let completed = farmBoardHasCompleteDate_(completeRaw);
+      let completedDate = completed ? farmBoardFmtDate_(completeRaw) : '';
+      if (!completed && completedWorks[recKey]) {
+        completed = true;
+        completedDate = farmBoardFmtDate_(completedWorks[recKey]);
+      }
+      const placeId = String(farmBoardCol_(idx, row, ['場所ID'], 10) || '');
+      const planIds = farmBoardParsePlanIds_(placeId);
+      const tagFromSheet = String(farmBoardCol_(idx, row, ['適合者', 'タグ'], 7) || '').trim();
+      let year = '';
+      let planNames = [];
+      let tags = [];
+      planIds.forEach(function(id) {
+        const hit = planById[id];
+        if (!hit) return;
+        if (hit.year && !year) year = hit.year;
+        if (hit.planName && planNames.indexOf(hit.planName) < 0) planNames.push(hit.planName);
+        if (hit.tag && tags.indexOf(hit.tag) < 0) tags.push(hit.tag);
+      });
+      if (tagFromSheet && tags.indexOf(tagFromSheet) < 0) tags.push(tagFromSheet);
+      tasks.push({
+        kind: kind,
+        workName: workName,
+        fieldName: fieldName,
+        crop: crop,
+        variety: '',
+        year: year,
+        hours: String(hoursRaw || ''),
+        trays: qty.trays,
+        bags: qty.bags,
+        grains: qty.grains,
+        completed: completed,
+        completedDate: completedDate,
+        date: farmBoardFmtDate_(farmBoardCol_(idx, row, ['作業予定日', '予定日', '日付'], 4)),
+        deadline: farmBoardFmtDate_(farmBoardCol_(idx, row, ['期限日'], 5)),
+        tag: tags.join(' '),
+        tags: tags,
+        planIds: planIds,
+        planNames: planNames,
+        placeId: placeId
+      });
+    }
+  }
+
+  return { plans: plans, fields: fields, tasks: tasks, prodCategories: prodCategories };
 }
 
 /** 保存済み栽培計画を年度＋作物＋計画名単位で削除 */
@@ -9352,7 +9806,10 @@ function buildCultivationPlanLookupById_() {
   data.forEach(r => {
     try {
       const plan = JSON.parse(String(r[5] || '{}'));
-      if (plan && plan.id) map[String(plan.id)] = plan;
+      if (plan && plan.id) {
+        if (!plan.year) plan.year = r[1];
+        map[String(plan.id)] = plan;
+      }
     } catch (e) {}
   });
   return map;
@@ -9528,7 +9985,9 @@ function previewCultivationPlanTags(params) {
         variety: plan.variety || '(品種未設定)',
         tag: plan.tag || '',
         trays: Number(plan.trays) || 0,
-        holes: Number(plan.holes) || 0
+        holes: Number(plan.holes) || 0,
+        maker: plan.maker || '',
+        grainCount: plan.grainCount || cpLookupGrainCountFromCroptypeDb_(plan.crop || crop, plan.variety || '')
       }))
     };
   } catch (e) {
@@ -9573,12 +10032,12 @@ function executeCultivationPlans(params) {
       plan.executedAt = executedAt;
     });
 
-    // 播種を作業予定へ反映（再実行時は完了日・写真を維持しつつ日程を更新）
-    const scheduleSync = upsertCultivationSowingSchedule_(year, targets);
-    const created = scheduleSync.created + scheduleSync.updated;
+    // 今回実行した計画の調達だけ出す。播種は調達完了後に出す。
+    const procureSync = upsertCultivationProcureSchedule_(year, targets);
+    const procureCount = (procureSync.created || 0) + (procureSync.updated || 0);
 
     // 計画シートを更新（実行済みステータスを反映）
-    const planSheet = ss.getSheetByName('栽培計画');
+    const planSheet = TENANT_SS.getSheetByName('栽培計画');
     if (planSheet && planSheet.getLastRow() > 1) {
       const data = planSheet.getRange(2, 1, planSheet.getLastRow(), 6).getValues();
       const planMap = {};
@@ -9598,8 +10057,9 @@ function executeCultivationPlans(params) {
     SpreadsheetApp.flush();
     return {
       success: true,
-      message: created + '件の播種を作業予定に登録しました（タグは定植→収穫の早い順で自動割り当て）',
-      created: created,
+      message: procureCount + '件の調達を作業予定に登録しました。調達が完了すると、その計画分の播種が出ます。',
+      created: 0,
+      procured: procureCount,
       executed: targets.length
     };
   } catch (e) {

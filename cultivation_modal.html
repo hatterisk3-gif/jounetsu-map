@@ -18,11 +18,6 @@
               <span class="cp-initial-settings-btn-label">初期設定</span>
               <span class="cp-initial-settings-btn-chevron" aria-hidden="true">▾</span>
             </button>
-            <input type="text" id="cpPlanName" maxlength="80" oninput="onCpPlanNameInput()" onblur="applyCpPlanTypeToName()" placeholder="計画名（未入力なら自動）"
-              title="計画名。未入力の場合は年度＋拠点＋作物＋本作/試作で自動設定されます"
-              class="cp-header-plan-name">
-            <button type="button" id="btnCpSavePlan" onclick="saveCultivationPlan()" title="本番へすぐ同期します。未実行の計画は編集のたびに自動保存されます"
-              style="flex-shrink:0; padding:6px 10px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; box-shadow:0 1px 4px rgba(255,152,0,0.35); white-space:nowrap; line-height:1.2;">計画を保存<br><span style="font-size:9px;font-weight:normal;">(すぐ同期)</span></button>
             <div id="cpHeaderContextBar" title="基本設定の内容" style="min-width:0; flex:1 1 220px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
               <span id="cpHeaderCtxLocation" class="cp-header-chip" style="display:none;"></span>
               <span id="cpHeaderCtxClimate" class="cp-header-chip cp-header-chip--climate" style="display:none;"></span>
@@ -30,8 +25,11 @@
               <span id="cpHeaderCtxCrop" class="cp-header-chip" style="display:none;"></span>
               <span id="cpHeaderCtxYear" class="cp-header-chip" style="display:none;"></span>
               <span id="cpHeaderCtxField" class="cp-header-chip cp-header-chip--field" style="display:none;"></span>
+              <span id="cpDraftStatus" class="cp-header-save-status"></span>
             </div>
           </div>
+          <button type="button" id="btnCpSavePlan" onclick="saveCultivationPlan()" title="本番へすぐ同期します。未実行の計画は編集のたびに自動保存されます"
+            style="flex-shrink:0; padding:6px 14px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; box-shadow:0 1px 4px rgba(255,152,0,0.35); white-space:nowrap;">計画を保存</button>
           <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999; flex-shrink: 0;" onclick="closeCultivationPlanModal()">×</span>
           </div>
           <div id="cpSaveProgress" style="display:none; width:100%; text-align:left;">
@@ -40,7 +38,6 @@
               <div id="cpSaveProgressBar" style="width:0%; height:100%; background:#FF9800; border-radius:999px; transition:width .35s ease;"></div>
             </div>
           </div>
-          <div id="cpDraftStatus" style="font-size:11px; color:#607D8B; line-height:1.35; min-height:14px;"></div>
         </div>
         <div id="cpFieldAttachBanner" style="display:none; margin-bottom:8px; padding:8px 10px; background:#E0F7FA; border:1px solid #4DD0E1; border-radius:6px; font-size:12px; color:#006064; align-items:center; justify-content:space-between; gap:8px;">
           <span id="cpFieldAttachBannerText"></span>
@@ -343,6 +340,17 @@
             background: #e0f7fa;
             color: #006064;
           }
+          .cp-header-save-status {
+            font-size: 11px;
+            color: #607D8B;
+            line-height: 1.25;
+            white-space: nowrap;
+            flex-shrink: 0;
+            min-width: 0;
+            max-width: 22em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
           .cp-plan-type-btn {
             flex: 1;
             margin: 0;
@@ -533,6 +541,73 @@
             overflow: auto;
             box-sizing: border-box;
           }
+          #cpBottomPanelHarvest.cp-bottom-panel {
+            max-height: min(48vh, 420px);
+          }
+          .cp-harvest-chart-frame {
+            display: flex;
+            align-items: stretch;
+            gap: 4px;
+          }
+          .cp-harvest-chart-yaxis {
+            flex-shrink: 0;
+            width: 46px;
+            box-sizing: border-box;
+            font-size: 10px;
+            color: #546E7A;
+            text-align: right;
+            line-height: 1.1;
+          }
+          .cp-harvest-chart-scroll {
+            flex: 1;
+            min-width: 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            border: 1px solid #ffe082;
+            border-radius: 4px;
+            background: #fff;
+          }
+          #cpHarvestChartBars {
+            overflow: visible;
+            height: auto;
+            padding: 2px 2px 0;
+          }
+          #cpHarvestChartAxis {
+            overflow: visible;
+            height: auto;
+            margin: 0;
+            border-top: 1px solid #ffe0b2;
+            background: #fffde7;
+            padding: 0 0 2px;
+          }
+          .cp-chart-month-label {
+            font-size: 11px;
+            font-weight: bold;
+            color: #37474F;
+            text-align: center;
+            box-sizing: border-box;
+            line-height: 1.3;
+            padding: 2px 0 3px;
+          }
+          .cp-chart-year-label {
+            font-size: 10px;
+            font-weight: bold;
+            color: #E65100;
+            box-sizing: border-box;
+            padding: 2px 6px 1px;
+            line-height: 1.2;
+            border-bottom: 1px solid #ffe0b2;
+          }
+          .cp-chart-col-value {
+            height: 16px;
+            font-size: 9px;
+            font-weight: bold;
+            color: #bf360c;
+            text-align: center;
+            line-height: 16px;
+            overflow: hidden;
+            white-space: nowrap;
+          }
           .cp-bottom-panel.is-open { display: block; }
           .cp-graph-metric-btn {
             font-size: 11px;
@@ -683,11 +758,16 @@
                     <button type="button" class="cp-graph-metric-btn" data-metric="maker" onclick="setCpGraphMetric('maker')">🏭 メーカー比率</button>
                   </div>
                   <div id="cpGraphMetricHint" style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.4;">品種カードの収穫を塗ると、半旬ごとの収穫量が積み上げ表示されます。</div>
-                  <div id="cpHarvestChartBars" style="overflow-x:auto; overflow-y:hidden; height:72px; border:1px solid #ffe082; border-radius:4px; background:#fff; padding:4px 2px 0;">
-                    <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">グラフタブを開くとここに表示されます</div>
+                  <div class="cp-harvest-chart-frame" id="cpHarvestChartFrame">
+                    <div id="cpHarvestChartYAxis" class="cp-harvest-chart-yaxis" aria-hidden="true"></div>
+                    <div class="cp-harvest-chart-scroll" id="cpHarvestChartScroll">
+                      <div id="cpHarvestChartBars">
+                        <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">グラフタブを開くとここに表示されます</div>
+                      </div>
+                      <div id="cpHarvestChartAxis"></div>
+                    </div>
                   </div>
                   <div id="cpMakerRatioPanel" style="display:none; border:1px solid #ffe082; border-radius:4px; background:#fff; padding:8px 10px; min-height:72px;"></div>
-                  <div id="cpHarvestChartAxis" style="overflow-x:auto; overflow-y:hidden; height:16px; margin-top:2px;"></div>
                 </div>
               </div>
               <div id="cpBottomPanelWork" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabWork" hidden>
@@ -1104,8 +1184,8 @@
           <span id="cpCropHarvestTotal" style="font-size:12px; color:#bf360c; font-weight:bold;"></span>
         </div>
         <div id="cpCropHarvestLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555; margin-bottom:6px;"></div>
-        <div id="cpCropHarvestBars" style="overflow-x:auto; height:140px; border:1px solid #ffe082; border-radius:4px; background:#fffaf0; padding:6px 2px 0;"></div>
-        <div id="cpCropHarvestAxis" style="overflow-x:auto; height:18px; margin-top:2px;"></div>
+        <div id="cpCropHarvestBars" style="overflow-x:auto; height:auto; min-height:140px; border:1px solid #ffe082; border-radius:4px 4px 0 0; background:#fffaf0; padding:6px 2px 0;"></div>
+        <div id="cpCropHarvestAxis" style="overflow-x:auto; height:auto; margin-top:0; border:1px solid #ffe082; border-top:none; border-radius:0 0 4px 4px; background:#fffde7;"></div>
         <div style="text-align:center; margin-top:12px;">
           <button type="button" onclick="closeCropHarvestChartModal()" style="padding:8px 24px; background:#666; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">閉じる</button>
         </div>

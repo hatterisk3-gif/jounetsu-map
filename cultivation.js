@@ -3522,6 +3522,12 @@ function refreshCpSeedProcureDisplay(planId) {
     if (seedCount > 0) {
         seedPart = '種 ' + seedCount.toLocaleString('ja-JP') + '粒';
         if (holes > 1 && trays > 0) seedPart += `（${trays}×${holes}）`;
+        const grainMeta = typeof parseGrainMeta === 'function' ? parseGrainMeta(grainVal) : null;
+        const specCount = grainMeta && grainMeta.count > 0 ? Number(grainMeta.count) : 0;
+        if (specCount > 0) {
+            const packs = Math.ceil(seedCount / specCount);
+            seedPart += ' → ' + packs.toLocaleString('ja-JP') + '袋';
+        }
     }
     el.innerHTML = bits.join(' ／ ') + ' ／ ' + escapeCpHtmlAttr(seedPart);
     if (typeof refreshCpPlanGrainPicker === 'function') refreshCpPlanGrainPicker(planId);
@@ -6945,6 +6951,8 @@ function updateCpGraphMetricChrome_(metric, crop) {
     if (titleEl) titleEl.textContent = titles[metric] || titles.harvest;
     if (hintEl) hintEl.textContent = hints[metric] || hints.harvest;
     const isMaker = metric === 'maker';
+    const frame = document.getElementById('cpHarvestChartFrame');
+    if (frame) frame.style.display = isMaker ? 'none' : 'flex';
     if (bars) bars.style.display = isMaker ? 'none' : '';
     if (axis) axis.style.display = isMaker ? 'none' : '';
     if (makerPanel) makerPanel.style.display = isMaker ? '' : 'none';
@@ -7623,12 +7631,32 @@ function solveCpHarvestTargetScales(plans, targetsMap) {
     };
 }
 
+function formatCpChartNumber_(v, decimals) {
+    const n = Number(v) || 0;
+    if (!(n > 0)) return '0';
+    const d = decimals > 0 ? decimals : 0;
+    if (d > 0) {
+        const r = Math.round(n * Math.pow(10, d)) / Math.pow(10, d);
+        return r.toLocaleString('ja-JP', { maximumFractionDigits: d, minimumFractionDigits: 0 });
+    }
+    const r = Math.round(n);
+    if (r >= 100000) return Math.round(r / 10000) + '万';
+    if (r >= 10000) return (Math.round(r / 1000) / 10) + '万';
+    return r.toLocaleString();
+}
+
 function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
     const opts = options || {};
     const barH = opts.barHeight || 56;
     const barW = opts.barWidth || 8;
     const months = getCpCalendarMonths();
     const seriesList = series || [];
+    const showValues = opts.showValues === true || (opts.showValues !== false && barW >= 18);
+    const valueH = showValues ? 16 : 0;
+    const unit = String(opts.unit || '');
+    const decimals = opts.valueDecimals != null ? opts.valueDecimals : 0;
+    const yearNum = Number(opts.year) || (typeof getCpVal === 'function' ? Number(getCpVal('cpYear', true)) : 0) || new Date().getFullYear();
+    const yAxisEl = opts.yAxisEl || null;
 
     let maxVal = 0;
     for (let i = 0; i < CP_HARVEST_PERIODS; i++) {
@@ -7643,16 +7671,33 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
         ).join('');
     }
 
+    const clearYAxis = () => {
+        if (yAxisEl) yAxisEl.innerHTML = '';
+    };
+
     if (!barsEl) return { total: 0, maxVal: 0 };
     if (!seriesList.length || maxVal <= 0) {
         const emptyMsg = opts.emptyMessage || 'データがありません';
         barsEl.innerHTML = `<div style="color:#999; font-size:11px; text-align:center; padding-top:${Math.max(8, barH / 2 - 8)}px; width:100%;">${emptyMsg}</div>`;
         if (axisEl) axisEl.innerHTML = '';
+        clearYAxis();
         return { total: 0, maxVal: 0 };
     }
 
+    const totalH = barH + valueH;
+    if (yAxisEl) {
+        const mid = maxVal / 2;
+        yAxisEl.innerHTML =
+            `<div style="height:${valueH}px;"></div>` +
+            `<div style="height:${barH}px; display:flex; flex-direction:column; justify-content:space-between; padding-right:4px;">` +
+            `<span>${formatCpChartNumber_(maxVal, decimals)}${unit}</span>` +
+            `<span>${formatCpChartNumber_(mid, decimals)}</span>` +
+            `<span>0</span>` +
+            `</div>`;
+    }
+
     const totalW = CP_HARVEST_PERIODS * barW;
-    let barsHtml = `<div style="display:flex; align-items:flex-end; height:${barH}px; width:${totalW}px; min-width:${totalW}px;">`;
+    let barsHtml = `<div style="display:flex; align-items:flex-end; height:${totalH}px; width:${totalW}px; min-width:${totalW}px;">`;
     let total = 0;
     for (let i = 0; i < CP_HARVEST_PERIODS; i++) {
         let stack = '';
@@ -7663,22 +7708,42 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
             total += v;
             if (v > 0) {
                 const h = Math.max(2, Math.round((v / maxVal) * (barH - 4)));
-                stack = `<div style="width:100%; height:${h}px; background:${s.color};" title="${s.name}: ${v.toLocaleString()}"></div>` + stack;
+                const tip = (typeof getCpPeriodFullLabel_ === 'function' ? getCpPeriodFullLabel_(i) + ' / ' : '') +
+                    s.name + ': ' + formatCpChartNumber_(v, decimals) + unit;
+                stack = `<div style="width:100%; height:${h}px; background:${s.color};" title="${tip.replace(/"/g, '&quot;')}"></div>` + stack;
             }
         });
-        const border = (i % 6 === 5) ? '1px solid #ccc' : '1px solid transparent';
-        barsHtml += `<div style="width:${barW}px; height:100%; display:flex; flex-direction:column; justify-content:flex-end; box-sizing:border-box; border-right:${border};" title="${colSum ? colSum.toLocaleString() : ''}">${stack}</div>`;
+        const monthIdx = Math.floor(i / 6);
+        const monthEnd = (i % 6 === 5);
+        const bg = monthIdx % 2 === 0 ? '#fff' : '#fff8e1';
+        const border = monthEnd ? '1px solid #bdbdbd' : '1px solid #f0f0f0';
+        const periodTip = (typeof getCpPeriodFullLabel_ === 'function' ? getCpPeriodFullLabel_(i) : '') +
+            (colSum ? '  ' + formatCpChartNumber_(colSum, decimals) + unit : '');
+        const valueLabel = (showValues && colSum > 0)
+            ? formatCpChartNumber_(colSum, decimals)
+            : '';
+        barsHtml += `<div style="width:${barW}px; height:100%; display:flex; flex-direction:column; justify-content:flex-end; box-sizing:border-box; background:${bg}; border-right:${border};" title="${periodTip.replace(/"/g, '&quot;')}">` +
+            (showValues ? `<div class="cp-chart-col-value">${valueLabel}</div>` : '') +
+            `<div style="height:${barH}px; width:100%; display:flex; flex-direction:column; justify-content:flex-end;">${stack}</div>` +
+            `</div>`;
     }
     barsHtml += '</div>';
     barsEl.innerHTML = barsHtml;
 
     if (axisEl) {
-        let axisHtml = `<div style="display:flex; width:${totalW}px; min-width:${totalW}px; font-size:9px; color:#888;">`;
+        const yearW = barW * 6 * 12;
+        const nextW = barW * 6 * 6;
+        let axisHtml = `<div style="width:${totalW}px; min-width:${totalW}px;">`;
+        axisHtml += `<div style="display:flex;">` +
+            `<div class="cp-chart-year-label" style="width:${yearW}px; border-right:1px solid #ffcc80;">${yearNum}年</div>` +
+            `<div class="cp-chart-year-label" style="width:${nextW}px; background:#fff3e0; color:#EF6C00;">${yearNum + 1}年</div>` +
+            `</div>`;
+        axisHtml += `<div style="display:flex;">`;
         months.forEach((m, idx) => {
-            const label = (idx === 0) ? `今${m}` : (idx === 12) ? `来${m}` : String(m);
-            axisHtml += `<div style="width:${barW * 6}px; text-align:center; box-sizing:border-box; border-right:1px solid #eee;">${label}</div>`;
+            const bg = idx % 2 === 0 ? '#fffde7' : '#fff';
+            axisHtml += `<div class="cp-chart-month-label" style="width:${barW * 6}px; background:${bg}; border-right:1px solid #e0e0e0;">${m}月</div>`;
         });
-        axisHtml += '</div>';
+        axisHtml += '</div></div>';
         axisEl.innerHTML = axisHtml;
     }
 
@@ -7718,9 +7783,14 @@ function refreshCpHarvestChart() {
         document.getElementById('cpHarvestChartLegend'),
         series,
         {
-            barHeight: 56,
-            barWidth: 24,
-            emptyMessage: emptyMessages[metric] || emptyMessages.harvest
+            barHeight: 88,
+            barWidth: 26,
+            showValues: true,
+            unit: unitSuffix,
+            valueDecimals: metric === 'planting' ? 1 : 0,
+            emptyMessage: emptyMessages[metric] || emptyMessages.harvest,
+            yAxisEl: document.getElementById('cpHarvestChartYAxis'),
+            year: typeof getCpVal === 'function' ? getCpVal('cpYear', true) : ''
         }
     );
     const totalEl = document.getElementById('cpHarvestChartTotal');
@@ -7816,7 +7886,7 @@ async function refreshCropHarvestChartModal() {
             document.getElementById('cpCropHarvestAxis'),
             document.getElementById('cpCropHarvestLegend'),
             series,
-            { barHeight: 120, barWidth: 10 }
+            { barHeight: 120, barWidth: 14, showValues: false, year: year }
         );
         const totalEl = document.getElementById('cpCropHarvestTotal');
         if (totalEl) totalEl.textContent = result.total > 0 ? `合計 ${result.total.toLocaleString()}` : '';
@@ -8214,10 +8284,11 @@ window.applyCpPlanTypeToName = applyCpPlanTypeToName;
 function updateCpSaveButtonLabel() {
     const btn = document.getElementById('btnCpSavePlan');
     if (!btn || btn.disabled) return;
+    btn.textContent = '計画を保存';
     const executed = typeof cpHasExecutedPlans_ === 'function' && cpHasExecutedPlans_();
-    btn.innerHTML = executed
-        ? '計画を保存<br><span style="font-size:9px;font-weight:normal;">(実行済みを更新)</span>'
-        : '計画を保存<br><span style="font-size:9px;font-weight:normal;">(すぐ同期)</span>';
+    btn.title = executed
+        ? '実行済みの作型を含みます。押すと本番へ更新します。'
+        : '本番へすぐ同期します。未実行の計画は編集のたびに自動保存されます';
 }
 
 function setCpSaveProgress(percent, label, autoAdvanceTo) {
@@ -9508,6 +9579,48 @@ function closeCpTagConfirmModal() {
     cpPendingTagExecution = null;
 }
 
+function buildCpProcurePreviewLines_(plans) {
+    const groups = {};
+    (plans || []).forEach(plan => {
+        if (!plan) return;
+        let grainVal = plan.grainCount || '';
+        if (!grainVal && typeof lookupVarietyMeta === 'function') {
+            const meta = lookupVarietyMeta(plan.crop, plan.variety) || {};
+            grainVal = meta.grainCount || '';
+            if (!plan.maker && meta.maker) plan.maker = meta.maker;
+        }
+        const trays = Number(plan.trays) || 0;
+        const holes = Number(plan.holes) || 0;
+        const seeds = holes === 1 ? trays : (trays * (holes > 0 ? holes : 0));
+        if (!(seeds > 0)) return;
+        const parsed = typeof parseGrainMeta === 'function' ? parseGrainMeta(grainVal) : { count: null, type: '' };
+        const specCount = parsed && parsed.count > 0 ? Number(parsed.count) : 0;
+        const specBase = (typeof formatGrainTypeLabel === 'function' ? formatGrainTypeLabel(grainVal) : '') || '規格未登録';
+        const crop = String(plan.crop || '').trim() || '（作物）';
+        const variety = String(plan.variety || '').trim() || '(品種未設定)';
+        const maker = String(plan.maker || '').trim();
+        const spec = (maker ? maker + ' ' : '') + specBase;
+        const key = [crop, variety, maker, spec].join('\t');
+        if (!groups[key]) {
+            groups[key] = { crop: crop, variety: variety, spec: spec, specCount: specCount, seeds: 0 };
+        }
+        groups[key].seeds += seeds;
+    });
+    return Object.keys(groups).map(k => {
+        const g = groups[k];
+        const packs = g.specCount > 0 ? Math.ceil(g.seeds / g.specCount) : 0;
+        return {
+            crop: g.crop,
+            variety: g.variety,
+            spec: g.spec,
+            seedsLabel: g.seeds.toLocaleString('ja-JP') + '粒',
+            packsLabel: g.specCount > 0
+                ? (packs.toLocaleString('ja-JP') + '袋')
+                : '規格未登録'
+        };
+    });
+}
+
 function showCpTagConfirmModal(year, crop, plans, planIds, planType, planName) {
     let modal = document.getElementById('cpTagConfirmModal');
     if (!modal) {
@@ -9533,6 +9646,20 @@ function showCpTagConfirmModal(year, crop, plans, planIds, planType, planName) {
             <span style="color:#777; font-size:11px; white-space:nowrap;">${qty.toLocaleString('ja-JP')}${unit}</span>
           </div>`;
     }).join('');
+    const procureLines = buildCpProcurePreviewLines_(plans);
+    const procureHtml = procureLines.length
+      ? ('<div style="margin-bottom:12px; border:1px solid #ffe0b2; border-radius:7px; overflow:hidden; background:#fff8e1;">' +
+         '<div style="padding:8px 10px; font-size:12px; font-weight:bold; color:#e65100;">📦 調達（播種の前）</div>' +
+         procureLines.map(line => (
+           '<div style="padding:7px 10px; border-top:1px solid #ffe0b2; font-size:12px; color:#5d4037; line-height:1.45;">' +
+           '<b>' + esc(line.crop) + '</b> ／ ' + esc(line.variety) +
+           '<div style="font-size:11px; color:#6d4c41; margin-top:2px;">規格 ' + esc(line.spec) +
+           ' ／ 必要 ' + esc(line.seedsLabel) +
+           ' → <b style="color:#e65100;">' + esc(line.packsLabel) + '</b></div>' +
+           '</div>'
+         )).join('') +
+         '</div>')
+      : '';
 
     const nameLabel = String(planName || '').trim();
     cpPendingTagExecution = {
@@ -9549,8 +9676,9 @@ function showCpTagConfirmModal(year, crop, plans, planIds, planType, planName) {
         <div style="border:1px solid #ddd; border-radius:7px; overflow:hidden; margin-bottom:14px;">
           ${rows}
         </div>
+        ${procureHtml}
         <div style="font-size:11px; color:#795548; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:8px; margin-bottom:14px;">
-          このタグで確定すると、播種が作業予定へ登録されます。
+          このタグで確定すると、今回の計画分の調達が作業予定へ入ります。調達を完了すると、その計画だけ播種へ進みます。あとから別の計画を実行すると、新しい調達になります。
         </div>
         <div style="display:flex; gap:10px;">
           <button type="button" onclick="closeCpTagConfirmModal()" style="flex:1; padding:11px; background:#fff; color:#555; border:1px solid #bbb; border-radius:6px; font-weight:bold; cursor:pointer;">戻る</button>

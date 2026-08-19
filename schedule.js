@@ -1700,7 +1700,7 @@ async function fetchWeatherAndUpdateUI() {
             const rowClass = isMid
               ? 'style="background-color:#fff8e1; color:#e65100;"'
               : (String(t.workName).includes('⚠️') ? 'style="background-color:#ffebee; color:#d32f2f; font-weight:bold;"' : (t.isOverdue ? 'class="overdue-row"' : ''));
-            const isCp = t.isCultivation || String(t.workName || '').indexOf('播種') === 0;
+            const isCp = t.isCultivation || String(t.workName || '').indexOf('播種') === 0 || String(t.workName || '').trim() === '調達';
             const cropCell = isCp
               ? `${t.cropName || '-'}${t.variety ? '<br><span style="color:#1565c0;font-size:11px;">品種: ' + t.variety + '</span>' : ''}${t.tag ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">TAG: ' + t.tag + '</span>' : (t.person ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.person + '</span>' : '')}`
               : (t.cropName || '-');

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>情熱MAP ダッシュボード</title>
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" href="icon.png">
+  <script src="exit-guard.js?v=1786240000001"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --card: #21262d;
+      --card-2: #2d333b;
+      --text: #f0f3f6;
+      --muted: #8b949e;
+      --line: #30363d;
+      --accent: #3fb950;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
+      background: var(--bg); color: var(--text);
+    }
+    button, input, select { font-family: inherit; }
+    #loginScreen {
+      position: fixed; inset: 0; z-index: 40000; display: none;
+      align-items: center; justify-content: center; background: var(--bg);
+    }
+    .login-box {
+      width: 88%; max-width: 360px; background: #fff; color: #222;
+      border-radius: 12px; padding: 24px; text-align: center;
+    }
+    .login-input {
+      width: 100%; padding: 12px; margin-bottom: 10px;
+      border: 1px solid #ccc; border-radius: 8px; font-size: 16px;
+    }
+    .login-btn {
+      width: 100%; padding: 12px; background: #2E7D32; color: #fff;
+      border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 10px 12px; background: #11161d; border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 20;
+    }
+    .topbar h1 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; }
+    .icon-btn, .text-btn {
+      border: 1px solid var(--line); background: var(--card); color: var(--text);
+      border-radius: 8px; height: 34px; padding: 0 10px; cursor: pointer; font-size: 13px; font-weight: 700;
+    }
+    .icon-btn:hover, .text-btn:hover { background: var(--card-2); }
+    .add-btn { background: #238636; border-color: #2ea043; color: #fff; }
+    .spacer { flex: 1; }
+    .search {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 0 8px;
+    }
+    .search input {
+      border: none; outline: none; background: transparent; color: var(--text);
+      height: 32px; min-width: 140px; font-size: 13px;
+    }
+    select.filter {
+      height: 34px; border-radius: 8px; border: 1px solid var(--line);
+      background: var(--card); color: var(--text); padding: 0 8px; font-size: 13px;
+    }
+    .status { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    #boardWrap {
+      height: calc(100vh - 55px); overflow: auto; padding: 12px;
+    }
+    #board {
+      display: flex; align-items: stretch; gap: 14px; min-height: calc(100vh - 80px);
+      width: max-content;
+    }
+    .parent {
+      display: flex; flex-direction: column; min-width: 280px;
+      background: #0f141a; border: 3px solid var(--accent);
+      border-radius: 14px; overflow: hidden;
+    }
+    .parent-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 8px; padding: 8px 12px 4px;
+    }
+    .parent-head .title { font-size: 13px; font-weight: 800; opacity: .85; }
+    .parent-head .hint { font-size: 11px; color: var(--muted); }
+    .lanes {
+      display: flex; gap: 8px; padding: 0 8px 8px; flex: 1; min-height: 0;
+    }
+    .lane {
+      width: 210px; min-width: 210px; display: flex; flex-direction: column;
+      background: rgba(255,255,255,.03); border-radius: 10px; overflow: hidden;
+    }
+    .lane-head {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 8px 6px; font-size: 12px; font-weight: 800; color: #d8dee8;
+    }
+    .count {
+      min-width: 22px; height: 18px; border-radius: 9px; padding: 0 6px;
+      background: rgba(255,255,255,.12); font-size: 11px; display: inline-flex;
+      align-items: center; justify-content: center;
+    }
+    .cards {
+      flex: 1; overflow-y: auto; padding: 0 6px 8px; display: flex; flex-direction: column; gap: 7px;
+      max-height: calc(100vh - 170px);
+    }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+      padding: 8px 9px; cursor: pointer; box-shadow: 0 1px 0 rgba(0,0,0,.25);
+    }
+    .card:hover { border-color: #6e7681; background: var(--card-2); }
+    .kicker { font-size: 10px; color: var(--muted); letter-spacing: .02em; margin-bottom: 3px; }
+    .ctitle { font-size: 13px; font-weight: 800; line-height: 1.35; }
+    .meta { font-size: 11px; color: #9aa4b2; margin-top: 5px; }
+    .empty {
+      color: var(--muted); font-size: 11px; text-align: center; padding: 18px 6px;
+    }
+    .parent-foot {
+      text-align: center; font-size: 18px; font-weight: 900;
+      padding: 8px 10px 10px; letter-spacing: .08em;
+      background: rgba(0,0,0,.28);
+    }
+    .drawer-bg {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 30;
+    }
+    .drawer {
+      display: none; position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw);
+      background: #151b23; z-index: 31; overflow: auto; border-left: 1px solid var(--line);
+      padding: 16px 16px 40px;
+    }
+    .drawer h2 { margin: 0 0 8px; font-size: 18px; }
+    .help { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 14px; }
+    .col-edit {
+      border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 10px;
+      background: #0f141a;
+    }
+    .col-edit .row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+    .col-edit input[type="text"], .col-edit select, .col-edit input[type="color"] {
+      background: var(--card); color: var(--text); border: 1px solid var(--line);
+      border-radius: 6px; height: 30px; padding: 0 8px; font-size: 13px;
+    }
+    .col-edit input[type="text"] { flex: 1; min-width: 120px; }
+    .child-edit {
+      margin: 6px 0 6px 10px; padding: 8px; border-left: 3px solid var(--accent);
+      background: rgba(255,255,255,.03); border-radius: 0 8px 8px 0;
+    }
+    .tiny { height: 28px; padding: 0 8px; font-size: 12px; }
+    .danger { color: #ff7b72; border-color: #f85149; }
+    .modal-bg {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 40;
+      align-items: center; justify-content: center;
+    }
+    .modal {
+      width: min(420px, 92vw); background: #1c2330; border: 1px solid var(--line);
+      border-radius: 12px; padding: 16px;
+    }
+    .modal h3 { margin: 0 0 8px; }
+    .modal p { margin: 6px 0; font-size: 13px; color: #c9d1d9; }
+    .err { color: #ff7b72; font-size: 12px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <div id="loginScreen">
+    <div class="login-box">
+      <h2 style="margin:0 0 12px;">ダッシュボード</h2>
+      <input id="loginId" class="login-input" placeholder="スタッフID" autocomplete="username">
+      <input id="loginPw" class="login-input" type="password" placeholder="パスワード" autocomplete="current-password">
+      <div id="loginError" class="err"></div>
+      <button type="button" class="login-btn" onclick="executeLogin(false)">ログイン</button>
+    </div>
+  </div>
+
+  <div class="topbar">
+    <button type="button" class="text-btn" onclick="location.href='index2.html'">🏠 戻る</button>
+    <h1>ダッシュボード</h1>
+    <button type="button" class="text-btn add-btn" onclick="openCustomize('add')">＋ 列を追加</button>
+    <select id="yearFilter" class="filter" onchange="renderBoard()"></select>
+    <div class="search">
+      <span>🔎</span>
+      <input id="q" placeholder="カードを検索" oninput="renderBoard()">
+    </div>
+    <div class="spacer"></div>
+    <span id="loadStatus" class="status">読み込み中…</span>
+    <button type="button" class="text-btn" onclick="loadBoard()">更新</button>
+    <button type="button" class="text-btn" onclick="openCustomize()">構成を編集</button>
+  </div>
+
+  <div id="boardWrap">
+    <div id="board"></div>
+  </div>
+
+  <div id="drawerBg" class="drawer-bg" onclick="closeCustomize()"></div>
+  <aside id="drawer" class="drawer">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <h2>表示の構成</h2>
+      <button type="button" class="text-btn" onclick="closeCustomize()">閉じる</button>
+    </div>
+    <p class="help">
+      親列（1計画・2調達…）の中に子列（1-1 未実行など）が入る形です。名前の変更・追加・上下入替・削除ができます。データが載る列は「カードの種類」で選びます。管理・収穫・出荷は空の親列を追加して後から使えます。
+    </p>
+    <div id="layoutEditor"></div>
+    <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+      <button type="button" class="text-btn add-btn" onclick="addParent()">親列を追加</button>
+      <button type="button" class="text-btn" onclick="resetLayout()">初期構成に戻す</button>
+    </div>
+  </aside>
+
+  <div id="cardModalBg" class="modal-bg" onclick="closeCardModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <h3 id="cardModalTitle"></h3>
+      <div id="cardModalBody"></div>
+      <div style="text-align:right; margin-top:12px;">
+        <button type="button" class="text-btn" onclick="closeCardModal()">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="farm-board.js?v=1787129000000"></script>
+</body>
+</html>
