@@ -16244,6 +16244,8 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.closeAfterWorkSaveContinueModal_ = () => {
+        const modalEl = document.getElementById('modal');
+        if (modalEl) modalEl.style.display = 'none';
         const m = document.getElementById('afterWorkSaveContinueModal');
         if (m) m.style.display = 'none';
         if (typeof window.refreshClockOutNudgeUI_ === 'function') {
@@ -16373,8 +16375,10 @@ function createSignboardMarker(name, pos, icon, id) {
         };
         if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
         const usual = window.getUsualClockOutTime_() || '17:00';
-        modal.innerHTML = `
-          <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28);">
+        const modalEl = document.getElementById('modal');
+        if (!modalEl) return;
+        modalEl.innerHTML = `
+          <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">✅ 記録を保存しました</div>
             <div style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.4;">「${String(workName).replace(/</g, '&lt;')}」の終了は <b>${startDefault || '--:--'}</b> です。続けて次の作業開始を入れられます。</div>
             <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">次の作業の開始時間</label>
@@ -16390,7 +16394,10 @@ function createSignboardMarker(name, pos, icon, id) {
             ${showClockOut ? `<button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を記録する${near ? `（${usual}ごろ）` : ''}</button>` : ''}
             <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
           </div>`;
-        modal.style.display = 'flex';
+        modalEl.style.display = 'flex';
+        modalEl.onclick = (evt) => {
+          if (evt.target === modalEl) closeAfterWorkSaveContinueModal_();
+        };
         setTimeout(() => {
           try { window.refreshAfterSavePlannedEndHint_(); } catch (e) {}
           try { window.refreshClockOutNudgeUI_(); } catch (e) {}

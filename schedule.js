@@ -823,9 +823,10 @@ async function fetchWeatherAndUpdateUI() {
         const timeoutMs = {
           saveCultivationPlans: 90000,
           saveCroptypeDBBatch: 90000,
-          getCultivationMaster: 60000
+          getCultivationMaster: 60000,
+          getCultivationPlans: 75000
         }[action] || 30000;
-        const maxRetries = (action === 'saveCultivationPlans' || action === 'saveCroptypeDBBatch') ? 0 : retries;
+        const maxRetries = (action === 'saveCultivationPlans' || action === 'saveCroptypeDBBatch' || action === 'getCultivationPlans') ? 0 : retries;
         
         let lastError = null;
         for (let i = 0; i <= maxRetries; i++) {
@@ -953,13 +954,24 @@ async function fetchWeatherAndUpdateUI() {
         const timeoutMs = {
           saveCultivationPlans: 90000,
           saveCroptypeDBBatch: 90000,
-          getCultivationMaster: 60000
+          getCultivationMaster: 60000,
+          getCultivationPlans: 75000
         }[action] || 30000;
-        const maxRetries = (action === 'saveCultivationPlans' || action === 'saveCroptypeDBBatch') ? 0 : retries;
+        const maxRetries = (action === 'saveCultivationPlans' || action === 'saveCroptypeDBBatch' || action === 'getCultivationPlans') ? 0 : retries;
         
         let lastError = null;
+        window._callGasControllers = window._callGasControllers || {};
+        window._callGasCancelled = window._callGasCancelled || {};
+        const cancelGenAtStart = window._callGasCancelled[action] || 0;
         for (let i = 0; i <= maxRetries; i++) {
+            if ((window._callGasCancelled[action] || 0) > cancelGenAtStart) {
+                const cancelled = new Error('cancelled');
+                cancelled.name = 'AbortError';
+                lastError = cancelled;
+                break;
+            }
             const controller = new AbortController();
+            window._callGasControllers[action] = controller;
             const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             try {
                 const res = await fetch(GAS_URL, {
@@ -995,6 +1007,17 @@ async function fetchWeatherAndUpdateUI() {
         lastError.message = lastError.message.replace("（リトライ中...）", "");
         throw lastError;
       }
+
+      window.abortCallGAS = function(action) {
+        window._callGasCancelled = window._callGasCancelled || {};
+        window._callGasCancelled[action] = (window._callGasCancelled[action] || 0) + 1;
+        const map = window._callGasControllers || {};
+        const c = map[action];
+        if (c) {
+          try { c.abort(); } catch (e) {}
+          delete map[action];
+        }
+      };
 
       let trackingOverlay = null;
       let animationFrameId = null;

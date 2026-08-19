@@ -8907,39 +8907,111 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
   }
 }
 
+function countContiguousFragments_(idxs) {
+  if (!idxs || !idxs.length) return 0;
+  let n = 1;
+  for (let i = 1; i < idxs.length; i++) {
+    if (idxs[i] !== idxs[i - 1] + 1) n++;
+  }
+  return n;
+}
+
+/** 一致行の JSON 列だけ読む（全シートの巨大JSONを毎回引かない） */
+function getCultivationPlanJsonCells_(sheet, rowCount, matchIdx) {
+  const out = {};
+  if (!sheet || !matchIdx || !matchIdx.length || rowCount <= 0) return out;
+  const fragments = countContiguousFragments_(matchIdx);
+  if (matchIdx.length >= 80 || fragments >= 25) {
+    const col = sheet.getRange(2, 6, rowCount, 1).getValues();
+    for (let i = 0; i < matchIdx.length; i++) {
+      const idx = matchIdx[i];
+      out[idx] = col[idx] ? col[idx][0] : '';
+    }
+    return out;
+  }
+  let start = 0;
+  while (start < matchIdx.length) {
+    let end = start;
+    while (end + 1 < matchIdx.length && matchIdx[end + 1] === matchIdx[start] + (end - start) + 1) end++;
+    const first = matchIdx[start];
+    const count = matchIdx[end] - first + 1;
+    const vals = sheet.getRange(first + 2, 6, count, 1).getValues();
+    for (let k = 0; k < vals.length; k++) out[first + k] = vals[k][0];
+    start = end + 1;
+  }
+  return out;
+}
+
 function getCultivationPlans(year, crop, planType, planName) {
   try {
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('栽培計画');
     if (!sheet) return [];
-    
     if (sheet.getLastRow() <= 1) return [];
-    
-    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+
+    const rowCount = sheet.getLastRow() - 1;
+    const meta = sheet.getRange(2, 2, rowCount, 3).getValues(); // year, id, crop
+    const yearS = String(year);
+    const cropS = String(crop);
+    const matchIdx = [];
+    for (let i = 0; i < meta.length; i++) {
+      if (String(meta[i][0]) === yearS && String(meta[i][2]) === cropS) matchIdx.push(i);
+    }
+    if (!matchIdx.length) return [];
+
+    const jsonByIdx = getCultivationPlanJsonCells_(sheet, rowCount, matchIdx);
     const results = [];
     const filterType = (planType != null && String(planType).trim() !== '')
       ? resolveCultivationPlanType_(planType)
       : '';
     const filterName = String(planName || '').trim();
-    
-    for (let i = 0; i < data.length; i++) {
-       const row = data[i];
-       if (String(row[1]) === String(year) && String(row[3]) === String(crop)) {
-          const planData = parseCultivationPlanJson_(row[5]);
-          if (!planData) continue;
-          if (!planData.planType) planData.planType = resolveCultivationPlanType_(planData);
-          if (!planData.planName) {
-            planData.planName = resolveCultivationPlanName_(year, crop, planData, planData.planType, null);
-          }
-          if (filterName && String(planData.planName).trim() !== filterName) continue;
-          if (!filterName && filterType && resolveCultivationPlanType_(planData) !== filterType) continue;
-          results.push(planData);
-       }
+
+    for (let i = 0; i < matchIdx.length; i++) {
+      const idx = matchIdx[i];
+      const planData = parseCultivationPlanJson_(jsonByIdx[idx]);
+      if (!planData) continue;
+      if (!planData.planType) planData.planType = resolveCultivationPlanType_(planData);
+      if (!planData.planName) {
+        planData.planName = resolveCultivationPlanName_(year, crop, planData, planData.planType, null);
+      }
+      if (filterName && String(planData.planName).trim() !== filterName) continue;
+      if (!filterName && filterType && resolveCultivationPlanType_(planData) !== filterType) continue;
+      results.push(planData);
     }
     return results;
   } catch(e) {
     throw new Error("栽培計画取得エラー: " + e.message);
   }
+}
+
+function cpPlanTaskFlat_(h) {
+  if (h == null) return -1;
+  if (typeof h === 'number' && isFinite(h)) return Math.floor(h);
+  if (h && typeof h === 'object') {
+    const mi = Number(h.monthIndex);
+    if (!isFinite(mi)) return -1;
+    if (h.periodIndex != null || h.period != null) {
+      const pi = Number(h.periodIndex != null ? h.periodIndex : h.period) || 0;
+      return mi > 17 ? mi : (mi * 6 + pi);
+    }
+    return mi;
+  }
+  return -1;
+}
+
+function cpPlanTaskRange_(planData, key) {
+  let arr = [];
+  if (planData && planData.tasks && Array.isArray(planData.tasks[key])) arr = planData.tasks[key];
+  else if (planData && Array.isArray(planData[key])) arr = planData[key];
+  let min = -1;
+  let max = -1;
+  (arr || []).forEach(function(h) {
+    const f = cpPlanTaskFlat_(h);
+    if (f < 0) return;
+    if (min < 0 || f < min) min = f;
+    if (max < 0 || f > max) max = f;
+  });
+  return { min: min, max: max };
 }
 
 function getSavedCultivationPlanList() {
@@ -9020,6 +9092,8 @@ function getSavedCultivationPlanList() {
            map[key].lastUpdated = row[0];
            if (planName) map[key].planName = planName;
        }
+       const sowR = cpPlanTaskRange_(planData, 'sowing');
+       const plantR = cpPlanTaskRange_(planData, 'planting');
        map[key].plans.push({
          id: planId,
          variety: vName,
@@ -9033,7 +9107,11 @@ function getSavedCultivationPlanList() {
          planType: planType,
          planName: planName,
          location: location,
-         tag: planData && planData.tag ? String(planData.tag || '').trim() : ''
+         tag: planData && planData.tag ? String(planData.tag || '').trim() : '',
+         sowFrom: sowR.min,
+         sowTo: sowR.max,
+         plantFrom: plantR.min,
+         plantTo: plantR.max
        });
        map[key].seedTotal += seedCount;
        if (status !== 'executed') map[key].seedPlannedTotal += seedCount;

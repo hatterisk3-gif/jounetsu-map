@@ -9,6 +9,14 @@
   const EXTRA_STORAGE_KEY = 'passionMapVarietyMakerCatalog';
 
   /**
+   * 品種コードの接頭辞 → メーカー
+   * 例: BL-101 → ブロリード
+   */
+  const VARIETY_CODE_PREFIX_MAKERS = [
+    { prefixes: ['bl-'], maker: 'ブロリード' }
+  ];
+
+  /**
    * よく流通する品種（種苗会社が公開カタログで扱っているもの中心）
    * crop は空でも可。あると同じ作物を優先表示する。
    */
@@ -117,9 +125,22 @@
   function normalizeVarietyKey(name) {
     return String(name || '')
       .trim()
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, function (ch) {
+        return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+      })
       .replace(/[\s　]+/g, '')
-      .replace(/[ｰー−‐‑‒–—―]/g, 'ー')
+      .replace(/[ｰー−‐‑‒–—―－]/g, 'ー')
       .toLowerCase();
+  }
+
+  function foldVarietyCodeKey(name) {
+    return normalizeVarietyKey(name).replace(/ー/g, '-');
+  }
+
+  function varietyStartsWithCodePrefix(varietyName, prefix) {
+    const q = foldVarietyCodeKey(varietyName);
+    const p = foldVarietyCodeKey(prefix);
+    return !!(p && q.indexOf(p) === 0);
   }
 
   function loadExtraCatalog() {
@@ -178,6 +199,22 @@
     if (!q) return [];
     const cropName = String(crop || '').trim();
     const byMaker = new Map();
+
+    VARIETY_CODE_PREFIX_MAKERS.forEach((rule) => {
+      const maker = String((rule && rule.maker) || '').trim();
+      if (!maker) return;
+      const hit = (rule.prefixes || []).some((prefix) => varietyStartsWithCodePrefix(varietyName, prefix));
+      if (!hit) return;
+      byMaker.set(maker, {
+        maker: maker,
+        variety: String(varietyName || '').trim(),
+        crop: cropName,
+        grainCount: '',
+        score: 95,
+        exact: true,
+        source: 'catalog'
+      });
+    });
 
     getAllCatalogEntries().forEach((row) => {
       if (!row) return;

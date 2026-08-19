@@ -1620,8 +1620,17 @@ async function confirmVarietyMetaDialog() {
                 refreshChoiceButtons('cpVariety');
                 syncCpVarietyMetaFields();
             }
-            if (planId) applyCpPlanVariety(planId, variety);
-            refreshCpPlanVarietySelectsForCrop(crop);
+            const appliedCardId = applyAddedVarietyToCpCard_(crop, variety, planId);
+            addCpVarietyOptionToOtherCards_(crop, variety, appliedCardId);
+            if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
+            closeVarietyMetaDialog();
+            if (mode === 'add' && addCardAfter && !appliedCardId) {
+                if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
+                addCpPlanRow({
+                    variety: variety,
+                    croptypeData: (typeof pendingCroptypeData !== 'undefined' ? pendingCroptypeData : null)
+                });
+            }
         } else {
             // 作型登録画面
             rememberCustomVariety(crop, variety);
@@ -1659,17 +1668,7 @@ async function confirmVarietyMetaDialog() {
                 climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : ''
             });
             renderCrVarietyBadges();
-        }
-
-        closeVarietyMetaDialog();
-
-        // ダイアログ閉鎖後にカード追加（裏同期と並行）
-        if (target === 'cp' && !planId && mode === 'add' && addCardAfter) {
-            if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
-            addCpPlanRow({
-                variety: variety,
-                croptypeData: (typeof pendingCroptypeData !== 'undefined' ? pendingCroptypeData : null)
-            });
+            closeVarietyMetaDialog();
         }
     } finally {
         if (confirmBtn) {
@@ -2860,28 +2859,39 @@ window.editCpLocationClimatesInManager = editCpLocationClimatesInManager;
 window.cancelCpLocationClimateEditInManager = cancelCpLocationClimateEditInManager;
 window.saveCpLocationClimateEditInManager = saveCpLocationClimateEditInManager;
 
+let _cpMasterFetchPromise = null;
+let _cpMasterFetchPaused = false;
+
 async function fetchCultivationMaster() {
-    try {
-        const cachedStr = localStorage.getItem('cpMasterDataCache');
-        if (cachedStr) {
-            try {
-                let cachedData = JSON.parse(cachedStr);
-                if (cachedData && cachedData.locations && cachedData.locations.length > 0) {
-                    cpMasterData = cachedData;
-                    applyCultivationMasterData();
-                }
-            } catch(e) {}
+    if (_cpMasterFetchPaused) return cpMasterData;
+    if (_cpMasterFetchPromise) return _cpMasterFetchPromise;
+    _cpMasterFetchPromise = (async () => {
+        try {
+            const cachedStr = localStorage.getItem('cpMasterDataCache');
+            if (cachedStr) {
+                try {
+                    let cachedData = JSON.parse(cachedStr);
+                    if (cachedData && cachedData.locations && cachedData.locations.length > 0) {
+                        cpMasterData = cachedData;
+                        applyCultivationMasterData();
+                    }
+                } catch(e) {}
+            }
+
+            const data = await callGAS('getCultivationMaster');
+            if(data && data.crops) {
+                cpMasterData = data;
+                localStorage.setItem('cpMasterDataCache', JSON.stringify(data));
+                applyCultivationMasterData();
+            }
+        } catch(e) {
+            if (e && (e.name === 'AbortError' || String(e.message || '') === 'cancelled')) return;
+            console.error("マスタ取得エラー", e);
         }
-        
-        const data = await callGAS('getCultivationMaster');
-        if(data && data.crops) {
-            cpMasterData = data;
-            localStorage.setItem('cpMasterDataCache', JSON.stringify(data));
-            applyCultivationMasterData();
-        }
-    } catch(e) {
-        console.error("マスタ取得エラー", e);
-    }
+    })().finally(() => {
+        _cpMasterFetchPromise = null;
+    });
+    return _cpMasterFetchPromise;
 }
 
 function getVarietyOptionsForCrop(crop) {
@@ -3007,9 +3017,8 @@ function refreshCpVarietyGroupDividers() {
     }
 
     if (!cpShowVarietyGroupDividers) {
-        if (typeof syncAllRowHeights === 'function') {
-            setTimeout(() => { syncAllRowHeights(); }, 30);
-        }
+        if (typeof scheduleSyncAllRowHeights === 'function') scheduleSyncAllRowHeights(30);
+        else if (typeof syncAllRowHeights === 'function') setTimeout(() => { syncAllRowHeights(); }, 30);
         return;
     }
 
@@ -3056,7 +3065,9 @@ function refreshCpVarietyGroupDividers() {
         }
         i = j + 1;
     }
-    if (typeof syncAllRowHeights === 'function') {
+    if (typeof scheduleSyncAllRowHeights === 'function') {
+        scheduleSyncAllRowHeights(30);
+    } else if (typeof syncAllRowHeights === 'function') {
         setTimeout(() => { syncAllRowHeights(); }, 30);
     }
 }
@@ -3280,7 +3291,7 @@ window.onCpPlanQtySelectChange = onCpPlanQtySelectChange;
 window.ensureCpNumericSelectValue = ensureCpNumericSelectValue;
 
 /** 計画カードの品種セレクトを作り直す */
-function refreshCpPlanVarietySelect(planId) {
+function refreshCpPlanVarietySelect(planId, opts) {
     const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
     const sel = document.getElementById('varietySelect_' + planId);
     if (!plan || !sel) return;
@@ -3288,14 +3299,37 @@ function refreshCpPlanVarietySelect(planId) {
     tmp.innerHTML = buildCpVarietySelectHtml(plan);
     const next = tmp.querySelector('select');
     if (next) sel.replaceWith(next);
-    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
+    if (!opts || !opts.skipOrdinals) {
+        if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
+    }
 }
 
 function refreshCpPlanVarietySelectsForCrop(crop) {
     const c = String(crop || '').trim();
     if (!c || !Array.isArray(cpPlans)) return;
     cpPlans.forEach(p => {
-        if (p && String(p.crop || '') === c) refreshCpPlanVarietySelect(p.id);
+        if (p && String(p.crop || '') === c) refreshCpPlanVarietySelect(p.id, { skipOrdinals: true });
+    });
+    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
+}
+
+/** 他カードのセレクトへ、作り直しせず選択肢だけ足す（スクロールを動かさない） */
+function addCpVarietyOptionToOtherCards_(crop, variety, skipPlanId) {
+    const v = String(variety || '').trim();
+    if (!v || !Array.isArray(cpPlans)) return;
+    const c = String(crop || '').trim();
+    cpPlans.forEach(p => {
+        if (!p || String(p.id) === String(skipPlanId || '')) return;
+        if (c && String(p.crop || '').trim() && String(p.crop || '').trim() !== c) return;
+        const sel = document.getElementById('varietySelect_' + p.id);
+        if (!sel) return;
+        if (Array.from(sel.options).some(o => String(o.value) === v)) return;
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        const custom = Array.from(sel.options).find(o => o.value === '__custom__');
+        if (custom) sel.insertBefore(opt, custom);
+        else sel.appendChild(opt);
     });
 }
 
@@ -3332,44 +3366,65 @@ function applyCpPlanVariety(planId, variety) {
     const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
     if (!plan) return;
     const next = String(variety || '').trim();
-    if (!next || next === plan.variety) {
+    if (!next) {
         if (typeof refreshCpSeedProcureDisplay === 'function') refreshCpSeedProcureDisplay(planId);
         return;
     }
-    plan.variety = next;
-    plan.isBlankStarter = false;
-    if (!plan.crop) {
-        const formCrop = getCpVal('cpCrop') || '';
-        if (formCrop) plan.crop = formCrop;
-    }
-    const card = document.getElementById('cpLeftCard_' + planId);
-    if (card) {
-        const cropBadge = card.querySelector('span[style*="background:#1976D2"]');
-        if (cropBadge) cropBadge.textContent = plan.crop || '作物未設定';
-    }
-
-    // 作型DBに一致すればファイルリンクのみ更新（既に塗ったカレンダーは維持）
-    const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
-    const locationClimates = getLocationClimates(getCpVal('cpLocation') || plan.location);
-    if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
-        const candidates = cpMasterData.croptypesDB.filter(db =>
-            db.crop === plan.crop &&
-            db.variety === next &&
-            isCroptypeClimateMatch(db.climate, climate, locationClimates)
-        );
-        let found = null;
-        if (climate) {
-            found = candidates.find(db => String(db.climate || '').trim() === climate) || candidates[0] || null;
-        } else {
-            found = candidates[0] || null;
+    const same = next === String(plan.variety || '').trim();
+    if (!same) {
+        plan.variety = next;
+        plan.isBlankStarter = false;
+        if (!plan.crop) {
+            const formCrop = getCpVal('cpCrop') || '';
+            if (formCrop) plan.crop = formCrop;
         }
-        if (found && found.fileUrl) plan.fileUrl = found.fileUrl;
+        const card = document.getElementById('cpLeftCard_' + planId);
+        if (card) {
+            const cropBadge = card.querySelector('span[style*="background:#1976D2"]');
+            if (cropBadge) cropBadge.textContent = plan.crop || '作物未設定';
+        }
+
+        // 作型DBに一致すればファイルリンクのみ更新（既に塗ったカレンダーは維持）
+        const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+        const locationClimates = getLocationClimates(getCpVal('cpLocation') || plan.location);
+        if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
+            const candidates = cpMasterData.croptypesDB.filter(db =>
+                db.crop === plan.crop &&
+                db.variety === next &&
+                isCroptypeClimateMatch(db.climate, climate, locationClimates)
+            );
+            let found = null;
+            if (climate) {
+                found = candidates.find(db => String(db.climate || '').trim() === climate) || candidates[0] || null;
+            } else {
+                found = candidates[0] || null;
+            }
+            if (found && found.fileUrl) plan.fileUrl = found.fileUrl;
+        }
     }
 
+    if (typeof refreshCpPlanVarietySelect === 'function') refreshCpPlanVarietySelect(planId);
     if (typeof refreshCpSeedProcureDisplay === 'function') refreshCpSeedProcureDisplay(planId);
+    if (same) return;
     if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
     if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
     if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
+}
+
+/** 新規追加した品種を、元のカード（なければ空カード）へセット */
+function applyAddedVarietyToCpCard_(crop, variety, planId) {
+    const v = String(variety || '').trim();
+    if (!v) return '';
+    let targetId = planId ? String(planId) : '';
+    if (!targetId) {
+        const blank = (cpPlans || []).find(p => p && (p.isBlankStarter || !String(p.variety || '').trim()));
+        if (blank) targetId = String(blank.id || '');
+    }
+    if (!targetId) return '';
+    const plan = (cpPlans || []).find(p => p && String(p.id) === targetId);
+    if (plan && !String(plan.crop || '').trim() && crop) plan.crop = String(crop || '').trim();
+    applyCpPlanVariety(targetId, v);
+    return targetId;
 }
 function changeCpPlanVariety(planId, value) {
     const plan = (typeof cpPlans !== 'undefined' ? cpPlans : []).find(p => p.id === planId);
@@ -4235,28 +4290,17 @@ window.refreshCpPlanLeftSummary = refreshCpPlanLeftSummary;
 function withPreservedCpPanelScroll(fn) {
     const leftPanel = document.getElementById('cpLeftPanel');
     const rightPanel = document.getElementById('cpRightPanel');
-    // ユーザー操作中は位置を触らず高さだけ合わせる
-    if (window._cpPanelUserScrolling) {
-        window._cpPanelHeightSyncing = true;
-        try { fn(); } finally { window._cpPanelHeightSyncing = false; }
-        return;
-    }
     const leftTop = leftPanel ? leftPanel.scrollTop : 0;
     const rightTop = rightPanel ? rightPanel.scrollTop : 0;
     const rightLeft = rightPanel ? rightPanel.scrollLeft : 0;
-    const gen = (window._cpScrollPreserveGen = (window._cpScrollPreserveGen || 0) + 1);
     window._cpPanelHeightSyncing = true;
     try {
         fn();
     } finally {
         window._cpPanelHeightSyncing = false;
     }
-    // 遅延 rAF 復元はユーザー操作と競合して巻き戻すため、同期後に1回だけ戻す
-    if (gen !== window._cpScrollPreserveGen || window._cpPanelUserScrolling) return;
-    if (leftPanel) {
-        // 高さ変更でブラウザが位置を動かした場合のみ戻す。ユーザーが既に動かしていれば触らない
-        if (Math.abs(leftPanel.scrollTop - leftTop) > 1) leftPanel.scrollTop = leftTop;
-    }
+    // 行高リセットでブラウザが先頭へ飛ばしても、同期直前の位置へ戻す
+    if (leftPanel && Math.abs(leftPanel.scrollTop - leftTop) > 1) leftPanel.scrollTop = leftTop;
     if (rightPanel) {
         if (Math.abs(rightPanel.scrollTop - rightTop) > 1) rightPanel.scrollTop = rightTop;
         if (Math.abs(rightPanel.scrollLeft - rightLeft) > 1) rightPanel.scrollLeft = rightLeft;
@@ -8259,6 +8303,30 @@ function updateCpSaveButtonLabel() {
         : '本番へすぐ同期します。未実行の計画は編集のたびに自動保存されます';
 }
 
+function showCpToast(msg, isSuccess, durationMs) {
+    if (isSuccess === undefined) isSuccess = true;
+    const dur = durationMs || (isSuccess ? 3000 : 4500);
+    let toast = document.getElementById('cpGlobalToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'cpGlobalToast';
+        toast.style.cssText = 'position:fixed; top:18px; left:50%; transform:translateX(-50%) translateY(-24px); opacity:0; padding:10px 22px; border-radius:8px; font-size:13px; font-weight:bold; color:#fff; box-shadow:0 4px 16px rgba(0,0,0,0.3); z-index:100005; transition:transform 0.25s ease, opacity 0.25s ease; pointer-events:none; max-width:90vw; text-align:center; line-height:1.4; white-space:pre-wrap;';
+        document.body.appendChild(toast);
+    }
+    toast.style.background = isSuccess ? '#2E7D32' : '#C62828';
+    toast.textContent = msg;
+    requestAnimationFrame(() => {
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+        toast.style.opacity = '1';
+    });
+    if (window._cpToastTimer) clearTimeout(window._cpToastTimer);
+    window._cpToastTimer = setTimeout(() => {
+        toast.style.transform = 'translateX(-50%) translateY(-24px)';
+        toast.style.opacity = '0';
+    }, dur);
+}
+window.showCpToast = showCpToast;
+
 function setCpSaveProgress(percent, label, autoAdvanceTo) {
     const box = document.getElementById('cpSaveProgress');
     const bar = document.getElementById('cpSaveProgressBar');
@@ -8294,7 +8362,7 @@ function setCpSaveProgress(percent, label, autoAdvanceTo) {
     }
 }
 
-function finishCpSaveProgress(success) {
+function finishCpSaveProgress(success, customMsg) {
     if (cpSaveProgressTimer) {
         clearInterval(cpSaveProgressTimer);
         cpSaveProgressTimer = null;
@@ -8308,12 +8376,12 @@ function finishCpSaveProgress(success) {
     bar.style.width = '100%';
     bar.style.background = success ? '#4CAF50' : '#d32f2f';
     labelEl.style.color = success ? '#2e7d32' : '#c62828';
-    labelEl.textContent = success ? '保存が完了しました' : '保存に失敗しました';
+    labelEl.textContent = customMsg || (success ? '保存が完了しました' : '保存に失敗しました');
     cpSaveProgressHideTimer = setTimeout(() => {
         box.style.display = 'none';
         bar.style.width = '0%';
         cpSaveProgressHideTimer = null;
-    }, success ? 1200 : 3000);
+    }, success ? 1500 : 3500);
 }
 
 async function saveCultivationPlan(options) {
@@ -8337,14 +8405,21 @@ async function saveCultivationPlan(options) {
     let acquiredSaveLock = false;
 
     try {
+        // 自動保存実行中に手動保存が押された場合は待機
+        if (!opts.auto && window._cpPlanSaveSyncBusy) {
+            let waitCount = 0;
+            while (window._cpPlanSaveSyncBusy && waitCount < 15) {
+                await new Promise(res => setTimeout(res, 100));
+                waitCount++;
+            }
+        }
         if (opts.auto && window._cpPlanSaveSyncBusy) {
             cpProductionAutosaveDirty = true;
             return false;
         }
-        if (opts.auto) {
-            window._cpPlanSaveSyncBusy = true;
-            acquiredSaveLock = true;
-        }
+        window._cpPlanSaveSyncBusy = true;
+        acquiredSaveLock = true;
+
         const year = getCpVal('cpYear', true) || new Date().getFullYear();
         const crop = getCpVal('cpCrop');
         
@@ -8531,8 +8606,6 @@ async function saveCultivationPlan(options) {
         if (typeof callGAS !== 'function') {
             throw new Error('サーバー通信の準備ができていません。ページを再読み込みしてから保存してください。');
         }
-        window._cpPlanSaveSyncBusy = true;
-        acquiredSaveLock = true;
         if (opts.auto) {
             cpProductionSyncState = { status: 'saving', at: '', error: '' };
             if (typeof updateCpDraftStatusUI === 'function') updateCpDraftStatusUI();
@@ -8694,7 +8767,7 @@ async function saveCultivationPlan(options) {
             });
         }
 
-        if (!opts.silent) finishCpSaveProgress(true);
+        if (!opts.silent) finishCpSaveProgress(true, wasOverwrite ? `「${planName}」を更新保存しました` : `「${planName}」を保存しました`);
 
         if (!opts.keepOpen) {
             const modal = document.getElementById('cultivationPlanModal');
@@ -8703,23 +8776,18 @@ async function saveCultivationPlan(options) {
 
         if (!opts.silent) {
             const baseMsg = wasOverwrite
-                ? `栽培計画「${planName}」を保存しました。`
-                : `未実行の栽培計画「${planName}」として保存しました。`;
+                ? `✅ 栽培計画「${planName}」を保存しました`
+                : `✅ 栽培計画「${planName}」を新規保存しました`;
             const msg = baseMsg +
-                (hadExecutedPlans ? '\n実行済み計画の作業予定も更新しました。' : '');
-            try {
-                if (typeof customAlert === 'function') customAlert(msg);
-                else alert(msg);
-            } catch (alertErr) {
-                alert(msg);
-            }
+                (hadExecutedPlans ? '\n（実行済み計画の作業予定も更新しました）' : '');
+            showCpToast(msg, true, 2800);
         }
 
         if (!opts.auto) {
             cpCropHarvestSummaryCache = null;
             if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
-            if (typeof loadData === 'function' && window.__scheduleBootstrapFinished) {
-                try { loadData(); } catch (e) {}
+            if (typeof updateMapVisuals === 'function') {
+                try { updateMapVisuals(); } catch (e) {}
             }
         }
         if (typeof updateCpDraftStatusUI === 'function') updateCpDraftStatusUI();
@@ -8757,12 +8825,12 @@ async function saveCultivationPlan(options) {
             if (typeof updateCpDraftStatusUI === 'function') updateCpDraftStatusUI();
             return false;
         }
-        if (!opts.silent) finishCpSaveProgress(false);
-        alert("保存エラー: " + (e.message || e));
+        if (!opts.silent) finishCpSaveProgress(false, '保存に失敗しました');
+        showCpToast("保存エラー: " + (e.message || e), false, 5000);
         return false;
     } finally {
         if (acquiredSaveLock) window._cpPlanSaveSyncBusy = false;
-        if (btn && !opts.silent) {
+        if (btn) {
             btn.disabled = false;
             updateCpSaveButtonLabel();
         }
@@ -9081,6 +9149,8 @@ function buildLiveEditorPlanListItem_() {
     const plans = (src || []).filter(p => p && String(p.variety || '').trim()).map(p => {
         const trays = Number(p.trays) || 0;
         const holes = Number(p.holes) || 0;
+        const sowR = cpNurseryTaskRangeFromTasks_(p.tasks, 'sowing');
+        const plantR = cpNurseryTaskRangeFromTasks_(p.tasks, 'planting');
         return {
             variety: p.variety,
             trays: trays,
@@ -9088,7 +9158,11 @@ function buildLiveEditorPlanListItem_() {
             areaA: Number(p.areaA) || 0,
             seedCount: (holes === 1) ? trays : (trays * (holes > 0 ? holes : 0)),
             status: p.status || 'planned',
-            location: p.location || form.location || ''
+            location: p.location || form.location || '',
+            sowFrom: sowR.min,
+            sowTo: sowR.max,
+            plantFrom: plantR.min,
+            plantTo: plantR.max
         };
     });
     if (!plans.length) return null;
@@ -9260,7 +9334,192 @@ function fillOverallPlanFilterSelects_(list) {
 const CP_NURSERY_TRAYS_PER_BED_KEY = 'passionMapNurseryTraysPerBed';
 const CP_NURSERY_TRAYS_PER_BED_DEFAULT = 500;
 let _cpOverallLastSummary = null;
+let _cpOverallLastTimeline = null;
 let _cpOverallActiveTab = 'summary';
+
+function cpNurseryTaskFlat_(h) {
+    const limit = (typeof CP_HARVEST_PERIODS === 'number') ? CP_HARVEST_PERIODS : 108;
+    if (h == null) return -1;
+    if (typeof h === 'number' && isFinite(h)) {
+        const n = Math.floor(h);
+        return (n >= 0 && n < limit) ? n : -1;
+    }
+    if (h && typeof h === 'object') {
+        if (h.flatIndex != null && isFinite(Number(h.flatIndex))) {
+            const n = Math.floor(Number(h.flatIndex));
+            return (n >= 0 && n < limit) ? n : -1;
+        }
+        const mi = Number(h.monthIndex);
+        if (!isFinite(mi)) return -1;
+        if (h.periodIndex != null || h.period != null) {
+            const pi = Number(h.periodIndex != null ? h.periodIndex : h.period) || 0;
+            const f = mi > 17 ? mi : (mi * 6 + pi);
+            return (f >= 0 && f < limit) ? Math.floor(f) : -1;
+        }
+        const n = Math.floor(mi);
+        return (n >= 0 && n < limit) ? n : -1;
+    }
+    return -1;
+}
+
+function cpNurseryTaskRangeFromTasks_(tasks, key) {
+    const arr = (tasks && Array.isArray(tasks[key])) ? tasks[key] : [];
+    let min = -1;
+    let max = -1;
+    arr.forEach(h => {
+        const f = cpNurseryTaskFlat_(h);
+        if (f < 0) return;
+        if (min < 0 || f < min) min = f;
+        if (max < 0 || f > max) max = f;
+    });
+    return { min: min, max: max };
+}
+
+function cpNurseryOccupyRange_(p) {
+    const limit = (typeof CP_HARVEST_PERIODS === 'number') ? CP_HARVEST_PERIODS : 108;
+    const sowFrom = Number(p && p.sowFrom);
+    const sowTo = Number(p && p.sowTo);
+    const plantFrom = Number(p && p.plantFrom);
+    const plantTo = Number(p && p.plantTo);
+    const hasSow = isFinite(sowFrom) && sowFrom >= 0 && isFinite(sowTo) && sowTo >= 0;
+    const hasPlant = isFinite(plantFrom) && plantFrom >= 0 && isFinite(plantTo) && plantTo >= 0;
+    if (hasSow && hasPlant) {
+        const from = Math.max(0, Math.min(sowFrom, plantTo));
+        const to = Math.min(limit - 1, Math.max(sowFrom, plantTo));
+        return { from: from, to: to, note: '' };
+    }
+    if (hasSow) {
+        return { from: Math.max(0, sowFrom), to: limit - 1, note: 'plantUnset' };
+    }
+    if (hasPlant) {
+        return { from: Math.max(0, plantFrom), to: Math.min(limit - 1, plantTo), note: 'sowUnset' };
+    }
+    return { from: -1, to: -1, note: 'unset' };
+}
+
+function nurseryMonthLabel_(monthIndex, year) {
+    const cal = (typeof getCpCalendarMonths === 'function')
+        ? getCpCalendarMonths()
+        : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+    const mon = cal[monthIndex] || ((monthIndex % 12) + 1);
+    const y = Number(year);
+    const isNext = monthIndex >= 12;
+    if (isFinite(y) && y > 0) {
+        return (isNext ? (y + 1) : y) + '年' + mon + '月';
+    }
+    return (isNext ? '翌' : '') + mon + '月';
+}
+
+function buildNurseryTimeline_(list, opts) {
+    opts = opts || {};
+    const year = String(opts.year || '');
+    const planType = opts.planType || 'all';
+    const status = opts.status || 'both';
+    const location = String(opts.location || '').trim();
+    const periodCount = (typeof CP_HARVEST_PERIODS === 'number') ? CP_HARVEST_PERIODS : 108;
+    const traysByPeriod = new Array(periodCount).fill(0);
+    const cropTraysByPeriod = {};
+    let timedTrays = 0;
+    let unsetTrays = 0;
+    let plantUnsetTrays = 0;
+    let sowUnsetTrays = 0;
+    let plantSum = 0;
+    (list || []).forEach(item => {
+        if (!item) return;
+        if (year && String(item.year) !== year) return;
+        const type = item.planType || (/試作/.test(String(item.planName || '')) ? '試作' : '本作');
+        if (planType !== 'all' && type !== planType) return;
+        const locs = Array.isArray(item.locations) && item.locations.length
+            ? item.locations
+            : (item.location ? String(item.location).split('・') : []);
+        if (location) {
+            const hit = locs.some(l => String(l || '').trim() === location)
+                || String(item.location || '').indexOf(location) >= 0;
+            if (!hit) return;
+        }
+        const crop = String(item.crop || '').trim() || '(作物未設定)';
+        (item.plans || []).forEach(p => {
+            if (!p) return;
+            if (status === 'planned' && p.status === 'executed') return;
+            if (status === 'executed' && p.status !== 'executed') return;
+            if (location) {
+                const ploc = String(p.location || '').trim();
+                if (ploc && ploc !== location) return;
+            }
+            const trays = Number(p.trays) || 0;
+            const holes = Number(p.holes) || 0;
+            if (holes === 1) {
+                plantSum += trays;
+                return;
+            }
+            if (!(trays > 0)) return;
+            const occ = cpNurseryOccupyRange_(p);
+            if (occ.from < 0 || occ.to < occ.from) {
+                unsetTrays += trays;
+                return;
+            }
+            if (occ.note === 'plantUnset') plantUnsetTrays += trays;
+            if (occ.note === 'sowUnset') sowUnsetTrays += trays;
+            timedTrays += trays;
+            if (!cropTraysByPeriod[crop]) cropTraysByPeriod[crop] = new Array(periodCount).fill(0);
+            for (let i = occ.from; i <= occ.to && i < periodCount; i++) {
+                traysByPeriod[i] += trays;
+                cropTraysByPeriod[crop][i] += trays;
+            }
+        });
+    });
+    let peakTrays = 0;
+    let peakPeriod = 0;
+    for (let i = 0; i < periodCount; i++) {
+        if (traysByPeriod[i] > peakTrays) {
+            peakTrays = traysByPeriod[i];
+            peakPeriod = i;
+        }
+    }
+    const months = [];
+    for (let m = 0; m < 18; m++) {
+        let monthPeak = 0;
+        let monthPeakPeriod = m * 6;
+        for (let p = 0; p < 6; p++) {
+            const idx = m * 6 + p;
+            if (idx >= periodCount) break;
+            const t = traysByPeriod[idx];
+            if (t > monthPeak) {
+                monthPeak = t;
+                monthPeakPeriod = idx;
+            }
+        }
+        const crops = {};
+        Object.keys(cropTraysByPeriod).forEach(crop => {
+            const t = (cropTraysByPeriod[crop] && cropTraysByPeriod[crop][monthPeakPeriod]) || 0;
+            if (t > 0) crops[crop] = t;
+        });
+        months.push({
+            monthIndex: m,
+            trays: monthPeak,
+            peakPeriod: monthPeakPeriod,
+            crops: crops
+        });
+    }
+    const peakCrops = {};
+    Object.keys(cropTraysByPeriod).forEach(crop => {
+        const t = (cropTraysByPeriod[crop] && cropTraysByPeriod[crop][peakPeriod]) || 0;
+        if (t > 0) peakCrops[crop] = t;
+    });
+    return {
+        year: year,
+        months: months,
+        peakTrays: peakTrays,
+        peakPeriod: peakPeriod,
+        peakMonthIndex: Math.floor(peakPeriod / 6),
+        peakCrops: peakCrops,
+        timedTrays: timedTrays,
+        unsetTrays: unsetTrays,
+        plantUnsetTrays: plantUnsetTrays,
+        sowUnsetTrays: sowUnsetTrays,
+        plantSum: plantSum
+    };
+}
 
 function getNurseryTraysPerBed_() {
     try {
@@ -9305,7 +9564,7 @@ function onNurseryTraysPerBedChange_() {
     const el = document.getElementById('cpNurseryTraysPerBed');
     const next = setNurseryTraysPerBed_(el ? el.value : CP_NURSERY_TRAYS_PER_BED_DEFAULT);
     if (el) el.value = String(next);
-    paintOverallNurseryPanel_(_cpOverallLastSummary);
+    paintOverallNurseryPanel_(_cpOverallLastSummary, _cpOverallLastTimeline);
 }
 
 function calcNurseryBedsNeeded_(traySum, perBed) {
@@ -9317,20 +9576,26 @@ function calcNurseryBedsNeeded_(traySum, perBed) {
     return { trays: trays, perBed: cap, beds: beds, lastFill: lastFill, remainToNext: remainToNext };
 }
 
-function paintOverallNurseryPanel_(summary) {
+function paintOverallNurseryPanel_(summary, timeline) {
     const panel = document.getElementById('cpOverallPanelNursery');
     if (!panel) return;
-    panel.innerHTML = renderOverallNurseryBedsHtml_(summary || { crops: [], total: { traySum: 0, plantSum: 0 } });
+    panel.innerHTML = renderOverallNurseryBedsHtml_(
+        summary || { crops: [], total: { traySum: 0, plantSum: 0 } },
+        timeline || _cpOverallLastTimeline
+    );
 }
 
-function renderOverallNurseryBedsHtml_(summary) {
+function renderOverallNurseryBedsHtml_(summary, timeline) {
     const esc = (s) => String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const perBed = getNurseryTraysPerBed_();
-    const traySum = Number(summary && summary.total && summary.total.traySum) || 0;
-    const plantSum = Number(summary && summary.total && summary.total.plantSum) || 0;
-    const calc = calcNurseryBedsNeeded_(traySum, perBed);
-    const crops = (summary && summary.crops) ? summary.crops.slice().sort((a, b) => (b.traySum || 0) - (a.traySum || 0)) : [];
+    const tl = timeline || {};
+    const plantSum = Number(tl.plantSum != null ? tl.plantSum : (summary && summary.total && summary.total.plantSum)) || 0;
+    const peakTrays = Number(tl.peakTrays) || 0;
+    const unsetTrays = Number(tl.unsetTrays) || 0;
+    const timedTrays = Number(tl.timedTrays) || 0;
+    const calc = calcNurseryBedsNeeded_(peakTrays, perBed);
+    const peakLabel = peakTrays > 0 ? nurseryMonthLabel_(tl.peakMonthIndex || 0, tl.year) : '';
 
     let html = '<div style="background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px; padding:10px 12px; margin-bottom:10px;">' +
         '<div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">' +
@@ -9339,25 +9604,59 @@ function renderOverallNurseryBedsHtml_(summary) {
         '<span style="font-size:11px; color:#689F38;">初期値 500枚</span>' +
         '</div></div>';
 
-    html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">' +
+    html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">' +
         '<div style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:10px 12px;">' +
-        '<div style="font-size:11px; color:#2E7D32; font-weight:bold;">必要苗床</div>' +
+        '<div style="font-size:11px; color:#2E7D32; font-weight:bold;">ピーク時の必要苗床</div>' +
         '<div style="font-size:26px; font-weight:bold; color:#1B5E20; line-height:1.15; margin-top:4px;">' + calc.beds.toLocaleString('ja-JP') + '<span style="font-size:14px;"> 区画</span></div>' +
+        (peakLabel ? '<div style="font-size:11px; color:#558B2F; margin-top:4px;">' + esc(peakLabel) + 'が最大</div>' : '') +
         '</div>' +
         '<div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:10px 12px;">' +
-        '<div style="font-size:11px; color:#F57F17; font-weight:bold;">対象の播種枚数</div>' +
+        '<div style="font-size:11px; color:#F57F17; font-weight:bold;">ピーク時の苗床枚数</div>' +
         '<div style="font-size:22px; font-weight:bold; color:#E65100; line-height:1.2; margin-top:4px;">' + calc.trays.toLocaleString('ja-JP') + '枚</div>' +
         '</div></div>';
 
-    if (calc.trays <= 0) {
+    html += '<div style="font-size:11px; color:#555; line-height:1.55; margin-bottom:10px;">' +
+        '播種の最初の半旬から定植の最後の半旬まで苗床に置きます（定植期も含める）。定植の翌半旬から差し引きます。各月は、その月の中でいちばん多い半旬の枚数です。' +
+        '</div>';
+
+    if (timedTrays <= 0 && unsetTrays <= 0) {
         html += '<div style="text-align:center; color:#666; font-size:13px; padding:18px 8px;">この条件では播種枚数がありません。' +
             (plantSum > 0 ? '<br><span style="font-size:11px; color:#888;">株数（' + plantSum.toLocaleString('ja-JP') + '株）は苗床枚数に含めていません。</span>' : '') +
             '</div>';
         return html;
     }
 
+    const months = Array.isArray(tl.months) ? tl.months : [];
+    const activeMonths = months.filter(m => (Number(m.trays) || 0) > 0);
+    if (activeMonths.length) {
+        const maxMonthTrays = activeMonths.reduce((n, m) => Math.max(n, Number(m.trays) || 0), 0) || 1;
+        html += '<div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">月別の苗床必要数</div>';
+        html += '<div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">';
+        activeMonths.forEach(m => {
+            const trays = Number(m.trays) || 0;
+            const beds = calcNurseryBedsNeeded_(trays, perBed);
+            const pct = Math.max(4, Math.round((trays / maxMonthTrays) * 100));
+            const isPeak = (m.monthIndex === tl.peakMonthIndex) && trays === peakTrays;
+            const cropBits = Object.keys(m.crops || {}).sort((a, b) => (m.crops[b] || 0) - (m.crops[a] || 0))
+                .map(name => esc(name) + ' ' + Number(m.crops[name] || 0).toLocaleString('ja-JP') + '枚')
+                .join(' ／ ');
+            html += '<div style="background:' + (isPeak ? '#E8F5E9' : '#fff') + '; border:1px solid ' + (isPeak ? '#81C784' : '#e0e0e0') + '; border-radius:8px; padding:8px 10px;">' +
+                '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:baseline;">' +
+                '<b style="font-size:13px; color:#333;">' + esc(nurseryMonthLabel_(m.monthIndex, tl.year)) +
+                (isPeak ? ' <span style="font-size:10px; background:#2E7D32; color:#fff; border-radius:8px; padding:1px 6px;">ピーク</span>' : '') +
+                '</b>' +
+                '<span style="font-size:12px; font-weight:bold; color:#1B5E20; white-space:nowrap;">' +
+                beds.beds.toLocaleString('ja-JP') + '区画 ／ ' + trays.toLocaleString('ja-JP') + '枚</span></div>' +
+                '<div style="height:6px; background:#eee; border-radius:99px; margin-top:6px; overflow:hidden;">' +
+                '<div style="width:' + pct + '%; height:100%; background:' + (isPeak ? '#2E7D32' : '#66BB6A') + '; border-radius:99px;"></div></div>' +
+                (cropBits ? '<div style="font-size:11px; color:#666; margin-top:5px;">' + cropBits + '</div>' : '') +
+                '</div>';
+        });
+        html += '</div>';
+    }
+
     html += '<div style="font-size:12px; color:#555; margin-bottom:10px; line-height:1.5;">' +
-        calc.trays.toLocaleString('ja-JP') + '枚 ÷ ' + calc.perBed.toLocaleString('ja-JP') + '枚 ＝ <b>' + calc.beds.toLocaleString('ja-JP') + '区画</b>';
+        'ピーク ' + calc.trays.toLocaleString('ja-JP') + '枚 ÷ ' + calc.perBed.toLocaleString('ja-JP') + '枚 ＝ <b>' + calc.beds.toLocaleString('ja-JP') + '区画</b>';
     if (calc.beds > 0 && calc.lastFill < calc.perBed) {
         html += '（最終区画 ' + calc.lastFill.toLocaleString('ja-JP') + ' / ' + calc.perBed.toLocaleString('ja-JP') + '枚。あと ' + calc.remainToNext.toLocaleString('ja-JP') + '枚で次の区画）';
     } else if (calc.beds > 0) {
@@ -9365,48 +9664,66 @@ function renderOverallNurseryBedsHtml_(summary) {
     }
     html += '</div>';
 
-    html += '<div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">区画の埋まり方</div>';
-    html += '<div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">';
-    const maxShow = 12;
-    const showBeds = Math.min(calc.beds, maxShow);
-    for (let i = 0; i < showBeds; i++) {
-        const fill = (i === calc.beds - 1) ? calc.lastFill : calc.perBed;
-        const pct = Math.max(4, Math.round((fill / calc.perBed) * 100));
-        html += '<div style="background:#fafafa; border:1px solid #DCEDC8; border-radius:8px; padding:7px 8px;">' +
-            '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">' +
-            '<b style="color:#33691E;">区画 ' + (i + 1) + '</b>' +
-            '<span style="color:#555;">' + fill.toLocaleString('ja-JP') + ' / ' + calc.perBed.toLocaleString('ja-JP') + '枚</span></div>' +
-            '<div style="height:8px; background:#eee; border-radius:99px; overflow:hidden;">' +
-            '<div style="width:' + pct + '%; height:100%; background:' + (fill >= calc.perBed ? '#2E7D32' : '#7CB342') + '; border-radius:99px;"></div></div></div>';
-    }
-    if (calc.beds > maxShow) {
-        html += '<div style="font-size:11px; color:#666; text-align:center;">ほか ' + (calc.beds - maxShow).toLocaleString('ja-JP') + ' 区画（満杯）</div>';
-    }
-    html += '</div>';
-
-    const trayCrops = crops.filter(c => (Number(c.traySum) || 0) > 0);
-    if (trayCrops.length) {
-        const maxTrays = trayCrops.reduce((m, c) => Math.max(m, Number(c.traySum) || 0), 0) || 1;
-        html += '<div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">作物別の苗床換算</div>';
-        html += '<div style="display:flex; flex-direction:column; gap:6px;">';
-        trayCrops.forEach(c => {
-            const trays = Number(c.traySum) || 0;
-            const beds = trays / calc.perBed;
-            const ownBeds = Math.ceil(trays / calc.perBed);
-            const pct = Math.max(4, Math.round((trays / maxTrays) * 100));
-            html += '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:8px 10px;">' +
-                '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">' +
-                '<b style="font-size:13px; color:#333;">' + esc(c.crop) + '</b>' +
-                '<span style="font-size:12px; font-weight:bold; color:#1B5E20; white-space:nowrap;">' + trays.toLocaleString('ja-JP') + '枚 ／ ' +
-                beds.toLocaleString('ja-JP', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '区画分' +
-                (ownBeds > 1 ? '（単独なら' + ownBeds + '区画）' : '') + '</span></div>' +
-                '<div style="height:6px; background:#eee; border-radius:99px; margin-top:6px; overflow:hidden;">' +
-                '<div style="width:' + pct + '%; height:100%; background:#66BB6A; border-radius:99px;"></div></div></div>';
-        });
+    if (peakTrays > 0) {
+        html += '<div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">ピーク時の区画の埋まり方</div>';
+        html += '<div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">';
+        const maxShow = 12;
+        const showBeds = Math.min(calc.beds, maxShow);
+        for (let i = 0; i < showBeds; i++) {
+            const fill = (i === calc.beds - 1) ? calc.lastFill : calc.perBed;
+            const pct = Math.max(4, Math.round((fill / calc.perBed) * 100));
+            html += '<div style="background:#fafafa; border:1px solid #DCEDC8; border-radius:8px; padding:7px 8px;">' +
+                '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">' +
+                '<b style="color:#33691E;">区画 ' + (i + 1) + '</b>' +
+                '<span style="color:#555;">' + fill.toLocaleString('ja-JP') + ' / ' + calc.perBed.toLocaleString('ja-JP') + '枚</span></div>' +
+                '<div style="height:8px; background:#eee; border-radius:99px; overflow:hidden;">' +
+                '<div style="width:' + pct + '%; height:100%; background:' + (fill >= calc.perBed ? '#2E7D32' : '#7CB342') + '; border-radius:99px;"></div></div></div>';
+        }
+        if (calc.beds > maxShow) {
+            html += '<div style="font-size:11px; color:#666; text-align:center;">ほか ' + (calc.beds - maxShow).toLocaleString('ja-JP') + ' 区画（満杯）</div>';
+        }
         html += '</div>';
+
+        const peakCropRows = Object.keys(tl.peakCrops || {}).map(name => ({ crop: name, traySum: tl.peakCrops[name] }))
+            .sort((a, b) => (b.traySum || 0) - (a.traySum || 0));
+        if (peakCropRows.length) {
+            const maxTrays = peakCropRows.reduce((n, c) => Math.max(n, Number(c.traySum) || 0), 0) || 1;
+            html += '<div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">ピーク月の作物内訳</div>';
+            html += '<div style="display:flex; flex-direction:column; gap:6px;">';
+            peakCropRows.forEach(c => {
+                const trays = Number(c.traySum) || 0;
+                const beds = trays / calc.perBed;
+                const ownBeds = Math.ceil(trays / calc.perBed);
+                const pct = Math.max(4, Math.round((trays / maxTrays) * 100));
+                html += '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:8px 10px;">' +
+                    '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">' +
+                    '<b style="font-size:13px; color:#333;">' + esc(c.crop) + '</b>' +
+                    '<span style="font-size:12px; font-weight:bold; color:#1B5E20; white-space:nowrap;">' + trays.toLocaleString('ja-JP') + '枚 ／ ' +
+                    beds.toLocaleString('ja-JP', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '区画分' +
+                    (ownBeds > 1 ? '（単独なら' + ownBeds + '区画）' : '') + '</span></div>' +
+                    '<div style="height:6px; background:#eee; border-radius:99px; margin-top:6px; overflow:hidden;">' +
+                    '<div style="width:' + pct + '%; height:100%; background:#66BB6A; border-radius:99px;"></div></div></div>';
+            });
+            html += '</div>';
+        }
+    }
+
+    const notes = [];
+    if (unsetTrays > 0) {
+        const unsetBeds = calcNurseryBedsNeeded_(unsetTrays, perBed).beds;
+        notes.push('時期未設定の苗 ' + unsetTrays.toLocaleString('ja-JP') + '枚（' + unsetBeds.toLocaleString('ja-JP') + '区画分）は月別グラフに含めていません。播種・定植時期を入れると時期別に反映されます。');
+    }
+    if ((Number(tl.plantUnsetTrays) || 0) > 0) {
+        notes.push('定植未設定の苗 ' + Number(tl.plantUnsetTrays).toLocaleString('ja-JP') + '枚は、播種以降カレンダー末まで苗床に残る計算です。');
+    }
+    if ((Number(tl.sowUnsetTrays) || 0) > 0) {
+        notes.push('播種未設定の苗 ' + Number(tl.sowUnsetTrays).toLocaleString('ja-JP') + '枚は、定植期間のみ苗床に置く計算です。');
     }
     if (plantSum > 0) {
-        html += '<div style="font-size:11px; color:#888; margin-top:10px;">穴数1の株数（' + plantSum.toLocaleString('ja-JP') + '株）は苗床の枚数換算から除外しています。</div>';
+        notes.push('穴数1の株数（' + plantSum.toLocaleString('ja-JP') + '株）は苗床の枚数換算から除外しています。');
+    }
+    if (notes.length) {
+        html += '<div style="font-size:11px; color:#666; margin-top:10px; line-height:1.55;">' + notes.map(n => '・' + n).join('<br>') + '</div>';
     }
     return html;
 }
@@ -9517,9 +9834,15 @@ async function refreshOverallPlanReviewModal() {
         location: location
     });
     _cpOverallLastSummary = summary;
+    _cpOverallLastTimeline = buildNurseryTimeline_(withLive, {
+        year: year,
+        planType: planType,
+        status: status,
+        location: location
+    });
     if (summaryPanel) summaryPanel.innerHTML = renderOverallPlanReviewHtml_(summary);
     else if (body) body.innerHTML = renderOverallPlanReviewHtml_(summary);
-    paintOverallNurseryPanel_(summary);
+    paintOverallNurseryPanel_(summary, _cpOverallLastTimeline);
     switchOverallPlanTab_(_cpOverallActiveTab || 'summary');
 }
 
@@ -10294,7 +10617,7 @@ function openCultivationPlanModal(options) {
         updateCpFieldAttachBanner();
     }
     
-    fetchCultivationMaster().then(() => {
+    const applyOpenedPlanUi_ = () => {
         if (opts.location) {
             setChoiceValue('cpLocation', opts.location, true);
         }
@@ -10310,9 +10633,16 @@ function openCultivationPlanModal(options) {
         if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
         if (typeof onCpCropChangedForCost === 'function') onCpCropChangedForCost();
         if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') scheduleRefreshCpWorkSchedulePanel();
-    }).finally(() => {
+    };
+    if (opts.skipMasterFetch) {
+        applyCachedCultivationMasterIfAny_();
+        applyOpenedPlanUi_();
         cpDraftAutosavePaused = false;
-    });
+    } else {
+        fetchCultivationMaster().then(applyOpenedPlanUi_).finally(() => {
+            cpDraftAutosavePaused = false;
+        });
+    }
     
     // 左右パネルの縦スクロール同期（二重登録を避ける共通関数）
     setupCpPlanPanelScrollSync();
@@ -12436,6 +12766,8 @@ function setCpLoadProgress(percent, label, autoAdvanceTo) {
     labelEl.style.color = '#555';
     labelEl.textContent = label;
     percentEl.textContent = current + '%';
+    const cancelBtn = document.getElementById('cpLoadProgressCancel');
+    if (cancelBtn) cancelBtn.style.display = 'block';
 
     const cap = Number(autoAdvanceTo) || 0;
     if (cap > current) {
@@ -12468,11 +12800,12 @@ function applyCachedCultivationMasterIfAny_() {
 }
 
 /** 計画読込用: キャッシュ優先。無ければサーバー取得。あれば裏で最新化 */
-async function ensureCultivationMasterForPlanLoad_() {
+async function ensureCultivationMasterForPlanLoad_(opts) {
+    opts = opts || {};
     const hasCache = applyCachedCultivationMasterIfAny_()
         || !!(cpMasterData && cpMasterData.crops);
     if (hasCache) {
-        if (typeof fetchCultivationMaster === 'function') {
+        if (!opts.deferRefresh && typeof fetchCultivationMaster === 'function') {
             Promise.resolve().then(() => fetchCultivationMaster()).catch(() => {});
         }
         return;
@@ -12498,6 +12831,8 @@ function finishCpLoadProgress(success, label) {
     labelEl.style.color = success ? '#2e7d32' : '#c62828';
     labelEl.textContent = label || (success ? '読み込みが完了しました' : '読み込みに失敗しました');
     percentEl.textContent = success ? '100%' : 'エラー';
+    const cancelBtn = document.getElementById('cpLoadProgressCancel');
+    if (cancelBtn) cancelBtn.style.display = 'none';
     if (success) {
         // 完了メッセージを一瞬見せてから閉じる（読み込み中だったことが分かるように）
         setTimeout(() => {
@@ -12520,6 +12855,14 @@ function yieldCpLoadRender() {
         else setTimeout(resolve, 0);
     });
 }
+
+let cpLoadCancelled_ = false;
+function cancelCpLoadProgress_() {
+    cpLoadCancelled_ = true;
+    if (typeof window.abortCallGAS === 'function') window.abortCallGAS('getCultivationPlans');
+    finishCpLoadProgress(false, '読み込みを中止しました');
+}
+window.cancelCpLoadProgress_ = cancelCpLoadProgress_;
 
 /** 読み込んだ計画から拠点を復元（同一計画内で最多の拠点を採用） */
 function resolvePrimaryLocationFromPlans_(plans) {
@@ -12574,6 +12917,9 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
     if (leftBody) leftBody.innerHTML = '';
     cpPlans = [];
     window.cpBulkPlanLoadInProgress = true;
+    cpLoadCancelled_ = false;
+    _cpMasterFetchPaused = true;
+    if (typeof window.abortCallGAS === 'function') window.abortCallGAS('getCultivationMaster');
 
     const btn = document.querySelector('button[onclick="loadHistoryPlans()"]');
     let orgText = '📂 この条件で保存済み計画を読み込む';
@@ -12584,13 +12930,30 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
             btn.disabled = true;
         }
 
-        setCpLoadProgress(12, 'サーバーから計画を取得しています...', 48);
-        const plans = await callGAS('getCultivationPlans', {
-            year: year,
-            crop: crop,
-            planType: planName ? '' : planType,
-            planName: planName
-        });
+        setCpLoadProgress(12, 'サーバーから計画を取得しています...', 42);
+        const waitStarted = Date.now();
+        const waitHint = setInterval(() => {
+            if (cpLoadCancelled_) return;
+            const sec = Math.max(1, Math.round((Date.now() - waitStarted) / 1000));
+            const shown = Math.min(68, 42 + Math.floor(sec / 4));
+            setCpLoadProgress(
+                shown,
+                'サーバーの応答を待っています…（' + sec + '秒）計画が多いと時間がかかります',
+                Math.min(72, shown + 4)
+            );
+        }, 4000);
+        let plans;
+        try {
+            plans = await callGAS('getCultivationPlans', {
+                year: year,
+                crop: crop,
+                planType: planName ? '' : planType,
+                planName: planName
+            }, 0);
+        } finally {
+            clearInterval(waitHint);
+        }
+        if (cpLoadCancelled_) return;
         if (plans && Array.isArray(plans) && plans.length > 0) {
             plans.forEach((plan, index) => {
                 if (!plan.id) {
@@ -12671,6 +13034,9 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
             if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
             if (typeof syncCpInitialSettingsForExistingCards_ === 'function') syncCpInitialSettingsForExistingCards_();
             finishCpLoadProgress(true, `${plans.length}件の計画（${resolvedName}）を読み込みました`);
+            if (typeof fetchCultivationMaster === 'function') {
+                Promise.resolve().then(() => fetchCultivationMaster()).catch(() => {});
+            }
             // 読み込み直後の自動レイアウトがスクロールを奪わないよう保護
             invalidateCpScrollPreserve_(2500);
             // グラフ・詳細レイアウトは完了表示のあとで調整
@@ -12707,10 +13073,16 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
                 : `${year}年「${crop}」の${planType}計画は見つかりませんでした。`);
         }
     } catch (e) {
+        if (cpLoadCancelled_) return;
         console.error("計画読み込みエラー", e);
-        finishCpLoadProgress(false, '計画の読み込みに失敗しました');
-        alert("計画の読み込みに失敗しました。");
+        const msg = (e && e.message) ? String(e.message) : '';
+        const timedOut = /タイムアウト/.test(msg) || (e && e.name === 'AbortError');
+        finishCpLoadProgress(false, timedOut ? '計画の取得が時間切れになりました' : '計画の読み込みに失敗しました');
+        alert(timedOut
+            ? '計画の取得に時間がかかりすぎました。通信が混み合っているか、データが大きい可能性があります。もう一度お試しください。'
+            : '計画の読み込みに失敗しました。');
     } finally {
+        _cpMasterFetchPaused = false;
         window.cpBulkPlanLoadInProgress = false;
         if (btn) {
             btn.innerHTML = orgText;
@@ -12775,7 +13147,7 @@ async function selectHistoryPlan(year, crop, planType, planName) {
         return;
     }
     if (modal.style.display !== 'flex') {
-        openCultivationPlanModal();
+        openCultivationPlanModal({ skipMasterFetch: true });
     }
 
     // マスタ取得より先にローディングを出す（「止まっている」ように見せない）
@@ -12783,7 +13155,7 @@ async function selectHistoryPlan(year, crop, planType, planName) {
 
     // キャッシュ優先でマスタを用意（サーバー待ちで塞がない）
     try {
-        await ensureCultivationMasterForPlanLoad_();
+        await ensureCultivationMasterForPlanLoad_({ deferRefresh: true });
     } catch (e) {}
     setCpLoadProgress(10, '年度・作物をセットしています...', 20);
     
