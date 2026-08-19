@@ -10,22 +10,39 @@
         </div>
       </div>
       <div id="cpPlanEditorSurface" style="background: #fff; color: #333; padding: 10px; border-radius: 0; width: 100%; max-width: 100%; box-shadow: none; height: 100%; max-height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;">
-          <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; flex-wrap: nowrap;">
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; flex-wrap: wrap;">
             <h3 style="margin: 0; color: #4CAF50; white-space: nowrap; flex-shrink: 0;">🌱 栽培計画作成</h3>
             <button type="button" id="cpInitialSettingsBtn" class="cp-initial-settings-btn" aria-expanded="false" aria-controls="cpStepsRow" onclick="toggleCpInitialSettings()" title="基本設定・栽培パラメーター・品種登録">
               <span class="cp-initial-settings-btn-label">初期設定</span>
               <span class="cp-initial-settings-btn-chevron" aria-hidden="true">▾</span>
             </button>
-            <div id="cpHeaderContextBar" title="基本設定の内容" style="min-width:0; flex:1; overflow:hidden; display:flex; align-items:center; gap:6px; flex-wrap:nowrap;">
+            <div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 220px;">
+              <input type="text" id="cpPlanName" maxlength="80" oninput="onCpPlanNameInput()" onblur="applyCpPlanTypeToName()" placeholder="計画名（未入力なら自動）"
+                title="計画名。未入力の場合は年度＋拠点＋作物＋本作/試作で自動設定されます"
+                style="flex:1; min-width:120px; padding:6px 8px; border:1px solid #FFB74D; border-radius:6px; box-sizing:border-box; font-size:13px;">
+              <button type="button" id="btnCpSavePlan" onclick="saveCultivationPlan()" title="本番へすぐ同期します。未実行の計画は編集のたびに自動保存されます"
+                style="flex-shrink:0; padding:6px 12px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; box-shadow:0 1px 4px rgba(255,152,0,0.35); white-space:nowrap; line-height:1.2;">計画を保存<br><span style="font-size:9px;font-weight:normal;">(すぐ同期)</span></button>
+            </div>
+          </div>
+          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999; flex-shrink: 0;" onclick="closeCultivationPlanModal()">×</span>
+          </div>
+          <div id="cpHeaderContextBar" title="基本設定の内容" style="min-width:0; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
               <span id="cpHeaderCtxLocation" class="cp-header-chip" style="display:none;"></span>
+              <span id="cpHeaderCtxClimate" class="cp-header-chip cp-header-chip--climate" style="display:none;"></span>
               <span id="cpHeaderCtxFieldCond" class="cp-header-chip" style="display:none;"></span>
               <span id="cpHeaderCtxCrop" class="cp-header-chip" style="display:none;"></span>
               <span id="cpHeaderCtxYear" class="cp-header-chip" style="display:none;"></span>
               <span id="cpHeaderCtxField" class="cp-header-chip cp-header-chip--field" style="display:none;"></span>
+          </div>
+          <div id="cpSaveProgress" style="display:none; width:100%; text-align:left;">
+            <div id="cpSaveProgressLabel" style="font-size:11px; color:#795548; margin-bottom:4px;">保存の準備中...</div>
+            <div style="height:8px; overflow:hidden; background:#ffe0b2; border-radius:999px;">
+              <div id="cpSaveProgressBar" style="width:0%; height:100%; background:#FF9800; border-radius:999px; transition:width .35s ease;"></div>
             </div>
           </div>
-          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999; flex-shrink: 0;" onclick="closeCultivationPlanModal()">×</span>
+          <div id="cpDraftStatus" style="font-size:11px; color:#607D8B; line-height:1.35; min-height:14px;"></div>
         </div>
         <div id="cpFieldAttachBanner" style="display:none; margin-bottom:8px; padding:8px 10px; background:#E0F7FA; border:1px solid #4DD0E1; border-radius:6px; font-size:12px; color:#006064; align-items:center; justify-content:space-between; gap:8px;">
           <span id="cpFieldAttachBannerText"></span>
@@ -103,7 +120,7 @@
                 <label style="font-size: 11px; font-weight: bold; color: #555;">産地（絞り込み）</label>
                 <button type="button" onclick="openCpBasicMasterManager('climate')" title="産地の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
               </div>
-              <select id="cpClimate" onchange="updateVarietyList(); checkCroptypeDB()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
+              <select id="cpClimate" onchange="updateVarietyList(); checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
                   <option value="">拠点の全産地</option>
                   <option value="暖地">暖地</option>
                   <option value="温暖地">温暖地</option>
@@ -122,6 +139,20 @@
                   <option value="ハウス">ハウス</option>
               </select>
             </div>
+          </div>
+          <div style="margin-top: 10px; padding: 8px 10px; background: #FFF8E1; border: 1px solid #FFE082; border-radius: 6px;">
+            <div style="font-size: 11px; font-weight: bold; color: #E65100; margin-bottom: 6px;">計画属性</div>
+            <div role="radiogroup" aria-label="計画属性" style="display:flex; gap:8px;">
+              <label class="cp-plan-type-btn">
+                <input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()">
+                <span>本作</span>
+              </label>
+              <label class="cp-plan-type-btn">
+                <input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()">
+                <span>試作</span>
+              </label>
+            </div>
+            <div style="font-size:10px; color:#888; margin-top:5px;">計画名の末尾に本作／試作が付きます。ヘッダーの計画名からも確認できます。</div>
           </div>
           <div style="text-align: center; margin-top: 10px; padding: 8px; background: #e8f5e9; border-radius: 6px; border: 1px dashed #4CAF50;">
             <p style="font-size: 11px; color: #2e7d32; margin: 0 0 5px 0; font-weight: bold;">※ 過去の計画を呼び出したい場合はこちら</p>
@@ -277,9 +308,9 @@
             transform: rotate(180deg);
           }
           .cp-header-chip {
-            flex-shrink: 1;
+            flex-shrink: 0;
             min-width: 0;
-            max-width: 28%;
+            max-width: 200px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -292,11 +323,43 @@
             background: #f1f8e9;
             color: #33691e;
           }
+          .cp-header-chip--climate {
+            border-color: #ce93d8;
+            background: #f3e5f5;
+            color: #6a1b9a;
+          }
           .cp-header-chip--field {
-            max-width: 36%;
+            max-width: 240px;
             border-color: #80deea;
             background: #e0f7fa;
             color: #006064;
+          }
+          .cp-plan-type-btn {
+            flex: 1;
+            margin: 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid #FFE082;
+            background: #fff;
+            font-size: 13px;
+            font-weight: bold;
+            color: #E65100;
+            box-sizing: border-box;
+          }
+          .cp-plan-type-btn.is-checked,
+          .cp-plan-type-btn:has(input:checked) {
+            background: #FF9800;
+            border-color: #F57C00;
+            color: #fff;
+          }
+          .cp-plan-type-btn input {
+            margin: 0;
+            accent-color: #FF9800;
           }
           .cp-steps { margin-bottom: 8px; }
           .cp-steps.is-collapsed {
@@ -405,7 +468,7 @@
             .cp-step-tab { transition: none; }
           }
 
-          /* 下部ドック: 収穫・作業・原価・保存（初期閉でペイント領域を確保） */
+          /* 下部ドック: グラフ・作業・原価（初期閉でペイント領域を確保） */
           #cpBottomDock {
             flex-shrink: 0;
             margin-top: 6px;
@@ -414,7 +477,7 @@
           }
           .cp-bottom-tabs {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 4px;
             padding: 4px 0 0;
           }
@@ -444,7 +507,6 @@
           .cp-bottom-tab--harvest.is-active { color: #e65100; box-shadow: 0 -2px 0 #FF9800 inset; }
           .cp-bottom-tab--work.is-active { color: #2e7d32; box-shadow: 0 -2px 0 #4CAF50 inset; }
           .cp-bottom-tab--cost.is-active { color: #e65100; box-shadow: 0 -2px 0 #FF9800 inset; }
-          .cp-bottom-tab--save.is-active { color: #EF6C00; box-shadow: 0 -2px 0 #FF9800 inset; }
           .cp-bottom-panels {
             display: grid;
             grid-template-rows: 0fr;
@@ -586,13 +648,12 @@
           </div>
         </div>
 
-        <!-- 下部タブ: グラフ・作業・原価・保存（閉じてペイント領域を広く） -->
+        <!-- 下部タブ: グラフ・作業・原価（閉じてペイント領域を広く） -->
         <div id="cpBottomDock">
           <div class="cp-bottom-tabs" role="tablist" aria-label="栽培計画の補助パネル">
             <button type="button" role="tab" id="cpBottomTabHarvest" class="cp-bottom-tab cp-bottom-tab--harvest" aria-selected="false" aria-controls="cpBottomPanelHarvest" data-bottom="harvest" onclick="openCpBottomTab('harvest')">📊 グラフ</button>
             <button type="button" role="tab" id="cpBottomTabWork" class="cp-bottom-tab cp-bottom-tab--work" aria-selected="false" aria-controls="cpBottomPanelWork" data-bottom="work" onclick="openCpBottomTab('work')">🛠️ 作業</button>
             <button type="button" role="tab" id="cpBottomTabCost" class="cp-bottom-tab cp-bottom-tab--cost" aria-selected="false" aria-controls="cpBottomPanelCost" data-bottom="cost" onclick="openCpBottomTab('cost')">💰 原価</button>
-            <button type="button" role="tab" id="cpBottomTabSave" class="cp-bottom-tab cp-bottom-tab--save" aria-selected="false" aria-controls="cpBottomPanelSave" data-bottom="save" onclick="openCpBottomTab('save')">💾 保存</button>
           </div>
           <div id="cpBottomPanels" class="cp-bottom-panels">
             <div class="cp-bottom-panels-clip">
@@ -652,31 +713,6 @@
                   <div id="cpCostSumMeta" style="font-size:10px; color:#888; margin-top:4px;"></div>
                 </div>
                 <div id="cpCostSummaryEmpty" style="font-size:11px; color:#888; padding:8px 0;">原価タブを開くと、選択中の作物の原価・売上予測を表示します</div>
-              </div>
-              <div id="cpBottomPanelSave" class="cp-bottom-panel" role="tabpanel" aria-labelledby="cpBottomTabSave" hidden>
-                <div style="width:min(100%, 520px); margin:0 auto 10px;">
-                  <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px; margin-bottom:4px;">
-                    <label for="cpPlanName" style="font-size:12px; font-weight:bold; color:#555;">計画名</label>
-                    <div role="radiogroup" aria-label="計画属性" style="display:flex; align-items:center; gap:10px; font-size:12px; font-weight:bold; color:#555;">
-                      <label style="display:flex; align-items:center; gap:3px; cursor:pointer;"><input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()" style="margin:0;">本作</label>
-                      <label style="display:flex; align-items:center; gap:3px; cursor:pointer;"><input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()" style="margin:0;">試作</label>
-                    </div>
-                  </div>
-                  <input type="text" id="cpPlanName" maxlength="80" oninput="onCpPlanNameInput()" onblur="applyCpPlanTypeToName()" placeholder="例: 2026年 徳阿 キャベツ 本作"
-                    style="width:100%; padding:9px 10px; border:1px solid #FFB74D; border-radius:6px; box-sizing:border-box; font-size:14px;">
-                  <div style="margin-top:3px; font-size:10px; color:#888;">未入力の場合は「年度＋拠点＋作物＋計画属性」で自動設定されます。</div>
-                </div>
-                <div style="text-align: center; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px;">
-                  <button type="button" id="btnCpSavePlan" onclick="saveCultivationPlan()" style="padding: 10px 28px; background: #FF9800; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">計画を保存<br><span style="font-size:10px;font-weight:normal;">(すぐ同期)</span></button>
-                  <div id="cpSaveProgress" style="display:none; width:min(100%, 420px); text-align:left;">
-                    <div id="cpSaveProgressLabel" style="font-size:11px; color:#795548; margin-bottom:4px;">保存の準備中...</div>
-                    <div style="height:8px; overflow:hidden; background:#ffe0b2; border-radius:999px;">
-                      <div id="cpSaveProgressBar" style="width:0%; height:100%; background:#FF9800; border-radius:999px; transition:width .35s ease;"></div>
-                    </div>
-                  </div>
-                  <div id="cpDraftStatus" style="width: 100%; font-size: 11px; color: #607D8B; margin-top: 2px;"></div>
-                  <div style="width:100%; font-size:10px; color:#888; margin-top:2px;">未実行の計画は編集のたびに本番（計画一覧）へ自動で上書きします。実行済みが含まれる場合は「計画を保存」で更新してください。</div>
-                </div>
               </div>
             </div>
           </div>

@@ -8133,6 +8133,7 @@ function setCpPlanType(value, updateName) {
     const type = value === '試作' ? '試作' : '本作';
     const radio = document.querySelector(`input[name="cpPlanType"][value="${type}"]`);
     if (radio) radio.checked = true;
+    syncCpPlanTypeButtonStyles_();
     if (updateName !== false) applyCpPlanTypeToName();
 }
 
@@ -8147,7 +8148,16 @@ function applyCpPlanTypeToName() {
 }
 
 function onCpPlanTypeChange() {
+    syncCpPlanTypeButtonStyles_();
     applyCpPlanTypeToName();
+}
+
+function syncCpPlanTypeButtonStyles_() {
+    document.querySelectorAll('.cp-plan-type-btn').forEach(label => {
+        const input = label.querySelector('input[type="radio"]');
+        if (input && input.checked) label.classList.add('is-checked');
+        else label.classList.remove('is-checked');
+    });
 }
 
 function getCpDefaultPlanName(yearOverride, cropOverride, planTypeOverride, seriesNum, locationOverride) {
@@ -8206,8 +8216,8 @@ function updateCpSaveButtonLabel() {
     if (!btn || btn.disabled) return;
     const executed = typeof cpHasExecutedPlans_ === 'function' && cpHasExecutedPlans_();
     btn.innerHTML = executed
-        ? '計画を保存<br><span style="font-size:10px;font-weight:normal;">(実行済みを更新)</span>'
-        : '計画を保存<br><span style="font-size:10px;font-weight:normal;">(すぐ同期)</span>';
+        ? '計画を保存<br><span style="font-size:9px;font-weight:normal;">(実行済みを更新)</span>'
+        : '計画を保存<br><span style="font-size:9px;font-weight:normal;">(すぐ同期)</span>';
 }
 
 function setCpSaveProgress(percent, label, autoAdvanceTo) {
@@ -10396,7 +10406,16 @@ function refreshCpHeaderContextBar() {
         });
     });
 
+    const climateSel = document.getElementById('cpClimate');
+    let climate = typeof getCpVal === 'function' ? String(getCpVal('cpClimate') || '').trim() : '';
+    if (!climate && climateSel && climateSel.selectedIndex >= 0) {
+        const opt = climateSel.options[climateSel.selectedIndex];
+        climate = opt ? String(opt.text || '').trim() : '';
+    }
+    if (!climate) climate = '全産地';
+
     setCpHeaderChip_(document.getElementById('cpHeaderCtxLocation'), location, '📍 ');
+    setCpHeaderChip_(document.getElementById('cpHeaderCtxClimate'), climate, '');
     setCpHeaderChip_(document.getElementById('cpHeaderCtxFieldCond'), fieldCond, '');
     setCpHeaderChip_(document.getElementById('cpHeaderCtxCrop'), crop, '');
     setCpHeaderChip_(document.getElementById('cpHeaderCtxYear'), year ? (year + '年') : '', '');
@@ -10954,8 +10973,8 @@ if (document.readyState === 'loading') {
 setTimeout(initCpStepsAccordion, 500);
 setTimeout(initCpStepsAccordion, 2000);
 
-/** 下部ドックタブ（グラフ・作業・原価・保存）。同じタブ再クリックで閉じる */
-const CP_BOTTOM_TAB_KEYS = ['harvest', 'work', 'cost', 'save'];
+/** 下部ドックタブ（グラフ・作業・原価）。同じタブ再クリックで閉じる */
+const CP_BOTTOM_TAB_KEYS = ['harvest', 'work', 'cost'];
 
 function openCpBottomTab(key) {
     const k = String(key || '').trim();
