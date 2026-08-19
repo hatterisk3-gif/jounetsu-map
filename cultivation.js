@@ -676,9 +676,6 @@ async function renameVarietyFromChoices(oldName) {
     if (typeof applyVarietyRenameToOpenCpPlans_ === 'function') {
         applyVarietyRenameToOpenCpPlans_(crop, oldVariety, newVariety);
     }
-    if (typeof renameVarietyInLocalCpDraft_ === 'function') {
-        renameVarietyInLocalCpDraft_(crop, oldVariety, newVariety);
-    }
     if (typeof refreshCpPlanVarietySelectsForCrop === 'function') {
         refreshCpPlanVarietySelectsForCrop(crop);
     }
@@ -1587,7 +1584,6 @@ async function confirmVarietyMetaDialog() {
                 newName: variety
             });
             applyVarietyRenameToOpenCpPlans_(crop, oldVariety, variety);
-            renameVarietyInLocalCpDraft_(crop, oldVariety, variety);
         }
 
         const makerEl = document.getElementById('cpVarietyMaker');
@@ -3329,34 +3325,6 @@ function applyVarietyRenameToOpenCpPlans_(crop, oldName, newName) {
     if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
     if (n && typeof pushCpEditHistory === 'function') pushCpEditHistory();
     return n;
-}
-
-function renameVarietyInLocalCpDraft_(crop, oldName, newName) {
-    const c = String(crop || '').trim();
-    const oldV = String(oldName || '').trim();
-    const newV = String(newName || '').trim();
-    if (!c || !oldV || !newV || oldV === newV) return;
-    try {
-        const raw = localStorage.getItem(typeof CP_DRAFT_KEY !== 'undefined' ? CP_DRAFT_KEY : 'jmap_cp_plan_draft');
-        if (!raw) return;
-        const draft = JSON.parse(raw);
-        if (!draft) return;
-        let changed = false;
-        const formCrop = String((draft.form && draft.form.crop) || '').trim();
-        if (draft.form && formCrop === c && String(draft.form.variety || '').trim() === oldV) {
-            draft.form.variety = newV;
-            changed = true;
-        }
-        (draft.plans || []).forEach(p => {
-            if (!p) return;
-            const planCrop = String(p.crop || formCrop || '').trim();
-            if (planCrop !== c) return;
-            if (String(p.variety || '').trim() !== oldV) return;
-            p.variety = newV;
-            changed = true;
-        });
-        if (changed) localStorage.setItem(typeof CP_DRAFT_KEY !== 'undefined' ? CP_DRAFT_KEY : 'jmap_cp_plan_draft', JSON.stringify(draft));
-    } catch (e) {}
 }
 
 /** 計画カードへ品種を反映（マスタ登録後・セレクト変更共通） */
@@ -8683,17 +8651,7 @@ async function saveCultivationPlan(options) {
             removePendingPlanSave_(buildCpPlanSaveKey(year, crop, previousPlanName));
         }
 
-        if (!opts.auto) clearCultivationPlanDraft();
         cpLoadedPlanKey = saveKey;
-        if (opts.auto) {
-            persistCultivationPlanDraft_({
-                auto: true,
-                silent: true,
-                syncCloud: false,
-                force: true,
-                allowWhenClosed: true
-            });
-        }
         try {
             cpLastProductionSig = JSON.stringify({ form: collectCpFormState(), plans: collectCurrentCpPlansFromDom() });
         } catch (e) {
@@ -9738,8 +9696,6 @@ async function executeSavedCultivationGroup(year, crop, planIds, planType, planN
 window.closeCpTagConfirmModal = closeCpTagConfirmModal;
 window.confirmCpTagExecution = confirmCpTagExecution;
 
-const CP_DRAFT_KEY = 'jmap_cp_plan_draft';
-
 // ===== 栽培計画 編集履歴（元に戻す / 次へ） =====
 const CP_EDIT_HISTORY_MAX = 40;
 let cpEditHistory = [];
@@ -9810,7 +9766,7 @@ function flushCpEditHistoryDebounce() {
     pushCpEditHistory();
 }
 
-/** 履歴を捨てて現在状態を起点にする（下書き／保存済み読込後など） */
+/** 履歴を捨てて現在状態を起点にする（保存済み読込後など） */
 function resetCpEditHistory() {
     clearTimeout(cpEditHistoryDebounceTimer);
     cpEditHistoryDebounceTimer = null;
@@ -9989,103 +9945,8 @@ function formatCpDraftSavedAt(iso) {
     }
 }
 
-function getCpDraftUserId_() {
-    return localStorage.getItem('passionMapUserId') || '';
-}
-
-function getCpDraftUserName_() {
-    return localStorage.getItem('passionMapUserName')
-        || (typeof currentUser !== 'undefined' ? currentUser : '')
-        || '';
-}
-
-function getCultivationPlanDraft() {
-    try {
-        const raw = localStorage.getItem(CP_DRAFT_KEY);
-        if (!raw) return null;
-        const draft = JSON.parse(raw);
-        if (!draft || !draft.savedAt) return null;
-        return draft;
-    } catch (e) {
-        return null;
-    }
-}
-
-function setLocalCultivationPlanDraft_(draft) {
-    localStorage.setItem(CP_DRAFT_KEY, JSON.stringify(draft));
-}
-
-function draftSavedAtMs_(draft) {
-    if (!draft) return 0;
-    const ms = Number(draft.savedAtMs);
-    if (ms && !isNaN(ms)) return ms;
-    try {
-        const t = Date.parse(draft.savedAt);
-        return isNaN(t) ? 0 : t;
-    } catch (e) {
-        return 0;
-    }
-}
-
-/** クラウドの下書きと端末を比較し、新しい方を端末に残す */
-async function refreshCultivationPlanDraftFromCloud_() {
-    const userId = getCpDraftUserId_();
-    if (!userId || typeof callGAS !== 'function') return getCultivationPlanDraft();
-    try {
-        const res = await Promise.race([
-            callGAS('getCultivationPlanDraftCloud', { userId: userId }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
-        ]);
-        const cloud = res && res.draft ? res.draft : null;
-        const local = getCultivationPlanDraft();
-        if (!cloud) return local;
-
-        const cloudMs = draftSavedAtMs_(cloud);
-        const localMs = draftSavedAtMs_(local);
-        if (cloudMs >= localMs) {
-            const draft = {
-                savedAt: cloud.savedAt || new Date(cloudMs || Date.now()).toISOString(),
-                savedAtMs: cloudMs || Date.now(),
-                form: cloud.form || {},
-                plans: Array.isArray(cloud.plans) ? cloud.plans : [],
-                userName: cloud.userName || ''
-            };
-            try { setLocalCultivationPlanDraft_(draft); } catch (e) {}
-            return draft;
-        }
-        // 端末の方が新しい場合はクラウドへ押し上げ（他端末へ追いつかせる）
-        if (local && localMs > cloudMs) {
-            callGAS('saveCultivationPlanDraftCloud', {
-                userId: userId,
-                userName: getCpDraftUserName_(),
-                draftJson: JSON.stringify({ form: local.form || {}, plans: local.plans || [] }),
-                savedAt: local.savedAt,
-                savedAtMs: localMs
-            }).catch(e => console.warn('栽培計画下書き クラウド追いつき失敗', e));
-        }
-        return local;
-    } catch (e) {
-        console.warn('栽培計画下書き クラウド取得スキップ:', e);
-        return getCultivationPlanDraft();
-    }
-}
-
-function clearCultivationPlanDraft() {
-    localStorage.removeItem(CP_DRAFT_KEY);
-    cpLastAutosaveSig = '';
-    updateCpDraftStatusUI();
-    const userId = getCpDraftUserId_();
-    if (userId && typeof callGAS === 'function') {
-        callGAS('clearCultivationPlanDraftCloud', { userId: userId }).catch(e => {
-            console.warn('栽培計画下書き クラウド削除失敗', e);
-        });
-    }
-}
-
 function updateCpDraftStatusUI() {
     const statusEl = document.getElementById('cpDraftStatus');
-    const loadBtn = document.getElementById('btnCpDraftLoad');
-    if (loadBtn) loadBtn.style.display = 'none';
     if (!statusEl) return;
 
     const executed = typeof cpHasExecutedPlans_ === 'function' && cpHasExecutedPlans_();
@@ -10113,17 +9974,8 @@ function updateCpDraftStatusUI() {
         return;
     }
 
-    const draft = getCultivationPlanDraft();
-    if (!draft) {
-        statusEl.style.color = '#607D8B';
-        statusEl.textContent = '未実行の計画は、編集すると本番へ自動保存されます。';
-        return;
-    }
-    const when = formatCpDraftSavedAt(draft.savedAt);
-    const crop = (draft.form && draft.form.crop) ? draft.form.crop : '';
-    const count = (draft.plans && draft.plans.length) ? draft.plans.length : 0;
     statusEl.style.color = '#607D8B';
-    statusEl.textContent = `端末に下書きあり: ${when}${crop ? ' / ' + crop : ''}（作型${count}件）`;
+    statusEl.textContent = '未実行の計画は、編集すると本番へ自動保存されます。';
 }
 
 function cpDraftHasContent_(form, plans) {
@@ -10146,82 +9998,7 @@ function isCpPlanModalOpen_() {
 }
 
 let cpDraftAutosaveTimer = null;
-let cpDraftCloudSyncTimer = null;
-let cpLastAutosaveSig = '';
 let cpDraftAutosavePaused = false;
-
-function persistCultivationPlanDraft_(opts) {
-    opts = opts || {};
-    if (cpEditHistoryNavigating || window.cpBulkPlanLoadInProgress) return false;
-    if (cpDraftAutosavePaused && opts.auto !== false) return false;
-    if (!opts.allowWhenClosed && !isCpPlanModalOpen_()) return false;
-
-    const form = collectCpFormState();
-    const plans = collectCurrentCpPlansFromDom();
-    if (!cpDraftHasContent_(form, plans)) return false;
-
-    const existing = getCultivationPlanDraft();
-    if (opts.auto !== false && existing && cpDraftHasContent_(existing.form, existing.plans)) {
-        const existingPlans = (existing.plans || []).filter(p => p && String(p.variety || '').trim());
-        const nextPlans = (plans || []).filter(p => p && String(p.variety || '').trim());
-        if (existingPlans.length > 0 && nextPlans.length === 0) return false;
-    }
-
-    let sig = '';
-    try {
-        sig = JSON.stringify({ form: form, plans: plans });
-    } catch (e) {
-        return false;
-    }
-    if (!opts.force && sig === cpLastAutosaveSig) return true;
-
-    const savedAtMs = Date.now();
-    const draft = {
-        savedAt: new Date(savedAtMs).toISOString(),
-        savedAtMs: savedAtMs,
-        form: form,
-        plans: plans,
-        loadedPlanKey: cpLoadedPlanKey || '',
-        auto: opts.auto !== false
-    };
-    try {
-        setLocalCultivationPlanDraft_(draft);
-        cpLastAutosaveSig = sig;
-    } catch (e) {
-        console.warn('栽培計画下書きの保存に失敗:', e);
-        if (!opts.silent) {
-            if (typeof customAlert === 'function') customAlert('一時保存に失敗しました: ' + e.message);
-            else alert('一時保存に失敗しました: ' + e.message);
-        }
-        return false;
-    }
-    updateCpDraftStatusUI();
-    if (opts.syncCloud) scheduleCpDraftCloudSync_(draft, !!opts.cloudImmediate);
-    return true;
-}
-
-function scheduleCpDraftCloudSync_(draft, immediate) {
-    const run = () => {
-        cpDraftCloudSyncTimer = null;
-        const userId = getCpDraftUserId_();
-        if (!userId || typeof callGAS !== 'function') return;
-        const d = draft || getCultivationPlanDraft();
-        if (!d || !cpDraftHasContent_(d.form, d.plans)) return;
-        callGAS('saveCultivationPlanDraftCloud', {
-            userId: userId,
-            userName: getCpDraftUserName_(),
-            draftJson: JSON.stringify({ form: d.form || {}, plans: d.plans || [] }),
-            savedAt: d.savedAt,
-            savedAtMs: d.savedAtMs
-        }).catch(e => console.warn('栽培計画下書き クラウド同期失敗:', e));
-    };
-    clearTimeout(cpDraftCloudSyncTimer);
-    if (immediate) {
-        run();
-        return;
-    }
-    cpDraftCloudSyncTimer = setTimeout(run, 20000);
-}
 
 function scheduleCpDraftAutosave_(delayMs) {
     if (cpDraftAutosavePaused) return;
@@ -10230,7 +10007,6 @@ function scheduleCpDraftAutosave_(delayMs) {
     clearTimeout(cpDraftAutosaveTimer);
     cpDraftAutosaveTimer = setTimeout(() => {
         cpDraftAutosaveTimer = null;
-        persistCultivationPlanDraft_({ auto: true, silent: true, syncCloud: true });
         runCpProductionAutosave_();
     }, delayMs != null ? delayMs : 1500);
 }
@@ -10239,14 +10015,6 @@ function flushCpDraftAutosave_(opts) {
     opts = opts || {};
     clearTimeout(cpDraftAutosaveTimer);
     cpDraftAutosaveTimer = null;
-    persistCultivationPlanDraft_({
-        auto: true,
-        silent: true,
-        syncCloud: true,
-        cloudImmediate: true,
-        force: true,
-        allowWhenClosed: !!opts.allowWhenClosed
-    });
     runCpProductionAutosave_({ allowWhenClosed: !!opts.allowWhenClosed });
 }
 
@@ -10289,6 +10057,7 @@ function runCpProductionAutosave_(opts) {
 function bindCpDraftAutosaveGuards_() {
     if (window._cpDraftAutosaveGuardsBound) return;
     window._cpDraftAutosaveGuardsBound = true;
+    try { localStorage.removeItem('jmap_cp_plan_draft'); } catch (e) {}
     document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'hidden') flushCpDraftAutosave_();
     });
@@ -10303,39 +10072,6 @@ function bindCpDraftAutosaveGuards_() {
     }, true);
 }
 bindCpDraftAutosaveGuards_();
-
-async function saveCultivationPlanDraft() {
-    const form = collectCpFormState();
-    const plans = collectCurrentCpPlansFromDom();
-    if (!cpDraftHasContent_(form, plans)) {
-        if (typeof customAlert === 'function') customAlert('一時保存する内容がありません。作物を選ぶか、作型を追加してください。');
-        else alert('一時保存する内容がありません。作物を選ぶか、作型を追加してください。');
-        return;
-    }
-    if (form.crop) rememberCustomCrop(form.crop);
-
-    const ok = persistCultivationPlanDraft_({
-        auto: false,
-        silent: false,
-        syncCloud: true,
-        cloudImmediate: true,
-        force: true
-    });
-    if (!ok) return;
-
-    const userId = getCpDraftUserId_();
-    if (userId && typeof callGAS === 'function') {
-        if (typeof customAlert === 'function') {
-            customAlert('一時保存しました。\n他端末への同期をバックグラウンドで実行中です。');
-        } else {
-            alert('一時保存しました。\n他端末への同期をバックグラウンドで実行中です。');
-        }
-    } else if (typeof customAlert === 'function') {
-        customAlert('一時保存しました（この端末のみ）。\n全端末同期にはログインIDが必要です。');
-    } else {
-        alert('一時保存しました（この端末のみ）。\n全端末同期にはログインIDが必要です。');
-    }
-}
 
 function applyCpFormState(form) {
     if (!form) return;
@@ -10378,109 +10114,6 @@ function applyCpFormState(form) {
     refreshAllChoiceButtons();
 }
 
-async function loadCultivationPlanDraft(options) {
-    const opts = options || {};
-    // 他端末の下書きを取り込む（最大数秒）
-    if (!opts.skipCloud) {
-        try {
-            await Promise.race([
-                refreshCultivationPlanDraftFromCloud_(),
-                new Promise(resolve => setTimeout(resolve, 5000))
-            ]);
-            updateCpDraftStatusUI();
-        } catch (e) {}
-    }
-    const draft = getCultivationPlanDraft();
-    if (!draft) {
-        if (!opts.silent) {
-            if (typeof customAlert === 'function') customAlert('一時保存された下書きはありません。');
-            else alert('一時保存された下書きはありません。');
-        }
-        return false;
-    }
-
-    const when = formatCpDraftSavedAt(draft.savedAt);
-    const crop = (draft.form && draft.form.crop) ? draft.form.crop : '（作物未設定）';
-    const count = (draft.plans && draft.plans.length) ? draft.plans.length : 0;
-
-    if (!opts.force) {
-        const msg = `下書きを読み込みますか？\n保存日時: ${when}\n作物: ${crop}\n作型: ${count}件\n\n※現在の入力内容は上書きされます。`;
-        let ok = false;
-        if (typeof customConfirm === 'function') ok = await customConfirm(msg);
-        else ok = confirm(msg);
-        if (!ok) return false;
-    }
-
-    // 画面へ復元（下書き読込後もここを起点に元に戻す／次へが可能）
-    applyCpEditorSnapshot({
-        form: draft.form || {},
-        plans: draft.plans || []
-    });
-    resetCpEditHistory();
-    if (typeof syncCpInitialSettingsForExistingCards_ === 'function') syncCpInitialSettingsForExistingCards_();
-    if (draft.loadedPlanKey) {
-        cpLoadedPlanKey = draft.loadedPlanKey;
-        if (typeof updateCpSaveButtonLabel === 'function') updateCpSaveButtonLabel();
-    }
-
-    updateCpDraftStatusUI();
-    if (typeof scheduleCpDraftAutosave_ === 'function') scheduleCpDraftAutosave_(1500);
-    if (!opts.silent) {
-        const statusEl = document.getElementById('cpDraftStatus');
-        if (statusEl) {
-            statusEl.textContent = '✓ 下書きを読み込みました';
-            statusEl.style.color = '#2e7d32';
-            statusEl.style.fontWeight = 'bold';
-            setTimeout(() => {
-                updateCpDraftStatusUI();
-                if (statusEl) {
-                    statusEl.style.color = '';
-                    statusEl.style.fontWeight = '';
-                }
-            }, 2000);
-        }
-    }
-    return true;
-}
-
-async function offerRestoreCpDraft() {
-    updateCpDraftStatusUI();
-    const local = getCultivationPlanDraft();
-    if (local && cpDraftHasContent_(local.form, local.plans) && cpEditHistoryIndex <= 0) {
-        await loadCultivationPlanDraft({ force: true, silent: true, skipCloud: true });
-        const statusEl = document.getElementById('cpDraftStatus');
-        if (statusEl) {
-            const when = formatCpDraftSavedAt(local.savedAt);
-            statusEl.textContent = '✓ 下書きを復元しました' + (when ? '（' + when + '）' : '');
-            statusEl.style.color = '#2e7d32';
-            statusEl.style.fontWeight = 'bold';
-            setTimeout(() => {
-                updateCpDraftStatusUI();
-                if (statusEl) {
-                    statusEl.style.color = '';
-                    statusEl.style.fontWeight = '';
-                }
-            }, 2500);
-        }
-    }
-    try {
-        const beforeMs = draftSavedAtMs_(getCultivationPlanDraft());
-        await Promise.race([
-            refreshCultivationPlanDraftFromCloud_(),
-            new Promise(resolve => setTimeout(resolve, 5000))
-        ]);
-        updateCpDraftStatusUI();
-        const merged = getCultivationPlanDraft();
-        if (merged && draftSavedAtMs_(merged) > beforeMs && cpEditHistoryIndex <= 0) {
-            await loadCultivationPlanDraft({ force: true, silent: true, skipCloud: true });
-        }
-    } catch (e) {}
-}
-window.saveCultivationPlanDraft = saveCultivationPlanDraft;
-window.loadCultivationPlanDraft = loadCultivationPlanDraft;
-window.clearCultivationPlanDraft = clearCultivationPlanDraft;
-window.refreshCultivationPlanDraftFromCloud_ = refreshCultivationPlanDraftFromCloud_;
-window.offerRestoreCpDraft = offerRestoreCpDraft;
 window.cpHasExecutedPlans_ = cpHasExecutedPlans_;
 window.runCpProductionAutosave_ = runCpProductionAutosave_;
 // --- END NEW CULTIVATION PLAN JS ---
@@ -10605,7 +10238,6 @@ window.closeCultivationPlanModal = function() {
 
 /**
  * options:
- *  - skipDraft: 下書き復元確認を出さない
  *  - location: 拠点をセット
  *  - fieldCondition: 圃場条件
  *  - fieldAttach: { fieldIds, areaA, label }
@@ -10652,7 +10284,6 @@ function openCultivationPlanModal(options) {
     refreshAllChoiceButtons();
     updateCpDraftStatusUI();
     if (typeof updateCpUndoRedoUI === 'function') updateCpUndoRedoUI();
-    if (!opts.skipDraft) cpDraftAutosavePaused = true;
 
     if (opts.fieldAttach) {
         window.setCpPendingFieldAttach(opts.fieldAttach);
@@ -10679,12 +10310,8 @@ function openCultivationPlanModal(options) {
         if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
         if (typeof onCpCropChangedForCost === 'function') onCpCropChangedForCost();
         if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') scheduleRefreshCpWorkSchedulePanel();
-        if (!opts.skipDraft) {
-            cpDraftAutosavePaused = true;
-            offerRestoreCpDraft().finally(() => {
-                cpDraftAutosavePaused = false;
-            });
-        }
+    }).finally(() => {
+        cpDraftAutosavePaused = false;
     });
     
     // 左右パネルの縦スクロール同期（二重登録を避ける共通関数）
@@ -10740,7 +10367,6 @@ window.openCultivationPlanFromField = function(p, attachOpts) {
 
     function proceedOpen(fIds, aA, lbl) {
         openCultivationPlanModal({
-            skipDraft: true,
             location: p.location || '',
             fieldCondition: p.condition || '',
             fieldAttach: {
@@ -11680,7 +11306,7 @@ function applyRegisteredCroptypeToPlan(sourceIndex) {
 
     const planModal = document.getElementById('cultivationPlanModal');
     if (!planModal || planModal.style.display !== 'flex') {
-        openCultivationPlanModal({ skipDraft: true });
+        openCultivationPlanModal();
     }
 
     if (item.crop) {
@@ -13149,7 +12775,7 @@ async function selectHistoryPlan(year, crop, planType, planName) {
         return;
     }
     if (modal.style.display !== 'flex') {
-        openCultivationPlanModal({ skipDraft: true });
+        openCultivationPlanModal();
     }
 
     // マスタ取得より先にローディングを出す（「止まっている」ように見せない）

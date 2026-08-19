@@ -111,6 +111,7 @@ function doPost(e) {
     else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
     else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
     else if (action === "getFarmBoardData") result = getFarmBoardData();
+    else if (action === "completeFarmBoardTasks") result = completeFarmBoardTasks(params);
     else if (action === "deleteSavedCultivationPlans") result = deleteSavedCultivationPlans(params.year, params.crop, params.planType, params.planName);
     else if (action === "getCultivationHarvestSummary") result = getCultivationHarvestSummary(params.year);
     else if (action === "getCultivationRidgeParamsForField") result = getCultivationRidgeParamsForField(params.fieldId || params.id);
@@ -168,9 +169,6 @@ function doPost(e) {
     else if (action === "saveTempWorkRecord") result = saveTempWorkRecord(params);
     else if (action === "getTempWorkRecord") result = getTempWorkRecord(params);
     else if (action === "clearTempWorkRecord") result = clearTempWorkRecord(params);
-    else if (action === "saveCultivationPlanDraftCloud") result = saveCultivationPlanDraftCloud(params);
-    else if (action === "getCultivationPlanDraftCloud") result = getCultivationPlanDraftCloud(params);
-    else if (action === "clearCultivationPlanDraftCloud") result = clearCultivationPlanDraftCloud(params);
     else if (action === "getPersonalSchedule") result = getPersonalSchedule(params);
     else if (action === "addPersonalScheduleItem") result = addPersonalScheduleItem(params);
     else if (action === "updatePersonalScheduleItem") result = updatePersonalScheduleItem(params);
@@ -9238,6 +9236,60 @@ function getFarmBoardData() {
   return { plans: plans, fields: fields, tasks: tasks, prodCategories: prodCategories };
 }
 
+function completeFarmBoardTasks(params) {
+  params = params || {};
+  const kind = String(params.kind || '');
+  const wantComplete = params.completed !== false && params.completed !== 'false';
+  const idSet = {};
+  (params.planIds || []).forEach(function(id) {
+    const s = String(id || '').trim();
+    if (s) idSet[s] = true;
+  });
+  const fieldName = String(params.fieldName || '').trim();
+  const tag = String(params.tag || '').trim();
+  const ss = TENANT_SS;
+  if (!ss) throw new Error('スプレッドシートが設定されていません');
+  const sheet = ss.getSheetByName('作業予定');
+  if (!sheet || sheet.getLastRow() < 2) return { success: true, updated: 0 };
+
+  const data = sheet.getDataRange().getValues();
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  let updated = 0;
+  const completedPlaceIds = {};
+  for (let i = 1; i < data.length; i++) {
+    const workName = String(data[i][0] || '');
+    if (farmBoardTaskKind_(workName) !== kind) continue;
+    const placeId = String(data[i][10] || '');
+    const ids = farmBoardParsePlanIds_(placeId);
+    let hit = false;
+    if (Object.keys(idSet).length) {
+      for (let j = 0; j < ids.length; j++) {
+        if (idSet[ids[j]]) { hit = true; break; }
+      }
+    }
+    if (!hit && fieldName) {
+      const names = String(data[i][3] || '').split(',');
+      for (let j = 0; j < names.length; j++) {
+        if (String(names[j] || '').trim() === fieldName) { hit = true; break; }
+      }
+    }
+    if (!hit && tag) {
+      const person = String(data[i][7] || '').trim();
+      if (person === tag || person.split(/\s+/).indexOf(tag) >= 0) hit = true;
+    }
+    if (!hit) continue;
+    const already = farmBoardHasCompleteDate_(data[i][8]);
+    if (wantComplete === already) continue;
+    sheet.getRange(i + 1, 9).setValue(wantComplete ? today : '');
+    updated++;
+    if (wantComplete) completedPlaceIds[placeId] = true;
+  }
+  if (wantComplete && kind === 'procure' && updated > 0) {
+    ensureSowingAfterCompletedProcure_(sheet.getDataRange().getValues(), completedPlaceIds);
+  }
+  return { success: true, updated: updated };
+}
+
 /** 保存済み栽培計画を年度＋作物＋計画名単位で削除 */
 function deleteSavedCultivationPlans(year, crop, planType, planName) {
   try {
@@ -11865,109 +11917,6 @@ function clearTempWorkRecord(params) {
   const data = sheet.getDataRange().getValues();
   for (let i = data.length - 1; i >= 1; i--) {
     if (String(data[i][0]) === userId && (!recordType || String(data[i][2]) === recordType)) {
-      sheet.deleteRow(i + 1);
-    }
-  }
-  return { success: true };
-}
-
-// ==========================================
-// 栽培計画の一時保存（全端末同期）
-// ==========================================
-function ensureCultivationPlanDraftSheet_() {
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) throw new Error('データベースに接続できません');
-  let sheet = ss.getSheetByName('栽培計画一時保存');
-  if (!sheet) {
-    sheet = ss.insertSheet('栽培計画一時保存');
-    sheet.appendRow(['スタッフID', 'ユーザー名', '下書きJSON', '保存日時ISO', '保存時刻ms']);
-    sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#e0e0e0');
-  }
-  return sheet;
-}
-
-function saveCultivationPlanDraftCloud(params) {
-  const sheet = ensureCultivationPlanDraftSheet_();
-  const userId = String(params.userId || '').trim();
-  if (!userId) throw new Error('ユーザーIDが必要です');
-
-  const savedAt = params.savedAt || new Date().toISOString();
-  const savedAtMs = Number(params.savedAtMs) || Date.now();
-  let draftJson = '';
-  if (typeof params.draftJson === 'string') {
-    draftJson = params.draftJson;
-  } else if (params.draft) {
-    draftJson = JSON.stringify(params.draft);
-  } else {
-    draftJson = JSON.stringify({ form: params.form || {}, plans: params.plans || [] });
-  }
-
-  const rowVals = [
-    userId,
-    params.userName || '',
-    draftJson,
-    savedAt,
-    savedAtMs
-  ];
-
-  const data = sheet.getDataRange().getValues();
-  let targetRow = -1;
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === userId) {
-      targetRow = i + 1;
-      break;
-    }
-  }
-
-  if (targetRow > 0) {
-    sheet.getRange(targetRow, 1, 1, rowVals.length).setValues([rowVals]);
-  } else {
-    sheet.appendRow(rowVals);
-  }
-  return { success: true, savedAt: savedAt, savedAtMs: savedAtMs };
-}
-
-function getCultivationPlanDraftCloud(params) {
-  const sheet = ensureCultivationPlanDraftSheet_();
-  const userId = String(params.userId || '').trim();
-  if (!userId) return { success: true, draft: null };
-
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === userId) {
-      let parsed = null;
-      try { parsed = JSON.parse(data[i][2] || '{}'); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object') {
-        return { success: true, draft: null };
-      }
-      // draftJson が { form, plans} または {savedAt, form, plans} どちらでも吸収
-      const form = parsed.form || {};
-      const plans = Array.isArray(parsed.plans) ? parsed.plans : [];
-      const savedAt = data[i][3] || parsed.savedAt || '';
-      const savedAtMs = Number(data[i][4]) || Number(parsed.savedAtMs) || 0;
-      return {
-        success: true,
-        draft: {
-          form: form,
-          plans: plans,
-          savedAt: savedAt,
-          savedAtMs: savedAtMs,
-          userName: data[i][1] || ''
-        }
-      };
-    }
-  }
-  return { success: true, draft: null };
-}
-
-function clearCultivationPlanDraftCloud(params) {
-  const sheet = ensureCultivationPlanDraftSheet_();
-  const userId = String(params.userId || '').trim();
-  if (!userId) return { success: true };
-
-  const data = sheet.getDataRange().getValues();
-  for (let i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][0]) === userId) {
       sheet.deleteRow(i + 1);
     }
   }

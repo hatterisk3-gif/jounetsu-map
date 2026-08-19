@@ -1,6 +1,19 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 const LAYOUT_KEY = "passionMapFarmBoardLayout";
+const PROGRESS_KEY = "passionMapFarmBoardProgress";
 const LAYOUT_VERSION = 1;
+
+const FIELD_STAGE_CATS = [
+  { source: "field.empty", cats: [] },
+  { source: "field.chipper", cats: ["chipper_disk"] },
+  { source: "field.ridge_crush", cats: ["ridge_crush"] },
+  { source: "field.compost", cats: ["compost"] },
+  { source: "field.dolomite", cats: ["dolomite"] },
+  { source: "field.fertilizer", cats: ["fertilizer"] },
+  { source: "field.forward_pull", cats: ["forward_pull"] },
+  { source: "field.ridge_make", cats: ["ridge_make"] },
+  { source: "plant.done", cats: ["planted"] }
+];
 
 const SOURCE_OPTIONS = [
   { id: "plan.unexecuted", label: "計画・未実行（計画別）" },
@@ -24,6 +37,10 @@ const SOURCE_OPTIONS = [
 let boardData = { plans: [], fields: [], tasks: [], prodCategories: [] };
 let layout = defaultLayout();
 let lastCards = [];
+let progressMap = loadProgressMap();
+let naturalIndexCache = null;
+let swipeState = null;
+let progressBusy = false;
 
 function uid(prefix) {
   return prefix + "_" + Math.random().toString(36).slice(2, 9);
@@ -98,6 +115,19 @@ function loadLayout() {
 
 function saveLayout() {
   localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+}
+
+function loadProgressMap() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PROGRESS_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveProgressMap() {
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progressMap));
 }
 
 function escapeHtml(s) {
@@ -194,6 +224,7 @@ async function loadBoard() {
       prodCategories: (data && data.prodCategories) || []
     };
     fillYearFilter();
+    pruneProgressMap();
     renderBoard();
     const n = (boardData.plans || []).length;
     setStatus("計画 " + n + "件");
@@ -312,7 +343,7 @@ function plantedFieldNames() {
 
 function fieldStage(field, planted) {
   const name = String(field.name || "").trim();
-  if (planted[name]) return "plant.done";
+  if (planted[name] || catDone(field, ["planted"])) return "plant.done";
   if (catDone(field, ["ridge_make"]) || fieldHasCompletedTask(name, ["ridge_make"])) return "field.ridge_make";
   if (catDone(field, ["forward_pull", "forward_pull_finish"]) || fieldHasCompletedTask(name, ["forward_pull"])) return "field.forward_pull";
   if (catDone(field, ["fertilizer"]) || fieldHasCompletedTask(name, ["fertilizer"])) return "field.fertilizer";
@@ -335,6 +366,9 @@ function fieldCard(field) {
   const area = Number(field.area) ? Number(field.area).toFixed(1) + "a" : "";
   return {
     id: "field_" + (field.id || field.name),
+    entityKey: "field:" + (field.id || field.name),
+    kind: "field",
+    payload: { fieldId: field.id || "", fieldName: field.name || "" },
     kicker: [field.location, field.origin].filter(Boolean).join(" · ") || "圃場",
     title: field.name || "(無名圃場)",
     meta: area,
@@ -347,6 +381,15 @@ function cardsForSource(source) {
   if (source === "plan.unexecuted") {
     return (boardData.plans || []).filter(matchYearGroup).filter((g) => Number(g.plannedCount) > 0).map((g) => ({
       id: "plan_u_" + g.year + "_" + g.planName,
+      entityKey: "plan:" + g.year + "\t" + g.planName,
+      kind: "plan",
+      payload: {
+        year: g.year,
+        crop: g.crop,
+        planType: g.planType,
+        planName: g.planName,
+        planIds: (g.plans || []).filter((p) => p && p.status !== "executed").map((p) => p.id)
+      },
       kicker: g.year + " · " + g.crop + (g.planType ? " · " + g.planType : ""),
       title: g.planName || "(計画名なし)",
       meta: "未実行 " + g.plannedCount + "件" + (g.seedPlannedTotal ? " / 種子 " + g.seedPlannedTotal : ""),
@@ -356,6 +399,15 @@ function cardsForSource(source) {
   if (source === "plan.waiting") {
     return (boardData.plans || []).filter(matchYearGroup).filter((g) => Number(g.executedCount) > 0).map((g) => ({
       id: "plan_w_" + g.year + "_" + g.planName,
+      entityKey: "plan:" + g.year + "\t" + g.planName,
+      kind: "plan",
+      payload: {
+        year: g.year,
+        crop: g.crop,
+        planType: g.planType,
+        planName: g.planName,
+        planIds: (g.plans || []).filter((p) => p && p.status === "executed").map((p) => p.id)
+      },
       kicker: g.year + " · " + g.crop + (g.planType ? " · " + g.planType : ""),
       title: g.planName || "(計画名なし)",
       meta: "実行済 " + g.executedCount + "件（待機中）",
@@ -378,6 +430,11 @@ function cardsForSource(source) {
         if (!grouped[key]) {
           grouped[key] = {
             id: "proc_" + (done ? "d_" : "u_") + key,
+            entityKey: "procure:" + key,
+            year: year,
+            crop: crop,
+            planName: planName,
+            planIds: [],
             kicker: [year, crop].filter(Boolean).join(" · ") || "調達",
             title: planName,
             bags: 0,
@@ -387,6 +444,7 @@ function cardsForSource(source) {
         }
         grouped[key].bags += Number(t.bags) || 0;
         if (t.hours) grouped[key].hours = t.hours;
+        if (id && grouped[key].planIds.indexOf(id) < 0) grouped[key].planIds.push(id);
         (t.tags || []).forEach((tag) => {
           if (tag && grouped[key].tags.indexOf(tag) < 0) grouped[key].tags.push(tag);
         });
@@ -396,6 +454,9 @@ function cardsForSource(source) {
       const c = grouped[k];
       return {
         id: c.id,
+        entityKey: c.entityKey,
+        kind: "procure",
+        payload: { year: c.year, crop: c.crop, planName: c.title, planIds: c.planIds || [] },
         kicker: c.kicker,
         title: c.title,
         meta: c.hours || (c.bags ? c.bags + "袋" : (done ? "調達完了" : "未調達")),
@@ -420,6 +481,12 @@ function cardsForSource(source) {
       if (!grouped[key]) {
         grouped[key] = {
           id: "sow_" + (done ? "d_" : "u_") + key,
+          entityKey: "sow:" + key,
+          year: year,
+          crop: crop,
+          planName: planName,
+          tag: tag,
+          planIds: [],
           kicker: [year, crop, planName].filter(Boolean).join(" · "),
           title: tag,
           trays: 0,
@@ -429,6 +496,7 @@ function cardsForSource(source) {
       }
       grouped[key].trays += Number(t.trays) || 0;
       if (t.hours) grouped[key].hours = t.hours;
+      if (id && grouped[key].planIds.indexOf(id) < 0) grouped[key].planIds.push(id);
       String(t.fieldName || "").split(",").forEach((n) => {
         const s = String(n).trim();
         if (s && grouped[key].fields.indexOf(s) < 0) grouped[key].fields.push(s);
@@ -439,6 +507,9 @@ function cardsForSource(source) {
       const trayLabel = c.trays ? c.trays + "枚" : (c.hours || "苗床");
       return {
         id: c.id,
+        entityKey: c.entityKey,
+        kind: "sow",
+        payload: { year: c.year, crop: c.crop, planName: c.planName, tag: c.tag, planIds: c.planIds || [] },
         kicker: c.kicker,
         title: c.title,
         meta: trayLabel + (done ? " · 定植待ち" : ""),
@@ -465,11 +536,18 @@ function cardsForSource(source) {
       if (!grouped[key]) {
         grouped[key] = {
           id: "plant_" + key,
+          entityKey: "plant:" + key,
+          year: year,
+          crop: (g && g.crop) || t.crop,
+          planName: planName,
+          tag: tag,
+          planIds: [],
           kicker: [year, (g && g.crop) || t.crop, planName].filter(Boolean).join(" · "),
           title: tag,
           fields: []
         };
       }
+      if (id && grouped[key].planIds.indexOf(id) < 0) grouped[key].planIds.push(id);
       String(t.fieldName || "").split(",").forEach((n) => {
         const s = String(n).trim();
         if (s && grouped[key].fields.indexOf(s) < 0) grouped[key].fields.push(s);
@@ -479,6 +557,9 @@ function cardsForSource(source) {
       const c = grouped[k];
       return {
         id: c.id,
+        entityKey: c.entityKey,
+        kind: "plant",
+        payload: { year: c.year, crop: c.crop, planName: c.planName, tag: c.tag, planIds: c.planIds || [], fieldName: (c.fields || []).join(",") },
         kicker: c.kicker,
         title: c.title,
         meta: (c.fields || []).join("、") || "定植済み",
@@ -489,10 +570,81 @@ function cardsForSource(source) {
   return [];
 }
 
+function uniqueLayoutSources() {
+  const set = {};
+  SOURCE_OPTIONS.forEach((s) => { if (s.id && s.id !== "empty") set[s.id] = true; });
+  ((layout && layout.columns) || []).forEach((col) => {
+    (col.children || []).forEach((ch) => {
+      if (ch.source && ch.source !== "empty") set[ch.source] = true;
+    });
+  });
+  return Object.keys(set);
+}
+
+function rebuildNaturalIndex() {
+  naturalIndexCache = {};
+  uniqueLayoutSources().forEach((src) => {
+    naturalIndexCache[src] = cardsForSource(src) || [];
+  });
+}
+
+function pruneProgressMap() {
+  rebuildNaturalIndex();
+  const natOf = {};
+  Object.keys(naturalIndexCache).forEach((src) => {
+    (naturalIndexCache[src] || []).forEach((c) => {
+      if (c.entityKey) natOf[c.entityKey] = src;
+    });
+  });
+  let changed = false;
+  Object.keys(progressMap).forEach((k) => {
+    if (natOf[k] === progressMap[k]) {
+      delete progressMap[k];
+      changed = true;
+    }
+  });
+  if (changed) saveProgressMap();
+}
+
+function displayedCardsFor(source) {
+  if (!naturalIndexCache) rebuildNaturalIndex();
+  const out = [];
+  const seen = {};
+  Object.keys(naturalIndexCache).forEach((natSource) => {
+    (naturalIndexCache[natSource] || []).forEach((c) => {
+      if (!c.entityKey) return;
+      const shown = progressMap[c.entityKey] || natSource;
+      if (shown !== source || seen[c.entityKey]) return;
+      seen[c.entityKey] = true;
+      out.push(Object.assign({}, c, { source: shown }));
+    });
+  });
+  return out;
+}
+
+function siblingSources(source) {
+  const cols = (layout && layout.columns) || [];
+  for (let i = 0; i < cols.length; i++) {
+    const kids = cols[i].children || [];
+    for (let j = 0; j < kids.length; j++) {
+      if ((kids[j].source || "empty") !== source) continue;
+      return {
+        prev: j > 0 ? (kids[j - 1].source || "empty") : "",
+        next: j < kids.length - 1 ? (kids[j + 1].source || "empty") : "",
+        prevTitle: j > 0 ? kids[j - 1].title : "",
+        nextTitle: j < kids.length - 1 ? kids[j + 1].title : ""
+      };
+    }
+  }
+  return { prev: "", next: "" };
+}
+
 function renderBoard() {
   const root = document.getElementById("board");
   if (!root) return;
   lastCards = [];
+  naturalIndexCache = null;
+  rebuildNaturalIndex();
   const cols = (layout && layout.columns) || [];
   if (!cols.length) {
     root.innerHTML = '<div class="empty">列がありません。「構成を編集」から追加してください。</div>';
@@ -502,7 +654,7 @@ function renderBoard() {
     const color = safeColor(col.color);
     const children = col.children || [];
     const lanes = children.map((ch) => {
-      const cards = cardsForSource(ch.source || "empty").filter(matchSearch);
+      const cards = displayedCardsFor(ch.source || "empty").filter(matchSearch);
       cards.forEach((c) => lastCards.push(c));
       const body = cards.length
         ? cards.map((c) => cardHtml(c)).join("")
@@ -521,10 +673,11 @@ function renderBoard() {
       <div class="parent-foot" style="color:${escapeHtml(color)}">${escapeHtml(col.title || "")}</div>
     </section>`;
   }).join("");
+  bindCardSwipe();
 }
 
 function cardHtml(c) {
-  return `<article class="card" data-id="${escapeHtml(c.id)}" onclick="openCardModal(this.dataset.id)">
+  return `<article class="card" data-id="${escapeHtml(c.id)}" data-entity="${escapeHtml(c.entityKey || "")}" data-source="${escapeHtml(c.source || "")}" data-kind="${escapeHtml(c.kind || "")}">
     <div class="kicker">${escapeHtml(c.kicker || "")}</div>
     <div class="ctitle">${escapeHtml(c.title || "")}</div>
     <div class="meta">${escapeHtml(c.meta || "")}</div>
@@ -672,6 +825,247 @@ function resetLayout() {
   if (!confirm("列の名前・並びを初期状態に戻しますか？（カードデータは消えません）")) return;
   layout = defaultLayout();
   persistAndRefresh();
+}
+
+function bindCardSwipe() {
+  const root = document.getElementById("board");
+  if (!root || root.dataset.swipeBound === "1") return;
+  root.dataset.swipeBound = "1";
+  root.addEventListener("pointerdown", onCardPointerDown);
+  root.addEventListener("pointermove", onCardPointerMove);
+  root.addEventListener("pointerup", onCardPointerUp);
+  root.addEventListener("pointercancel", onCardPointerUp);
+}
+
+function onCardPointerDown(e) {
+  if (progressBusy) return;
+  const card = e.target.closest(".card");
+  if (!card || !card.dataset.entity) return;
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  swipeState = {
+    card: card,
+    x: e.clientX,
+    y: e.clientY,
+    dx: 0,
+    moved: false
+  };
+  try { card.setPointerCapture(e.pointerId); } catch (err) {}
+}
+
+function onCardPointerMove(e) {
+  if (!swipeState) return;
+  swipeState.dx = e.clientX - swipeState.x;
+  const dy = e.clientY - swipeState.y;
+  if (!swipeState.moved && Math.abs(swipeState.dx) > 14 && Math.abs(swipeState.dx) > Math.abs(dy) * 1.2) {
+    swipeState.moved = true;
+    swipeState.card.classList.add("swiping");
+  }
+  if (!swipeState.moved) return;
+  e.preventDefault();
+  const dx = Math.max(-130, Math.min(130, swipeState.dx));
+  swipeState.card.style.transform = "translateX(" + dx + "px)";
+  swipeState.card.classList.toggle("hint-next", dx > 48);
+  swipeState.card.classList.toggle("hint-back", dx < -48);
+}
+
+function onCardPointerUp(e) {
+  if (!swipeState) return;
+  const card = swipeState.card;
+  const dx = swipeState.dx;
+  const moved = swipeState.moved;
+  swipeState = null;
+  card.classList.remove("swiping", "hint-next", "hint-back");
+  if (!moved) {
+    card.style.transform = "";
+    openCardModal(card.dataset.id);
+    return;
+  }
+  if (dx > 72) {
+    commitCardMove(card, 1);
+    return;
+  }
+  if (dx < -72) {
+    commitCardMove(card, -1);
+    return;
+  }
+  card.style.transition = "transform .18s ease";
+  card.style.transform = "";
+  setTimeout(() => { card.style.transition = ""; }, 200);
+}
+
+function applyFieldStageLocal(field, source) {
+  if (!field.catStatuses || typeof field.catStatuses !== "object") field.catStatuses = {};
+  let targetIdx = -1;
+  FIELD_STAGE_CATS.forEach((row, i) => {
+    if (row.source === source) targetIdx = i;
+  });
+  if (targetIdx < 0) return;
+  FIELD_STAGE_CATS.forEach((row, i) => {
+    (row.cats || []).forEach((catId) => {
+      if (!field.catStatuses[catId]) field.catStatuses[catId] = { status: "none" };
+      field.catStatuses[catId].status = i > 0 && i <= targetIdx ? "completed" : "none";
+    });
+  });
+}
+
+function manurePayloadFromField(field) {
+  const catStatuses = field.catStatuses || {};
+  const compost = catStatuses.compost || {};
+  return {
+    catStatuses: catStatuses,
+    manure_status: compost.status || "none",
+    manure_deadline: compost.deadline || "",
+    manure_scheduled_date: compost.scheduled_date || "",
+    manure_cancel_reason: compost.cancel_reason || "",
+    manure_has_pin: !!compost.has_pin,
+    manure_route_selected: !!compost.route_selected
+  };
+}
+
+function applyPlanLocal(payload, dest) {
+  const g = (boardData.plans || []).find((x) => x.year === payload.year && x.planName === payload.planName);
+  if (!g) return;
+  if (dest === "plan.waiting") {
+    g.executedCount = g.count;
+    g.plannedCount = 0;
+    (g.plans || []).forEach((p) => { if (p) p.status = "executed"; });
+  }
+}
+
+function applyTaskLocal(kind, payload, completed) {
+  const ids = {};
+  (payload.planIds || []).forEach((id) => { if (id) ids[String(id)] = true; });
+  (boardData.tasks || []).forEach((t) => {
+    if (t.kind !== kind) return;
+    const hit = (t.planIds || []).some((id) => ids[String(id)]);
+    if (hit) t.completed = completed;
+  });
+}
+
+async function commitCardMove(card, dir) {
+  const entity = card.dataset.entity;
+  const from = card.dataset.source;
+  const info = lastCards.find((c) => c.entityKey === entity) || {};
+  const sib = siblingSources(from);
+  const dest = dir > 0 ? sib.next : sib.prev;
+  const destTitle = dir > 0 ? sib.nextTitle : sib.prevTitle;
+  if (!dest) {
+    card.style.transition = "transform .18s ease";
+    card.style.transform = "";
+    setStatus(dir > 0 ? "これ以上先はありません" : "これ以上戻れません");
+    setTimeout(() => { card.style.transition = ""; }, 200);
+    return;
+  }
+  const kind = info.kind || card.dataset.kind;
+  const payload = info.payload || {};
+  const label = info.title || "このカード";
+  if (kind === "plan" && dest === "plan.unexecuted") {
+    card.style.transform = "";
+    setStatus("実行の取り消しは計画画面から行ってください");
+    return;
+  }
+  if (kind === "plan" && dest === "plan.waiting") {
+    if (!confirm("「" + label + "」を実行し、調達へ進めますか？")) {
+      card.style.transform = "";
+      return;
+    }
+  } else if (dir > 0 && (kind === "procure" || kind === "sow" || kind === "plant") && (dest === "procure.done" || dest === "sow.waiting" || dest === "plant.done")) {
+    const work = kind === "procure" ? "調達" : (kind === "sow" ? "播種" : "定植");
+    if (!confirm("「" + label + "」の" + work + "を完了にしますか？")) {
+      card.style.transform = "";
+      return;
+    }
+  } else if (kind === "field" && dir > 0) {
+    if (!confirm("「" + label + "」を「" + (destTitle || dest) + "」へ進めますか？")) {
+      card.style.transform = "";
+      return;
+    }
+  }
+
+  const prev = progressMap[entity];
+  progressMap[entity] = dest;
+  saveProgressMap();
+  if (kind === "field") {
+    const field = (boardData.fields || []).find((f) => ("field:" + (f.id || f.name)) === entity);
+    if (field) applyFieldStageLocal(field, dest);
+  } else if (kind === "plan") {
+    applyPlanLocal(payload, dest);
+  } else if (kind === "procure") {
+    applyTaskLocal("procure", payload, dest === "procure.done");
+  } else if (kind === "sow") {
+    applyTaskLocal("sow", payload, dest === "sow.waiting");
+  } else if (kind === "plant") {
+    applyTaskLocal("plant", payload, dest === "plant.done");
+  }
+  renderBoard();
+  setStatus("「" + label + "」→ " + (destTitle || dest));
+
+  progressBusy = true;
+  try {
+    await syncCardMove(kind, payload, dest, dir > 0);
+  } catch (e) {
+    if (kind === "procure" || kind === "sow" || kind === "plant") {
+      setStatus("列は動かしました。" + (e.message || "作業予定への同期は再デプロイ後に有効です"));
+    } else {
+      if (prev) progressMap[entity] = prev;
+      else delete progressMap[entity];
+      saveProgressMap();
+      setStatus(e.message || "進捗の保存に失敗しました");
+      renderBoard();
+    }
+  } finally {
+    progressBusy = false;
+  }
+}
+
+async function syncCardMove(kind, payload, dest, forward) {
+  const userName = localStorage.getItem("passionMapUserName") || "";
+  if (kind === "field") {
+    const field = (boardData.fields || []).find((f) => f.id === payload.fieldId || f.name === payload.fieldName);
+    if (!field || !field.id) return;
+    applyFieldStageLocal(field, dest);
+    await callGAS("updatePolygon", {
+      id: field.id,
+      userName: userName,
+      manureData: JSON.stringify(manurePayloadFromField(field))
+    });
+    return;
+  }
+  if (kind === "plan" && dest === "plan.waiting" && forward) {
+    const res = await callGAS("executeCultivationPlans", {
+      year: payload.year,
+      crop: payload.crop,
+      planType: payload.planType,
+      planName: payload.planName,
+      planIds: payload.planIds || []
+    });
+    if (res && res.success === false) throw new Error(res.message || "実行に失敗しました");
+    return;
+  }
+  if (kind === "plan") return;
+  const taskKind = kind === "plant" ? "plant" : kind;
+  const completed = forward && (dest === "procure.done" || dest === "sow.waiting" || dest === "plant.done");
+  if (taskKind === "procure" || taskKind === "sow" || taskKind === "plant") {
+    if (!forward && !completed) {
+      await callGAS("completeFarmBoardTasks", {
+        kind: taskKind,
+        completed: false,
+        planIds: payload.planIds || [],
+        tag: payload.tag || "",
+        fieldName: payload.fieldName || ""
+      });
+      return;
+    }
+    if (completed) {
+      await callGAS("completeFarmBoardTasks", {
+        kind: taskKind,
+        completed: true,
+        planIds: payload.planIds || [],
+        tag: payload.tag || "",
+        fieldName: payload.fieldName || ""
+      });
+    }
+  }
 }
 
 window.executeLogin = executeLogin;

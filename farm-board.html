@@ -67,8 +67,9 @@
       background: var(--card); color: var(--text); padding: 0 8px; font-size: 13px;
     }
     .status { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .hint-bar { font-size: 11px; color: var(--muted); padding: 0 12px 8px; }
     #boardWrap {
-      height: calc(100vh - 55px); overflow: auto; padding: 12px;
+      height: calc(100vh - 78px); overflow: auto; padding: 12px;
     }
     #board {
       display: flex; align-items: stretch; gap: 14px; min-height: calc(100vh - 80px);
@@ -107,9 +108,14 @@
     }
     .card {
       background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-      padding: 8px 9px; cursor: pointer; box-shadow: 0 1px 0 rgba(0,0,0,.25);
+      padding: 8px 9px; cursor: grab; box-shadow: 0 1px 0 rgba(0,0,0,.25);
+      touch-action: pan-y; user-select: none; position: relative;
     }
     .card:hover { border-color: #6e7681; background: var(--card-2); }
+    .card.swiping { cursor: grabbing; z-index: 2; }
+    .card.hint-next { box-shadow: 10px 0 0 #238636; }
+    .card.hint-back { box-shadow: -10px 0 0 #d29922; }
+    .card.busy { opacity: .65; pointer-events: none; }
     .kicker { font-size: 10px; color: var(--muted); letter-spacing: .02em; margin-bottom: 3px; }
     .ctitle { font-size: 13px; font-weight: 800; line-height: 1.35; }
     .meta { font-size: 11px; color: #9aa4b2; margin-top: 5px; }
@@ -185,6 +191,7 @@
     <button type="button" class="text-btn" onclick="loadBoard()">更新</button>
     <button type="button" class="text-btn" onclick="openCustomize()">構成を編集</button>
   </div>
+  <div class="hint-bar">カードを右へスライドすると次の進捗へ、左へスライドすると一つ戻します</div>
 
   <div id="boardWrap">
     <div id="board"></div>
@@ -216,6 +223,6 @@
     </div>
   </div>
 
-  <script src="farm-board.js?v=1787129000000"></script>
+  <script src="farm-board.js?v=1787126600000"></script>
 </body>
 </html>
