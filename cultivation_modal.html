@@ -129,25 +129,23 @@
                 <label style="font-size: 11px; font-weight: bold; color: #555;">圃場条件</label>
                 <button type="button" onclick="openCpBasicMasterManager('condition')" title="圃場条件の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
               </div>
-              <select id="cpFieldCondition" onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
-                  <option value="露地">露地</option>
-                  <option value="ハウス">ハウス</option>
-              </select>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <select id="cpFieldCondition" onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0; box-sizing: border-box;">
+                    <option value="露地">露地</option>
+                    <option value="ハウス">ハウス</option>
+                </select>
+                <div role="radiogroup" aria-label="計画属性" class="cp-plan-type-group" title="計画名の末尾に本作／試作が付きます">
+                  <label class="cp-plan-type-btn">
+                    <input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()">
+                    <span>本作</span>
+                  </label>
+                  <label class="cp-plan-type-btn">
+                    <input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()">
+                    <span>試作</span>
+                  </label>
+                </div>
+              </div>
             </div>
-          </div>
-          <div style="margin-top: 10px; padding: 8px 10px; background: #FFF8E1; border: 1px solid #FFE082; border-radius: 6px;">
-            <div style="font-size: 11px; font-weight: bold; color: #E65100; margin-bottom: 6px;">計画属性</div>
-            <div role="radiogroup" aria-label="計画属性" style="display:flex; gap:8px;">
-              <label class="cp-plan-type-btn">
-                <input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()">
-                <span>本作</span>
-              </label>
-              <label class="cp-plan-type-btn">
-                <input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()">
-                <span>試作</span>
-              </label>
-            </div>
-            <div style="font-size:10px; color:#888; margin-top:5px;">計画名の末尾に本作／試作が付きます。ヘッダーの計画名からも確認できます。</div>
           </div>
           <div style="text-align: center; margin-top: 10px; padding: 8px; background: #e8f5e9; border-radius: 6px; border: 1px dashed #4CAF50;">
             <p style="font-size: 11px; color: #2e7d32; margin: 0 0 5px 0; font-weight: bold;">※ 過去の計画を呼び出したい場合はこちら</p>
@@ -351,22 +349,27 @@
             overflow: hidden;
             text-overflow: ellipsis;
           }
+          .cp-plan-type-group {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+          }
           .cp-plan-type-btn {
-            flex: 1;
             margin: 0;
             cursor: pointer;
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
-            padding: 8px 10px;
-            border-radius: 6px;
-            border: 1px solid #FFE082;
+            position: relative;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid #FFCC80;
             background: #fff;
-            font-size: 13px;
+            font-size: 11px;
             font-weight: bold;
             color: #E65100;
             box-sizing: border-box;
+            white-space: nowrap;
           }
           .cp-plan-type-btn.is-checked,
           .cp-plan-type-btn:has(input:checked) {
@@ -375,8 +378,9 @@
             color: #fff;
           }
           .cp-plan-type-btn input {
-            margin: 0;
-            accent-color: #FF9800;
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
           }
           .cp-steps { margin-bottom: 8px; }
           .cp-steps.is-collapsed {
