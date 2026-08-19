@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>情熱MAP 操作索引</title>
+  <link rel="icon" href="icon_index.png">
+  <link rel="apple-touch-icon" href="icon_index.png">
+  <link rel="manifest" href="manifest_portal.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <style>
+    :root {
+      --bg: #f3f6f4;
+      --ink: #1b2a22;
+      --muted: #60756a;
+      --line: #d7e3db;
+      --panel: #fff;
+      --accent: #0d7a4f;
+      --accent-soft: #e6f6ee;
+      --warn: #e65100;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--ink); }
+    header {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 14px; background: #0d7a4f; color: #fff;
+      box-shadow: 0 2px 10px rgba(13, 122, 79, .28);
+    }
+    header h1 { margin: 0; font-size: 17px; font-weight: 800; flex: 1; }
+    .hdr-btn, a.back {
+      color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.45);
+      background: rgba(255,255,255,.12); border-radius: 8px; padding: 7px 10px;
+      font-size: 12px; font-weight: 800; cursor: pointer; white-space: nowrap;
+    }
+    main { width: min(720px, 100%); margin: 0 auto; padding: 16px 14px 120px; }
+    .lead { margin: 0 0 14px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .search-wrap {
+      display: flex; gap: 8px; align-items: stretch;
+      background: var(--panel); border: 2px solid #0d7a4f; border-radius: 16px;
+      padding: 6px; box-shadow: 0 8px 24px rgba(13,122,79,.12);
+    }
+    #opsQuery {
+      flex: 1; border: 0; outline: none; font-size: 18px; padding: 14px 12px;
+      background: transparent; min-width: 0;
+    }
+    .mic-btn {
+      width: 56px; border: 0; border-radius: 12px; background: #e8f5e9; color: #1b5e20;
+      font-size: 22px; font-weight: 800; cursor: pointer;
+    }
+    .mic-btn.on { background: #c62828; color: #fff; animation: pulse 1s infinite; }
+    @keyframes pulse { 50% { opacity: .7; } }
+    .status { min-height: 18px; margin: 8px 2px 12px; font-size: 12px; font-weight: 700; color: var(--muted); }
+    .status.err { color: #c62828; }
+    .section-title { margin: 16px 0 8px; font-size: 12px; font-weight: 800; color: #456; letter-spacing: .04em; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px 14px; margin-bottom: 8px; cursor: pointer; width: 100%; text-align: left;
+    }
+    .card.on { border-color: #0d7a4f; background: var(--accent-soft); box-shadow: 0 0 0 2px rgba(13,122,79,.18); }
+    .card .name { font-size: 16px; font-weight: 800; }
+    .card .meta { margin-top: 4px; font-size: 12px; color: var(--muted); }
+    .action {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      padding: 14px; margin-bottom: 8px; cursor: pointer; width: 100%; text-align: left;
+    }
+    .action.on { border-color: #e65100; background: #fff3e0; }
+    .action .dot { width: 18px; height: 18px; border: 2px solid #bbb; border-radius: 50%; flex-shrink: 0; }
+    .action.on .dot { border-color: #e65100; background: #e65100; box-shadow: inset 0 0 0 3px #fff; }
+    .action .aname { font-size: 16px; font-weight: 800; }
+    .action .aurl { margin-top: 3px; font-size: 11px; color: var(--muted); word-break: break-all; }
+    .empty { text-align: center; color: #90a4ae; padding: 28px 8px; }
+    .exec-bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+      background: linear-gradient(to top, #f3f6f4 70%, rgba(243,246,244,0));
+    }
+    .exec-bar .inner { width: min(720px, 100%); margin: 0 auto; display: flex; gap: 8px; }
+    .btn {
+      border: 0; border-radius: 12px; padding: 16px; font-size: 16px; font-weight: 800; cursor: pointer;
+    }
+    .btn-exec { flex: 1; background: #0d7a4f; color: #fff; }
+    .btn-exec:disabled { background: #b0bec5; cursor: not-allowed; }
+    .btn-clear { background: #eceff1; color: #455a64; min-width: 88px; }
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50; align-items: center; justify-content: center; padding: 16px; }
+    .overlay.show { display: flex; }
+    .modal { background: #fff; width: min(560px, 100%); max-height: 90vh; overflow: auto; border-radius: 14px; padding: 16px; }
+    .modal h3 { margin: 0 0 10px; }
+    label { display: block; font-size: 12px; font-weight: 800; color: #546e7a; margin: 10px 0 4px; }
+    input, select, textarea { width: 100%; padding: 10px; border: 1px solid #cfd8dc; border-radius: 8px; font: inherit; }
+    textarea { min-height: 72px; resize: vertical; }
+    .hint { font-size: 11px; color: #78909c; margin-top: 4px; line-height: 1.45; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    .custom-item { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; border: 1px solid #eee; border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔍 操作索引</h1>
+    <button type="button" class="hdr-btn" onclick="opsOpenRegister()">＋ 操作を登録</button>
+    <a class="back" href="index.html">案内所</a>
+  </header>
+  <main>
+    <p class="lead">音声か文字で探す → 対象を選ぶ → 実行する操作を選ぶ。資材は在庫の入出庫が自動で出ます。AppSheet のURLも登録できます。</p>
+    <div class="search-wrap">
+      <input id="opsQuery" type="search" placeholder="例: オーソサイド / 作業記録" autocomplete="off" enterkeyhint="search">
+      <button type="button" class="mic-btn" id="opsMic" onclick="opsToggleVoice()" aria-label="音声入力">🎤</button>
+    </div>
+    <div class="status" id="opsStatus">読み込み中...</div>
+    <div id="opsTargetSection"></div>
+    <div id="opsActionSection"></div>
+  </main>
+  <div class="exec-bar">
+    <div class="inner">
+      <button type="button" class="btn btn-clear" onclick="opsClear()">戻す</button>
+      <button type="button" class="btn btn-exec" id="opsExec" onclick="opsExecute()" disabled>実行する</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="opsOverlay" onclick="if(event.target===this) opsCloseRegister()">
+    <div class="modal">
+      <h3 id="opsFormTitle">操作を登録</h3>
+      <input type="hidden" id="opsFormId">
+      <label>対象名</label>
+      <input id="opsFormTarget" list="opsTargetList" placeholder="例: オーソサイド水和剤">
+      <datalist id="opsTargetList"></datalist>
+      <label>キーワード（カンマ区切り）</label>
+      <input id="opsFormKeywords" placeholder="例: オーソサイド, 殺菌剤">
+      <label>操作名</label>
+      <input id="opsFormAction" placeholder="例: 出庫登録 / AppSheetで入庫">
+      <label>飛び先の作り方</label>
+      <select id="opsFormTemplate" onchange="opsApplyTemplate()">
+        <option value="custom">任意URL / AppSheet</option>
+        <option value="stock_out">情熱MAP 出庫登録</option>
+        <option value="stock_in">情熱MAP 入庫登録</option>
+        <option value="stock_view">情熱MAP 在庫を見る</option>
+        <option value="work_add">情熱MAP 作業記録をつける</option>
+        <option value="work_delete">情熱MAP 作業記録を消す</option>
+      </select>
+      <label>飛び先URL</label>
+      <textarea id="opsFormUrl" placeholder="https://www.appsheet.com/start/..."></textarea>
+      <div class="hint">資材に紐づけると <code>{id}</code> <code>{name}</code> が自動で入ります。AppSheet の入力画面URLをそのまま貼っても使えます。</div>
+      <label>既存の資材に紐づける（任意）</label>
+      <select id="opsFormMaterial"><option value="">紐づけない（独自の対象）</option></select>
+      <div class="row">
+        <div>
+          <label>アイコン</label>
+          <input id="opsFormIcon" placeholder="📦">
+        </div>
+        <div>
+          <label>メモ</label>
+          <input id="opsFormNote" placeholder="任意">
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <button type="button" class="btn btn-clear" onclick="opsCloseRegister()">閉じる</button>
+        <button type="button" class="btn btn-exec" onclick="opsSaveRoute()">保存する</button>
+      </div>
+      <div class="status" id="opsFormStatus"></div>
+      <div class="section-title">登録済みの独自操作</div>
+      <div id="opsCustomList"></div>
+    </div>
+  </div>
+
+  <script src="ops-index.js?v=1787569500000"></script>
+</body>
+</html>

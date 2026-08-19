@@ -210,6 +210,9 @@ function doPost(e) {
     else if (action === "dayPlan_update") result = dayPlan_update(params);
     else if (action === "dayPlan_delete") result = dayPlan_delete(params);
     else if (action === "dayPlan_options") result = dayPlan_options(params);
+    else if (action === "getOpsIndex") result = getOpsIndex(params);
+    else if (action === "saveOpsRoute") result = saveOpsRoute(params);
+    else if (action === "deleteOpsRoute") result = deleteOpsRoute(params);
 
     return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
@@ -14063,6 +14066,204 @@ function quotationArchive_(params) {
     return { success: true };
   }
   throw new Error('対象の見積が見つかりません');
+}
+
+// ==========================================
+// 🔍 操作索引（検索→対象→実行）
+// ==========================================
+const OPS_INDEX_HEADERS = ['ID', '対象名', 'キーワード', '操作名', 'URL', 'アイコン', '対象キー', '有効', '並び', '更新者', '更新日時', 'メモ'];
+
+function ensureOpsIndexSheet_() {
+  const ss = TENANT_SS;
+  if (!ss) throw new Error('データベースに接続できません');
+  let sheet = ss.getSheetByName('操作索引');
+  if (!sheet) {
+    sheet = ss.insertSheet('操作索引');
+    sheet.getRange(1, 1, 1, OPS_INDEX_HEADERS.length).setValues([OPS_INDEX_HEADERS]);
+    try { sheet.getRange(1, 1, 1, OPS_INDEX_HEADERS.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    return sheet;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
+  for (let i = 0; i < OPS_INDEX_HEADERS.length; i++) {
+    if (headers[i] !== OPS_INDEX_HEADERS[i]) {
+      try { sheet.getRange(1, i + 1).setValue(OPS_INDEX_HEADERS[i]); } catch (e) {}
+    }
+  }
+  return sheet;
+}
+
+function isOpsRouteEnabled_(v) {
+  if (v === false || v === 0) return false;
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if (!s) return true;
+  return !(s === 'false' || s === '0' || s === 'no' || s === '無効' || s === 'off');
+}
+
+function readOpsCustomRoutes_() {
+  const sheet = ensureOpsIndexSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const values = sheet.getRange(2, 1, lastRow - 1, OPS_INDEX_HEADERS.length).getValues();
+  const list = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const id = String(row[0] || '').trim();
+    const targetName = String(row[1] || '').trim();
+    const actionName = String(row[3] || '').trim();
+    const url = String(row[4] || '').trim();
+    if (!id && !targetName && !actionName) continue;
+    list.push({
+      id: id,
+      targetName: targetName,
+      keywords: String(row[2] || '').trim(),
+      actionName: actionName,
+      url: url,
+      icon: String(row[5] || '').trim(),
+      targetKey: String(row[6] || '').trim(),
+      enabled: isOpsRouteEnabled_(row[7]),
+      order: row[8] === '' || row[8] == null ? 100 : Number(row[8]),
+      userName: String(row[9] || '').trim(),
+      updatedAt: row[10] ? String(row[10]) : '',
+      note: String(row[11] || '').trim(),
+      source: 'custom'
+    });
+  }
+  return list;
+}
+
+function getOpsIndex(params) {
+  const ss = TENANT_SS;
+  if (!ss) throw new Error('データベースに接続できません。ログインしてください。');
+  const materials = [];
+  const mSh = ss.getSheetByName('資材マスタ');
+  if (mSh) {
+    const md = mSh.getDataRange().getValues();
+    for (let i = 1; i < md.length; i++) {
+      const name = String(md[i][1] || '').trim();
+      if (!name) continue;
+      materials.push({
+        id: String(md[i][0] || '').trim(),
+        name: name,
+        workCategory: String(md[i][2] || '').trim(),
+        size: md[i][3] || '',
+        volUnit: String(md[i][4] || '').trim(),
+        stockUnit: String(md[i][5] || '').trim(),
+        signName: String(md[i][8] || '').trim(),
+        signId: String(md[i][9] || '').trim(),
+        stock: md[i][10] || 0
+      });
+    }
+  }
+
+  const works = [];
+  const workSheet = ss.getSheetByName('作業マスタ');
+  if (workSheet) {
+    try { ensureWorkMasterHeaders_(workSheet); } catch (e) {}
+    const data = workSheet.getDataRange().getValues();
+    if (data.length > 0) {
+      const headers = data[0].map(h => String(h).trim());
+      const idxName = headers.indexOf('作業名');
+      const idxCategory = findWorkCategoryColumnIndex_(headers);
+      const idxAlias = findWorkAliasColumnIndex_(headers);
+      for (let i = 1; i < data.length; i++) {
+        const name = idxName >= 0 ? String(data[i][idxName] || '').trim() : '';
+        if (!name) continue;
+        works.push({
+          name: name,
+          category: idxCategory >= 0 ? String(data[i][idxCategory] || '').trim() : '',
+          aliases: idxAlias >= 0 ? String(data[i][idxAlias] || '').trim() : ''
+        });
+      }
+    }
+  }
+
+  let pesticides = [];
+  try {
+    pesticides = (readPesticideMasterList_() || []).map(function (p) {
+      return { id: String(p.id || '').trim(), name: String(p.name || '').trim() };
+    }).filter(function (p) { return p.name; });
+  } catch (e) { pesticides = []; }
+
+  let fertilizers = [];
+  try {
+    fertilizers = (readFertilizerMasterList_() || []).map(function (f) {
+      return { id: String(f.id || '').trim(), name: String(f.name || '').trim() };
+    }).filter(function (f) { return f.name; });
+  } catch (e) { fertilizers = []; }
+
+  return {
+    materials: materials,
+    works: works,
+    pesticides: pesticides,
+    fertilizers: fertilizers,
+    customRoutes: readOpsCustomRoutes_()
+  };
+}
+
+function saveOpsRoute(params) {
+  const p = params || {};
+  const sheet = ensureOpsIndexSheet_();
+  const targetName = String(p.targetName || '').trim();
+  const actionName = String(p.actionName || '').trim();
+  const url = String(p.url || '').trim();
+  if (!targetName) throw new Error('対象名を入力してください');
+  if (!actionName) throw new Error('操作名を入力してください');
+  if (!url) throw new Error('飛び先URLを入力してください');
+
+  const now = Utilities.formatDate(new Date(), 'JST', 'yyyy/MM/dd HH:mm:ss');
+  const userName = String(p.userName || '').trim();
+  let id = String(p.id || '').trim();
+  const rowData = [
+    id,
+    targetName,
+    String(p.keywords || '').trim(),
+    actionName,
+    url,
+    String(p.icon || '').trim(),
+    String(p.targetKey || '').trim(),
+    p.enabled === false ? 'FALSE' : 'TRUE',
+    p.order === '' || p.order == null ? 100 : Number(p.order),
+    userName,
+    now,
+    String(p.note || '').trim()
+  ];
+
+  const lastRow = sheet.getLastRow();
+  if (id && lastRow >= 2) {
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0] || '').trim() === id) {
+        sheet.getRange(i + 2, 1, 1, OPS_INDEX_HEADERS.length).setValues([rowData]);
+        writeLog(userName, '操作索引更新', targetName, actionName);
+        return { success: true, id: id };
+      }
+    }
+  }
+
+  id = id || ('ops_' + Utilities.getUuid().replace(/-/g, '').slice(0, 12));
+  rowData[0] = id;
+  sheet.appendRow(rowData);
+  writeLog(userName, '操作索引登録', targetName, actionName);
+  return { success: true, id: id };
+}
+
+function deleteOpsRoute(params) {
+  const id = String((params && params.id) || '').trim();
+  if (!id) throw new Error('削除するIDがありません');
+  const sheet = ensureOpsIndexSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error('登録がありません');
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '').trim() === id) {
+      const name = String(sheet.getRange(i + 2, 2).getValue() || '');
+      sheet.deleteRow(i + 2);
+      writeLog(String((params && params.userName) || ''), '操作索引削除', name, id);
+      return { success: true };
+    }
+  }
+  throw new Error('対象の登録が見つかりません');
 }
 
 // ==========================================

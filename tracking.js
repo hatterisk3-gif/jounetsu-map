@@ -23,15 +23,23 @@
       modal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.6);z-index:5000;justify-content:center;align-items:center;';
       document.body.appendChild(modal);
     }
-    if (!modalBody) {
+    // 作業記録後ダイアログが #modal の innerHTML を差し替えると #modalBody が消える。
+    // 残ったカード＋退勤画面が flex で横並びになり「右半分」に見えるのを防ぐ。
+    if (!modalBody || modalBody.parentNode !== modal) {
+      while (modal.firstChild) modal.removeChild(modal.firstChild);
       modalBody = document.createElement('div');
       modalBody.id = 'modalBody';
       modalBody.className = 'modal-content';
-      modalBody.style.cssText = 'background:#fff;padding:20px;border-radius:8px;width:90%;max-width:440px;max-height:90vh;overflow:auto;box-sizing:border-box;';
       modal.appendChild(modalBody);
-    } else {
-      modalBody.style.maxWidth = '440px';
+    } else if (modal.children.length > 1) {
+      Array.from(modal.children).forEach((ch) => {
+        if (ch !== modalBody) ch.remove();
+      });
     }
+    try { modal.onclick = null; } catch (e) {}
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    modalBody.style.cssText = 'background:#fff;padding:20px;border-radius:8px;width:90%;max-width:440px;max-height:90vh;overflow:auto;box-sizing:border-box;';
     return { modal: modal, modalBody: modalBody };
   }
 
@@ -2914,6 +2922,14 @@
     html += `  <button onclick="cancelClockIn()" style="background:#FFEEEF; color:#C62828; border:1px solid #FFCDD2; width:100%; padding:8px; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">間違えて出勤したので取り消す</button>`;
     html += `</div>`;
     showClockModal(html);
+    const clockEls = ensureClockModal();
+    clockEls.modal.style.justifyContent = 'stretch';
+    clockEls.modal.style.alignItems = 'stretch';
+    clockEls.modalBody.style.width = '100%';
+    clockEls.modalBody.style.maxWidth = 'none';
+    clockEls.modalBody.style.height = '100%';
+    clockEls.modalBody.style.maxHeight = '100vh';
+    clockEls.modalBody.style.borderRadius = '0';
     // 作業中休憩の入力UIは撤去済み（作業記録の合計のみ参照）
 
     // 退勤忘れ時: 地図データ未読込だと最終終了時間が取れないため、シート／読み込み後に再セット

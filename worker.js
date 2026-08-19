@@ -757,6 +757,11 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           try {
             if (typeof window.refreshHarvestPendingBadge === 'function') window.refreshHarvestPendingBadge();
           } catch (e) {}
+          try {
+            if (typeof window.consumeOpsDeepLink === 'function') {
+              setTimeout(() => window.consumeOpsDeepLink(), 200);
+            }
+          } catch (e) {}
       }
           
 
@@ -1839,8 +1844,12 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       // --- 在庫管理の画面表示（アコーディオン版！） ---
-      window.openInventoryUI = (signId) => {
+      window.openInventoryUI = (signId, options) => {
           const p = loadedPolygons[signId];
+          if (!p) {
+            if (typeof customAlert === 'function') customAlert('保管場所が地図にありません。');
+            return;
+          }
           document.getElementById('rightPanelTitle').innerText = `📦 ${p.name} - 在庫管理`;
           const signMats = pdlMaterials.filter(m => m.signId === signId || m.signName === p.name);
 
@@ -1908,6 +1917,28 @@ function createSignboardMarker(name, pos, icon, id) {
           `;
           if(typeof infoWindow !== 'undefined') infoWindow.close();
           document.getElementById('rightPanel').classList.add('open');
+
+          const expandId = options && (options.expandMatId || options.matId);
+          const dir = options && options.dir;
+          if (expandId) {
+            const mat = signMats.find(m => String(m.id) === String(expandId)) || pdlMaterials.find(m => String(m.id) === String(expandId));
+            if (mat) {
+              const unitStr = mat.stockUnit ? mat.stockUnit : (mat.unit || '');
+              setTimeout(() => {
+                if (typeof toggleInventoryAccordion === 'function') {
+                  toggleInventoryAccordion(mat.id, mat.name, unitStr, signId);
+                }
+                if (dir === 'in' || dir === 'out' || dir === '1' || dir === '-1') {
+                  const direction = (dir === 'in' || dir === '1') ? 1 : -1;
+                  setTimeout(() => {
+                    if (typeof execInventoryUpdate === 'function') {
+                      execInventoryUpdate(mat.id, mat.name, signId, p.name, direction);
+                    }
+                  }, 350);
+                }
+              }, 250);
+            }
+          }
       };
 
       window.showInventoryHistory = async (matId, matName, unitStr, currentStock, signId) => {
@@ -2781,22 +2812,26 @@ function createSignboardMarker(name, pos, icon, id) {
       window.updateSelectedPolysDisplay = () => {
         const disp = document.getElementById('selected_polys_display');
         if(!disp) return;
+        disp.classList.add('field-select-box');
         if(selectedPolyIds.length === 0) {
-          disp.innerHTML = `<span style="color:#999; font-size:13px; font-weight:bold; padding:4px 0;">対象なし（任意）</span>`;
-        } else { 
-          disp.innerHTML = selectedPolyIds.map(id => {
+          disp.classList.add('is-empty');
+          disp.innerHTML = `<div style="width:100%; text-align:center; color:#E65100; font-size:14px; font-weight:bold; line-height:1.45;">🗺️ まだ圃場が選ばれていません<div style="font-size:12px; font-weight:normal; color:#F57C00; margin-top:2px;">「マップから選択」または「前回の圃場」で選んでください</div></div>`;
+        } else {
+          disp.classList.remove('is-empty');
+          const chips = selectedPolyIds.map(id => {
             const p = loadedPolygons[id];
             const name = (p && p.name) ? p.name : "不明な圃場";
             const around = typeof window.isSurroundingField_ === 'function' && window.isSurroundingField_(p);
-            const bg = around ? '#FFF3E0' : '#e8f0fe';
-            const fg = around ? '#E65100' : '#1a73e8';
-            const bd = around ? '#FFB74D' : '#aecbfa';
-            const mark = around ? '<span style="font-size:10px; font-weight:bold;">周辺地</span>' : '';
-            return `<span style="display:inline-flex; align-items:center; gap:4px; background:${bg}; color:${fg}; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:bold; border:1px solid ${bd}; margin-top:4px;">
-              ${name}${mark}
-              <span onclick="removeSelectedPoly('${id}')" style="cursor:pointer; font-weight:bold; color:#d32f2f; margin-left:2px; font-size:14px; line-height:1;" title="対象から外す">×</span>
+            const bg = around ? '#FFF3E0' : '#2E7D32';
+            const fg = around ? '#E65100' : '#fff';
+            const bd = around ? '#FF9800' : '#1B5E20';
+            const mark = around ? '<span style="font-size:11px; font-weight:bold; margin-left:4px;">周辺地</span>' : '';
+            return `<span style="display:inline-flex; align-items:center; gap:6px; background:${bg}; color:${fg}; padding:8px 12px; border-radius:16px; font-size:14px; font-weight:bold; border:2px solid ${bd}; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
+              📍 ${name}${mark}
+              <span onclick="removeSelectedPoly('${id}')" style="cursor:pointer; font-weight:bold; color:${around ? '#c62828' : '#FFCDD2'}; margin-left:2px; font-size:16px; line-height:1;" title="対象から外す">×</span>
             </span>`;
-          }).join(''); 
+          }).join('');
+          disp.innerHTML = `<div style="width:100%; font-size:12px; color:#1B5E20; font-weight:bold;">✅ 選択中 ${selectedPolyIds.length}件</div>${chips}`;
         }
         if (typeof window.refreshSurroundingFieldWarning_ === 'function') window.refreshSurroundingFieldWarning_();
 
@@ -5734,8 +5769,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const nameEl = document.getElementById('rec_work_name');
         const currentName = String((nameEl && nameEl.value) || pending || '').trim();
         const showWork = !!(cat && (cropReady || currentName));
+        // 予想／準備から作業名だけセットした直後は、作物選択に集中させる
+        const hideChipsUntilCrop = !!(pending && currentName && !cropReady);
 
-        if (section) section.style.display = showWork ? 'block' : 'none';
+        if (section) section.style.display = (showWork && !hideChipsUntilCrop) ? 'block' : 'none';
         if (hint) {
           if (cropReady) {
             hint.style.display = 'none';
@@ -10376,43 +10413,75 @@ function createSignboardMarker(name, pos, icon, id) {
         container.style.display = 'block';
       };
 
+      /** 作業名だけセットし、作物はユーザーが選ぶ（予想・準備の次作業用） */
+      window.applyWorkNameThenPickCrop_ = (workName) => {
+        const name = String(workName || '').trim();
+        if (!name) return false;
+        window._keepWorkNameWithoutCrop = name;
+
+        const master = (typeof window.findWorkMasterByName_ === 'function')
+          ? window.findWorkMasterByName_(name)
+          : (pdlWorkMaster || []).find(w => String(w.name || '').trim() === name);
+        const category = master ? (master.category || '圃場作業') : '圃場作業';
+
+        const catInput = document.getElementById('rec_work_category');
+        if (catInput) catInput.value = category;
+        document.querySelectorAll('.work-category-btn').forEach(btn => {
+          const isSelected = (btn.dataset.category === category);
+          const styles = (typeof window.getWorkMetaChipStyles === 'function')
+            ? window.getWorkMetaChipStyles('category', btn.dataset.category, isSelected)
+            : { background: isSelected ? '#2196F3' : '#f4f6f8', color: isSelected ? '#fff' : '#333', border: isSelected ? '1px solid #1976D2' : '1px solid #ccc', fontWeight: isSelected ? 'bold' : 'normal' };
+          btn.style.background = styles.background;
+          btn.style.color = styles.color;
+          btn.style.border = styles.border;
+          btn.style.fontWeight = styles.fontWeight;
+        });
+        if (typeof window.renderCategoryAdminBar === 'function') {
+          window.renderCategoryAdminBar(category);
+        }
+
+        window.selectedWorkCropFilterKeys = [];
+        const cropInput = document.getElementById('rec_work_crop_filter');
+        if (cropInput) cropInput.value = '';
+        if (typeof window.renderCropFilterButtons === 'function') {
+          window.renderCropFilterButtons([]);
+        }
+        if (typeof window.syncRecordCropFromFilter === 'function') {
+          window.syncRecordCropFromFilter([]);
+        }
+
+        const nameEl = document.getElementById('rec_work_name');
+        if (nameEl) nameEl.value = name;
+        if (typeof window.renderWorkOptions === 'function') {
+          window.renderWorkOptions(category, []);
+        }
+        if (nameEl) nameEl.value = name;
+
+        if (typeof window.refreshWorkNameSectionVisibility === 'function') {
+          window.refreshWorkNameSectionVisibility();
+        }
+        if (typeof window.handleWorkNameChange === 'function') {
+          window.handleWorkNameChange(name);
+        }
+
+        const cropZone = document.querySelector('.rec-zone-crop');
+        if (cropZone) {
+          cropZone.classList.add('crop-pick-focus');
+          try { cropZone.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+          setTimeout(() => { try { cropZone.classList.remove('crop-pick-focus'); } catch (e2) {} }, 2200);
+        }
+        return true;
+      };
+
       window.applyNextWorkPrediction = (cropName, workName) => {
-        cropName = String(cropName || '').trim();
         workName = String(workName || '').trim();
         if (!workName) return;
-
-        // 作業チップ選択と同じ経路でカテゴリ・作物ゲート・作業名を一括セット
-        if (typeof window.selectWorkChip === 'function') {
-          window.selectWorkChip(workName);
-        } else if (typeof window.handleWorkNameChange === 'function') {
-          window.handleWorkNameChange(workName);
+        // 予想チップの作物名はヒント用。作業名だけセットし、作物は選び直せるようにする
+        if (typeof window.applyWorkNameThenPickCrop_ === 'function') {
+          window.applyWorkNameThenPickCrop_(workName);
         }
-
-        if (cropName) {
-          const p = (typeof loadedPolygons !== 'undefined' && typeof activePolyId !== 'undefined') ? loadedPolygons[activePolyId] : null;
-          const category = document.getElementById('rec_work_category')?.value || 'すべて';
-          const options = (typeof window.getCropOptionsForCategory === 'function')
-            ? window.getCropOptionsForCategory(category, p)
-            : [];
-          const matchedOpt = (options || []).find(opt => opt.label === cropName || opt.key === cropName);
-          const cropKey = matchedOpt
-            ? matchedOpt.key
-            : ((typeof window.normalizeWorkCropKey === 'function') ? window.normalizeWorkCropKey(cropName) : cropName);
-
-          if (cropKey && typeof window.applyWorkCropFilterSelection_ === 'function') {
-            window.applyWorkCropFilterSelection_([cropKey]);
-          } else if (cropKey && typeof window.selectWorkCropFilter === 'function') {
-            window.selectWorkCropFilter(cropKey);
-          }
-
-          // 作業名セクションが表示された後にチップ選択を再適用
-          if (typeof window.selectWorkChip === 'function') {
-            window.selectWorkChip(workName);
-          }
-        }
-
         if (typeof window.showRecordSyncToast === 'function') {
-          window.showRecordSyncToast(`🔮 次の作業「${cropName ? (cropName + ' ') : ''}${workName}」をセットしました！`, 'ok');
+          window.showRecordSyncToast(`🔮 「${workName}」をセットしました。作物を選んでください`, 'ok');
         }
       };
 
@@ -10593,40 +10662,13 @@ function createSignboardMarker(name, pos, icon, id) {
        * ⏰ 時間帯おすすめ作業をワンタップで適用
        */
       window.applyTimeBasedWorkSuggestion = (cropName, workName) => {
-        cropName = String(cropName || '').trim();
         workName = String(workName || '').trim();
         if (!workName) return;
-
-        if (typeof window.selectWorkChip === 'function') {
-          window.selectWorkChip(workName);
-        } else if (typeof window.handleWorkNameChange === 'function') {
-          window.handleWorkNameChange(workName);
+        if (typeof window.applyWorkNameThenPickCrop_ === 'function') {
+          window.applyWorkNameThenPickCrop_(workName);
         }
-
-        if (cropName) {
-          const p = (typeof loadedPolygons !== 'undefined' && typeof activePolyId !== 'undefined') ? loadedPolygons[activePolyId] : null;
-          const category = document.getElementById('rec_work_category')?.value || 'すべて';
-          const options = (typeof window.getCropOptionsForCategory === 'function')
-            ? window.getCropOptionsForCategory(category, p)
-            : [];
-          const matchedOpt = (options || []).find(opt => opt.label === cropName || opt.key === cropName);
-          const cropKey = matchedOpt
-            ? matchedOpt.key
-            : ((typeof window.normalizeWorkCropKey === 'function') ? window.normalizeWorkCropKey(cropName) : cropName);
-
-          if (cropKey && typeof window.applyWorkCropFilterSelection_ === 'function') {
-            window.applyWorkCropFilterSelection_([cropKey]);
-          } else if (cropKey && typeof window.selectWorkCropFilter === 'function') {
-            window.selectWorkCropFilter(cropKey);
-          }
-
-          if (typeof window.selectWorkChip === 'function') {
-            window.selectWorkChip(workName);
-          }
-        }
-
         if (typeof window.showRecordSyncToast === 'function') {
-          window.showRecordSyncToast(`⏰ この時間の候補「${cropName ? (cropName + ' ') : ''}${workName}」をセットしました！`, 'ok');
+          window.showRecordSyncToast(`⏰ 「${workName}」をセットしました。作物を選んでください`, 'ok');
         }
       };
 
@@ -11656,69 +11698,9 @@ function createSignboardMarker(name, pos, icon, id) {
         const name = String(workName || '').trim();
         if (!name) return;
         try {
-          window._keepWorkNameWithoutCrop = name;
-
-          const master = (typeof window.findWorkMasterByName_ === 'function')
-            ? window.findWorkMasterByName_(name)
-            : (pdlWorkMaster || []).find(w => String(w.name || '').trim() === name);
-          const category = master ? (master.category || '圃場作業') : '圃場作業';
-
-          // カテゴリだけセット（selectWorkCategory はデフォルト作物まで選んでしまうので使わない）
-          const catInput = document.getElementById('rec_work_category');
-          if (catInput) catInput.value = category;
-          document.querySelectorAll('.work-category-btn').forEach(btn => {
-            const isSelected = (btn.dataset.category === category);
-            const styles = (typeof window.getWorkMetaChipStyles === 'function')
-              ? window.getWorkMetaChipStyles('category', btn.dataset.category, isSelected)
-              : { background: isSelected ? '#2196F3' : '#f4f6f8', color: isSelected ? '#fff' : '#333', border: isSelected ? '1px solid #1976D2' : '1px solid #ccc', fontWeight: isSelected ? 'bold' : 'normal' };
-            btn.style.background = styles.background;
-            btn.style.color = styles.color;
-            btn.style.border = styles.border;
-            btn.style.fontWeight = styles.fontWeight;
-          });
-          if (typeof window.renderCategoryAdminBar === 'function') {
-            window.renderCategoryAdminBar(category);
+          if (typeof window.applyWorkNameThenPickCrop_ === 'function') {
+            window.applyWorkNameThenPickCrop_(name);
           }
-
-          // 作物は未選択のまま（後から選ぶ）
-          window.selectedWorkCropFilterKeys = [];
-          const cropInput = document.getElementById('rec_work_crop_filter');
-          if (cropInput) cropInput.value = '';
-          if (typeof window.renderCropFilterButtons === 'function') {
-            window.renderCropFilterButtons([]);
-          }
-          if (typeof window.syncRecordCropFromFilter === 'function') {
-            window.syncRecordCropFromFilter([]);
-          }
-
-          const nameEl = document.getElementById('rec_work_name');
-          if (nameEl) nameEl.value = name;
-
-          if (typeof window.renderWorkOptions === 'function') {
-            window.renderWorkOptions(category, []);
-          }
-          if (nameEl) nameEl.value = name;
-
-          if (typeof window.refreshWorkNameSectionVisibility === 'function') {
-            window.refreshWorkNameSectionVisibility();
-          }
-          if (typeof window.handleWorkNameChange === 'function') {
-            window.handleWorkNameChange(name);
-          }
-
-          document.querySelectorAll('.work-chip').forEach(el => {
-            const wNameChip = el.dataset.wname || '';
-            const isSel = (wNameChip === name);
-            const styles = (typeof window.getWorkMetaChipStyles === 'function')
-              ? window.getWorkMetaChipStyles('work', wNameChip, isSel)
-              : null;
-            if (styles) {
-              el.style.background = styles.background;
-              el.style.color = styles.color;
-              el.style.border = styles.border;
-              el.style.fontWeight = styles.fontWeight;
-            }
-          });
 
           if (typeof window.matchStartTimeToPreviousEnd === 'function') {
             window.matchStartTimeToPreviousEnd();
@@ -15257,14 +15239,30 @@ function createSignboardMarker(name, pos, icon, id) {
           : '📍 <b>場所未選択</b><br>マップから作業対象の場所を選択してください。';
         const placeInfoBtn = `<button type="button" class="info-icon-btn" onclick="toggleInfoPopover(event, 'popover-place-detail')">ℹ️</button><div id="popover-place-detail" class="info-popover-box" style="margin-top:6px; background:#1B5E20; max-width:100%; display:none;">${placeInfoText}</div>`;
 
-        const lastFieldBtn = `<button type="button" id="btn_select_last_fields" onclick="selectLastWorkFields()" style="display:none; background:#FFF8E1; color:#F57F17; border:1px solid #FFB74D; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">↩️ 前回の圃場</button>`;
+        const lastFieldBtn = `<button type="button" id="btn_select_last_fields" onclick="selectLastWorkFields()" style="display:none; background:#FFF8E1; color:#E65100; border:2px solid #FF9800; border-radius:20px; padding:8px 12px; font-weight:bold; font-size:13px; cursor:pointer; ${addBtnStyle}">↩️ 前回の圃場</button>`;
+        const buildFieldTargetSection = (opts) => {
+          const hiddenStyle = opts.hidden ? 'display:none; ' : '';
+          return `<div id="field_target_section" class="rec-zone rec-zone-field" style="${hiddenStyle}margin-bottom:15px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
+              <div style="min-width:140px; flex:1;">
+                <label class="form-label" style="margin:0; color:#1B5E20; font-size:15px; display:flex; align-items:center; gap:4px;">📍 ${opts.title} ${placeInfoBtn}</label>
+                <div style="font-size:12px; color:#2E7D32; font-weight:bold; margin-top:3px;">${opts.hint}</div>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+                ${lastFieldBtn}
+                <button type="button" onclick="openMapSelect()" style="background:#2E7D32; color:#fff; border:none; border-radius:20px; padding:8px 14px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(46,125,50,0.28); ${addBtnStyle}">${opts.mapLabel}</button>
+              </div>
+            </div>
+            <div id="selected_polys_display" class="field-select-box is-empty"></div>
+          </div>`;
+        };
         if (currentRecordType === 'work' && !p.isMarker) {
-           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:none; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 圃場記録対象 ${placeInfoBtn} <span style="font-size:11px; color:#66BB6A; font-weight:normal; margin-left:4px;">（自動選択）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = buildFieldTargetSection({ hidden: true, title: '圃場を選択', hint: '作業する圃場です（地図から追加・変更できます）', mapLabel: '🗺️ マップから選択' });
         } else if (currentRecordType === 'work') {
            // 看板起点でも圃場を追加選択できる
-           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="display:none; margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 圃場記録対象 ${placeInfoBtn} <span style="font-size:11px; color:#66BB6A; font-weight:normal; margin-left:4px;">（任意・複数可）</span></label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">🗺️ マップから選択</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = buildFieldTargetSection({ hidden: true, title: '圃場を選択', hint: '必要ならマップから追加できます（任意・複数可）', mapLabel: '🗺️ マップから選択' });
         } else if (!p.isMarker) {
-           targetSection = `<div id="field_target_section" class="rec-zone rec-zone-field" style="margin-bottom:15px; background:#E8F5E9; padding:12px; border-radius:8px; border:1px solid #A5D6A7;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; flex-wrap:wrap;"><label class="form-label" style="margin:0; color:#2E7D32; display:flex; align-items:center;">📍 記録対象 (複数選択可) ${placeInfoBtn}</label><div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${lastFieldBtn}<button onclick="openMapSelect()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:20px; padding:4px 10px; font-weight:bold; font-size:12px; cursor:pointer; ${addBtnStyle}">＋ 追加</button></div></div><div id="selected_polys_display" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-height:24px;"></div></div>`;
+           targetSection = buildFieldTargetSection({ hidden: false, title: '記録する圃場', hint: '複数選択できます', mapLabel: '＋ 追加' });
         }
         
         const now = new Date(); const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -16828,9 +16826,27 @@ function createSignboardMarker(name, pos, icon, id) {
         });
       };
 
+      window.fillAppModalHtml_ = (html) => {
+        const modalEl = document.getElementById('modal');
+        if (!modalEl) return null;
+        let modalBody = document.getElementById('modalBody');
+        if (!modalBody || modalBody.parentNode !== modalEl) {
+          modalEl.innerHTML = '';
+          modalBody = document.createElement('div');
+          modalBody.id = 'modalBody';
+          modalBody.className = 'modal-content';
+          modalEl.appendChild(modalBody);
+        }
+        modalBody.innerHTML = html;
+        return modalEl;
+      };
+
       window.closeAfterWorkSaveContinueModal_ = () => {
         const modalEl = document.getElementById('modal');
-        if (modalEl) modalEl.style.display = 'none';
+        if (modalEl) {
+          modalEl.style.display = 'none';
+          try { modalEl.onclick = null; } catch (e) {}
+        }
         const m = document.getElementById('afterWorkSaveContinueModal');
         if (m) m.style.display = 'none';
         if (typeof window.refreshClockOutNudgeUI_ === 'function') {
@@ -17031,7 +17047,7 @@ function createSignboardMarker(name, pos, icon, id) {
           ? `<div style="font-size:20px; font-weight:bold; color:#1565C0;">⏱️ ${payload.plannedEnd10a}</div>
              <div style="font-size:11px; color:#666;">10aあたり ${payload.minsPer10a || 0}分 × ${payload.areaA || 0}a ／ ${fmt(payload.per10aMins) || '—'}</div>`
           : `<div style="font-size:12px; color:#888;">10aあたりから算出できません</div>`;
-        modalEl.innerHTML = `
+        window.fillAppModalHtml_(`
           <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">✅ 次の作業を登録しました</div>
             <div style="font-size:12px; color:#888; margin-bottom:10px;">作業名と予定圃場の登録です。作業記録としては本登録していません。</div>
@@ -17166,7 +17182,7 @@ function createSignboardMarker(name, pos, icon, id) {
           return `<button type="button" class="after-save-field-chip" data-pid="${String(id).replace(/"/g, '&quot;')}" onclick="toggleAfterSaveDraftField_('${safeId}')" style="background:${on ? '#2E7D32' : '#fff'}; color:${on ? '#fff' : '#2E7D32'}; border:1.5px solid #66BB6A; border-radius:16px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📍 ${label}</button>`;
         }).join('');
         const estHtml = window.renderAfterSaveEstimateHtml_(window._afterSaveDraftWorkName || '', window.getAfterSaveDraftPolyIds_(), startHm);
-        modalEl.innerHTML = `
+        window.fillAppModalHtml_(`
           <div style="background:#fff; width:100%; max-width:400px; max-height:88vh; overflow:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#FF9800; margin-bottom:6px;">🚜 次の作業を登録</div>
             <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">作業名と予定圃場を登録します（本登録しません）。開始は前作業の終了 <b>${startHm}</b> です。</div>
@@ -17197,7 +17213,9 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.startClockOutFromAfterSave_ = () => {
         window.closeAfterWorkSaveContinueModal_();
-        if (typeof window.toggleTracking === 'function') window.toggleTracking();
+        if (typeof window.ensureClockModal === 'function') window.ensureClockModal();
+        if (typeof window.openClockOutModal === 'function') window.openClockOutModal();
+        else if (typeof window.toggleTracking === 'function') window.toggleTracking();
       };
 
       window.showAfterWorkSaveContinueModal_ = (opts) => {
@@ -17222,7 +17240,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
         const modalEl = document.getElementById('modal');
         if (!modalEl) return;
-        modalEl.innerHTML = `
+        window.fillAppModalHtml_(`
           <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">✅ 記録を保存しました</div>
             <div style="font-size:13px; color:#555; margin-bottom:16px; line-height:1.45;">「${String(workName).replace(/</g, '&lt;')}」を保存しました。次の操作を選んでください。</div>
@@ -20875,6 +20893,54 @@ function createSignboardMarker(name, pos, icon, id) {
         setTimeout(applySet, 320);
         setTimeout(() => { window._openingFromSpecialSet = false; }, 600);
       };
+    // 🔍 操作索引からの直接飛び（worker.html?op=inventory&matId=... など）
+      window._opsDeepLinkConsumed = false;
+      window.consumeOpsDeepLink = function () {
+        if (window._opsDeepLinkConsumed) return;
+        let params;
+        try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
+        const op = params.get('op');
+        if (!op) return;
+        window._opsDeepLinkConsumed = true;
+        try { window.history.replaceState(null, '', window.location.pathname); } catch (e) {}
+
+        if (op === 'inventory') {
+          const matId = params.get('matId') || params.get('id') || params.get('name');
+          const dir = params.get('dir');
+          const tryOpen = (attempt) => {
+            const mats = (typeof pdlMaterials !== 'undefined' && Array.isArray(pdlMaterials)) ? pdlMaterials : [];
+            const mat = mats.find(m => String(m.id) === String(matId) || String(m.name) === String(matId));
+            if (!mat) {
+              if (attempt < 24) return setTimeout(() => tryOpen(attempt + 1), 250);
+              if (typeof customAlert === 'function') customAlert('指定の資材が見つかりませんでした。');
+              return;
+            }
+            const signId = mat.signId;
+            if (!signId || typeof loadedPolygons === 'undefined' || !loadedPolygons[signId]) {
+              if (attempt < 24) return setTimeout(() => tryOpen(attempt + 1), 250);
+              if (typeof customAlert === 'function') customAlert('資材の保管場所が地図にありません。看板へ資材を登録してください。');
+              return;
+            }
+            if (typeof openInventoryUI === 'function') {
+              openInventoryUI(signId, { expandMatId: mat.id, dir: dir });
+            }
+          };
+          tryOpen(0);
+          return;
+        }
+
+        if (op === 'work') {
+          const mode = params.get('mode') || 'add';
+          setTimeout(() => {
+            if (mode === 'delete') {
+              if (typeof openMyWorkHistoryDetail === 'function') openMyWorkHistoryDetail();
+            } else if (typeof findCurrentFieldAndOpenForm === 'function') {
+              findCurrentFieldAndOpenForm('work');
+            }
+          }, 500);
+        }
+      };
+
     // 🌟ここから上書き：共有されたURLを開いた瞬間に「全自動」で解析＆判定する！🌟
       const urlParams = new URLSearchParams(window.location.search);
       const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
