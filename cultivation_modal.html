@@ -129,21 +129,22 @@
                 <label style="font-size: 11px; font-weight: bold; color: #555;">圃場条件</label>
                 <button type="button" onclick="openCpBasicMasterManager('condition')" title="圃場条件の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
               </div>
-              <div style="display:flex; align-items:center; gap:6px;">
-                <select id="cpFieldCondition" onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0; box-sizing: border-box;">
-                    <option value="露地">露地</option>
-                    <option value="ハウス">ハウス</option>
-                </select>
-                <div role="radiogroup" aria-label="計画属性" class="cp-plan-type-group" title="計画名の末尾に本作／試作が付きます">
-                  <label class="cp-plan-type-btn">
-                    <input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()">
-                    <span>本作</span>
-                  </label>
-                  <label class="cp-plan-type-btn">
-                    <input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()">
-                    <span>試作</span>
-                  </label>
-                </div>
+              <select id="cpFieldCondition" onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
+                  <option value="露地">露地</option>
+                  <option value="ハウス">ハウス</option>
+              </select>
+            </div>
+            <div style="width: 100%;">
+              <label style="font-size: 11px; font-weight: bold; color: #555; display:block; margin-bottom:2px;">本作／試作</label>
+              <div role="radiogroup" aria-label="本作または試作" class="cp-plan-type-group" title="計画名の末尾に本作／試作が付きます">
+                <label class="cp-plan-type-btn">
+                  <input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()">
+                  <span>本作</span>
+                </label>
+                <label class="cp-plan-type-btn">
+                  <input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()">
+                  <span>試作</span>
+                </label>
               </div>
             </div>
           </div>
@@ -352,7 +353,7 @@
           .cp-plan-type-group {
             display: flex;
             gap: 4px;
-            flex-shrink: 0;
+            flex-wrap: wrap;
           }
           .cp-plan-type-btn {
             margin: 0;
@@ -361,15 +362,16 @@
             align-items: center;
             justify-content: center;
             position: relative;
-            padding: 3px 8px;
+            padding: 5px 10px;
             border-radius: 4px;
             border: 1px solid #FFCC80;
             background: #fff;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: bold;
             color: #E65100;
             box-sizing: border-box;
             white-space: nowrap;
+            line-height: 1.2;
           }
           .cp-plan-type-btn.is-checked,
           .cp-plan-type-btn:has(input:checked) {
