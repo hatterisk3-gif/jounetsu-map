@@ -71,6 +71,7 @@ function doPost(e) {
     else if (action === "deleteCropWorkPlan") result = deleteCropWorkPlan(params);
     else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
     else if (action === "getSowingProgress") result = getSowingProgress(params);
+    else if (action === "getCropWorkProgressSummary") result = getCropWorkProgressSummary(params);
     else if (action === "getWorkRecordAnalysis") result = getWorkRecordAnalysis(params);
     else if (action === "saveManualData") result = saveManualData(params.manual);
     else if (action === "getManualList") result = getManualList();
@@ -87,7 +88,13 @@ function doPost(e) {
     else if (action === "addMaterialToSign") result = addMaterialToSign(params); // ★これを追加
     else if (action === "getInventoryHistory") result = getInventoryHistory(params); // ★これを追加
     else if (action === "getScheduleData") result = getScheduleData();
+    else if (action === "addWorkSchedule") result = addWorkSchedule(params);
+    else if (action === "getOutsourceWorkData") result = getOutsourceWorkData();
+    else if (action === "addOutsourceWorkRequest") result = addOutsourceWorkRequest(params);
+    else if (action === "completeOutsourceWork") result = completeOutsourceWork(params);
+    else if (action === "deleteOutsourceWork") result = deleteOutsourceWork(params);
     else if (action === "deleteWorkSchedule") result = deleteWorkSchedule(params);
+    else if (action === "completeWorkSchedule") result = completeWorkSchedule(params);
     else if (action === "delegateCompleteWork") result = delegateCompleteWork(params);
     else if (action === "saveReport") result = saveReportData(params.id, params.name, params.author, params.text, params.photos);
     else if (action === "deleteInventoryHistory") result = deleteInventoryHistory(params);
@@ -4018,6 +4025,599 @@ function ensureCropWorkPlanSheet_() {
   return sheet;
 }
 
+function normalizeCropWorkTrigger_(raw) {
+  const t = String((raw && (raw.trigger || raw.triggerType)) || '').trim().toLowerCase();
+  if (t === 'period' || t === 'hanjun' || t === '半旬') return 'period';
+  if (t === 'gdd' || t === '積算' || t === '積算温度') return 'gdd';
+  if (t === 'sun' || t === 'sunshine' || t === '日射' || t === '日射量' || t === '積算日射') return 'sun';
+  if (t === 'rain' || t === 'precip' || t === '降水' || t === '降水量' || t === '積算降水') return 'rain';
+  return 'days';
+}
+
+function cropWorkNeedsWeather_(entries) {
+  return (entries || []).some(function(e) {
+    const t = normalizeCropWorkTrigger_(e);
+    if (t === 'gdd' || t === 'sun' || t === 'rain') return true;
+    const cancelMm = Number(e && e.rainCancelMm);
+    const cancelDays = Number(e && e.rainCancelDays);
+    return cancelMm > 0 && cancelDays > 0;
+  });
+}
+
+function estimateDaysFromGdd_(gddTarget, gddBase) {
+  const target = Number(gddTarget) || 0;
+  if (target <= 0) return 0;
+  const daily = 8; // 天気が取れないときの最後の目安
+  return Math.max(1, Math.round(target / daily));
+}
+
+const DEFAULT_FARM_LATLNG_ = { lat: 33.91, lng: 134.66 };
+
+function ymdAddDays_(ymd, n) {
+  const p = String(ymd || '').split('-');
+  const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  d.setDate(d.getDate() + (Number(n) || 0));
+  return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+
+function ymdShiftYear_(ymd, delta) {
+  const p = String(ymd || '').split('-');
+  const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  d.setFullYear(d.getFullYear() + (Number(delta) || 0));
+  return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+
+function minYmd_(a, b) {
+  return String(a) <= String(b) ? a : b;
+}
+
+function maxYmd_(a, b) {
+  return String(a) >= String(b) ? a : b;
+}
+
+function gddDayFromMinMax_(tmax, tmin, base) {
+  const mean = (Number(tmax) + Number(tmin)) / 2;
+  if (!isFinite(mean)) return null;
+  return Math.max(0, mean - Number(base));
+}
+
+function parseCoordPoint_(pt) {
+  if (!pt) return null;
+  let lat;
+  let lng;
+  if (Array.isArray(pt)) {
+    lat = Number(pt[0]);
+    lng = Number(pt[1]);
+  } else {
+    lat = Number(pt.lat != null ? pt.lat : pt.latitude);
+    lng = Number(pt.lng != null ? pt.lng : pt.longitude);
+  }
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+    const swap = lat;
+    lat = lng;
+    lng = swap;
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat: lat, lng: lng };
+}
+
+function resolveFarmLatLng_(fieldIds, latHint, lngHint) {
+  const hintLat = Number(latHint);
+  const hintLng = Number(lngHint);
+  const hintOk = isFinite(hintLat) && isFinite(hintLng)
+    && Math.abs(hintLat) <= 90 && Math.abs(hintLng) <= 180
+    && !(hintLat === 0 && hintLng === 0);
+  try {
+    const polygons = getSavedPolygons() || [];
+    const idSet = {};
+    (fieldIds || []).forEach(function(id) {
+      const s = String(id || '').trim();
+      if (!s) return;
+      idSet[s] = true;
+      const m = s.match(/^(.*)#une#/);
+      if (m) idSet[m[1]] = true;
+    });
+    function centroidOf_(p) {
+      const coords = p && p.coords;
+      if (!coords || !coords.length) return null;
+      let slat = 0;
+      let slng = 0;
+      let n = 0;
+      for (let i = 0; i < coords.length; i++) {
+        const pt = parseCoordPoint_(coords[i]);
+        if (!pt) continue;
+        slat += pt.lat;
+        slng += pt.lng;
+        n++;
+      }
+      if (!n) return null;
+      return { lat: slat / n, lng: slng / n };
+    }
+    if (Object.keys(idSet).length) {
+      for (let i = 0; i < polygons.length; i++) {
+        const p = polygons[i];
+        if (!p || !idSet[String(p.id)]) continue;
+        const c = centroidOf_(p);
+        if (c) return c;
+      }
+    }
+    for (let i = 0; i < polygons.length; i++) {
+      const p = polygons[i];
+      if (!p || (p.coords && p.coords.length === 1)) continue;
+      const c = centroidOf_(p);
+      if (c) return c;
+    }
+  } catch (e) {}
+  if (hintOk) return { lat: hintLat, lng: hintLng };
+  return { lat: DEFAULT_FARM_LATLNG_.lat, lng: DEFAULT_FARM_LATLNG_.lng };
+}
+
+function parseOpenMeteoDailyWeather_(json) {
+  const map = {};
+  if (!json || !json.daily || !json.daily.time) return map;
+  const times = json.daily.time;
+  const tmax = json.daily.temperature_2m_max || [];
+  const tmin = json.daily.temperature_2m_min || [];
+  const rain = json.daily.precipitation_sum || [];
+  const sun = json.daily.sunshine_duration || [];
+  for (let i = 0; i < times.length; i++) {
+    const x = Number(tmax[i]);
+    const n = Number(tmin[i]);
+    const r = Number(rain[i]);
+    const s = Number(sun[i]);
+    const row = {};
+    if (isFinite(x) && isFinite(n)) {
+      row.tmax = x;
+      row.tmin = n;
+    }
+    if (isFinite(r)) row.rain = r;
+    if (isFinite(s)) row.sunSec = s;
+    if (Object.keys(row).length) map[times[i]] = row;
+  }
+  return map;
+}
+
+function parseOpenMeteoDailyTemps_(json) {
+  return parseOpenMeteoDailyWeather_(json);
+}
+
+function fetchOpenMeteoWeatherMaps_(lat, lng, ranges) {
+  const out = [];
+  if (!ranges || !ranges.length) return out;
+  const reqs = ranges.map(function(r) {
+    const base = r.archive
+      ? 'https://archive-api.open-meteo.com/v1/archive'
+      : 'https://api.open-meteo.com/v1/forecast';
+    return {
+      url: base + '?latitude=' + encodeURIComponent(lat)
+        + '&longitude=' + encodeURIComponent(lng)
+        + '&start_date=' + encodeURIComponent(r.start)
+        + '&end_date=' + encodeURIComponent(r.end)
+        + '&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration&timezone=Asia%2FTokyo',
+      muteHttpExceptions: true,
+      followRedirects: true
+    };
+  });
+  let resps = [];
+  try {
+    resps = UrlFetchApp.fetchAll(reqs);
+  } catch (e) {
+    return out;
+  }
+  for (let i = 0; i < resps.length; i++) {
+    const item = { kind: ranges[i].kind, map: {} };
+    try {
+      if (resps[i].getResponseCode() === 200) {
+        item.map = parseOpenMeteoDailyWeather_(JSON.parse(resps[i].getContentText()));
+      }
+    } catch (e2) {}
+    out.push(item);
+  }
+  return out;
+}
+
+function fetchOpenMeteoTempMaps_(lat, lng, ranges) {
+  return fetchOpenMeteoWeatherMaps_(lat, lng, ranges);
+}
+
+function buildCropWorkWeatherRanges_(plantYmd, horizonYmd, todayYmd) {
+  const forecastStart = ymdAddDays_(todayYmd, -92);
+  const forecastEnd = ymdAddDays_(todayYmd, 15);
+  const ranges = [];
+  if (plantYmd < forecastStart) {
+    const archiveEnd = minYmd_(horizonYmd, ymdAddDays_(forecastStart, -1));
+    if (plantYmd <= archiveEnd) {
+      ranges.push({ start: plantYmd, end: archiveEnd, archive: true, kind: 'obs' });
+    }
+  }
+  const fs = maxYmd_(plantYmd, forecastStart);
+  const fe = minYmd_(horizonYmd, forecastEnd);
+  if (fs <= fe) {
+    ranges.push({ start: fs, end: fe, archive: false, kind: 'fc' });
+  }
+  const climStart = maxYmd_(plantYmd, ymdAddDays_(forecastEnd, 1));
+  if (climStart <= horizonYmd) {
+    ranges.push({
+      start: ymdShiftYear_(climStart, -1),
+      end: ymdShiftYear_(horizonYmd, -1),
+      archive: true,
+      kind: 'clim'
+    });
+  }
+  return ranges;
+}
+
+function mergeOpenMeteoWeatherMaps_(fetchResults) {
+  const weather = {};
+  (fetchResults || []).forEach(function(item) {
+    Object.keys(item.map || {}).forEach(function(ymd) {
+      const key = item.kind === 'clim' ? ymdShiftYear_(ymd, 1) : ymd;
+      const src = item.kind;
+      const row = item.map[ymd] || {};
+      if (!weather[key]) weather[key] = { src: src };
+      else if (item.kind !== 'clim') weather[key].src = src;
+      if (row.tmax != null && row.tmin != null) {
+        weather[key].tmax = row.tmax;
+        weather[key].tmin = row.tmin;
+      }
+      if (row.rain != null && (item.kind !== 'clim' || weather[key].rain == null)) {
+        weather[key].rain = row.rain;
+      }
+      if (row.sunSec != null && (item.kind !== 'clim' || weather[key].sunSec == null)) {
+        weather[key].sunSec = row.sunSec;
+      }
+    });
+  });
+  return weather;
+}
+
+/** 定植日から先の日別天気。過去=実測、直近〜16日=予報、それ以降=去年の同時期 */
+function loadCropWorkWeatherSeries_(lat, lng, plantDate) {
+  const plantYmd = formatYmd_(plantDate);
+  const todayYmd = formatYmd_(new Date());
+  const horizonYmd = ymdAddDays_(plantYmd, 400);
+  const cacheKey = 'cwpW:' + Number(lat).toFixed(3) + ',' + Number(lng).toFixed(3)
+    + ':' + plantYmd + ':' + todayYmd;
+  try {
+    const cached = CacheService.getScriptCache().get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
+
+  const ranges = buildCropWorkWeatherRanges_(plantYmd, horizonYmd, todayYmd);
+  const weather = mergeOpenMeteoWeatherMaps_(fetchOpenMeteoWeatherMaps_(lat, lng, ranges));
+  try {
+    CacheService.getScriptCache().put(cacheKey, JSON.stringify(weather), 21600);
+  } catch (e) {}
+  return weather;
+}
+
+function loadGddTempSeries_(lat, lng, plantDate) {
+  return loadCropWorkWeatherSeries_(lat, lng, plantDate);
+}
+
+function gddSourceLabel_(srcCount) {
+  const parts = [];
+  if (srcCount.obs) parts.push('実測');
+  if (srcCount.fc) parts.push('予報');
+  if (srcCount.clim) parts.push('同時期');
+  return parts.length ? parts.join('・') : '天気';
+}
+
+function estimateGddReach_(plantDate, gddTarget, gddBase, weather) {
+  const target = Number(gddTarget) || 0;
+  const base = (gddBase == null || isNaN(Number(gddBase))) ? 10 : Number(gddBase);
+  const plant = new Date(plantDate.getTime());
+  plant.setHours(0, 0, 0, 0);
+  if (target <= 0) {
+    return { date: plant, days: 0, dailyMean: 0, source: 'none', usedMeteo: false };
+  }
+  weather = weather || {};
+  let acc = 0;
+  let used = 0;
+  let gddSum = 0;
+  const srcCount = { obs: 0, fc: 0, clim: 0, fill: 0 };
+  const cursor = new Date(plant.getTime());
+  for (let i = 0; i < 400; i++) {
+    const key = formatYmd_(cursor);
+    const t = weather[key];
+    let gdd = null;
+    if (t && isFinite(Number(t.tmax)) && isFinite(Number(t.tmin))) {
+      gdd = gddDayFromMinMax_(t.tmax, t.tmin, base);
+      used++;
+      gddSum += gdd;
+      srcCount[t.src || 'obs'] = (srcCount[t.src || 'obs'] || 0) + 1;
+    } else if (used > 0) {
+      gdd = gddSum / used;
+      srcCount.fill++;
+    } else {
+      gdd = 8;
+      srcCount.fill++;
+    }
+    acc += gdd;
+    if (acc >= target) {
+      return {
+        date: new Date(cursor.getTime()),
+        days: i,
+        dailyMean: used ? Math.round((gddSum / used) * 10) / 10 : Math.round(gdd * 10) / 10,
+        source: used > 0 ? gddSourceLabel_(srcCount) : 'fallback',
+        usedMeteo: used > 0,
+        accumulated: Math.round(acc * 10) / 10
+      };
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  const days = estimateDaysFromGdd_(target, base);
+  const fb = new Date(plant.getTime());
+  fb.setDate(fb.getDate() + days);
+  return { date: fb, days: days, dailyMean: 8, source: 'fallback', usedMeteo: false };
+}
+
+function estimateSunReach_(plantDate, targetHours, weather) {
+  const target = Number(targetHours) || 0;
+  const plant = new Date(plantDate.getTime());
+  plant.setHours(0, 0, 0, 0);
+  if (target <= 0) {
+    return { date: plant, days: 0, dailyMean: 0, source: 'none', usedMeteo: false };
+  }
+  weather = weather || {};
+  let acc = 0;
+  let used = 0;
+  let sum = 0;
+  const srcCount = { obs: 0, fc: 0, clim: 0, fill: 0 };
+  const cursor = new Date(plant.getTime());
+  for (let i = 0; i < 400; i++) {
+    const key = formatYmd_(cursor);
+    const w = weather[key];
+    let hours = null;
+    if (w && isFinite(Number(w.sunSec))) {
+      hours = Number(w.sunSec) / 3600;
+      used++;
+      sum += hours;
+      srcCount[w.src || 'obs'] = (srcCount[w.src || 'obs'] || 0) + 1;
+    } else if (used > 0) {
+      hours = sum / used;
+      srcCount.fill++;
+    } else {
+      hours = 5;
+      srcCount.fill++;
+    }
+    acc += hours;
+    if (acc >= target) {
+      return {
+        date: new Date(cursor.getTime()),
+        days: i,
+        dailyMean: used ? Math.round((sum / used) * 10) / 10 : Math.round(hours * 10) / 10,
+        source: used > 0 ? gddSourceLabel_(srcCount) : 'fallback',
+        usedMeteo: used > 0,
+        accumulated: Math.round(acc * 10) / 10
+      };
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  const days = Math.max(1, Math.round(target / 5));
+  const fb = new Date(plant.getTime());
+  fb.setDate(fb.getDate() + days);
+  return { date: fb, days: days, dailyMean: 5, source: 'fallback', usedMeteo: false };
+}
+
+function estimateRainReach_(plantDate, targetMm, weather) {
+  const target = Number(targetMm) || 0;
+  const plant = new Date(plantDate.getTime());
+  plant.setHours(0, 0, 0, 0);
+  if (target <= 0) {
+    return { date: plant, days: 0, dailyMean: 0, source: 'none', usedMeteo: false };
+  }
+  weather = weather || {};
+  let acc = 0;
+  let used = 0;
+  let sum = 0;
+  const srcCount = { obs: 0, fc: 0, clim: 0, fill: 0 };
+  const cursor = new Date(plant.getTime());
+  for (let i = 0; i < 400; i++) {
+    const key = formatYmd_(cursor);
+    const w = weather[key];
+    let rain = null;
+    if (w && isFinite(Number(w.rain))) {
+      rain = Number(w.rain);
+      used++;
+      sum += rain;
+      srcCount[w.src || 'obs'] = (srcCount[w.src || 'obs'] || 0) + 1;
+    } else if (used > 0) {
+      rain = sum / used;
+      srcCount.fill++;
+    } else {
+      rain = 3;
+      srcCount.fill++;
+    }
+    acc += rain;
+    if (acc >= target) {
+      return {
+        date: new Date(cursor.getTime()),
+        days: i,
+        dailyMean: used ? Math.round((sum / used) * 10) / 10 : Math.round(rain * 10) / 10,
+        source: used > 0 ? gddSourceLabel_(srcCount) : 'fallback',
+        usedMeteo: used > 0,
+        accumulated: Math.round(acc * 10) / 10
+      };
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  const days = Math.max(1, Math.round(target / 3));
+  const fb = new Date(plant.getTime());
+  fb.setDate(fb.getDate() + days);
+  return { date: fb, days: days, dailyMean: 3, source: 'fallback', usedMeteo: false };
+}
+
+function sumRainInWindow_(plantDate, windowDays, weather) {
+  const plant = new Date(plantDate.getTime());
+  plant.setHours(0, 0, 0, 0);
+  const days = Math.max(1, Number(windowDays) || 1);
+  let sum = 0;
+  let used = 0;
+  const cursor = new Date(plant.getTime());
+  for (let i = 0; i < days; i++) {
+    const key = formatYmd_(cursor);
+    const w = weather && weather[key];
+    if (w && isFinite(Number(w.rain))) {
+      sum += Number(w.rain);
+      used++;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return { sum: Math.round(sum * 10) / 10, usedDays: used, windowDays: days };
+}
+
+function evaluateRainCancel_(entry, plantDate, geo) {
+  const threshold = Number(entry && entry.rainCancelMm);
+  const windowDays = Number(entry && entry.rainCancelDays);
+  if (!(threshold > 0) || !(windowDays > 0)) {
+    return { cancelled: false, accumulated: 0, threshold: threshold, windowDays: windowDays };
+  }
+  if (geo && geo.skipWeather) {
+    return { cancelled: false, accumulated: 0, threshold: threshold, windowDays: windowDays, pending: true };
+  }
+  let weather = geo && geo.weather;
+  if (!weather) {
+    const loc = (geo && geo.lat != null && geo.lng != null)
+      ? { lat: geo.lat, lng: geo.lng }
+      : resolveFarmLatLng_(geo && geo.fieldIds, geo && geo.lat, geo && geo.lng);
+    try {
+      weather = loadCropWorkWeatherSeries_(loc.lat, loc.lng, plantDate);
+    } catch (e) {
+      weather = {};
+    }
+  }
+  const rain = sumRainInWindow_(plantDate, windowDays, weather);
+  const cancelled = rain.sum >= threshold;
+  return {
+    cancelled: cancelled,
+    accumulated: rain.sum,
+    threshold: threshold,
+    windowDays: windowDays,
+    usedDays: rain.usedDays,
+    label: cancelled
+      ? ('定植+' + windowDays + '日間で降水' + rain.sum + 'mm≥' + threshold + 'mm')
+      : ('降水監視' + windowDays + '日/' + threshold + 'mm・現在' + rain.sum + 'mm')
+  };
+}
+
+function resolveCropWorkGeoWeather_(geo, plantDate) {
+  if (geo && geo.skipWeather) return geo.weather || {};
+  if (geo && geo.weather) return geo.weather;
+  const loc = (geo && geo.lat != null && geo.lng != null)
+    ? { lat: geo.lat, lng: geo.lng }
+    : resolveFarmLatLng_(geo && geo.fieldIds, geo && geo.lat, geo && geo.lng);
+  try {
+    return loadCropWorkWeatherSeries_(loc.lat, loc.lng, plantDate);
+  } catch (e) {
+    return {};
+  }
+}
+
+function resolveCropWorkWindow_(entry, plantDate, geo) {
+  const trigger = normalizeCropWorkTrigger_(entry);
+  const duration = Math.max(1, Number(entry.durationDays) || 1);
+  const plantBase = new Date(plantDate.getTime());
+  plantBase.setHours(0, 0, 0, 0);
+  let start = new Date(plantBase.getTime());
+  let label = '';
+  let meteoInfo = null;
+  if (trigger === 'period') {
+    const n = Number(entry.offsetPeriods != null ? entry.offsetPeriods : Math.round((Number(entry.offsetDays) || 0) / 5));
+    const periods = isNaN(n) ? 0 : Math.round(n);
+    start.setDate(start.getDate() + periods * 5);
+    label = periods === 0 ? '定植当半旬' : ('定植+' + periods + '半旬');
+  } else if (trigger === 'gdd') {
+    const target = Number(entry.gddTarget) || 0;
+    const base = (entry.gddBase == null || entry.gddBase === '') ? 10 : Number(entry.gddBase);
+    const baseN = isNaN(base) ? 10 : base;
+    let reach;
+    if (geo && geo.skipWeather) {
+      const days = estimateDaysFromGdd_(target, baseN);
+      const d = new Date(start.getTime());
+      d.setDate(d.getDate() + days);
+      reach = { date: d, days: days, dailyMean: 8, source: 'fallback', usedMeteo: false };
+    } else {
+      const weather = resolveCropWorkGeoWeather_(geo, plantBase);
+      reach = estimateGddReach_(plantBase, target, baseN, weather);
+    }
+    start = reach.date;
+    start.setHours(0, 0, 0, 0);
+    meteoInfo = reach;
+    if (reach.usedMeteo) {
+      label = '積算' + target + '℃（基準' + baseN + '℃・' + reach.source
+        + ' +' + reach.days + '日・' + reach.dailyMean + '℃/日）';
+    } else {
+      label = '積算' + target + '℃（基準' + baseN + '℃・目安+' + reach.days + '日）';
+    }
+  } else if (trigger === 'sun') {
+    const target = Number(entry.sunTargetHours) || 0;
+    let reach;
+    if (geo && geo.skipWeather) {
+      const days = Math.max(1, Math.round(target / 5));
+      const d = new Date(start.getTime());
+      d.setDate(d.getDate() + days);
+      reach = { date: d, days: days, dailyMean: 5, source: 'fallback', usedMeteo: false };
+    } else {
+      const weather = resolveCropWorkGeoWeather_(geo, plantBase);
+      reach = estimateSunReach_(plantBase, target, weather);
+    }
+    start = reach.date;
+    start.setHours(0, 0, 0, 0);
+    meteoInfo = reach;
+    if (reach.usedMeteo) {
+      label = '積算日射' + target + 'h（' + reach.source + ' +' + reach.days + '日・'
+        + reach.dailyMean + 'h/日）';
+    } else {
+      label = '積算日射' + target + 'h（目安+' + reach.days + '日）';
+    }
+  } else if (trigger === 'rain') {
+    const target = Number(entry.rainTargetMm) || 0;
+    let reach;
+    if (geo && geo.skipWeather) {
+      const days = Math.max(1, Math.round(target / 3));
+      const d = new Date(start.getTime());
+      d.setDate(d.getDate() + days);
+      reach = { date: d, days: days, dailyMean: 3, source: 'fallback', usedMeteo: false };
+    } else {
+      const weather = resolveCropWorkGeoWeather_(geo, plantBase);
+      reach = estimateRainReach_(plantBase, target, weather);
+    }
+    start = reach.date;
+    start.setHours(0, 0, 0, 0);
+    meteoInfo = reach;
+    if (reach.usedMeteo) {
+      label = '積算降水' + target + 'mm（' + reach.source + ' +' + reach.days + '日・'
+        + reach.dailyMean + 'mm/日）';
+    } else {
+      label = '積算降水' + target + 'mm（目安+' + reach.days + '日）';
+    }
+  } else {
+    const n = Number(entry.offsetDays) || 0;
+    const days = isNaN(n) ? 0 : Math.round(n);
+    start.setDate(start.getDate() + days);
+    label = days === 0 ? '定植当日' : (days > 0 ? '定植+' + days + '日' : '定植' + days + '日');
+  }
+  const end = new Date(start.getTime());
+  end.setDate(end.getDate() + duration - 1);
+  const cancelInfo = evaluateRainCancel_(entry, plantBase, geo);
+  let cancelled = !!(cancelInfo && cancelInfo.cancelled);
+  if (cancelInfo && cancelInfo.label) {
+    label = label + '／' + cancelInfo.label;
+  }
+  return {
+    start: start,
+    end: end,
+    label: label,
+    trigger: trigger,
+    gddInfo: meteoInfo,
+    meteoInfo: meteoInfo,
+    cancelInfo: cancelInfo,
+    cancelled: cancelled
+  };
+}
+
 function normalizeCropWorkPlanPayload_(cropName, entries, userName) {
   const name = String(cropName || '').trim();
   if (!name) throw new Error('品目名を指定してください');
@@ -4027,17 +4627,37 @@ function normalizeCropWorkPlanPayload_(cropName, entries, userName) {
     if (!raw) return;
     const workName = String(raw.workName || raw.name || '').trim();
     if (!workName) return;
+    const trigger = normalizeCropWorkTrigger_(raw);
     const offsetDays = Number(raw.offsetDays != null ? raw.offsetDays : 0);
+    const offsetPeriods = Number(raw.offsetPeriods != null ? raw.offsetPeriods : '');
     const durationDays = Number(raw.durationDays != null ? raw.durationDays : 1);
+    const gddTarget = Number(raw.gddTarget != null ? raw.gddTarget : 0);
+    const gddBase = (raw.gddBase == null || raw.gddBase === '') ? 10 : Number(raw.gddBase);
+    const sunTargetHours = Number(raw.sunTargetHours != null ? raw.sunTargetHours : 0);
+    const rainTargetMm = Number(raw.rainTargetMm != null ? raw.rainTargetMm : 0);
+    const rainCancelMm = Number(raw.rainCancelMm != null ? raw.rainCancelMm : 0);
+    const rainCancelDays = Number(raw.rainCancelDays != null ? raw.rainCancelDays : 0);
     normalized.push({
       id: String(raw.id || ('CWP-' + Utilities.getUuid().substring(0, 8))),
       workName: workName,
+      trigger: trigger,
       offsetDays: isNaN(offsetDays) ? 0 : Math.round(offsetDays),
+      offsetPeriods: isNaN(offsetPeriods) ? (trigger === 'period' ? 0 : '') : Math.round(offsetPeriods),
       durationDays: (isNaN(durationDays) || durationDays < 1) ? 1 : Math.round(durationDays),
+      gddTarget: (isNaN(gddTarget) || gddTarget < 0) ? 0 : Math.round(gddTarget),
+      gddBase: (isNaN(gddBase) || gddBase < 0) ? 10 : Math.round(gddBase * 10) / 10,
+      sunTargetHours: (isNaN(sunTargetHours) || sunTargetHours < 0) ? 0 : Math.round(sunTargetHours * 10) / 10,
+      rainTargetMm: (isNaN(rainTargetMm) || rainTargetMm < 0) ? 0 : Math.round(rainTargetMm * 10) / 10,
+      rainCancelMm: (isNaN(rainCancelMm) || rainCancelMm < 0) ? 0 : Math.round(rainCancelMm * 10) / 10,
+      rainCancelDays: (isNaN(rainCancelDays) || rainCancelDays < 0) ? 0 : Math.round(rainCancelDays),
       note: String(raw.note || '').trim()
     });
   });
-  normalized.sort((a, b) => a.offsetDays - b.offsetDays || a.workName.localeCompare(b.workName, 'ja'));
+  normalized.sort(function(a, b) {
+    const wa = resolveCropWorkWindow_(a, new Date(2000, 0, 1), { skipWeather: true });
+    const wb = resolveCropWorkWindow_(b, new Date(2000, 0, 1), { skipWeather: true });
+    return wa.start - wb.start || a.workName.localeCompare(b.workName, 'ja');
+  });
   return {
     cropName: name,
     entries: normalized,
@@ -4175,8 +4795,36 @@ function formatYmd_(d) {
 
 /**
  * 定植セル + 品目別作業設定 → 発生作業一覧
- * params: { cropName, year, plantingCells: [{monthIndex, month, periodIndex}] }
+ * params: { cropName, year, plantingCells, fieldIds, lat, lng }
  */
+function mapCropWorkPreviewRow_(e, win, flat, plantStart, plantEnd) {
+  return {
+    id: e.id,
+    workName: e.workName,
+    trigger: win.trigger,
+    offsetDays: e.offsetDays,
+    offsetPeriods: e.offsetPeriods,
+    durationDays: e.durationDays,
+    gddTarget: e.gddTarget,
+    gddBase: e.gddBase,
+    sunTargetHours: e.sunTargetHours,
+    rainTargetMm: e.rainTargetMm,
+    rainCancelMm: e.rainCancelMm,
+    rainCancelDays: e.rainCancelDays,
+    note: e.note,
+    startDate: win.start ? formatYmd_(win.start) : null,
+    endDate: win.end ? formatYmd_(win.end) : null,
+    periodLabel: flat != null ? cpFlatToLabel_(flat) : win.label,
+    triggerLabel: win.label,
+    flat: flat,
+    cancelled: !!win.cancelled,
+    cancelLabel: win.cancelInfo && win.cancelInfo.label ? win.cancelInfo.label : '',
+    rainAccumulated: win.cancelInfo ? win.cancelInfo.accumulated : null,
+    plantingStart: plantStart ? formatYmd_(plantStart) : undefined,
+    plantingEnd: plantEnd ? formatYmd_(plantEnd) : undefined
+  };
+}
+
 function previewCropWorkSchedule(params) {
   const cropName = String((params && params.cropName) || '').trim();
   if (!cropName) throw new Error('作物名を指定してください');
@@ -4184,6 +4832,25 @@ function previewCropWorkSchedule(params) {
   const plantingCells = Array.isArray(params && params.plantingCells) ? params.plantingCells : [];
   const planRes = getCropWorkPlan({ cropName: cropName });
   const entries = (planRes.plan && planRes.plan.entries) || [];
+  const loc = resolveFarmLatLng_(params && params.fieldIds, params && params.lat, params && params.lng);
+  const needsWeather = cropWorkNeedsWeather_(entries);
+  const plantForWeather = plantingCells.length
+    ? (function() {
+        const parts = plantingCells.map(c => cpCellToDateParts(year, c));
+        parts.sort((a, b) => a.start - b.start);
+        return parts[0].start;
+      })()
+    : new Date();
+  let weather = null;
+  if (needsWeather) {
+    try { weather = loadCropWorkWeatherSeries_(loc.lat, loc.lng, plantForWeather); } catch (e) { weather = {}; }
+  }
+  const geo = { lat: loc.lat, lng: loc.lng, weather: weather };
+  const gddWeather = needsWeather ? {
+    lat: loc.lat,
+    lng: loc.lng,
+    note: '気温・降水・日射は実測・16日予報、先は去年の同時期'
+  } : null;
 
   if (!plantingCells.length) {
     return {
@@ -4191,17 +4858,11 @@ function previewCropWorkSchedule(params) {
       cropName: cropName,
       year: year,
       plantingLabel: '',
-      works: entries.map(e => ({
-        id: e.id,
-        workName: e.workName,
-        offsetDays: e.offsetDays,
-        durationDays: e.durationDays,
-        note: e.note,
-        startDate: null,
-        endDate: null,
-        periodLabel: '定植+' + e.offsetDays + '日',
-        flat: null
-      })),
+      gddWeather: gddWeather,
+      works: entries.map(e => {
+        const win = resolveCropWorkWindow_(e, new Date(), geo);
+        return mapCropWorkPreviewRow_(e, win, null, null, null);
+      }),
       entryCount: entries.length,
       message: '定植半旬が未設定です（オフセットのみ表示）'
     };
@@ -4214,26 +4875,11 @@ function previewCropWorkSchedule(params) {
   const plantingLabel = formatCpPeriodLabel(year, plantingCells);
 
   const works = entries.map(e => {
-    const start = new Date(plantStart.getTime());
-    start.setDate(start.getDate() + (Number(e.offsetDays) || 0));
-    const end = new Date(start.getTime());
-    end.setDate(end.getDate() + Math.max(0, (Number(e.durationDays) || 1) - 1));
-    const flat = dateToCpFlatIndex_(year, start);
-    return {
-      id: e.id,
-      workName: e.workName,
-      offsetDays: e.offsetDays,
-      durationDays: e.durationDays,
-      note: e.note,
-      startDate: formatYmd_(start),
-      endDate: formatYmd_(end),
-      periodLabel: cpFlatToLabel_(flat),
-      flat: flat,
-      plantingStart: formatYmd_(plantStart),
-      plantingEnd: formatYmd_(plantEnd)
-    };
+    const win = resolveCropWorkWindow_(e, plantStart, geo);
+    const flat = dateToCpFlatIndex_(year, win.start);
+    return mapCropWorkPreviewRow_(e, win, flat, plantStart, plantEnd);
   });
-  works.sort((a, b) => String(a.startDate || '').localeCompare(String(b.startDate || '')) || a.offsetDays - b.offsetDays);
+  works.sort((a, b) => String(a.startDate || '').localeCompare(String(b.startDate || '')) || String(a.workName).localeCompare(String(b.workName), 'ja'));
 
   return {
     success: true,
@@ -4242,6 +4888,7 @@ function previewCropWorkSchedule(params) {
     plantingLabel: plantingLabel,
     plantingStart: formatYmd_(plantStart),
     plantingEnd: formatYmd_(plantEnd),
+    gddWeather: gddWeather,
     works: works,
     entryCount: works.length
   };
@@ -5572,8 +6219,9 @@ function getScheduleData() {
         }
         const scheduleKey = buildWorkScheduleKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw);
         const placeIdRaw = String(sData[i][10] || '');
-        const isCultivation = placeIdRaw.indexOf('cp:') === 0;
-        const isProcure = placeIdRaw.indexOf('cp:procure:') === 0;
+        const parsedPlace = parseCpPlaceKind_(placeIdRaw);
+        const isCultivation = !!parsedPlace.kind;
+        const isProcure = parsedPlace.kind === 'procure';
         if (isProcure && (compDate || (!compDate && completedWorks[key]))) {
           completedProcurePlaceIds[placeIdRaw] = true;
         }
@@ -5588,15 +6236,21 @@ function getScheduleData() {
           displayTrays = hours;
         } else if (isCultivation) {
           if (!globalCpPlanLookup_) globalCpPlanLookup_ = buildCultivationPlanLookupById_();
-          const planId = placeIdRaw.split('|')[0].replace(/^cp:/, '');
-          const plan = globalCpPlanLookup_[planId];
+          const planId = parsedPlace.planIds[0] || '';
+          const plan = planId ? globalCpPlanLookup_[planId] : null;
           if (plan) {
             displayCrop = plan.crop || displayCrop;
             varietyName = plan.variety || '';
             displayTag = plan.tag || displayTag;
             const unit = (Number(plan.holes) === 1) ? '粒' : '枚';
-            if (plan.trays != null && plan.trays !== '') displayTrays = plan.trays + unit;
-            try { periodLabel = formatCpPeriodLabel(plan.year, (plan.tasks && plan.tasks.sowing) || []); } catch (e2) {}
+            if (parsedPlace.kind !== 'work' && plan.trays != null && plan.trays !== '') displayTrays = plan.trays + unit;
+          }
+          if (parsedPlace.kind === 'plant') {
+            try { periodLabel = plan ? formatCpPeriodLabel(plan.year, (plan.tasks && plan.tasks.planting) || []) : '定植'; } catch (e2) { periodLabel = '定植'; }
+          } else if (parsedPlace.kind === 'work') {
+            periodLabel = String(hours || '');
+          } else if (parsedPlace.kind === 'sow') {
+            try { periodLabel = plan ? formatCpPeriodLabel(plan.year, (plan.tasks && plan.tasks.sowing) || []) : ''; } catch (e2) {}
           }
         }
         activeSchedules.push({
@@ -5666,6 +6320,8 @@ function getScheduleData() {
     });
     attachDayPlansToSchedule_(activeSchedules[activeSchedules.length - 1], dayPlanMaps);
   });
+
+  applyWorkScheduleStatus_(activeSchedules);
 
   // 4. ポリゴン情報の収集（ステータスはフロントエンドで計算させるために付加情報を乗せる）
   const polygons = getSavedPolygons();
@@ -5780,6 +6436,88 @@ function deleteWorkSchedule(params) {
 }
 
 /**
+ * 作業予定を一覧から完了にする（完了日を入れる。削除はしない）
+ * 調達完了→播種、播種完了→定植、定植完了→品目別作業 を作業予定へ出す。
+ * 途中作業は作業記録の進捗を完了に更新する。
+ */
+function completeWorkSchedule(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  const isMid = params.isMidWork === true || params.isMidWork === 'true' || params.isMidWork === 1 || params.isMidWork === '1';
+  if (isMid || String(params.recordId || '').trim()) {
+    return delegateCompleteWork(params);
+  }
+
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) throw new Error('作業予定シートがありません');
+
+  const data = schedSheet.getDataRange().getValues();
+  let targetRow = parseInt(params.sheetRow, 10);
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    targetRow = 0;
+    const wantKey = String(params.scheduleKey || '').trim();
+    const wantName = String(params.workName || '').trim();
+    const wantField = String(params.fieldName || '').trim();
+    const wantCrop = String(params.cropName || '').trim();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (String(row[8] || '').trim()) continue;
+      const key = buildWorkScheduleKey_(row[0], row[3], row[2], row[4], row[5]);
+      if (wantKey && key === wantKey) {
+        targetRow = i + 1;
+        break;
+      }
+      if (!wantKey && wantName
+          && String(row[0] || '').trim() === wantName
+          && String(row[3] || '').trim() === wantField
+          && String(row[2] || '').trim() === wantCrop) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    throw new Error('完了対象の作業予定が見つかりませんでした');
+  }
+
+  const rowData = data[targetRow - 1] || [];
+  const workName = String(rowData[0] || params.workName || '').trim();
+  const fieldName = String(rowData[3] || params.fieldName || '').trim();
+  const placeId = String(rowData[10] || '').trim();
+  if (String(rowData[8] || '').trim()) {
+    throw new Error('この作業は既に完了済みです');
+  }
+
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  schedSheet.getRange(targetRow, 9).setValue(today);
+
+  if (placeId.indexOf('cp:procure:') === 0 || workName === '調達') {
+    const extra = {};
+    extra[placeId] = true;
+    try {
+      ensureSowingAfterCompletedProcure_(schedSheet.getDataRange().getValues(), extra);
+    } catch (eSow) {}
+  } else if (parseCpPlaceKind_(placeId).kind === 'sow' || workName === '播種') {
+    const extra = {};
+    extra[placeId] = true;
+    try {
+      ensurePlantingAfterCompletedSowing_(schedSheet.getDataRange().getValues(), extra);
+    } catch (ePlant) {}
+  } else if (parseCpPlaceKind_(placeId).kind === 'plant' || workName === '定植') {
+    const extra = {};
+    extra[placeId] = true;
+    try {
+      ensureFieldWorksAfterCompletedPlanting_(schedSheet.getDataRange().getValues(), extra);
+    } catch (eWork) {}
+  }
+
+  writeLog(userName, '作業予定完了', fieldName || workName, `作業名: ${workName}, 行: ${targetRow}`);
+  return { success: true, workName: workName, fieldName: fieldName, sheetRow: targetRow, completedAt: today };
+}
+
+/**
  * 作業予定を手動で追加登録する
  * params: { workName, fieldName, cropName, dept, schedDate, deadline, hours, person, notes, polyId, userName }
  */
@@ -5816,6 +6554,194 @@ function addWorkSchedule(params) {
   const author = String(params.userName || person || 'ユーザー').trim();
   writeLog(author, '作業予定追加', fieldName || workName, `作業名: ${workName}, 予定日: ${schedDateStr || '未指定'}`);
   return { success: true, workName: workName, fieldName: fieldName };
+}
+
+// ===== 依頼作業（外注） =====
+const OUTSOURCE_WORK_HEADERS_ = ['作業名', '依頼先', '作物名', '圃場名', '予定日', '期限日', '枚数・時間', '依頼者', '完了日', '備考', '場所ID'];
+
+function ensureOutsourceWorkSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('依頼作業');
+  if (!sheet) {
+    sheet = ss.insertSheet('依頼作業');
+    sheet.appendRow(OUTSOURCE_WORK_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, OUTSOURCE_WORK_HEADERS_.length).setFontWeight('bold').setBackground('#e3f2fd');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), OUTSOURCE_WORK_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    OUTSOURCE_WORK_HEADERS_.forEach(function(h, idx) {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function buildOutsourceWorkKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw) {
+  return buildWorkScheduleKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw);
+}
+
+function formatOutsourceDateCell_(raw) {
+  if (!raw) return '-';
+  try {
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'Asia/Tokyo', 'MM/dd');
+  } catch (e) {}
+  return String(raw);
+}
+
+function getOutsourceWorkData() {
+  const ss = TENANT_SS;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const sheet = ensureOutsourceWorkSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return { success: true, items: [] };
+
+  const fieldNameToPolyId = {};
+  try {
+    (getSavedPolygons() || []).forEach(function(p) {
+      if (p && p.name && p.id) fieldNameToPolyId[String(p.name)] = p.id;
+    });
+  } catch (e) {}
+
+  const data = sheet.getRange(2, 1, last - 1, OUTSOURCE_WORK_HEADERS_.length).getValues();
+  const items = [];
+  for (let i = 0; i < data.length; i++) {
+    const workName = String(data[i][0] || '').trim();
+    const vendor = String(data[i][1] || '').trim();
+    const cropName = String(data[i][2] || '').trim();
+    const fieldName = String(data[i][3] || '').trim();
+    const schedDateRaw = data[i][4];
+    const deadlineRaw = data[i][5];
+    const hours = String(data[i][6] || '').trim();
+    const requester = String(data[i][7] || '').trim();
+    const compDate = data[i][8];
+    const notes = String(data[i][9] || '').trim();
+    const polyId = String(data[i][10] || '').trim();
+    if (!workName && !fieldName) continue;
+    if (compDate) continue;
+
+    let isOverdue = false;
+    if (deadlineRaw) {
+      const dl = new Date(deadlineRaw);
+      dl.setHours(0, 0, 0, 0);
+      if (dl < today) isOverdue = true;
+    }
+    items.push({
+      workName: workName,
+      vendor: vendor,
+      cropName: cropName,
+      fieldName: fieldName,
+      schedDate: formatOutsourceDateCell_(schedDateRaw),
+      deadline: formatOutsourceDateCell_(deadlineRaw),
+      hours: hours,
+      requester: requester,
+      notes: notes,
+      isOverdue: isOverdue,
+      sheetRow: i + 2,
+      scheduleKey: buildOutsourceWorkKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw),
+      polyId: polyId || fieldNameToPolyId[fieldName] || ''
+    });
+  }
+  return { success: true, items: items };
+}
+
+function addOutsourceWorkRequest(params) {
+  params = params || {};
+  const workName = String(params.workName || '').trim();
+  if (!workName) throw new Error('作業名を入力してください');
+  const vendor = String(params.vendor || params.dept || '').trim();
+  const fieldName = String(params.fieldName || '').trim();
+  const cropName = String(params.cropName || '').trim();
+  let schedDateStr = '';
+  if (params.schedDate) {
+    try { schedDateStr = Utilities.formatDate(new Date(params.schedDate), 'Asia/Tokyo', 'yyyy/MM/dd'); } catch (e) { schedDateStr = String(params.schedDate); }
+  }
+  let deadlineStr = '';
+  if (params.deadline) {
+    try { deadlineStr = Utilities.formatDate(new Date(params.deadline), 'Asia/Tokyo', 'yyyy/MM/dd'); } catch (e) { deadlineStr = String(params.deadline); }
+  }
+  const hours = String(params.hours || '').trim();
+  const requester = String(params.requester || params.person || params.userName || '').trim();
+  const notes = String(params.notes || '').trim();
+  const polyId = String(params.polyId || '').trim();
+
+  const sheet = ensureOutsourceWorkSheet_();
+  sheet.appendRow([workName, vendor, cropName, fieldName, schedDateStr, deadlineStr, hours, requester, '', notes, polyId]);
+  writeLog(requester || 'ユーザー', '依頼作業追加', fieldName || workName,
+    `作業名: ${workName}, 依頼先: ${vendor || '未指定'}, 予定日: ${schedDateStr || '未指定'}`);
+  return { success: true, workName: workName, vendor: vendor, fieldName: fieldName };
+}
+
+function completeOutsourceWork(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  const sheet = ensureOutsourceWorkSheet_();
+  const data = sheet.getDataRange().getValues();
+  let targetRow = parseInt(params.sheetRow, 10);
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    targetRow = 0;
+    const wantKey = String(params.scheduleKey || '').trim();
+    const wantName = String(params.workName || '').trim();
+    const wantField = String(params.fieldName || '').trim();
+    const wantCrop = String(params.cropName || '').trim();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][8] || '').trim()) continue;
+      const key = buildOutsourceWorkKey_(data[i][0], data[i][3], data[i][2], data[i][4], data[i][5]);
+      if (wantKey && key === wantKey) { targetRow = i + 1; break; }
+      if (!wantKey && wantName
+          && String(data[i][0] || '').trim() === wantName
+          && String(data[i][3] || '').trim() === wantField
+          && String(data[i][2] || '').trim() === wantCrop) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+  }
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    throw new Error('完了対象の依頼作業が見つかりませんでした');
+  }
+  const rowData = data[targetRow - 1] || [];
+  if (String(rowData[8] || '').trim()) throw new Error('この依頼作業は既に完了済みです');
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd');
+  sheet.getRange(targetRow, 9).setValue(today);
+  writeLog(userName, '依頼作業完了', String(rowData[3] || ''), `作業名: ${rowData[0]}, 依頼先: ${rowData[1]}`);
+  return { success: true, sheetRow: targetRow };
+}
+
+function deleteOutsourceWork(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  const sheet = ensureOutsourceWorkSheet_();
+  const data = sheet.getDataRange().getValues();
+  let targetRow = parseInt(params.sheetRow, 10);
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    targetRow = 0;
+    const wantKey = String(params.scheduleKey || '').trim();
+    const wantName = String(params.workName || '').trim();
+    const wantField = String(params.fieldName || '').trim();
+    const wantCrop = String(params.cropName || '').trim();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][8] || '').trim()) continue;
+      const key = buildOutsourceWorkKey_(data[i][0], data[i][3], data[i][2], data[i][4], data[i][5]);
+      if (wantKey && key === wantKey) { targetRow = i + 1; break; }
+      if (!wantKey && wantName
+          && String(data[i][0] || '').trim() === wantName
+          && String(data[i][3] || '').trim() === wantField
+          && String(data[i][2] || '').trim() === wantCrop) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+  }
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    throw new Error('削除対象の依頼作業が見つかりませんでした');
+  }
+  const rowData = data[targetRow - 1] || [];
+  if (String(rowData[8] || '').trim()) throw new Error('この依頼作業は既に完了済みです');
+  sheet.deleteRow(targetRow);
+  writeLog(userName, '依頼作業削除', String(rowData[3] || ''), `作業名: ${rowData[0]}, 依頼先: ${rowData[1]}`);
+  return { success: true, sheetRow: targetRow };
 }
 
 // ==========================================
@@ -8797,12 +9723,259 @@ function upsertCultivationProcureSchedule_(year, plans) {
   return result;
 }
 
+function parseCpPlaceKind_(placeId) {
+  const raw = String(placeId || '');
+  const marker = raw.split('|')[0];
+  if (marker.indexOf('cp:procure:') === 0) {
+    return { kind: 'procure', planIds: parseCpProcurePlanIds_(raw), entryId: '', marker: marker };
+  }
+  if (marker.indexOf('cp:plant:') === 0) {
+    const id = marker.slice('cp:plant:'.length);
+    return { kind: 'plant', planIds: id ? [id] : [], entryId: '', marker: marker };
+  }
+  if (marker.indexOf('cp:work:') === 0) {
+    const rest = marker.slice('cp:work:'.length);
+    const parts = rest.split('::');
+    const planId = String(parts[0] || '').trim();
+    const entryId = String(parts[1] || '').trim();
+    return { kind: 'work', planIds: planId ? [planId] : [], entryId: entryId, marker: marker };
+  }
+  if (marker.indexOf('cp:') === 0) {
+    const id = marker.slice(3);
+    if (!id || id.indexOf('plant:') === 0 || id.indexOf('work:') === 0 || id.indexOf('procure:') === 0) {
+      return { kind: '', planIds: [], entryId: '', marker: marker };
+    }
+    return { kind: 'sow', planIds: [id], entryId: '', marker: marker };
+  }
+  return { kind: '', planIds: [], entryId: '', marker: marker };
+}
+
+function cpPlanFieldNames_(plan) {
+  const fieldIds = (plan && plan.fieldIds) || [];
+  if (fieldIds.length > 0) return fieldIds.map(resolveCpFieldDisplayName_).join(', ');
+  return '(圃場未選択)';
+}
+
+function upsertCultivationPlantingSchedule_(year, plans) {
+  const result = { updated: 0, created: 0, deleted: 0 };
+  if (!plans || plans.length === 0) return result;
+  const ss = TENANT_SS;
+  let schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) {
+    schedSheet = ss.insertSheet('作業予定');
+    schedSheet.appendRow(['作業名', '担当部署', '作物名', '圃場名', '予定日', '期限日', '時間', '適合者', '完了日', '写真URL', '場所ID']);
+  }
+  const targetIds = {};
+  plans.forEach(function(p) { targetIds['cp:plant:' + p.id] = true; });
+  const preserved = {};
+  if (schedSheet.getLastRow() > 1) {
+    const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow(), 11).getValues();
+    for (let i = sData.length - 1; i >= 0; i--) {
+      const placeId = String(sData[i][10] || '');
+      const marker = placeId.split('|')[0];
+      if (!targetIds[marker]) continue;
+      if (!preserved[marker]) {
+        preserved[marker] = { completed: sData[i][8] || '', photo: sData[i][9] || '' };
+      }
+      schedSheet.deleteRow(i + 2);
+      result.deleted++;
+    }
+  }
+  plans.forEach(function(plan) {
+    const planting = (plan.tasks && plan.tasks.planting) ? plan.tasks.planting : [];
+    const sowing = (plan.tasks && plan.tasks.sowing) ? plan.tasks.sowing : [];
+    let startDate;
+    let endDate;
+    if (planting.length) {
+      const parts = planting.map(function(c) { return cpCellToDateParts(year, c); });
+      parts.sort(function(a, b) { return a.start - b.start; });
+      startDate = parts[0].start;
+      endDate = parts[parts.length - 1].end;
+    } else if (sowing.length) {
+      const parts = sowing.map(function(c) { return cpCellToDateParts(year, c); });
+      parts.sort(function(a, b) { return a.start - b.start; });
+      startDate = parts[parts.length - 1].end;
+      endDate = new Date(startDate.getTime());
+      endDate.setDate(endDate.getDate() + 14);
+    } else {
+      startDate = new Date();
+      endDate = new Date();
+      endDate.setDate(endDate.getDate() + 7);
+    }
+    const trays = plan.trays || 0;
+    const unit = (Number(plan.holes) === 1) ? '株' : '枚';
+    const traysLabel = trays ? (trays + unit) : '';
+    const fieldIds = plan.fieldIds || [];
+    const fieldNames = cpPlanFieldNames_(plan);
+    const marker = 'cp:plant:' + plan.id;
+    const placeId = marker + (fieldIds.length ? '|' + fieldIds.join(',') : '');
+    const keep = preserved[marker] || { completed: '', photo: '' };
+    schedSheet.appendRow([
+      '定植',
+      '',
+      plan.crop || '',
+      fieldNames,
+      startDate,
+      endDate,
+      traysLabel,
+      plan.tag || '',
+      keep.completed,
+      keep.photo,
+      placeId
+    ]);
+    if (preserved[marker]) result.updated++;
+    else result.created++;
+  });
+  return result;
+}
+
+function collectExistingCpPlantingPlanIds_(sData) {
+  const ids = {};
+  (sData || []).forEach(function(row) {
+    if (String(row[0] || '').trim() !== '定植') return;
+    const parsed = parseCpPlaceKind_(row[10]);
+    if (parsed.kind !== 'plant') return;
+    parsed.planIds.forEach(function(id) { ids[id] = true; });
+  });
+  return ids;
+}
+
+function collectExistingCpWorkMarkers_(sData) {
+  const ids = {};
+  (sData || []).forEach(function(row) {
+    const parsed = parseCpPlaceKind_(row[10]);
+    if (parsed.kind === 'work' && parsed.marker) ids[parsed.marker] = true;
+  });
+  return ids;
+}
+
+function ensurePlantingAfterCompletedSowing_(sData, extraCompletedPlaceIds) {
+  extraCompletedPlaceIds = extraCompletedPlaceIds || {};
+  const existingPlant = collectExistingCpPlantingPlanIds_(sData);
+  const lookup = buildCultivationPlanLookupById_();
+  const byYear = {};
+  (sData || []).forEach(function(row) {
+    if (String(row[0] || '').trim() !== '播種') return;
+    const placeId = String(row[10] || '');
+    const parsed = parseCpPlaceKind_(placeId);
+    if (parsed.kind !== 'sow') return;
+    const done = !!(row[8] || extraCompletedPlaceIds[placeId]);
+    if (!done) return;
+    parsed.planIds.forEach(function(id) {
+      if (existingPlant[id]) return;
+      const plan = lookup[id];
+      if (!plan) return;
+      const year = String(plan.year || '');
+      if (!year) return;
+      if (!byYear[year]) byYear[year] = [];
+      byYear[year].push(plan);
+      existingPlant[id] = true;
+    });
+  });
+  Object.keys(byYear).forEach(function(year) {
+    upsertCultivationPlantingSchedule_(year, byYear[year]);
+  });
+}
+
+function parseSheetDateLoose_(v) {
+  if (!v) return null;
+  try {
+    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) return v;
+    const s = String(v).trim().replace(/\//g, '-');
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d;
+  } catch (e) {}
+  return null;
+}
+
+function enqueueCropWorksForPlan_(plan, plantDate) {
+  const result = { created: 0 };
+  if (!plan || !plan.id || !plantDate) return result;
+  const crop = String(plan.crop || '').trim();
+  if (!crop) return result;
+  const planRes = getCropWorkPlan({ cropName: crop });
+  const entries = (planRes.plan && planRes.plan.entries) || [];
+  if (!entries.length) return result;
+  const ss = TENANT_SS;
+  let schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) {
+    schedSheet = ss.insertSheet('作業予定');
+    schedSheet.appendRow(['作業名', '担当部署', '作物名', '圃場名', '予定日', '期限日', '時間', '適合者', '完了日', '写真URL', '場所ID']);
+  }
+  const existing = {};
+  if (schedSheet.getLastRow() > 1) {
+    const sData = schedSheet.getRange(2, 11, schedSheet.getLastRow() - 1, 1).getValues();
+    sData.forEach(function(r) {
+      const parsed = parseCpPlaceKind_(r[0]);
+      if (parsed.kind === 'work' && parsed.marker) existing[parsed.marker] = true;
+    });
+  }
+  const fieldIds = plan.fieldIds || [];
+  const fieldNames = cpPlanFieldNames_(plan);
+  const plant = new Date(plantDate.getTime());
+  plant.setHours(0, 0, 0, 0);
+  const loc = resolveFarmLatLng_(fieldIds);
+  let weather = null;
+  if (cropWorkNeedsWeather_(entries)) {
+    try { weather = loadCropWorkWeatherSeries_(loc.lat, loc.lng, plant); } catch (e) { weather = {}; }
+  }
+  const geo = { lat: loc.lat, lng: loc.lng, weather: weather };
+  entries.forEach(function(entry) {
+    const marker = 'cp:work:' + plan.id + '::' + entry.id;
+    if (existing[marker]) return;
+    const win = resolveCropWorkWindow_(entry, plant, geo);
+    const placeId = marker + (fieldIds.length ? '|' + fieldIds.join(',') : '');
+    const workName = win.cancelled ? ('[キャンセル] ' + entry.workName) : entry.workName;
+    schedSheet.appendRow([
+      workName,
+      '',
+      crop,
+      fieldNames,
+      win.start,
+      win.end,
+      win.label,
+      plan.tag || '',
+      '',
+      '',
+      placeId
+    ]);
+    existing[marker] = true;
+    result.created++;
+  });
+  return result;
+}
+
+function ensureFieldWorksAfterCompletedPlanting_(sData, extraCompletedPlaceIds) {
+  extraCompletedPlaceIds = extraCompletedPlaceIds || {};
+  const lookup = buildCultivationPlanLookupById_();
+  const donePlans = {};
+  (sData || []).forEach(function(row) {
+    if (String(row[0] || '').trim() !== '定植') return;
+    const placeId = String(row[10] || '');
+    const parsed = parseCpPlaceKind_(placeId);
+    if (parsed.kind !== 'plant') return;
+    const doneVal = row[8] || extraCompletedPlaceIds[placeId];
+    if (!doneVal) return;
+    parsed.planIds.forEach(function(id) {
+      if (donePlans[id]) return;
+      const plan = lookup[id];
+      if (!plan) return;
+      let plantDate = parseSheetDateLoose_(row[8]);
+      if (!plantDate) plantDate = new Date();
+      enqueueCropWorksForPlan_(plan, plantDate);
+      donePlans[id] = true;
+    });
+  });
+}
+
 function collectExistingCpSowingPlanIds_(sData) {
   const ids = {};
   (sData || []).forEach(function(row) {
     if (String(row[0] || '').trim() !== '播種') return;
     const placeId = String(row[10] || '');
     if (placeId.indexOf('cp:procure:') === 0) return;
+    if (placeId.indexOf('cp:plant:') === 0) return;
+    if (placeId.indexOf('cp:work:') === 0) return;
     if (placeId.indexOf('cp:') !== 0) return;
     const id = placeId.split('|')[0].replace(/^cp:/, '');
     if (id) ids[id] = true;
@@ -9315,13 +10488,7 @@ function farmBoardCol_(idx, row, names, fallbackIndex) {
 }
 
 function farmBoardParsePlanIds_(placeId) {
-  const s = String(placeId || '');
-  if (s.indexOf('cp:procure:') === 0) return parseCpProcurePlanIds_(s);
-  if (s.indexOf('cp:') === 0) {
-    const id = s.split('|')[0].replace(/^cp:/, '');
-    return id ? [id] : [];
-  }
-  return [];
+  return parseCpPlaceKind_(placeId).planIds;
 }
 
 /**
@@ -9496,6 +10663,12 @@ function completeFarmBoardTasks(params) {
   }
   if (wantComplete && kind === 'procure' && updated > 0) {
     ensureSowingAfterCompletedProcure_(sheet.getDataRange().getValues(), completedPlaceIds);
+  }
+  if (wantComplete && kind === 'sow' && updated > 0) {
+    ensurePlantingAfterCompletedSowing_(sheet.getDataRange().getValues(), completedPlaceIds);
+  }
+  if (wantComplete && kind === 'plant' && updated > 0) {
+    ensureFieldWorksAfterCompletedPlanting_(sheet.getDataRange().getValues(), completedPlaceIds);
   }
   return { success: true, updated: updated };
 }
@@ -10120,6 +11293,226 @@ function lookupCultivationByTag(params) {
   return {
     success: true,
     plan: foundExactYearExecuted || foundExactYear || foundAnyExecuted || foundAny
+  };
+}
+
+/** 作業予定シートから栽培計画ごとの完了状態を集計 */
+function buildCpScheduleProgressState_(sData) {
+  const state = {};
+  function ensure(id) {
+    const k = String(id);
+    if (!state[k]) {
+      state[k] = {
+        procureDone: false,
+        sowDone: false,
+        plantDone: false,
+        worksDone: {},
+        worksExist: {}
+      };
+    }
+    return state[k];
+  }
+  (sData || []).forEach(function(row) {
+    const placeId = String(row[10] || '');
+    if (!placeId) return;
+    const parsed = parseCpPlaceKind_(placeId);
+    const done = !!(row[8]);
+    if (parsed.kind === 'procure') {
+      parseCpProcurePlanIds_(placeId).forEach(function(pid) {
+        const st = ensure(pid);
+        if (done) st.procureDone = true;
+      });
+    } else if (parsed.kind === 'sow') {
+      parsed.planIds.forEach(function(pid) {
+        const st = ensure(pid);
+        if (done) st.sowDone = true;
+      });
+    } else if (parsed.kind === 'plant') {
+      parsed.planIds.forEach(function(pid) {
+        const st = ensure(pid);
+        if (done) st.plantDone = true;
+      });
+    } else if (parsed.kind === 'work') {
+      parsed.planIds.forEach(function(pid) {
+        const st = ensure(pid);
+        const eid = String(parsed.entryId || '');
+        if (!eid) return;
+        st.worksExist[eid] = true;
+        if (done) st.worksDone[eid] = true;
+      });
+    }
+  });
+  return state;
+}
+
+/** 1計画の栽培パイプライン＋品目別作業の進捗ラベルを算出 */
+function computePlanCropWorkProgress_(plan, state, entries) {
+  const st = (state && state[String(plan.id)]) || {
+    procureDone: false,
+    sowDone: false,
+    plantDone: false,
+    worksDone: {},
+    worksExist: {}
+  };
+  const hasSowing = ((plan.tasks && plan.tasks.sowing) || []).length > 0;
+  const needsProcure = hasSowing && cpPlanSeedNeedCount_(plan) > 0;
+  const entriesSorted = entries || [];
+  const totalWorks = entriesSorted.length;
+  let completedWorks = 0;
+  entriesSorted.forEach(function(e) {
+    if (st.worksDone[String(e.id)]) completedWorks++;
+  });
+
+  let statusLabel = '';
+  let nextLabel = '';
+  let stageCode = 'all_done';
+
+  if (needsProcure && !st.procureDone) {
+    statusLabel = '調達待ち';
+    nextLabel = '調達';
+    stageCode = 'procure_pending';
+  } else if (hasSowing && !st.sowDone) {
+    statusLabel = (needsProcure && st.procureDone) ? '調達完了' : '播種待ち';
+    nextLabel = '播種';
+    stageCode = 'sow_pending';
+  } else if (!st.plantDone) {
+    statusLabel = (hasSowing && st.sowDone) ? '播種完了' : '定植待ち';
+    nextLabel = '定植';
+    stageCode = 'plant_pending';
+  } else if (totalWorks === 0) {
+    statusLabel = '定植完了';
+    nextLabel = '';
+    stageCode = 'all_done';
+    completedWorks = 0;
+  } else {
+    let lastDoneName = '定植';
+    let nextWorkName = '';
+    let allDone = true;
+    for (let i = 0; i < entriesSorted.length; i++) {
+      const e = entriesSorted[i];
+      const eid = String(e.id);
+      if (!st.worksDone[eid]) {
+        allDone = false;
+        nextWorkName = e.workName;
+        break;
+      }
+      lastDoneName = e.workName;
+    }
+    if (allDone) {
+      statusLabel = lastDoneName + 'まで完了';
+      nextLabel = '';
+      stageCode = 'all_done';
+      completedWorks = totalWorks;
+    } else {
+      statusLabel = lastDoneName + 'まで完了';
+      nextLabel = nextWorkName;
+      stageCode = 'work_pending';
+    }
+  }
+
+  return {
+    statusLabel: statusLabel,
+    nextLabel: nextLabel,
+    stageCode: stageCode,
+    completedWorks: completedWorks,
+    totalWorks: totalWorks,
+    plantDone: !!st.plantDone,
+    sowDone: !!st.sowDone,
+    procureDone: !!st.procureDone
+  };
+}
+
+/** 圃場別・TAG別の栽培作業進捗一覧（実行済み栽培計画ベース） */
+function getCropWorkProgressSummary(params) {
+  const yearFilter = (params && params.year) ? String(params.year) : '';
+  const planLookup = buildCultivationPlanLookupById_();
+  const ss = TENANT_SS;
+  const schedSheet = ss.getSheetByName('作業予定');
+  let sData = [];
+  if (schedSheet && schedSheet.getLastRow() > 1) {
+    sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+  }
+  const state = buildCpScheduleProgressState_(sData);
+  const cropEntriesCache = {};
+  function entriesForCrop(crop) {
+    const c = String(crop || '').trim();
+    if (!c) return [];
+    if (!cropEntriesCache[c]) {
+      try {
+        const res = getCropWorkPlan({ cropName: c });
+        cropEntriesCache[c] = (res.plan && res.plan.entries) || [];
+      } catch (e) {
+        cropEntriesCache[c] = [];
+      }
+    }
+    return cropEntriesCache[c];
+  }
+
+  const plans = Object.keys(planLookup).map(function(k) { return planLookup[k]; }).filter(function(p) {
+    if (!p || p.status !== 'executed') return false;
+    if (yearFilter && String(p.year) !== yearFilter) return false;
+    return true;
+  });
+
+  const byField = [];
+  const byTag = [];
+
+  plans.forEach(function(plan) {
+    const entries = entriesForCrop(plan.crop);
+    const prog = computePlanCropWorkProgress_(plan, state, entries);
+    const fieldIds = (plan.fieldIds && plan.fieldIds.length) ? plan.fieldIds : [''];
+    const fieldNames = cpPlanFieldNames_(plan);
+    const base = {
+      planId: plan.id,
+      year: plan.year,
+      crop: plan.crop || '',
+      variety: plan.variety || '',
+      tag: plan.tag || '',
+      fieldNames: fieldNames,
+      statusLabel: prog.statusLabel,
+      nextLabel: prog.nextLabel,
+      stageCode: prog.stageCode,
+      completedWorks: prog.completedWorks,
+      totalWorks: prog.totalWorks,
+      displayProgress: prog.nextLabel
+        ? (prog.statusLabel + ' → 次: ' + prog.nextLabel)
+        : prog.statusLabel
+    };
+    byTag.push(base);
+    fieldIds.forEach(function(fid) {
+      byField.push({
+        planId: base.planId,
+        year: base.year,
+        crop: base.crop,
+        variety: base.variety,
+        tag: base.tag,
+        fieldNames: base.fieldNames,
+        statusLabel: base.statusLabel,
+        nextLabel: base.nextLabel,
+        stageCode: base.stageCode,
+        completedWorks: base.completedWorks,
+        totalWorks: base.totalWorks,
+        displayProgress: base.displayProgress,
+        fieldId: String(fid || ''),
+        fieldName: fid ? resolveCpFieldDisplayName_(fid) : '(圃場未選択)'
+      });
+    });
+  });
+
+  byField.sort(function(a, b) {
+    return String(a.fieldName).localeCompare(String(b.fieldName), 'ja')
+      || String(a.tag).localeCompare(String(b.tag), 'ja');
+  });
+  byTag.sort(function(a, b) {
+    return String(a.tag).localeCompare(String(b.tag), 'ja')
+      || String(a.crop).localeCompare(String(b.crop), 'ja');
+  });
+
+  return {
+    success: true,
+    byField: byField,
+    byTag: byTag,
+    year: yearFilter || 'all'
   };
 }
 
@@ -14577,6 +15970,25 @@ function attachDayPlansToSchedule_(t, maps) {
     if (seen[k]) return false;
     seen[k] = true;
     return true;
+  });
+}
+
+/** 作業一覧ステータス: pending=未実行 / planned=予定中 / running=実行中 */
+function resolveWorkScheduleStatus_(t) {
+  if (t && t.isMidWork) {
+    return { code: 'running', label: '実行中' };
+  }
+  if (t && t.dayPlans && t.dayPlans.length > 0) {
+    return { code: 'planned', label: '予定中' };
+  }
+  return { code: 'pending', label: '未実行' };
+}
+
+function applyWorkScheduleStatus_(schedules) {
+  (schedules || []).forEach(function(t) {
+    const st = resolveWorkScheduleStatus_(t);
+    t.workStatus = st.code;
+    t.workStatusLabel = st.label;
   });
 }
 

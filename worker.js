@@ -18926,6 +18926,21 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
             <div id="addWorkScheduleFormPanel" style="display:none; margin-top:10px; border-top:1px dashed #a5d6a7; padding-top:10px;">
               <div style="margin-bottom:8px;">
+                <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">実施区分</label>
+                <div style="display:flex; gap:8px;">
+                  <label style="flex:1;display:flex;align-items:center;gap:6px;padding:6px;border:1px solid #a5d6a7;border-radius:6px;background:#f1f8e9;font-size:12px;">
+                    <input type="radio" name="addSchedKind" value="internal" checked onchange="onAddSchedKindChange_()"> 自社
+                  </label>
+                  <label style="flex:1;display:flex;align-items:center;gap:6px;padding:6px;border:1px solid #90caf9;border-radius:6px;background:#e3f2fd;font-size:12px;">
+                    <input type="radio" name="addSchedKind" value="outsource" onchange="onAddSchedKindChange_()"> 外注→依頼一覧
+                  </label>
+                </div>
+              </div>
+              <div id="addSchedVendorWrap" style="display:none;margin-bottom:8px;">
+                <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">🏢 依頼先</label>
+                <input type="text" id="addSchedVendor" placeholder="例: ○○業者" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
+              </div>
+              <div style="margin-bottom:8px;">
                 <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">📍 圃場名</label>
                 <select id="addSchedFieldName" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
                   <option value="">圃場を選択 (任意)</option>
@@ -18941,7 +18956,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <input type="text" id="addSchedCropName" placeholder="例: キャベツ" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
                 </div>
                 <div style="flex:1;">
-                  <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;">👤 担当者</label>
+                  <label style="font-size:11px; color:#555; display:block; margin-bottom:2px;" id="addSchedPersonLabel">👤 担当者</label>
                   <input type="text" id="addSchedPerson" placeholder="担当者名" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
                 </div>
               </div>
@@ -18964,6 +18979,19 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
           </div>
         `;
+      };
+
+      window.onAddSchedKindChange_ = function() {
+        const kind = (document.querySelector('input[name="addSchedKind"]:checked') || {}).value || 'internal';
+        const vendorWrap = document.getElementById('addSchedVendorWrap');
+        const personLabel = document.getElementById('addSchedPersonLabel');
+        const btn = document.getElementById('submitAddWorkSchedBtn');
+        if (vendorWrap) vendorWrap.style.display = kind === 'outsource' ? 'block' : 'none';
+        if (personLabel) personLabel.textContent = kind === 'outsource' ? '👤 依頼者' : '👤 担当者';
+        if (btn) {
+          btn.textContent = kind === 'outsource' ? '依頼作業一覧へ登録' : '作業予定を追加登録';
+          btn.style.background = kind === 'outsource' ? '#1565c0' : '#2e7d32';
+        }
       };
 
       window.toggleAddWorkScheduleForm = function() {
@@ -19011,15 +19039,30 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const cropName = (document.getElementById('addSchedCropName')?.value || '').trim();
         const person = (document.getElementById('addSchedPerson')?.value || '').trim();
+        const vendor = (document.getElementById('addSchedVendor')?.value || '').trim();
         const schedDate = document.getElementById('addSchedDate')?.value || '';
         const deadline = document.getElementById('addSchedDeadline')?.value || '';
         const hours = (document.getElementById('addSchedHours')?.value || '').trim();
         const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+        const kind = (document.querySelector('input[name="addSchedKind"]:checked') || {}).value || 'internal';
 
         if (btn) { btn.disabled = true; btn.innerText = '送信中...'; }
         if (resDiv) { resDiv.innerText = '登録中...'; resDiv.style.color = '#666'; }
 
         try {
+          if (kind === 'outsource') {
+            await callGAS('addOutsourceWorkRequest', {
+              workName, fieldName, cropName, vendor, schedDate, deadline, hours,
+              requester: person, person, polyId, userName
+            });
+            if (resDiv) {
+              resDiv.innerText = '✅ 依頼作業一覧に追加しました';
+              resDiv.style.color = '#1565c0';
+            }
+            if (typeof window.openOutsourceWorkTable === 'function') {
+              setTimeout(() => window.openOutsourceWorkTable(), 600);
+            }
+          } else {
           const res = await callGAS('addWorkSchedule', {
             workName: workName,
             fieldName: fieldName,
@@ -19039,6 +19082,7 @@ function createSignboardMarker(name, pos, icon, id) {
           setTimeout(() => {
             if (typeof window.openScheduleList === 'function') window.openScheduleList();
           }, 600);
+          }
         } catch (e) {
           if (resDiv) {
             resDiv.innerText = '❌ 追加に失敗しました: ' + (e.message || e);
@@ -19088,7 +19132,13 @@ function createSignboardMarker(name, pos, icon, id) {
             if (t.fieldName) h += `<span style="color:#2196F3; cursor:pointer; font-weight:bold; border:1px solid #2196F3; padding:2px 6px; border-radius:4px; font-size:11px;" onclick="focusAndOpenByName('${safeField}')">場所へ</span>`;
             h += `</div>`;
             if (isMid) {
-              h += `<div style="margin-bottom:6px;"><span style="background:#ef6c00;color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:10px;">⏳ 途中作業</span></div>`;
+              h += `<div style="margin-bottom:6px;">${typeof formatWorkStatusBadgeHtml === 'function' ? formatWorkStatusBadgeHtml(t) : '<span style="background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;">実行中</span>'}</div>`;
+            } else {
+              const stBadge = (t.workStatusLabel)
+                ? ('<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;' +
+                  (t.workStatus === 'planned' ? 'background:#e3f2fd;color:#1565c0;' : 'background:#eceff1;color:#546e7a;') + '">' + t.workStatusLabel + '</span>')
+                : '';
+              if (stBadge) h += `<div style="margin-bottom:6px;">${stBadge}</div>`;
             }
             h += `<div style="font-size:15px; font-weight:bold; color:${titleColor}; margin-bottom:8px;">${t.workName || '-'}</div>`;
             if (isMid) {

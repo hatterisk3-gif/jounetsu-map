@@ -1051,7 +1051,7 @@ window.getMasterTypeInfo = (type) => {
         cropChemPlan: { title: '🗓️ 品目別農薬設定', desc: '品目ごとに半旬（1上前〜12下後）の農薬・肥料を設定', list: pdlCropChemPlans || [] },
         costItem: { title: '💰 原価マスタ', desc: '種・資材・機械などの規格と単価を登録', list: pdlCostItems || [] },
         cropCostPlan: { title: '📊 品目別原価設定', desc: '作物ごとに使う原価品目と用量を組み合わせる', list: pdlCropCostPlans || [] },
-        cropWorkPlan: { title: '🛠️ 品目別作業設定', desc: '作物×作業を定植からの日数で設定（半旬暦）', list: pdlCropWorkPlans || [] },
+        cropWorkPlan: { title: '🛠️ 品目別作業設定', desc: '日数・半旬・積算温度/日射/降水＋降水キャンセル', list: pdlCropWorkPlans || [] },
         nurseryLocation: { title: '🪴 育苗場所マスタ', desc: '育苗区画（圃場）と方向の登録', list: pdlNurseryLocations || [] },
         cropCultSetting: { title: '📐 作物栽培設定マスタ', desc: '品目ごとの播種穴数など栽培デフォルト', list: pdlCropCultSettings || [] },
         container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] }

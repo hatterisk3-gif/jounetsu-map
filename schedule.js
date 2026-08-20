@@ -15,6 +15,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       // We need to stop loadData if not logged in.
       let map, infoWindow, loadedPolygons = {};
       let globalSchedules = [];
+      let globalOutsourceWorks = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
       window.getActiveScheduleList = function () {
         return (globalSchedules || []).slice();
@@ -1568,6 +1569,7 @@ async function fetchWeatherAndUpdateUI() {
           const tagPart = (t.tag || t.person) ? ` / <span style="color:#e91e63;font-weight:bold;">${t.tag || t.person}</span>` : '';
           const traysPart = (t.trays || t.hours) ? ` · ${t.trays || t.hours}` : '';
           return `<div style="${cl} border-bottom:1px solid #eee; padding:6px;">
+                    <div style="margin-bottom:4px;">${formatWorkStatusBadgeHtml(t)}</div>
                     <span style="background:#e3f2fd; color:#1a73e8; padding:2px 4px; border-radius:4px; font-size:10px; margin-right:4px;">${t.dept}</span>
                     <b>${t.workName}</b><br>
                     <small>${t.cropName ? t.cropName : ''}${tagPart}${traysPart}</small><br>
@@ -1687,6 +1689,25 @@ async function fetchWeatherAndUpdateUI() {
         }
       };
 
+      function formatWorkStatusBadgeHtml(t) {
+        const code = (t && t.workStatus) || (t && t.isMidWork ? 'running' : ((t && t.dayPlans && t.dayPlans.length) ? 'planned' : 'pending'));
+        const label = (t && t.workStatusLabel) || (code === 'running' ? '実行中' : (code === 'planned' ? '予定中' : '未実行'));
+        const styles = {
+          pending: 'background:#eceff1;color:#546e7a;border:1px solid #cfd8dc;',
+          planned: 'background:#e3f2fd;color:#1565c0;border:1px solid #90caf9;',
+          running: 'background:#fff3e0;color:#e65100;border:1px solid #ffb74d;'
+        };
+        const st = styles[code] || styles.pending;
+        return '<span style="display:inline-block;' + st + 'border-radius:999px;padding:2px 8px;font-size:10px;font-weight:bold;white-space:nowrap;">' + label + '</span>';
+      }
+
+      function workStatusSortRank(t) {
+        const code = (t && t.workStatus) || (t.isMidWork ? 'running' : ((t.dayPlans && t.dayPlans.length) ? 'planned' : 'pending'));
+        if (code === 'running') return 0;
+        if (code === 'planned') return 1;
+        return 2;
+      }
+
       function formatDayPlansBadgeHtml(t) {
         const plans = (t && Array.isArray(t.dayPlans)) ? t.dayPlans : [];
         if (!plans.length) return '';
@@ -1695,24 +1716,127 @@ async function fetchWeatherAndUpdateUI() {
           const ds = String(p.date || '');
           const m = ds.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
           const md = m ? (Number(m[2]) + '/' + Number(m[3])) : ds;
-          return '<span style="display:inline-block;background:#e3f2fd;color:#0d47a1;border:1px solid #90caf9;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:bold;margin:1px 2px 0 0;">👤' + n + ' 予定済み（' + md + '）</span>';
+          const tm = p.startTime ? (' ' + String(p.startTime).replace(/</g, '&lt;')) : '';
+          return '<span style="display:inline-block;background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da;border-radius:999px;padding:1px 7px;font-size:10px;margin:1px 2px 0 0;">👤' + n + ' ' + md + tm + '</span>';
         }).join('') + '</div>';
       }
 
-      window.openScheduleTable = () => {
+      window.formatWorkStatusBadgeHtml = formatWorkStatusBadgeHtml;
+      window._scheduleViewMode = 'tasks';
+      window._cropWorkProgressCache = null;
+
+      function escHtml_(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      function formatCropWorkCountCell_(row) {
+        const done = Number(row.completedWorks) || 0;
+        const total = Number(row.totalWorks) || 0;
+        if (!total) return '<span style="color:#888;">—</span>';
+        return escHtml_(done + ' / ' + total);
+      }
+
+      function formatProgressStatusCell_(row) {
+        const label = escHtml_(row.statusLabel || '');
+        const cls = (row.stageCode === 'all_done') ? 'progress-stage-all_done' : 'progress-stage-pending';
+        return '<span class="' + cls + '">' + label + '</span>';
+      }
+
+      window.switchScheduleView = function(mode) {
+        mode = mode || 'tasks';
+        window._scheduleViewMode = mode;
+        ['tasks', 'field', 'tag'].forEach(function(m) {
+          const tab = document.getElementById(m === 'tasks' ? 'schedTabTasks' : (m === 'field' ? 'schedTabField' : 'schedTabTag'));
+          if (tab) tab.classList.toggle('active', m === mode);
+        });
+        const tasksEl = document.getElementById('scheduleViewTasks');
+        const fieldEl = document.getElementById('scheduleViewFieldProgress');
+        const tagEl = document.getElementById('scheduleViewTagProgress');
+        if (tasksEl) tasksEl.style.display = (mode === 'tasks') ? 'block' : 'none';
+        if (fieldEl) fieldEl.style.display = (mode === 'field') ? 'block' : 'none';
+        if (tagEl) tagEl.style.display = (mode === 'tag') ? 'block' : 'none';
+        const titleEl = document.getElementById('tableDeptName');
+        if (titleEl) {
+          if (mode === 'field') titleEl.textContent = '圃場別進捗';
+          else if (mode === 'tag') titleEl.textContent = 'TAG別進捗';
+          else titleEl.textContent = currentDept;
+        }
+        if (mode === 'tasks') {
+          renderScheduleTasksTable_();
+        } else {
+          loadCropWorkProgressView_(mode);
+        }
+      };
+
+      async function loadCropWorkProgressView_(mode) {
+        const tbody = document.getElementById(mode === 'field' ? 'fieldProgressTableBody' : 'tagProgressTableBody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#888;">読み込み中...</td></tr>';
+        try {
+          const year = String(new Date().getFullYear());
+          const res = await callGAS('getCropWorkProgressSummary', { year: year });
+          window._cropWorkProgressCache = res || null;
+          renderCropWorkProgressTables_(res);
+        } catch (e) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#c62828;">読み込み失敗: ' + escHtml_(e.message || e) + '</td></tr>';
+        }
+      }
+
+      function renderCropWorkProgressTables_(res) {
+        const byField = (res && res.byField) || [];
+        const byTag = (res && res.byTag) || [];
+        const fieldBody = document.getElementById('fieldProgressTableBody');
+        const tagBody = document.getElementById('tagProgressTableBody');
+        if (fieldBody) {
+          if (!byField.length) {
+            fieldBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#888;">実行済み栽培計画がありません</td></tr>';
+          } else {
+            fieldBody.innerHTML = byField.map(function(row) {
+              return '<tr>' +
+                '<td>' + escHtml_(row.fieldName) + '</td>' +
+                '<td>' + escHtml_(row.crop) + '</td>' +
+                '<td>' + escHtml_(row.variety || '—') + '</td>' +
+                '<td>' + escHtml_(row.tag || '—') + '</td>' +
+                '<td>' + formatProgressStatusCell_(row) + '</td>' +
+                '<td>' + escHtml_(row.nextLabel || '—') + '</td>' +
+                '<td>' + formatCropWorkCountCell_(row) + '</td>' +
+                '</tr>';
+            }).join('');
+          }
+        }
+        if (tagBody) {
+          if (!byTag.length) {
+            tagBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#888;">実行済み栽培計画がありません</td></tr>';
+          } else {
+            tagBody.innerHTML = byTag.map(function(row) {
+              return '<tr>' +
+                '<td>' + escHtml_(row.tag || '—') + '</td>' +
+                '<td>' + escHtml_(row.crop) + '</td>' +
+                '<td>' + escHtml_(row.variety || '—') + '</td>' +
+                '<td>' + escHtml_(row.fieldNames || '—') + '</td>' +
+                '<td>' + formatProgressStatusCell_(row) + '</td>' +
+                '<td>' + escHtml_(row.nextLabel || '—') + '</td>' +
+                '<td>' + formatCropWorkCountCell_(row) + '</td>' +
+                '</tr>';
+            }).join('');
+          }
+        }
+      }
+
+      function renderScheduleTasksTable_() {
         const tbody = document.getElementById('scheduleTableBody');
+        if (!tbody) return;
         document.getElementById('tableDeptName').innerText = currentDept;
 
         let filteredSchedules = currentDept === 'すべて' ? globalSchedules : globalSchedules.filter(t => t.dept === currentDept);
 
         if (filteredSchedules.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">現在必要な作業はありません</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">現在必要な作業はありません</td></tr>';
         } else {
           let sorted = [...filteredSchedules].sort((a, b) => {
-             if (!!a.isMidWork !== !!b.isMidWork) return a.isMidWork ? -1 : 1;
-             if (a.isMidWork && b.isMidWork) {
-               return String(b.workDateYmd || '').localeCompare(String(a.workDateYmd || ''));
-             }
+             const ra = workStatusSortRank(a);
+             const rb = workStatusSortRank(b);
+             if (ra !== rb) return ra - rb;
              if(a.deadline === '-') return 1;
              if(b.deadline === '-') return -1;
              return new Date(a.deadline) - new Date(b.deadline);
@@ -1735,9 +1859,8 @@ async function fetchWeatherAndUpdateUI() {
             const tagCell = isMid
               ? (`👤${t.author || t.person || '-'}` + (t.startTime ? `<br><span style="font-size:11px;">${t.startTime}〜${t.endTime || ''}</span>` : ''))
               : (isCp ? (t.tag || t.person || '-') : (t.person || '-'));
-            const workLabel = isMid
-              ? `${t.workName}<br><span style="background:#ef6c00;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:bold;">途中</span>`
-              : t.workName;
+            const workLabel = t.workName;
+            const statusHtml = formatWorkStatusBadgeHtml(t);
             const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
             const taskUsersHtml = (!isMid && taskUsers.length)
               ? '<div style="margin-top:4px;">' + taskUsers.map(u => {
@@ -1751,10 +1874,15 @@ async function fetchWeatherAndUpdateUI() {
             const safeField = String(t.fieldName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeCrop = String(t.cropName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeKey = String(t.scheduleKey || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const actionCell = isMid
-              ? '<span style="font-size:10px;color:#999;">途中</span>'
+            const safePoly = String(t.polyId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeRec = String(t.recordId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const completeBtn = `<button type="button" class="sched-complete-btn" onclick="completeScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}', ${isMid ? 1 : 0}, '${safePoly}', '${safeRec}')" style="background:#e8f5e9;color:#2e7d32;border:1px solid #81c784;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:bold;cursor:pointer;white-space:nowrap;">完了</button>`;
+            const deleteBtn = isMid
+              ? ''
               : `<button type="button" onclick="deleteScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}')" style="background:#ffebee;color:#c62828;border:1px solid #ef9a9a;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:bold;cursor:pointer;white-space:nowrap;">削除</button>`;
+            const actionCell = `<div style="display:flex;flex-direction:column;gap:4px;align-items:stretch;">${completeBtn}${deleteBtn}</div>`;
             return `<tr ${rowClass} data-sched-idx="${idx}">
+                      <td style="text-align:center;white-space:nowrap;">${statusHtml}</td>
                       <td>${workLabel}${taskUsersHtml}${dayPlansHtml}</td>
                       <td>${t.dept || '-'}</td>
                       <td>${cropCell}</td>
@@ -1767,7 +1895,94 @@ async function fetchWeatherAndUpdateUI() {
                     </tr>`;
           }).join('');
         }
+      }
+
+      window.refreshScheduleDataCache_ = async function() {
+        try {
+          const data = await callGAS('getScheduleData');
+          if (!data) return null;
+          localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+          globalSchedules = data.activeSchedules || [];
+          if (typeof updateMapVisuals === 'function') updateMapVisuals();
+          const modal = document.getElementById('scheduleModal');
+          if (modal && modal.style.display === 'flex') {
+            if (window._scheduleViewMode === 'tasks') {
+              renderScheduleTasksTable_();
+            } else {
+              window._cropWorkProgressCache = null;
+              loadCropWorkProgressView_(window._scheduleViewMode);
+            }
+          }
+          return data;
+        } catch (e) {
+          return null;
+        }
+      };
+
+      window.openScheduleTable = () => {
         document.getElementById('scheduleModal').style.display = 'flex';
+        switchScheduleView(window._scheduleViewMode || 'tasks');
+      };
+
+      window.completeScheduleFromList = async function(sheetRow, scheduleKey, workName, fieldName, cropName, isMid, polyId, recordId) {
+        if (window._schedCompleteBusy) return;
+        const label = String(workName || 'この作業');
+        if (!confirm('「' + label + '」を完了にしますか？')) return;
+        window._schedCompleteBusy = true;
+        document.querySelectorAll('.sched-complete-btn').forEach(function(btn) {
+          btn.disabled = true;
+          btn.style.pointerEvents = 'none';
+          if (btn.textContent === '完了') btn.textContent = '完了中...';
+        });
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          await callGAS('completeWorkSchedule', {
+            sheetRow: sheetRow,
+            scheduleKey: scheduleKey || '',
+            workName: workName || '',
+            fieldName: fieldName || '',
+            cropName: cropName || '',
+            userName: userName,
+            isMidWork: !!isMid,
+            polyId: polyId || '',
+            recordId: recordId || ''
+          });
+          globalSchedules = (globalSchedules || []).filter(t => {
+            if (isMid) {
+              if (recordId && String(t.recordId || '') === String(recordId)) return false;
+              return true;
+            }
+            if (scheduleKey && t.scheduleKey === scheduleKey) return false;
+            if (sheetRow && t.sheetRow === sheetRow) return false;
+            return !(t.workName === workName && t.fieldName === fieldName && t.cropName === cropName);
+          });
+          try {
+            const cachedStr = localStorage.getItem('passionMapScheduleData');
+            if (cachedStr) {
+              const cached = JSON.parse(cachedStr);
+              cached.activeSchedules = globalSchedules;
+              localStorage.setItem('passionMapScheduleData', JSON.stringify(cached));
+            }
+          } catch (e) {}
+          if (typeof updateMapVisuals === 'function') updateMapVisuals();
+          openScheduleTable();
+          callGAS('getScheduleData').then(data => {
+            if (!data) return;
+            localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+            globalSchedules = data.activeSchedules || [];
+            if (typeof updateMapVisuals === 'function') updateMapVisuals();
+            if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
+              openScheduleTable();
+            }
+          }).catch(() => {});
+        } catch (e) {
+          alert('完了に失敗しました: ' + (e.message || e));
+          if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
+            openScheduleTable();
+          }
+        } finally {
+          window._schedCompleteBusy = false;
+        }
       };
 
       window.deleteScheduleFromList = async function(sheetRow, scheduleKey, workName, fieldName, cropName) {
@@ -1811,6 +2026,197 @@ async function fetchWeatherAndUpdateUI() {
           }).catch(() => {});
         } catch (e) {
           alert('削除に失敗しました: ' + (e.message || e));
+        }
+      };
+
+      window.refreshOutsourceWorks_ = async function() {
+        try {
+          const res = await callGAS('getOutsourceWorkData');
+          globalOutsourceWorks = (res && res.items) || [];
+        } catch (e) {
+          globalOutsourceWorks = [];
+        }
+        return globalOutsourceWorks;
+      };
+
+      window.openOutsourceWorkTable = async function() {
+        const modal = document.getElementById('outsourceWorkModal');
+        const tbody = document.getElementById('outsourceWorkTableBody');
+        if (!modal || !tbody) return;
+        document.getElementById('scheduleModal').style.display = 'none';
+        modal.style.display = 'flex';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">読込中...</td></tr>';
+        await window.refreshOutsourceWorks_();
+        const list = globalOutsourceWorks || [];
+        if (!list.length) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;">依頼中の外注作業はありません<br><span style="font-size:12px;">「＋依頼追加」から登録できます</span></td></tr>';
+          return;
+        }
+        const sorted = [...list].sort((a, b) => {
+          if (a.deadline === '-') return 1;
+          if (b.deadline === '-') return -1;
+          return new Date(a.deadline) - new Date(b.deadline);
+        });
+        tbody.innerHTML = sorted.map(t => {
+          const rowClass = t.isOverdue ? 'class="overdue-row"' : '';
+          const safeWork = String(t.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const safeField = String(t.fieldName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const safeCrop = String(t.cropName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const safeKey = String(t.scheduleKey || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const completeBtn = `<button type="button" onclick="completeOutsourceFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}')" style="background:#e3f2fd;color:#1565c0;border:1px solid #90caf9;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:bold;cursor:pointer;">完了</button>`;
+          const deleteBtn = `<button type="button" onclick="deleteOutsourceFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}')" style="background:#ffebee;color:#c62828;border:1px solid #ef9a9a;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:bold;cursor:pointer;">削除</button>`;
+          return `<tr ${rowClass}>
+            <td>${String(t.workName || '').replace(/</g, '&lt;')}</td>
+            <td>${String(t.vendor || '-').replace(/</g, '&lt;')}</td>
+            <td>${String(t.cropName || '-').replace(/</g, '&lt;')}</td>
+            <td>${String(t.fieldName || '-').replace(/</g, '&lt;')}</td>
+            <td>${t.schedDate || '-'}</td>
+            <td>${t.deadline || '-'}</td>
+            <td>${String(t.hours || '-').replace(/</g, '&lt;')}</td>
+            <td>${String(t.requester || '-').replace(/</g, '&lt;')}</td>
+            <td style="text-align:center;"><div style="display:flex;flex-direction:column;gap:4px;">${completeBtn}${deleteBtn}</div></td>
+          </tr>`;
+        }).join('');
+      };
+
+      window.completeOutsourceFromList = async function(sheetRow, scheduleKey, workName, fieldName, cropName) {
+        if (!confirm('「' + workName + '」の依頼を完了にしますか？')) return;
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          await callGAS('completeOutsourceWork', { sheetRow, scheduleKey, workName, fieldName, cropName, userName });
+          await window.refreshOutsourceWorks_();
+          openOutsourceWorkTable();
+        } catch (e) {
+          alert('完了に失敗しました: ' + (e.message || e));
+        }
+      };
+
+      window.deleteOutsourceFromList = async function(sheetRow, scheduleKey, workName, fieldName, cropName) {
+        if (!confirm('「' + workName + '」の依頼を削除しますか？')) return;
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          await callGAS('deleteOutsourceWork', { sheetRow, scheduleKey, workName, fieldName, cropName, userName });
+          await window.refreshOutsourceWorks_();
+          openOutsourceWorkTable();
+        } catch (e) {
+          alert('削除に失敗しました: ' + (e.message || e));
+        }
+      };
+
+      window.populateAddWorkFieldSelect_ = function() {
+        const sel = document.getElementById('addWorkField');
+        if (!sel || sel.options.length > 1) return;
+        const polys = loadedPolygons || {};
+        Object.values(polys).filter(p => p && !p.isMarker && p.name)
+          .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'))
+          .forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.name;
+            opt.dataset.polyId = f.id || '';
+            opt.textContent = f.name;
+            sel.appendChild(opt);
+          });
+      };
+
+      window.onAddWorkKindChange = function() {
+        const kind = (document.querySelector('input[name="addWorkKind"]:checked') || {}).value || 'internal';
+        const vendorWrap = document.getElementById('addWorkVendorWrap');
+        const personLabel = document.getElementById('addWorkPersonLabel');
+        const btn = document.getElementById('addWorkSubmitBtn');
+        const title = document.getElementById('addWorkModalTitle');
+        if (vendorWrap) vendorWrap.style.display = kind === 'outsource' ? 'block' : 'none';
+        if (personLabel) personLabel.textContent = kind === 'outsource' ? '👤 依頼者' : '👤 担当者';
+        if (btn) {
+          btn.textContent = kind === 'outsource' ? '依頼作業一覧へ登録' : '作業一覧へ登録';
+          btn.style.background = kind === 'outsource' ? '#1565c0' : '#2e7d32';
+        }
+        if (title) title.textContent = kind === 'outsource' ? '＋ 依頼作業を追加（外注）' : '＋ 作業を追加（自社）';
+      };
+
+      window.openAddWorkModal = function(defaultKind) {
+        const modal = document.getElementById('addWorkModal');
+        if (!modal) return;
+        populateAddWorkFieldSelect_();
+        const kind = defaultKind === 'outsource' ? 'outsource' : 'internal';
+        document.querySelectorAll('input[name="addWorkKind"]').forEach(r => {
+          r.checked = r.value === kind;
+        });
+        onAddWorkKindChange();
+        ['addWorkName', 'addWorkVendor', 'addWorkCrop', 'addWorkHours'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        const today = new Date().toISOString().slice(0, 10);
+        const dateEl = document.getElementById('addWorkSchedDate');
+        if (dateEl) dateEl.value = today;
+        const dlEl = document.getElementById('addWorkDeadline');
+        if (dlEl) dlEl.value = '';
+        const personEl = document.getElementById('addWorkPerson');
+        if (personEl) {
+          personEl.value = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+        }
+        const resDiv = document.getElementById('addWorkResult');
+        if (resDiv) resDiv.textContent = '';
+        modal.style.display = 'flex';
+      };
+
+      window.closeAddWorkModal = function() {
+        const modal = document.getElementById('addWorkModal');
+        if (modal) modal.style.display = 'none';
+      };
+
+      window.submitAddWorkFromModal = async function() {
+        const btn = document.getElementById('addWorkSubmitBtn');
+        const resDiv = document.getElementById('addWorkResult');
+        const kind = (document.querySelector('input[name="addWorkKind"]:checked') || {}).value || 'internal';
+        const workName = (document.getElementById('addWorkName')?.value || '').trim();
+        if (!workName) {
+          if (resDiv) { resDiv.textContent = '作業名を入力してください'; resDiv.style.color = '#c62828'; }
+          return;
+        }
+        const selEl = document.getElementById('addWorkField');
+        const fieldName = (selEl?.value || '').trim();
+        const selectedOpt = selEl ? selEl.options[selEl.selectedIndex] : null;
+        const polyId = selectedOpt ? (selectedOpt.dataset.polyId || '') : '';
+        const cropName = (document.getElementById('addWorkCrop')?.value || '').trim();
+        const person = (document.getElementById('addWorkPerson')?.value || '').trim();
+        const vendor = (document.getElementById('addWorkVendor')?.value || '').trim();
+        const schedDate = document.getElementById('addWorkSchedDate')?.value || '';
+        const deadline = document.getElementById('addWorkDeadline')?.value || '';
+        const hours = (document.getElementById('addWorkHours')?.value || '').trim();
+        const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+        try {
+          if (kind === 'outsource') {
+            await callGAS('addOutsourceWorkRequest', {
+              workName, fieldName, cropName, vendor, schedDate, deadline, hours,
+              requester: person, person, polyId, userName
+            });
+            if (resDiv) { resDiv.textContent = '依頼作業一覧に登録しました'; resDiv.style.color = '#1565c0'; }
+            closeAddWorkModal();
+            await refreshOutsourceWorks_();
+            openOutsourceWorkTable();
+          } else {
+            await callGAS('addWorkSchedule', {
+              workName, fieldName, cropName, person, schedDate, deadline, hours, polyId, userName
+            });
+            if (resDiv) { resDiv.textContent = '作業一覧に登録しました'; resDiv.style.color = '#2e7d32'; }
+            closeAddWorkModal();
+            const data = await callGAS('getScheduleData');
+            if (data) {
+              localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+              globalSchedules = data.activeSchedules || [];
+              if (typeof updateMapVisuals === 'function') updateMapVisuals();
+            }
+            openScheduleTable();
+          }
+        } catch (e) {
+          if (resDiv) { resDiv.textContent = '登録失敗: ' + (e.message || e); resDiv.style.color = '#c62828'; }
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            onAddWorkKindChange();
+          }
         }
       };
 

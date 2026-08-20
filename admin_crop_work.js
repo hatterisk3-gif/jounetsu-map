@@ -46,7 +46,7 @@
     return (
       '<div style="display:flex;flex-direction:column;gap:12px;height:100%;min-height:0;">' +
       '<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:10px;font-size:12px;line-height:1.45;color:#555;">' +
-      '作物ごとに「作業名」と「定植からの日数」を登録します。栽培計画と同じ半旬暦で、定植時期から何日後にどの作業が発生するかがわかります。' +
+      '定植完了を起点に、作業一覧へ出す農作業を作物ごとに登録します。日数・半旬・積算温度・積算日射・積算降水で発動できます。天気は圃場の実測・予報（先は去年同時期）から計算します。' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">' +
       '<div style="flex:1;min-width:180px;">' +
@@ -65,7 +65,15 @@
       '<select id="cwpAddWork" class="form-input" style="margin:0 0 8px;padding:8px;">' +
       '<option value="">選択...</option>' + workOpts +
       '</select>' +
-      '<div style="display:flex;gap:8px;">' +
+      '<label style="font-size:12px;font-weight:bold;color:#555;">発動条件</label>' +
+      '<select id="cwpAddTrigger" class="form-input" style="margin:0 0 8px;padding:8px;" onchange="cwpOnTriggerChange()">' +
+      '<option value="days">定植からの日数</option>' +
+      '<option value="period">定植からの半旬（1半旬＝5日）</option>' +
+      '<option value="gdd">定植からの積算温度</option>' +
+      '<option value="sun">定植からの積算日射</option>' +
+      '<option value="rain">定植からの積算降水</option>' +
+      '</select>' +
+      '<div id="cwpAddDaysWrap" style="display:flex;gap:8px;">' +
       '<div style="flex:1;">' +
       '<label style="font-size:12px;font-weight:bold;color:#555;">定植から（日）</label>' +
       '<input type="number" id="cwpAddOffset" class="form-input" style="margin:0 0 8px;padding:8px;" value="14" step="1">' +
@@ -74,11 +82,53 @@
       '<label style="font-size:12px;font-weight:bold;color:#555;">所要日数</label>' +
       '<input type="number" id="cwpAddDuration" class="form-input" style="margin:0 0 8px;padding:8px;" value="1" min="1" step="1">' +
       '</div></div>' +
+      '<div id="cwpAddPeriodWrap" style="display:none;gap:8px;">' +
+      '<div style="flex:1;">' +
+      '<label style="font-size:12px;font-weight:bold;color:#555;">定植から（半旬）</label>' +
+      '<input type="number" id="cwpAddPeriods" class="form-input" style="margin:0 0 8px;padding:8px;" value="2" step="1">' +
+      '</div>' +
+      '<div style="flex:1;">' +
+      '<label style="font-size:12px;font-weight:bold;color:#555;">所要日数</label>' +
+      '<input type="number" id="cwpAddDuration2" class="form-input" style="margin:0 0 8px;padding:8px;" value="5" min="1" step="1">' +
+      '</div></div>' +
+      '<div id="cwpAddGddWrap" style="display:none;">' +
+      '<div style="display:flex;gap:8px;">' +
+      '<div style="flex:1;"><label style="font-size:12px;font-weight:bold;color:#555;">積算温度（℃）</label>' +
+      '<input type="number" id="cwpAddGddTarget" class="form-input" style="margin:0 0 8px;padding:8px;" value="200" min="0" step="10"></div>' +
+      '<div style="flex:1;"><label style="font-size:12px;font-weight:bold;color:#555;">基準温度（℃）</label>' +
+      '<input type="number" id="cwpAddGddBase" class="form-input" style="margin:0 0 8px;padding:8px;" value="10" min="0" step="0.5"></div>' +
+      '</div>' +
+      '<label style="font-size:12px;font-weight:bold;color:#555;">所要日数</label>' +
+      '<input type="number" id="cwpAddDuration3" class="form-input" style="margin:0 0 8px;padding:8px;" value="1" min="1" step="1">' +
+      '</div>' +
+      '<div id="cwpAddSunWrap" style="display:none;">' +
+      '<div style="flex:1;"><label style="font-size:12px;font-weight:bold;color:#555;">積算日射（時間）</label>' +
+      '<input type="number" id="cwpAddSunHours" class="form-input" style="margin:0 0 8px;padding:8px;" value="100" min="0" step="5"></div>' +
+      '<label style="font-size:12px;font-weight:bold;color:#555;">所要日数</label>' +
+      '<input type="number" id="cwpAddDuration4" class="form-input" style="margin:0 0 8px;padding:8px;" value="1" min="1" step="1">' +
+      '</div>' +
+      '<div id="cwpAddRainWrap" style="display:none;">' +
+      '<div style="flex:1;"><label style="font-size:12px;font-weight:bold;color:#555;">積算降水（mm）</label>' +
+      '<input type="number" id="cwpAddRainMm" class="form-input" style="margin:0 0 8px;padding:8px;" value="30" min="0" step="1"></div>' +
+      '<label style="font-size:12px;font-weight:bold;color:#555;">所要日数</label>' +
+      '<input type="number" id="cwpAddDuration5" class="form-input" style="margin:0 0 8px;padding:8px;" value="1" min="1" step="1">' +
+      '</div>' +
+      '<div id="cwpAddRainCancelWrap" style="margin:8px 0;padding:8px;background:#e3f2fd;border-radius:6px;border:1px solid #90caf9;">' +
+      '<label style="font-size:12px;font-weight:bold;color:#1565c0;display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
+      '<input type="checkbox" id="cwpAddRainCancelEnable" onchange="cwpOnRainCancelToggle()"> 降水キャンセル（規定期間の積算降水で表示キャンセル）</label>' +
+      '<div id="cwpAddRainCancelFields" style="display:none;gap:8px;">' +
+      '<div style="flex:1;"><label style="font-size:11px;font-weight:bold;color:#555;">監視期間（定植から・日）</label>' +
+      '<input type="number" id="cwpAddRainCancelDays" class="form-input" style="margin:0 0 6px;padding:6px;" value="14" min="1" step="1"></div>' +
+      '<div style="flex:1;"><label style="font-size:11px;font-weight:bold;color:#555;">積算降水（mm）以上でキャンセル</label>' +
+      '<input type="number" id="cwpAddRainCancelMm" class="form-input" style="margin:0 0 6px;padding:6px;" value="10" min="0" step="0.5"></div>' +
+      '</div>' +
+      '<div style="font-size:10px;color:#666;line-height:1.35;">例: 定植+14日の散布で、14日間に10mm超の雨なら [キャンセル] 表示</div>' +
+      '</div>' +
       '<label style="font-size:12px;font-weight:bold;color:#555;">備考</label>' +
       '<input type="text" id="cwpAddNote" class="form-input" style="margin:0 0 8px;padding:8px;" placeholder="任意">' +
       '<button type="button" onclick="cwpAddEntry()" style="width:100%;background:#43a047;color:#fff;border:none;border-radius:4px;padding:10px;font-weight:bold;cursor:pointer;">リストへ追加</button>' +
       '<div style="margin-top:10px;font-size:11px;color:#666;background:#f1f8e9;border-radius:6px;padding:8px;line-height:1.4;">' +
-      '例: 定植+14日 → 土寄せ　／　マイナス値で定植前の作業も可' +
+      '例: 定植+14日で土寄せ ／ 積算200℃で収穫 ／ 積算日射100h ／ 積算降水30mm。日数系＋降水キャンセルで「雨が多ければ散布をキャンセル表示」も可能。' +
       '</div></div>' +
       '<div style="flex:1.4;min-width:320px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;overflow:auto;">' +
       '<div style="font-weight:bold;color:#444;margin-bottom:8px;">設定済み作業（定植起点）</div>' +
@@ -126,6 +176,28 @@
     window.cwpRenderEntries_();
   };
 
+  window.cwpOnRainCancelToggle = function () {
+    const on = !!(document.getElementById('cwpAddRainCancelEnable') || {}).checked;
+    const fields = document.getElementById('cwpAddRainCancelFields');
+    if (fields) fields.style.display = on ? 'flex' : 'none';
+  };
+
+  window.cwpOnTriggerChange = function () {
+    const trigger = ((document.getElementById('cwpAddTrigger') || {}).value || 'days');
+    const days = document.getElementById('cwpAddDaysWrap');
+    const period = document.getElementById('cwpAddPeriodWrap');
+    const gdd = document.getElementById('cwpAddGddWrap');
+    const sun = document.getElementById('cwpAddSunWrap');
+    const rain = document.getElementById('cwpAddRainWrap');
+    const cancelWrap = document.getElementById('cwpAddRainCancelWrap');
+    if (days) days.style.display = trigger === 'days' ? 'flex' : 'none';
+    if (period) period.style.display = trigger === 'period' ? 'flex' : 'none';
+    if (gdd) gdd.style.display = trigger === 'gdd' ? 'block' : 'none';
+    if (sun) sun.style.display = trigger === 'sun' ? 'block' : 'none';
+    if (rain) rain.style.display = trigger === 'rain' ? 'block' : 'none';
+    if (cancelWrap) cancelWrap.style.display = (trigger === 'rain') ? 'none' : 'block';
+  };
+
   window.cwpAddEntry = function () {
     const st = window._cwpState;
     if (!st || !st.cropName) {
@@ -137,17 +209,60 @@
       customAlert('作業名を選んでください');
       return;
     }
-    const offset = Number((document.getElementById('cwpAddOffset') || {}).value);
-    const duration = Number((document.getElementById('cwpAddDuration') || {}).value);
+    const trigger = ((document.getElementById('cwpAddTrigger') || {}).value || 'days');
     const note = ((document.getElementById('cwpAddNote') || {}).value || '').trim();
-    st.entries.push({
+    let duration = 1;
+    const entry = {
       id: 'CWP-' + Date.now().toString(36),
       workName: workName,
-      offsetDays: isNaN(offset) ? 0 : Math.round(offset),
-      durationDays: (isNaN(duration) || duration < 1) ? 1 : Math.round(duration),
+      trigger: trigger,
+      offsetDays: 0,
+      offsetPeriods: 0,
+      gddTarget: 0,
+      gddBase: 10,
+      sunTargetHours: 0,
+      rainTargetMm: 0,
+      rainCancelMm: 0,
+      rainCancelDays: 0,
       note: note
-    });
-    st.entries.sort((a, b) => a.offsetDays - b.offsetDays || a.workName.localeCompare(b.workName, 'ja'));
+    };
+    if (trigger === 'period') {
+      const periods = Number((document.getElementById('cwpAddPeriods') || {}).value);
+      duration = Number((document.getElementById('cwpAddDuration2') || {}).value);
+      entry.offsetPeriods = isNaN(periods) ? 0 : Math.round(periods);
+      entry.offsetDays = entry.offsetPeriods * 5;
+    } else if (trigger === 'gdd') {
+      const target = Number((document.getElementById('cwpAddGddTarget') || {}).value);
+      const base = Number((document.getElementById('cwpAddGddBase') || {}).value);
+      duration = Number((document.getElementById('cwpAddDuration3') || {}).value);
+      entry.gddTarget = isNaN(target) ? 0 : Math.round(target);
+      entry.gddBase = isNaN(base) ? 10 : base;
+      entry.offsetDays = Math.max(1, Math.round(entry.gddTarget / 8));
+    } else if (trigger === 'sun') {
+      const hours = Number((document.getElementById('cwpAddSunHours') || {}).value);
+      duration = Number((document.getElementById('cwpAddDuration4') || {}).value);
+      entry.sunTargetHours = isNaN(hours) ? 0 : hours;
+      entry.offsetDays = Math.max(1, Math.round(entry.sunTargetHours / 5));
+    } else if (trigger === 'rain') {
+      const mm = Number((document.getElementById('cwpAddRainMm') || {}).value);
+      duration = Number((document.getElementById('cwpAddDuration5') || {}).value);
+      entry.rainTargetMm = isNaN(mm) ? 0 : mm;
+      entry.offsetDays = Math.max(1, Math.round(entry.rainTargetMm / 3));
+    } else {
+      const offset = Number((document.getElementById('cwpAddOffset') || {}).value);
+      duration = Number((document.getElementById('cwpAddDuration') || {}).value);
+      entry.offsetDays = isNaN(offset) ? 0 : Math.round(offset);
+    }
+    const cancelOn = !!(document.getElementById('cwpAddRainCancelEnable') || {}).checked;
+    if (cancelOn && trigger !== 'rain') {
+      const cDays = Number((document.getElementById('cwpAddRainCancelDays') || {}).value);
+      const cMm = Number((document.getElementById('cwpAddRainCancelMm') || {}).value);
+      entry.rainCancelDays = isNaN(cDays) ? 0 : Math.round(cDays);
+      entry.rainCancelMm = isNaN(cMm) ? 0 : cMm;
+    }
+    entry.durationDays = (isNaN(duration) || duration < 1) ? 1 : Math.round(duration);
+    st.entries.push(entry);
+    st.entries.sort((a, b) => (Number(a.offsetDays) || 0) - (Number(b.offsetDays) || 0) || a.workName.localeCompare(b.workName, 'ja'));
     st.dirty = true;
     window.cwpRenderEntries_();
   };
@@ -177,16 +292,39 @@
       return;
     }
     el.innerHTML = list.map(e => {
-      const off = Number(e.offsetDays) || 0;
-      const offLabel = off === 0 ? '定植当日' : (off > 0 ? '定植+' + off + '日' : '定植' + off + '日');
+      const trigger = String(e.trigger || 'days');
+      let offLabel = '';
+      if (trigger === 'period') {
+        const n = Number(e.offsetPeriods != null ? e.offsetPeriods : Math.round((Number(e.offsetDays) || 0) / 5));
+        offLabel = n === 0 ? '定植当半旬' : ('定植+' + n + '半旬');
+      } else if (trigger === 'gdd') {
+        offLabel = '積算' + (e.gddTarget || 0) + '℃（基準' + (e.gddBase != null ? e.gddBase : 10) + '℃）';
+      } else if (trigger === 'sun') {
+        offLabel = '積算日射' + (e.sunTargetHours || 0) + 'h';
+      } else if (trigger === 'rain') {
+        offLabel = '積算降水' + (e.rainTargetMm || 0) + 'mm';
+      } else {
+        const off = Number(e.offsetDays) || 0;
+        offLabel = off === 0 ? '定植当日' : (off > 0 ? '定植+' + off + '日' : '定植' + off + '日');
+      }
+      const previewDays = trigger === 'period'
+        ? (Number(e.offsetPeriods) || 0) * 5
+        : (Number(e.offsetDays) || 0);
+      const exampleLine = (trigger === 'gdd' || trigger === 'sun' || trigger === 'rain')
+        ? '到達日は定植後の実測・予報（先は去年同時期）から計算'
+        : ('例: 4月定植 → ' + previewOffset(4, previewDays) + ' ／ 9月定植 → ' + previewOffset(9, previewDays));
+      const cancelLine = (Number(e.rainCancelMm) > 0 && Number(e.rainCancelDays) > 0)
+        ? ('降水キャンセル: 定植+' + e.rainCancelDays + '日間で' + e.rainCancelMm + 'mm以上')
+        : '';
       return (
         '<div style="border:1px solid #eee;border-radius:6px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">' +
         '<div><div style="font-weight:bold;color:#333;">' + esc(e.workName) +
         ' <span style="font-size:11px;background:#e8f5e9;color:#2e7d32;padding:1px 6px;border-radius:4px;">' + esc(offLabel) + '</span></div>' +
         '<div style="font-size:12px;color:#666;margin-top:4px;">所要 ' + esc(e.durationDays || 1) + '日' +
         (e.note ? ' ／ ' + esc(e.note) : '') +
-        '<br><span style="color:#888;">例: 4月定植 → ' + esc(previewOffset(4, off)) +
-        ' ／ 9月定植 → ' + esc(previewOffset(9, off)) + '</span></div></div>' +
+        '<br><span style="color:#888;">' + esc(exampleLine) + '</span>' +
+        (cancelLine ? '<br><span style="color:#1565c0;">' + esc(cancelLine) + '</span>' : '') +
+        '</div></div>' +
         '<button type="button" onclick="cwpRemoveEntry(\'' + esc(e.id) + '\')" style="background:#ffebee;color:#c62828;border:1px solid #ef9a9a;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer;flex-shrink:0;">削除</button>' +
         '</div>'
       );
@@ -202,7 +340,12 @@
         '</tr>' +
         [3, 4, 5, 8, 9, 10].map(m =>
           '<tr><td style="border:1px solid #ddd;padding:4px;font-weight:bold;">' + m + '月上前</td>' +
-          list.map(e => '<td style="border:1px solid #ddd;padding:4px;">' + esc(previewOffset(m, e.offsetDays)) + '</td>').join('') +
+          list.map(e => {
+            const t = String(e.trigger || 'days');
+            if (t === 'gdd' || t === 'sun' || t === 'rain') return '<td style="border:1px solid #ddd;padding:4px;color:#1565c0;">実測積算</td>';
+            const days = t === 'period' ? (Number(e.offsetPeriods) || 0) * 5 : (Number(e.offsetDays) || 0);
+            return '<td style="border:1px solid #ddd;padding:4px;">' + esc(previewOffset(m, days)) + '</td>';
+          }).join('') +
           '</tr>'
         ).join('') +
         '</table></div>';

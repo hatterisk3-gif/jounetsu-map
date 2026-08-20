@@ -9040,7 +9040,7 @@ function renderSavedPlanListHtml_(list, isLoadMode) {
                   </div>
                   <div style="display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end;">
                     <button type="button" onclick="event.stopPropagation(); selectHistoryPlan('${y}', '${c}', '${pt}', '${pn}')" style="background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer;">📂 読込</button>
-                    ${isLoadMode ? '' : `<button type="button" onclick="event.stopPropagation(); executeSavedCultivationGroup('${y}', '${c}', null, '${pt}', '${pn}')" ${canExec ? '' : 'disabled'} title="${canExec ? '未実行計画を作業予定へ' : '未実行がありません'}" style="background:${canExec ? '#4CAF50' : '#bbb'}; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:${canExec ? 'pointer' : 'not-allowed'};">▶️ 実行</button>`}
+                    ${isLoadMode ? '' : `<button type="button" class="cp-plan-exec-btn" data-can-exec="${canExec ? '1' : '0'}" onclick="event.stopPropagation(); executeSavedCultivationGroup('${y}', '${c}', null, '${pt}', '${pn}', event)" ${canExec ? '' : 'disabled'} title="${canExec ? '未実行計画を作業予定へ' : '未実行がありません'}" style="background:${canExec ? '#4CAF50' : '#bbb'}; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:${canExec ? 'pointer' : 'not-allowed'};">▶️ 実行</button>`}
                     <button type="button" onclick="event.stopPropagation(); deleteSavedCultivationGroup('${y}', '${c}', '${pt}', '${pn}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:8px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗑 削除</button>
                   </div>
                 </div>
@@ -9969,31 +9969,68 @@ function showCpTagConfirmModal(year, crop, plans, planIds, planType, planName) {
     modal.style.display = 'flex';
 }
 
+let cpConfirmExecuteBusy = false;
+
 async function confirmCpTagExecution() {
-    if (!cpPendingTagExecution) return;
+    if (cpConfirmExecuteBusy || !cpPendingTagExecution) return;
+    cpConfirmExecuteBusy = true;
     const pending = cpPendingTagExecution;
     const btn = document.getElementById('cpConfirmExecuteBtn');
     if (btn) {
         btn.disabled = true;
+        btn.style.pointerEvents = 'none';
         btn.textContent = '実行中...';
     }
     const tagModal = document.getElementById('cpTagConfirmModal');
     if (tagModal) tagModal.style.display = 'none';
-    const ok = await runExecuteCultivationPlans(
-        pending.year, pending.crop, pending.planIds, pending.planType, pending.planName
-    );
-    if (ok) {
-        cpPendingTagExecution = null;
-        cpCropHarvestSummaryCache = null;
-        await showPlanListModal({ mode: 'manage' });
-    } else if (btn) {
-        if (tagModal) tagModal.style.display = 'flex';
-        btn.disabled = false;
-        btn.textContent = 'このタグで実行';
+    try {
+        const ok = await runExecuteCultivationPlans(
+            pending.year, pending.crop, pending.planIds, pending.planType, pending.planName
+        );
+        if (ok) {
+            cpPendingTagExecution = null;
+            cpCropHarvestSummaryCache = null;
+            await showPlanListModal({ mode: 'manage' });
+        } else if (btn) {
+            if (tagModal) tagModal.style.display = 'flex';
+            btn.disabled = false;
+            btn.style.pointerEvents = '';
+            btn.textContent = 'このタグで実行';
+        }
+    } finally {
+        cpConfirmExecuteBusy = false;
     }
 }
 
-async function executeSavedCultivationGroup(year, crop, planIds, planType, planName) {
+let cpExecutePreviewBusy = false;
+
+function setCpPlanExecButtonsBusy_(busy, activeBtn) {
+    const buttons = document.querySelectorAll('.cp-plan-exec-btn');
+    buttons.forEach(btn => {
+        const can = btn.getAttribute('data-can-exec') !== '0';
+        if (busy) {
+            btn.disabled = true;
+            btn.style.pointerEvents = 'none';
+            btn.style.cursor = 'not-allowed';
+            if (btn === activeBtn) btn.textContent = '確認中...';
+            else btn.style.opacity = '0.65';
+            return;
+        }
+        btn.disabled = !can;
+        btn.style.pointerEvents = '';
+        btn.style.cursor = can ? 'pointer' : 'not-allowed';
+        btn.style.opacity = '';
+        btn.textContent = '▶️ 実行';
+    });
+}
+
+async function executeSavedCultivationGroup(year, crop, planIds, planType, planName, evt) {
+    if (cpExecutePreviewBusy) return;
+    cpExecutePreviewBusy = true;
+    const btn = (evt && evt.currentTarget)
+        || (evt && evt.target && evt.target.closest && evt.target.closest('.cp-plan-exec-btn'))
+        || null;
+    setCpPlanExecButtonsBusy_(true, btn);
     try {
         const res = await callGAS('previewCultivationPlanTags', {
             year: year,
@@ -10013,6 +10050,9 @@ async function executeSavedCultivationGroup(year, crop, planIds, planType, planN
         );
     } catch (e) {
         alert('タグ割り当て確認エラー: ' + e.message);
+    } finally {
+        cpExecutePreviewBusy = false;
+        setCpPlanExecButtonsBusy_(false);
     }
 }
 

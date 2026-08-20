@@ -100,27 +100,165 @@
     <div class="modal-content">
       <div class="modal-header">
         <span>📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
-        <span style="cursor:pointer; font-size:24px;"
-          onclick="document.getElementById('scheduleModal').style.display='none'">×</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button type="button" onclick="openAddWorkModal('internal')" style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">＋作業</button>
+          <button type="button" onclick="openOutsourceWorkTable()" style="background:#1565c0;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">📤 依頼一覧</button>
+          <span style="cursor:pointer; font-size:24px;" onclick="document.getElementById('scheduleModal').style.display='none'">×</span>
+        </div>
+      </div>
+      <div id="scheduleModalTabs" style="display:flex;gap:6px;padding:8px 10px;background:#e3f2fd;border-bottom:1px solid #90caf9;">
+        <button type="button" id="schedTabTasks" class="sched-view-tab active" onclick="switchScheduleView('tasks')">📋 作業一覧</button>
+        <button type="button" id="schedTabField" class="sched-view-tab" onclick="switchScheduleView('field')">🌾 圃場進捗</button>
+        <button type="button" id="schedTabTag" class="sched-view-tab" onclick="switchScheduleView('tag')">🏷️ TAG進捗</button>
       </div>
       <div class="modal-body">
-        <table id="scheduleTable">
+        <div id="scheduleViewTasks">
+          <table id="scheduleTable">
+            <thead>
+              <tr>
+                <th>ステータス</th>
+                <th>作業名</th>
+                <th>部署</th>
+                <th>作物・品種・TAG</th>
+                <th>圃場/看板名</th>
+                <th>予定日</th>
+                <th>期限日</th>
+                <th>枚数・期間</th>
+                <th>タグ・担当</th>
+                <th style="width:108px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleTableBody">
+            </tbody>
+          </table>
+        </div>
+        <div id="scheduleViewFieldProgress" style="display:none;">
+          <div id="fieldProgressHint" style="font-size:12px;color:#555;margin-bottom:8px;">実行済み栽培計画について、品目別作業設定の順序で圃場ごとの進捗を表示します。</div>
+          <table id="fieldProgressTable" class="progress-summary-table">
+            <thead>
+              <tr>
+                <th>圃場</th>
+                <th>作物</th>
+                <th>品種</th>
+                <th>TAG</th>
+                <th>進捗</th>
+                <th>次の作業</th>
+                <th>品目作業</th>
+              </tr>
+            </thead>
+            <tbody id="fieldProgressTableBody"></tbody>
+          </table>
+        </div>
+        <div id="scheduleViewTagProgress" style="display:none;">
+          <div id="tagProgressHint" style="font-size:12px;color:#555;margin-bottom:8px;">実行済み栽培計画について、TAGごとに計画上の作業進捗を表示します。</div>
+          <table id="tagProgressTable" class="progress-summary-table">
+            <thead>
+              <tr>
+                <th>TAG</th>
+                <th>作物</th>
+                <th>品種</th>
+                <th>圃場</th>
+                <th>進捗</th>
+                <th>次の作業</th>
+                <th>品目作業</th>
+              </tr>
+            </thead>
+            <tbody id="tagProgressTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="outsourceWorkModal">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#1565c0;">
+        <span>📤 依頼作業一覧（外注）</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button type="button" onclick="openAddWorkModal('outsource')" style="background:#fff;color:#1565c0;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">＋依頼追加</button>
+          <button type="button" onclick="document.getElementById('outsourceWorkModal').style.display='none';openScheduleTable();" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">📋 作業一覧</button>
+          <span style="cursor:pointer; font-size:24px;" onclick="document.getElementById('outsourceWorkModal').style.display='none'">×</span>
+        </div>
+      </div>
+      <div class="modal-body">
+        <table id="outsourceWorkTable">
           <thead>
             <tr>
               <th>作業名</th>
-              <th>部署</th>
-              <th>作物・品種・TAG</th>
+              <th>依頼先</th>
+              <th>作物</th>
               <th>圃場/看板名</th>
               <th>予定日</th>
               <th>期限日</th>
               <th>枚数・期間</th>
-              <th>タグ・担当</th>
-              <th style="width:64px;">操作</th>
+              <th>依頼者</th>
+              <th style="width:108px;">操作</th>
             </tr>
           </thead>
-          <tbody id="scheduleTableBody">
-          </tbody>
+          <tbody id="outsourceWorkTableBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="addWorkModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10030; align-items:center; justify-content:center;">
+    <div style="background:#fff; width:min(420px,94vw); border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25);">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#2e7d32; color:#fff;">
+        <span id="addWorkModalTitle" style="font-weight:bold;">＋ 作業を追加</span>
+        <span style="cursor:pointer; font-size:22px;" onclick="closeAddWorkModal()">×</span>
+      </div>
+      <div style="padding:14px 16px;">
+        <div style="margin-bottom:10px;">
+          <label style="font-size:12px;font-weight:bold;color:#555;display:block;margin-bottom:4px;">実施区分</label>
+          <div style="display:flex;gap:8px;">
+            <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:2px solid #a5d6a7;border-radius:8px;cursor:pointer;background:#f1f8e9;">
+              <input type="radio" name="addWorkKind" value="internal" checked onchange="onAddWorkKindChange()"> 自社
+            </label>
+            <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:2px solid #90caf9;border-radius:8px;cursor:pointer;background:#e3f2fd;">
+              <input type="radio" name="addWorkKind" value="outsource" onchange="onAddWorkKindChange()"> 外注
+            </label>
+          </div>
+        </div>
+        <div style="margin-bottom:8px;">
+          <label style="font-size:11px;color:#555;">🚜 作業名 <span style="color:red;">*</span></label>
+          <input type="text" id="addWorkName" placeholder="例: 防除、除草、定植" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div id="addWorkVendorWrap" style="display:none;margin-bottom:8px;">
+          <label style="font-size:11px;color:#555;">🏢 依頼先</label>
+          <input type="text" id="addWorkVendor" placeholder="例: ○○農園、○○業者" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:8px;">
+          <label style="font-size:11px;color:#555;">📍 圃場名</label>
+          <select id="addWorkField" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+            <option value="">圃場を選択 (任意)</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <div style="flex:1;">
+            <label style="font-size:11px;color:#555;">🌱 作物名</label>
+            <input type="text" id="addWorkCrop" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px;color:#555;" id="addWorkPersonLabel">👤 担当者</label>
+            <input type="text" id="addWorkPerson" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <div style="flex:1;">
+            <label style="font-size:11px;color:#555;">📅 予定日</label>
+            <input type="date" id="addWorkSchedDate" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px;color:#555;">⏳ 期限日</label>
+            <input type="date" id="addWorkDeadline" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;color:#555;">📝 枚数・時間 / 備考</label>
+          <input type="text" id="addWorkHours" placeholder="例: 2h, 10枚" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <button type="button" id="addWorkSubmitBtn" onclick="submitAddWorkFromModal()" style="width:100%;background:#2e7d32;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
+        <div id="addWorkResult" style="margin-top:8px;font-size:12px;font-weight:bold;"></div>
       </div>
     </div>
   </div>
@@ -244,6 +382,10 @@
     <button type="button" onclick="openScheduleTable()">
       <div style="font-size:20px;">📋</div>
       <div style="font-weight:bold;">作業一覧</div>
+    </button>
+    <button type="button" onclick="openOutsourceWorkTable()">
+      <div style="font-size:20px;">📤</div>
+      <div style="font-weight:bold;">依頼作業</div>
     </button>
     <button type="button" onclick="openWorkRecordAnalysisModal()">
       <div style="font-size:20px;">📊</div>
@@ -426,7 +568,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1787136000000';
+    const cacheBust = '1787575200000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',

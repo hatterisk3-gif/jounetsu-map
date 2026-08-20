@@ -562,6 +562,9 @@
     try { await callGAS('dayPlan_delete', { id: id }); } catch (e) {}
     window._dayPlan.items = (window._dayPlan.items || []).filter(x => x.id !== id);
     window.dpRenderGrid();
+    if (typeof window.refreshScheduleDataCache_ === 'function') {
+      window.refreshScheduleDataCache_();
+    }
   };
 
   window.dpSaveBlock = async function (approveEstimate) {
@@ -603,6 +606,9 @@
     }
     window.dpCloseEditor();
     window.dpLoad();
+    if (typeof window.refreshScheduleDataCache_ === 'function') {
+      window.refreshScheduleDataCache_();
+    }
   };
 
   document.addEventListener('input', function (e) {
