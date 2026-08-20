@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1786669000000">
+  <link rel="stylesheet" href="schedule.css?v=1787584800000">
 </head>
 
 <body>
@@ -101,9 +101,11 @@
       <div class="modal-header">
         <span>📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
         <div style="display:flex;align-items:center;gap:8px;">
+          <button type="button" id="scheduleFullscreenBtn" onclick="toggleScheduleModalFullscreen()" title="全画面表示" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">⛶ 全画面</button>
+          <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">🏢 部署設定</button>
           <button type="button" onclick="openAddWorkModal('internal')" style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">＋作業</button>
           <button type="button" onclick="openOutsourceWorkTable()" style="background:#1565c0;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">📤 依頼一覧</button>
-          <span style="cursor:pointer; font-size:24px;" onclick="document.getElementById('scheduleModal').style.display='none'">×</span>
+          <span style="cursor:pointer; font-size:24px;" onclick="closeScheduleModal()">×</span>
         </div>
       </div>
       <div id="scheduleModalTabs" style="display:flex;gap:6px;padding:8px 10px;background:#e3f2fd;border-bottom:1px solid #90caf9;">
@@ -113,9 +115,17 @@
       </div>
       <div class="modal-body">
         <div id="scheduleViewTasks">
+          <div id="scheduleBulkBar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;padding:8px 10px;background:#fff;border:1px solid #e0e0e0;border-radius:6px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:bold;color:#333;cursor:pointer;">
+              <input type="checkbox" id="schedSelectAll" onchange="toggleSchedSelectAll_(this.checked)"> すべて選択
+            </label>
+            <button type="button" id="schedBulkCompleteBtn" onclick="bulkCompleteSelectedSchedules_()" disabled style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:bold;cursor:pointer;opacity:0.55;">✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)</button>
+            <span id="schedBulkHint" style="font-size:11px;color:#666;">チェックした作業を一括で完了にします</span>
+          </div>
           <table id="scheduleTable">
             <thead>
               <tr>
+                <th style="width:36px;text-align:center;"><input type="checkbox" id="schedSelectAllHead" title="すべて選択" onchange="toggleSchedSelectAll_(this.checked)"></th>
                 <th>ステータス</th>
                 <th>作業名</th>
                 <th>部署</th>
@@ -165,6 +175,39 @@
             </thead>
             <tbody id="tagProgressTableBody"></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="workDeptSettingsModal">
+    <div class="modal-content" style="max-width:720px;">
+      <div class="modal-header" style="background:#455a64;">
+        <span>🏢 作業の部署設定</span>
+        <span style="cursor:pointer;font-size:24px;" onclick="closeWorkDeptSettingsModal()">×</span>
+      </div>
+      <div class="modal-body">
+        <div style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
+          作業名ごとに担当部署（作業カテゴリ）を設定します。保存すると<strong>作業マスタ</strong>と<strong>未完了の作業予定</strong>に反映されます。
+        </div>
+        <input type="text" id="workDeptSettingsFilter" placeholder="作業名で絞り込み..." oninput="filterWorkDeptSettingsRows_()" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;margin-bottom:10px;font-size:13px;">
+        <div style="overflow:auto;max-height:55vh;">
+          <table id="workDeptSettingsTable" class="progress-summary-table">
+            <thead>
+              <tr>
+                <th>作業名</th>
+                <th>担当部署</th>
+                <th>備考</th>
+              </tr>
+            </thead>
+            <tbody id="workDeptSettingsTableBody">
+              <tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">読み込み中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button type="button" onclick="closeWorkDeptSettingsModal()" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">キャンセル</button>
+          <button type="button" id="workDeptSettingsSaveBtn" onclick="saveWorkDeptSettings_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">保存する</button>
         </div>
       </div>
     </div>
@@ -568,7 +611,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1787575200000';
+    const cacheBust = '1787584800000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',

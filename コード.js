@@ -72,6 +72,9 @@ function doPost(e) {
     else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
     else if (action === "getSowingProgress") result = getSowingProgress(params);
     else if (action === "getCropWorkProgressSummary") result = getCropWorkProgressSummary(params);
+    else if (action === "getWorkDeptSettings") result = getWorkDeptSettings(params);
+    else if (action === "updateWorkDeptSettings") result = updateWorkDeptSettings(params);
+    else if (action === "updateScheduleRowDept") result = updateScheduleRowDept(params);
     else if (action === "getWorkRecordAnalysis") result = getWorkRecordAnalysis(params);
     else if (action === "saveManualData") result = saveManualData(params.manual);
     else if (action === "getManualList") result = getManualList();
@@ -95,6 +98,7 @@ function doPost(e) {
     else if (action === "deleteOutsourceWork") result = deleteOutsourceWork(params);
     else if (action === "deleteWorkSchedule") result = deleteWorkSchedule(params);
     else if (action === "completeWorkSchedule") result = completeWorkSchedule(params);
+    else if (action === "bulkCompleteWorkSchedule") result = bulkCompleteWorkSchedule(params);
     else if (action === "delegateCompleteWork") result = delegateCompleteWork(params);
     else if (action === "saveReport") result = saveReportData(params.id, params.name, params.author, params.text, params.photos);
     else if (action === "deleteInventoryHistory") result = deleteInventoryHistory(params);
@@ -6029,6 +6033,216 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
 // ==========================================
 // 作業予定と地図ステータスの取得（部署自動判定を追加）
 // ==========================================
+function findWorkDeptColumnIndex_(headers) {
+  const candidates = ['担当部署', 'カテゴリ', '作業カテゴリ', 'カテゴリー', '作業カテゴリー'];
+  for (let i = 0; i < candidates.length; i++) {
+    const idx = headers.indexOf(candidates[i]);
+    if (idx >= 0) return idx;
+  }
+  const idxName = headers.indexOf('作業名');
+  if (idxName === 0 && headers.length > 1) return 1;
+  return -1;
+}
+
+function getWorkCategoryList_() {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('作業カテゴリマスタ');
+  let list = [];
+  if (sheet && sheet.getLastRow() > 1) {
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+    data.forEach(function(r) {
+      const n = String(r[0] || '').trim();
+      if (n) list.push(n);
+    });
+  }
+  if (!list.length) list = ['圃場作業', '事務作業', '保全・整備'];
+  ['運営', '未設定'].forEach(function(x) {
+    if (list.indexOf(x) < 0) list.push(x);
+  });
+  return list;
+}
+
+/** 作業マスタから 作業名→部署 の辞書を構築 */
+function buildWorkDeptMapFromMaster_() {
+  const map = {};
+  const ss = TENANT_SS;
+  const workMasterSheet = ss.getSheetByName('作業マスタ');
+  if (!workMasterSheet || workMasterSheet.getLastRow() <= 1) return map;
+  try { ensureWorkMasterHeaders_(workMasterSheet); } catch (e) {}
+  const wData = workMasterSheet.getDataRange().getValues();
+  const headers = wData[0].map(function(h) { return String(h || '').trim(); });
+  const idxName = headers.indexOf('作業名');
+  const idxDept = findWorkDeptColumnIndex_(headers);
+  for (let i = 1; i < wData.length; i++) {
+    const name = idxName >= 0 ? String(wData[i][idxName] || '').trim() : String(wData[i][0] || '').trim();
+    if (!name) continue;
+    const dept = idxDept >= 0 ? (String(wData[i][idxDept] || '').trim() || '未分類') : '未分類';
+    map[name] = dept;
+    if (name === '播種') map.__SOWING__ = dept;
+  }
+  return map;
+}
+
+function resolveScheduleWorkDept_(workName, workDeptMap) {
+  const wn = String(workName || '').trim();
+  if (!wn) return '未設定';
+  if (wn.indexOf('⚠️') >= 0) return '運営';
+  if (workDeptMap[wn]) return workDeptMap[wn];
+  if (wn.indexOf('播種') === 0 && workDeptMap.__SOWING__) return workDeptMap.__SOWING__;
+  if (wn === '調達') return workDeptMap['調達'] || workDeptMap.__SOWING__ || '未設定';
+  return workDeptMap[wn] || '未設定';
+}
+
+function scheduleWorkNameMatchesDeptKey_(rowWorkName, keyWorkName) {
+  const row = String(rowWorkName || '').trim();
+  const key = String(keyWorkName || '').trim();
+  if (!row || !key) return false;
+  if (row === key) return true;
+  if (key === '播種' && row.indexOf('播種') === 0) return true;
+  return false;
+}
+
+/** 作業一覧用：部署マスタ一覧取得 */
+function getWorkDeptSettings(params) {
+  const workDeptMap = buildWorkDeptMapFromMaster_();
+  const ss = TENANT_SS;
+  const workCategories = getWorkCategoryList_();
+  const rows = [];
+  const seen = {};
+
+  const workSheet = ss.getSheetByName('作業マスタ');
+  if (workSheet && workSheet.getLastRow() > 1) {
+    try {
+      readWorkMasterList_(workSheet).forEach(function(w) {
+        const name = String(w.name || '').trim();
+        if (!name || seen[name]) return;
+        seen[name] = true;
+        rows.push({
+          workName: name,
+          dept: String(w.category || workDeptMap[name] || '未設定').trim() || '未設定',
+          inMaster: true
+        });
+      });
+    } catch (e) {}
+  }
+
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (schedSheet && schedSheet.getLastRow() > 1) {
+    const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+    sData.forEach(function(row) {
+      if (row[8]) return;
+      const name = String(row[0] || '').trim();
+      if (!name) return;
+      const key = (name.indexOf('播種') === 0) ? '播種' : name;
+      if (seen[key]) return;
+      seen[key] = true;
+      const dept = String(row[1] || '').trim() || resolveScheduleWorkDept_(name, workDeptMap);
+      rows.push({
+        workName: key,
+        dept: dept,
+        inMaster: !!(workDeptMap[key] || (key === '播種' && workDeptMap.__SOWING__))
+      });
+    });
+  }
+
+  rows.sort(function(a, b) {
+    return String(a.workName).localeCompare(String(b.workName), 'ja');
+  });
+
+  return { success: true, workCategories: workCategories, rows: rows };
+}
+
+/** 作業名ごとの部署を更新（作業マスタ＋未完了の作業予定） */
+function updateWorkDeptSettings(params) {
+  const updates = (params && params.updates) || [];
+  const syncSchedule = !(params && params.syncScheduleRows === false);
+  const userName = String((params && params.userName) || '').trim() || 'システム';
+  if (!updates.length) return { success: true, updatedMaster: 0, updatedSchedule: 0 };
+
+  const ss = TENANT_SS;
+  let updatedMaster = 0;
+  let updatedSchedule = 0;
+
+  const workSheet = ss.getSheetByName('作業マスタ');
+  if (workSheet) {
+    try { ensureWorkMasterHeaders_(workSheet); } catch (e) {}
+    const wData = workSheet.getDataRange().getValues();
+    const headers = wData[0].map(function(h) { return String(h || '').trim(); });
+    const idxName = headers.indexOf('作業名');
+    let idxDept = findWorkDeptColumnIndex_(headers);
+    if (idxDept < 0) {
+      idxDept = headers.length;
+      workSheet.getRange(1, idxDept + 1).setValue('カテゴリ');
+      headers.push('カテゴリ');
+    }
+    updates.forEach(function(u) {
+      const workName = String(u.workName || '').trim();
+      const dept = String(u.dept || '').trim();
+      if (!workName || !dept) return;
+      let found = false;
+      for (let i = 1; i < wData.length; i++) {
+        const nm = idxName >= 0 ? String(wData[i][idxName] || '').trim() : String(wData[i][0] || '').trim();
+        if (nm !== workName) continue;
+        workSheet.getRange(i + 1, idxDept + 1).setValue(dept);
+        wData[i][idxDept] = dept;
+        updatedMaster++;
+        found = true;
+        break;
+      }
+      if (!found) {
+        const row = new Array(headers.length).fill('');
+        if (idxName >= 0) row[idxName] = workName;
+        else row[0] = workName;
+        row[idxDept] = dept;
+        workSheet.appendRow(row);
+        wData.push(row);
+        updatedMaster++;
+      }
+      writeLog(userName, '部署設定', workName, dept);
+    });
+  }
+
+  if (syncSchedule) {
+    const schedSheet = ss.getSheetByName('作業予定');
+    if (schedSheet && schedSheet.getLastRow() > 1) {
+      const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+      updates.forEach(function(u) {
+        const workName = String(u.workName || '').trim();
+        const dept = String(u.dept || '').trim();
+        if (!workName || !dept) return;
+        for (let i = 0; i < sData.length; i++) {
+          if (sData[i][8]) continue;
+          if (!scheduleWorkNameMatchesDeptKey_(sData[i][0], workName)) continue;
+          schedSheet.getRange(i + 2, 2).setValue(dept);
+          sData[i][1] = dept;
+          updatedSchedule++;
+        }
+      });
+    }
+  }
+
+  return { success: true, updatedMaster: updatedMaster, updatedSchedule: updatedSchedule };
+}
+
+/** 作業予定1行の部署だけ更新 */
+function updateScheduleRowDept(params) {
+  const sheetRow = Number(params && params.sheetRow);
+  const dept = String((params && params.dept) || '').trim();
+  const userName = String((params && params.userName) || '').trim() || 'システム';
+  if (!sheetRow || sheetRow < 2) throw new Error('行番号が不正です');
+  if (!dept) throw new Error('部署を指定してください');
+
+  const ss = TENANT_SS;
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) throw new Error('作業予定シートがありません');
+  if (sheetRow > schedSheet.getLastRow()) throw new Error('対象行が見つかりません');
+
+  const workName = String(schedSheet.getRange(sheetRow, 1).getValue() || '').trim();
+  schedSheet.getRange(sheetRow, 2).setValue(dept);
+  writeLog(userName, '作業予定部署変更', workName, dept);
+  return { success: true, sheetRow: sheetRow, dept: dept, workName: workName };
+}
+
 function isMidProgressStatus_(progress) {
   const p = String(progress || '').trim();
   return p === '途中' || p === '作業中';
@@ -6069,19 +6283,8 @@ function getScheduleData() {
   const today = new Date(); today.setHours(0,0,0,0);
   globalCpPlanLookup_ = null;
 
-  // 1. 作業記録マスタから「作業名 -> 担当部署」の辞書を作成
-  const workDeptMap = {};
-  const workMasterSheet = ss.getSheetByName('作業マスタ');
-  if (workMasterSheet) {
-    const wData = workMasterSheet.getDataRange().getValues();
-    for(let i=1; i<wData.length; i++) {
-      if(wData[i][0]) {
-        workDeptMap[wData[i][0]] = wData[i][1] || '未分類';
-        // 前方一致用（栽培計画の旧「播種 100枚 […]」行にも対応）
-        if (String(wData[i][0]).trim() === '播種') workDeptMap.__SOWING__ = wData[i][1] || '未分類';
-      }
-    }
-  }
+  // 1. 作業マスタから「作業名 -> 担当部署」の辞書を作成
+  const workDeptMap = buildWorkDeptMapFromMaster_();
 
   // 圃場名 → polyId
   const fieldNameToPolyId = {};
@@ -6329,7 +6532,7 @@ function getScheduleData() {
     p.harvestingDepts = harvestingFields[p.name] || []; 
   });
 
-  return { polygons, activeSchedules, midWorks: midWorks };
+  return { polygons, activeSchedules, midWorks: midWorks, workCategories: getWorkCategoryList_() };
 }
 
 /**
@@ -6515,6 +6718,42 @@ function completeWorkSchedule(params) {
 
   writeLog(userName, '作業予定完了', fieldName || workName, `作業名: ${workName}, 行: ${targetRow}`);
   return { success: true, workName: workName, fieldName: fieldName, sheetRow: targetRow, completedAt: today };
+}
+
+/** 作業一覧から複数件をまとめて完了 */
+function bulkCompleteWorkSchedule(params) {
+  params = params || {};
+  const items = params.items || [];
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  if (!items.length) return { success: true, completed: 0, failed: [] };
+
+  const completed = [];
+  const failed = [];
+  items.forEach(function(item) {
+    try {
+      const res = completeWorkSchedule(Object.assign({}, item, { userName: userName }));
+      completed.push({
+        workName: res.workName || item.workName || '',
+        fieldName: res.fieldName || item.fieldName || '',
+        sheetRow: res.sheetRow || item.sheetRow || 0
+      });
+    } catch (e) {
+      failed.push({
+        workName: item.workName || '',
+        fieldName: item.fieldName || '',
+        sheetRow: item.sheetRow || 0,
+        message: String(e.message || e)
+      });
+    }
+  });
+
+  return {
+    success: failed.length === 0,
+    completedCount: completed.length,
+    failedCount: failed.length,
+    completed: completed,
+    failed: failed
+  };
 }
 
 /**

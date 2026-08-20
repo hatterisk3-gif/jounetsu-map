@@ -16,6 +16,10 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let map, infoWindow, loadedPolygons = {};
       let globalSchedules = [];
       let globalOutsourceWorks = [];
+      let workDeptCategories = ['圃場作業', '事務作業', '保全・整備', '運営'];
+      window._workDeptSettingsDraft = null;
+      window._schedSelectedKeys = window._schedSelectedKeys || new Set();
+      window._schedTableRows = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
       window.getActiveScheduleList = function () {
         return (globalSchedules || []).slice();
@@ -1390,6 +1394,10 @@ async function fetchWeatherAndUpdateUI() {
         const applyScheduleData = (data) => {
           if (!data) return;
           globalSchedules = data.activeSchedules || [];
+          if (Array.isArray(data.workCategories) && data.workCategories.length) {
+            workDeptCategories = data.workCategories.slice();
+            window._workDeptCategories = workDeptCategories;
+          }
           loadedPolygons = {};
           (data.polygons || []).forEach(p => {
              p.isMarker = p.coords && p.coords.length === 1;
@@ -1729,6 +1737,297 @@ async function fetchWeatherAndUpdateUI() {
         return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
 
+      function escAttr_(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      function getWorkDeptCategoryOptions_(current) {
+        const cur = String(current || '').trim();
+        const base = (workDeptCategories && workDeptCategories.length)
+          ? workDeptCategories.slice()
+          : ['圃場作業', '事務作業', '保全・整備', '運営', '未設定'];
+        const set = {};
+        base.forEach(function(c) { set[c] = true; });
+        if (cur && !set[cur]) base.unshift(cur);
+        return base;
+      }
+
+      function buildWorkDeptSelectOptions_(current, prefix) {
+        prefix = prefix || '';
+        const cur = String(current || '未設定').trim() || '未設定';
+        return getWorkDeptCategoryOptions_(cur).map(function(c) {
+          return '<option value="' + escAttr_(c) + '"' + (c === cur ? ' selected' : '') + '>' + escHtml_(c) + '</option>';
+        }).join('');
+      }
+
+      function buildInlineDeptSelectHtml_(t) {
+        if (t.isMidWork || !t.sheetRow) {
+          return escHtml_(t.dept || '-');
+        }
+        const cur = String(t.dept || '未設定').trim() || '未設定';
+        return '<select class="sched-dept-select" onchange="changeScheduleRowDept(' + Number(t.sheetRow) + ', this.value)" title="この行の部署を変更">' +
+          buildWorkDeptSelectOptions_(cur) + '</select>';
+      }
+
+      window.changeScheduleRowDept = async function(sheetRow, dept) {
+        if (!sheetRow || !dept) return;
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          await callGAS('updateScheduleRowDept', { sheetRow: sheetRow, dept: dept, userName: userName });
+          globalSchedules = (globalSchedules || []).map(function(t) {
+            if (Number(t.sheetRow) === Number(sheetRow)) return Object.assign({}, t, { dept: dept });
+            return t;
+          });
+          try {
+            const cachedStr = localStorage.getItem('passionMapScheduleData');
+            if (cachedStr) {
+              const cached = JSON.parse(cachedStr);
+              cached.activeSchedules = globalSchedules;
+              localStorage.setItem('passionMapScheduleData', JSON.stringify(cached));
+            }
+          } catch (e) {}
+          buildDeptFilter();
+          if (typeof updateMapVisuals === 'function') updateMapVisuals();
+        } catch (e) {
+          alert('部署の変更に失敗しました: ' + (e.message || e));
+          if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+        }
+      };
+
+      window.openWorkDeptSettingsModal = async function() {
+        const modal = document.getElementById('workDeptSettingsModal');
+        const tbody = document.getElementById('workDeptSettingsTableBody');
+        const filterEl = document.getElementById('workDeptSettingsFilter');
+        if (!modal || !tbody) return;
+        modal.style.display = 'flex';
+        if (filterEl) filterEl.value = '';
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">読み込み中...</td></tr>';
+        try {
+          const res = await callGAS('getWorkDeptSettings');
+          if (Array.isArray(res.workCategories) && res.workCategories.length) {
+            workDeptCategories = res.workCategories.slice();
+            window._workDeptCategories = workDeptCategories;
+          }
+          window._workDeptSettingsDraft = (res.rows || []).map(function(r) {
+            return {
+              workName: r.workName,
+              dept: r.dept || '未設定',
+              inMaster: !!r.inMaster,
+              originalDept: r.dept || '未設定'
+            };
+          });
+          renderWorkDeptSettingsRows_();
+        } catch (e) {
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#c62828;">読み込み失敗: ' + escHtml_(e.message || e) + '</td></tr>';
+        }
+      };
+
+      window.closeWorkDeptSettingsModal = function() {
+        const modal = document.getElementById('workDeptSettingsModal');
+        if (modal) modal.style.display = 'none';
+      };
+
+      window.filterWorkDeptSettingsRows_ = function() {
+        renderWorkDeptSettingsRows_();
+      };
+
+      function renderWorkDeptSettingsRows_() {
+        const tbody = document.getElementById('workDeptSettingsTableBody');
+        const filterEl = document.getElementById('workDeptSettingsFilter');
+        const rows = window._workDeptSettingsDraft || [];
+        if (!tbody) return;
+        const q = filterEl ? String(filterEl.value || '').trim().toLowerCase() : '';
+        const filtered = q ? rows.filter(function(r) {
+          return String(r.workName || '').toLowerCase().indexOf(q) >= 0;
+        }) : rows;
+        if (!filtered.length) {
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">該当する作業がありません</td></tr>';
+          return;
+        }
+        tbody.innerHTML = filtered.map(function(r, idx) {
+          const note = r.inMaster
+            ? '<span style="color:#2e7d32;font-size:11px;">作業マスタ</span>'
+            : '<span style="color:#ef6c00;font-size:11px;">予定のみ</span>';
+          const safeName = escAttr_(r.workName);
+          return '<tr data-dept-idx="' + rows.indexOf(r) + '">' +
+            '<td style="font-weight:bold;">' + escHtml_(r.workName) + '</td>' +
+            '<td><select class="sched-dept-select" style="max-width:160px;" data-work-name="' + safeName + '" onchange="onWorkDeptSettingChange_(this)">' +
+            buildWorkDeptSelectOptions_(r.dept) + '</select></td>' +
+            '<td>' + note + '</td></tr>';
+        }).join('');
+      }
+
+      window.onWorkDeptSettingChange_ = function(sel) {
+        const name = sel.getAttribute('data-work-name');
+        const val = sel.value;
+        const rows = window._workDeptSettingsDraft || [];
+        rows.forEach(function(r) {
+          if (String(r.workName) === String(name)) r.dept = val;
+        });
+      };
+
+      window.saveWorkDeptSettings_ = async function() {
+        const btn = document.getElementById('workDeptSettingsSaveBtn');
+        const rows = window._workDeptSettingsDraft || [];
+        const updates = rows.filter(function(r) {
+          return String(r.dept || '') !== String(r.originalDept || '');
+        }).map(function(r) {
+          return { workName: r.workName, dept: r.dept };
+        });
+        if (!updates.length) {
+          closeWorkDeptSettingsModal();
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          await callGAS('updateWorkDeptSettings', {
+            updates: updates,
+            syncScheduleRows: true,
+            userName: userName
+          });
+          closeWorkDeptSettingsModal();
+          const data = await callGAS('getScheduleData');
+          if (data) {
+            localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+            globalSchedules = data.activeSchedules || [];
+            if (Array.isArray(data.workCategories) && data.workCategories.length) {
+              workDeptCategories = data.workCategories.slice();
+            }
+            buildDeptFilter();
+            if (typeof updateMapVisuals === 'function') updateMapVisuals();
+          }
+          if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
+            if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+          }
+        } catch (e) {
+          alert('保存に失敗しました: ' + (e.message || e));
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '保存する'; }
+        }
+      };
+
+      function buildScheduleRowKey_(t) {
+        if (!t) return '';
+        if (t.isMidWork && t.recordId) return 'mid:' + String(t.recordId);
+        if (t.scheduleKey) return 'key:' + String(t.scheduleKey);
+        if (t.sheetRow) return 'row:' + String(t.sheetRow);
+        return 'wf:' + String(t.workName || '') + '|' + String(t.fieldName || '') + '|' + String(t.cropName || '');
+      }
+
+      function scheduleItemToCompletePayload_(t) {
+        return {
+          sheetRow: Number(t.sheetRow) || 0,
+          scheduleKey: t.scheduleKey || '',
+          workName: t.workName || '',
+          fieldName: t.fieldName || '',
+          cropName: t.cropName || '',
+          isMidWork: !!t.isMidWork,
+          polyId: t.polyId || '',
+          recordId: t.recordId || ''
+        };
+      }
+
+      function updateSchedBulkSelectionUi_() {
+        const count = (window._schedSelectedKeys && window._schedSelectedKeys.size) || 0;
+        const countEl = document.getElementById('schedSelectedCount');
+        const btn = document.getElementById('schedBulkCompleteBtn');
+        if (countEl) countEl.textContent = String(count);
+        if (btn) {
+          btn.disabled = count <= 0;
+          btn.style.opacity = count > 0 ? '1' : '0.55';
+        }
+        const visibleKeys = (window._schedTableRows || []).map(buildScheduleRowKey_);
+        const allSelected = visibleKeys.length > 0 && visibleKeys.every(function(k) {
+          return window._schedSelectedKeys.has(k);
+        });
+        const head = document.getElementById('schedSelectAllHead');
+        const bar = document.getElementById('schedSelectAll');
+        if (head) head.checked = allSelected;
+        if (bar) bar.checked = allSelected;
+      }
+
+      window.toggleSchedRowSelect_ = function(key, checked) {
+        if (!window._schedSelectedKeys) window._schedSelectedKeys = new Set();
+        if (checked) window._schedSelectedKeys.add(key);
+        else window._schedSelectedKeys.delete(key);
+        updateSchedBulkSelectionUi_();
+      };
+
+      window.toggleSchedSelectAll_ = function(checked) {
+        if (!window._schedSelectedKeys) window._schedSelectedKeys = new Set();
+        (window._schedTableRows || []).forEach(function(t) {
+          const key = buildScheduleRowKey_(t);
+          if (checked) window._schedSelectedKeys.add(key);
+          else window._schedSelectedKeys.delete(key);
+        });
+        document.querySelectorAll('.sched-row-check').forEach(function(el) {
+          el.checked = !!checked;
+        });
+        const head = document.getElementById('schedSelectAllHead');
+        const bar = document.getElementById('schedSelectAll');
+        if (head) head.checked = !!checked;
+        if (bar) bar.checked = !!checked;
+        updateSchedBulkSelectionUi_();
+      };
+
+      window.bulkCompleteSelectedSchedules_ = async function() {
+        if (window._schedCompleteBusy) return;
+        const selected = (window._schedTableRows || []).filter(function(t) {
+          return window._schedSelectedKeys && window._schedSelectedKeys.has(buildScheduleRowKey_(t));
+        });
+        if (!selected.length) return;
+        const preview = selected.slice(0, 5).map(function(t) {
+          return '・' + String(t.workName || '') + (t.fieldName ? ('（' + t.fieldName + '）') : '');
+        }).join('\n');
+        const more = selected.length > 5 ? ('\n…他 ' + (selected.length - 5) + ' 件') : '';
+        if (!confirm(selected.length + '件の作業をまとめて完了にしますか？\n\n' + preview + more)) return;
+
+        window._schedCompleteBusy = true;
+        const btn = document.getElementById('schedBulkCompleteBtn');
+        const prevLabel = btn ? btn.innerHTML : '';
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '完了処理中...';
+        }
+        document.querySelectorAll('.sched-complete-btn, .sched-row-check').forEach(function(el) {
+          el.disabled = true;
+        });
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          const items = selected.map(scheduleItemToCompletePayload_);
+          const res = await callGAS('bulkCompleteWorkSchedule', { items: items, userName: userName });
+          const failed = (res && res.failed) || [];
+          if (failed.length) {
+            const msg = failed.slice(0, 3).map(function(f) {
+              return (f.workName || '作業') + ': ' + (f.message || '失敗');
+            }).join('\n');
+            alert('一部の完了に失敗しました（' + failed.length + '件）\n' + msg);
+          }
+          window._schedSelectedKeys = new Set();
+          const data = await callGAS('getScheduleData');
+          if (data) {
+            localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+            globalSchedules = data.activeSchedules || [];
+            if (Array.isArray(data.workCategories) && data.workCategories.length) {
+              workDeptCategories = data.workCategories.slice();
+            }
+            buildDeptFilter();
+            if (typeof updateMapVisuals === 'function') updateMapVisuals();
+          }
+          if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
+            switchScheduleView(window._scheduleViewMode || 'tasks');
+          }
+        } catch (e) {
+          alert('一括完了に失敗しました: ' + (e.message || e));
+          if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+        } finally {
+          window._schedCompleteBusy = false;
+          if (btn) btn.innerHTML = prevLabel || '✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)';
+          updateSchedBulkSelectionUi_();
+        }
+      };
+
       function formatCropWorkCountCell_(row) {
         const done = Number(row.completedWorks) || 0;
         const total = Number(row.totalWorks) || 0;
@@ -1755,6 +2054,8 @@ async function fetchWeatherAndUpdateUI() {
         if (tasksEl) tasksEl.style.display = (mode === 'tasks') ? 'block' : 'none';
         if (fieldEl) fieldEl.style.display = (mode === 'field') ? 'block' : 'none';
         if (tagEl) tagEl.style.display = (mode === 'tag') ? 'block' : 'none';
+        const bulkBar = document.getElementById('scheduleBulkBar');
+        if (bulkBar) bulkBar.style.display = (mode === 'tasks') ? 'flex' : 'none';
         const titleEl = document.getElementById('tableDeptName');
         if (titleEl) {
           if (mode === 'field') titleEl.textContent = '圃場別進捗';
@@ -1831,7 +2132,9 @@ async function fetchWeatherAndUpdateUI() {
         let filteredSchedules = currentDept === 'すべて' ? globalSchedules : globalSchedules.filter(t => t.dept === currentDept);
 
         if (filteredSchedules.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">現在必要な作業はありません</td></tr>';
+          window._schedTableRows = [];
+          tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">現在必要な作業はありません</td></tr>';
+          updateSchedBulkSelectionUi_();
         } else {
           let sorted = [...filteredSchedules].sort((a, b) => {
              const ra = workStatusSortRank(a);
@@ -1841,8 +2144,11 @@ async function fetchWeatherAndUpdateUI() {
              if(b.deadline === '-') return -1;
              return new Date(a.deadline) - new Date(b.deadline);
           });
+          window._schedTableRows = sorted;
 
           tbody.innerHTML = sorted.map((t, idx) => {
+            const rowKey = buildScheduleRowKey_(t);
+            const isChecked = window._schedSelectedKeys && window._schedSelectedKeys.has(rowKey);
             const isMid = !!t.isMidWork;
             const rowClass = isMid
               ? 'style="background-color:#fff8e1; color:#e65100;"'
@@ -1881,10 +2187,12 @@ async function fetchWeatherAndUpdateUI() {
               ? ''
               : `<button type="button" onclick="deleteScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}')" style="background:#ffebee;color:#c62828;border:1px solid #ef9a9a;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:bold;cursor:pointer;white-space:nowrap;">削除</button>`;
             const actionCell = `<div style="display:flex;flex-direction:column;gap:4px;align-items:stretch;">${completeBtn}${deleteBtn}</div>`;
+            const checkCell = `<input type="checkbox" class="sched-row-check" data-sched-key="${escAttr_(rowKey)}" ${isChecked ? 'checked' : ''} onchange="toggleSchedRowSelect_('${String(rowKey).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', this.checked)" title="一括完了の対象">`;
             return `<tr ${rowClass} data-sched-idx="${idx}">
+                      <td style="text-align:center;">${checkCell}</td>
                       <td style="text-align:center;white-space:nowrap;">${statusHtml}</td>
                       <td>${workLabel}${taskUsersHtml}${dayPlansHtml}</td>
-                      <td>${t.dept || '-'}</td>
+                      <td>${buildInlineDeptSelectHtml_(t)}</td>
                       <td>${cropCell}</td>
                       <td>${t.fieldName}</td>
                       <td>${isMid ? (t.workDate || t.schedDate) : t.schedDate}</td>
@@ -1894,6 +2202,7 @@ async function fetchWeatherAndUpdateUI() {
                       <td style="text-align:center;">${actionCell}</td>
                     </tr>`;
           }).join('');
+          updateSchedBulkSelectionUi_();
         }
       }
 
@@ -1917,6 +2226,33 @@ async function fetchWeatherAndUpdateUI() {
         } catch (e) {
           return null;
         }
+      };
+
+      window.resetScheduleModalFullscreen_ = function() {
+        const modal = document.getElementById('scheduleModal');
+        if (modal) modal.classList.remove('schedule-modal-fullscreen');
+        const btn = document.getElementById('scheduleFullscreenBtn');
+        if (btn) {
+          btn.textContent = '⛶ 全画面';
+          btn.title = '全画面表示';
+        }
+      };
+
+      window.toggleScheduleModalFullscreen = function() {
+        const modal = document.getElementById('scheduleModal');
+        const btn = document.getElementById('scheduleFullscreenBtn');
+        if (!modal) return;
+        const on = modal.classList.toggle('schedule-modal-fullscreen');
+        if (btn) {
+          btn.textContent = on ? '⊡ 縮小' : '⛶ 全画面';
+          btn.title = on ? '通常表示に戻す' : '全画面表示';
+        }
+      };
+
+      window.closeScheduleModal = function() {
+        const modal = document.getElementById('scheduleModal');
+        if (modal) modal.style.display = 'none';
+        resetScheduleModalFullscreen_();
       };
 
       window.openScheduleTable = () => {
