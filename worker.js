@@ -17069,7 +17069,7 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
             <button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を登録</button>
             <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
-          </div>`;
+          </div>`);
         modalEl.style.display = 'flex';
         modalEl.onclick = (evt) => {
           if (evt.target === modalEl) closeAfterWorkSaveContinueModal_();
@@ -17196,7 +17196,7 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="display:flex; flex-wrap:wrap; gap:8px; max-height:28vh; overflow-y:auto; margin-bottom:12px;">${chipHtml}</div>
             <button type="button" onclick="registerAfterSaveNextWorkName_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">この内容で登録</button>
             <button type="button" onclick="showAfterWorkSaveContinueModal_({ data: window._afterSaveWorkMeta || {}, polyIds: window._afterSaveNextPolyIds || [] })" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">戻る</button>
-          </div>`;
+          </div>`);
         modalEl.style.display = 'flex';
         modalEl.onclick = (evt) => {
           if (evt.target === modalEl) closeAfterWorkSaveContinueModal_();
@@ -17247,7 +17247,7 @@ function createSignboardMarker(name, pos, icon, id) {
             <button type="button" onclick="showAfterSaveNextWorkPicker_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🚜 次の作業を登録</button>
             <button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を登録</button>
             <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
-          </div>`;
+          </div>`);
         modalEl.style.display = 'flex';
         modalEl.onclick = (evt) => {
           if (evt.target === modalEl) closeAfterWorkSaveContinueModal_();
