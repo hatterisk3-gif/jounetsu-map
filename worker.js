@@ -16968,15 +16968,26 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.selectAfterSaveNextWork_ = (workName, crop) => {
         window._afterSaveDraftWorkName = String(workName || '').trim();
-        window._afterSaveDraftCrop = String(crop || '').trim();
+        if (crop) window._afterSaveDraftCrop = String(crop || '').trim();
         window.refreshAfterSaveNextWorkPreview_();
         document.querySelectorAll('.after-save-work-chip').forEach(btn => {
-          const on = btn.getAttribute('data-work') === window._afterSaveDraftWorkName
-            && btn.getAttribute('data-crop') === window._afterSaveDraftCrop;
+          const on = btn.getAttribute('data-work') === window._afterSaveDraftWorkName;
           btn.style.background = on ? '#FF9800' : '#fff';
-          btn.style.color = on ? '#fff' : '#1b5e20';
-          btn.style.borderColor = on ? '#F57C00' : '#81c784';
+          btn.style.color = on ? '#fff' : '#e65100';
+          btn.style.borderColor = on ? '#F57C00' : '#ffb74d';
         });
+      };
+
+      window.selectAfterSaveCategory_ = (cat) => {
+        window._afterSaveDraftCategory = String(cat || '').trim();
+        window._afterSaveDraftWorkName = '';
+        window.showAfterSaveNextWorkPicker_();
+      };
+
+      window.selectAfterSaveCrop_ = (crop) => {
+        window._afterSaveDraftCrop = String(crop || '').trim();
+        window._afterSaveDraftWorkName = '';
+        window.showAfterSaveNextWorkPicker_();
       };
 
       window.refreshAfterSaveNextWorkPreview_ = () => {
@@ -17006,6 +17017,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const payload = {
           workName: name,
           crop: String(crop || window._afterSaveDraftCrop || saved.crop || '').trim(),
+          category: String(window._afterSaveDraftCategory || saved.category || '').trim(),
           workDate: saved.workDate || '',
           startTime: startHm,
           plannedEnd: dual.field.plannedEnd || dual.per10a.plannedEnd || '',
@@ -17125,15 +17137,58 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!Array.isArray(window._afterSaveDraftPolyIds)) {
           window._afterSaveDraftPolyIds = Array.isArray(window._afterSaveNextPolyIds) ? window._afterSaveNextPolyIds.slice() : [];
         }
+        if (typeof window._afterSaveDraftCategory === 'undefined') {
+          window._afterSaveDraftCategory = saved.category || 'すべて';
+        }
+        if (typeof window._afterSaveDraftCrop === 'undefined') {
+          window._afterSaveDraftCrop = saved.crop || '';
+        }
         const startHm = window.getAfterSaveNextWorkStartHm_() || '--:--';
+        const curCat = String(window._afterSaveDraftCategory || 'すべて').trim();
+        const curCrop = String(window._afterSaveDraftCrop || '').trim();
+        const selectedName = String(window._afterSaveDraftWorkName || '');
+        const selectedCrop = String(window._afterSaveDraftCrop || '');
+
+        // --- 1. カテゴリ一覧・チップの生成 ---
+        const catSet = new Set();
+        const allCategories = ['すべて'];
+        (pdlWorkCategories || []).forEach(c => {
+          const name = String((typeof c === 'string' ? c : (c && c.name)) || '').trim();
+          if (name && !catSet.has(name)) { catSet.add(name); allCategories.push(name); }
+        });
+        (pdlWorkMaster || []).forEach(w => {
+          const cat = String(w && (w.category || w.workCategory) || '').trim();
+          if (cat && !catSet.has(cat)) { catSet.add(cat); allCategories.push(cat); }
+        });
+        const categoryChips = allCategories.map(cat => {
+          const on = (curCat === cat) || (!curCat && cat === 'すべて');
+          const safeCat = String(cat).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" onclick="selectAfterSaveCategory_('${safeCat}')" style="background:${on ? '#1565C0' : '#fff'}; color:${on ? '#fff' : '#1565C0'}; border:1.5px solid #1976D2; border-radius:16px; padding:5px 11px; font-size:12px; font-weight:bold; cursor:pointer; flex-shrink:0;">${cat === 'すべて' ? '🌐 ' + cat : '📁 ' + cat}</button>`;
+        }).join('');
+
+        // --- 2. 作物一覧・チップの生成 ---
+        const cropSet = new Set();
+        const allCrops = ['すべて／共通'];
+        (pdlCrops || []).forEach(c => {
+          const name = String((typeof c === 'string' ? c : (c && c.name)) || '').trim();
+          if (name && !cropSet.has(name)) { cropSet.add(name); allCrops.push(name); }
+        });
+        const cropChips = allCrops.map(crop => {
+          const isAll = (crop === 'すべて／共通');
+          const on = isAll ? (!curCrop || curCrop === '共通') : (curCrop === crop);
+          const valToSet = isAll ? '' : crop;
+          const safeCropVal = String(valToSet).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" onclick="selectAfterSaveCrop_('${safeCropVal}')" style="background:${on ? '#2E7D32' : '#fff'}; color:${on ? '#fff' : '#2E7D32'}; border:1.5px solid #4CAF50; border-radius:16px; padding:5px 11px; font-size:12px; font-weight:bold; cursor:pointer; flex-shrink:0;">${isAll ? '🌱 ' + crop : '🌿 ' + crop}</button>`;
+        }).join('');
+
+        // --- 3. 作業一覧・チップの生成（カテゴリ＆作物でフィルタ） ---
         const pred = (typeof window.getNextWorkPredictions_ === 'function')
           ? window.getNextWorkPredictions_({ atHm: startHm })
           : { candidates: [] };
         const candidates = Array.isArray(pred.candidates) ? pred.candidates : [];
         const seen = new Set();
         const chips = [];
-        const selectedName = String(window._afterSaveDraftWorkName || '');
-        const selectedCrop = String(window._afterSaveDraftCrop || '');
+
         const pushChip = (workName, crop, extraLabel) => {
           const name = String(workName || '').trim();
           if (!name) return;
@@ -17145,33 +17200,45 @@ function createSignboardMarker(name, pos, icon, id) {
           const label = ((crop ? crop + ' ' : '') + name).replace(/</g, '&lt;');
           const search = ((crop || '') + ' ' + name + ' ' + (extraLabel || '')).replace(/"/g, '&quot;');
           const on = selectedName === name && selectedCrop === String(crop || '');
-          chips.push(`<button type="button" class="after-save-work-chip" data-work="${String(name).replace(/"/g, '&quot;')}" data-crop="${String(crop || '').replace(/"/g, '&quot;')}" data-search="${search}" onclick="selectAfterSaveNextWork_('${safeName}', '${safeCrop}')" style="background:${on ? '#FF9800' : '#fff'}; color:${on ? '#fff' : '#1b5e20'}; border:1.5px solid ${on ? '#F57C00' : '#81c784'}; border-radius:18px; padding:7px 12px; font-size:13px; font-weight:bold; cursor:pointer;">🚜 ${label}${extraLabel ? ` <span style="font-size:10px; opacity:.85;">${String(extraLabel).replace(/</g, '&lt;')}</span>` : ''}</button>`);
+          chips.push(`<button type="button" class="after-save-work-chip" data-work="${String(name).replace(/"/g, '&quot;')}" data-crop="${String(crop || '').replace(/"/g, '&quot;')}" data-search="${search}" onclick="selectAfterSaveNextWork_('${safeName}', '${safeCrop}')" style="background:${on ? '#FF9800' : '#fff'}; color:${on ? '#fff' : '#e65100'}; border:1.5px solid ${on ? '#F57C00' : '#ffb74d'}; border-radius:18px; padding:7px 12px; font-size:13px; font-weight:bold; cursor:pointer;">🚜 ${label}${extraLabel ? ` <span style="font-size:10px; opacity:.85;">${String(extraLabel).replace(/</g, '&lt;')}</span>` : ''}</button>`);
         };
-        candidates.forEach((c, i) => {
+
+        // 候補・予測
+        candidates.forEach(c => {
+          if (curCrop && c.crop && c.crop !== curCrop) return;
+          if (curCat && curCat !== 'すべて') {
+            const wObj = (pdlWorkMaster || []).find(w => w && w.name === c.workName);
+            const wCat = String(wObj && (wObj.category || wObj.workCategory) || '').trim();
+            if (wCat && wCat !== curCat) return;
+          }
           const src = c.source === 'time' ? 'この時間' : (c.source === 'both' ? '前＋時間' : '前の作業');
           const extra = (c.rate != null) ? `${src} ${c.rate}%` : src;
-          pushChip(c.workName, c.crop || saved.crop || '', extra);
+          pushChip(c.workName, c.crop || curCrop || saved.crop || '', extra);
         });
-        const cropNow = String(saved.crop || '').trim();
+
+        // 作業マスタ
         (pdlWorkMaster || []).forEach(w => {
           const wName = String(w && w.name || '').trim();
           if (!wName || wName.indexOf('休憩') >= 0) return;
+          const wCat = String(w && (w.category || w.workCategory) || '').trim();
+          if (curCat && curCat !== 'すべて' && wCat && wCat !== curCat) return;
+
           let cropMatch = true;
-          if (cropNow && typeof window.getWorkMasterCropKeys === 'function') {
+          if (curCrop && typeof window.getWorkMasterCropKeys === 'function') {
             const keys = window.getWorkMasterCropKeys(w);
-            const nCrop = window.normalizeWorkCropKey ? window.normalizeWorkCropKey(cropNow) : cropNow;
-            cropMatch = keys.includes('__common__') || keys.includes(nCrop) || keys.includes(cropNow);
+            const nCrop = window.normalizeWorkCropKey ? window.normalizeWorkCropKey(curCrop) : curCrop;
+            cropMatch = keys.includes('__common__') || keys.includes(nCrop) || keys.includes(curCrop);
           }
-          if (cropMatch) pushChip(wName, cropNow, '');
+          if (cropMatch) {
+            pushChip(wName, curCrop || '', '');
+          }
         });
-        (pdlWorkMaster || []).forEach(w => {
-          const wName = String(w && w.name || '').trim();
-          if (!wName || wName.indexOf('休憩') >= 0) return;
-          pushChip(wName, '', '');
-        });
+
         const chipHtml = chips.length
           ? chips.join('')
-          : '<div style="font-size:12px; color:#888; padding:8px 0;">作業マスタに作業名がありません</div>';
+          : '<div style="font-size:12px; color:#888; padding:8px 0;">該当する作業がありません。</div>';
+
+        // --- 4. 場所（予定圃場チップ群） ---
         const selectedSet = new Set(window.getAfterSaveDraftPolyIds_().map(String));
         const fieldChips = window.collectAfterSaveFieldChipIds_().map(id => {
           const p = loadedPolygons[id];
@@ -17181,20 +17248,38 @@ function createSignboardMarker(name, pos, icon, id) {
           const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           return `<button type="button" class="after-save-field-chip" data-pid="${String(id).replace(/"/g, '&quot;')}" onclick="toggleAfterSaveDraftField_('${safeId}')" style="background:${on ? '#2E7D32' : '#fff'}; color:${on ? '#fff' : '#2E7D32'}; border:1.5px solid #66BB6A; border-radius:16px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📍 ${label}</button>`;
         }).join('');
+
         const estHtml = window.renderAfterSaveEstimateHtml_(window._afterSaveDraftWorkName || '', window.getAfterSaveDraftPolyIds_(), startHm);
+
+        // --- HTMLレンダリング（カテゴリ → 作物 → 作業 → 場所 の順序） ---
         window.fillAppModalHtml_(`
-          <div style="background:#fff; width:100%; max-width:400px; max-height:88vh; overflow:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-            <div style="font-size:16px; font-weight:bold; color:#FF9800; margin-bottom:6px;">🚜 次の作業を登録</div>
-            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">作業名と予定圃場を登録します（本登録しません）。開始は前作業の終了 <b>${startHm}</b> です。</div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-              <div style="font-size:13px; font-weight:bold; color:#2E7D32;">📍 作業予定圃場</div>
-              <button type="button" onclick="openAfterSaveFieldMapSelect_()" style="background:#fff; color:#2E7D32; border:1px solid #66BB6A; border-radius:16px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗺️ マップから選ぶ</button>
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${fieldChips || '<span style="font-size:12px; color:#888;">候補がありません。マップから選んでください。</span>'}</div>
+          <div style="background:#fff; width:100%; max-width:420px; max-height:88vh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+            <div style="font-size:16px; font-weight:bold; color:#FF9800; margin-bottom:4px;">🚜 次の作業を登録</div>
+            <div style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.4;">作業名と予定圃場を登録します（本登録しません）。開始は前作業の終了 <b>${startHm}</b> です。</div>
+
+            <!-- ① カテゴリ -->
+            <div style="font-size:13px; font-weight:bold; color:#1565C0; margin-bottom:5px; display:flex; align-items:center; gap:4px;">📁 カテゴリ</div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;">${categoryChips}</div>
+
+            <!-- ② 作物 -->
+            <div style="font-size:13px; font-weight:bold; color:#2E7D32; margin-bottom:5px; display:flex; align-items:center; gap:4px;">🌱 作物</div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;">${cropChips}</div>
+
+            <!-- ③ 作業 -->
+            <div style="font-size:13px; font-weight:bold; color:#E65100; margin-bottom:5px; display:flex; align-items:center; gap:4px;">🚜 作業</div>
+            <input type="search" id="after_save_work_q" placeholder="作業名で検索..." oninput="filterAfterSaveNextWorkChips_()" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; margin-bottom:8px;">
+            <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:22vh; overflow-y:auto; margin-bottom:10px; padding:2px;">${chipHtml}</div>
             <div id="after_save_est_box" style="margin-bottom:12px;">${estHtml}</div>
-            <input type="search" id="after_save_work_q" placeholder="作業名で検索..." oninput="filterAfterSaveNextWorkChips_()" style="width:100%; box-sizing:border-box; padding:9px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; margin-bottom:10px;">
-            <div style="display:flex; flex-wrap:wrap; gap:8px; max-height:28vh; overflow-y:auto; margin-bottom:12px;">${chipHtml}</div>
-            <button type="button" onclick="registerAfterSaveNextWorkName_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">この内容で登録</button>
+
+            <!-- ④ 場所 -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+              <div style="font-size:13px; font-weight:bold; color:#2E7D32; display:flex; align-items:center; gap:4px;">📍 場所（作業予定圃場）</div>
+              <button type="button" onclick="openAfterSaveFieldMapSelect_()" style="background:#fff; color:#2E7D32; border:1.5px solid #66BB6A; border-radius:14px; padding:3px 10px; font-size:11px; font-weight:bold; cursor:pointer;">🗺️ マップから選ぶ</button>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:14px;">${fieldChips || '<span style="font-size:12px; color:#888;">候補がありません。マップから選んでください。</span>'}</div>
+
+            <!-- アクションボタン -->
+            <button type="button" onclick="registerAfterSaveNextWorkName_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px; box-shadow:0 2px 6px rgba(255,152,0,0.3);">この内容で登録</button>
             <button type="button" onclick="showAfterWorkSaveContinueModal_({ data: window._afterSaveWorkMeta || {}, polyIds: window._afterSaveNextPolyIds || [] })" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">戻る</button>
           </div>`);
         modalEl.style.display = 'flex';
@@ -17203,7 +17288,7 @@ function createSignboardMarker(name, pos, icon, id) {
         };
         setTimeout(() => {
           const q = document.getElementById('after_save_work_q');
-          if (q) q.focus();
+          if (q && !window._afterSaveDraftWorkName) q.focus();
         }, 40);
       };
 
@@ -17237,6 +17322,9 @@ function createSignboardMarker(name, pos, icon, id) {
           category: data.category || '',
           endTime: startDefault
         };
+        window._afterSaveDraftCategory = data.category || 'すべて';
+        window._afterSaveDraftCrop = data.crop || '';
+        window._afterSaveDraftWorkName = '';
         if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
         const modalEl = document.getElementById('modal');
         if (!modalEl) return;
