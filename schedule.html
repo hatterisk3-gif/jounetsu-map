@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1787584800000">
+  <link rel="stylesheet" href="schedule.css?v=1787592000000">
 </head>
 
 <body>
@@ -108,8 +108,9 @@
           <span style="cursor:pointer; font-size:24px;" onclick="closeScheduleModal()">×</span>
         </div>
       </div>
-      <div id="scheduleModalTabs" style="display:flex;gap:6px;padding:8px 10px;background:#e3f2fd;border-bottom:1px solid #90caf9;">
+      <div id="scheduleModalTabs" style="display:flex;gap:6px;padding:8px 10px;background:#e3f2fd;border-bottom:1px solid #90caf9;flex-wrap:wrap;">
         <button type="button" id="schedTabTasks" class="sched-view-tab active" onclick="switchScheduleView('tasks')">📋 作業一覧</button>
+        <button type="button" id="schedTabHarvest" class="sched-view-tab" onclick="switchScheduleView('harvest')">🍅 収穫中</button>
         <button type="button" id="schedTabField" class="sched-view-tab" onclick="switchScheduleView('field')">🌾 圃場進捗</button>
         <button type="button" id="schedTabTag" class="sched-view-tab" onclick="switchScheduleView('tag')">🏷️ TAG進捗</button>
       </div>
@@ -120,6 +121,9 @@
               <input type="checkbox" id="schedSelectAll" onchange="toggleSchedSelectAll_(this.checked)"> すべて選択
             </label>
             <button type="button" id="schedBulkCompleteBtn" onclick="bulkCompleteSelectedSchedules_()" disabled style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:bold;cursor:pointer;opacity:0.55;">✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)</button>
+            <span style="width:1px;height:18px;background:#ddd;"></span>
+            <button type="button" id="schedFilterAll" class="sched-list-filter active" onclick="setScheduleListFilter_('all')">すべて</button>
+            <button type="button" id="schedFilterFieldWork" class="sched-list-filter" onclick="setScheduleListFilter_('fieldWork')">🌱 畑の品目作業</button>
             <span id="schedBulkHint" style="font-size:11px;color:#666;">チェックした作業を一括で完了にします</span>
           </div>
           <table id="scheduleTable">
@@ -140,6 +144,41 @@
             </thead>
             <tbody id="scheduleTableBody">
             </tbody>
+          </table>
+        </div>
+        <div id="scheduleViewHarvest" style="display:none;">
+          <div id="harvestListHint" style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
+            作業記録で「収穫」が未完了の圃場を一覧表示します。栽培計画の収穫期間が終盤〜過ぎているもの、または収穫開始から日数が長いものを「そろそろ終わり」とします。
+          </div>
+          <div style="font-weight:bold;color:#e65100;margin:4px 0 6px;font-size:13px;">⏰ そろそろ終わりそう（<span id="harvestAlmostCount">0</span>）</div>
+          <table id="harvestAlmostTable" class="progress-summary-table" style="margin-bottom:16px;">
+            <thead>
+              <tr>
+                <th>圃場</th>
+                <th>作物</th>
+                <th>状態</th>
+                <th>収穫開始</th>
+                <th>最終収穫</th>
+                <th>計画期間</th>
+                <th>理由</th>
+              </tr>
+            </thead>
+            <tbody id="harvestAlmostTableBody"></tbody>
+          </table>
+          <div style="font-weight:bold;color:#ef6c00;margin:4px 0 6px;font-size:13px;">🍅 収穫中の畑（<span id="harvestAllCount">0</span>）</div>
+          <table id="harvestAllTable" class="progress-summary-table">
+            <thead>
+              <tr>
+                <th>圃場</th>
+                <th>作物</th>
+                <th>状態</th>
+                <th>収穫開始</th>
+                <th>最終収穫</th>
+                <th>計画期間</th>
+                <th>備考</th>
+              </tr>
+            </thead>
+            <tbody id="harvestAllTableBody"></tbody>
           </table>
         </div>
         <div id="scheduleViewFieldProgress" style="display:none;">
@@ -611,7 +650,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1787584800000';
+    const cacheBust = '1787592000000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',

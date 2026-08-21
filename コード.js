@@ -71,7 +71,10 @@ function doPost(e) {
     else if (action === "deleteCropWorkPlan") result = deleteCropWorkPlan(params);
     else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
     else if (action === "getSowingProgress") result = getSowingProgress(params);
+    else if (action === "getCurrentSowingPlanOptions") result = getCurrentSowingPlanOptions(params);
     else if (action === "getCropWorkProgressSummary") result = getCropWorkProgressSummary(params);
+    else if (action === "getHarvestingFieldsSummary") result = getHarvestingFieldsSummary(params);
+    else if (action === "getWeatherPlantingPriorities") result = getWeatherPlantingPriorities(params);
     else if (action === "getWorkDeptSettings") result = getWorkDeptSettings(params);
     else if (action === "updateWorkDeptSettings") result = updateWorkDeptSettings(params);
     else if (action === "updateScheduleRowDept") result = updateScheduleRowDept(params);
@@ -6456,6 +6459,13 @@ function getScheduleData() {
             try { periodLabel = plan ? formatCpPeriodLabel(plan.year, (plan.tasks && plan.tasks.sowing) || []) : ''; } catch (e2) {}
           }
         }
+        let placeFieldIds = [];
+        const pipeIdx = placeIdRaw.indexOf('|');
+        if (pipeIdx >= 0) {
+          placeFieldIds = placeIdRaw.slice(pipeIdx + 1).split(',').map(function(x) {
+            return String(x || '').trim();
+          }).filter(Boolean);
+        }
         activeSchedules.push({
           workName,
           dept,
@@ -6468,6 +6478,8 @@ function getScheduleData() {
           person,
           isOverdue,
           isCultivation: isCultivation,
+          cpKind: parsedPlace.kind || '',
+          fieldIds: placeFieldIds,
           trays: displayTrays,
           tag: displayTag,
           periodLabel: periodLabel,
@@ -7019,7 +7031,7 @@ function getOrCreateCropColor(cropName) {
   return newColor;
 }
 // ==========================================
-// 🚜 全体収穫（一括ロット生成）処理 ★拠点別に対応
+// 🚜 全体収穫（ロット生成）★1畑＝1ロット
 // ==========================================
 function saveGlobalHarvest(params) {
   const ss = TENANT_SS;
@@ -7027,7 +7039,7 @@ function saveGlobalHarvest(params) {
     ? Utilities.formatDate(new Date(params.date.replace(/-/g, '/')), "JST", "yyyy/MM/dd")
     : Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
   const time = Utilities.formatDate(new Date(), "JST", "HH:mm");
-  
+
   // ① 圃場マスタから 圃場名 => 拠点名 の辞書を作る
   const fieldSheet = ss.getSheetByName('圃場');
   const fieldLocationMap = {};
@@ -7035,44 +7047,67 @@ function saveGlobalHarvest(params) {
     const fData = fieldSheet.getDataRange().getValues();
     for (let i = 1; i < fData.length; i++) {
       if (fData[i][1]) {
-        fieldLocationMap[fData[i][1]] = fData[i][2] || '未設定'; // C列(2)が拠点
+        fieldLocationMap[String(fData[i][1]).trim()] = fData[i][2] || '未設定'; // C列(2)が拠点
       }
     }
   }
 
-  // ② 指定日の「作業記録」から、指定拠点＆指定作物の「収穫」を行った畑を自動検索
+  // ② 指定日の「作業記録」から、指定拠点＆指定作物の「収穫」畑を検索（候補）
   const workSheet = ss.getSheetByName('作業記録');
   let harvestedFields = [];
   if (workSheet) {
     const wData = workSheet.getDataRange().getValues();
-    for(let i=1; i<wData.length; i++) {
-       try {
-         const d = new Date(wData[i][3]); // D列(3): 作業日
-         if (!isNaN(d.getTime())) {
-           const recordDate = Utilities.formatDate(d, "JST", "yyyy/MM/dd");
-           const wName = String(wData[i][4]); // E列(4): 作業名
-           const cropName = String(wData[i][5]); // F列(5): 作物名
-           const fieldName = String(wData[i][1]); // B列(1): 圃場名
-           
-           const fieldLoc = fieldLocationMap[fieldName] || '未設定';
+    for (let i = 1; i < wData.length; i++) {
+      try {
+        const d = new Date(wData[i][3]); // D列(3): 作業日
+        if (!isNaN(d.getTime())) {
+          const recordDate = Utilities.formatDate(d, "JST", "yyyy/MM/dd");
+          const wName = String(wData[i][4]); // E列(4): 作業名
+          const cropName = String(wData[i][5]); // F列(5): 作物名
+          const fieldRaw = String(wData[i][1] || ''); // B列(1): 圃場名
+          const primaryField = fieldRaw.split(',')[0].trim();
+          if (!primaryField) continue;
+          const fieldLoc = fieldLocationMap[primaryField] || '未設定';
 
-           // 日付、収穫作業、作物名、そして【拠点】が完全に一致するか判定！
-           if (recordDate === targetDateStr && wName.includes('収穫') && cropName === params.crop && fieldLoc === params.location) {
-              harvestedFields.push(fieldName);
-           }
-         }
-       } catch(e){}
+          if (recordDate === targetDateStr && wName.indexOf('収穫') >= 0 && cropName === params.crop && fieldLoc === params.location) {
+            harvestedFields.push(primaryField);
+          }
+        }
+      } catch (e) {}
     }
   }
-  
-  // 重複排除してカンマ区切りに
-  const fieldNamesStr = [...new Set(harvestedFields)].join(' , ') || "圃場指定なし（単独ロット）";
-  
-  // ③ ロット記録に保存（内容単位・内容個数はクライアント入力を優先、なければマスタ）
+  const uniqueHarvested = [];
+  harvestedFields.forEach(function(f) {
+    if (uniqueHarvested.indexOf(f) < 0) uniqueHarvested.push(f);
+  });
+
+  // ③ 1畑＝1ロット: 圃場は明示指定を優先。未指定なら候補が1件のときだけ自動
+  let fieldNamesStr = String(params.fieldName || params.fields || '').trim();
+  // 旧形式の複数畑カンマ連結は拒否（トレーサビリティのため）
+  if (fieldNamesStr && (fieldNamesStr.indexOf(' , ') >= 0 || fieldNamesStr.indexOf(',') >= 0)) {
+    const parts = fieldNamesStr.split(/\s*,\s*/).map(function(s) { return s.trim(); }).filter(Boolean);
+    if (parts.length > 1) {
+      throw new Error('1ロットにつき畑は1つだけ指定してください（複数畑は分けてロット作成）');
+    }
+    fieldNamesStr = parts[0] || '';
+  }
+  if (!fieldNamesStr) {
+    if (uniqueHarvested.length === 1) {
+      fieldNamesStr = uniqueHarvested[0];
+    } else if (uniqueHarvested.length > 1) {
+      throw new Error('同日・同作物で複数畑の収穫があります。畑を1つ選んでロットを作成してください: ' + uniqueHarvested.join(' / '));
+    } else {
+      throw new Error('紐付ける畑が指定されていません。作業記録から取り込むか、畑を選択してください');
+    }
+  }
+
+  // ④ ロット記録に保存（内容単位・内容個数はクライアント入力を優先、なければマスタ）
   const lotSheet = getOrCreateRecordSheet('ロット記録');
   ensureLotRecordContentHeaders_(lotSheet);
 
-  const lotId = "L-" + Utilities.formatDate(new Date(), "JST", "MMddHHmm") + Math.floor(Math.random()*10);
+  const lotId = "L-" + String(targetDateStr).replace(/\//g, '')
+    + "-" + Utilities.formatDate(new Date(), "JST", "HHmm")
+    + Math.floor(Math.random() * 10);
   const containerType = String(params.containerType || '').trim();
   const cropName = String(params.crop || '').trim();
   let contentUnit = String(params.contentUnit || '').trim();
@@ -7090,7 +7125,7 @@ function saveGlobalHarvest(params) {
   // コンテナごとの内容個数配列（あれば合計・代表値を算出）
   let qtyList = [];
   if (Array.isArray(params.contentQtys) && params.contentQtys.length > 0) {
-    qtyList = params.contentQtys.map(function (v) {
+    qtyList = params.contentQtys.map(function(v) {
       const n = Number(v);
       return (isFinite(n) && n >= 0) ? n : 0;
     });
@@ -7098,8 +7133,8 @@ function saveGlobalHarvest(params) {
   const mode = String(params.contentMode || (qtyList.length ? 'individual' : 'uniform')).trim() || 'uniform';
 
   if (qtyList.length > 0) {
-    const total = qtyList.reduce(function (s, n) { return s + n; }, 0);
-    const allSame = qtyList.every(function (n) { return n === qtyList[0]; });
+    const total = qtyList.reduce(function(s, n) { return s + n; }, 0);
+    const allSame = qtyList.every(function(n) { return n === qtyList[0]; });
     contentQty = allSame ? qtyList[0] : (Math.round((total / qtyList.length) * 1000) / 1000);
     contentDetail = JSON.stringify({
       mode: mode,
@@ -7108,13 +7143,25 @@ function saveGlobalHarvest(params) {
       total: total,
       uniformQty: params.uniformQty != null ? Number(params.uniformQty) : (allSame ? qtyList[0] : ''),
       remainderCount: params.remainderCount != null ? Number(params.remainderCount) : 0,
-      remainderQty: params.remainderQty != null ? Number(params.remainderQty) : ''
+      remainderQty: params.remainderQty != null ? Number(params.remainderQty) : '',
+      fieldName: fieldNamesStr,
+      polyId: String(params.polyId || '').trim(),
+      harvestDate: targetDateStr
     });
   } else if (params.contentQty !== '' && params.contentQty != null) {
     const parsed = Number(params.contentQty);
     if (isFinite(parsed) && parsed >= 0) contentQty = parsed;
   } else if (masterHit && masterHit.contentQty !== '' && masterHit.contentQty != null) {
     contentQty = Number(masterHit.contentQty) || 0;
+  }
+  if (!contentDetail) {
+    contentDetail = JSON.stringify({
+      mode: mode,
+      unit: contentUnit,
+      fieldName: fieldNamesStr,
+      polyId: String(params.polyId || '').trim(),
+      harvestDate: targetDateStr
+    });
   }
 
   // A:ID, B:日時, C:生成者, D:作物名, E:圃場名, F:コンテナ種類, G:初期数, H:残数, I:ステータス, J:拠点, K:内容単位, L:内容個数, M:内容内訳
@@ -7135,12 +7182,15 @@ function saveGlobalHarvest(params) {
   ]);
 
   const totalForLog = qtyList.length
-    ? qtyList.reduce(function (s, n) { return s + n; }, 0)
+    ? qtyList.reduce(function(s, n) { return s + n; }, 0)
     : ((Number(params.count) || 0) * (Number(contentQty) || 0));
-  writeLog(params.author, "一括ロット生成", lotId, `拠点: ${params.location}, 日付: ${targetDateStr}, 作物: ${params.crop}, 内容: ${contentQty}${contentUnit}, 合計: ${totalForLog}, 自動紐付: ${fieldNamesStr}`);
+  writeLog(params.author, "ロット生成(1畑×1日)", lotId, `拠点: ${params.location}, 日付: ${targetDateStr}, 作物: ${params.crop}, 畑: ${fieldNamesStr}, 内容: ${contentQty}${contentUnit}, 合計: ${totalForLog}`);
   return {
     lotId: lotId,
     fields: fieldNamesStr,
+    fieldName: fieldNamesStr,
+    harvestDate: targetDateStr,
+    polyId: String(params.polyId || '').trim(),
     contentUnit: contentUnit,
     contentQty: contentQty,
     contentTotal: totalForLog,
@@ -11755,6 +11805,344 @@ function getCropWorkProgressSummary(params) {
   };
 }
 
+/** 圃場表示名の照合用（畝付きラベルは括弧前を基準名に） */
+function normalizeFieldNameForMatch_(name) {
+  const s = String(name || '').trim();
+  if (!s) return '';
+  const paren = s.indexOf('(');
+  if (paren > 0) return s.slice(0, paren).trim();
+  return s;
+}
+
+/**
+ * 収穫中の畑一覧＋そろそろ終わりそうな畑。
+ * 作業記録の「収穫」未完了を基準にし、栽培計画の収穫半旬で終盤判定する。
+ */
+function getHarvestingFieldsSummary(params) {
+  const todayStr = String((params && params.today) || '').trim()
+    || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const todayParts = todayStr.split('-').map(Number);
+  const today = (todayParts.length >= 3)
+    ? new Date(todayParts[0], todayParts[1] - 1, todayParts[2])
+    : new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
+  const ALMOST_DAYS = 10;
+  const LONG_HARVEST_DAYS = 21;
+
+  const ss = TENANT_SS;
+  const workDeptMap = buildWorkDeptMapFromMaster_();
+  const fieldNameToPolyId = {};
+  try {
+    getSavedPolygons().forEach(function(p) {
+      if (p && p.name && p.id) fieldNameToPolyId[String(p.name)] = p.id;
+    });
+  } catch (e) {}
+
+  // field|crop → 集計
+  const groups = {};
+  function ensureGroup(fieldName, cropName) {
+    const f = String(fieldName || '').trim();
+    const c = String(cropName || '').trim();
+    const key = f + '\t' + c;
+    if (!groups[key]) {
+      groups[key] = {
+        fieldName: f,
+        cropName: c,
+        polyId: fieldNameToPolyId[f] || '',
+        depts: [],
+        authors: [],
+        firstYmd: '',
+        lastYmd: '',
+        lastIncompleteYmd: '',
+        lastCompleteYmd: '',
+        lastProgress: '',
+        lastWorkName: '',
+        incompleteCount: 0,
+        completeCount: 0
+      };
+    }
+    return groups[key];
+  }
+
+  const workSheet = ss.getSheetByName('作業記録');
+  if (workSheet && workSheet.getLastRow() > 1) {
+    const wData = workSheet.getDataRange().getValues();
+    for (let i = 1; i < wData.length; i++) {
+      const workName = String(wData[i][4] || '');
+      if (!workName || workName.indexOf('収穫') < 0) continue;
+      const fieldRaw = String(wData[i][1] || '');
+      const primaryField = fieldRaw.split(',')[0].trim();
+      if (!primaryField) continue;
+      const cropName = String(wData[i][5] || '').trim();
+      const progress = String(wData[i][10] || '').trim();
+      const author = String(wData[i][2] || '').trim();
+      const workDate = wData[i][3];
+      const ymd = formatWorkDateYmd_(workDate);
+      const dept = workDeptMap[workName] || '未分類';
+      const g = ensureGroup(primaryField, cropName);
+
+      if (ymd) {
+        if (!g.firstYmd || ymd < g.firstYmd) g.firstYmd = ymd;
+        if (!g.lastYmd || ymd > g.lastYmd) g.lastYmd = ymd;
+      }
+      if (author && g.authors.indexOf(author) < 0) g.authors.push(author);
+      if (dept && g.depts.indexOf(dept) < 0) g.depts.push(dept);
+      g.lastWorkName = workName;
+
+      if (progress === '完了') {
+        g.completeCount++;
+        if (ymd && (!g.lastCompleteYmd || ymd >= g.lastCompleteYmd)) {
+          g.lastCompleteYmd = ymd;
+        }
+      } else {
+        g.incompleteCount++;
+        if (ymd && (!g.lastIncompleteYmd || ymd >= g.lastIncompleteYmd)) {
+          g.lastIncompleteYmd = ymd;
+          g.lastProgress = progress || '途中';
+        } else if (!g.lastProgress) {
+          g.lastProgress = progress || '途中';
+        }
+      }
+    }
+  }
+
+  // 実行済み計画の収穫窓（圃場名×作物で参照）
+  const planLookup = buildCultivationPlanLookupById_();
+  const planWindows = [];
+  Object.keys(planLookup).forEach(function(k) {
+    const plan = planLookup[k];
+    if (!plan || plan.status !== 'executed') return;
+    const harvestCells = (plan.tasks && Array.isArray(plan.tasks.harvesting)) ? plan.tasks.harvesting : [];
+    if (!harvestCells.length) return;
+    let windowStart = null;
+    let windowEnd = null;
+    harvestCells.forEach(function(cell) {
+      try {
+        const parts = cpCellToDateParts(plan.year, cell);
+        if (!windowStart || parts.start < windowStart) windowStart = parts.start;
+        if (!windowEnd || parts.end > windowEnd) windowEnd = parts.end;
+      } catch (e) {}
+    });
+    if (!windowStart || !windowEnd) return;
+    const start0 = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate());
+    const end0 = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), windowEnd.getDate());
+    const fieldIds = (plan.fieldIds && plan.fieldIds.length) ? plan.fieldIds : [];
+    const displayNames = fieldIds.length
+      ? fieldIds.map(resolveCpFieldDisplayName_)
+      : [];
+    const baseNames = displayNames.map(normalizeFieldNameForMatch_).filter(Boolean);
+    planWindows.push({
+      planId: plan.id,
+      year: plan.year,
+      crop: String(plan.crop || '').trim(),
+      variety: plan.variety || '',
+      tag: plan.tag || '',
+      fieldNames: cpPlanFieldNames_(plan),
+      baseNames: baseNames,
+      displayNames: displayNames,
+      harvestLabel: formatCpPeriodLabel(plan.year, harvestCells),
+      harvestStart: Utilities.formatDate(start0, 'Asia/Tokyo', 'yyyy-MM-dd'),
+      harvestEnd: Utilities.formatDate(end0, 'Asia/Tokyo', 'yyyy-MM-dd'),
+      startMs: start0.getTime(),
+      endMs: end0.getTime()
+    });
+  });
+
+  function findPlanFor(fieldName, cropName) {
+    const base = normalizeFieldNameForMatch_(fieldName);
+    const crop = String(cropName || '').trim();
+    let best = null;
+    planWindows.forEach(function(pw) {
+      if (crop && pw.crop && pw.crop !== crop) return;
+      const hit = pw.baseNames.some(function(bn) {
+        return bn === base || bn === fieldName || String(fieldName).indexOf(bn) === 0;
+      }) || (pw.displayNames.indexOf(fieldName) >= 0);
+      if (!hit) return;
+      // 収穫期間が今日に近い／重なるものを優先
+      if (!best) {
+        best = pw;
+        return;
+      }
+      const bestDist = Math.min(Math.abs(todayMs - best.startMs), Math.abs(todayMs - best.endMs));
+      const dist = Math.min(Math.abs(todayMs - pw.startMs), Math.abs(todayMs - pw.endMs));
+      if (dist < bestDist) best = pw;
+    });
+    return best;
+  }
+
+  const harvesting = [];
+  Object.keys(groups).forEach(function(key) {
+    const g = groups[key];
+    if (!g.incompleteCount) return;
+    // 最終の未完了より後（同日含む）に完了があるなら収穫中ではない
+    if (g.lastCompleteYmd && g.lastIncompleteYmd && g.lastCompleteYmd >= g.lastIncompleteYmd) return;
+    if (g.lastCompleteYmd && !g.lastIncompleteYmd) return;
+
+    const plan = findPlanFor(g.fieldName, g.cropName);
+    let daysToEnd = null;
+    let daysSinceFirst = null;
+    let windowProgress = null;
+    let almostDone = false;
+    const reasons = [];
+
+    if (g.firstYmd) {
+      const fp = g.firstYmd.split('-').map(Number);
+      if (fp.length >= 3) {
+        const first = new Date(fp[0], fp[1] - 1, fp[2]);
+        first.setHours(0, 0, 0, 0);
+        daysSinceFirst = Math.max(0, Math.round((todayMs - first.getTime()) / 86400000));
+      }
+    }
+
+    if (plan) {
+      daysToEnd = Math.round((plan.endMs - todayMs) / 86400000);
+      const span = Math.max(1, plan.endMs - plan.startMs);
+      windowProgress = Math.max(0, Math.min(1, (todayMs - plan.startMs) / span));
+      if (todayMs > plan.endMs) {
+        almostDone = true;
+        reasons.push('計画の収穫期間を過ぎています');
+      } else if (daysToEnd <= ALMOST_DAYS) {
+        almostDone = true;
+        reasons.push('計画の収穫終了まであと' + daysToEnd + '日');
+      } else if (windowProgress >= 0.75 && todayMs >= plan.startMs) {
+        almostDone = true;
+        reasons.push('計画収穫期間の終盤');
+      }
+    }
+    if (!almostDone && daysSinceFirst != null && daysSinceFirst >= LONG_HARVEST_DAYS) {
+      almostDone = true;
+      reasons.push('収穫開始から' + daysSinceFirst + '日経過');
+    }
+
+    harvesting.push({
+      fieldName: g.fieldName,
+      cropName: g.cropName,
+      polyId: g.polyId,
+      depts: g.depts,
+      authors: g.authors,
+      firstHarvestYmd: g.firstYmd,
+      lastHarvestYmd: g.lastIncompleteYmd || g.lastYmd,
+      lastProgress: g.lastProgress || '途中',
+      workName: g.lastWorkName || '収穫',
+      daysSinceFirst: daysSinceFirst,
+      almostDone: almostDone,
+      almostReasons: reasons,
+      statusLabel: almostDone ? 'そろそろ終わり' : '収穫中',
+      planId: plan ? plan.planId : '',
+      variety: plan ? plan.variety : '',
+      tag: plan ? plan.tag : '',
+      harvestLabel: plan ? plan.harvestLabel : '',
+      harvestStart: plan ? plan.harvestStart : '',
+      harvestEnd: plan ? plan.harvestEnd : '',
+      daysToEnd: daysToEnd,
+      windowProgress: windowProgress
+    });
+  });
+
+  harvesting.sort(function(a, b) {
+    if (!!b.almostDone !== !!a.almostDone) return a.almostDone ? -1 : 1;
+    const da = (a.daysToEnd != null) ? a.daysToEnd : 9999;
+    const db = (b.daysToEnd != null) ? b.daysToEnd : 9999;
+    if (da !== db) return da - db;
+    return String(a.fieldName).localeCompare(String(b.fieldName), 'ja')
+      || String(a.cropName).localeCompare(String(b.cropName), 'ja');
+  });
+
+  const almostDoneList = harvesting.filter(function(r) { return !!r.almostDone; });
+
+  return {
+    success: true,
+    today: todayStr,
+    harvesting: harvesting,
+    almostDone: almostDoneList,
+    counts: {
+      harvesting: harvesting.length,
+      almostDone: almostDoneList.length
+    }
+  };
+}
+
+/**
+ * 天気優先事項用: 実行済み計画のうち「定植待ち」かつ定植半旬が開始済み（期間内〜後）の候補。
+ * 播種→定植まで進んでいない（調達待ち・播種待ち）は除外。
+ */
+function getWeatherPlantingPriorities(params) {
+  const todayStr = String((params && params.today) || '').trim()
+    || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const todayParts = todayStr.split('-').map(Number);
+  const today = (todayParts.length >= 3)
+    ? new Date(todayParts[0], todayParts[1] - 1, todayParts[2])
+    : new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const planLookup = buildCultivationPlanLookupById_();
+  const ss = TENANT_SS;
+  const schedSheet = ss.getSheetByName('作業予定');
+  let sData = [];
+  if (schedSheet && schedSheet.getLastRow() > 1) {
+    sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+  }
+  const state = buildCpScheduleProgressState_(sData);
+  const items = [];
+
+  Object.keys(planLookup).forEach(function(k) {
+    const plan = planLookup[k];
+    if (!plan || plan.status !== 'executed') return;
+
+    const plantingCells = (plan.tasks && Array.isArray(plan.tasks.planting)) ? plan.tasks.planting : [];
+    if (!plantingCells.length) return;
+
+    const prog = computePlanCropWorkProgress_(plan, state, []);
+    // 定植待ちのみ（播種まで完了していない／既に定植済みは除外）
+    if (prog.stageCode !== 'plant_pending') return;
+    const hasSowing = ((plan.tasks && plan.tasks.sowing) || []).length > 0;
+    if (hasSowing && !prog.sowDone) return;
+
+    let windowStart = null;
+    let windowEnd = null;
+    plantingCells.forEach(function(cell) {
+      try {
+        const parts = cpCellToDateParts(plan.year, cell);
+        if (!windowStart || parts.start < windowStart) windowStart = parts.start;
+        if (!windowEnd || parts.end > windowEnd) windowEnd = parts.end;
+      } catch (e) {}
+    });
+    if (!windowStart || !windowEnd) return;
+
+    const start0 = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate());
+    const end0 = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), windowEnd.getDate());
+    // 定植期間の開始日以降（期間内〜後）。開始前は出さない
+    if (today.getTime() < start0.getTime()) return;
+
+    const inWindow = today.getTime() <= end0.getTime();
+    items.push({
+      planId: plan.id,
+      year: plan.year,
+      crop: plan.crop || '',
+      variety: plan.variety || '',
+      tag: plan.tag || '',
+      fieldNames: cpPlanFieldNames_(plan),
+      statusLabel: prog.statusLabel,
+      plantingLabel: formatCpPeriodLabel(plan.year, plantingCells),
+      plantingStart: Utilities.formatDate(start0, 'Asia/Tokyo', 'yyyy-MM-dd'),
+      plantingEnd: Utilities.formatDate(end0, 'Asia/Tokyo', 'yyyy-MM-dd'),
+      phase: inWindow ? 'in' : 'after'
+    });
+  });
+
+  items.sort(function(a, b) {
+    return String(a.plantingStart || '').localeCompare(String(b.plantingStart || ''))
+      || String(a.crop || '').localeCompare(String(b.crop || ''), 'ja');
+  });
+
+  return {
+    success: true,
+    today: todayStr,
+    items: items
+  };
+}
+
 function getSowingProgress(params) {
   const yearFilter = (params && params.year) ? String(params.year) : '';
   const planLookup = buildCultivationPlanLookupById_();
@@ -11833,6 +12221,130 @@ function getSowingProgress(params) {
     rows: rows.sort((a, b) => String(a.crop).localeCompare(String(b.crop), 'ja') || String(a.tag).localeCompare(String(b.tag), 'ja')),
     cropSummary: cropSummary,
     records: records
+  };
+}
+
+/**
+ * 作業記録の播種UI用: いまの播種期間（またはまもなく／未完了）の実行済み計画一覧。
+ * params: { today?, crop?, year?, includeDone? }
+ */
+function getCurrentSowingPlanOptions(params) {
+  params = params || {};
+  const todayStr = String(params.today || '').trim()
+    || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const todayParts = todayStr.split('-').map(Number);
+  const today = (todayParts.length >= 3)
+    ? new Date(todayParts[0], todayParts[1] - 1, todayParts[2])
+    : new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
+  const cropFilter = String(params.crop || '').trim();
+  const yearFilter = String(params.year || '').trim() || String(today.getFullYear());
+  const includeDone = params.includeDone === true || params.includeDone === 'true';
+  const BEFORE_DAYS = 7;   // 期間開始の何日前から候補に出すか
+  const AFTER_DAYS = 14;   // 期間終了後も未播種なら何日まで出すか
+
+  const planLookup = buildCultivationPlanLookupById_();
+  const ss = TENANT_SS;
+  const schedSheet = ss.getSheetByName('作業予定');
+  let sData = [];
+  if (schedSheet && schedSheet.getLastRow() > 1) {
+    sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+  }
+  const state = buildCpScheduleProgressState_(sData);
+
+  // 播種実績（TAG別）
+  const records = readSowingRecordList_();
+  const traysByTag = {};
+  records.forEach(function(r) {
+    const tag = String(r.tag || '').trim();
+    if (!tag) return;
+    traysByTag[tag] = (traysByTag[tag] || 0) + (Number(r.trays) || 0);
+  });
+
+  const items = [];
+  Object.keys(planLookup).forEach(function(k) {
+    const plan = planLookup[k];
+    if (!plan || plan.status !== 'executed') return;
+    if (yearFilter && String(plan.year) !== yearFilter) return;
+    const crop = String(plan.crop || '').trim();
+    if (cropFilter && crop !== cropFilter) return;
+    const sowingCells = (plan.tasks && Array.isArray(plan.tasks.sowing)) ? plan.tasks.sowing : [];
+    if (!sowingCells.length) return;
+
+    let windowStart = null;
+    let windowEnd = null;
+    sowingCells.forEach(function(cell) {
+      try {
+        const parts = cpCellToDateParts(plan.year, cell);
+        if (!windowStart || parts.start < windowStart) windowStart = parts.start;
+        if (!windowEnd || parts.end > windowEnd) windowEnd = parts.end;
+      } catch (e) {}
+    });
+    if (!windowStart || !windowEnd) return;
+    const start0 = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate());
+    const end0 = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), windowEnd.getDate());
+    const startMs = start0.getTime();
+    const endMs = end0.getTime();
+    const earlyMs = startMs - BEFORE_DAYS * 86400000;
+    const lateMs = endMs + AFTER_DAYS * 86400000;
+
+    const prog = computePlanCropWorkProgress_(plan, state, []);
+    // 定植済み以降は候補から外す（播種のタイミングではない）
+    if (prog.plantDone) return;
+    const sowDone = !!prog.sowDone;
+    const plannedTrays = Number(plan.trays) || 0;
+    const doneTrays = traysByTag[String(plan.tag || '').trim()] || 0;
+    const traysDone = plannedTrays > 0 ? (doneTrays >= plannedTrays) : sowDone;
+    if (!includeDone && traysDone && sowDone) return;
+
+    // 今の期間: 開始前少し〜終了後少し、またはまだ播種未完で開始済み
+    const inCurrentWindow = todayMs >= earlyMs && todayMs <= lateMs;
+    const overdueOpen = todayMs > endMs && !sowDone && !traysDone;
+    if (!inCurrentWindow && !overdueOpen) return;
+
+    let phase = 'in';
+    if (todayMs < startMs) phase = 'soon';
+    else if (todayMs > endMs) phase = 'after';
+
+    const periodLabel = formatCpPeriodLabel(plan.year, sowingCells);
+    items.push({
+      planId: plan.id,
+      year: plan.year,
+      crop: crop,
+      variety: plan.variety || '',
+      tag: plan.tag || '',
+      trays: plannedTrays,
+      holes: plan.holes != null ? plan.holes : '',
+      doneTrays: doneTrays,
+      remainTrays: Math.max(0, plannedTrays - doneTrays),
+      fieldNames: cpPlanFieldNames_(plan),
+      periodLabel: periodLabel,
+      sowingStart: Utilities.formatDate(start0, 'Asia/Tokyo', 'yyyy-MM-dd'),
+      sowingEnd: Utilities.formatDate(end0, 'Asia/Tokyo', 'yyyy-MM-dd'),
+      phase: phase,
+      stageCode: prog.stageCode || '',
+      statusLabel: prog.statusLabel || '',
+      sowDone: sowDone
+    });
+  });
+
+  items.sort(function(a, b) {
+    const phaseOrder = { in: 0, soon: 1, after: 2 };
+    const pa = phaseOrder[a.phase] != null ? phaseOrder[a.phase] : 9;
+    const pb = phaseOrder[b.phase] != null ? phaseOrder[b.phase] : 9;
+    if (pa !== pb) return pa - pb;
+    return String(a.sowingStart || '').localeCompare(String(b.sowingStart || ''))
+      || String(a.crop || '').localeCompare(String(b.crop || ''), 'ja')
+      || String(a.tag || '').localeCompare(String(b.tag || ''), 'ja');
+  });
+
+  return {
+    success: true,
+    today: todayStr,
+    year: yearFilter,
+    crop: cropFilter,
+    items: items
   };
 }
 

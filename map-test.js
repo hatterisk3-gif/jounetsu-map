@@ -1664,6 +1664,8 @@ async function fetchWeatherAndUpdateUI() {
     window.weatherSunshineState.historyData = historyData;
     window.weatherSunshineState.todayStr = todayStr;
     window.weatherSunshineState.lastYearTodayStr = lastYearTodayStr;
+    window.weatherSunshineState.lat = lat;
+    window.weatherSunshineState.lng = lng;
 
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;

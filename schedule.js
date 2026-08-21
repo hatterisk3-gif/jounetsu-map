@@ -21,6 +21,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       window._schedSelectedKeys = window._schedSelectedKeys || new Set();
       window._schedTableRows = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
+      let scheduleListFilter = 'all'; // all | fieldWork
       window.getActiveScheduleList = function () {
         return (globalSchedules || []).slice();
       };
@@ -544,6 +545,8 @@ async function fetchWeatherAndUpdateUI() {
     window.weatherSunshineState.historyData = historyData;
     window.weatherSunshineState.todayStr = todayStr;
     window.weatherSunshineState.lastYearTodayStr = lastYearTodayStr;
+    window.weatherSunshineState.lat = lat;
+    window.weatherSunshineState.lng = lng;
 
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
@@ -1475,13 +1478,39 @@ async function fetchWeatherAndUpdateUI() {
         updateMapVisuals(); // 地図の色を再計算
       };
 
+      /** 計画由来の作業予定が、この圃場ポリゴンに紐づくか判定 */
+      function scheduleMatchesField_(t, p) {
+        if (!t || !p) return false;
+        const polyId = String(p.id || '');
+        const polyName = String(p.name || '');
+        const ids = Array.isArray(t.fieldIds) ? t.fieldIds : [];
+        if (polyId && ids.length) {
+          for (let i = 0; i < ids.length; i++) {
+            const fid = String(ids[i] || '');
+            if (!fid) continue;
+            if (fid === polyId) return true;
+            if (fid.indexOf(polyId + '#') === 0) return true;
+            if (fid.split('#')[0] === polyId) return true;
+          }
+        }
+        const fn = String(t.fieldName || '').trim();
+        if (!fn || !polyName) return false;
+        if (fn === polyName) return true;
+        // 「北圃場(畝1)」形式
+        if (fn.indexOf(polyName + '(') === 0) return true;
+        // 「A圃場, B圃場」複数紐づけ
+        return fn.split(/[,、]/).map(function(s) { return s.trim(); }).some(function(part) {
+          return part === polyName || part.indexOf(polyName + '(') === 0;
+        });
+      }
+
       // ★変更：選択された部署に基づいて地図上のオブジェクトを描画＆色付けする
       function updateMapVisuals() {
         for (let id in loadedPolygons) {
           const p = loadedPolygons[id];
           
-          // 該当場所のタスクを抽出（部署フィルタ適用）
-          let fieldTasks = globalSchedules.filter(t => t.fieldName === p.name);
+          // 該当場所のタスクを抽出（圃場名一致＋計画の fieldIds / 畝ラベル付き名も拾う）
+          let fieldTasks = globalSchedules.filter(t => scheduleMatchesField_(t, p));
           let filteredTasks = currentDept === 'すべて' ? fieldTasks : fieldTasks.filter(t => t.dept === currentDept);
           
           const isHarvesting = currentDept === 'すべて' ? p.harvestingDepts.length > 0 : p.harvestingDepts.includes(currentDept);
@@ -1572,14 +1601,33 @@ async function fetchWeatherAndUpdateUI() {
 
       function showPopup(p, latLng) {
         const tasks = p.filteredTasks; // フィルター済みのタスクを使用
+        const cropWorks = (tasks || []).filter(t => t.cpKind === 'work' || (t.isCultivation && t.cpKind === 'work'));
+        const plantWorks = (tasks || []).filter(t => t.cpKind === 'plant' || String(t.workName || '').trim() === '定植');
+        let planHint = '';
+        if (cropWorks.length || plantWorks.length) {
+          const crops = [];
+          (cropWorks.length ? cropWorks : plantWorks).forEach(function(t) {
+            const label = [t.cropName, t.variety, t.tag].filter(Boolean).join(' / ');
+            if (label && crops.indexOf(label) < 0) crops.push(label);
+          });
+          planHint = `<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:6px 8px;margin-bottom:8px;font-size:11px;color:#2e7d32;line-height:1.4;">
+            🌱 栽培計画由来${crops.length ? '：' + crops.map(c => '<b>' + String(c).replace(/</g,'&lt;') + '</b>').join('、') : ''}
+            ${cropWorks.length ? '<br>品目作業 ' + cropWorks.length + '件' : (plantWorks.length ? '<br>定植待ち' : '')}
+          </div>`;
+        }
         let tasksHtml = tasks.length === 0 ? '<div style="color:#aaa; font-size:12px;">現在の予定はありません</div>' : tasks.map(t => {
           let cl = String(t.workName).includes('⚠️') ? 'color:#d32f2f; font-weight:bold; background:#ffebee;' : (t.isOverdue ? 'color:#d32f2f; font-weight:bold;' : 'color:#333;');
           const tagPart = (t.tag || t.person) ? ` / <span style="color:#e91e63;font-weight:bold;">${t.tag || t.person}</span>` : '';
           const traysPart = (t.trays || t.hours) ? ` · ${t.trays || t.hours}` : '';
+          const kindBadge = t.cpKind === 'work'
+            ? '<span style="background:#c8e6c9;color:#1b5e20;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">品目作業</span>'
+            : (t.cpKind === 'plant' ? '<span style="background:#dcedc8;color:#33691e;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">定植</span>'
+            : (t.cpKind === 'sow' ? '<span style="background:#fff9c4;color:#f57f17;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">播種</span>'
+            : (t.cpKind === 'procure' ? '<span style="background:#ffe0b2;color:#e65100;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">調達</span>' : '')));
           return `<div style="${cl} border-bottom:1px solid #eee; padding:6px;">
                     <div style="margin-bottom:4px;">${formatWorkStatusBadgeHtml(t)}</div>
                     <span style="background:#e3f2fd; color:#1a73e8; padding:2px 4px; border-radius:4px; font-size:10px; margin-right:4px;">${t.dept}</span>
-                    <b>${t.workName}</b><br>
+                    ${kindBadge}<b>${t.workName}</b><br>
                     <small>${t.cropName ? t.cropName : ''}${tagPart}${traysPart}</small><br>
                     <small>期間: ${t.schedDate}〜${t.deadline}</small>
                     ${formatDayPlansBadgeHtml(t)}
@@ -1613,11 +1661,12 @@ async function fetchWeatherAndUpdateUI() {
           </div>`;
         }
 
-        let h = `<div style="width:200px; padding:5px; font-family:sans-serif;">
+        let h = `<div style="width:220px; padding:5px; font-family:sans-serif;">
                    <h3 style="margin:0 0 5px 0;">${p.isMarker?p.color+' ':''}${p.name}</h3>
                    ${funcHtml}
                    <div style="font-size:12px; font-weight:bold; margin-bottom:5px;">${p.statusText}</div>
-                   <div style="background:#f9f9f9; padding:5px; border-radius:4px; max-height:150px; overflow-y:auto;">
+                   ${planHint}
+                   <div style="background:#f9f9f9; padding:5px; border-radius:4px; max-height:180px; overflow-y:auto;">
                      ${tasksHtml}
                    </div>
                    ${manureBtn}
@@ -2044,30 +2093,146 @@ async function fetchWeatherAndUpdateUI() {
       window.switchScheduleView = function(mode) {
         mode = mode || 'tasks';
         window._scheduleViewMode = mode;
-        ['tasks', 'field', 'tag'].forEach(function(m) {
-          const tab = document.getElementById(m === 'tasks' ? 'schedTabTasks' : (m === 'field' ? 'schedTabField' : 'schedTabTag'));
+        ['tasks', 'harvest', 'field', 'tag'].forEach(function(m) {
+          const tabId = (m === 'tasks') ? 'schedTabTasks'
+            : (m === 'harvest') ? 'schedTabHarvest'
+            : (m === 'field') ? 'schedTabField'
+            : 'schedTabTag';
+          const tab = document.getElementById(tabId);
           if (tab) tab.classList.toggle('active', m === mode);
         });
         const tasksEl = document.getElementById('scheduleViewTasks');
+        const harvestEl = document.getElementById('scheduleViewHarvest');
         const fieldEl = document.getElementById('scheduleViewFieldProgress');
         const tagEl = document.getElementById('scheduleViewTagProgress');
         if (tasksEl) tasksEl.style.display = (mode === 'tasks') ? 'block' : 'none';
+        if (harvestEl) harvestEl.style.display = (mode === 'harvest') ? 'block' : 'none';
         if (fieldEl) fieldEl.style.display = (mode === 'field') ? 'block' : 'none';
         if (tagEl) tagEl.style.display = (mode === 'tag') ? 'block' : 'none';
         const bulkBar = document.getElementById('scheduleBulkBar');
         if (bulkBar) bulkBar.style.display = (mode === 'tasks') ? 'flex' : 'none';
         const titleEl = document.getElementById('tableDeptName');
         if (titleEl) {
-          if (mode === 'field') titleEl.textContent = '圃場別進捗';
+          if (mode === 'harvest') titleEl.textContent = '収穫中の畑';
+          else if (mode === 'field') titleEl.textContent = '圃場別進捗';
           else if (mode === 'tag') titleEl.textContent = 'TAG別進捗';
           else titleEl.textContent = currentDept;
         }
         if (mode === 'tasks') {
           renderScheduleTasksTable_();
+        } else if (mode === 'harvest') {
+          loadHarvestingFieldsView_();
         } else {
           loadCropWorkProgressView_(mode);
         }
       };
+
+      function formatHarvestYmdShort_(ymd) {
+        if (!ymd) return '—';
+        const m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return Number(m[2]) + '/' + Number(m[3]);
+        return escHtml_(ymd);
+      }
+
+      function formatHarvestStatusCell_(row) {
+        if (row.almostDone) {
+          return '<span class="harvest-status-almost">そろそろ終わり</span>';
+        }
+        return '<span class="harvest-status-active">収穫中</span>';
+      }
+
+      function formatHarvestPlanCell_(row) {
+        if (!row.harvestLabel && !row.harvestEnd) return '—';
+        let html = escHtml_(row.harvestLabel || '');
+        if (row.harvestStart || row.harvestEnd) {
+          html += '<div style="font-size:11px;color:#666;margin-top:2px;">'
+            + formatHarvestYmdShort_(row.harvestStart) + '〜' + formatHarvestYmdShort_(row.harvestEnd)
+            + '</div>';
+        }
+        if (row.tag) {
+          html += '<div style="font-size:11px;color:#e91e63;font-weight:bold;margin-top:2px;">TAG: '
+            + escHtml_(row.tag) + '</div>';
+        }
+        return html || '—';
+      }
+
+      function buildHarvestRowHtml_(row, noteText) {
+        const cropCell = escHtml_(row.cropName || '—')
+          + (row.variety ? '<div style="font-size:11px;color:#1565c0;">' + escHtml_(row.variety) + '</div>' : '');
+        return '<tr' + (row.almostDone ? ' style="background:#fff8e1;"' : '') + '>' +
+          '<td>' + escHtml_(row.fieldName || '—') + '</td>' +
+          '<td>' + cropCell + '</td>' +
+          '<td>' + formatHarvestStatusCell_(row) + '</td>' +
+          '<td>' + formatHarvestYmdShort_(row.firstHarvestYmd) + '</td>' +
+          '<td>' + formatHarvestYmdShort_(row.lastHarvestYmd) + '</td>' +
+          '<td>' + formatHarvestPlanCell_(row) + '</td>' +
+          '<td style="font-size:12px;color:#555;">' + escHtml_(noteText || '—') + '</td>' +
+          '</tr>';
+      }
+
+      async function loadHarvestingFieldsView_() {
+        const almostBody = document.getElementById('harvestAlmostTableBody');
+        const allBody = document.getElementById('harvestAllTableBody');
+        if (!almostBody || !allBody) return;
+        almostBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:#888;">読み込み中...</td></tr>';
+        allBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:#888;">読み込み中...</td></tr>';
+        try {
+          const today = (typeof formatLocalYmd_ === 'function')
+            ? formatLocalYmd_(new Date())
+            : (function() {
+                const d = new Date();
+                return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+              })();
+          const res = await callGAS('getHarvestingFieldsSummary', { today: today });
+          window._harvestingFieldsCache = res || null;
+          renderHarvestingFieldsTables_(res);
+        } catch (e) {
+          const msg = '読み込み失敗: ' + escHtml_(e.message || e);
+          almostBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:#c62828;">' + msg + '</td></tr>';
+          allBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:#c62828;">' + msg + '</td></tr>';
+        }
+      }
+
+      function renderHarvestingFieldsTables_(res) {
+        const almost = (res && res.almostDone) || [];
+        const all = (res && res.harvesting) || [];
+        const almostBody = document.getElementById('harvestAlmostTableBody');
+        const allBody = document.getElementById('harvestAllTableBody');
+        const almostCount = document.getElementById('harvestAlmostCount');
+        const allCount = document.getElementById('harvestAllCount');
+        if (almostCount) almostCount.textContent = String(almost.length);
+        if (allCount) allCount.textContent = String(all.length);
+
+        if (almostBody) {
+          if (!almost.length) {
+            almostBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:14px;color:#888;">該当する畑はありません</td></tr>';
+          } else {
+            almostBody.innerHTML = almost.map(function(row) {
+              const note = (row.almostReasons && row.almostReasons.length)
+                ? row.almostReasons.join('／')
+                : '終盤';
+              return buildHarvestRowHtml_(row, note);
+            }).join('');
+          }
+        }
+        if (allBody) {
+          if (!all.length) {
+            allBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:14px;color:#888;">現在、収穫中の畑はありません</td></tr>';
+          } else {
+            allBody.innerHTML = all.map(function(row) {
+              let note = '';
+              if (row.almostDone && row.almostReasons && row.almostReasons.length) {
+                note = row.almostReasons.join('／');
+              } else if (row.daysSinceFirst != null) {
+                note = '開始から' + row.daysSinceFirst + '日';
+              } else if (row.lastProgress) {
+                note = row.lastProgress;
+              }
+              return buildHarvestRowHtml_(row, note);
+            }).join('');
+          }
+        }
+      }
 
       async function loadCropWorkProgressView_(mode) {
         const tbody = document.getElementById(mode === 'field' ? 'fieldProgressTableBody' : 'tagProgressTableBody');
@@ -2124,16 +2289,32 @@ async function fetchWeatherAndUpdateUI() {
         }
       }
 
+      window.setScheduleListFilter_ = function(mode) {
+        scheduleListFilter = mode === 'fieldWork' ? 'fieldWork' : 'all';
+        const allBtn = document.getElementById('schedFilterAll');
+        const fwBtn = document.getElementById('schedFilterFieldWork');
+        if (allBtn) allBtn.classList.toggle('active', scheduleListFilter === 'all');
+        if (fwBtn) fwBtn.classList.toggle('active', scheduleListFilter === 'fieldWork');
+        if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+      };
+
       function renderScheduleTasksTable_() {
         const tbody = document.getElementById('scheduleTableBody');
         if (!tbody) return;
         document.getElementById('tableDeptName').innerText = currentDept;
 
         let filteredSchedules = currentDept === 'すべて' ? globalSchedules : globalSchedules.filter(t => t.dept === currentDept);
+        if (scheduleListFilter === 'fieldWork') {
+          // 定植後に品目別作業設定から畑へ載った作業のみ
+          filteredSchedules = filteredSchedules.filter(t => t.cpKind === 'work');
+        }
 
         if (filteredSchedules.length === 0) {
           window._schedTableRows = [];
-          tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">現在必要な作業はありません</td></tr>';
+          const emptyMsg = scheduleListFilter === 'fieldWork'
+            ? '定植完了後の畑の品目作業はありません<br><span style="font-size:11px;color:#888;">品目別作業設定があり、定植が完了するとここに出ます</span>'
+            : '現在必要な作業はありません';
+          tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">' + emptyMsg + '</td></tr>';
           updateSchedBulkSelectionUi_();
         } else {
           let sorted = [...filteredSchedules].sort((a, b) => {
@@ -2217,6 +2398,9 @@ async function fetchWeatherAndUpdateUI() {
           if (modal && modal.style.display === 'flex') {
             if (window._scheduleViewMode === 'tasks') {
               renderScheduleTasksTable_();
+            } else if (window._scheduleViewMode === 'harvest') {
+              window._harvestingFieldsCache = null;
+              loadHarvestingFieldsView_();
             } else {
               window._cropWorkProgressCache = null;
               loadCropWorkProgressView_(window._scheduleViewMode);

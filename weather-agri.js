@@ -117,6 +117,7 @@
     // 作業適日（今日〜+6日）
     const workDays = [];
     const end = Math.min(daily.time.length, todayIndex + 7);
+    let rainWithin2Days = null;
     for (let i = todayIndex; i < end; i++) {
       const rain = num(rainA[i]);
       const code = num(codeA[i]);
@@ -130,6 +131,15 @@
       const isWindy = wind >= 10;
       const isHot = tMax >= 34;
       const isFrost = tMin <= 2;
+      const daysAhead = i - todayIndex;
+      if (isRainy && daysAhead >= 0 && daysAhead <= 2 && !rainWithin2Days) {
+        rainWithin2Days = {
+          date: daily.time[i],
+          label: labelDate,
+          daysAhead: daysAhead,
+          rain: rain
+        };
+      }
 
       const scores = {
         weeding: !isRainy && !isWindy && sunH >= 2 ? 2 : (!isRainy ? 1 : 0),
@@ -168,6 +178,7 @@
       gddSeason,
       alerts,
       workDays,
+      rainWithin2Days,
       irrigateSuggest,
       tMaxToday,
       tMinToday
@@ -211,11 +222,30 @@
       ? `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#fff3e0;border:1px solid #ffcc80;color:#e65100;font-size:12px;font-weight:bold;">💧 潅水おすすめ：土壌水分が低めです（推定 ${m}%）</div>`
       : `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;font-size:12px;">💧 潅水は急がなくてよさそうです（推定 ${m}%）</div>`;
 
+    const priorityBox = renderWeatherPrioritySectionHtml_(insights);
+
+    // DOM挿入後に定植候補を非同期取得
+    if (insights.rainWithin2Days) {
+      setTimeout(() => {
+        try { refreshWeatherPriorityPanel_(); } catch (e) {}
+      }, 40);
+    }
+    setTimeout(() => {
+      try { refreshMonthlyClimatePanel_(); } catch (e) {}
+    }, 60);
+
     return `
       <div style="background:linear-gradient(180deg,#e8f5e9 0%,#e3f2fd 100%);border:1px solid #90caf9;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
           <span style="font-weight:bold;color:#1565c0;font-size:13px;">🌱 農業天気ダッシュボード</span>
           <button type="button" onclick="toggleSoilMoistureMapOverlay()" style="border:1px solid #1565c0;background:#fff;color:#1565c0;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:bold;cursor:pointer;">地図に水分表示</button>
+        </div>
+
+        ${priorityBox}
+
+        <div id="weatherMonthlyClimateMount" style="background:#fff;border-radius:8px;padding:10px;border:1px solid #b39ddb;margin-bottom:8px;">
+          <div style="font-weight:bold;color:#5e35b1;margin-bottom:4px;">📅 月別の天気傾向</div>
+          <div id="weatherMonthlyClimateBody" style="font-size:12px;color:#666;">この地点の直近数年データを集計中...</div>
         </div>
 
         <div style="background:#fff;border-radius:8px;padding:10px;border:1px solid #bbdefb;margin-bottom:8px;">
@@ -264,6 +294,396 @@
         </div>
       </div>
     `;
+  }
+
+  const WEATHER_PRIORITY_GAS_URL = 'https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec';
+  let _plantingPriorityCache = { at: 0, today: '', items: null };
+
+  function escHtml_(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function rainAheadLabel_(rainInfo) {
+    if (!rainInfo) return '';
+    if (rainInfo.daysAhead === 0) return '今日';
+    if (rainInfo.daysAhead === 1) return '明日';
+    if (rainInfo.daysAhead === 2) return '明後日';
+    return rainInfo.label || '';
+  }
+
+  function renderWeatherPrioritySectionHtml_(insights) {
+    const rain = insights && insights.rainWithin2Days;
+    if (!rain) {
+      return `
+        <div id="weatherPriorityMount" style="background:#fff;border-radius:8px;padding:10px;border:1px solid #c8e6c9;margin-bottom:8px;">
+          <div style="font-weight:bold;color:#2e7d32;margin-bottom:4px;">🎯 天気から見た優先事項</div>
+          <div style="font-size:12px;color:#666;">直近2日以内の雨予報はないため、定植の最優先表示はありません。</div>
+        </div>`;
+    }
+    const when = rainAheadLabel_(rain);
+    return `
+      <div id="weatherPriorityMount" style="background:#fff8e1;border-radius:8px;padding:10px;border:1px solid #ffcc80;margin-bottom:8px;">
+        <div style="font-weight:bold;color:#e65100;margin-bottom:4px;">🎯 天気から見た優先事項</div>
+        <div style="font-size:11px;color:#bf360c;margin-bottom:6px;">🌧️ ${escHtml_(when)}（${escHtml_(rain.label)}）に雨予報 → 定植候補を確認中...</div>
+        <div id="weatherPriorityList" style="font-size:12px;color:#666;">読み込み中...</div>
+      </div>`;
+  }
+
+  async function callWeatherPriorityGas_(action, params) {
+    if (typeof global.callGAS === 'function') {
+      return global.callGAS(action, params || {});
+    }
+    const spreadsheetId = localStorage.getItem('spreadsheetId');
+    const body = Object.assign({}, params || {}, { action: action });
+    if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null') {
+      body.spreadsheetId = spreadsheetId;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(WEATHER_PRIORITY_GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        throw new Error('GAS応答の解析に失敗しました');
+      }
+      if (json.status !== 'success') throw new Error(json.message || 'GASエラー');
+      return json.data;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function loadWeatherPlantingPriorityItems_(todayStr) {
+    const now = Date.now();
+    if (
+      _plantingPriorityCache.items &&
+      _plantingPriorityCache.today === todayStr &&
+      (now - _plantingPriorityCache.at) < 5 * 60 * 1000
+    ) {
+      return _plantingPriorityCache.items;
+    }
+    const res = await callWeatherPriorityGas_('getWeatherPlantingPriorities', { today: todayStr });
+    const items = (res && Array.isArray(res.items)) ? res.items : [];
+    _plantingPriorityCache = { at: now, today: todayStr, items: items };
+    return items;
+  }
+
+  function renderPlantingPriorityItemsHtml_(items, rainInfo) {
+    if (!items || !items.length) {
+      return `<div style="font-size:12px;color:#666;">定植待ち（播種まで完了）かつ定植期間内〜後の計画はありません。</div>`;
+    }
+    const when = rainAheadLabel_(rainInfo);
+    const rows = items.map(it => {
+      const crop = escHtml_(it.crop || '');
+      const variety = it.variety ? (' / ' + escHtml_(it.variety)) : '';
+      const tag = it.tag ? escHtml_(it.tag) : '';
+      const fields = Array.isArray(it.fieldNames)
+        ? escHtml_(it.fieldNames.join('、'))
+        : escHtml_(it.fieldNames || '圃場未設定');
+      const phase = it.phase === 'after' ? '定植期間後' : '定植期間内';
+      const period = escHtml_(it.plantingLabel || '');
+      return `
+        <div style="background:#fff;border:1px solid #ffcc80;border-left:4px solid #e53935;border-radius:8px;padding:8px 10px;margin-bottom:6px;">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span style="background:#c62828;color:#fff;font-size:10px;font-weight:bold;padding:2px 8px;border-radius:999px;">最優先 · 定植</span>
+            <span style="font-size:10px;color:#e65100;font-weight:bold;">${phase}${period ? '（' + period + '）' : ''}</span>
+          </div>
+          <div style="font-size:14px;font-weight:bold;color:#bf360c;margin-top:4px;">🌱 ${crop}${variety}${tag ? ' <span style="font-size:11px;color:#888;">[' + tag + ']</span>' : ''}</div>
+          <div style="font-size:11px;color:#666;margin-top:2px;">📍 ${fields}</div>
+          <div style="font-size:11px;color:#555;margin-top:4px;line-height:1.35;">${escHtml_(when)}の雨の前に定植を進める（${escHtml_(it.statusLabel || '定植待ち')}）</div>
+        </div>`;
+    }).join('');
+    return rows;
+  }
+
+  async function refreshWeatherPriorityPanel_() {
+    const mount = document.getElementById('weatherPriorityMount');
+    const list = document.getElementById('weatherPriorityList');
+    if (!mount) return;
+    const st = global.weatherSunshineState;
+    const insights = st && st.agriInsights;
+    const rain = insights && insights.rainWithin2Days;
+    if (!rain) return;
+    if (!list) return;
+    try {
+      const todayStr = (st && st.todayStr) || '';
+      const items = await loadWeatherPlantingPriorityItems_(todayStr);
+      if (!document.getElementById('weatherPriorityList')) return;
+      list.innerHTML = renderPlantingPriorityItemsHtml_(items, rain);
+      if (items.length) {
+        const when = rainAheadLabel_(rain);
+        const head = mount.querySelector('div');
+        // keep title; update subtitle if present
+        const sub = mount.children[1];
+        if (sub && sub.id !== 'weatherPriorityList') {
+          sub.innerHTML = `🌧️ ${escHtml_(when)}（${escHtml_(rain.label)}）に雨予報 · 定植候補 <b>${items.length}</b> 件`;
+        }
+      }
+    } catch (e) {
+      if (document.getElementById('weatherPriorityList')) {
+        list.innerHTML = `<div style="color:#c62828;font-size:12px;">定植候補の取得に失敗しました</div>`;
+      }
+      console.warn('weather planting priority', e);
+    }
+  }
+
+  let _monthlyClimateCache = { key: '', at: 0, months: null, years: 0 };
+
+  function resolveWeatherLatLng_() {
+    const st = global.weatherSunshineState || {};
+    if (st.lat != null && st.lng != null && isFinite(Number(st.lat)) && isFinite(Number(st.lng))) {
+      return { lat: Number(st.lat), lng: Number(st.lng) };
+    }
+    try {
+      if (global.map && typeof global.map.getCenter === 'function') {
+        const c = global.map.getCenter();
+        return { lat: c.lat(), lng: c.lng() };
+      }
+    } catch (e) {}
+    if (global.lastWeatherFetchPos && global.lastWeatherFetchPos.lat != null) {
+      return { lat: Number(global.lastWeatherFetchPos.lat), lng: Number(global.lastWeatherFetchPos.lng) };
+    }
+    return null;
+  }
+
+  function evaluateMonthRainLabel_(rainMm, avgRain) {
+    if (!(avgRain > 0) || rainMm == null) return { key: 'na', text: 'データ不足', color: '#78909c', bg: '#eceff1' };
+    const r = rainMm / avgRain;
+    if (r >= 1.35) return { key: 'very_wet', text: '雨が多い', color: '#01579b', bg: '#e1f5fe' };
+    if (r >= 1.12) return { key: 'wet', text: 'やや雨多め', color: '#0277bd', bg: '#e3f2fd' };
+    if (r <= 0.65) return { key: 'very_dry', text: '雨が少ない', color: '#e65100', bg: '#fff3e0' };
+    if (r <= 0.88) return { key: 'dry', text: 'やや雨少なめ', color: '#ef6c00', bg: '#fff8e1' };
+    return { key: 'normal', text: '平年並み', color: '#2e7d32', bg: '#e8f5e9' };
+  }
+
+  function evaluateMonthTempLabel_(tempC, avgTemp) {
+    if (tempC == null || avgTemp == null) return '';
+    const d = tempC - avgTemp;
+    if (d >= 2.5) return '暑め';
+    if (d <= -2.5) return '涼しめ';
+    return '';
+  }
+
+  function buildMonthlyClimateFromArchive_(daily) {
+    if (!daily || !daily.time || !daily.time.length) return null;
+    const rainA = daily.precipitation_sum || [];
+    const tmaxA = daily.temperature_2m_max || [];
+    const tminA = daily.temperature_2m_min || [];
+    const sunA = daily.sunshine_duration || [];
+    const codeA = daily.weathercode || [];
+
+    const buckets = {};
+    for (let m = 1; m <= 12; m++) {
+      buckets[m] = { rain: 0, rainyDays: 0, tempSum: 0, tempN: 0, sunH: 0, days: 0, yearSet: {} };
+    }
+
+    for (let i = 0; i < daily.time.length; i++) {
+      const ds = String(daily.time[i] || '');
+      const parts = ds.split('-').map(Number);
+      if (parts.length < 3 || !parts[1]) continue;
+      const y = parts[0];
+      const m = parts[1];
+      const b = buckets[m];
+      if (!b) continue;
+      const rain = num(rainA[i]);
+      const code = num(codeA[i]);
+      const tmax = num(tmaxA[i]);
+      const tmin = num(tminA[i]);
+      const sunH = num(sunA[i]) / 3600;
+      b.rain += rain;
+      b.days += 1;
+      b.yearSet[y] = true;
+      if (rain >= 1.5 || code >= 51) b.rainyDays += 1;
+      if (isFinite(tmax) && isFinite(tmin)) {
+        b.tempSum += (tmax + tmin) / 2;
+        b.tempN += 1;
+      }
+      b.sunH += sunH;
+    }
+
+    const yearCounts = [];
+    for (let m = 1; m <= 12; m++) {
+      yearCounts.push(Object.keys(buckets[m].yearSet).length);
+    }
+    const yearsUsed = yearCounts.length ? Math.max.apply(null, yearCounts) : 0;
+    if (yearsUsed < 1) return null;
+
+    const months = [];
+    for (let m = 1; m <= 12; m++) {
+      const b = buckets[m];
+      const yN = Math.max(1, Object.keys(b.yearSet).length);
+      months.push({
+        month: m,
+        rainMm: Math.round((b.rain / yN) * 10) / 10,
+        rainyDays: Math.round((b.rainyDays / yN) * 10) / 10,
+        meanTemp: b.tempN ? Math.round((b.tempSum / b.tempN) * 10) / 10 : null,
+        sunH: Math.round((b.sunH / yN) * 10) / 10,
+        years: yN
+      });
+    }
+
+    const rains = months.map(x => x.rainMm).filter(v => v > 0);
+    const temps = months.map(x => x.meanTemp).filter(v => v != null);
+    const avgRain = rains.length ? rains.reduce((a, b) => a + b, 0) / rains.length : 0;
+    const avgTemp = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : null;
+
+    months.forEach(mo => {
+      mo.rainLabel = evaluateMonthRainLabel_(mo.rainMm, avgRain);
+      mo.tempExtra = evaluateMonthTempLabel_(mo.meanTemp, avgTemp);
+      mo.vsAvgPct = avgRain > 0 ? Math.round((mo.rainMm / avgRain) * 100) : null;
+    });
+
+    // 雨の多い順トップ3
+    const wetRank = months.slice().sort((a, b) => b.rainMm - a.rainMm);
+    months.forEach(mo => {
+      mo.wetRank = wetRank.findIndex(x => x.month === mo.month) + 1;
+    });
+
+    return { months: months, years: yearsUsed, avgRain: Math.round(avgRain * 10) / 10, avgTemp };
+  }
+
+  function buildMonthlyClimateNarrative_(profile, todayStr) {
+    if (!profile || !profile.months) return '';
+    const parts = String(todayStr || '').split('-').map(Number);
+    const curM = parts[1] || (new Date().getMonth() + 1);
+    const nextM = curM === 12 ? 1 : curM + 1;
+    const cur = profile.months.find(x => x.month === curM);
+    const next = profile.months.find(x => x.month === nextM);
+    const lines = [];
+    if (cur) {
+      lines.push(`${curM}月は年平均比 ${cur.vsAvgPct != null ? cur.vsAvgPct + '%' : '—'} の降水量（${cur.rainLabel.text}・雨日約${cur.rainyDays}日）`);
+    }
+    if (next) {
+      const again = cur && cur.rainLabel && next.rainLabel
+        && (cur.rainLabel.key === 'wet' || cur.rainLabel.key === 'very_wet')
+        && (next.rainLabel.key === 'wet' || next.rainLabel.key === 'very_wet');
+      lines.push(`${nextM}月は${again ? 'また' : ''}${next.rainLabel.text}の傾向（平均 ${next.rainMm}mm・雨の多さ ${next.wetRank}/12位）`);
+    }
+    return lines.join('。') + '。';
+  }
+
+  function renderMonthlyClimateHtml_(profile, todayStr) {
+    if (!profile || !profile.months) {
+      return '<div style="color:#888;">月別傾向を計算できませんでした</div>';
+    }
+    const parts = String(todayStr || '').split('-').map(Number);
+    const curM = parts[1] || (new Date().getMonth() + 1);
+    const nextM = curM === 12 ? 1 : curM + 1;
+    const narrative = buildMonthlyClimateNarrative_(profile, todayStr);
+    const maxRain = Math.max.apply(null, profile.months.map(m => m.rainMm || 0)) || 1;
+
+    const bars = profile.months.map(mo => {
+      const h = Math.max(4, Math.round((mo.rainMm / maxRain) * 56));
+      const isCur = mo.month === curM;
+      const isNext = mo.month === nextM;
+      const barColor = mo.rainLabel.key === 'very_wet' || mo.rainLabel.key === 'wet'
+        ? '#0288d1'
+        : (mo.rainLabel.key === 'very_dry' || mo.rainLabel.key === 'dry' ? '#ff9800' : '#66bb6a');
+      const ring = isCur ? '2px solid #c62828' : (isNext ? '2px solid #6a1b9a' : '1px solid transparent');
+      return `
+        <div style="flex:1;min-width:0;text-align:center;" title="${mo.month}月 ${mo.rainMm}mm / ${mo.rainLabel.text}">
+          <div style="height:60px;display:flex;align-items:flex-end;justify-content:center;">
+            <div style="width:70%;max-width:18px;height:${h}px;background:${barColor};border-radius:3px 3px 0 0;border:${ring};box-sizing:border-box;"></div>
+          </div>
+          <div style="font-size:9px;font-weight:${isCur || isNext ? 'bold' : 'normal'};color:${isCur ? '#c62828' : (isNext ? '#6a1b9a' : '#666')};">${mo.month}</div>
+        </div>`;
+    }).join('');
+
+    const focusMonths = [curM, nextM].filter((v, i, a) => a.indexOf(v) === i);
+    const cards = focusMonths.map(m => {
+      const mo = profile.months.find(x => x.month === m);
+      if (!mo) return '';
+      const tag = m === curM ? '今月' : '来月';
+      const tempBit = mo.meanTemp != null
+        ? `平均気温 ${mo.meanTemp}℃${mo.tempExtra ? '（' + mo.tempExtra + '）' : ''}`
+        : '';
+      return `
+        <div style="flex:1;min-width:140px;background:${mo.rainLabel.bg};border:1px solid ${mo.rainLabel.color}44;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:10px;font-weight:bold;color:${mo.rainLabel.color};margin-bottom:2px;">${tag} · ${m}月</div>
+          <div style="font-size:14px;font-weight:bold;color:${mo.rainLabel.color};">${mo.rainLabel.text}</div>
+          <div style="font-size:11px;color:#455a64;margin-top:4px;line-height:1.4;">
+            降水 ${mo.rainMm}mm（年平均比 ${mo.vsAvgPct != null ? mo.vsAvgPct + '%' : '—'}）<br>
+            雨日 約${mo.rainyDays}日 · 日照 ${mo.sunH}h<br>
+            ${tempBit}
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div style="font-size:11px;color:#4527a0;line-height:1.45;margin-bottom:8px;background:#ede7f6;border-radius:6px;padding:8px 10px;">${escHtml_(narrative)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">${cards}</div>
+      <div style="background:#fafafa;border:1px solid #e0e0e0;border-radius:8px;padding:8px 6px 4px;">
+        <div style="font-size:10px;color:#666;margin-bottom:4px;padding-left:4px;">月別降水量（直近${profile.years}年平均） 赤枠=今月 / 紫枠=来月</div>
+        <div style="display:flex;align-items:flex-end;gap:2px;">${bars}</div>
+      </div>
+      <div style="font-size:10px;color:#888;margin-top:6px;line-height:1.35;">※この地点の過去${profile.years}年実績から算出。平年値（30年）ではありません。「また雨が多い」などは月ごとの相対評価です。</div>
+    `;
+  }
+
+  async function loadMonthlyClimateProfile_(lat, lng) {
+    const now = new Date();
+    const endYear = now.getFullYear() - 1;
+    const startYear = endYear - 2;
+    const key = [Math.round(lat * 100) / 100, Math.round(lng * 100) / 100, startYear, endYear].join('|');
+    if (
+      _monthlyClimateCache.months &&
+      _monthlyClimateCache.key === key &&
+      (Date.now() - _monthlyClimateCache.at) < 12 * 60 * 60 * 1000
+    ) {
+      return { months: _monthlyClimateCache.months, years: _monthlyClimateCache.years, avgRain: _monthlyClimateCache.avgRain, avgTemp: _monthlyClimateCache.avgTemp };
+    }
+
+    const start = startYear + '-01-01';
+    const end = endYear + '-12-31';
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${start}&end_date=${end}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration&timezone=Asia%2FTokyo`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('月別天気の取得に失敗しました');
+    const json = await res.json();
+    const profile = buildMonthlyClimateFromArchive_(json.daily);
+    if (!profile) throw new Error('月別集計に失敗しました');
+    _monthlyClimateCache = {
+      key: key,
+      at: Date.now(),
+      months: profile.months,
+      years: profile.years,
+      avgRain: profile.avgRain,
+      avgTemp: profile.avgTemp
+    };
+    global.weatherSunshineState = global.weatherSunshineState || {};
+    global.weatherSunshineState.monthlyClimate = profile;
+    return profile;
+  }
+
+  async function refreshMonthlyClimatePanel_() {
+    const body = document.getElementById('weatherMonthlyClimateBody');
+    if (!body) return;
+    const pos = resolveWeatherLatLng_();
+    if (!pos) {
+      body.innerHTML = '<div style="color:#888;">位置情報が無いため月別傾向を出せません</div>';
+      return;
+    }
+    try {
+      const st = global.weatherSunshineState || {};
+      const profile = await loadMonthlyClimateProfile_(pos.lat, pos.lng);
+      if (!document.getElementById('weatherMonthlyClimateBody')) return;
+      body.innerHTML = renderMonthlyClimateHtml_(profile, st.todayStr);
+    } catch (e) {
+      console.warn('monthly climate', e);
+      if (document.getElementById('weatherMonthlyClimateBody')) {
+        body.innerHTML = '<div style="color:#c62828;">月別傾向の取得に失敗しました</div>';
+      }
+    }
   }
 
   function getRecentIrrigationBoost(poly) {
@@ -374,6 +794,8 @@
 
   global.computeAgriWeatherInsights = computeAgriWeatherInsights;
   global.renderAgriWeatherPanelHtml = renderAgriWeatherPanelHtml;
+  global.refreshWeatherPriorityPanel_ = refreshWeatherPriorityPanel_;
+  global.refreshMonthlyClimatePanel_ = refreshMonthlyClimatePanel_;
   global.toggleSoilMoistureMapOverlay = toggleSoilMoistureMapOverlay;
   global.applySoilMoistureColors = applySoilMoistureColors;
   global.clearSoilMoistureColors = clearSoilMoistureColors;

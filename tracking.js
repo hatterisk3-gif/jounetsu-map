@@ -2330,7 +2330,7 @@
   };
 
   /** 退勤する → まず整合確認（すぐ退勤確定しない） */
-  window.confirmClockOut = function () {
+  window.confirmClockOut = async function () {
     syncClockInTimeFromModalIfChanged();
     const dateInput = document.getElementById('clockOutDate') ? document.getElementById('clockOutDate').value : '';
     const timeInput = document.getElementById('clockOutTime') ? document.getElementById('clockOutTime').value : '';
@@ -2352,6 +2352,14 @@
       if (ls == null || le == null || le === ls) {
         alertMsg('昼休憩の開始・終了時刻を正しく入力してください');
         return;
+      }
+    } else {
+      // 次の画面（時間確認）へ進む前に、昼なしを確認
+      // ※すでに「昼休憩なし」で登録済み（hidden）の場合は再確認しない
+      const needsLunchOffConfirm = !lunchEl || lunchEl.type === 'checkbox';
+      if (needsLunchOffConfirm) {
+        const ok = await confirmMsg('昼休憩が登録されていませんが大丈夫ですか？');
+        if (!ok) return;
       }
     }
 
@@ -2867,10 +2875,14 @@
       }
       html += `<button type="button" onclick="window._isModifyingLunchFromClockOut=true; openLunchBreakModal();" style="width:100%; background:#fff; color:#E65100; border:1px solid #FF9800; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:8px;">昼休憩を変更する</button>`;
     } else {
+      const gapSugClock = suggestLunchFromWorkGaps(user, workDateForLunch || outDate);
+      // 作業間に昼の空きが無い（ぶっ通し）→ 昼休憩チェックは初期OFF
+      const straightThrough = !gapSugClock;
       const lunchOn = (lunchReg && lunchReg.registered)
         ? !!lunchReg.enabled
-        : ((pending && pending.lunchEnabled != null) ? !!pending.lunchEnabled : !!pref.lunchEnabled);
-      const gapSugClock = suggestLunchFromWorkGaps(user, workDateForLunch || outDate);
+        : ((pending && pending.lunchEnabled != null)
+          ? !!pending.lunchEnabled
+          : (straightThrough ? false : !!pref.lunchEnabled));
       let ls = (lunchReg && lunchReg.registered && lunchReg.start)
         ? lunchReg.start
         : ((pending && pending.lunchStart) || (lunchReg && lunchReg.start) || '');
@@ -2889,6 +2901,9 @@
       html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
       html += `<input type="checkbox" id="clockLunchEnabled" ${lunchOn ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
       html += `</label>`;
+      if (straightThrough && !lunchOn) {
+        html += `<div style="font-size:11px; color:#e65100; margin:-2px 0 8px; line-height:1.4;">※作業記録が昼をまたいで連続しているため、昼休憩はオフにしています。必要ならチェックを入れてください。</div>`;
+      }
       html += `<div id="clockLunchFields" style="display:flex; gap:8px; align-items:center; opacity:${lunchOn ? '1' : '0.45'}; margin-top:6px;">`;
       html += `<input type="text" id="clockLunchStart" class="form-input app-time-input" readonly inputmode="none" style="flex:1; margin:0; padding:10px 8px; text-align:center; font-weight:bold; font-size:16px; border:1px solid #c5e1a5; border-radius:6px; background:#fff;" value="${ls}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockLunchStart', '昼休憩 開始')">`;
       html += `<span style="color:#558b2f; font-weight:bold; font-size:16px;">〜</span>`;
