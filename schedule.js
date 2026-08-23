@@ -25,6 +25,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       window._schedTableRows = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
       let scheduleListFilter = 'all'; // all | fieldWork
+      let scheduleWorkNameFilter = ''; // 空＝すべて / 作業名で絞り込み
       let scheduleSortKey = 'status';
       let scheduleSortDir = 'asc';
       try {
@@ -2284,8 +2285,9 @@ async function fetchWeatherAndUpdateUI() {
       window.switchScheduleView = function(mode) {
         mode = mode || 'tasks';
         window._scheduleViewMode = mode;
-        ['tasks', 'harvest', 'field', 'tag'].forEach(function(m) {
+        ['tasks', 'outsource', 'harvest', 'field', 'tag'].forEach(function(m) {
           const tabId = (m === 'tasks') ? 'schedTabTasks'
+            : (m === 'outsource') ? 'schedTabOutsource'
             : (m === 'harvest') ? 'schedTabHarvest'
             : (m === 'field') ? 'schedTabField'
             : 'schedTabTag';
@@ -2293,24 +2295,39 @@ async function fetchWeatherAndUpdateUI() {
           if (tab) tab.classList.toggle('active', m === mode);
         });
         const tasksEl = document.getElementById('scheduleViewTasks');
+        const outsourceEl = document.getElementById('scheduleViewOutsource');
         const harvestEl = document.getElementById('scheduleViewHarvest');
         const fieldEl = document.getElementById('scheduleViewFieldProgress');
         const tagEl = document.getElementById('scheduleViewTagProgress');
         if (tasksEl) tasksEl.style.display = (mode === 'tasks') ? 'block' : 'none';
+        if (outsourceEl) outsourceEl.style.display = (mode === 'outsource') ? 'block' : 'none';
         if (harvestEl) harvestEl.style.display = (mode === 'harvest') ? 'block' : 'none';
         if (fieldEl) fieldEl.style.display = (mode === 'field') ? 'block' : 'none';
         if (tagEl) tagEl.style.display = (mode === 'tag') ? 'block' : 'none';
         const bulkBar = document.getElementById('scheduleBulkBar');
         if (bulkBar) bulkBar.style.display = (mode === 'tasks') ? 'flex' : 'none';
+        const addBtn = document.getElementById('scheduleHeaderAddBtn');
+        if (addBtn) {
+          if (mode === 'outsource') {
+            addBtn.textContent = '＋依頼';
+            addBtn.style.background = '#1565c0';
+          } else {
+            addBtn.textContent = '＋作業';
+            addBtn.style.background = '#2e7d32';
+          }
+        }
         const titleEl = document.getElementById('tableDeptName');
         if (titleEl) {
-          if (mode === 'harvest') titleEl.textContent = '収穫中の畑';
+          if (mode === 'outsource') titleEl.textContent = '依頼作業';
+          else if (mode === 'harvest') titleEl.textContent = '収穫中の畑';
           else if (mode === 'field') titleEl.textContent = '圃場別進捗';
           else if (mode === 'tag') titleEl.textContent = 'TAG別進捗';
           else titleEl.textContent = currentDept;
         }
         if (mode === 'tasks') {
           renderScheduleTasksTable_();
+        } else if (mode === 'outsource') {
+          renderOutsourceWorkTable_();
         } else if (mode === 'harvest') {
           loadHarvestingFieldsView_();
         } else {
@@ -2489,6 +2506,89 @@ async function fetchWeatherAndUpdateUI() {
         if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
       };
 
+      function syncScheduleWorkNameFilterUi_() {
+        const chip = document.getElementById('schedWorkNameFilterChip');
+        const chipText = document.getElementById('schedWorkNameFilterChipText');
+        const th = document.querySelector('#scheduleTable th.sched-workname-filter-th');
+        const active = !!scheduleWorkNameFilter;
+        if (chip) chip.style.display = active ? 'inline-flex' : 'none';
+        if (chipText) chipText.textContent = scheduleWorkNameFilter || '';
+        if (th) th.classList.toggle('is-filtered', active);
+      }
+
+      function getScheduleWorkNameCandidates_() {
+        let list = currentDept === 'すべて' ? (globalSchedules || []) : (globalSchedules || []).filter(function(t) {
+          return t.dept === currentDept;
+        });
+        if (scheduleListFilter === 'fieldWork') {
+          list = list.filter(function(t) { return t.cpKind === 'work'; });
+        }
+        const names = [];
+        const seen = {};
+        list.forEach(function(t) {
+          const n = String(t.workName || '').trim();
+          if (!n || seen[n]) return;
+          seen[n] = true;
+          names.push(n);
+        });
+        names.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+        return names;
+      }
+
+      function ensureScheduleWorkNameFilterPop_() {
+        let pop = document.getElementById('schedWorkNameFilterPop');
+        if (pop) return pop;
+        pop = document.createElement('div');
+        pop.id = 'schedWorkNameFilterPop';
+        document.body.appendChild(pop);
+        document.addEventListener('click', function(ev) {
+          const p = document.getElementById('schedWorkNameFilterPop');
+          if (!p || p.style.display === 'none') return;
+          if (p.contains(ev.target)) return;
+          if (ev.target && ev.target.closest && ev.target.closest('.sched-workname-filter-th')) return;
+          p.style.display = 'none';
+        });
+        return pop;
+      }
+
+      window.openScheduleWorkNameFilter_ = function(ev) {
+        if (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+        const pop = ensureScheduleWorkNameFilterPop_();
+        const names = getScheduleWorkNameCandidates_();
+        let html = '<div style="font-size:11px;color:#666;margin:0 0 6px 2px;">作業名で絞り込み</div>';
+        html += '<button type="button" class="wnf-item wnf-clear" onclick="setScheduleWorkNameFilter_(\'\')">すべて表示</button>';
+        if (!names.length) {
+          html += '<div style="padding:10px;color:#888;font-size:12px;">表示できる作業がありません</div>';
+        } else {
+          html += names.map(function(n) {
+            const active = n === scheduleWorkNameFilter ? ' is-active' : '';
+            return '<button type="button" class="wnf-item' + active + '" onclick="setScheduleWorkNameFilter_(this.getAttribute(\'data-name\'))" data-name="' +
+              escAttr_(n) + '">' + escHtml_(n) + '</button>';
+          }).join('');
+        }
+        pop.innerHTML = html;
+        const th = document.querySelector('#scheduleTable th.sched-workname-filter-th');
+        const rect = th ? th.getBoundingClientRect() : { left: 16, bottom: 80 };
+        pop.style.display = 'block';
+        pop.style.left = Math.min(Math.max(8, rect.left), window.innerWidth - 240) + 'px';
+        pop.style.top = (rect.bottom + 4) + 'px';
+      };
+
+      window.setScheduleWorkNameFilter_ = function(name) {
+        scheduleWorkNameFilter = String(name || '').trim();
+        const pop = document.getElementById('schedWorkNameFilterPop');
+        if (pop) pop.style.display = 'none';
+        syncScheduleWorkNameFilterUi_();
+        if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+      };
+
+      window.clearScheduleWorkNameFilter_ = function() {
+        setScheduleWorkNameFilter_('');
+      };
+
       function parseSchedDateSortKey_(v) {
         if (v == null || v === '' || v === '-') return null;
         const s = String(v).trim();
@@ -2604,20 +2704,30 @@ async function fetchWeatherAndUpdateUI() {
       function renderScheduleTasksTable_() {
         const tbody = document.getElementById('scheduleTableBody');
         if (!tbody) return;
-        document.getElementById('tableDeptName').innerText = currentDept;
+        if (window._scheduleViewMode === 'tasks') {
+          document.getElementById('tableDeptName').innerText = currentDept;
+        }
         syncScheduleSortUi_();
+        syncScheduleWorkNameFilterUi_();
 
         let filteredSchedules = currentDept === 'すべて' ? globalSchedules : globalSchedules.filter(t => t.dept === currentDept);
         if (scheduleListFilter === 'fieldWork') {
           // 定植後に品目別作業設定から畑へ載った作業のみ
           filteredSchedules = filteredSchedules.filter(t => t.cpKind === 'work');
         }
+        if (scheduleWorkNameFilter) {
+          filteredSchedules = filteredSchedules.filter(function(t) {
+            return String(t.workName || '').trim() === scheduleWorkNameFilter;
+          });
+        }
 
         if (filteredSchedules.length === 0) {
           window._schedTableRows = [];
-          const emptyMsg = scheduleListFilter === 'fieldWork'
+          const emptyMsg = scheduleWorkNameFilter
+            ? ('「' + escHtml_(scheduleWorkNameFilter) + '」の作業はありません<br><span style="font-size:11px;color:#888;">作業名ヘッダから絞り込みを解除できます</span>')
+            : (scheduleListFilter === 'fieldWork'
             ? '定植完了後の畑の品目作業はありません<br><span style="font-size:11px;color:#888;">品目別作業設定があり、定植が完了するとここに出ます</span>'
-            : '現在必要な作業はありません';
+            : '現在必要な作業はありません');
           tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">' + emptyMsg + '</td></tr>';
           updateSchedBulkSelectionUi_();
         } else {
@@ -2670,7 +2780,7 @@ async function fetchWeatherAndUpdateUI() {
             const actionCell = `<div style="display:flex;flex-direction:column;gap:4px;align-items:stretch;">${completeBtn}${deleteBtn}</div>`;
             const checkCell = `<input type="checkbox" class="sched-row-check" data-sched-key="${escAttr_(rowKey)}" ${isChecked ? 'checked' : ''} onchange="toggleSchedRowSelect_('${String(rowKey).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', this.checked)" title="一括完了の対象">`;
             return `<tr ${rowClass} data-sched-idx="${idx}">
-                      <td style="text-align:center;">${checkCell}</td>
+                      <td class="sched-check-col">${checkCell}</td>
                       <td style="text-align:center;white-space:nowrap;">${statusHtml}</td>
                       <td>${workLabel}${taskUsersHtml}${midAuthorHtml}${dayPlansHtml}</td>
                       <td>${buildInlineDeptSelectHtml_(t)}</td>
@@ -2836,12 +2946,9 @@ async function fetchWeatherAndUpdateUI() {
         return globalOutsourceWorks;
       };
 
-      window.openOutsourceWorkTable = async function() {
-        const modal = document.getElementById('outsourceWorkModal');
+      window.renderOutsourceWorkTable_ = async function() {
         const tbody = document.getElementById('outsourceWorkTableBody');
-        if (!modal || !tbody) return;
-        document.getElementById('scheduleModal').style.display = 'none';
-        modal.style.display = 'flex';
+        if (!tbody) return;
         tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">読込中...</td></tr>';
         await window.refreshOutsourceWorks_();
         const list = globalOutsourceWorks || [];
@@ -2876,13 +2983,19 @@ async function fetchWeatherAndUpdateUI() {
         }).join('');
       };
 
+      window.openOutsourceWorkTable = function() {
+        const modal = document.getElementById('scheduleModal');
+        if (modal) modal.style.display = 'flex';
+        switchScheduleView('outsource');
+      };
+
       window.completeOutsourceFromList = async function(sheetRow, scheduleKey, workName, fieldName, cropName) {
         if (!confirm('「' + workName + '」の依頼を完了にしますか？')) return;
         try {
           const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
           await callGAS('completeOutsourceWork', { sheetRow, scheduleKey, workName, fieldName, cropName, userName });
           await window.refreshOutsourceWorks_();
-          openOutsourceWorkTable();
+          renderOutsourceWorkTable_();
         } catch (e) {
           alert('完了に失敗しました: ' + (e.message || e));
         }
@@ -2894,7 +3007,7 @@ async function fetchWeatherAndUpdateUI() {
           const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
           await callGAS('deleteOutsourceWork', { sheetRow, scheduleKey, workName, fieldName, cropName, userName });
           await window.refreshOutsourceWorks_();
-          openOutsourceWorkTable();
+          renderOutsourceWorkTable_();
         } catch (e) {
           alert('削除に失敗しました: ' + (e.message || e));
         }

@@ -15,7 +15,6 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
       
       #scheduleModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #fff; z-index: 4000; justify-content: center; align-items: stretch; }
       #scheduleModal .modal-content { width: 100%; max-width: none; height: 100%; border-radius: 0; }
-      #outsourceWorkModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 4000; justify-content: center; align-items: center; }
       #workDeptSettingsModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 4100; justify-content: center; align-items: center; }
       .sched-dept-select { font-size:12px; padding:3px 6px; border:1px solid #90caf9; border-radius:4px; background:#fff; max-width:120px; }
       #scheduleTable, #outsourceWorkTable, .progress-summary-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
@@ -28,6 +27,91 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
       .sched-sortable.is-active { color: #0d47a1; background: #e3f2fd; }
       .sched-sort-ind { margin-left: 3px; font-size: 10px; color: #90a4ae; }
       .sched-sortable.is-active .sched-sort-ind { color: #1565c0; font-weight: bold; }
+      #scheduleTable .sched-row-check,
+      #schedSelectAllHead,
+      #schedSelectAll {
+        width: 22px;
+        height: 22px;
+        min-width: 22px;
+        min-height: 22px;
+        margin: 0;
+        cursor: pointer;
+        accent-color: #2e7d32;
+        transform: scale(1.35);
+        transform-origin: center center;
+      }
+      #scheduleTable th.sched-check-col,
+      #scheduleTable td.sched-check-col {
+        width: 52px;
+        min-width: 52px;
+        text-align: center;
+        vertical-align: middle;
+        padding: 10px 6px;
+      }
+      #scheduleBulkBar .sched-check-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: bold;
+        color: #333;
+        cursor: pointer;
+        padding: 4px 2px;
+      }
+      #schedWorkNameFilterPop {
+        display: none;
+        position: absolute;
+        z-index: 4200;
+        background: #fff;
+        border: 1px solid #90caf9;
+        border-radius: 8px;
+        box-shadow: 0 6px 20px rgba(0,0,0,.18);
+        min-width: 220px;
+        max-width: min(360px, 92vw);
+        max-height: 50vh;
+        overflow: auto;
+        padding: 8px;
+      }
+      #schedWorkNameFilterPop .wnf-item {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: #fff;
+        border: 1px solid #e3f2fd;
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 4px;
+        font-size: 13px;
+        font-weight: bold;
+        color: #1565c0;
+        cursor: pointer;
+      }
+      #schedWorkNameFilterPop .wnf-item:hover,
+      #schedWorkNameFilterPop .wnf-item.is-active {
+        background: #e3f2fd;
+        border-color: #64b5f6;
+      }
+      #schedWorkNameFilterPop .wnf-clear {
+        background: #f5f5f5;
+        color: #546e7a;
+        border-color: #cfd8dc;
+      }
+      th.sched-workname-filter-th.is-filtered {
+        background: #fff3e0;
+        color: #ef6c00;
+      }
+      #schedWorkNameFilterChip {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        background: #fff3e0;
+        border: 1px solid #ffcc80;
+        color: #e65100;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: bold;
+      }
       .progress-summary-table th { background: #e8f5e9; padding: 8px; text-align: left; border-bottom: 2px solid #a5d6a7; white-space: nowrap; }
       .progress-summary-table td { padding: 8px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
       .progress-stage-all_done { color: #2e7d32; font-weight: bold; }

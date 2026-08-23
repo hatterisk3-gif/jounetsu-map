@@ -102,13 +102,13 @@
         <span>📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
         <div style="display:flex;align-items:center;gap:8px;">
           <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">🏢 部署設定</button>
-          <button type="button" onclick="openAddWorkModal('internal')" style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">＋作業</button>
-          <button type="button" onclick="openOutsourceWorkTable()" style="background:#1565c0;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">📤 依頼一覧</button>
+          <button type="button" id="scheduleHeaderAddBtn" onclick="openAddWorkModal(window._scheduleViewMode === 'outsource' ? 'outsource' : 'internal')" style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">＋作業</button>
           <span style="cursor:pointer; font-size:24px;" onclick="closeScheduleModal()">×</span>
         </div>
       </div>
       <div id="scheduleModalTabs" style="display:flex;gap:6px;padding:8px 10px;background:#e3f2fd;border-bottom:1px solid #90caf9;flex-wrap:wrap;">
         <button type="button" id="schedTabTasks" class="sched-view-tab active" onclick="switchScheduleView('tasks')">📋 作業一覧</button>
+        <button type="button" id="schedTabOutsource" class="sched-view-tab" onclick="switchScheduleView('outsource')">📤 依頼作業</button>
         <button type="button" id="schedTabHarvest" class="sched-view-tab" onclick="switchScheduleView('harvest')">🍅 収穫中</button>
         <button type="button" id="schedTabField" class="sched-view-tab" onclick="switchScheduleView('field')">🌾 圃場進捗</button>
         <button type="button" id="schedTabTag" class="sched-view-tab" onclick="switchScheduleView('tag')">🏷️ TAG進捗</button>
@@ -116,10 +116,14 @@
       <div class="modal-body">
         <div id="scheduleViewTasks">
           <div id="scheduleBulkBar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;padding:8px 10px;background:#fff;border:1px solid #e0e0e0;border-radius:6px;">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:bold;color:#333;cursor:pointer;">
+            <label class="sched-check-label">
               <input type="checkbox" id="schedSelectAll" onchange="toggleSchedSelectAll_(this.checked)"> すべて選択
             </label>
             <button type="button" id="schedBulkCompleteBtn" onclick="bulkCompleteSelectedSchedules_()" disabled style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:bold;cursor:pointer;opacity:0.55;">✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)</button>
+            <span id="schedWorkNameFilterChip">
+              作業名: <span id="schedWorkNameFilterChipText"></span>
+              <button type="button" onclick="clearScheduleWorkNameFilter_()" title="絞り込み解除" style="background:transparent;border:none;color:#e65100;font-weight:bold;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;">×</button>
+            </span>
             <span style="width:1px;height:18px;background:#ddd;"></span>
             <button type="button" id="schedFilterAll" class="sched-list-filter active" onclick="setScheduleListFilter_('all')">すべて</button>
             <button type="button" id="schedFilterFieldWork" class="sched-list-filter" onclick="setScheduleListFilter_('fieldWork')">🌱 畑の品目作業</button>
@@ -138,14 +142,14 @@
                 <option value="dept:asc">部署（あいうえお）</option>
               </select>
             </label>
-            <span id="schedBulkHint" style="font-size:11px;color:#666;">列見出しをタップしても並び替えできます</span>
+            <span id="schedBulkHint" style="font-size:11px;color:#666;">作業名ヘッダで絞り込み／他の列見出しで並び替え</span>
           </div>
           <table id="scheduleTable">
             <thead>
               <tr>
-                <th style="width:36px;text-align:center;"><input type="checkbox" id="schedSelectAllHead" title="すべて選択" onchange="toggleSchedSelectAll_(this.checked)"></th>
+                <th class="sched-check-col"><input type="checkbox" id="schedSelectAllHead" title="すべて選択" onchange="toggleSchedSelectAll_(this.checked)"></th>
                 <th class="sched-sortable" data-sort-key="status" onclick="toggleScheduleSort_('status')" title="クリックで並び替え">ステータス<span class="sched-sort-ind" data-for="status"></span></th>
-                <th class="sched-sortable" data-sort-key="workName" onclick="toggleScheduleSort_('workName')" title="クリックで並び替え">作業名<span class="sched-sort-ind" data-for="workName"></span></th>
+                <th class="sched-sortable sched-workname-filter-th" data-sort-key="workName" onclick="openScheduleWorkNameFilter_(event)" title="クリックで作業名で絞り込み">作業名<span class="sched-sort-ind" data-for="workName"></span></th>
                 <th class="sched-sortable" data-sort-key="dept" onclick="toggleScheduleSort_('dept')" title="クリックで並び替え">部署<span class="sched-sort-ind" data-for="dept"></span></th>
                 <th class="sched-sortable" data-sort-key="cropName" onclick="toggleScheduleSort_('cropName')" title="クリックで並び替え">作物・品種・TAG<span class="sched-sort-ind" data-for="cropName"></span></th>
                 <th class="sched-sortable" data-sort-key="fieldName" onclick="toggleScheduleSort_('fieldName')" title="クリックで並び替え">圃場/看板名<span class="sched-sort-ind" data-for="fieldName"></span></th>
@@ -228,6 +232,28 @@
             <tbody id="tagProgressTableBody"></tbody>
           </table>
         </div>
+        <div id="scheduleViewOutsource" style="display:none;">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;padding:8px 10px;background:#fff;border:1px solid #e0e0e0;border-radius:6px;">
+            <button type="button" onclick="openAddWorkModal('outsource')" style="background:#1565c0;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:bold;cursor:pointer;">＋依頼追加</button>
+            <span style="font-size:12px;color:#555;">外注・依頼中の作業一覧です。</span>
+          </div>
+          <table id="outsourceWorkTable">
+            <thead>
+              <tr>
+                <th>作業名</th>
+                <th>依頼先</th>
+                <th>作物</th>
+                <th>圃場/看板名</th>
+                <th>予定日</th>
+                <th>期限日</th>
+                <th>枚数・期間</th>
+                <th>依頼者</th>
+                <th style="width:108px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="outsourceWorkTableBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -295,37 +321,6 @@
             <button type="button" id="userDeptLinkSaveBtn" onclick="saveUserDeptLinks_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">ユーザー部署を保存</button>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="outsourceWorkModal">
-    <div class="modal-content">
-      <div class="modal-header" style="background:#1565c0;">
-        <span>📤 依頼作業一覧（外注）</span>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button type="button" onclick="openAddWorkModal('outsource')" style="background:#fff;color:#1565c0;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">＋依頼追加</button>
-          <button type="button" onclick="document.getElementById('outsourceWorkModal').style.display='none';openScheduleTable();" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">📋 作業一覧</button>
-          <span style="cursor:pointer; font-size:24px;" onclick="document.getElementById('outsourceWorkModal').style.display='none'">×</span>
-        </div>
-      </div>
-      <div class="modal-body">
-        <table id="outsourceWorkTable">
-          <thead>
-            <tr>
-              <th>作業名</th>
-              <th>依頼先</th>
-              <th>作物</th>
-              <th>圃場/看板名</th>
-              <th>予定日</th>
-              <th>期限日</th>
-              <th>枚数・期間</th>
-              <th>依頼者</th>
-              <th style="width:108px;">操作</th>
-            </tr>
-          </thead>
-          <tbody id="outsourceWorkTableBody"></tbody>
-        </table>
       </div>
     </div>
   </div>
