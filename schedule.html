@@ -120,9 +120,13 @@
               <input type="checkbox" id="schedSelectAll" onchange="toggleSchedSelectAll_(this.checked)"> すべて選択
             </label>
             <button type="button" id="schedBulkCompleteBtn" onclick="bulkCompleteSelectedSchedules_()" disabled class="sched-bulk-complete-btn">✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)</button>
-            <span id="schedWorkNameFilterChip">
+            <span id="schedWorkNameFilterChip" class="sched-filter-chip">
               作業名: <span id="schedWorkNameFilterChipText"></span>
-              <button type="button" onclick="clearScheduleWorkNameFilter_()" title="絞り込み解除" style="background:transparent;border:none;color:#e65100;font-weight:bold;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;">×</button>
+              <button type="button" onclick="clearScheduleWorkNameFilter_()" title="絞り込み解除" class="sched-filter-chip-clear">×</button>
+            </span>
+            <span id="schedDeptFilterChip" class="sched-filter-chip">
+              部署: <span id="schedDeptFilterChipText"></span>
+              <button type="button" onclick="clearScheduleDeptFilter_()" title="絞り込み解除" class="sched-filter-chip-clear">×</button>
             </span>
             <span class="sched-bulk-sep"></span>
             <button type="button" id="schedFilterAll" class="sched-list-filter active" onclick="setScheduleListFilter_('all')">すべて</button>
@@ -142,7 +146,8 @@
                 <option value="dept:asc">部署（あいうえお）</option>
               </select>
             </label>
-            <span id="schedBulkHint" class="sched-bulk-hint">作業名ヘッダで絞り込み／他の列見出しで並び替え</span>
+            <span id="schedBulkHint" class="sched-bulk-hint">作業名・部署ヘッダで絞り込み／他の列見出しで並び替え</span>
+            <span id="schedSyncStatus" class="sched-sync-status" style="display:none;" aria-live="polite"></span>
           </div>
           <div class="schedule-table-wrap">
           <table id="scheduleTable">
@@ -151,7 +156,7 @@
                 <th class="sched-check-col"><input type="checkbox" id="schedSelectAllHead" title="すべて選択" onchange="toggleSchedSelectAll_(this.checked)"></th>
                 <th class="sched-sortable" data-sort-key="status" onclick="toggleScheduleSort_('status')" title="クリックで並び替え">ステータス<span class="sched-sort-ind" data-for="status"></span></th>
                 <th class="sched-sortable sched-workname-filter-th" data-sort-key="workName" onclick="openScheduleWorkNameFilter_(event)" title="クリックで作業名で絞り込み">作業名<span class="sched-sort-ind" data-for="workName"></span></th>
-                <th class="sched-sortable" data-sort-key="dept" onclick="toggleScheduleSort_('dept')" title="クリックで並び替え">部署<span class="sched-sort-ind" data-for="dept"></span></th>
+                <th class="sched-sortable sched-dept-filter-th" data-sort-key="dept" onclick="openScheduleDeptFilter_(event)" title="クリックで部署で絞り込み">部署<span class="sched-sort-ind" data-for="dept"></span></th>
                 <th class="sched-sortable" data-sort-key="cropName" onclick="toggleScheduleSort_('cropName')" title="クリックで並び替え">作物・品種・TAG<span class="sched-sort-ind" data-for="cropName"></span></th>
                 <th class="sched-sortable" data-sort-key="fieldName" onclick="toggleScheduleSort_('fieldName')" title="クリックで並び替え">圃場/看板名<span class="sched-sort-ind" data-for="fieldName"></span></th>
                 <th class="sched-sortable" data-sort-key="schedDate" onclick="toggleScheduleSort_('schedDate')" title="クリックで並び替え">予定日<span class="sched-sort-ind" data-for="schedDate"></span></th>
@@ -392,8 +397,12 @@
   <div id="sowingProgressModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10020; align-items:center; justify-content:center;">
     <div style="background:#fff; width:min(960px,96vw); max-height:90vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#6a1b9a; color:#fff;">
-        <span style="font-weight:bold; font-size:16px;">🌱 播種進捗</span>
+        <span style="font-weight:bold; font-size:16px;">🌱 播種・育苗</span>
         <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="document.getElementById('sowingProgressModal').style.display='none'">×</span>
+      </div>
+      <div style="display:flex; gap:0; border-bottom:1px solid #e1bee7; background:#faf5fc;" id="sowingNurseryTabs">
+        <button type="button" id="sowingNurseryTabProgress" onclick="switchSowingNurseryTab_('progress')" style="flex:1; border:none; background:transparent; padding:10px 8px; font-weight:bold; font-size:13px; cursor:pointer; color:#6a1b9a; border-bottom:3px solid #6a1b9a;">播種進捗</button>
+        <button type="button" id="sowingNurseryTabRecords" onclick="switchSowingNurseryTab_('records')" style="flex:1; border:none; background:transparent; padding:10px 8px; font-weight:bold; font-size:13px; cursor:pointer; color:#888; border-bottom:3px solid transparent;">育苗記録</button>
       </div>
       <div style="padding:12px 16px; overflow:auto; flex:1;" id="sowingProgressBody">
       </div>
@@ -519,7 +528,7 @@
     </button>
     <button type="button" onclick="openSowingProgressModal()">
       <div style="font-size:20px;">🌱</div>
-      <div style="font-weight:bold;">播種進捗</div>
+      <div style="font-weight:bold;">播種・育苗</div>
     </button>
     <button type="button" onclick="openCropMarketModal()">
       <div style="font-size:20px;">📈</div>

@@ -26,6 +26,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
       let scheduleListFilter = 'all'; // all | fieldWork
       let scheduleWorkNameFilter = ''; // 空＝すべて / 作業名で絞り込み
+      let scheduleDeptFilter = ''; // 空＝すべて / 部署で絞り込み
       let scheduleSortKey = 'status';
       let scheduleSortDir = 'asc';
       try {
@@ -2212,6 +2213,168 @@ async function fetchWeatherAndUpdateUI() {
         updateSchedBulkSelectionUi_();
       };
 
+      function persistScheduleDataCache_() {
+        try {
+          const cachedStr = localStorage.getItem('passionMapScheduleData');
+          if (!cachedStr) {
+            localStorage.setItem('passionMapScheduleData', JSON.stringify({ activeSchedules: globalSchedules || [] }));
+            return;
+          }
+          const cached = JSON.parse(cachedStr);
+          cached.activeSchedules = globalSchedules || [];
+          localStorage.setItem('passionMapScheduleData', JSON.stringify(cached));
+        } catch (e) {}
+      }
+
+      function showSchedSyncStatus_(text, kind, opts) {
+        const el = document.getElementById('schedSyncStatus');
+        if (!el) return;
+        opts = opts || {};
+        el.classList.remove('is-error', 'is-ok');
+        if (kind === 'error') el.classList.add('is-error');
+        if (kind === 'ok') el.classList.add('is-ok');
+        el.innerHTML = '';
+        if (!text && !opts.undo) {
+          el.style.display = 'none';
+          return;
+        }
+        const label = document.createElement('span');
+        label.textContent = text || '';
+        el.appendChild(label);
+        if (opts.undo) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'sched-undo-btn';
+          btn.textContent = '↩ 元に戻す';
+          btn.onclick = function(ev) {
+            if (ev) ev.stopPropagation();
+            undoLastScheduleComplete_();
+          };
+          el.appendChild(btn);
+        }
+        el.style.display = 'inline-flex';
+      }
+
+      function hideSchedSyncStatusSoon_(ms) {
+        const token = String(Date.now());
+        window._schedSyncHideToken = token;
+        setTimeout(function() {
+          if (window._schedSyncHideToken !== token) return;
+          const el = document.getElementById('schedSyncStatus');
+          if (!el) return;
+          // 元に戻す付きのバナーは自動では消さない（押しやすく残す）
+          if (el.querySelector('.sched-undo-btn')) return;
+          el.style.display = 'none';
+          el.textContent = '';
+          el.classList.remove('is-error', 'is-ok');
+        }, ms || 2500);
+      }
+
+      function pushScheduleCompleteUndo_(items, removedRows) {
+        if (!window._schedUndoStack) window._schedUndoStack = [];
+        window._schedUndoStack.push({
+          id: Date.now(),
+          items: (items || []).map(function(it) { return Object.assign({}, it); }),
+          removedRows: (removedRows || []).map(function(r) { return Object.assign({}, r); }),
+          at: Date.now()
+        });
+        while (window._schedUndoStack.length > 5) window._schedUndoStack.shift();
+      }
+
+      function refreshScheduleListAfterMutation_() {
+        if (typeof updateMapVisuals === 'function') updateMapVisuals();
+        if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
+          if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+          else switchScheduleView(window._scheduleViewMode || 'tasks');
+        }
+        updateSchedBulkSelectionUi_();
+      }
+
+      window.undoLastScheduleComplete_ = async function() {
+        if (window._schedUndoBusy) return;
+        const stack = window._schedUndoStack || [];
+        if (!stack.length) {
+          alert('取り消せる完了操作がありません');
+          return;
+        }
+        const batch = stack.pop();
+        const items = batch.items || [];
+        if (!items.length) return;
+        if (!confirm(items.length + '件の完了を元に戻しますか？')) {
+          stack.push(batch);
+          return;
+        }
+
+        window._schedUndoBusy = true;
+        showSchedSyncStatus_('☁ 完了を取り消しています…（' + items.length + '件）');
+
+        // 表示はすぐ戻す
+        const restored = (batch.removedRows || []).slice();
+        if (restored.length) {
+          const existingKeys = new Set((globalSchedules || []).map(buildScheduleRowKey_));
+          restored.forEach(function(row) {
+            const k = buildScheduleRowKey_(row);
+            if (!existingKeys.has(k)) {
+              globalSchedules = (globalSchedules || []).concat([row]);
+              existingKeys.add(k);
+            }
+          });
+          persistScheduleDataCache_();
+          refreshScheduleListAfterMutation_();
+        }
+
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          let failed = [];
+          if (items.length === 1) {
+            await callGAS('undoCompleteWorkSchedule', Object.assign({}, items[0], { userName: userName }));
+          } else {
+            const res = await callGAS('bulkUndoCompleteWorkSchedule', { items: items, userName: userName });
+            failed = (res && res.failed) || [];
+          }
+          const data = await callGAS('getScheduleData');
+          if (data) {
+            localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+            globalSchedules = data.activeSchedules || [];
+            if (Array.isArray(data.departments) && data.departments.length) {
+              workDeptCategories = data.departments.slice();
+            }
+            buildDeptFilter();
+          }
+          refreshScheduleListAfterMutation_();
+          if (failed.length) {
+            showSchedSyncStatus_('⚠ 一部の取消に失敗（' + failed.length + '件）', 'error');
+            alert('一部の完了取消に失敗しました（' + failed.length + '件）');
+            hideSchedSyncStatusSoon_(4000);
+          } else {
+            showSchedSyncStatus_('✓ 完了を取り消しました（' + items.length + '件）', 'ok');
+            hideSchedSyncStatusSoon_(2200);
+          }
+        } catch (e) {
+          showSchedSyncStatus_('取消に失敗しました', 'error');
+          alert('完了の取消に失敗しました: ' + (e.message || e));
+          try {
+            const data = await callGAS('getScheduleData');
+            if (data) {
+              localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+              globalSchedules = data.activeSchedules || [];
+              refreshScheduleListAfterMutation_();
+            }
+          } catch (e2) {}
+          hideSchedSyncStatusSoon_(4000);
+        } finally {
+          window._schedUndoBusy = false;
+        }
+      };
+
+      function removeSchedulesByKeysOptimistic_(keySet) {
+        if (!keySet || !keySet.size) return;
+        globalSchedules = (globalSchedules || []).filter(function(t) {
+          return !keySet.has(buildScheduleRowKey_(t));
+        });
+        persistScheduleDataCache_();
+      }
+
       window.bulkCompleteSelectedSchedules_ = async function() {
         if (window._schedCompleteBusy) return;
         const selected = (window._schedTableRows || []).filter(function(t) {
@@ -2224,47 +2387,62 @@ async function fetchWeatherAndUpdateUI() {
         const more = selected.length > 5 ? ('\n…他 ' + (selected.length - 5) + ' 件') : '';
         if (!confirm(selected.length + '件の作業をまとめて完了にしますか？\n\n' + preview + more)) return;
 
+        const keySet = new Set(selected.map(buildScheduleRowKey_));
+        const snapshot = (globalSchedules || []).slice();
+        const removedRows = selected.map(function(t) { return Object.assign({}, t); });
+        const items = selected.map(scheduleItemToCompletePayload_);
+        const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+        const count = items.length;
+
+        // 表示はすぐ完了扱いにし、同期は裏で進める
         window._schedCompleteBusy = true;
-        const btn = document.getElementById('schedBulkCompleteBtn');
-        const prevLabel = btn ? btn.innerHTML : '';
-        if (btn) {
-          btn.disabled = true;
-          btn.innerHTML = '完了処理中...';
-        }
-        document.querySelectorAll('.sched-complete-btn, .sched-row-check').forEach(function(el) {
-          el.disabled = true;
-        });
+        pushScheduleCompleteUndo_(items, removedRows);
+        removeSchedulesByKeysOptimistic_(keySet);
+        window._schedSelectedKeys = new Set();
+        if (typeof updateMapVisuals === 'function') updateMapVisuals();
+        if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+        updateSchedBulkSelectionUi_();
+        showSchedSyncStatus_('☁ 完了を同期中…（' + count + '件）', null, { undo: true });
+
         try {
-          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
-          const items = selected.map(scheduleItemToCompletePayload_);
           const res = await callGAS('bulkCompleteWorkSchedule', { items: items, userName: userName });
           const failed = (res && res.failed) || [];
-          if (failed.length) {
-            const msg = failed.slice(0, 3).map(function(f) {
-              return (f.workName || '作業') + ': ' + (f.message || '失敗');
-            }).join('\n');
-            alert('一部の完了に失敗しました（' + failed.length + '件）\n' + msg);
-          }
-          window._schedSelectedKeys = new Set();
           const data = await callGAS('getScheduleData');
           if (data) {
             localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
             globalSchedules = data.activeSchedules || [];
-            if (Array.isArray(data.workCategories) && data.workCategories.length) {
+            if (Array.isArray(data.departments) && data.departments.length) {
+              workDeptCategories = data.departments.slice();
+            } else if (Array.isArray(data.workCategories) && data.workCategories.length) {
               workDeptCategories = data.workCategories.slice();
             }
             buildDeptFilter();
             if (typeof updateMapVisuals === 'function') updateMapVisuals();
           }
           if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
-            switchScheduleView(window._scheduleViewMode || 'tasks');
+            if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+            else switchScheduleView(window._scheduleViewMode || 'tasks');
+          }
+          if (failed.length) {
+            showSchedSyncStatus_('⚠ 一部失敗（' + failed.length + '/' + count + '件）', 'error', { undo: true });
+            const msg = failed.slice(0, 3).map(function(f) {
+              return (f.workName || '作業') + ': ' + (f.message || '失敗');
+            }).join('\n');
+            alert('一部の完了に失敗しました（' + failed.length + '件）\n' + msg + '\n\n失敗分は一覧に戻している場合があります。');
+          } else {
+            showSchedSyncStatus_('✓ 同期完了（' + count + '件）', 'ok', { undo: true });
           }
         } catch (e) {
-          alert('一括完了に失敗しました: ' + (e.message || e));
+          if (window._schedUndoStack && window._schedUndoStack.length) window._schedUndoStack.pop();
+          globalSchedules = snapshot;
+          persistScheduleDataCache_();
+          if (typeof updateMapVisuals === 'function') updateMapVisuals();
           if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+          showSchedSyncStatus_('同期失敗 — 一覧を戻しました', 'error');
+          alert('一括完了に失敗しました: ' + (e.message || e));
+          hideSchedSyncStatusSoon_(4000);
         } finally {
           window._schedCompleteBusy = false;
-          if (btn) btn.innerHTML = prevLabel || '✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)';
           updateSchedBulkSelectionUi_();
         }
       };
@@ -2506,22 +2684,40 @@ async function fetchWeatherAndUpdateUI() {
         if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
       };
 
-      function syncScheduleWorkNameFilterUi_() {
-        const chip = document.getElementById('schedWorkNameFilterChip');
-        const chipText = document.getElementById('schedWorkNameFilterChipText');
-        const th = document.querySelector('#scheduleTable th.sched-workname-filter-th');
-        const active = !!scheduleWorkNameFilter;
-        if (chip) chip.style.display = active ? 'inline-flex' : 'none';
-        if (chipText) chipText.textContent = scheduleWorkNameFilter || '';
-        if (th) th.classList.toggle('is-filtered', active);
+      function syncScheduleColumnFilterUi_() {
+        const nameChip = document.getElementById('schedWorkNameFilterChip');
+        const nameText = document.getElementById('schedWorkNameFilterChipText');
+        const nameTh = document.querySelector('#scheduleTable th.sched-workname-filter-th');
+        const nameOn = !!scheduleWorkNameFilter;
+        if (nameChip) nameChip.style.display = nameOn ? 'inline-flex' : 'none';
+        if (nameText) nameText.textContent = scheduleWorkNameFilter || '';
+        if (nameTh) nameTh.classList.toggle('is-filtered', nameOn);
+
+        const deptChip = document.getElementById('schedDeptFilterChip');
+        const deptText = document.getElementById('schedDeptFilterChipText');
+        const deptTh = document.querySelector('#scheduleTable th.sched-dept-filter-th');
+        const deptOn = !!scheduleDeptFilter;
+        if (deptChip) deptChip.style.display = deptOn ? 'inline-flex' : 'none';
+        if (deptText) deptText.textContent = scheduleDeptFilter || '';
+        if (deptTh) deptTh.classList.toggle('is-filtered', deptOn);
       }
 
-      function getScheduleWorkNameCandidates_() {
-        let list = currentDept === 'すべて' ? (globalSchedules || []) : (globalSchedules || []).filter(function(t) {
+      function getScheduleBaseListForColumnFilter_() {
+        let list = currentDept === 'すべて' ? (globalSchedules || []).slice() : (globalSchedules || []).filter(function(t) {
           return t.dept === currentDept;
         });
         if (scheduleListFilter === 'fieldWork') {
           list = list.filter(function(t) { return t.cpKind === 'work'; });
+        }
+        return list;
+      }
+
+      function getScheduleWorkNameCandidates_() {
+        let list = getScheduleBaseListForColumnFilter_();
+        if (scheduleDeptFilter) {
+          list = list.filter(function(t) {
+            return String(t.dept || '').trim() === scheduleDeptFilter;
+          });
         }
         const names = [];
         const seen = {};
@@ -2535,20 +2731,50 @@ async function fetchWeatherAndUpdateUI() {
         return names;
       }
 
-      function ensureScheduleWorkNameFilterPop_() {
-        let pop = document.getElementById('schedWorkNameFilterPop');
+      function getScheduleDeptCandidates_() {
+        let list = getScheduleBaseListForColumnFilter_();
+        if (scheduleWorkNameFilter) {
+          list = list.filter(function(t) {
+            return String(t.workName || '').trim() === scheduleWorkNameFilter;
+          });
+        }
+        const names = [];
+        const seen = {};
+        list.forEach(function(t) {
+          const n = String(t.dept || '').trim() || '未設定';
+          if (seen[n]) return;
+          seen[n] = true;
+          names.push(n);
+        });
+        names.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+        return names;
+      }
+
+      function ensureScheduleColumnFilterPop_() {
+        let pop = document.getElementById('schedColumnFilterPop');
         if (pop) return pop;
         pop = document.createElement('div');
-        pop.id = 'schedWorkNameFilterPop';
+        pop.id = 'schedColumnFilterPop';
+        pop.className = 'sched-column-filter-pop';
         document.body.appendChild(pop);
         document.addEventListener('click', function(ev) {
-          const p = document.getElementById('schedWorkNameFilterPop');
+          const p = document.getElementById('schedColumnFilterPop');
           if (!p || p.style.display === 'none') return;
           if (p.contains(ev.target)) return;
-          if (ev.target && ev.target.closest && ev.target.closest('.sched-workname-filter-th')) return;
+          if (ev.target && ev.target.closest && (
+            ev.target.closest('.sched-workname-filter-th') ||
+            ev.target.closest('.sched-dept-filter-th')
+          )) return;
           p.style.display = 'none';
         });
         return pop;
+      }
+
+      function positionScheduleColumnFilterPop_(pop, th) {
+        const rect = th ? th.getBoundingClientRect() : { left: 16, bottom: 80 };
+        pop.style.display = 'block';
+        pop.style.left = Math.min(Math.max(8, rect.left), window.innerWidth - 240) + 'px';
+        pop.style.top = (rect.bottom + 4) + 'px';
       }
 
       window.openScheduleWorkNameFilter_ = function(ev) {
@@ -2556,12 +2782,12 @@ async function fetchWeatherAndUpdateUI() {
           ev.preventDefault();
           ev.stopPropagation();
         }
-        const pop = ensureScheduleWorkNameFilterPop_();
+        const pop = ensureScheduleColumnFilterPop_();
         const names = getScheduleWorkNameCandidates_();
-        let html = '<div style="font-size:11px;color:#666;margin:0 0 6px 2px;">作業名で絞り込み</div>';
+        let html = '<div class="sched-filter-pop-title">作業名で絞り込み</div>';
         html += '<button type="button" class="wnf-item wnf-clear" onclick="setScheduleWorkNameFilter_(\'\')">すべて表示</button>';
         if (!names.length) {
-          html += '<div style="padding:10px;color:#888;font-size:12px;">表示できる作業がありません</div>';
+          html += '<div class="sched-filter-pop-empty">表示できる作業がありません</div>';
         } else {
           html += names.map(function(n) {
             const active = n === scheduleWorkNameFilter ? ' is-active' : '';
@@ -2570,23 +2796,53 @@ async function fetchWeatherAndUpdateUI() {
           }).join('');
         }
         pop.innerHTML = html;
-        const th = document.querySelector('#scheduleTable th.sched-workname-filter-th');
-        const rect = th ? th.getBoundingClientRect() : { left: 16, bottom: 80 };
-        pop.style.display = 'block';
-        pop.style.left = Math.min(Math.max(8, rect.left), window.innerWidth - 240) + 'px';
-        pop.style.top = (rect.bottom + 4) + 'px';
+        positionScheduleColumnFilterPop_(pop, document.querySelector('#scheduleTable th.sched-workname-filter-th'));
+      };
+
+      window.openScheduleDeptFilter_ = function(ev) {
+        if (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+        const pop = ensureScheduleColumnFilterPop_();
+        const names = getScheduleDeptCandidates_();
+        let html = '<div class="sched-filter-pop-title">部署で絞り込み</div>';
+        html += '<button type="button" class="wnf-item wnf-clear" onclick="setScheduleDeptFilter_(\'\')">すべて表示</button>';
+        if (!names.length) {
+          html += '<div class="sched-filter-pop-empty">表示できる部署がありません</div>';
+        } else {
+          html += names.map(function(n) {
+            const active = n === scheduleDeptFilter ? ' is-active' : '';
+            return '<button type="button" class="wnf-item' + active + '" onclick="setScheduleDeptFilter_(this.getAttribute(\'data-name\'))" data-name="' +
+              escAttr_(n) + '">' + escHtml_(n) + '</button>';
+          }).join('');
+        }
+        pop.innerHTML = html;
+        positionScheduleColumnFilterPop_(pop, document.querySelector('#scheduleTable th.sched-dept-filter-th'));
       };
 
       window.setScheduleWorkNameFilter_ = function(name) {
         scheduleWorkNameFilter = String(name || '').trim();
-        const pop = document.getElementById('schedWorkNameFilterPop');
+        const pop = document.getElementById('schedColumnFilterPop') || document.getElementById('schedWorkNameFilterPop');
         if (pop) pop.style.display = 'none';
-        syncScheduleWorkNameFilterUi_();
+        syncScheduleColumnFilterUi_();
         if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
       };
 
       window.clearScheduleWorkNameFilter_ = function() {
         setScheduleWorkNameFilter_('');
+      };
+
+      window.setScheduleDeptFilter_ = function(name) {
+        scheduleDeptFilter = String(name || '').trim();
+        const pop = document.getElementById('schedColumnFilterPop');
+        if (pop) pop.style.display = 'none';
+        syncScheduleColumnFilterUi_();
+        if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+      };
+
+      window.clearScheduleDeptFilter_ = function() {
+        setScheduleDeptFilter_('');
       };
 
       function parseSchedDateSortKey_(v) {
@@ -2708,12 +2964,17 @@ async function fetchWeatherAndUpdateUI() {
           document.getElementById('tableDeptName').innerText = currentDept;
         }
         syncScheduleSortUi_();
-        syncScheduleWorkNameFilterUi_();
+        syncScheduleColumnFilterUi_();
 
         let filteredSchedules = currentDept === 'すべて' ? globalSchedules : globalSchedules.filter(t => t.dept === currentDept);
         if (scheduleListFilter === 'fieldWork') {
           // 定植後に品目別作業設定から畑へ載った作業のみ
           filteredSchedules = filteredSchedules.filter(t => t.cpKind === 'work');
+        }
+        if (scheduleDeptFilter) {
+          filteredSchedules = filteredSchedules.filter(function(t) {
+            return (String(t.dept || '').trim() || '未設定') === scheduleDeptFilter;
+          });
         }
         if (scheduleWorkNameFilter) {
           filteredSchedules = filteredSchedules.filter(function(t) {
@@ -2723,11 +2984,15 @@ async function fetchWeatherAndUpdateUI() {
 
         if (filteredSchedules.length === 0) {
           window._schedTableRows = [];
-          const emptyMsg = scheduleWorkNameFilter
-            ? ('「' + escHtml_(scheduleWorkNameFilter) + '」の作業はありません<br><span style="font-size:11px;color:#888;">作業名ヘッダから絞り込みを解除できます</span>')
-            : (scheduleListFilter === 'fieldWork'
-            ? '定植完了後の畑の品目作業はありません<br><span style="font-size:11px;color:#888;">品目別作業設定があり、定植が完了するとここに出ます</span>'
-            : '現在必要な作業はありません');
+          let emptyMsg = '現在必要な作業はありません';
+          if (scheduleWorkNameFilter || scheduleDeptFilter) {
+            const parts = [];
+            if (scheduleDeptFilter) parts.push('部署「' + escHtml_(scheduleDeptFilter) + '」');
+            if (scheduleWorkNameFilter) parts.push('作業名「' + escHtml_(scheduleWorkNameFilter) + '」');
+            emptyMsg = parts.join(' × ') + 'の作業はありません<br><span style="font-size:11px;color:#888;">ヘッダの絞り込みを解除できます</span>';
+          } else if (scheduleListFilter === 'fieldWork') {
+            emptyMsg = '定植完了後の畑の品目作業はありません<br><span style="font-size:11px;color:#888;">品目別作業設定があり、定植が完了するとここに出ます</span>';
+          }
           tbody.innerHTML = '<tr class="sched-empty-row"><td colspan="10" style="text-align:center;">' + emptyMsg + '</td></tr>';
           updateSchedBulkSelectionUi_();
         } else {
@@ -2839,12 +3104,51 @@ async function fetchWeatherAndUpdateUI() {
         if (window._schedCompleteBusy) return;
         const label = String(workName || 'この作業');
         if (!confirm('「' + label + '」を完了にしますか？')) return;
-        window._schedCompleteBusy = true;
-        document.querySelectorAll('.sched-complete-btn').forEach(function(btn) {
-          btn.disabled = true;
-          btn.style.pointerEvents = 'none';
-          if (btn.textContent === '完了') btn.textContent = '完了中...';
+
+        const matchKey = isMid && recordId
+          ? ('mid:' + String(recordId))
+          : (scheduleKey ? ('key:' + String(scheduleKey)) : (sheetRow ? ('row:' + String(sheetRow)) : ''));
+        const removedRows = (globalSchedules || []).filter(function(t) {
+          const k = buildScheduleRowKey_(t);
+          if (matchKey && k === matchKey) return true;
+          if (isMid) return recordId && String(t.recordId || '') === String(recordId);
+          if (scheduleKey && t.scheduleKey === scheduleKey) return true;
+          if (sheetRow && Number(t.sheetRow) === Number(sheetRow)) return true;
+          return t.workName === workName && t.fieldName === fieldName && t.cropName === cropName;
         });
+        const items = removedRows.length
+          ? removedRows.map(scheduleItemToCompletePayload_)
+          : [{
+              sheetRow: Number(sheetRow) || 0,
+              scheduleKey: scheduleKey || '',
+              workName: workName || '',
+              fieldName: fieldName || '',
+              cropName: cropName || '',
+              isMidWork: !!isMid,
+              polyId: polyId || '',
+              recordId: recordId || ''
+            }];
+
+        window._schedCompleteBusy = true;
+        pushScheduleCompleteUndo_(items, removedRows);
+        const keySet = new Set(removedRows.map(buildScheduleRowKey_));
+        if (keySet.size) removeSchedulesByKeysOptimistic_(keySet);
+        else {
+          globalSchedules = (globalSchedules || []).filter(function(t) {
+            if (isMid) {
+              if (recordId && String(t.recordId || '') === String(recordId)) return false;
+              return true;
+            }
+            if (scheduleKey && t.scheduleKey === scheduleKey) return false;
+            if (sheetRow && t.sheetRow === sheetRow) return false;
+            return !(t.workName === workName && t.fieldName === fieldName && t.cropName === cropName);
+          });
+          persistScheduleDataCache_();
+        }
+        if (typeof updateMapVisuals === 'function') updateMapVisuals();
+        openScheduleTable();
+        showSchedSyncStatus_('☁ 完了を同期中…', null, { undo: true });
+
         try {
           const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
           await callGAS('completeWorkSchedule', {
@@ -2858,26 +3162,7 @@ async function fetchWeatherAndUpdateUI() {
             polyId: polyId || '',
             recordId: recordId || ''
           });
-          globalSchedules = (globalSchedules || []).filter(t => {
-            if (isMid) {
-              if (recordId && String(t.recordId || '') === String(recordId)) return false;
-              return true;
-            }
-            if (scheduleKey && t.scheduleKey === scheduleKey) return false;
-            if (sheetRow && t.sheetRow === sheetRow) return false;
-            return !(t.workName === workName && t.fieldName === fieldName && t.cropName === cropName);
-          });
-          try {
-            const cachedStr = localStorage.getItem('passionMapScheduleData');
-            if (cachedStr) {
-              const cached = JSON.parse(cachedStr);
-              cached.activeSchedules = globalSchedules;
-              localStorage.setItem('passionMapScheduleData', JSON.stringify(cached));
-            }
-          } catch (e) {}
-          if (typeof updateMapVisuals === 'function') updateMapVisuals();
-          openScheduleTable();
-          callGAS('getScheduleData').then(data => {
+          callGAS('getScheduleData').then(function(data) {
             if (!data) return;
             localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
             globalSchedules = data.activeSchedules || [];
@@ -2885,12 +3170,26 @@ async function fetchWeatherAndUpdateUI() {
             if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
               openScheduleTable();
             }
-          }).catch(() => {});
+            showSchedSyncStatus_('✓ 同期完了', 'ok', { undo: true });
+          }).catch(function() {
+            showSchedSyncStatus_('✓ 完了（再読込は後で）', 'ok', { undo: true });
+          });
         } catch (e) {
+          if (window._schedUndoStack && window._schedUndoStack.length) window._schedUndoStack.pop();
+          if (removedRows.length) {
+            const existingKeys = new Set((globalSchedules || []).map(buildScheduleRowKey_));
+            removedRows.forEach(function(row) {
+              const k = buildScheduleRowKey_(row);
+              if (!existingKeys.has(k)) globalSchedules = (globalSchedules || []).concat([row]);
+            });
+            persistScheduleDataCache_();
+          }
           alert('完了に失敗しました: ' + (e.message || e));
           if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
             openScheduleTable();
           }
+          showSchedSyncStatus_('完了に失敗しました', 'error');
+          hideSchedSyncStatusSoon_(3000);
         } finally {
           window._schedCompleteBusy = false;
         }
@@ -3134,43 +3433,60 @@ async function fetchWeatherAndUpdateUI() {
         }
       };
 
-      window.openSowingProgressModal = async () => {
-        const modal = document.getElementById('sowingProgressModal');
-        const body = document.getElementById('sowingProgressBody');
-        if (!modal || !body) return;
-        modal.style.display = 'flex';
-        const loading = window.AppLoading
-          ? AppLoading.inline(body, {
-              label: '播種進捗を読み込み中...',
-              detail: '年度別の実績を集計しています',
-              delay: 0
-            })
-          : null;
-        try {
-          const year = String(new Date().getFullYear());
-          const res = await callGAS('getSowingProgress', { year });
-          const cropSummary = (res && res.cropSummary) || [];
-          const rows = (res && res.rows) || [];
-          let html = '';
-          html += `<div style="margin-bottom:14px; font-size:12px; color:#555;">年度 ${year} の実行済み栽培計画に対する播種実績です。</div>`;
-          html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">作物別サマリー</div>`;
-          if (!cropSummary.length) {
-            html += `<div style="color:#888; margin-bottom:14px;">データがありません。栽培計画を実行し、作業記録で「播種」を記録してください。</div>`;
-          } else {
-            html += `<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; margin-bottom:16px;">`;
-            cropSummary.forEach(c => {
-              const pct = c.progressPct || 0;
-              html += `<div style="border:1px solid #e1bee7; border-radius:8px; padding:10px; background:#faf5fc;">
-                <div style="font-weight:bold; color:#4a148c;">${String(c.crop||'').replace(/</g,'&lt;')}</div>
-                <div style="font-size:12px; color:#555; margin:4px 0;">計画 ${c.plannedTrays||0} / 実績 ${c.doneTrays||0}</div>
+      window._sowingNurseryState = window._sowingNurseryState || {
+        tab: 'progress',
+        year: '',
+        data: null
+      };
+
+      window.escSowingNurseryHtml_ = (v) => String(v == null ? '' : v).replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+      window.syncSowingNurseryTabButtons_ = () => {
+        const tab = (window._sowingNurseryState && window._sowingNurseryState.tab) || 'progress';
+        const progressBtn = document.getElementById('sowingNurseryTabProgress');
+        const recordsBtn = document.getElementById('sowingNurseryTabRecords');
+        const active = { color: '#6a1b9a', borderBottom: '3px solid #6a1b9a' };
+        const idle = { color: '#888', borderBottom: '3px solid transparent' };
+        if (progressBtn) {
+          progressBtn.style.color = tab === 'progress' ? active.color : idle.color;
+          progressBtn.style.borderBottom = tab === 'progress' ? active.borderBottom : idle.borderBottom;
+        }
+        if (recordsBtn) {
+          recordsBtn.style.color = tab === 'records' ? active.color : idle.color;
+          recordsBtn.style.borderBottom = tab === 'records' ? active.borderBottom : idle.borderBottom;
+        }
+      };
+
+      window.switchSowingNurseryTab_ = (tab) => {
+        window._sowingNurseryState.tab = tab === 'records' ? 'records' : 'progress';
+        window.syncSowingNurseryTabButtons_();
+        window.renderSowingNurseryBody_();
+      };
+
+      window.renderSowingNurseryProgressHtml_ = (res, year) => {
+        const esc = window.escSowingNurseryHtml_;
+        const cropSummary = (res && res.cropSummary) || [];
+        const rows = (res && res.rows) || [];
+        let html = '';
+        html += `<div style="margin-bottom:14px; font-size:12px; color:#555;">年度 ${esc(year)} の実行済み栽培計画に対する播種実績です。作業一覧で「播種」を完了した分も反映されます。</div>`;
+        html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">作物別サマリー</div>`;
+        if (!cropSummary.length) {
+          html += `<div style="color:#888; margin-bottom:14px;">データがありません。栽培計画を実行し、作業一覧で播種を完了するか、作業記録で「播種」を記録してください。</div>`;
+        } else {
+          html += `<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; margin-bottom:16px;">`;
+          cropSummary.forEach(c => {
+            const pct = c.progressPct || 0;
+            html += `<div style="border:1px solid #e1bee7; border-radius:8px; padding:10px; background:#faf5fc;">
+                <div style="font-weight:bold; color:#4a148c;">${esc(c.crop || '')}</div>
+                <div style="font-size:12px; color:#555; margin:4px 0;">計画 ${c.plannedTrays || 0} / 実績 ${c.doneTrays || 0}</div>
                 <div style="background:#eee; border-radius:6px; height:10px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:#8e24aa;"></div></div>
                 <div style="font-size:11px; color:#6a1b9a; margin-top:4px;">${pct}%</div>
               </div>`;
-            });
-            html += `</div>`;
-          }
-          html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">TAG別進捗</div>`;
-          html += `<div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
+          });
+          html += `</div>`;
+        }
+        html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">TAG別進捗</div>`;
+        html += `<div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
             <thead><tr style="background:#f3e5f5; text-align:left;">
               <th style="padding:8px; border-bottom:1px solid #ce93d8;">作物</th>
               <th style="padding:8px; border-bottom:1px solid #ce93d8;">品種</th>
@@ -3181,32 +3497,122 @@ async function fetchWeatherAndUpdateUI() {
               <th style="padding:8px; border-bottom:1px solid #ce93d8;">残</th>
               <th style="padding:8px; border-bottom:1px solid #ce93d8;">進捗</th>
             </tr></thead><tbody>`;
-          if (!rows.length) {
-            html += `<tr><td colspan="8" style="padding:16px; text-align:center; color:#888;">該当なし</td></tr>`;
-          } else {
-            rows.forEach(r => {
-              const pct = r.progressPct || 0;
-              html += `<tr>
-                <td style="padding:8px; border-bottom:1px solid #eee;">${String(r.crop||'-').replace(/</g,'&lt;')}</td>
-                <td style="padding:8px; border-bottom:1px solid #eee;">${String(r.variety||'-').replace(/</g,'&lt;')}</td>
-                <td style="padding:8px; border-bottom:1px solid #eee; color:#e91e63; font-weight:bold;">${String(r.tag||'-').replace(/</g,'&lt;')}</td>
-                <td style="padding:8px; border-bottom:1px solid #eee;">${String(r.periodLabel||'-').replace(/</g,'&lt;')}</td>
-                <td style="padding:8px; border-bottom:1px solid #eee;">${r.plannedTrays||0}</td>
-                <td style="padding:8px; border-bottom:1px solid #eee;">${r.doneTrays||0}</td>
-                <td style="padding:8px; border-bottom:1px solid #eee;">${r.remainTrays||0}</td>
+        if (!rows.length) {
+          html += `<tr><td colspan="8" style="padding:16px; text-align:center; color:#888;">該当なし</td></tr>`;
+        } else {
+          rows.forEach(r => {
+            const pct = r.progressPct || 0;
+            html += `<tr>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${esc(r.crop || '-')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${esc(r.variety || '-')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee; color:#e91e63; font-weight:bold;">${esc(r.tag || '-')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${esc(r.periodLabel || '-')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${r.plannedTrays || 0}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${r.doneTrays || 0}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${r.remainTrays || 0}</td>
                 <td style="padding:8px; border-bottom:1px solid #eee;">
-                  <div style="background:#eee; border-radius:6px; height:8px; overflow:hidden; min-width:60px;"><div style="width:${pct}%; height:100%; background:${pct>=100?'#43a047':'#8e24aa'};"></div></div>
+                  <div style="background:#eee; border-radius:6px; height:8px; overflow:hidden; min-width:60px;"><div style="width:${pct}%; height:100%; background:${pct >= 100 ? '#43a047' : '#8e24aa'};"></div></div>
                   <span style="font-size:11px;">${pct}%</span>
                 </td>
               </tr>`;
-            });
-          }
-          html += `</tbody></table></div>`;
+          });
+        }
+        html += `</tbody></table></div>`;
+        return html;
+      };
+
+      window.renderSowingNurseryRecordsHtml_ = (res, year) => {
+        const esc = window.escSowingNurseryHtml_;
+        const yearStr = String(year || '').trim();
+        let records = ((res && res.records) || []).slice();
+        if (yearStr) {
+          records = records.filter(r => {
+            const sow = String(r.sowingDate || '');
+            const rec = String(r.recordedAt || '');
+            return sow.indexOf(yearStr) === 0 || rec.indexOf(yearStr) === 0;
+          });
+        }
+        records.sort((a, b) => {
+          return String(b.sowingDate || b.recordedAt || '').localeCompare(String(a.sowingDate || a.recordedAt || ''))
+            || String(b.recordedAt || '').localeCompare(String(a.recordedAt || ''));
+        });
+        let html = '';
+        html += `<div style="margin-bottom:12px; font-size:12px; color:#555;">年度 ${esc(yearStr || 'すべて')} の育苗・播種記録です。作業記録や作業一覧の播種完了から登録されたものを、区画・枚数つきで確認できます。</div>`;
+        html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">記録一覧（${records.length}件）</div>`;
+        if (!records.length) {
+          html += `<div style="color:#888; padding:16px; text-align:center;">まだ育苗・播種の記録がありません。</div>`;
+          return html;
+        }
+        html += `<div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead><tr style="background:#f3e5f5; text-align:left;">
+              <th style="padding:8px; border-bottom:1px solid #ce93d8; white-space:nowrap;">播種日</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">TAG</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">作物</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">品種</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">区画</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">方向</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">枚数</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">穴数</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">記録者</th>
+              <th style="padding:8px; border-bottom:1px solid #ce93d8;">備考</th>
+            </tr></thead><tbody>`;
+        records.forEach(r => {
+          html += `<tr>
+              <td style="padding:8px; border-bottom:1px solid #eee; white-space:nowrap;">${esc(r.sowingDate || '-')}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee; color:#e91e63; font-weight:bold;">${esc(r.tag || '-')}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee;">${esc(r.cropName || '-')}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee;">${esc(r.variety || '-')}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee;">${esc(r.nurseryName || '-')}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee;">${esc(r.direction || '-')}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee;">${r.trays != null ? r.trays : '-'}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee;">${r.holes !== '' && r.holes != null ? esc(r.holes) : '-'}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee;">${esc(r.author || '-')}</td>
+              <td style="padding:8px; border-bottom:1px solid #eee; color:#666;">${esc(r.note || '')}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
+        return html;
+      };
+
+      window.renderSowingNurseryBody_ = () => {
+        const body = document.getElementById('sowingProgressBody');
+        if (!body) return;
+        const st = window._sowingNurseryState;
+        if (!st.data) {
+          body.innerHTML = `<div style="color:#888; padding:12px;">データがありません。</div>`;
+          return;
+        }
+        if (st.tab === 'records') {
+          body.innerHTML = window.renderSowingNurseryRecordsHtml_(st.data, st.year);
+        } else {
+          body.innerHTML = window.renderSowingNurseryProgressHtml_(st.data, st.year);
+        }
+      };
+
+      window.openSowingProgressModal = async () => {
+        const modal = document.getElementById('sowingProgressModal');
+        const body = document.getElementById('sowingProgressBody');
+        if (!modal || !body) return;
+        modal.style.display = 'flex';
+        window._sowingNurseryState.tab = window._sowingNurseryState.tab || 'progress';
+        window.syncSowingNurseryTabButtons_();
+        const loading = window.AppLoading
+          ? AppLoading.inline(body, {
+              label: '播種・育苗を読み込み中...',
+              detail: '進捗と記録を集計しています',
+              delay: 0
+            })
+          : null;
+        try {
+          const year = String(new Date().getFullYear());
+          const res = await callGAS('getSowingProgress', { year });
+          window._sowingNurseryState.year = year;
+          window._sowingNurseryState.data = res || { cropSummary: [], rows: [], records: [] };
           if (loading) loading.done();
-          body.innerHTML = html;
+          window.renderSowingNurseryBody_();
         } catch (e) {
           if (loading) loading.done();
-          body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g,'&lt;')}</div>`;
+          body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g, '&lt;')}</div>`;
         }
       };
 

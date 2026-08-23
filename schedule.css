@@ -99,7 +99,9 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
         cursor: pointer;
         padding: 4px 2px;
       }
-      #schedWorkNameFilterPop {
+      #schedColumnFilterPop,
+      #schedWorkNameFilterPop,
+      .sched-column-filter-pop {
         display: none;
         position: absolute;
         z-index: 4200;
@@ -113,7 +115,9 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
         overflow: auto;
         padding: 8px;
       }
-      #schedWorkNameFilterPop .wnf-item {
+      #schedColumnFilterPop .wnf-item,
+      #schedWorkNameFilterPop .wnf-item,
+      .sched-column-filter-pop .wnf-item {
         display: block;
         width: 100%;
         text-align: left;
@@ -127,21 +131,40 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
         color: #1565c0;
         cursor: pointer;
       }
+      #schedColumnFilterPop .wnf-item:hover,
+      #schedColumnFilterPop .wnf-item.is-active,
       #schedWorkNameFilterPop .wnf-item:hover,
-      #schedWorkNameFilterPop .wnf-item.is-active {
+      #schedWorkNameFilterPop .wnf-item.is-active,
+      .sched-column-filter-pop .wnf-item:hover,
+      .sched-column-filter-pop .wnf-item.is-active {
         background: #e3f2fd;
         border-color: #64b5f6;
       }
-      #schedWorkNameFilterPop .wnf-clear {
+      #schedColumnFilterPop .wnf-clear,
+      #schedWorkNameFilterPop .wnf-clear,
+      .sched-column-filter-pop .wnf-clear {
         background: #f5f5f5;
         color: #546e7a;
         border-color: #cfd8dc;
       }
-      th.sched-workname-filter-th.is-filtered {
+      .sched-filter-pop-title {
+        font-size: 11px;
+        color: #666;
+        margin: 0 0 6px 2px;
+      }
+      .sched-filter-pop-empty {
+        padding: 10px;
+        color: #888;
+        font-size: 12px;
+      }
+      th.sched-workname-filter-th.is-filtered,
+      th.sched-dept-filter-th.is-filtered {
         background: #fff3e0;
         color: #ef6c00;
       }
-      #schedWorkNameFilterChip {
+      .sched-filter-chip,
+      #schedWorkNameFilterChip,
+      #schedDeptFilterChip {
         display: none;
         align-items: center;
         gap: 6px;
@@ -152,6 +175,16 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
         padding: 4px 10px;
         font-size: 12px;
         font-weight: bold;
+      }
+      .sched-filter-chip-clear {
+        background: transparent;
+        border: none;
+        color: #e65100;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 0 2px;
+        font-size: 14px;
+        line-height: 1;
       }
       .progress-summary-table th { background: #e8f5e9; padding: 8px; text-align: left; border-bottom: 2px solid #a5d6a7; white-space: nowrap; }
       .progress-summary-table td { padding: 8px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
@@ -237,6 +270,46 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
         width: auto;
       }
       .sched-bulk-hint { font-size: 11px; color: #666; }
+      .sched-sync-status {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        color: #1565c0;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: bold;
+        white-space: nowrap;
+      }
+      .sched-sync-status.is-error {
+        background: #ffebee;
+        border-color: #ef9a9a;
+        color: #c62828;
+      }
+      .sched-sync-status.is-ok {
+        background: #e8f5e9;
+        border-color: #a5d6a7;
+        color: #2e7d32;
+      }
+      .sched-undo-btn {
+        margin-left: 4px;
+        background: #fff;
+        color: #1565c0;
+        border: 1px solid #90caf9;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .sched-sync-status.is-ok .sched-undo-btn,
+      .sched-sync-status.is-error .sched-undo-btn {
+        color: inherit;
+        border-color: currentColor;
+      }
       .schedule-modal-header { gap: 8px; }
       .schedule-modal-title { min-width: 0; flex: 1; }
       .schedule-modal-actions {
@@ -355,13 +428,17 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
           padding: 10px;
           min-height: 44px;
         }
-        #schedWorkNameFilterChip {
+        #schedWorkNameFilterChip,
+        #schedDeptFilterChip,
+        .sched-filter-chip {
           width: 100%;
           justify-content: space-between;
           padding: 8px 12px;
           font-size: 13px;
         }
-        #schedWorkNameFilterPop {
+        #schedColumnFilterPop,
+        #schedWorkNameFilterPop,
+        .sched-column-filter-pop {
           position: fixed;
           left: 8px !important;
           right: 8px;
@@ -372,7 +449,9 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
           max-height: 55vh;
           z-index: 4500;
         }
-        #schedWorkNameFilterPop .wnf-item {
+        #schedColumnFilterPop .wnf-item,
+        #schedWorkNameFilterPop .wnf-item,
+        .sched-column-filter-pop .wnf-item {
           padding: 14px 12px;
           font-size: 15px;
           min-height: 48px;

@@ -104,6 +104,8 @@ function doPost(e) {
     else if (action === "deleteWorkSchedule") result = deleteWorkSchedule(params);
     else if (action === "completeWorkSchedule") result = completeWorkSchedule(params);
     else if (action === "bulkCompleteWorkSchedule") result = bulkCompleteWorkSchedule(params);
+    else if (action === "undoCompleteWorkSchedule") result = undoCompleteWorkSchedule(params);
+    else if (action === "bulkUndoCompleteWorkSchedule") result = bulkUndoCompleteWorkSchedule(params);
     else if (action === "delegateCompleteWork") result = delegateCompleteWork(params);
     else if (action === "saveReport") result = saveReportData(params.id, params.name, params.author, params.text, params.photos);
     else if (action === "deleteInventoryHistory") result = deleteInventoryHistory(params);
@@ -6925,6 +6927,9 @@ function completeWorkSchedule(params) {
     try {
       ensurePlantingAfterCompletedSowing_(schedSheet.getDataRange().getValues(), extra);
     } catch (ePlant) {}
+    try {
+      ensureSowingRecordAfterScheduleComplete_(rowData, userName, today);
+    } catch (eSowRec) {}
   } else if (parseCpPlaceKind_(placeId).kind === 'plant' || workName === '定植') {
     const extra = {};
     extra[placeId] = true;
@@ -6969,6 +6974,151 @@ function bulkCompleteWorkSchedule(params) {
     completedCount: completed.length,
     failedCount: failed.length,
     completed: completed,
+    failed: failed
+  };
+}
+
+/** 途中作業の完了を元に戻す（進捗を途中へ） */
+function undoDelegateCompleteWork_(params) {
+  const polyId = String((params && (params.id || params.polyId)) || '').trim();
+  const recordId = String((params && params.recordId) || '').trim();
+  const userName = String((params && params.userName) || '').trim() || 'システム';
+  if (!polyId) throw new Error('圃場IDがありません');
+  if (!recordId) throw new Error('記録IDがありません');
+
+  const found = findSheetAndRowById(polyId);
+  if (!found) throw new Error('対象の圃場が見つかりません');
+  const pc = 10;
+  let ex = [];
+  if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {} }
+  if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) {} }
+  const tgt = ex.find(function(item) { return item && (item.id === recordId || item.url === recordId); });
+  if (!tgt) throw new Error('対象の作業記録が見つかりません');
+  if (!tgt.data || typeof tgt.data !== 'object') tgt.data = {};
+
+  tgt.data.progressStatus = '途中';
+  if (tgt.data.comment) {
+    tgt.data.comment = String(tgt.data.comment)
+      .split('\n')
+      .filter(function(line) { return String(line).indexOf('【委任完了】') < 0; })
+      .join('\n');
+  }
+
+  found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
+
+  const rs = TENANT_SS.getSheetByName('作業記録');
+  if (rs) {
+    const d = rs.getDataRange().getValues();
+    for (let i = 1; i < d.length; i++) {
+      if (String(d[i][12]) === recordId) {
+        rs.getRange(i + 1, 11).setValue('途中');
+        break;
+      }
+    }
+  }
+
+  writeLog(userName, '作業完了取消', found.rowData[1] || polyId, '記録ID: ' + recordId + ' → 途中');
+  return { success: true, recordId: recordId, progressStatus: '途中', isMidWork: true };
+}
+
+/**
+ * 作業予定の完了を元に戻す（完了日をクリア）
+ * 途中作業は進捗を「途中」に戻す。
+ */
+function undoCompleteWorkSchedule(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  const isMid = params.isMidWork === true || params.isMidWork === 'true' || params.isMidWork === 1 || params.isMidWork === '1';
+  if (isMid || String(params.recordId || '').trim()) {
+    return undoDelegateCompleteWork_(params);
+  }
+
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) throw new Error('作業予定シートがありません');
+
+  const data = schedSheet.getDataRange().getValues();
+  let targetRow = parseInt(params.sheetRow, 10);
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    targetRow = 0;
+    const wantKey = String(params.scheduleKey || '').trim();
+    const wantName = String(params.workName || '').trim();
+    const wantField = String(params.fieldName || '').trim();
+    const wantCrop = String(params.cropName || '').trim();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      // 完了済みを対象にする
+      if (!String(row[8] || '').trim()) continue;
+      const key = buildWorkScheduleKey_(row[0], row[3], row[2], row[4], row[5]);
+      if (wantKey && key === wantKey) {
+        targetRow = i + 1;
+        break;
+      }
+      if (!wantKey && wantName
+          && String(row[0] || '').trim() === wantName
+          && String(row[3] || '').trim() === wantField
+          && String(row[2] || '').trim() === wantCrop) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (!(targetRow >= 2 && targetRow <= data.length)) {
+    throw new Error('取り消す完了済み作業が見つかりませんでした');
+  }
+
+  const rowData = data[targetRow - 1] || [];
+  const workName = String(rowData[0] || params.workName || '').trim();
+  const fieldName = String(rowData[3] || params.fieldName || '').trim();
+  const placeId = String(rowData[10] || '').trim();
+  if (!String(rowData[8] || '').trim()) {
+    return { success: true, workName: workName, fieldName: fieldName, sheetRow: targetRow, alreadyOpen: true };
+  }
+
+  schedSheet.getRange(targetRow, 9).setValue('');
+  if (parseCpPlaceKind_(placeId).kind === 'sow' || workName === '播種') {
+    try {
+      removeSowingRecordAfterScheduleUndo_(rowData);
+    } catch (eSowUndo) {}
+  }
+  writeLog(userName, '作業完了取消', fieldName || workName, `作業名: ${workName}, 行: ${targetRow}`);
+  return { success: true, workName: workName, fieldName: fieldName, sheetRow: targetRow };
+}
+
+/** 作業一覧から複数件の完了をまとめて取り消す */
+function bulkUndoCompleteWorkSchedule(params) {
+  params = params || {};
+  const items = params.items || [];
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  if (!items.length) return { success: true, undone: 0, failed: [] };
+
+  const undone = [];
+  const failed = [];
+  items.forEach(function(item) {
+    try {
+      const res = undoCompleteWorkSchedule(Object.assign({}, item, { userName: userName }));
+      undone.push({
+        workName: res.workName || item.workName || '',
+        fieldName: res.fieldName || item.fieldName || '',
+        sheetRow: res.sheetRow || item.sheetRow || 0,
+        isMidWork: !!(res.isMidWork || item.isMidWork)
+      });
+    } catch (e) {
+      failed.push({
+        workName: item.workName || '',
+        fieldName: item.fieldName || '',
+        sheetRow: item.sheetRow || 0,
+        message: String(e.message || e)
+      });
+    }
+  });
+
+  return {
+    success: failed.length === 0,
+    undoneCount: undone.length,
+    failedCount: failed.length,
+    undone: undone,
     failed: failed
   };
 }
@@ -11727,6 +11877,112 @@ function appendSowingRecordFromWork_(recordData, author, recordId) {
   ]);
 }
 
+/** 作業予定の「枚数・時間」または計画から播種枚数（粒）を取る */
+function parseScheduleSowingTrays_(hoursCell, plan) {
+  const qty = farmBoardParseQty_(hoursCell);
+  if (qty.trays > 0) return qty.trays;
+  if (qty.grains > 0) return qty.grains;
+  return Number(plan && plan.trays) || 0;
+}
+
+/** 作業一覧完了から作った播種記録のシステムID */
+function sowingRecordIdFromSchedule_(placeId) {
+  const parsed = parseCpPlaceKind_(placeId);
+  const marker = String((parsed && parsed.marker) || String(placeId || '').split('|')[0] || '').trim();
+  if (!marker) return '';
+  return 'sched-sow:' + marker;
+}
+
+/**
+ * 作業一覧で播種を完了したとき、播種記録へ実績を書く（播種進捗と同期）。
+ * 既に同IDの記録があればスキップ。
+ */
+function ensureSowingRecordAfterScheduleComplete_(rowData, userName, completedAt) {
+  rowData = rowData || [];
+  const placeId = String(rowData[10] || '').trim();
+  const workName = String(rowData[0] || '').trim();
+  const parsed = parseCpPlaceKind_(placeId);
+  if (parsed.kind !== 'sow' && workName !== '播種') return null;
+
+  const recordId = sowingRecordIdFromSchedule_(placeId);
+  if (!recordId) return null;
+
+  const existing = readSowingRecordList_();
+  if (existing.some(function(r) { return String(r.recordId || '') === recordId; })) {
+    return recordId;
+  }
+
+  const planId = (parsed.planIds && parsed.planIds[0]) || '';
+  const planLookup = buildCultivationPlanLookupById_();
+  const plan = planId ? planLookup[planId] : null;
+  const trays = parseScheduleSowingTrays_(rowData[6], plan);
+  const tag = String(rowData[7] || (plan && plan.tag) || '').trim();
+  const cropName = String(rowData[2] || (plan && plan.crop) || '').trim();
+
+  appendSowingRecordFromWork_({
+    crop: cropName,
+    workDate: completedAt,
+    sowingRecord: {
+      tag: tag,
+      cropName: cropName,
+      variety: (plan && plan.variety) || '',
+      nurseryName: '',
+      direction: '',
+      sowingDate: completedAt,
+      trays: trays,
+      holes: (plan && plan.holes != null) ? plan.holes : '',
+      planId: planId,
+      note: '作業一覧から完了'
+    }
+  }, userName || '', recordId);
+  return recordId;
+}
+
+/** 作業一覧の播種完了取消時、自動作成した播種記録を削除 */
+function removeSowingRecordAfterScheduleUndo_(rowData) {
+  rowData = rowData || [];
+  const placeId = String(rowData[10] || '').trim();
+  const recordId = sowingRecordIdFromSchedule_(placeId);
+  if (!recordId) return false;
+  const sheet = ensureSowingRecordSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return false;
+  const numRows = last - 1;
+  const values = sheet.getRange(2, 1, numRows, SOWING_RECORD_HEADERS_.length).getValues();
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (String(values[i][11] || '') === recordId) {
+      sheet.deleteRow(i + 2);
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 完了済み播種の作業予定から計画ID別の実績枚数を集計 */
+function buildCompletedSowTraysByPlanId_() {
+  const map = {};
+  const ss = TENANT_SS;
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet || schedSheet.getLastRow() < 2) return map;
+  const numRows = schedSheet.getLastRow() - 1;
+  const sData = schedSheet.getRange(2, 1, numRows, 11).getValues();
+  const planLookup = buildCultivationPlanLookupById_();
+  sData.forEach(function(row) {
+    if (!String(row[8] || '').trim()) return;
+    const placeId = String(row[10] || '');
+    const workName = String(row[0] || '').trim();
+    const parsed = parseCpPlaceKind_(placeId);
+    if (parsed.kind !== 'sow' && workName !== '播種') return;
+    const planIds = (parsed.planIds && parsed.planIds.length) ? parsed.planIds : [];
+    planIds.forEach(function(pid) {
+      const plan = planLookup[pid];
+      const trays = parseScheduleSowingTrays_(row[6], plan);
+      map[pid] = (map[pid] || 0) + trays;
+    });
+  });
+  return map;
+}
+
 function buildCultivationPlanLookupById_() {
   const map = {};
   const sheet = TENANT_SS.getSheetByName('栽培計画');
@@ -12358,17 +12614,27 @@ function getSowingProgress(params) {
     return sowing.length > 0;
   });
   const records = readSowingRecordList_();
+  const byPlanId = {};
   const byTag = {};
   records.forEach(r => {
+    const trays = Number(r.trays) || 0;
+    const pid = String(r.planId || '').trim();
+    if (pid) byPlanId[pid] = (byPlanId[pid] || 0) + trays;
     const key = r.tag || (r.cropName + '|' + r.variety);
     if (!byTag[key]) byTag[key] = { tag: r.tag, cropName: r.cropName, variety: r.variety, trays: 0, records: [] };
-    byTag[key].trays += Number(r.trays) || 0;
+    byTag[key].trays += trays;
     byTag[key].records.push(r);
   });
+  // 作業一覧で播種完了済みの計画も実績に含める（播種記録未作成の既存データ向け）
+  const scheduleDoneByPlan = buildCompletedSowTraysByPlanId_();
   const rows = plans.map(p => {
     const plannedTrays = Number(p.trays) || 0;
+    const fromPlanId = byPlanId[String(p.id)] || 0;
     const hit = byTag[p.tag] || { trays: 0, records: [] };
-    const doneTrays = Number(hit.trays) || 0;
+    // 計画ID付き記録があれば優先（TAG集計との二重加算を避ける）
+    const fromRecords = fromPlanId > 0 ? fromPlanId : (Number(hit.trays) || 0);
+    const fromSchedule = scheduleDoneByPlan[String(p.id)] || 0;
+    const doneTrays = Math.max(fromRecords, fromSchedule);
     const pct = plannedTrays > 0 ? Math.min(100, Math.round(doneTrays / plannedTrays * 100)) : (doneTrays > 0 ? 100 : 0);
     let periodLabel = '';
     try {
@@ -12458,14 +12724,19 @@ function getCurrentSowingPlanOptions(params) {
   }
   const state = buildCpScheduleProgressState_(sData);
 
-  // 播種実績（TAG別）
+  // 播種実績（計画ID／TAG／作業予定完了）
   const records = readSowingRecordList_();
+  const traysByPlanId = {};
   const traysByTag = {};
   records.forEach(function(r) {
+    const trays = Number(r.trays) || 0;
+    const pid = String(r.planId || '').trim();
+    if (pid) traysByPlanId[pid] = (traysByPlanId[pid] || 0) + trays;
     const tag = String(r.tag || '').trim();
     if (!tag) return;
-    traysByTag[tag] = (traysByTag[tag] || 0) + (Number(r.trays) || 0);
+    traysByTag[tag] = (traysByTag[tag] || 0) + trays;
   });
+  const scheduleDoneByPlan = buildCompletedSowTraysByPlanId_();
 
   const items = [];
   Object.keys(planLookup).forEach(function(k) {
@@ -12499,7 +12770,10 @@ function getCurrentSowingPlanOptions(params) {
     if (prog.plantDone) return;
     const sowDone = !!prog.sowDone;
     const plannedTrays = Number(plan.trays) || 0;
-    const doneTrays = traysByTag[String(plan.tag || '').trim()] || 0;
+    const fromPlanId = traysByPlanId[String(plan.id)] || 0;
+    const fromTag = traysByTag[String(plan.tag || '').trim()] || 0;
+    const fromRecords = fromPlanId > 0 ? fromPlanId : fromTag;
+    const doneTrays = Math.max(fromRecords, scheduleDoneByPlan[String(plan.id)] || 0);
     const traysDone = plannedTrays > 0 ? (doneTrays >= plannedTrays) : sowDone;
     if (!includeDone && traysDone && sowDone) return;
 
