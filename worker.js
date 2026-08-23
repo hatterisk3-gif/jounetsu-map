@@ -4390,7 +4390,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
         const isRest = wName.includes('休憩');
 
-        // 圃場カテゴリは作業名未選択でも圃場選択を出す（畑→登録作業の流れ）
+        // 圃場カテゴリは作業名未選択でも圃場選択を出す（DOM上は作業名の直後）
         const isFieldCat = window.isFieldCategory(cat) || cat === 'すべて';
         const isMaint = (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wName))
           || wName.includes('修理') || wName.includes('点検') || wName.includes('整備')
@@ -15588,8 +15588,8 @@ function createSignboardMarker(name, pos, icon, id) {
           </div>`;
         };
         if (currentRecordType === 'work' && !p.isMarker) {
-           // 畑→登録作業の流れのため、最初から圃場選択を出す
-           targetSection = buildFieldTargetSection({ hidden: false, title: '圃場を選択', hint: '先に畑を選ぶと、計画で登録された作業が出ます', mapLabel: '🗺️ マップから選択' });
+           // 作業名のあとに圃場を選ぶ流れ（作業名 → 圃場）
+           targetSection = buildFieldTargetSection({ hidden: false, title: '圃場を選択', hint: '作業名のあとに、対象の畑をマップから選んでください（複数可）', mapLabel: '🗺️ マップから選択' });
         } else if (currentRecordType === 'work') {
            // 看板起点でも圃場を追加選択できる
            targetSection = buildFieldTargetSection({ hidden: true, title: '圃場を選択', hint: '必要ならマップから追加できます（任意・複数可）', mapLabel: '🗺️ マップから選択' });
@@ -15724,8 +15724,6 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="pending_next_work_banner" style="display:none; border:1px solid #FFE082; border-radius:8px; padding:10px 12px; margin:10px 0 12px; font-size:13px; font-weight:bold; line-height:1.4;"></div>
                   <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
                   ${timeUI}
-                  ${targetSection}
-                  ${fieldRegisteredWorksSection}
                   <div id="next_work_prediction_section" style="display:none; background:linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border:1px solid #a5d6a7; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(46,125,50,0.08);"></div>
                   <div id="time_work_suggestion_section" style="display:none; background:linear-gradient(135deg, #e3f2fd 0%, #e8f5e9 100%); border:1px solid #90caf9; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(21,101,192,0.08);"></div>
                   <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:1px solid #9FA8DA; border-radius:10px; padding:12px; margin-bottom:12px;">
@@ -15756,6 +15754,8 @@ function createSignboardMarker(name, pos, icon, id) {
                     ${allChipsHTML}
                   </div>
                   </div>
+                  ${targetSection}
+                  ${fieldRegisteredWorksSection}
                   <div id="work_assoc_suggest" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="field_machinery_section" style="display:none; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
@@ -18031,7 +18031,7 @@ function createSignboardMarker(name, pos, icon, id) {
         window.fillAppModalHtml_(`
           <div style="background:#fff; width:100%; max-width:420px; max-height:88vh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#FF9800; margin-bottom:4px;">🚜 次の作業を登録</div>
-            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">段階的に選びます（本登録しません）。開始は前作業の終了 <b>${startHm}</b> です。</div>
+            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">${window._afterSaveFromClockIn ? '段階的に選びます（本登録しません）。開始は出勤時刻' : '段階的に選びます（本登録しません）。開始は前作業の終了'} <b>${startHm}</b> です。</div>
             ${stepHeader}
             ${stepBody}
             ${primaryBtn}
@@ -18070,6 +18070,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const startDefault = endTime || nowHm;
         const workName = String(data.workName || '作業');
         window._afterSaveNextPolyIds = Array.isArray(polyIds) ? polyIds.slice() : [];
+        window._afterSaveFromClockIn = false;
         window._afterSaveWorkMeta = {
           workDate: data.workDate || '',
           workName: workName,
@@ -18099,6 +18100,50 @@ function createSignboardMarker(name, pos, icon, id) {
         setTimeout(() => {
           try { window.refreshClockOutNudgeUI_(); } catch (e) {}
         }, 50);
+      };
+
+      window.showAfterClockInContinueModal_ = (opts) => {
+        opts = opts || {};
+        const workDate = String(opts.workDate || '').trim();
+        const timeHm = window.normalizeTimeHm
+          ? (window.normalizeTimeHm(opts.time) || String(opts.time || '').trim())
+          : String(opts.time || '').trim();
+        const now = new Date();
+        const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const startDefault = timeHm || nowHm;
+        window._afterSaveFromClockIn = true;
+        window._afterSaveNextPolyIds = [];
+        window._afterSaveWorkMeta = {
+          workDate: workDate,
+          workName: '出勤',
+          crop: '',
+          category: '',
+          endTime: startDefault
+        };
+        window._afterSaveDraftCategory = 'すべて';
+        window._afterSaveDraftCrop = '';
+        window._afterSaveDraftWorkName = '';
+        window._afterSavePickerStep = 'category';
+        if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') {
+          window.ensureDayPlanCacheForPlannedEnd_();
+        }
+        const modalEl = document.getElementById('modal');
+        if (!modalEl) return;
+        const safeHm = String(startDefault).replace(/</g, '&lt;');
+        window.fillAppModalHtml_(`
+          <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+            <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">✅ 出勤しました</div>
+            <div style="font-size:13px; color:#555; margin-bottom:16px; line-height:1.45;">出勤時刻 <b>${safeHm}</b> を記録しました。<br>続けて最初の作業を登録するとスムーズです。</div>
+            <button type="button" onclick="showAfterSaveNextWorkPicker_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🚜 次の作業を登録</button>
+            <button type="button" onclick="window._afterSaveFromClockIn=false; closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">あとで登録する</button>
+          </div>`);
+        modalEl.style.display = 'flex';
+        modalEl.onclick = (evt) => {
+          if (evt.target === modalEl) {
+            window._afterSaveFromClockIn = false;
+            closeAfterWorkSaveContinueModal_();
+          }
+        };
       };
 
       async function submitRecord() {
@@ -23794,7 +23839,8 @@ window.toggleTracking = () => {
         <div id="popover-clockin-help" class="info-popover-box" style="margin-bottom:12px; background:#2E7D32; max-width:100%; display:none;">
           💡 <b>出勤処理のヘルプ</b><br>
           ・出勤処理を行うと現在地のGPSが記録され、トラッキングを開始します。<br>
-          ・打刻された出勤時刻は、本日の作業記録の開始時間の自動入力と同期されます。
+          ・打刻された出勤時刻は、本日の作業記録の開始時間の自動入力と同期されます。<br>
+          ・出勤後は「次の作業を登録」へ進めます。
         </div>`;
 
         html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
@@ -23865,6 +23911,15 @@ window.confirmClockIn = () => {
     localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
     window.syncTrackingUI();
 
+    // 出勤後は次の作業登録へ進める
+    if (typeof window.showAfterClockInContinueModal_ === 'function') {
+        setTimeout(() => {
+            try {
+                window.showAfterClockInContinueModal_({ workDate: dateInput, time: timeStr });
+            } catch (e) { console.warn(e); }
+        }, 80);
+    }
+
     navigator.geolocation.getCurrentPosition((p) => {
         const lat = p.coords.latitude;
         const lng = p.coords.longitude;
@@ -23889,9 +23944,8 @@ window.confirmClockIn = () => {
         }
     }, (err) => {
         console.warn('GPSエラー', err);
-        if (typeof customAlert !== 'undefined' && typeof customAlert === 'function') {
-            customAlert('GPSの取得に失敗しましたが、出勤時間は記録しました。');
-        }
+        // 出勤後モーダル表示中はブロックしない（時刻は既に記録済み）
+        console.warn('GPSの取得に失敗しましたが、出勤時間は記録しました。');
         if (typeof currentUser !== 'undefined' && currentUser) {
             if(typeof callGAS === 'function') {
                 callGAS('saveTrackingData', {
