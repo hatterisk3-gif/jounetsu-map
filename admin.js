@@ -6994,8 +6994,8 @@ window.openMyPage = function() {
 
     if (isAdmin) {
         html += `
-        <h4 style="color:#555; margin-bottom:8px; margin-top:20px;">👥 ユーザー権限の変更</h4>
-        <p style="font-size:12px; color:#777; margin:0 0 8px 0; line-height:1.4;">管理者はユーザーの権限（管理者／作業員）を変更できます。最後の管理者は作業員に変更できません。</p>
+        <h4 style="color:#555; margin-bottom:8px; margin-top:20px;">👥 ユーザー権限・部署の変更</h4>
+        <p style="font-size:12px; color:#777; margin:0 0 8px 0; line-height:1.4;">管理者はユーザーの権限（管理者／作業員）と所属部署を変更できます。最後の管理者は作業員に変更できません。</p>
         <div id="userRoleManageMsg" style="min-height:18px; margin-bottom:8px; font-size:13px; font-weight:bold;"></div>
         <div id="userRoleManageList" style="background:#fafafa; border:1px solid #e0e0e0; border-radius:8px; padding:8px; max-height:240px; overflow-y:auto; margin-bottom:8px;">
             <div style="text-align:center; color:#999; font-size:13px; padding:12px;">読み込み中...</div>
@@ -7046,10 +7046,21 @@ window.loadUserRoleManageList = async function() {
         }
         const esc = (s) => String(s == null ? '' : s)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        let deptOpts = Array.isArray(res.departments) && res.departments.length
+            ? res.departments.slice()
+            : ['運営', '未設定'];
+        users.forEach(u => {
+            const d = String((u && u.dept) || '').trim();
+            if (d && deptOpts.indexOf(d) < 0) deptOpts.unshift(d);
+        });
         listEl.innerHTML = users.map((u, idx) => {
             const role = (u.role === '管理者') ? '管理者' : '作業員';
             const uid = esc(u.userId);
             const uname = esc(u.userName || '');
+            const dept = String(u.dept || '未設定').trim() || '未設定';
+            const deptOptions = deptOpts.map(d =>
+                `<option value="${esc(d)}" ${d === dept ? 'selected' : ''}>${esc(d)}</option>`
+            ).join('');
             return `
               <div style="display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee; flex-wrap:wrap;" data-user-id="${uid}">
                 <div style="flex:1; min-width:120px;">
@@ -7060,7 +7071,11 @@ window.loadUserRoleManageList = async function() {
                   <option value="作業員" ${role === '作業員' ? 'selected' : ''}>作業員</option>
                   <option value="管理者" ${role === '管理者' ? 'selected' : ''}>管理者</option>
                 </select>
-                <button type="button" class="user-role-change-btn" data-idx="${idx}" style="padding:6px 10px; background:#7B1FA2; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">変更</button>
+                <select class="user-dept-select" data-idx="${idx}" style="padding:6px 8px; font-size:13px; border:1px solid #ccc; border-radius:4px; min-width:110px;" title="所属部署">
+                  ${deptOptions}
+                </select>
+                <button type="button" class="user-role-change-btn" data-idx="${idx}" style="padding:6px 10px; background:#7B1FA2; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">権限</button>
+                <button type="button" class="user-dept-change-btn" data-idx="${idx}" style="padding:6px 10px; background:#455a64; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">部署</button>
               </div>
             `;
         }).join('');
@@ -7074,8 +7089,46 @@ window.loadUserRoleManageList = async function() {
                 changeUserRoleFromAdmin(user.userId, sel ? sel.value : user.role);
             });
         });
+        listEl.querySelectorAll('.user-dept-change-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const idx = parseInt(this.getAttribute('data-idx'), 10);
+                const user = (window._userRoleManageUsers || [])[idx];
+                if (!user) return;
+                const sel = listEl.querySelector('.user-dept-select[data-idx="' + idx + '"]');
+                changeUserDeptFromAdmin(user.userId, sel ? sel.value : user.dept);
+            });
+        });
     } catch (e) {
         listEl.innerHTML = `<div style="text-align:center; color:#c62828; font-size:13px; padding:12px;">${String(e.message || e)}</div>`;
+    }
+};
+
+window.changeUserDeptFromAdmin = async function(targetUserId, selectedDept) {
+    const newDept = String(selectedDept || '未設定').trim() || '未設定';
+    const adminUserId = localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '';
+    const adminPassword = localStorage.getItem('passionMapUserPw') || localStorage.getItem('pMapAdminPw') || '';
+    if (!adminUserId || !adminPassword) {
+        window.setUserRoleManageMsg('ログイン情報が不足しています', false);
+        return;
+    }
+    if (!confirm(`「${targetUserId}」の部署を「${newDept}」に変更しますか？`)) return;
+    window.setUserRoleManageMsg('部署を変更中...', true);
+    try {
+        const res = await callGAS('updateUserDepts', {
+            updates: [{ userId: targetUserId, dept: newDept }],
+            userName: localStorage.getItem('passionMapUserName') || adminUserId
+        });
+        if (!res || res.success === false) {
+            window.setUserRoleManageMsg((res && res.message) || '部署の変更に失敗しました', false);
+            return;
+        }
+        window.setUserRoleManageMsg(`部署を変更しました（${targetUserId}: ${newDept}）`, true);
+        if (String(targetUserId) === String(adminUserId)) {
+            localStorage.setItem('passionMapUserDept', newDept);
+        }
+        loadUserRoleManageList();
+    } catch (e) {
+        window.setUserRoleManageMsg(String(e.message || e), false);
     }
 };
 

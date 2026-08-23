@@ -78,6 +78,8 @@ function doPost(e) {
     else if (action === "getWorkDeptSettings") result = getWorkDeptSettings(params);
     else if (action === "updateWorkDeptSettings") result = updateWorkDeptSettings(params);
     else if (action === "updateScheduleRowDept") result = updateScheduleRowDept(params);
+    else if (action === "saveDepartmentMaster") result = saveDepartmentMaster(params);
+    else if (action === "updateUserDepts") result = updateUserDepts(params);
     else if (action === "getWorkRecordAnalysis") result = getWorkRecordAnalysis(params);
     else if (action === "saveManualData") result = saveManualData(params.manual);
     else if (action === "getManualList") result = getManualList();
@@ -488,11 +490,22 @@ function checkLogin(orgId, userId, password) {
 
   const sheet = TENANT_SS.getSheetByName('名簿');
   if (!sheet) throw new Error("組織DBに「名簿」シートが見つかりません");
+  let deptCol = -1;
+  try {
+    deptCol = ensureMeiboDeptColumn_().col;
+  } catch (e) {}
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(userId) && String(data[i][1]) === String(password)) {
       writeLog(data[i][2], "ログイン", "システム", "ログイン成功");
-      return { success: true, name: data[i][2], role: data[i][3] || "作業員", spreadsheetId: targetSpreadsheetId };
+      const dept = deptCol >= 0 ? (String(data[i][deptCol] || '').trim() || '') : '';
+      return {
+        success: true,
+        name: data[i][2],
+        role: data[i][3] || "作業員",
+        dept: dept,
+        spreadsheetId: targetSpreadsheetId
+      };
     }
   }
   return { success: false, message: "IDまたはパスワードが正しくありません" };
@@ -672,13 +685,19 @@ function listUsersForAdmin(params) {
   if (!admin.success) return admin;
 
   const users = [];
+  let deptCol = -1;
+  try {
+    const info = ensureMeiboDeptColumn_();
+    deptCol = info.col;
+  } catch (e) {}
   for (let i = 1; i < admin.data.length; i++) {
     const uid = String(admin.data[i][0] || '').trim();
     if (!uid) continue;
     users.push({
       userId: uid,
       userName: String(admin.data[i][2] || '').trim(),
-      role: String(admin.data[i][3] || '作業員').trim() || '作業員'
+      role: String(admin.data[i][3] || '作業員').trim() || '作業員',
+      dept: deptCol >= 0 ? (String(admin.data[i][deptCol] || '').trim() || '未設定') : '未設定'
     });
   }
   users.sort(function(a, b) {
@@ -687,7 +706,9 @@ function listUsersForAdmin(params) {
     if (ra !== rb) return ra - rb;
     return String(a.userName || a.userId).localeCompare(String(b.userName || b.userId), 'ja');
   });
-  return { success: true, users: users };
+  let departments = ['運営', '未設定'];
+  try { departments = getDeptList_(); } catch (e) {}
+  return { success: true, users: users, departments: departments };
 }
 
 /** 管理者向け: ユーザー権限変更 */
@@ -1388,6 +1409,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'sign') sheetName = '看板マスタ';
   else if (masterType === 'location') sheetName = '拠点マスタ';
   else if (masterType === 'workCategory') sheetName = '作業カテゴリマスタ';
+  else if (masterType === 'department' || masterType === 'dept') sheetName = '部署マスタ';
   else if (masterType === 'contentUnit') sheetName = 'コンテナ内容単位マスタ';
   else if (masterType === 'machineType') sheetName = '機種マスタ';
   else if (masterType === 'machineGroup') sheetName = '機械グループマスタ';
@@ -1405,6 +1427,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet.appendRow(["圃場作業"]);
           sheet.appendRow(["事務作業"]);
           sheet.appendRow(["保全・整備"]);
+      } else if (masterType === 'department' || masterType === 'dept') {
+          sheet = ensureDeptMasterSheet_();
       } else if (masterType === 'contentUnit') {
           sheet = ensureContentUnitMasterSheet_();
       } else if (masterType === 'crop') {
@@ -6036,15 +6060,30 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
 // ==========================================
 // 作業予定と地図ステータスの取得（部署自動判定を追加）
 // ==========================================
+/** 作業マスタの担当部署列のみ（作業カテゴリ列とは別） */
 function findWorkDeptColumnIndex_(headers) {
-  const candidates = ['担当部署', 'カテゴリ', '作業カテゴリ', 'カテゴリー', '作業カテゴリー'];
+  const candidates = ['担当部署', '部署'];
   for (let i = 0; i < candidates.length; i++) {
     const idx = headers.indexOf(candidates[i]);
     if (idx >= 0) return idx;
   }
-  const idxName = headers.indexOf('作業名');
-  if (idxName === 0 && headers.length > 1) return 1;
   return -1;
+}
+
+/** 作業マスタに「担当部署」列を保証 */
+function ensureWorkMasterDeptColumn_(sheet) {
+  if (!sheet) return -1;
+  try { ensureWorkMasterHeaders_(sheet); } catch (e) {}
+  let lastCol = Math.max(sheet.getLastColumn(), 1);
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h || '').trim();
+  });
+  let idxDept = findWorkDeptColumnIndex_(headers);
+  if (idxDept >= 0) return idxDept;
+  lastCol += 1;
+  sheet.getRange(1, lastCol).setValue('担当部署');
+  SpreadsheetApp.flush();
+  return lastCol - 1;
 }
 
 function getWorkCategoryList_() {
@@ -6052,17 +6091,137 @@ function getWorkCategoryList_() {
   const sheet = ss.getSheetByName('作業カテゴリマスタ');
   let list = [];
   if (sheet && sheet.getLastRow() > 1) {
-    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+    const data = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues();
     data.forEach(function(r) {
       const n = String(r[0] || '').trim();
       if (n) list.push(n);
     });
   }
   if (!list.length) list = ['圃場作業', '事務作業', '保全・整備'];
+  return list;
+}
+
+/** 部署マスタシートを確保 */
+function ensureDeptMasterSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('部署マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('部署マスタ');
+    sheet.appendRow(['部署名']);
+  } else {
+    const h = String(sheet.getRange(1, 1).getValue() || '').trim();
+    if (!h) sheet.getRange(1, 1).setValue('部署名');
+  }
+  return sheet;
+}
+
+/** 部署マスタ一覧（作業カテゴリとは別） */
+function getDeptList_() {
+  const sheet = ensureDeptMasterSheet_();
+  let list = [];
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues();
+    data.forEach(function(r) {
+      const n = String(r[0] || '').trim();
+      if (n && list.indexOf(n) < 0) list.push(n);
+    });
+  }
   ['運営', '未設定'].forEach(function(x) {
     if (list.indexOf(x) < 0) list.push(x);
   });
   return list;
+}
+
+/** 部署マスタを全置換保存 */
+function saveDepartmentMaster(params) {
+  const p = params || {};
+  const userName = String(p.userName || '').trim() || 'システム';
+  let names = [];
+  if (Array.isArray(p.departments)) {
+    names = p.departments.map(function(d) { return String(d || '').trim(); }).filter(Boolean);
+  } else if (p.department) {
+    names = getDeptList_().slice();
+    const add = String(p.department || '').trim();
+    if (add && names.indexOf(add) < 0) names.push(add);
+  }
+  const uniq = [];
+  const seen = {};
+  names.forEach(function(n) {
+    if (n === '未設定') return;
+    if (seen[n]) return;
+    seen[n] = true;
+    uniq.push(n);
+  });
+  const sheet = ensureDeptMasterSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow, 1).clearContent();
+  if (uniq.length) {
+    sheet.getRange(2, 1, 1 + uniq.length, 1).setValues(uniq.map(function(n) { return [n]; }));
+  }
+  try { writeLog(userName, '部署マスタ保存', '部署マスタ', uniq.join(', ')); } catch (e) {}
+  return { success: true, departments: getDeptList_() };
+}
+
+/** 名簿の部署列を確保 */
+function ensureMeiboDeptColumn_() {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('名簿');
+  if (!sheet) throw new Error('名簿シートが見つかりません');
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h || '').trim();
+  });
+  let col = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = headers[c];
+    if (h === '部署' || h === '担当部署' || h === '所属部署') {
+      col = c;
+      break;
+    }
+  }
+  if (col < 0) {
+    // ヘッダー行が無い旧名簿（A:ID B:PW C:名前 D:役割）にも対応
+    if (lastCol >= 1 && !headers[0]) {
+      sheet.getRange(1, 1, 1, 4).setValues([['スタッフID', 'パスワード', 'ユーザー名', '役割']]);
+    }
+    col = Math.max(sheet.getLastColumn(), 4);
+    sheet.getRange(1, col + 1).setValue('部署');
+    SpreadsheetApp.flush();
+  }
+  return { sheet: sheet, col: col };
+}
+
+function readMeiboUserDept_(rowVals, deptCol) {
+  if (deptCol < 0 || !rowVals) return '';
+  return String(rowVals[deptCol] || '').trim();
+}
+
+/** ユーザーの部署を一括更新 */
+function updateUserDepts(params) {
+  const p = params || {};
+  const userName = String(p.userName || '').trim() || 'システム';
+  const updates = Array.isArray(p.updates) ? p.updates : [];
+  if (!updates.length) return { success: true, updated: 0 };
+
+  const info = ensureMeiboDeptColumn_();
+  const data = info.sheet.getDataRange().getValues();
+  let updated = 0;
+  updates.forEach(function(u) {
+    const uid = String((u && u.userId) || '').trim();
+    const dept = String((u && u.dept) || '').trim();
+    if (!uid) return;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0] || '').trim() !== uid) continue;
+      info.sheet.getRange(i + 1, info.col + 1).setValue(dept);
+      data[i][info.col] = dept;
+      updated++;
+      try {
+        writeLog(userName, 'ユーザー部署設定', uid, String(data[i][2] || uid) + ': ' + (dept || '未設定'));
+      } catch (e) {}
+      break;
+    }
+  });
+  return { success: true, updated: updated };
 }
 
 /** 作業マスタから 作業名→部署 の辞書を構築 */
@@ -6071,15 +6230,14 @@ function buildWorkDeptMapFromMaster_() {
   const ss = TENANT_SS;
   const workMasterSheet = ss.getSheetByName('作業マスタ');
   if (!workMasterSheet || workMasterSheet.getLastRow() <= 1) return map;
-  try { ensureWorkMasterHeaders_(workMasterSheet); } catch (e) {}
+  const idxDept = ensureWorkMasterDeptColumn_(workMasterSheet);
   const wData = workMasterSheet.getDataRange().getValues();
   const headers = wData[0].map(function(h) { return String(h || '').trim(); });
   const idxName = headers.indexOf('作業名');
-  const idxDept = findWorkDeptColumnIndex_(headers);
   for (let i = 1; i < wData.length; i++) {
     const name = idxName >= 0 ? String(wData[i][idxName] || '').trim() : String(wData[i][0] || '').trim();
     if (!name) continue;
-    const dept = idxDept >= 0 ? (String(wData[i][idxDept] || '').trim() || '未分類') : '未分類';
+    const dept = idxDept >= 0 ? (String(wData[i][idxDept] || '').trim() || '未設定') : '未設定';
     map[name] = dept;
     if (name === '播種') map.__SOWING__ = dept;
   }
@@ -6105,33 +6263,40 @@ function scheduleWorkNameMatchesDeptKey_(rowWorkName, keyWorkName) {
   return false;
 }
 
-/** 作業一覧用：部署マスタ一覧取得 */
+/** 作業一覧用：部署設定取得（部署マスタ＋作業→部署＋ユーザー紐づけ） */
 function getWorkDeptSettings(params) {
   const workDeptMap = buildWorkDeptMapFromMaster_();
   const ss = TENANT_SS;
-  const workCategories = getWorkCategoryList_();
+  const departments = getDeptList_();
   const rows = [];
   const seen = {};
 
   const workSheet = ss.getSheetByName('作業マスタ');
   if (workSheet && workSheet.getLastRow() > 1) {
     try {
-      readWorkMasterList_(workSheet).forEach(function(w) {
-        const name = String(w.name || '').trim();
-        if (!name || seen[name]) return;
+      const idxDept = ensureWorkMasterDeptColumn_(workSheet);
+      const wData = workSheet.getDataRange().getValues();
+      const headers = wData[0].map(function(h) { return String(h || '').trim(); });
+      const idxName = headers.indexOf('作業名');
+      for (let i = 1; i < wData.length; i++) {
+        const name = idxName >= 0 ? String(wData[i][idxName] || '').trim() : String(wData[i][0] || '').trim();
+        if (!name || seen[name]) continue;
         seen[name] = true;
+        const dept = idxDept >= 0
+          ? (String(wData[i][idxDept] || '').trim() || workDeptMap[name] || '未設定')
+          : (workDeptMap[name] || '未設定');
         rows.push({
           workName: name,
-          dept: String(w.category || workDeptMap[name] || '未設定').trim() || '未設定',
+          dept: dept,
           inMaster: true
         });
-      });
+      }
     } catch (e) {}
   }
 
   const schedSheet = ss.getSheetByName('作業予定');
   if (schedSheet && schedSheet.getLastRow() > 1) {
-    const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+    const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow(), 11).getValues();
     sData.forEach(function(row) {
       if (row[8]) return;
       const name = String(row[0] || '').trim();
@@ -6152,10 +6317,35 @@ function getWorkDeptSettings(params) {
     return String(a.workName).localeCompare(String(b.workName), 'ja');
   });
 
-  return { success: true, workCategories: workCategories, rows: rows };
+  const users = [];
+  try {
+    const meiboInfo = ensureMeiboDeptColumn_();
+    const mData = meiboInfo.sheet.getDataRange().getValues();
+    for (let i = 1; i < mData.length; i++) {
+      const uid = String(mData[i][0] || '').trim();
+      if (!uid) continue;
+      users.push({
+        userId: uid,
+        userName: String(mData[i][2] || '').trim(),
+        role: String(mData[i][3] || '作業員').trim() || '作業員',
+        dept: readMeiboUserDept_(mData[i], meiboInfo.col) || '未設定'
+      });
+    }
+    users.sort(function(a, b) {
+      return String(a.userName || a.userId).localeCompare(String(b.userName || b.userId), 'ja');
+    });
+  } catch (e) {}
+
+  return {
+    success: true,
+    departments: departments,
+    workCategories: getWorkCategoryList_(),
+    rows: rows,
+    users: users
+  };
 }
 
-/** 作業名ごとの部署を更新（作業マスタ＋未完了の作業予定） */
+/** 作業名ごとの部署を更新（作業マスタの担当部署列＋未完了の作業予定） */
 function updateWorkDeptSettings(params) {
   const updates = (params && params.updates) || [];
   const syncSchedule = !(params && params.syncScheduleRows === false);
@@ -6166,18 +6356,29 @@ function updateWorkDeptSettings(params) {
   let updatedMaster = 0;
   let updatedSchedule = 0;
 
+  // 新しい部署名があれば部署マスタへ追加
+  try {
+    const existing = getDeptList_();
+    const toAdd = [];
+    updates.forEach(function(u) {
+      const d = String(u.dept || '').trim();
+      if (!d || d === '未設定') return;
+      if (existing.indexOf(d) < 0 && toAdd.indexOf(d) < 0) toAdd.push(d);
+    });
+    if (toAdd.length) {
+      saveDepartmentMaster({
+        departments: existing.filter(function(x) { return x !== '未設定'; }).concat(toAdd),
+        userName: userName
+      });
+    }
+  } catch (e) {}
+
   const workSheet = ss.getSheetByName('作業マスタ');
   if (workSheet) {
-    try { ensureWorkMasterHeaders_(workSheet); } catch (e) {}
+    const idxDept = ensureWorkMasterDeptColumn_(workSheet);
     const wData = workSheet.getDataRange().getValues();
     const headers = wData[0].map(function(h) { return String(h || '').trim(); });
     const idxName = headers.indexOf('作業名');
-    let idxDept = findWorkDeptColumnIndex_(headers);
-    if (idxDept < 0) {
-      idxDept = headers.length;
-      workSheet.getRange(1, idxDept + 1).setValue('カテゴリ');
-      headers.push('カテゴリ');
-    }
     updates.forEach(function(u) {
       const workName = String(u.workName || '').trim();
       const dept = String(u.dept || '').trim();
@@ -6193,7 +6394,7 @@ function updateWorkDeptSettings(params) {
         break;
       }
       if (!found) {
-        const row = new Array(headers.length).fill('');
+        const row = new Array(Math.max(headers.length, idxDept + 1)).fill('');
         if (idxName >= 0) row[idxName] = workName;
         else row[0] = workName;
         row[idxDept] = dept;
@@ -6208,7 +6409,7 @@ function updateWorkDeptSettings(params) {
   if (syncSchedule) {
     const schedSheet = ss.getSheetByName('作業予定');
     if (schedSheet && schedSheet.getLastRow() > 1) {
-      const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+      const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow(), 11).getValues();
       updates.forEach(function(u) {
         const workName = String(u.workName || '').trim();
         const dept = String(u.dept || '').trim();
@@ -6544,7 +6745,7 @@ function getScheduleData() {
     p.harvestingDepts = harvestingFields[p.name] || []; 
   });
 
-  return { polygons, activeSchedules, midWorks: midWorks, workCategories: getWorkCategoryList_() };
+  return { polygons, activeSchedules, midWorks: midWorks, workCategories: getWorkCategoryList_(), departments: getDeptList_() };
 }
 
 /**

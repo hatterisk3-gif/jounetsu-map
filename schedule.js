@@ -16,12 +16,25 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       let map, infoWindow, loadedPolygons = {};
       let globalSchedules = [];
       let globalOutsourceWorks = [];
-      let workDeptCategories = ['圃場作業', '事務作業', '保全・整備', '運営'];
+      let workDeptCategories = ['運営', '未設定'];
       window._workDeptSettingsDraft = null;
+      window._departmentMasterDraft = null;
+      window._userDeptLinkDraft = null;
+      window._workDeptSettingsTab = 'works';
       window._schedSelectedKeys = window._schedSelectedKeys || new Set();
       window._schedTableRows = [];
       let currentDept = 'すべて'; // 現在選択されている部署フィルター
       let scheduleListFilter = 'all'; // all | fieldWork
+      let scheduleSortKey = 'status';
+      let scheduleSortDir = 'asc';
+      try {
+        const savedSort = localStorage.getItem('passionMapScheduleSort');
+        if (savedSort) {
+          const parts = String(savedSort).split(':');
+          if (parts[0]) scheduleSortKey = parts[0];
+          if (parts[1] === 'desc' || parts[1] === 'asc') scheduleSortDir = parts[1];
+        }
+      } catch (e) {}
       window.getActiveScheduleList = function () {
         return (globalSchedules || []).slice();
       };
@@ -46,6 +59,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                   localStorage.setItem('passionMapUserPw', pw);
                   localStorage.setItem('passionMapUserName', result.data.name);
                   localStorage.setItem('passionMapUserRole', result.data.role || '管理者');
+                  if (result.data.dept != null) localStorage.setItem('passionMapUserDept', result.data.dept || '');
                   localStorage.setItem('spreadsheetId', result.data.spreadsheetId);
 
                   if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
@@ -1397,7 +1411,11 @@ async function fetchWeatherAndUpdateUI() {
         const applyScheduleData = (data) => {
           if (!data) return;
           globalSchedules = data.activeSchedules || [];
-          if (Array.isArray(data.workCategories) && data.workCategories.length) {
+          if (Array.isArray(data.departments) && data.departments.length) {
+            workDeptCategories = data.departments.slice();
+            window._workDeptCategories = workDeptCategories;
+          } else if (Array.isArray(data.workCategories) && data.workCategories.length) {
+            // 互換: 古いGASが departments を返さない場合
             workDeptCategories = data.workCategories.slice();
             window._workDeptCategories = workDeptCategories;
           }
@@ -1794,7 +1812,7 @@ async function fetchWeatherAndUpdateUI() {
         const cur = String(current || '').trim();
         const base = (workDeptCategories && workDeptCategories.length)
           ? workDeptCategories.slice()
-          : ['圃場作業', '事務作業', '保全・整備', '運営', '未設定'];
+          : ['運営', '未設定'];
         const set = {};
         base.forEach(function(c) { set[c] = true; });
         if (cur && !set[cur]) base.unshift(cur);
@@ -1843,6 +1861,22 @@ async function fetchWeatherAndUpdateUI() {
         }
       };
 
+      window.switchWorkDeptSettingsTab_ = function(tab) {
+        window._workDeptSettingsTab = tab || 'works';
+        const works = document.getElementById('workDeptTabWorks');
+        const depts = document.getElementById('workDeptTabDepts');
+        const users = document.getElementById('workDeptTabUsers');
+        if (works) works.style.display = tab === 'works' ? '' : 'none';
+        if (depts) depts.style.display = tab === 'depts' ? '' : 'none';
+        if (users) users.style.display = tab === 'users' ? '' : 'none';
+        document.querySelectorAll('.work-dept-tab-btn').forEach(function(btn) {
+          const on = btn.getAttribute('data-tab') === tab;
+          btn.style.background = on ? '#455a64' : '#eee';
+          btn.style.color = on ? '#fff' : '#333';
+          btn.style.border = on ? 'none' : '1px solid #ccc';
+        });
+      };
+
       window.openWorkDeptSettingsModal = async function() {
         const modal = document.getElementById('workDeptSettingsModal');
         const tbody = document.getElementById('workDeptSettingsTableBody');
@@ -1850,13 +1884,20 @@ async function fetchWeatherAndUpdateUI() {
         if (!modal || !tbody) return;
         modal.style.display = 'flex';
         if (filterEl) filterEl.value = '';
+        switchWorkDeptSettingsTab_('works');
         tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">読み込み中...</td></tr>';
+        const deptListEl = document.getElementById('departmentMasterList');
+        const userListEl = document.getElementById('userDeptLinkList');
+        if (deptListEl) deptListEl.innerHTML = '<div style="text-align:center;color:#888;padding:16px;">読み込み中...</div>';
+        if (userListEl) userListEl.innerHTML = '<div style="text-align:center;color:#888;padding:16px;">読み込み中...</div>';
         try {
           const res = await callGAS('getWorkDeptSettings');
-          if (Array.isArray(res.workCategories) && res.workCategories.length) {
-            workDeptCategories = res.workCategories.slice();
-            window._workDeptCategories = workDeptCategories;
-          }
+          const depts = Array.isArray(res.departments) && res.departments.length
+            ? res.departments.slice()
+            : (Array.isArray(res.workCategories) ? res.workCategories.slice() : ['運営', '未設定']);
+          workDeptCategories = depts;
+          window._workDeptCategories = workDeptCategories;
+          window._departmentMasterDraft = depts.filter(function(d) { return d && d !== '未設定'; });
           window._workDeptSettingsDraft = (res.rows || []).map(function(r) {
             return {
               workName: r.workName,
@@ -1865,9 +1906,22 @@ async function fetchWeatherAndUpdateUI() {
               originalDept: r.dept || '未設定'
             };
           });
+          window._userDeptLinkDraft = (res.users || []).map(function(u) {
+            return {
+              userId: u.userId,
+              userName: u.userName || '',
+              role: u.role || '作業員',
+              dept: u.dept || '未設定',
+              originalDept: u.dept || '未設定'
+            };
+          });
           renderWorkDeptSettingsRows_();
+          renderDepartmentMasterList_();
+          renderUserDeptLinkList_();
         } catch (e) {
           tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#c62828;">読み込み失敗: ' + escHtml_(e.message || e) + '</td></tr>';
+          if (deptListEl) deptListEl.innerHTML = '<div style="color:#c62828;padding:12px;">読み込み失敗</div>';
+          if (userListEl) userListEl.innerHTML = '<div style="color:#c62828;padding:12px;">読み込み失敗</div>';
         }
       };
 
@@ -1893,7 +1947,7 @@ async function fetchWeatherAndUpdateUI() {
           tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">該当する作業がありません</td></tr>';
           return;
         }
-        tbody.innerHTML = filtered.map(function(r, idx) {
+        tbody.innerHTML = filtered.map(function(r) {
           const note = r.inMaster
             ? '<span style="color:#2e7d32;font-size:11px;">作業マスタ</span>'
             : '<span style="color:#ef6c00;font-size:11px;">予定のみ</span>';
@@ -1905,6 +1959,143 @@ async function fetchWeatherAndUpdateUI() {
             '<td>' + note + '</td></tr>';
         }).join('');
       }
+
+      function renderDepartmentMasterList_() {
+        const el = document.getElementById('departmentMasterList');
+        if (!el) return;
+        const list = window._departmentMasterDraft || [];
+        if (!list.length) {
+          el.innerHTML = '<div style="text-align:center;color:#888;padding:16px;font-size:13px;">部署がまだありません。上で追加してください。</div>';
+          return;
+        }
+        el.innerHTML = list.map(function(name, idx) {
+          const locked = name === '運営';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #eee;">' +
+            '<div style="flex:1;font-weight:bold;font-size:13px;">' + escHtml_(name) +
+            (locked ? ' <span style="font-size:11px;color:#888;font-weight:normal;">（システム）</span>' : '') +
+            '</div>' +
+            (locked ? '' : '<button type="button" onclick="removeDepartmentFromDraft_(' + idx + ')" style="background:#ffebee;color:#c62828;border:1px solid #ef9a9a;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;">削除</button>') +
+            '</div>';
+        }).join('');
+      }
+
+      function renderUserDeptLinkList_() {
+        const el = document.getElementById('userDeptLinkList');
+        if (!el) return;
+        const users = window._userDeptLinkDraft || [];
+        if (!users.length) {
+          el.innerHTML = '<div style="text-align:center;color:#888;padding:16px;font-size:13px;">ユーザーがいません</div>';
+          return;
+        }
+        el.innerHTML = users.map(function(u, idx) {
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #eee;flex-wrap:wrap;">' +
+            '<div style="flex:1;min-width:120px;">' +
+            '<div style="font-weight:bold;font-size:13px;">' + escHtml_(u.userName || u.userId) + '</div>' +
+            '<div style="font-size:11px;color:#888;">ID: ' + escHtml_(u.userId) + ' / ' + escHtml_(u.role || '') + '</div>' +
+            '</div>' +
+            '<select class="sched-dept-select" data-user-idx="' + idx + '" onchange="onUserDeptLinkChange_(this)" style="min-width:140px;">' +
+            buildWorkDeptSelectOptions_(u.dept) + '</select>' +
+            '</div>';
+        }).join('');
+      }
+
+      window.addDepartmentToDraft_ = function() {
+        const input = document.getElementById('newDepartmentNameInput');
+        const name = input ? String(input.value || '').trim() : '';
+        if (!name) {
+          alert('部署名を入力してください');
+          return;
+        }
+        if (name === '未設定') {
+          alert('「未設定」は予約名のため追加できません');
+          return;
+        }
+        const list = window._departmentMasterDraft || [];
+        if (list.indexOf(name) >= 0) {
+          alert('同じ部署名が既にあります');
+          return;
+        }
+        list.push(name);
+        window._departmentMasterDraft = list;
+        workDeptCategories = list.slice();
+        if (workDeptCategories.indexOf('未設定') < 0) workDeptCategories.push('未設定');
+        window._workDeptCategories = workDeptCategories;
+        if (input) input.value = '';
+        renderDepartmentMasterList_();
+        renderWorkDeptSettingsRows_();
+        renderUserDeptLinkList_();
+      };
+
+      window.removeDepartmentFromDraft_ = function(idx) {
+        const list = window._departmentMasterDraft || [];
+        if (idx < 0 || idx >= list.length) return;
+        if (list[idx] === '運営') return;
+        if (!confirm('部署「' + list[idx] + '」を一覧から削除しますか？\n（作業・ユーザーに設定済みの値はそのまま残ります）')) return;
+        list.splice(idx, 1);
+        window._departmentMasterDraft = list;
+        workDeptCategories = list.slice();
+        if (workDeptCategories.indexOf('未設定') < 0) workDeptCategories.push('未設定');
+        window._workDeptCategories = workDeptCategories;
+        renderDepartmentMasterList_();
+        renderWorkDeptSettingsRows_();
+        renderUserDeptLinkList_();
+      };
+
+      window.onUserDeptLinkChange_ = function(sel) {
+        const idx = parseInt(sel.getAttribute('data-user-idx'), 10);
+        const users = window._userDeptLinkDraft || [];
+        if (!users[idx]) return;
+        users[idx].dept = sel.value;
+      };
+
+      window.saveDepartmentMaster_ = async function() {
+        const btn = document.getElementById('departmentMasterSaveBtn');
+        if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          const res = await callGAS('saveDepartmentMaster', {
+            departments: window._departmentMasterDraft || [],
+            userName: userName
+          });
+          const depts = (res && res.departments) || (window._departmentMasterDraft || []);
+          workDeptCategories = depts.slice();
+          window._workDeptCategories = workDeptCategories;
+          window._departmentMasterDraft = depts.filter(function(d) { return d && d !== '未設定'; });
+          renderDepartmentMasterList_();
+          renderWorkDeptSettingsRows_();
+          renderUserDeptLinkList_();
+          alert('部署マスタを保存しました');
+        } catch (e) {
+          alert('保存に失敗しました: ' + (e.message || e));
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '部署マスタを保存'; }
+        }
+      };
+
+      window.saveUserDeptLinks_ = async function() {
+        const btn = document.getElementById('userDeptLinkSaveBtn');
+        const users = window._userDeptLinkDraft || [];
+        const updates = users.filter(function(u) {
+          return String(u.dept || '') !== String(u.originalDept || '');
+        }).map(function(u) {
+          return { userId: u.userId, dept: u.dept };
+        });
+        if (!updates.length) {
+          alert('変更はありません');
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+          await callGAS('updateUserDepts', { updates: updates, userName: userName });
+          users.forEach(function(u) { u.originalDept = u.dept; });
+          alert('ユーザーの部署を保存しました（' + updates.length + '件）');
+        } catch (e) {
+          alert('保存に失敗しました: ' + (e.message || e));
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = 'ユーザー部署を保存'; }
+        }
+      };
 
       window.onWorkDeptSettingChange_ = function(sel) {
         const name = sel.getAttribute('data-work-name');
@@ -1940,8 +2131,8 @@ async function fetchWeatherAndUpdateUI() {
           if (data) {
             localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
             globalSchedules = data.activeSchedules || [];
-            if (Array.isArray(data.workCategories) && data.workCategories.length) {
-              workDeptCategories = data.workCategories.slice();
+            if (Array.isArray(data.departments) && data.departments.length) {
+              workDeptCategories = data.departments.slice();
             }
             buildDeptFilter();
             if (typeof updateMapVisuals === 'function') updateMapVisuals();
@@ -2298,10 +2489,123 @@ async function fetchWeatherAndUpdateUI() {
         if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
       };
 
+      function parseSchedDateSortKey_(v) {
+        if (v == null || v === '' || v === '-') return null;
+        const s = String(v).trim();
+        let m = s.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+        if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        m = s.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+        if (m) {
+          const y = new Date().getFullYear();
+          return Date.UTC(y, Number(m[1]) - 1, Number(m[2]));
+        }
+        const d = new Date(s);
+        return isNaN(d.getTime()) ? null : d.getTime();
+      }
+
+      function scheduleRowDateValue_(t, key) {
+        if (!t) return null;
+        if (key === 'deadline') return parseSchedDateSortKey_(t.deadline);
+        // 予定日: 途中作業は作業日を使う
+        if (t.isMidWork) return parseSchedDateSortKey_(t.workDate || t.schedDate || t.workDateYmd);
+        return parseSchedDateSortKey_(t.schedDate || t.workDate);
+      }
+
+      function scheduleRowTextValue_(t, key) {
+        if (!t) return '';
+        if (key === 'workName') return String(t.workName || '');
+        if (key === 'fieldName') return String(t.fieldName || '');
+        if (key === 'cropName') return String(t.cropName || '');
+        if (key === 'dept') return String(t.dept || '');
+        return '';
+      }
+
+      function compareScheduleRows_(a, b, key, dir) {
+        const mul = dir === 'desc' ? -1 : 1;
+        if (key === 'status') {
+          const ra = workStatusSortRank(a);
+          const rb = workStatusSortRank(b);
+          if (ra !== rb) return (ra - rb) * mul;
+          // 同ステータス内は期限が近い順を維持
+          const da = scheduleRowDateValue_(a, 'deadline');
+          const db = scheduleRowDateValue_(b, 'deadline');
+          if (da == null && db == null) return 0;
+          if (da == null) return 1;
+          if (db == null) return -1;
+          return da - db;
+        }
+        if (key === 'deadline' || key === 'schedDate') {
+          const da = scheduleRowDateValue_(a, key);
+          const db = scheduleRowDateValue_(b, key);
+          if (da == null && db == null) return 0;
+          if (da == null) return 1;
+          if (db == null) return -1;
+          if (da !== db) return (da - db) * mul;
+          return workStatusSortRank(a) - workStatusSortRank(b);
+        }
+        const ta = scheduleRowTextValue_(a, key);
+        const tb = scheduleRowTextValue_(b, key);
+        const cmp = String(ta).localeCompare(String(tb), 'ja');
+        if (cmp !== 0) return cmp * mul;
+        return workStatusSortRank(a) - workStatusSortRank(b);
+      }
+
+      function persistScheduleSort_() {
+        try {
+          localStorage.setItem('passionMapScheduleSort', scheduleSortKey + ':' + scheduleSortDir);
+        } catch (e) {}
+      }
+
+      function syncScheduleSortUi_() {
+        const sel = document.getElementById('schedSortSelect');
+        if (sel) {
+          const val = scheduleSortKey + ':' + scheduleSortDir;
+          const has = Array.from(sel.options).some(function(o) { return o.value === val; });
+          if (has) sel.value = val;
+          else if (scheduleSortKey === 'status') sel.value = 'status:asc';
+          else sel.value = scheduleSortKey + ':asc';
+        }
+        document.querySelectorAll('#scheduleTable th.sched-sortable').forEach(function(th) {
+          const key = th.getAttribute('data-sort-key');
+          const active = key === scheduleSortKey;
+          th.classList.toggle('is-active', active);
+        });
+        document.querySelectorAll('#scheduleTable .sched-sort-ind').forEach(function(el) {
+          const key = el.getAttribute('data-for');
+          if (key === scheduleSortKey) {
+            el.textContent = scheduleSortDir === 'desc' ? '▼' : '▲';
+          } else {
+            el.textContent = '';
+          }
+        });
+      }
+
+      window.setScheduleSortFromSelect_ = function(value) {
+        const parts = String(value || 'status:asc').split(':');
+        scheduleSortKey = parts[0] || 'status';
+        scheduleSortDir = parts[1] === 'desc' ? 'desc' : 'asc';
+        persistScheduleSort_();
+        if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+      };
+
+      window.toggleScheduleSort_ = function(key) {
+        key = String(key || '').trim();
+        if (!key) return;
+        if (scheduleSortKey === key) {
+          scheduleSortDir = scheduleSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          scheduleSortKey = key;
+          scheduleSortDir = (key === 'status' || key === 'deadline' || key === 'schedDate') ? 'asc' : 'asc';
+        }
+        persistScheduleSort_();
+        if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+      };
+
       function renderScheduleTasksTable_() {
         const tbody = document.getElementById('scheduleTableBody');
         if (!tbody) return;
         document.getElementById('tableDeptName').innerText = currentDept;
+        syncScheduleSortUi_();
 
         let filteredSchedules = currentDept === 'すべて' ? globalSchedules : globalSchedules.filter(t => t.dept === currentDept);
         if (scheduleListFilter === 'fieldWork') {
@@ -2314,16 +2618,11 @@ async function fetchWeatherAndUpdateUI() {
           const emptyMsg = scheduleListFilter === 'fieldWork'
             ? '定植完了後の畑の品目作業はありません<br><span style="font-size:11px;color:#888;">品目別作業設定があり、定植が完了するとここに出ます</span>'
             : '現在必要な作業はありません';
-          tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">' + emptyMsg + '</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">' + emptyMsg + '</td></tr>';
           updateSchedBulkSelectionUi_();
         } else {
-          let sorted = [...filteredSchedules].sort((a, b) => {
-             const ra = workStatusSortRank(a);
-             const rb = workStatusSortRank(b);
-             if (ra !== rb) return ra - rb;
-             if(a.deadline === '-') return 1;
-             if(b.deadline === '-') return -1;
-             return new Date(a.deadline) - new Date(b.deadline);
+          let sorted = [...filteredSchedules].sort(function(a, b) {
+            return compareScheduleRows_(a, b, scheduleSortKey, scheduleSortDir);
           });
           window._schedTableRows = sorted;
 
@@ -2343,9 +2642,6 @@ async function fetchWeatherAndUpdateUI() {
               : (isCp
                   ? `${t.trays || t.hours || '-'}${t.periodLabel ? '<br><span style="font-size:10px;color:#666;">' + t.periodLabel + '</span>' : ''}`
                   : (t.trays || t.hours || '-'));
-            const tagCell = isMid
-              ? (`👤${t.author || t.person || '-'}` + (t.startTime ? `<br><span style="font-size:11px;">${t.startTime}〜${t.endTime || ''}</span>` : ''))
-              : (isCp ? (t.tag || t.person || '-') : (t.person || '-'));
             const workLabel = t.workName;
             const statusHtml = formatWorkStatusBadgeHtml(t);
             const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
@@ -2355,6 +2651,10 @@ async function fetchWeatherAndUpdateUI() {
                   const st = u.done ? 'opacity:0.5;text-decoration:line-through;' : '';
                   return '<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:999px;padding:1px 6px;font-size:10px;font-weight:bold;margin:1px 2px 0 0;' + st + '">👤' + n + '</span>';
                 }).join('') + '</div>'
+              : '';
+            const midAuthorHtml = isMid
+              ? ('<div style="margin-top:4px;font-size:11px;">👤' + String(t.author || t.person || '-').replace(/</g, '&lt;') +
+                (t.startTime ? (' <span style="color:#666;">' + t.startTime + '〜' + (t.endTime || '') + '</span>') : '') + '</div>')
               : '';
             const dayPlansHtml = formatDayPlansBadgeHtml(t);
             const safeWork = String(t.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -2372,14 +2672,13 @@ async function fetchWeatherAndUpdateUI() {
             return `<tr ${rowClass} data-sched-idx="${idx}">
                       <td style="text-align:center;">${checkCell}</td>
                       <td style="text-align:center;white-space:nowrap;">${statusHtml}</td>
-                      <td>${workLabel}${taskUsersHtml}${dayPlansHtml}</td>
+                      <td>${workLabel}${taskUsersHtml}${midAuthorHtml}${dayPlansHtml}</td>
                       <td>${buildInlineDeptSelectHtml_(t)}</td>
                       <td>${cropCell}</td>
                       <td>${t.fieldName}</td>
                       <td>${isMid ? (t.workDate || t.schedDate) : t.schedDate}</td>
                       <td>${isMid ? '-' : t.deadline}</td>
                       <td>${traysCell}</td>
-                      <td>${tagCell}</td>
                       <td style="text-align:center;">${actionCell}</td>
                     </tr>`;
           }).join('');
@@ -2412,31 +2711,9 @@ async function fetchWeatherAndUpdateUI() {
         }
       };
 
-      window.resetScheduleModalFullscreen_ = function() {
-        const modal = document.getElementById('scheduleModal');
-        if (modal) modal.classList.remove('schedule-modal-fullscreen');
-        const btn = document.getElementById('scheduleFullscreenBtn');
-        if (btn) {
-          btn.textContent = '⛶ 全画面';
-          btn.title = '全画面表示';
-        }
-      };
-
-      window.toggleScheduleModalFullscreen = function() {
-        const modal = document.getElementById('scheduleModal');
-        const btn = document.getElementById('scheduleFullscreenBtn');
-        if (!modal) return;
-        const on = modal.classList.toggle('schedule-modal-fullscreen');
-        if (btn) {
-          btn.textContent = on ? '⊡ 縮小' : '⛶ 全画面';
-          btn.title = on ? '通常表示に戻す' : '全画面表示';
-        }
-      };
-
       window.closeScheduleModal = function() {
         const modal = document.getElementById('scheduleModal');
         if (modal) modal.style.display = 'none';
-        resetScheduleModalFullscreen_();
       };
 
       window.openScheduleTable = () => {

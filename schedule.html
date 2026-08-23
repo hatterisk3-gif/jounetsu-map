@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1787592000000">
+  <link rel="stylesheet" href="schedule.css?v=1787700000000">
 </head>
 
 <body>
@@ -101,7 +101,6 @@
       <div class="modal-header">
         <span>📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
         <div style="display:flex;align-items:center;gap:8px;">
-          <button type="button" id="scheduleFullscreenBtn" onclick="toggleScheduleModalFullscreen()" title="全画面表示" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">⛶ 全画面</button>
           <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">🏢 部署設定</button>
           <button type="button" onclick="openAddWorkModal('internal')" style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">＋作業</button>
           <button type="button" onclick="openOutsourceWorkTable()" style="background:#1565c0;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">📤 依頼一覧</button>
@@ -124,21 +123,35 @@
             <span style="width:1px;height:18px;background:#ddd;"></span>
             <button type="button" id="schedFilterAll" class="sched-list-filter active" onclick="setScheduleListFilter_('all')">すべて</button>
             <button type="button" id="schedFilterFieldWork" class="sched-list-filter" onclick="setScheduleListFilter_('fieldWork')">🌱 畑の品目作業</button>
-            <span id="schedBulkHint" style="font-size:11px;color:#666;">チェックした作業を一括で完了にします</span>
+            <span style="width:1px;height:18px;background:#ddd;"></span>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:bold;color:#333;white-space:nowrap;">
+              並び替え
+              <select id="schedSortSelect" class="form-input" style="margin:0;padding:4px 8px;font-size:12px;min-width:140px;width:auto;" onchange="setScheduleSortFromSelect_(this.value)">
+                <option value="status:asc">ステータス（進行中優先）</option>
+                <option value="deadline:asc">期限日が近い順</option>
+                <option value="deadline:desc">期限日が遠い順</option>
+                <option value="schedDate:asc">予定日が早い順</option>
+                <option value="schedDate:desc">予定日が遅い順</option>
+                <option value="workName:asc">作業名（あいうえお）</option>
+                <option value="fieldName:asc">圃場名（あいうえお）</option>
+                <option value="cropName:asc">作物名（あいうえお）</option>
+                <option value="dept:asc">部署（あいうえお）</option>
+              </select>
+            </label>
+            <span id="schedBulkHint" style="font-size:11px;color:#666;">列見出しをタップしても並び替えできます</span>
           </div>
           <table id="scheduleTable">
             <thead>
               <tr>
                 <th style="width:36px;text-align:center;"><input type="checkbox" id="schedSelectAllHead" title="すべて選択" onchange="toggleSchedSelectAll_(this.checked)"></th>
-                <th>ステータス</th>
-                <th>作業名</th>
-                <th>部署</th>
-                <th>作物・品種・TAG</th>
-                <th>圃場/看板名</th>
-                <th>予定日</th>
-                <th>期限日</th>
+                <th class="sched-sortable" data-sort-key="status" onclick="toggleScheduleSort_('status')" title="クリックで並び替え">ステータス<span class="sched-sort-ind" data-for="status"></span></th>
+                <th class="sched-sortable" data-sort-key="workName" onclick="toggleScheduleSort_('workName')" title="クリックで並び替え">作業名<span class="sched-sort-ind" data-for="workName"></span></th>
+                <th class="sched-sortable" data-sort-key="dept" onclick="toggleScheduleSort_('dept')" title="クリックで並び替え">部署<span class="sched-sort-ind" data-for="dept"></span></th>
+                <th class="sched-sortable" data-sort-key="cropName" onclick="toggleScheduleSort_('cropName')" title="クリックで並び替え">作物・品種・TAG<span class="sched-sort-ind" data-for="cropName"></span></th>
+                <th class="sched-sortable" data-sort-key="fieldName" onclick="toggleScheduleSort_('fieldName')" title="クリックで並び替え">圃場/看板名<span class="sched-sort-ind" data-for="fieldName"></span></th>
+                <th class="sched-sortable" data-sort-key="schedDate" onclick="toggleScheduleSort_('schedDate')" title="クリックで並び替え">予定日<span class="sched-sort-ind" data-for="schedDate"></span></th>
+                <th class="sched-sortable" data-sort-key="deadline" onclick="toggleScheduleSort_('deadline')" title="クリックで並び替え">期限日<span class="sched-sort-ind" data-for="deadline"></span></th>
                 <th>枚数・期間</th>
-                <th>タグ・担当</th>
                 <th style="width:108px;">操作</th>
               </tr>
             </thead>
@@ -220,33 +233,67 @@
   </div>
 
   <div id="workDeptSettingsModal">
-    <div class="modal-content" style="max-width:720px;">
+    <div class="modal-content" style="max-width:760px;">
       <div class="modal-header" style="background:#455a64;">
-        <span>🏢 作業の部署設定</span>
+        <span>🏢 部署設定</span>
         <span style="cursor:pointer;font-size:24px;" onclick="closeWorkDeptSettingsModal()">×</span>
       </div>
       <div class="modal-body">
-        <div style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
-          作業名ごとに担当部署（作業カテゴリ）を設定します。保存すると<strong>作業マスタ</strong>と<strong>未完了の作業予定</strong>に反映されます。
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+          <button type="button" class="work-dept-tab-btn" data-tab="works" onclick="switchWorkDeptSettingsTab_('works')" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">作業の担当部署</button>
+          <button type="button" class="work-dept-tab-btn" data-tab="depts" onclick="switchWorkDeptSettingsTab_('depts')" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">部署マスタ</button>
+          <button type="button" class="work-dept-tab-btn" data-tab="users" onclick="switchWorkDeptSettingsTab_('users')" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">ユーザー紐づけ</button>
         </div>
-        <input type="text" id="workDeptSettingsFilter" placeholder="作業名で絞り込み..." oninput="filterWorkDeptSettingsRows_()" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;margin-bottom:10px;font-size:13px;">
-        <div style="overflow:auto;max-height:55vh;">
-          <table id="workDeptSettingsTable" class="progress-summary-table">
-            <thead>
-              <tr>
-                <th>作業名</th>
-                <th>担当部署</th>
-                <th>備考</th>
-              </tr>
-            </thead>
-            <tbody id="workDeptSettingsTableBody">
-              <tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">読み込み中...</td></tr>
-            </tbody>
-          </table>
+
+        <div id="workDeptTabWorks">
+          <div style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
+            作業名ごとに<strong>担当部署</strong>を設定します（作業カテゴリとは別です）。保存すると<strong>作業マスタ</strong>と<strong>未完了の作業予定</strong>に反映されます。
+          </div>
+          <input type="text" id="workDeptSettingsFilter" placeholder="作業名で絞り込み..." oninput="filterWorkDeptSettingsRows_()" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;margin-bottom:10px;font-size:13px;">
+          <div style="overflow:auto;max-height:48vh;">
+            <table id="workDeptSettingsTable" class="progress-summary-table">
+              <thead>
+                <tr>
+                  <th>作業名</th>
+                  <th>担当部署</th>
+                  <th>備考</th>
+                </tr>
+              </thead>
+              <tbody id="workDeptSettingsTableBody">
+                <tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">読み込み中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+            <button type="button" onclick="closeWorkDeptSettingsModal()" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">キャンセル</button>
+            <button type="button" id="workDeptSettingsSaveBtn" onclick="saveWorkDeptSettings_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">保存する</button>
+          </div>
         </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-          <button type="button" onclick="closeWorkDeptSettingsModal()" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">キャンセル</button>
-          <button type="button" id="workDeptSettingsSaveBtn" onclick="saveWorkDeptSettings_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">保存する</button>
+
+        <div id="workDeptTabDepts" style="display:none;">
+          <div style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
+            組織の<strong>部署名</strong>を登録します。ここで追加した部署を、作業の担当部署やユーザーの所属に選べます。
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <input type="text" id="newDepartmentNameInput" placeholder="新しい部署名" style="flex:1;min-width:160px;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;">
+            <button type="button" onclick="addDepartmentToDraft_()" style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-weight:bold;cursor:pointer;">追加</button>
+          </div>
+          <div id="departmentMasterList" style="overflow:auto;max-height:48vh;border:1px solid #e0e0e0;border-radius:8px;padding:8px;background:#fafafa;"></div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+            <button type="button" onclick="closeWorkDeptSettingsModal()" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">閉じる</button>
+            <button type="button" id="departmentMasterSaveBtn" onclick="saveDepartmentMaster_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">部署マスタを保存</button>
+          </div>
+        </div>
+
+        <div id="workDeptTabUsers" style="display:none;">
+          <div style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
+            ユーザーと<strong>所属部署</strong>を紐づけます。名簿の「部署」列に保存されます。
+          </div>
+          <div id="userDeptLinkList" style="overflow:auto;max-height:48vh;border:1px solid #e0e0e0;border-radius:8px;padding:8px;background:#fafafa;"></div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+            <button type="button" onclick="closeWorkDeptSettingsModal()" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">閉じる</button>
+            <button type="button" id="userDeptLinkSaveBtn" onclick="saveUserDeptLinks_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">ユーザー部署を保存</button>
+          </div>
         </div>
       </div>
     </div>
@@ -650,7 +697,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1787592000000';
+    const cacheBust = '1787700000000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',

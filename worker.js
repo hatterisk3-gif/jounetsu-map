@@ -478,6 +478,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   localStorage.setItem('passionMapUserPw', pw);
                   localStorage.setItem('passionMapUserName', result.name);
                   localStorage.setItem('passionMapUserRole', result.role || '作業員');
+                  if (result.dept != null) localStorage.setItem('passionMapUserDept', result.dept || '');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
                   if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
