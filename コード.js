@@ -6091,7 +6091,7 @@ function getWorkCategoryList_() {
   const sheet = ss.getSheetByName('作業カテゴリマスタ');
   let list = [];
   if (sheet && sheet.getLastRow() > 1) {
-    const data = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues();
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
     data.forEach(function(r) {
       const n = String(r[0] || '').trim();
       if (n) list.push(n);
@@ -6119,8 +6119,10 @@ function ensureDeptMasterSheet_() {
 function getDeptList_() {
   const sheet = ensureDeptMasterSheet_();
   let list = [];
-  if (sheet.getLastRow() > 1) {
-    const data = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues();
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    // Sheet.getRange(row, column, numRows, numColumns)
+    const data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
     data.forEach(function(r) {
       const n = String(r[0] || '').trim();
       if (n && list.indexOf(n) < 0) list.push(n);
@@ -6154,9 +6156,11 @@ function saveDepartmentMaster(params) {
   });
   const sheet = ensureDeptMasterSheet_();
   const lastRow = sheet.getLastRow();
-  if (lastRow > 1) sheet.getRange(2, 1, lastRow, 1).clearContent();
+  // Sheet.getRange の第3引数は最終行ではなく行数
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, 1).clearContent();
   if (uniq.length) {
-    sheet.getRange(2, 1, 1 + uniq.length, 1).setValues(uniq.map(function(n) { return [n]; }));
+    const values = uniq.map(function(n) { return [n]; });
+    sheet.getRange(2, 1, values.length, 1).setValues(values);
   }
   try { writeLog(userName, '部署マスタ保存', '部署マスタ', uniq.join(', ')); } catch (e) {}
   return { success: true, departments: getDeptList_() };
