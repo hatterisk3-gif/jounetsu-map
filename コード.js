@@ -12892,6 +12892,13 @@ function getSowingNurseryFormOptions(params) {
     const c = String(s.cropName || '').trim();
     if (c) cropSet[c] = true;
   });
+  // 予定にない作物も播種できるよう、作物マスタも候補に含める
+  try {
+    readMergedCropMasterList_().forEach(function(c) {
+      const n = String((c && c.name) || c || '').trim();
+      if (n) cropSet[n] = true;
+    });
+  } catch (eCrop) {}
   const crops = Object.keys(cropSet).sort(function(a, b) {
     return String(a).localeCompare(String(b), 'ja');
   });
@@ -12918,7 +12925,7 @@ function saveSowingRecord(params) {
   const tag = String(s.tag || '').trim();
   const cropName = String(s.cropName || s.crop || '').trim();
   const trays = Number(s.trays);
-  if (!tag && !cropName) throw new Error('品目またはTAGを入力してください');
+  if (!tag && !cropName) throw new Error('作物名またはTAGを入力してください');
   if (!(trays > 0)) throw new Error('枚数を入力してください');
 
   const sowingDate = String(s.sowingDate || '').trim()

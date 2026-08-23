@@ -3512,32 +3512,104 @@ async function fetchWeatherAndUpdateUI() {
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px;">
             <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">品目</label>
-              <select id="snr_crop" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryCropChange_()">
-                <option value="">選択してください</option>${cropOpts}
-              </select>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">作物名</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <select id="snr_crop" class="form-input" style="margin:0; flex:1; min-width:0;" onchange="onSowingNurseryCropChange_()">
+                  <option value="">選択してください</option>${cropOpts}
+                </select>
+                <button type="button" onclick="toggleSowingNurseryAddCropPanel_()" title="作物名を追加"
+                  style="flex-shrink:0; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋追加</button>
+              </div>
+              <div id="snr_add_crop_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
+                <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">作物名を新規追加（予定にない播種用）</div>
+                <div style="display:grid; gap:8px;">
+                  <div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">作物名 *</label>
+                    <input type="text" id="snr_new_crop" class="form-input" style="margin:0; width:100%;" placeholder="例: レタス・ブロッコリー">
+                  </div>
+                  <div style="display:flex; gap:6px;">
+                    <button type="button" id="snr_add_crop_btn" onclick="submitAddSowingNurseryCrop_()"
+                      style="flex:1; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">マスタに登録</button>
+                    <button type="button" onclick="toggleSowingNurseryAddCropPanel_(false)"
+                      style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>
+                  </div>
+                  <div id="snr_add_crop_msg" style="font-size:11px; font-weight:bold;"></div>
+                </div>
+              </div>
             </div>
             <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">TAG（現在の期間）</label>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">TAG（現在の期間・任意）</label>
               <select id="snr_tag" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryTagChange_()">
-                <option value="">先に品目を選択</option>
+                <option value="">先に作物名を選択</option>
               </select>
             </div>
             <div>
               <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">品種名</label>
-              <input type="text" id="snr_variety" class="form-input" style="margin:0; width:100%;" placeholder="TAG選択で自動表示" readonly>
+              <input type="text" id="snr_variety" class="form-input" style="margin:0; width:100%;" placeholder="TAG選択で自動、または手入力">
             </div>
             <div>
               <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">場所カテゴリ</label>
-              <select id="snr_loc_cat" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryLocCatChange_()">
-                <option value="">選択してください</option>${catOpts}
-              </select>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <select id="snr_loc_cat" class="form-input" style="margin:0; flex:1; min-width:0;" onchange="onSowingNurseryLocCatChange_()">
+                  <option value="">選択してください</option>${catOpts}
+                </select>
+                <button type="button" onclick="toggleSowingNurseryAddLocCatPanel_()" title="場所カテゴリを追加"
+                  style="flex-shrink:0; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋追加</button>
+              </div>
+              <div id="snr_add_loc_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
+                <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">場所カテゴリを新規追加</div>
+                <div style="display:grid; gap:8px;">
+                  <div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">場所カテゴリ名 *</label>
+                    <input type="text" id="snr_new_loc_cat" class="form-input" style="margin:0; width:100%;" placeholder="例: ハウスA・育苗ハウス">
+                  </div>
+                  <div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画名 *</label>
+                    <input type="text" id="snr_new_plot" class="form-input" style="margin:0; width:100%;" placeholder="例: 1列目・東側">
+                  </div>
+                  <div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">方向（任意）</label>
+                    <input type="text" id="snr_new_dir" class="form-input" style="margin:0; width:100%;" placeholder="例: 東・南向き">
+                  </div>
+                  <div style="display:flex; gap:6px;">
+                    <button type="button" id="snr_add_loc_btn" onclick="submitAddSowingNurseryLocCategory_()"
+                      style="flex:1; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">マスタに登録</button>
+                    <button type="button" onclick="toggleSowingNurseryAddLocCatPanel_(false)"
+                      style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>
+                  </div>
+                  <div id="snr_add_loc_msg" style="font-size:11px; font-weight:bold;"></div>
+                </div>
+              </div>
             </div>
             <div>
               <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">区画</label>
-              <select id="snr_plot" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryPlotChange_()">
-                <option value="">場所カテゴリを選択</option>
-              </select>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <select id="snr_plot" class="form-input" style="margin:0; flex:1; min-width:0;" onchange="onSowingNurseryPlotChange_()">
+                  <option value="">場所カテゴリを選択</option>
+                </select>
+                <button type="button" onclick="toggleSowingNurseryAddPlotPanel_()" title="このカテゴリに区画を追加"
+                  style="flex-shrink:0; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋区画</button>
+              </div>
+              <div id="snr_add_plot_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
+                <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">区画を追加（選択中の場所カテゴリ）</div>
+                <div style="display:grid; gap:8px;">
+                  <div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画名 *</label>
+                    <input type="text" id="snr_add_plot_name" class="form-input" style="margin:0; width:100%;" placeholder="例: 2列目">
+                  </div>
+                  <div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">方向（任意）</label>
+                    <input type="text" id="snr_add_plot_dir" class="form-input" style="margin:0; width:100%;" placeholder="例: 東">
+                  </div>
+                  <div style="display:flex; gap:6px;">
+                    <button type="button" id="snr_add_plot_btn" onclick="submitAddSowingNurseryPlot_()"
+                      style="flex:1; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">区画を登録</button>
+                    <button type="button" onclick="toggleSowingNurseryAddPlotPanel_(false)"
+                      style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>
+                  </div>
+                  <div id="snr_add_plot_msg" style="font-size:11px; font-weight:bold;"></div>
+                </div>
+              </div>
             </div>
             <div>
               <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">方向</label>
@@ -3615,17 +3687,97 @@ async function fetchWeatherAndUpdateUI() {
         const plans = window.getSowingNurseryPlansFiltered_(crop);
         const esc = window.escSowingNurseryHtml_;
         if (!crop) {
-          sel.innerHTML = '<option value="">先に品目を選択</option>';
+          sel.innerHTML = '<option value="">先に作物名を選択</option>';
           return;
         }
         if (!plans.length) {
-          sel.innerHTML = '<option value="">現在の期間のTAGがありません</option>';
+          sel.innerHTML = '<option value="">予定なし（TAGなしで登録可）</option>';
           return;
         }
-        sel.innerHTML = '<option value="">TAGを選択</option>' + plans.map(p => {
+        sel.innerHTML = '<option value="">TAGなし／手入力のみ</option>' + plans.map(p => {
           const label = window.formatSowingNurseryPlanOption_(p);
           return `<option value="${esc(p.planId || '')}" data-tag="${esc(p.tag || '')}">${esc(label)}</option>`;
         }).join('');
+      };
+
+      window.applySowingNurseryCropList_ = (names, preferName) => {
+        const st = window._sowingNurseryState;
+        if (!st || !st.formOptions) return;
+        const list = (names || []).map(function(c) {
+          return typeof c === 'string' ? c : String((c && c.name) || '').trim();
+        }).filter(Boolean);
+        const uniq = [];
+        const seen = {};
+        list.forEach(function(n) {
+          if (seen[n]) return;
+          seen[n] = true;
+          uniq.push(n);
+        });
+        uniq.sort(function(a, b) { return String(a).localeCompare(String(b), 'ja'); });
+        st.formOptions.crops = uniq;
+        const esc = window.escSowingNurseryHtml_;
+        const sel = document.getElementById('snr_crop');
+        if (sel) {
+          const keep = preferName || sel.value || '';
+          sel.innerHTML = '<option value="">選択してください</option>' + uniq.map(function(c) {
+            return `<option value="${esc(c)}">${esc(c)}</option>`;
+          }).join('');
+          if (keep && seen[keep]) sel.value = keep;
+        }
+        if (typeof window.onSowingNurseryCropChange_ === 'function') {
+          window.onSowingNurseryCropChange_();
+        }
+      };
+
+      window.toggleSowingNurseryAddCropPanel_ = (forceShow) => {
+        const panel = document.getElementById('snr_add_crop_panel');
+        if (!panel) return;
+        const show = (forceShow === true) ? true : (forceShow === false ? false : panel.style.display === 'none');
+        panel.style.display = show ? 'block' : 'none';
+        if (show) {
+          const msg = document.getElementById('snr_add_crop_msg');
+          if (msg) msg.textContent = '';
+          setTimeout(function() {
+            const el = document.getElementById('snr_new_crop');
+            if (el) el.focus();
+          }, 30);
+        }
+      };
+
+      window.submitAddSowingNurseryCrop_ = async () => {
+        const cropName = String((document.getElementById('snr_new_crop') || {}).value || '').trim();
+        const msg = document.getElementById('snr_add_crop_msg');
+        const btn = document.getElementById('snr_add_crop_btn');
+        if (!cropName) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '作物名を入力してください'; }
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '作物マスタへ登録しています...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName')
+            || localStorage.getItem('passionMapUserId')
+            || 'ユーザー';
+          const list = await callGAS('manageMaster', {
+            masterType: 'crop',
+            manageAction: 'add',
+            value: { name: cropName, density: 0, tagAbbreviation: '' },
+            userName: userName
+          });
+          const names = Array.isArray(list)
+            ? list.map(function(c) { return typeof c === 'string' ? c : String((c && c.name) || '').trim(); }).filter(Boolean)
+            : [];
+          if (names.indexOf(cropName) < 0) names.push(cropName);
+          window.applySowingNurseryCropList_(names, cropName);
+          if (msg) { msg.style.color = '#2e7d32'; msg.textContent = '「' + cropName + '」を追加しました'; }
+          const input = document.getElementById('snr_new_crop');
+          if (input) input.value = '';
+          setTimeout(function() { window.toggleSowingNurseryAddCropPanel_(false); }, 600);
+        } catch (e) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '追加に失敗: ' + (e.message || e); }
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = 'マスタに登録'; }
+        }
       };
 
       window.onSowingNurseryCropChange_ = () => {
@@ -3656,7 +3808,7 @@ async function fetchWeatherAndUpdateUI() {
         const traysEl = document.getElementById('snr_trays');
         const periodBox = document.getElementById('snr_period_box');
         if (planIdEl) planIdEl.value = plan ? (plan.planId || '') : '';
-        if (varietyEl) varietyEl.value = plan ? (plan.variety || '') : '';
+        if (varietyEl && plan) varietyEl.value = plan.variety || '';
         if (holesEl && plan && plan.holes != null && plan.holes !== '') {
           holesEl.value = plan.holes;
         } else if (holesEl && !holesEl.value) {
@@ -3692,6 +3844,211 @@ async function fetchWeatherAndUpdateUI() {
       window.getSowingNurseryLocCategory_ = (name) => {
         const cats = (window.getSowingNurseryFormOpts_() || {}).locationCategories || [];
         return cats.find(c => String(c.name) === String(name)) || null;
+      };
+
+      /** 育苗場所マスタ一覧から場所カテゴリ構造を再構築 */
+      window.rebuildSowingNurseryLocCategories_ = (list) => {
+        const catMap = {};
+        (list || []).forEach(function(n) {
+          const cat = String(n.polyName || '').trim() || '未分類';
+          if (!catMap[cat]) catMap[cat] = [];
+          catMap[cat].push(n);
+        });
+        return Object.keys(catMap).sort(function(a, b) {
+          return String(a).localeCompare(String(b), 'ja');
+        }).map(function(cat) {
+          const plots = catMap[cat].map(function(n) {
+            return {
+              id: n.id || '',
+              name: n.name || '',
+              direction: n.direction || '',
+              polyName: n.polyName || '',
+              note: n.note || ''
+            };
+          }).sort(function(a, b) {
+            return String(a.name).localeCompare(String(b.name), 'ja');
+          });
+          const directions = [];
+          const dirSeen = {};
+          plots.forEach(function(p) {
+            const d = String(p.direction || '').trim();
+            if (!d || dirSeen[d]) return;
+            dirSeen[d] = true;
+            directions.push(d);
+          });
+          return { name: cat, plots: plots, directions: directions };
+        });
+      };
+
+      window.applySowingNurseryLocMasterList_ = (list, preferCat, preferPlotId) => {
+        const st = window._sowingNurseryState;
+        if (!st || !st.formOptions) return;
+        st.formOptions.nurseryLocations = list || [];
+        st.formOptions.locationCategories = window.rebuildSowingNurseryLocCategories_(list);
+        const esc = window.escSowingNurseryHtml_;
+        const catSel = document.getElementById('snr_loc_cat');
+        if (catSel) {
+          const cats = st.formOptions.locationCategories || [];
+          const keep = preferCat || catSel.value || '';
+          catSel.innerHTML = '<option value="">選択してください</option>' + cats.map(function(c) {
+            return `<option value="${esc(c.name)}">${esc(c.name)}</option>`;
+          }).join('');
+          if (keep && cats.some(function(c) { return String(c.name) === String(keep); })) {
+            catSel.value = keep;
+          }
+        }
+        if (typeof window.onSowingNurseryLocCatChange_ === 'function') {
+          window.onSowingNurseryLocCatChange_();
+        }
+        if (preferPlotId) {
+          const plotSel = document.getElementById('snr_plot');
+          if (plotSel) {
+            for (let i = 0; i < plotSel.options.length; i++) {
+              if (String(plotSel.options[i].value) === String(preferPlotId)
+                  || String(plotSel.options[i].getAttribute('data-name') || '') === String(preferPlotId)) {
+                plotSel.selectedIndex = i;
+                break;
+              }
+            }
+            if (typeof window.onSowingNurseryPlotChange_ === 'function') {
+              window.onSowingNurseryPlotChange_();
+            }
+          }
+        }
+      };
+
+      window.toggleSowingNurseryAddLocCatPanel_ = (forceShow) => {
+        const panel = document.getElementById('snr_add_loc_panel');
+        if (!panel) return;
+        const show = (forceShow === true) ? true : (forceShow === false ? false : panel.style.display === 'none');
+        panel.style.display = show ? 'block' : 'none';
+        if (show) {
+          const plotPanel = document.getElementById('snr_add_plot_panel');
+          if (plotPanel) plotPanel.style.display = 'none';
+          const msg = document.getElementById('snr_add_loc_msg');
+          if (msg) msg.textContent = '';
+          setTimeout(function() {
+            const el = document.getElementById('snr_new_loc_cat');
+            if (el) el.focus();
+          }, 30);
+        }
+      };
+
+      window.toggleSowingNurseryAddPlotPanel_ = (forceShow) => {
+        const panel = document.getElementById('snr_add_plot_panel');
+        if (!panel) return;
+        const catName = (document.getElementById('snr_loc_cat') || {}).value || '';
+        if (!catName && forceShow !== false) {
+          if (typeof customAlert === 'function') customAlert('先に場所カテゴリを選択するか、＋追加で新規カテゴリを作ってください');
+          else alert('先に場所カテゴリを選択してください');
+          return;
+        }
+        const show = (forceShow === true) ? true : (forceShow === false ? false : panel.style.display === 'none');
+        panel.style.display = show ? 'block' : 'none';
+        if (show) {
+          const locPanel = document.getElementById('snr_add_loc_panel');
+          if (locPanel) locPanel.style.display = 'none';
+          const msg = document.getElementById('snr_add_plot_msg');
+          if (msg) msg.textContent = '';
+          setTimeout(function() {
+            const el = document.getElementById('snr_add_plot_name');
+            if (el) el.focus();
+          }, 30);
+        }
+      };
+
+      window.submitAddSowingNurseryLocCategory_ = async () => {
+        const catName = String((document.getElementById('snr_new_loc_cat') || {}).value || '').trim();
+        const plotName = String((document.getElementById('snr_new_plot') || {}).value || '').trim();
+        const direction = String((document.getElementById('snr_new_dir') || {}).value || '').trim();
+        const msg = document.getElementById('snr_add_loc_msg');
+        const btn = document.getElementById('snr_add_loc_btn');
+        if (!catName) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '場所カテゴリ名を入力してください'; }
+          return;
+        }
+        if (!plotName) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '区画名を入力してください（カテゴリには最低1区画が必要です）'; }
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '育苗場所マスタへ登録しています...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName')
+            || localStorage.getItem('passionMapUserId')
+            || 'ユーザー';
+          const list = await callGAS('manageMaster', {
+            masterType: 'nurseryLocation',
+            manageAction: 'add',
+            value: {
+              name: plotName,
+              polyId: '',
+              polyName: catName,
+              direction: direction,
+              note: ''
+            },
+            userName: userName
+          });
+          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotName);
+          if (msg) { msg.style.color = '#2e7d32'; msg.textContent = '「' + catName + ' / ' + plotName + '」を追加しました'; }
+          const catInput = document.getElementById('snr_new_loc_cat');
+          const plotInput = document.getElementById('snr_new_plot');
+          const dirInput = document.getElementById('snr_new_dir');
+          if (catInput) catInput.value = '';
+          if (plotInput) plotInput.value = '';
+          if (dirInput) dirInput.value = '';
+          setTimeout(function() { window.toggleSowingNurseryAddLocCatPanel_(false); }, 600);
+        } catch (e) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '追加に失敗: ' + (e.message || e); }
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = 'マスタに登録'; }
+        }
+      };
+
+      window.submitAddSowingNurseryPlot_ = async () => {
+        const catName = String((document.getElementById('snr_loc_cat') || {}).value || '').trim();
+        const plotName = String((document.getElementById('snr_add_plot_name') || {}).value || '').trim();
+        const direction = String((document.getElementById('snr_add_plot_dir') || {}).value || '').trim();
+        const msg = document.getElementById('snr_add_plot_msg');
+        const btn = document.getElementById('snr_add_plot_btn');
+        if (!catName) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '場所カテゴリを選択してください'; }
+          return;
+        }
+        if (!plotName) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '区画名を入力してください'; }
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '区画を登録しています...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName')
+            || localStorage.getItem('passionMapUserId')
+            || 'ユーザー';
+          const list = await callGAS('manageMaster', {
+            masterType: 'nurseryLocation',
+            manageAction: 'add',
+            value: {
+              name: plotName,
+              polyId: '',
+              polyName: catName,
+              direction: direction,
+              note: ''
+            },
+            userName: userName
+          });
+          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotName);
+          if (msg) { msg.style.color = '#2e7d32'; msg.textContent = '区画「' + plotName + '」を追加しました'; }
+          const plotInput = document.getElementById('snr_add_plot_name');
+          const dirInput = document.getElementById('snr_add_plot_dir');
+          if (plotInput) plotInput.value = '';
+          if (dirInput) dirInput.value = '';
+          setTimeout(function() { window.toggleSowingNurseryAddPlotPanel_(false); }, 600);
+        } catch (e) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '追加に失敗: ' + (e.message || e); }
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '区画を登録'; }
+        }
       };
 
       window.onSowingNurseryLocCatChange_ = () => {
@@ -3754,13 +4111,10 @@ async function fetchWeatherAndUpdateUI() {
         const trays = Number((document.getElementById('snr_trays') || {}).value);
         const holesRaw = (document.getElementById('snr_holes') || {}).value;
         if (!crop) {
-          if (msg) { msg.style.color = '#c62828'; msg.textContent = '品目を選択してください'; }
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '作物名を選択してください'; }
           return;
         }
-        if (!tag && !planId) {
-          if (msg) { msg.style.color = '#c62828'; msg.textContent = 'TAGを選択してください'; }
-          return;
-        }
+        // TAGは任意（予定にない播種も作物名だけで登録可）
         if (!(trays > 0)) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '枚数を入力してください'; }
           return;
