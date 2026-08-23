@@ -18,6 +18,47 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
       #workDeptSettingsModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 4100; justify-content: center; align-items: center; }
       .sched-dept-select { font-size:12px; padding:3px 6px; border:1px solid #90caf9; border-radius:4px; background:#fff; max-width:120px; }
       #scheduleTable, #outsourceWorkTable, .progress-summary-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+      #scheduleTable { font-size: 15px; }
+      #scheduleTable th {
+        font-size: 14px;
+        padding: 11px 9px;
+        line-height: 1.35;
+      }
+      #scheduleTable td {
+        font-size: 15px;
+        padding: 11px 9px;
+        line-height: 1.45;
+        vertical-align: middle;
+      }
+      #scheduleTable .sched-status-badge {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 5px 12px;
+        font-size: 13px;
+        font-weight: bold;
+        white-space: nowrap;
+        line-height: 1.3;
+      }
+      #scheduleTable .sched-subtext {
+        display: inline-block;
+        margin-top: 3px;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      #scheduleTable .sched-chip {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 3px 9px;
+        font-size: 12px;
+        font-weight: bold;
+        margin: 2px 3px 0 0;
+        line-height: 1.3;
+      }
+      #scheduleTable .sched-dept-select {
+        font-size: 14px;
+        padding: 5px 8px;
+        max-width: 140px;
+      }
       .sched-view-tab { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; border: 1px solid #90caf9; background: #fff; color: #1565c0; cursor: pointer; }
       .sched-view-tab.active { background: #1565c0; color: #fff; border-color: #0d47a1; }
       .sched-list-filter { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: bold; border: 1px solid #cfd8dc; background: #f5f5f5; color: #546e7a; cursor: pointer; }
@@ -154,18 +195,311 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
       th, td { padding: 8px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
       th { background-color: #e3f2fd; color: #1a73e8; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1); }
       .overdue-row { background-color: #ffebee; color: #d32f2f; font-weight: bold; }
-      
-      .legend { display: flex; gap: 10px; font-size: 11px; padding: 5px; background: #333; border-radius: 4px; margin-right: 10px;}
-      .leg-item { display: flex; align-items: center; gap: 3px; }
-      .leg-color { width: 12px; height: 12px; border-radius: 2px; }
-    
+      #scheduleTable tr.sched-task-row.is-mid { background-color: #fff8e1; color: #e65100; }
+      #scheduleTable tr.sched-task-row.is-warn { background-color: #ffebee; color: #d32f2f; font-weight: bold; }
+      .schedule-bulk-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+        padding: 8px 10px;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+      }
+      .sched-bulk-sep { width: 1px; height: 18px; background: #ddd; }
+      .sched-bulk-complete-btn {
+        background: #2e7d32;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        opacity: 0.55;
+      }
+      .sched-sort-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: bold;
+        color: #333;
+        white-space: nowrap;
+      }
+      .sched-sort-select {
+        margin: 0;
+        padding: 6px 8px;
+        font-size: 13px;
+        min-width: 140px;
+        width: auto;
+      }
+      .sched-bulk-hint { font-size: 11px; color: #666; }
+      .schedule-modal-header { gap: 8px; }
+      .schedule-modal-title { min-width: 0; flex: 1; }
+      .schedule-modal-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      .schedule-header-btn {
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        border: none;
+      }
+      .schedule-header-btn-ghost {
+        background: rgba(255,255,255,.2);
+        color: #fff;
+        border: 1px solid rgba(255,255,255,.5);
+      }
+      .schedule-header-btn-add { background: #2e7d32; color: #fff; }
+      .schedule-modal-close { cursor: pointer; font-size: 24px; line-height: 1; padding: 0 4px; }
+      .schedule-modal-tabs {
+        display: flex;
+        gap: 6px;
+        padding: 8px 10px;
+        background: #e3f2fd;
+        border-bottom: 1px solid #90caf9;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .schedule-modal-tabs .sched-view-tab { flex-shrink: 0; }
+      .schedule-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .sched-action-btns {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        align-items: stretch;
+      }
+      .sched-complete-btn {
+        background: #e8f5e9;
+        color: #2e7d32;
+        border: 1px solid #81c784;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .sched-delete-btn {
+        background: #ffebee;
+        color: #c62828;
+        border: 1px solid #ef9a9a;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
       /* スマホで見切れないように横スクロール対応 */
       @media screen and (max-width: 768px) {
         .control-panel { flex-wrap: wrap; gap: 8px; padding: 10px 5px; }
         .control-panel-buttons { width: 100%; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
         .control-panel-buttons::-webkit-scrollbar { height: 4px; }
         .control-panel-buttons::-webkit-scrollbar-thumb { background: #888; border-radius: 2px; }
-        .control-panel-buttons > * { flex-shrink: 0; } /* モバイルでボタンが潰れないように */
+        .control-panel-buttons > * { flex-shrink: 0; }
+
+        #scheduleModal .modal-header.schedule-modal-header {
+          padding: 12px 10px;
+          font-size: 16px;
+          align-items: flex-start;
+        }
+        #scheduleModal .modal-body { padding: 8px; }
+        .schedule-modal-title { font-size: 15px; line-height: 1.35; }
+        .schedule-header-btn { padding: 8px 10px; font-size: 12px; min-height: 36px; }
+        .schedule-modal-close { font-size: 28px; padding: 2px 6px; }
+        .schedule-modal-tabs { padding: 8px; gap: 8px; }
+        .sched-view-tab {
+          padding: 8px 12px;
+          font-size: 13px;
+          min-height: 40px;
+        }
+        .schedule-bulk-bar {
+          gap: 8px;
+          padding: 10px;
+          margin-bottom: 10px;
+        }
+        .sched-bulk-sep { display: none; }
+        .sched-bulk-hint { display: none; }
+        .sched-bulk-complete-btn {
+          width: 100%;
+          padding: 12px 14px;
+          font-size: 14px;
+          min-height: 44px;
+        }
+        .sched-list-filter {
+          padding: 8px 12px;
+          font-size: 13px;
+          min-height: 40px;
+        }
+        .sched-sort-label {
+          width: 100%;
+          font-size: 13px;
+          white-space: normal;
+        }
+        .sched-sort-select {
+          flex: 1;
+          min-width: 0;
+          width: 100%;
+          font-size: 14px;
+          padding: 10px;
+          min-height: 44px;
+        }
+        #schedWorkNameFilterChip {
+          width: 100%;
+          justify-content: space-between;
+          padding: 8px 12px;
+          font-size: 13px;
+        }
+        #schedWorkNameFilterPop {
+          position: fixed;
+          left: 8px !important;
+          right: 8px;
+          top: auto !important;
+          bottom: 12px;
+          max-width: none;
+          width: auto;
+          max-height: 55vh;
+          z-index: 4500;
+        }
+        #schedWorkNameFilterPop .wnf-item {
+          padding: 14px 12px;
+          font-size: 15px;
+          min-height: 48px;
+        }
+
+        /* 作業一覧: スマホはカード表示 */
+        .schedule-table-wrap { overflow: visible; }
+        #scheduleTable,
+        #scheduleTable thead,
+        #scheduleTable tbody,
+        #scheduleTable tr.sched-task-row,
+        #scheduleTable tr.sched-task-row > td {
+          display: block;
+          width: 100%;
+        }
+        #scheduleTable { border: none; box-shadow: none; background: transparent; font-size: 15px; }
+        #scheduleTable thead { display: none; }
+        #scheduleTable tr.sched-task-row {
+          margin: 0 0 12px;
+          padding: 12px;
+          border: 1px solid #cfd8dc;
+          border-radius: 12px;
+          background: #fff;
+          box-shadow: 0 1px 4px rgba(0,0,0,.06);
+          box-sizing: border-box;
+        }
+        #scheduleTable tr.sched-task-row.is-mid { background: #fff8e1; }
+        #scheduleTable tr.sched-task-row.is-warn,
+        #scheduleTable tr.sched-task-row.overdue-row { background: #ffebee; }
+        #scheduleTable tr.sched-task-row > td {
+          border: none;
+          padding: 8px 0;
+          white-space: normal;
+          text-align: left !important;
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 10px;
+          border-bottom: 1px dashed #eceff1;
+        }
+        #scheduleTable tr.sched-task-row > td:last-child { border-bottom: none; padding-bottom: 0; }
+        #scheduleTable tr.sched-task-row > td::before {
+          content: attr(data-label);
+          flex: 0 0 38%;
+          max-width: 120px;
+          color: #607d8b;
+          font-size: 12px;
+          font-weight: bold;
+          line-height: 1.4;
+          padding-top: 2px;
+        }
+        #scheduleTable tr.sched-task-row > td > .sched-cell-val,
+        #scheduleTable tr.sched-task-row > td > .sched-action-btns {
+          flex: 1;
+          min-width: 0;
+          text-align: right;
+        }
+        #scheduleTable .sched-col-status,
+        #scheduleTable .sched-col-work {
+          align-items: center;
+        }
+        #scheduleTable .sched-col-work .sched-cell-val {
+          font-size: 16px;
+          font-weight: bold;
+          text-align: right;
+        }
+        #scheduleTable .sched-col-work .sched-subtext,
+        #scheduleTable .sched-col-work .sched-chip {
+          font-weight: normal;
+        }
+        #scheduleTable .sched-status-badge {
+          font-size: 13px;
+          padding: 6px 12px;
+        }
+        #scheduleTable .sched-dept-select {
+          font-size: 15px;
+          padding: 8px 10px;
+          max-width: 100%;
+          min-height: 40px;
+        }
+        #scheduleTable .sched-check-col {
+          width: auto;
+          min-width: 0;
+          padding-top: 0;
+          padding-bottom: 10px;
+          border-bottom: 1px solid #e0e0e0;
+          align-items: center;
+        }
+        #scheduleTable .sched-col-actions {
+          display: block;
+          padding-top: 10px;
+        }
+        #scheduleTable .sched-col-actions::before { display: none; }
+        #scheduleTable .sched-action-btns {
+          flex-direction: row;
+          gap: 8px;
+        }
+        #scheduleTable .sched-complete-btn,
+        #scheduleTable .sched-delete-btn {
+          flex: 1;
+          min-height: 44px;
+          font-size: 14px;
+          padding: 10px 12px;
+        }
+        #scheduleTable tr.sched-empty-row,
+        #scheduleTable tr.sched-empty-row > td {
+          display: block;
+          width: 100%;
+          border: none;
+          background: #fff;
+          border-radius: 10px;
+          padding: 24px 12px;
+        }
+        #scheduleTable tr.sched-empty-row > td::before { display: none; }
+
+        /* 進捗系テーブルもスマホで横スクロールしやすく */
+        #scheduleViewHarvest,
+        #scheduleViewFieldProgress,
+        #scheduleViewTagProgress,
+        #scheduleViewOutsource {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+        .progress-summary-table,
+        #outsourceWorkTable {
+          min-width: 640px;
+        }
       }
 
       /* -------------------------------------------

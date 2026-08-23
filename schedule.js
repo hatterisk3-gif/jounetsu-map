@@ -1774,7 +1774,7 @@ async function fetchWeatherAndUpdateUI() {
           running: 'background:#fff3e0;color:#e65100;border:1px solid #ffb74d;'
         };
         const st = styles[code] || styles.pending;
-        return '<span style="display:inline-block;' + st + 'border-radius:999px;padding:2px 8px;font-size:10px;font-weight:bold;white-space:nowrap;">' + label + '</span>';
+        return '<span class="sched-status-badge" style="' + st + '">' + label + '</span>';
       }
 
       function workStatusSortRank(t) {
@@ -1787,13 +1787,13 @@ async function fetchWeatherAndUpdateUI() {
       function formatDayPlansBadgeHtml(t) {
         const plans = (t && Array.isArray(t.dayPlans)) ? t.dayPlans : [];
         if (!plans.length) return '';
-        return '<div style="margin-top:4px;">' + plans.map(function (p) {
+        return '<div style="margin-top:5px;">' + plans.map(function (p) {
           const n = String(p.userName || p.userId || '').replace(/</g, '&lt;');
           const ds = String(p.date || '');
           const m = ds.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
           const md = m ? (Number(m[2]) + '/' + Number(m[3])) : ds;
           const tm = p.startTime ? (' ' + String(p.startTime).replace(/</g, '&lt;')) : '';
-          return '<span style="display:inline-block;background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da;border-radius:999px;padding:1px 7px;font-size:10px;margin:1px 2px 0 0;">👤' + n + ' ' + md + tm + '</span>';
+          return '<span class="sched-chip" style="background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da;">👤' + n + ' ' + md + tm + '</span>';
         }).join('') + '</div>';
       }
 
@@ -2728,7 +2728,7 @@ async function fetchWeatherAndUpdateUI() {
             : (scheduleListFilter === 'fieldWork'
             ? '定植完了後の畑の品目作業はありません<br><span style="font-size:11px;color:#888;">品目別作業設定があり、定植が完了するとここに出ます</span>'
             : '現在必要な作業はありません');
-          tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">' + emptyMsg + '</td></tr>';
+          tbody.innerHTML = '<tr class="sched-empty-row"><td colspan="10" style="text-align:center;">' + emptyMsg + '</td></tr>';
           updateSchedBulkSelectionUi_();
         } else {
           let sorted = [...filteredSchedules].sort(function(a, b) {
@@ -2740,30 +2740,32 @@ async function fetchWeatherAndUpdateUI() {
             const rowKey = buildScheduleRowKey_(t);
             const isChecked = window._schedSelectedKeys && window._schedSelectedKeys.has(rowKey);
             const isMid = !!t.isMidWork;
-            const rowClass = isMid
-              ? 'style="background-color:#fff8e1; color:#e65100;"'
-              : (String(t.workName).includes('⚠️') ? 'style="background-color:#ffebee; color:#d32f2f; font-weight:bold;"' : (t.isOverdue ? 'class="overdue-row"' : ''));
+            const isWarn = !isMid && String(t.workName).includes('⚠️');
+            const rowClassList = ['sched-task-row'];
+            if (isMid) rowClassList.push('is-mid');
+            else if (isWarn) rowClassList.push('is-warn');
+            else if (t.isOverdue) rowClassList.push('overdue-row');
             const isCp = t.isCultivation || String(t.workName || '').indexOf('播種') === 0 || String(t.workName || '').trim() === '調達';
             const cropCell = isCp
-              ? `${t.cropName || '-'}${t.variety ? '<br><span style="color:#1565c0;font-size:11px;">品種: ' + t.variety + '</span>' : ''}${t.tag ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">TAG: ' + t.tag + '</span>' : (t.person ? '<br><span style="color:#e91e63;font-size:11px;font-weight:bold;">' + t.person + '</span>' : '')}`
+              ? `${t.cropName || '-'}${t.variety ? '<br><span class="sched-subtext" style="color:#1565c0;">品種: ' + t.variety + '</span>' : ''}${t.tag ? '<br><span class="sched-subtext" style="color:#e91e63;font-weight:bold;">TAG: ' + t.tag + '</span>' : (t.person ? '<br><span class="sched-subtext" style="color:#e91e63;font-weight:bold;">' + t.person + '</span>' : '')}`
               : (t.cropName || '-');
             const traysCell = isMid
               ? (t.totalTime || '-')
               : (isCp
-                  ? `${t.trays || t.hours || '-'}${t.periodLabel ? '<br><span style="font-size:10px;color:#666;">' + t.periodLabel + '</span>' : ''}`
+                  ? `${t.trays || t.hours || '-'}${t.periodLabel ? '<br><span class="sched-subtext" style="color:#666;">' + t.periodLabel + '</span>' : ''}`
                   : (t.trays || t.hours || '-'));
             const workLabel = t.workName;
             const statusHtml = formatWorkStatusBadgeHtml(t);
             const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
             const taskUsersHtml = (!isMid && taskUsers.length)
-              ? '<div style="margin-top:4px;">' + taskUsers.map(u => {
+              ? '<div style="margin-top:5px;">' + taskUsers.map(u => {
                   const n = String(u.userName || u.userId || '').replace(/</g, '&lt;');
                   const st = u.done ? 'opacity:0.5;text-decoration:line-through;' : '';
-                  return '<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:999px;padding:1px 6px;font-size:10px;font-weight:bold;margin:1px 2px 0 0;' + st + '">👤' + n + '</span>';
+                  return '<span class="sched-chip" style="background:#e8f5e9;color:#2e7d32;' + st + '">👤' + n + '</span>';
                 }).join('') + '</div>'
               : '';
             const midAuthorHtml = isMid
-              ? ('<div style="margin-top:4px;font-size:11px;">👤' + String(t.author || t.person || '-').replace(/</g, '&lt;') +
+              ? ('<div class="sched-subtext" style="margin-top:5px;">👤' + String(t.author || t.person || '-').replace(/</g, '&lt;') +
                 (t.startTime ? (' <span style="color:#666;">' + t.startTime + '〜' + (t.endTime || '') + '</span>') : '') + '</div>')
               : '';
             const dayPlansHtml = formatDayPlansBadgeHtml(t);
@@ -2773,23 +2775,25 @@ async function fetchWeatherAndUpdateUI() {
             const safeKey = String(t.scheduleKey || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safePoly = String(t.polyId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeRec = String(t.recordId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const completeBtn = `<button type="button" class="sched-complete-btn" onclick="completeScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}', ${isMid ? 1 : 0}, '${safePoly}', '${safeRec}')" style="background:#e8f5e9;color:#2e7d32;border:1px solid #81c784;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:bold;cursor:pointer;white-space:nowrap;">完了</button>`;
+            const completeBtn = `<button type="button" class="sched-complete-btn" onclick="completeScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}', ${isMid ? 1 : 0}, '${safePoly}', '${safeRec}')">完了</button>`;
             const deleteBtn = isMid
               ? ''
-              : `<button type="button" onclick="deleteScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}')" style="background:#ffebee;color:#c62828;border:1px solid #ef9a9a;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:bold;cursor:pointer;white-space:nowrap;">削除</button>`;
-            const actionCell = `<div style="display:flex;flex-direction:column;gap:4px;align-items:stretch;">${completeBtn}${deleteBtn}</div>`;
+              : `<button type="button" class="sched-delete-btn" onclick="deleteScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}')">削除</button>`;
+            const actionCell = `<div class="sched-action-btns">${completeBtn}${deleteBtn}</div>`;
             const checkCell = `<input type="checkbox" class="sched-row-check" data-sched-key="${escAttr_(rowKey)}" ${isChecked ? 'checked' : ''} onchange="toggleSchedRowSelect_('${String(rowKey).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', this.checked)" title="一括完了の対象">`;
-            return `<tr ${rowClass} data-sched-idx="${idx}">
-                      <td class="sched-check-col">${checkCell}</td>
-                      <td style="text-align:center;white-space:nowrap;">${statusHtml}</td>
-                      <td>${workLabel}${taskUsersHtml}${midAuthorHtml}${dayPlansHtml}</td>
-                      <td>${buildInlineDeptSelectHtml_(t)}</td>
-                      <td>${cropCell}</td>
-                      <td>${t.fieldName}</td>
-                      <td>${isMid ? (t.workDate || t.schedDate) : t.schedDate}</td>
-                      <td>${isMid ? '-' : t.deadline}</td>
-                      <td>${traysCell}</td>
-                      <td style="text-align:center;">${actionCell}</td>
+            const schedDateVal = isMid ? (t.workDate || t.schedDate) : t.schedDate;
+            const deadlineVal = isMid ? '-' : t.deadline;
+            return `<tr class="${rowClassList.join(' ')}" data-sched-idx="${idx}">
+                      <td class="sched-check-col" data-label="選択">${checkCell}</td>
+                      <td class="sched-col-status" data-label="ステータス"><div class="sched-cell-val">${statusHtml}</div></td>
+                      <td class="sched-col-work" data-label="作業名"><div class="sched-cell-val">${workLabel}${taskUsersHtml}${midAuthorHtml}${dayPlansHtml}</div></td>
+                      <td class="sched-col-dept" data-label="部署"><div class="sched-cell-val">${buildInlineDeptSelectHtml_(t)}</div></td>
+                      <td class="sched-col-crop" data-label="作物・品種・TAG"><div class="sched-cell-val">${cropCell}</div></td>
+                      <td class="sched-col-field" data-label="圃場/看板名"><div class="sched-cell-val">${escHtml_(t.fieldName || '-')}</div></td>
+                      <td class="sched-col-date" data-label="予定日"><div class="sched-cell-val">${escHtml_(schedDateVal || '-')}</div></td>
+                      <td class="sched-col-deadline" data-label="期限日"><div class="sched-cell-val">${escHtml_(deadlineVal || '-')}</div></td>
+                      <td class="sched-col-trays" data-label="枚数・期間"><div class="sched-cell-val">${traysCell}</div></td>
+                      <td class="sched-col-actions" data-label="操作">${actionCell}</td>
                     </tr>`;
           }).join('');
           updateSchedBulkSelectionUi_();

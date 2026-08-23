@@ -98,15 +98,15 @@
 
   <div id="scheduleModal">
     <div class="modal-content">
-      <div class="modal-header">
-        <span>📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">🏢 部署設定</button>
-          <button type="button" id="scheduleHeaderAddBtn" onclick="openAddWorkModal(window._scheduleViewMode === 'outsource' ? 'outsource' : 'internal')" style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">＋作業</button>
-          <span style="cursor:pointer; font-size:24px;" onclick="closeScheduleModal()">×</span>
+      <div class="modal-header schedule-modal-header">
+        <span class="schedule-modal-title">📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
+        <div class="schedule-modal-actions">
+          <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定" class="schedule-header-btn schedule-header-btn-ghost">🏢 部署</button>
+          <button type="button" id="scheduleHeaderAddBtn" onclick="openAddWorkModal(window._scheduleViewMode === 'outsource' ? 'outsource' : 'internal')" class="schedule-header-btn schedule-header-btn-add">＋作業</button>
+          <span class="schedule-modal-close" onclick="closeScheduleModal()" role="button" aria-label="閉じる">×</span>
         </div>
       </div>
-      <div id="scheduleModalTabs" style="display:flex;gap:6px;padding:8px 10px;background:#e3f2fd;border-bottom:1px solid #90caf9;flex-wrap:wrap;">
+      <div id="scheduleModalTabs" class="schedule-modal-tabs">
         <button type="button" id="schedTabTasks" class="sched-view-tab active" onclick="switchScheduleView('tasks')">📋 作業一覧</button>
         <button type="button" id="schedTabOutsource" class="sched-view-tab" onclick="switchScheduleView('outsource')">📤 依頼作業</button>
         <button type="button" id="schedTabHarvest" class="sched-view-tab" onclick="switchScheduleView('harvest')">🍅 収穫中</button>
@@ -115,22 +115,22 @@
       </div>
       <div class="modal-body">
         <div id="scheduleViewTasks">
-          <div id="scheduleBulkBar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;padding:8px 10px;background:#fff;border:1px solid #e0e0e0;border-radius:6px;">
+          <div id="scheduleBulkBar" class="schedule-bulk-bar">
             <label class="sched-check-label">
               <input type="checkbox" id="schedSelectAll" onchange="toggleSchedSelectAll_(this.checked)"> すべて選択
             </label>
-            <button type="button" id="schedBulkCompleteBtn" onclick="bulkCompleteSelectedSchedules_()" disabled style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:bold;cursor:pointer;opacity:0.55;">✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)</button>
+            <button type="button" id="schedBulkCompleteBtn" onclick="bulkCompleteSelectedSchedules_()" disabled class="sched-bulk-complete-btn">✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)</button>
             <span id="schedWorkNameFilterChip">
               作業名: <span id="schedWorkNameFilterChipText"></span>
               <button type="button" onclick="clearScheduleWorkNameFilter_()" title="絞り込み解除" style="background:transparent;border:none;color:#e65100;font-weight:bold;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;">×</button>
             </span>
-            <span style="width:1px;height:18px;background:#ddd;"></span>
+            <span class="sched-bulk-sep"></span>
             <button type="button" id="schedFilterAll" class="sched-list-filter active" onclick="setScheduleListFilter_('all')">すべて</button>
             <button type="button" id="schedFilterFieldWork" class="sched-list-filter" onclick="setScheduleListFilter_('fieldWork')">🌱 畑の品目作業</button>
-            <span style="width:1px;height:18px;background:#ddd;"></span>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:bold;color:#333;white-space:nowrap;">
+            <span class="sched-bulk-sep"></span>
+            <label class="sched-sort-label">
               並び替え
-              <select id="schedSortSelect" class="form-input" style="margin:0;padding:4px 8px;font-size:12px;min-width:140px;width:auto;" onchange="setScheduleSortFromSelect_(this.value)">
+              <select id="schedSortSelect" class="form-input sched-sort-select" onchange="setScheduleSortFromSelect_(this.value)">
                 <option value="status:asc">ステータス（進行中優先）</option>
                 <option value="deadline:asc">期限日が近い順</option>
                 <option value="deadline:desc">期限日が遠い順</option>
@@ -142,8 +142,9 @@
                 <option value="dept:asc">部署（あいうえお）</option>
               </select>
             </label>
-            <span id="schedBulkHint" style="font-size:11px;color:#666;">作業名ヘッダで絞り込み／他の列見出しで並び替え</span>
+            <span id="schedBulkHint" class="sched-bulk-hint">作業名ヘッダで絞り込み／他の列見出しで並び替え</span>
           </div>
+          <div class="schedule-table-wrap">
           <table id="scheduleTable">
             <thead>
               <tr>
@@ -162,6 +163,7 @@
             <tbody id="scheduleTableBody">
             </tbody>
           </table>
+          </div>
         </div>
         <div id="scheduleViewHarvest" style="display:none;">
           <div id="harvestListHint" style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
