@@ -1578,11 +1578,37 @@ function manageMasterData(masterType, manageAction, value, userName) {
       writeLog(userName, "マスタ追加", rowObj.name, `対象: ${sheetName}`);
     } else if (masterType === 'nurseryLocation') {
       const loc = (typeof value === 'object' && value) ? value : { name: value };
-      const name = String(loc.name || '').trim();
-      if (!name) throw new Error('育苗場所名を入力してください');
-      const newId = 'NUR-' + Utilities.getUuid().substring(0, 8);
-      sheet.appendRow([newId, name, String(loc.polyId || '').trim(), String(loc.polyName || '').trim(), String(loc.direction || '').trim(), String(loc.note || '').trim()]);
-      writeLog(userName, "マスタ追加", name, `対象: ${sheetName}`);
+      const polyId = String(loc.polyId || '').trim();
+      const polyName = String(loc.polyName || '').trim();
+      const commonDir = String(loc.direction || '').trim();
+      const commonNote = String(loc.note || '').trim();
+      // 一括: plots:[{name,direction}] または names:['区画1','区画2']
+      let plotItems = [];
+      if (Array.isArray(loc.plots) && loc.plots.length) {
+        plotItems = loc.plots.map(function(p) {
+          if (typeof p === 'string') return { name: String(p || '').trim(), direction: commonDir, note: commonNote };
+          return {
+            name: String((p && (p.name || p.plotName)) || '').trim(),
+            direction: String((p && p.direction) || commonDir).trim(),
+            note: String((p && p.note) || commonNote).trim()
+          };
+        }).filter(function(p) { return !!p.name; });
+      } else if (Array.isArray(loc.names) && loc.names.length) {
+        plotItems = loc.names.map(function(n) {
+          return { name: String(n || '').trim(), direction: commonDir, note: commonNote };
+        }).filter(function(p) { return !!p.name; });
+      } else {
+        const name = String(loc.name || '').trim();
+        if (name) plotItems = [{ name: name, direction: commonDir, note: commonNote }];
+      }
+      if (!plotItems.length) throw new Error('育苗場所名（区画）を入力してください');
+      const addedNames = [];
+      plotItems.forEach(function(p) {
+        const newId = 'NUR-' + Utilities.getUuid().substring(0, 8);
+        sheet.appendRow([newId, p.name, polyId, polyName, p.direction || '', p.note || '']);
+        addedNames.push(p.name);
+      });
+      writeLog(userName, "マスタ追加", addedNames.join(', '), `対象: ${sheetName} / カテゴリ: ${polyName || '-'} / ${addedNames.length}件`);
     } else if (masterType === 'cropCultSetting') {
       const row = (typeof value === 'object' && value) ? value : { cropName: value };
       const cropName = String(row.cropName || row.name || '').trim();
