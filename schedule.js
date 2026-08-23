@@ -3436,7 +3436,10 @@ async function fetchWeatherAndUpdateUI() {
       window._sowingNurseryState = window._sowingNurseryState || {
         tab: 'progress',
         year: '',
-        data: null
+        data: null,
+        showAddForm: false,
+        formOptions: null,
+        formBusy: false
       };
 
       window.escSowingNurseryHtml_ = (v) => String(v == null ? '' : v).replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -3459,8 +3462,342 @@ async function fetchWeatherAndUpdateUI() {
 
       window.switchSowingNurseryTab_ = (tab) => {
         window._sowingNurseryState.tab = tab === 'records' ? 'records' : 'progress';
+        if (tab !== 'records') window._sowingNurseryState.showAddForm = false;
         window.syncSowingNurseryTabButtons_();
         window.renderSowingNurseryBody_();
+      };
+
+      window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._sowingNurseryState.formOptions) || null;
+
+      window.getSowingNurseryPlansFiltered_ = (crop) => {
+        const opts = window.getSowingNurseryFormOpts_();
+        const plans = (opts && opts.plans) || [];
+        const c = String(crop || '').trim();
+        if (!c) return plans.slice();
+        return plans.filter(p => String(p.crop || '').trim() === c);
+      };
+
+      window.formatSowingNurseryPlanOption_ = (it) => {
+        const phaseMap = { in: '期間内', soon: 'まもなく', after: '期間後' };
+        const phase = phaseMap[it.phase] || '';
+        const tag = it.tag || '(TAGなし)';
+        const variety = it.variety ? '／' + it.variety : '';
+        const remain = (it.remainTrays != null && it.trays)
+          ? `／残${it.remainTrays}枚`
+          : (it.trays ? `／予定${it.trays}枚` : '');
+        return `${phase ? '[' + phase + '] ' : ''}${tag}${variety}${remain}`;
+      };
+
+      window.buildSowingNurseryAddFormHtml_ = () => {
+        const esc = window.escSowingNurseryHtml_;
+        const st = window._sowingNurseryState;
+        const opts = st.formOptions;
+        if (!opts) {
+          return `<div id="sowingNurseryAddForm" style="margin-bottom:14px; border:1px solid #e1bee7; border-radius:8px; padding:12px; background:#faf5fc;">
+            <div style="color:#888;">フォーム用データを読み込み中...</div>
+          </div>`;
+        }
+        const today = opts.today || (() => {
+          const d = new Date();
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        })();
+        const crops = opts.crops || [];
+        const categories = opts.locationCategories || [];
+        const cropOpts = crops.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+        const catOpts = categories.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+        return `<div id="sowingNurseryAddForm" style="margin-bottom:14px; border:1px solid #e1bee7; border-radius:8px; padding:12px; background:#faf5fc;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div style="font-weight:bold; color:#6a1b9a;">＋ 育苗記録を新規追加</div>
+            <button type="button" onclick="cancelSowingNurseryAddForm_()" style="border:none; background:transparent; color:#888; cursor:pointer; font-size:18px; line-height:1;">×</button>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px;">
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">品目</label>
+              <select id="snr_crop" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryCropChange_()">
+                <option value="">選択してください</option>${cropOpts}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">TAG（現在の期間）</label>
+              <select id="snr_tag" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryTagChange_()">
+                <option value="">先に品目を選択</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">品種名</label>
+              <input type="text" id="snr_variety" class="form-input" style="margin:0; width:100%;" placeholder="TAG選択で自動表示" readonly>
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">場所カテゴリ</label>
+              <select id="snr_loc_cat" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryLocCatChange_()">
+                <option value="">選択してください</option>${catOpts}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">区画</label>
+              <select id="snr_plot" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryPlotChange_()">
+                <option value="">場所カテゴリを選択</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">方向</label>
+              <select id="snr_direction" class="form-input" style="margin:0; width:100%;">
+                <option value="">場所カテゴリを選択</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">播種日</label>
+              <input type="date" id="snr_date" class="form-input" style="margin:0; width:100%;" value="${esc(today)}">
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">枚数</label>
+              <input type="number" id="snr_trays" class="form-input" style="margin:0; width:100%;" min="1" step="1" placeholder="枚">
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">穴数</label>
+              <input type="number" id="snr_holes" class="form-input" style="margin:0; width:100%;" min="0" step="1" placeholder="TAG選択で自動">
+            </div>
+          </div>
+          <input type="hidden" id="snr_plan_id" value="">
+          <div id="snr_period_box" style="display:none; margin-top:10px; padding:10px; background:#fff; border:1px solid #e1bee7; border-radius:6px; font-size:12px; color:#4a148c;">
+            <div style="font-weight:bold; margin-bottom:4px;">栽培時期（TAGから自動）</div>
+            <div>播種期: <span id="snr_period_sow">-</span></div>
+            <div>定植期: <span id="snr_period_plant">-</span></div>
+            <div>収穫期: <span id="snr_period_harvest">-</span></div>
+            <div id="snr_remain_hint" style="margin-top:4px; color:#6a1b9a;"></div>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <button type="button" id="snr_save_btn" onclick="submitSowingNurseryRecord_()" style="flex:1; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:10px; font-weight:bold; cursor:pointer;">登録する</button>
+            <button type="button" onclick="cancelSowingNurseryAddForm_()" style="background:#eee; color:#555; border:none; border-radius:6px; padding:10px 14px; font-weight:bold; cursor:pointer;">キャンセル</button>
+          </div>
+          <div id="snr_form_msg" style="margin-top:8px; font-size:12px; font-weight:bold;"></div>
+        </div>`;
+      };
+
+      window.openSowingNurseryAddForm_ = async () => {
+        const st = window._sowingNurseryState;
+        st.showAddForm = true;
+        st.tab = 'records';
+        window.syncSowingNurseryTabButtons_();
+        window.renderSowingNurseryBody_();
+        if (st.formOptions) {
+          window.refreshSowingNurseryTagOptions_();
+          return;
+        }
+        try {
+          const year = st.year || String(new Date().getFullYear());
+          const d = new Date();
+          const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const res = await callGAS('getSowingNurseryFormOptions', {
+            year: year,
+            today: today,
+            includeDone: true
+          });
+          st.formOptions = res || { plans: [], crops: [], locationCategories: [] };
+          window.renderSowingNurseryBody_();
+        } catch (e) {
+          st.showAddForm = false;
+          window.renderSowingNurseryBody_();
+          if (typeof customAlert === 'function') customAlert('フォームの読込に失敗しました: ' + (e.message || e));
+        }
+      };
+
+      window.cancelSowingNurseryAddForm_ = () => {
+        window._sowingNurseryState.showAddForm = false;
+        window.renderSowingNurseryBody_();
+      };
+
+      window.refreshSowingNurseryTagOptions_ = () => {
+        const sel = document.getElementById('snr_tag');
+        const cropEl = document.getElementById('snr_crop');
+        if (!sel) return;
+        const crop = cropEl ? cropEl.value : '';
+        const plans = window.getSowingNurseryPlansFiltered_(crop);
+        const esc = window.escSowingNurseryHtml_;
+        if (!crop) {
+          sel.innerHTML = '<option value="">先に品目を選択</option>';
+          return;
+        }
+        if (!plans.length) {
+          sel.innerHTML = '<option value="">現在の期間のTAGがありません</option>';
+          return;
+        }
+        sel.innerHTML = '<option value="">TAGを選択</option>' + plans.map(p => {
+          const label = window.formatSowingNurseryPlanOption_(p);
+          return `<option value="${esc(p.planId || '')}" data-tag="${esc(p.tag || '')}">${esc(label)}</option>`;
+        }).join('');
+      };
+
+      window.onSowingNurseryCropChange_ = () => {
+        window.refreshSowingNurseryTagOptions_();
+        const varietyEl = document.getElementById('snr_variety');
+        const planIdEl = document.getElementById('snr_plan_id');
+        const holesEl = document.getElementById('snr_holes');
+        const periodBox = document.getElementById('snr_period_box');
+        if (varietyEl) varietyEl.value = '';
+        if (planIdEl) planIdEl.value = '';
+        if (holesEl) {
+          const crop = (document.getElementById('snr_crop') || {}).value || '';
+          const settings = (window.getSowingNurseryFormOpts_() || {}).cropCultSettings || [];
+          const hit = settings.find(s => String(s.cropName || '') === crop);
+          holesEl.value = hit && hit.sowingHoles != null && hit.sowingHoles !== '' ? hit.sowingHoles : '';
+        }
+        if (periodBox) periodBox.style.display = 'none';
+      };
+
+      window.onSowingNurseryTagChange_ = () => {
+        const sel = document.getElementById('snr_tag');
+        const planId = sel ? sel.value : '';
+        const plans = window.getSowingNurseryPlansFiltered_((document.getElementById('snr_crop') || {}).value || '');
+        const plan = plans.find(p => String(p.planId || '') === String(planId)) || null;
+        const varietyEl = document.getElementById('snr_variety');
+        const planIdEl = document.getElementById('snr_plan_id');
+        const holesEl = document.getElementById('snr_holes');
+        const traysEl = document.getElementById('snr_trays');
+        const periodBox = document.getElementById('snr_period_box');
+        if (planIdEl) planIdEl.value = plan ? (plan.planId || '') : '';
+        if (varietyEl) varietyEl.value = plan ? (plan.variety || '') : '';
+        if (holesEl && plan && plan.holes != null && plan.holes !== '') {
+          holesEl.value = plan.holes;
+        } else if (holesEl && !holesEl.value) {
+          const crop = (document.getElementById('snr_crop') || {}).value || '';
+          const settings = (window.getSowingNurseryFormOpts_() || {}).cropCultSettings || [];
+          const hit = settings.find(s => String(s.cropName || '') === crop);
+          if (hit && hit.sowingHoles != null && hit.sowingHoles !== '') holesEl.value = hit.sowingHoles;
+        }
+        if (traysEl && !traysEl.value && plan && plan.remainTrays > 0) {
+          traysEl.value = plan.remainTrays;
+        }
+        if (periodBox) {
+          if (plan) {
+            periodBox.style.display = 'block';
+            const sowEl = document.getElementById('snr_period_sow');
+            const plantEl = document.getElementById('snr_period_plant');
+            const harvEl = document.getElementById('snr_period_harvest');
+            const remainEl = document.getElementById('snr_remain_hint');
+            if (sowEl) sowEl.textContent = plan.sowingLabel || plan.periodLabel || '-';
+            if (plantEl) plantEl.textContent = plan.plantingLabel || '-';
+            if (harvEl) harvEl.textContent = plan.harvestLabel || '-';
+            if (remainEl) {
+              remainEl.textContent = (plan.trays != null)
+                ? `計画 ${plan.trays || 0}枚 ／ 実績 ${plan.doneTrays || 0}枚 ／ 残 ${plan.remainTrays || 0}枚`
+                : '';
+            }
+          } else {
+            periodBox.style.display = 'none';
+          }
+        }
+      };
+
+      window.getSowingNurseryLocCategory_ = (name) => {
+        const cats = (window.getSowingNurseryFormOpts_() || {}).locationCategories || [];
+        return cats.find(c => String(c.name) === String(name)) || null;
+      };
+
+      window.onSowingNurseryLocCatChange_ = () => {
+        const catName = (document.getElementById('snr_loc_cat') || {}).value || '';
+        const cat = window.getSowingNurseryLocCategory_(catName);
+        const plotSel = document.getElementById('snr_plot');
+        const dirSel = document.getElementById('snr_direction');
+        const esc = window.escSowingNurseryHtml_;
+        if (!plotSel || !dirSel) return;
+        if (!cat) {
+          plotSel.innerHTML = '<option value="">場所カテゴリを選択</option>';
+          dirSel.innerHTML = '<option value="">場所カテゴリを選択</option>';
+          return;
+        }
+        const plots = cat.plots || [];
+        plotSel.innerHTML = '<option value="">選択してください</option>' + plots.map(p => {
+          return `<option value="${esc(p.id || p.name)}" data-name="${esc(p.name || '')}" data-direction="${esc(p.direction || '')}">${esc(p.name || p.id)}</option>`;
+        }).join('');
+        const dirs = cat.directions || [];
+        dirSel.innerHTML = '<option value="">選択してください</option>' + dirs.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+      };
+
+      window.onSowingNurseryPlotChange_ = () => {
+        const plotSel = document.getElementById('snr_plot');
+        const dirSel = document.getElementById('snr_direction');
+        if (!plotSel || !dirSel) return;
+        const opt = plotSel.options[plotSel.selectedIndex];
+        const dir = opt ? (opt.getAttribute('data-direction') || '') : '';
+        if (dir) {
+          let found = false;
+          for (let i = 0; i < dirSel.options.length; i++) {
+            if (dirSel.options[i].value === dir) { found = true; break; }
+          }
+          if (!found) {
+            const o = document.createElement('option');
+            o.value = dir;
+            o.textContent = dir;
+            dirSel.appendChild(o);
+          }
+          dirSel.value = dir;
+        }
+      };
+
+      window.submitSowingNurseryRecord_ = async () => {
+        const st = window._sowingNurseryState;
+        if (st.formBusy) return;
+        const msg = document.getElementById('snr_form_msg');
+        const btn = document.getElementById('snr_save_btn');
+        const crop = (document.getElementById('snr_crop') || {}).value || '';
+        const tagSel = document.getElementById('snr_tag');
+        const tagOpt = tagSel && tagSel.selectedIndex >= 0 ? tagSel.options[tagSel.selectedIndex] : null;
+        const tag = tagOpt ? (tagOpt.getAttribute('data-tag') || '') : '';
+        const planId = (document.getElementById('snr_plan_id') || {}).value || '';
+        const variety = (document.getElementById('snr_variety') || {}).value || '';
+        const plotSel = document.getElementById('snr_plot');
+        const plotOpt = plotSel && plotSel.selectedIndex >= 0 ? plotSel.options[plotSel.selectedIndex] : null;
+        const nurseryName = plotOpt ? (plotOpt.getAttribute('data-name') || plotOpt.textContent || '') : '';
+        const direction = (document.getElementById('snr_direction') || {}).value || '';
+        const sowingDate = (document.getElementById('snr_date') || {}).value || '';
+        const trays = Number((document.getElementById('snr_trays') || {}).value);
+        const holesRaw = (document.getElementById('snr_holes') || {}).value;
+        if (!crop) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '品目を選択してください'; }
+          return;
+        }
+        if (!tag && !planId) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = 'TAGを選択してください'; }
+          return;
+        }
+        if (!(trays > 0)) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '枚数を入力してください'; }
+          return;
+        }
+        st.formBusy = true;
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '保存しています...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName') || 'ユーザー';
+          await callGAS('saveSowingRecord', {
+            userName: userName,
+            sowingRecord: {
+              tag: tag,
+              cropName: crop,
+              variety: variety,
+              nurseryName: nurseryName,
+              direction: direction,
+              sowingDate: sowingDate,
+              trays: trays,
+              holes: holesRaw === '' || holesRaw == null ? '' : holesRaw,
+              planId: planId,
+              note: ''
+            }
+          });
+          st.showAddForm = false;
+          st.formOptions = null;
+          const year = st.year || String(new Date().getFullYear());
+          const res = await callGAS('getSowingProgress', { year });
+          st.data = res || { cropSummary: [], rows: [], records: [] };
+          window.renderSowingNurseryBody_();
+          if (typeof customAlert === 'function') customAlert('育苗記録を登録しました');
+        } catch (e) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '登録失敗: ' + (e.message || e); }
+          if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
+        } finally {
+          st.formBusy = false;
+        }
       };
 
       window.renderSowingNurseryProgressHtml_ = (res, year) => {
@@ -3523,6 +3860,7 @@ async function fetchWeatherAndUpdateUI() {
 
       window.renderSowingNurseryRecordsHtml_ = (res, year) => {
         const esc = window.escSowingNurseryHtml_;
+        const st = window._sowingNurseryState;
         const yearStr = String(year || '').trim();
         let records = ((res && res.records) || []).slice();
         if (yearStr) {
@@ -3537,7 +3875,13 @@ async function fetchWeatherAndUpdateUI() {
             || String(b.recordedAt || '').localeCompare(String(a.recordedAt || ''));
         });
         let html = '';
-        html += `<div style="margin-bottom:12px; font-size:12px; color:#555;">年度 ${esc(yearStr || 'すべて')} の育苗・播種記録です。作業記録や作業一覧の播種完了から登録されたものを、区画・枚数つきで確認できます。</div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+          <div style="font-size:12px; color:#555; flex:1;">年度 ${esc(yearStr || 'すべて')} の育苗・播種記録です。作業記録や作業一覧の播種完了、またはここからの新規追加で登録できます。</div>
+          <button type="button" onclick="openSowingNurseryAddForm_()" style="background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 新規追加</button>
+        </div>`;
+        if (st.showAddForm) {
+          html += window.buildSowingNurseryAddFormHtml_();
+        }
         html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">記録一覧（${records.length}件）</div>`;
         if (!records.length) {
           html += `<div style="color:#888; padding:16px; text-align:center;">まだ育苗・播種の記録がありません。</div>`;

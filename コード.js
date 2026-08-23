@@ -72,6 +72,8 @@ function doPost(e) {
     else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
     else if (action === "getSowingProgress") result = getSowingProgress(params);
     else if (action === "getCurrentSowingPlanOptions") result = getCurrentSowingPlanOptions(params);
+    else if (action === "getSowingNurseryFormOptions") result = getSowingNurseryFormOptions(params);
+    else if (action === "saveSowingRecord") result = saveSowingRecord(params);
     else if (action === "getCropWorkProgressSummary") result = getCropWorkProgressSummary(params);
     else if (action === "getHarvestingFieldsSummary") result = getHarvestingFieldsSummary(params);
     else if (action === "getWeatherPlantingPriorities") result = getWeatherPlantingPriorities(params);
@@ -12787,6 +12789,13 @@ function getCurrentSowingPlanOptions(params) {
     else if (todayMs > endMs) phase = 'after';
 
     const periodLabel = formatCpPeriodLabel(plan.year, sowingCells);
+    const plantingCells = (plan.tasks && Array.isArray(plan.tasks.planting)) ? plan.tasks.planting : [];
+    const harvestCells = (plan.tasks && Array.isArray(plan.tasks.harvesting)) ? plan.tasks.harvesting : [];
+    const sowingLabel = periodLabel;
+    let plantingLabel = '';
+    let harvestLabel = '';
+    try { plantingLabel = formatCpPeriodLabel(plan.year, plantingCells); } catch (eP) { plantingLabel = ''; }
+    try { harvestLabel = formatCpPeriodLabel(plan.year, harvestCells); } catch (eH) { harvestLabel = ''; }
     items.push({
       planId: plan.id,
       year: plan.year,
@@ -12799,6 +12808,9 @@ function getCurrentSowingPlanOptions(params) {
       remainTrays: Math.max(0, plannedTrays - doneTrays),
       fieldNames: cpPlanFieldNames_(plan),
       periodLabel: periodLabel,
+      sowingLabel: sowingLabel,
+      plantingLabel: plantingLabel,
+      harvestLabel: harvestLabel,
       sowingStart: Utilities.formatDate(start0, 'Asia/Tokyo', 'yyyy-MM-dd'),
       sowingEnd: Utilities.formatDate(end0, 'Asia/Tokyo', 'yyyy-MM-dd'),
       phase: phase,
@@ -12825,6 +12837,115 @@ function getCurrentSowingPlanOptions(params) {
     crop: cropFilter,
     items: items
   };
+}
+
+/**
+ * スケジュール画面の育苗記録新規追加用。
+ * 現在期間の計画・育苗場所マスタ（場所カテゴリ／区画／方向）・穴数設定を返す。
+ */
+function getSowingNurseryFormOptions(params) {
+  params = params || {};
+  const planRes = getCurrentSowingPlanOptions(Object.assign({}, params, {
+    includeDone: params.includeDone != null ? params.includeDone : true
+  }));
+  const items = (planRes && planRes.items) || [];
+  const nurseryLocations = readNurseryLocationList_();
+  const cropCultSettings = readCropCultSettingList_();
+
+  const catMap = {};
+  nurseryLocations.forEach(function(n) {
+    const cat = String(n.polyName || '').trim() || '未分類';
+    if (!catMap[cat]) catMap[cat] = [];
+    catMap[cat].push(n);
+  });
+  const locationCategories = Object.keys(catMap).sort(function(a, b) {
+    return String(a).localeCompare(String(b), 'ja');
+  }).map(function(cat) {
+    const plots = catMap[cat].map(function(n) {
+      return {
+        id: n.id || '',
+        name: n.name || '',
+        direction: n.direction || '',
+        polyName: n.polyName || '',
+        note: n.note || ''
+      };
+    }).sort(function(a, b) {
+      return String(a.name).localeCompare(String(b.name), 'ja');
+    });
+    const directions = [];
+    const dirSeen = {};
+    plots.forEach(function(p) {
+      const d = String(p.direction || '').trim();
+      if (!d || dirSeen[d]) return;
+      dirSeen[d] = true;
+      directions.push(d);
+    });
+    return { name: cat, plots: plots, directions: directions };
+  });
+
+  const cropSet = {};
+  items.forEach(function(it) {
+    const c = String(it.crop || '').trim();
+    if (c) cropSet[c] = true;
+  });
+  cropCultSettings.forEach(function(s) {
+    const c = String(s.cropName || '').trim();
+    if (c) cropSet[c] = true;
+  });
+  const crops = Object.keys(cropSet).sort(function(a, b) {
+    return String(a).localeCompare(String(b), 'ja');
+  });
+
+  return {
+    success: true,
+    today: (planRes && planRes.today) || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'),
+    year: (planRes && planRes.year) || String(new Date().getFullYear()),
+    plans: items,
+    crops: crops,
+    locationCategories: locationCategories,
+    nurseryLocations: nurseryLocations,
+    cropCultSettings: cropCultSettings
+  };
+}
+
+/** スケジュール画面などから播種・育苗記録を直接追加 */
+function saveSowingRecord(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  const s = (params.sowingRecord && typeof params.sowingRecord === 'object')
+    ? params.sowingRecord
+    : params;
+  const tag = String(s.tag || '').trim();
+  const cropName = String(s.cropName || s.crop || '').trim();
+  const trays = Number(s.trays);
+  if (!tag && !cropName) throw new Error('品目またはTAGを入力してください');
+  if (!(trays > 0)) throw new Error('枚数を入力してください');
+
+  const sowingDate = String(s.sowingDate || '').trim()
+    || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const recordId = String(s.recordId || '').trim()
+    || ('manual-sow-' + Utilities.getUuid().substring(0, 8));
+
+  appendSowingRecordFromWork_({
+    crop: cropName,
+    workDate: sowingDate,
+    sowingRecord: {
+      tag: tag,
+      cropName: cropName,
+      variety: String(s.variety || '').trim(),
+      nurseryName: String(s.nurseryName || s.plot || '').trim(),
+      direction: String(s.direction || '').trim(),
+      sowingDate: sowingDate,
+      trays: trays,
+      holes: (s.holes === '' || s.holes == null) ? '' : s.holes,
+      planId: String(s.planId || '').trim(),
+      note: String(s.note || '').trim()
+    }
+  }, userName, recordId);
+
+  writeLog(userName, '播種記録追加', tag || cropName,
+    '枚数: ' + trays + ', 区画: ' + String(s.nurseryName || s.plot || '') + ', 日: ' + sowingDate);
+  return { success: true, recordId: recordId };
 }
 
 /** 実行前に、実際の実行処理と同じ規則でタグ割り当てを確認する */
