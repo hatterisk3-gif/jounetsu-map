@@ -4670,7 +4670,6 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
 
       window.deleteSnrDirection_ = async () => {
         const catName = (document.getElementById('snr_loc_cat') || {}).value || '';
-        const plotSel = document.getElementById('snr_plot');
         const dirSel = document.getElementById('snr_direction');
         if (!catName) {
           if (typeof customAlert === 'function') customAlert('場所カテゴリを選択してください');
@@ -4683,24 +4682,16 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           return;
         }
         const direction = dirSel.value;
-        const plotOpt = plotSel && plotSel.selectedIndex >= 0 ? plotSel.options[plotSel.selectedIndex] : null;
-        const plotName = (plotOpt && plotOpt.value)
-          ? (plotOpt.getAttribute('data-name') || plotOpt.textContent || '')
-          : '';
-        const confirmMsg = plotName
-          ? '区画「' + plotName + '」の方向「' + direction + '」を削除しますか？'
-          : '方向「' + direction + '」をカテゴリ全体から削除しますか？\n（この方向を持つ区画の組み合わせがすべて削除されます）';
+        const confirmMsg = '方向「' + direction + '」を、この場所カテゴリの全区画から削除しますか？';
         if (!confirm(confirmMsg)) return;
         try {
           const userName = localStorage.getItem('passionMapUserName')
             || localStorage.getItem('passionMapUserId')
             || 'ユーザー';
-          const payload = { polyName: catName, direction: direction };
-          if (plotName) payload.plotName = plotName;
           const list = await callGAS('manageMaster', {
             masterType: 'nurseryLocation',
             manageAction: 'delete',
-            value: payload,
+            value: { polyName: catName, direction: direction },
             userName: userName
           });
           window.applySowingNurseryLocMasterList_(list, catName, '');
