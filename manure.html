@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>情熱MAP 鶏糞散布</title>
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" href="icon.png">
+  <script src="exit-guard.js?v=1786240000001"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #2c1c12; }
+    #map { position: absolute; inset: 0; z-index: 1; }
+    #loginScreen {
+      position: fixed; inset: 0; z-index: 40000; display: flex; align-items: center; justify-content: center;
+      background: #2c1c12;
+    }
+    .login-box {
+      width: 88%; max-width: 360px; background: #fff; border-radius: 12px; padding: 24px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35); text-align: center;
+    }
+    .login-input {
+      width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px;
+    }
+    .login-btn {
+      width: 100%; padding: 12px; background: #6D4C41; color: #fff; border: none; border-radius: 8px;
+      font-size: 16px; font-weight: bold; cursor: pointer;
+    }
+    .fab {
+      position: fixed; z-index: 1900; width: 48px; height: 48px; border: none; border-radius: 50%;
+      background: #fff; color: #1565C0; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,.3); cursor: pointer;
+    }
+    #btnCurrentLocation { bottom: calc(12px + env(safe-area-inset-bottom)); right: 12px; }
+    body.sheet-open #btnCurrentLocation { bottom: calc(42vh + 16px + env(safe-area-inset-bottom)); }
+    #btnHome {
+      top: 12px; left: 12px; width: auto; height: 36px; border-radius: 18px;
+      font-size: 13px; font-weight: bold; padding: 0 12px; color: #333;
+    }
+    .sheet {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000;
+      background: #fff; border-radius: 16px 16px 0 0;
+      box-shadow: 0 -6px 24px rgba(0,0,0,.22);
+      max-height: 48vh; display: flex; flex-direction: column;
+      padding-bottom: env(safe-area-inset-bottom);
+      transition: max-height .2s ease;
+    }
+    .sheet.collapsed { max-height: 72px; }
+    .sheet-handle { width: 40px; height: 4px; border-radius: 2px; background: #ddd; margin: 8px auto 4px; }
+    .sheet-head {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      padding: 4px 14px 8px;
+    }
+    .sheet-head h2 { margin: 0; font-size: 16px; color: #5D4037; }
+    .sheet-tools { display: flex; gap: 6px; align-items: center; }
+    .sheet-body { overflow-y: auto; padding: 0 12px 12px; flex: 1; -webkit-overflow-scrolling: touch; }
+    .ghost {
+      background: none; border: none; color: #6D4C41; font-weight: bold; font-size: 13px; cursor: pointer;
+    }
+    .sel, .inp {
+      width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; background: #fff;
+    }
+    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .hint { font-size: 12px; color: #888; line-height: 1.4; padding: 8px 2px; }
+    .field-card {
+      border: 1px solid #e0d6d0; background: #faf7f4; border-radius: 10px; padding: 10px;
+      margin-bottom: 8px;
+    }
+    .field-card.on {
+      border-color: #E65100; background: #FFF3E0; box-shadow: 0 0 0 2px rgba(230,81,0,.18);
+    }
+    .field-card.inprogress { border-color: #F9A825; background: #FFFDE7; }
+    .field-card.inprogress.on { border-color: #F57F17; }
+    .field-top { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+    .field-name { flex: 1; min-width: 0; font-size: 15px; font-weight: bold; color: #3E2723; }
+    .field-meta { font-size: 11px; color: #666; font-weight: normal; margin-top: 2px; }
+    .status-pill {
+      flex-shrink: 0; font-size: 11px; font-weight: bold; border-radius: 99px;
+      padding: 3px 8px; color: #fff;
+    }
+    .st-request { background: #E53935; }
+    .st-accepted { background: #FB8C00; }
+    .st-inprogress { background: #F9A825; color: #3E2723; }
+    .field-amt {
+      display: flex; justify-content: space-between; gap: 8px; margin: 8px 0 6px;
+      font-size: 12px; color: #5D4037;
+    }
+    .field-amt b { color: #BF360C; }
+    .act-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .act {
+      border: none; border-radius: 8px; padding: 10px 4px; font-weight: bold; font-size: 13px; cursor: pointer;
+    }
+    .act:disabled { opacity: .55; cursor: default; }
+    .act-mid { background: #FFF8E1; color: #F57F17; border: 1px solid #FFD54F; }
+    .act-part { background: #EFEBE9; color: #5D4037; border: 1px solid #BCAAA4; }
+    .act-done { background: #2E7D32; color: #fff; }
+    .count-badge {
+      display: inline-block; min-width: 22px; text-align: center; background: #E65100; color: #fff;
+      border-radius: 99px; font-size: 12px; padding: 1px 7px; margin-left: 4px;
+    }
+    #fieldMemoOverlay {
+      display: none; position: fixed; inset: 0; z-index: 12000; background: #1b120e; flex-direction: column;
+    }
+    #fieldMemoOverlay.open { display: flex; }
+    #fieldMemoHeader {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 10px 12px; background: #4E342E; color: #fff; flex-shrink: 0;
+    }
+    #fieldMemoMapWrap { flex: 1; position: relative; min-height: 0; }
+    #fieldMemoMap { width: 100%; height: 100%; }
+    #fieldMemoPanel {
+      background: #2c211c; color: #eee; padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+      flex-shrink: 0; border-top: 1px solid #5D4037; max-height: 48vh; overflow-y: auto;
+    }
+    .fm-btn {
+      border: none; border-radius: 6px; padding: 10px 12px; font-weight: bold; font-size: 13px; cursor: pointer;
+    }
+    .fm-btn:disabled { opacity: 0.5; cursor: default; }
+    .fm-btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .fm-btn-row .fm-btn { flex: 1; min-width: 70px; }
+    .fm-tool.active { outline: 2px solid #FFD54F; outline-offset: 1px; }
+  </style>
+</head>
+<body>
+  <div id="loginScreen">
+    <div class="login-box">
+      <h2 style="color:#6D4C41; margin-top:0;">鶏糞散布</h2>
+      <div id="loginError" style="color:#c62828; margin-bottom:10px; font-size:13px;"></div>
+      <input type="text" id="loginId" class="login-input" placeholder="スタッフID" autocomplete="username">
+      <input type="password" id="loginPw" class="login-input" placeholder="パスワード" autocomplete="current-password">
+      <button class="login-btn" onclick="executeLogin()">ログイン</button>
+    </div>
+  </div>
+
+  <div id="map"></div>
+  <button type="button" id="btnHome" class="fab" onclick="location.href='index2.html'">🏠 戻る</button>
+  <button type="button" id="btnCurrentLocation" class="fab" title="現在地">📍</button>
+
+  <div id="listSheet" class="sheet" data-exit-guard="true">
+    <div class="sheet-handle" onclick="toggleSheet()"></div>
+    <div class="sheet-head">
+      <h2>🐔 散布依頼<span id="requestCount" class="count-badge">0</span></h2>
+      <div class="sheet-tools">
+        <button type="button" class="ghost" onclick="reloadManureData()">更新</button>
+        <button type="button" class="ghost" onclick="toggleSheet()" id="btnToggleSheet">縮小</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <div class="filters">
+        <select id="manureLocation" class="sel" onchange="renderRequestList()"></select>
+        <input type="search" id="fieldSearch" class="inp" placeholder="畑名で絞り込み" oninput="renderRequestList()">
+      </div>
+      <div id="requestList"></div>
+    </div>
+  </div>
+
+  <div id="fieldMemoOverlay">
+    <div id="fieldMemoHeader">
+      <div style="min-width:0; flex:1;">
+        <div style="font-weight:bold; font-size:15px;">📝 圃場メモ</div>
+        <div id="fieldMemoTargetName" style="font-size:12px; opacity:0.9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+        <label style="font-size:11px; display:flex; flex-direction:column; gap:2px;">
+          作業日
+          <input type="date" id="fieldMemoWorkDate" style="padding:4px 6px; border-radius:4px; border:1px solid #ccc; font-size:13px; width:140px;">
+        </label>
+        <button type="button" class="fm-btn" style="background:#f44336; color:#fff;" onclick="closeFieldMemo()">閉じる</button>
+      </div>
+    </div>
+    <div id="fieldMemoMapWrap">
+      <div id="fieldMemoMap"></div>
+    </div>
+    <div id="fieldMemoPanel">
+      <div id="fieldMemoHint" style="font-size:12px; color:#FFE082; margin-bottom:6px;">ツールを選んで地図を操作してください</div>
+      <div class="fm-btn-row">
+        <button type="button" id="fmBtnLine" class="fm-btn fm-tool" style="background:#5D4037; color:#fff;" onclick="setFieldMemoMode('line')">✏️ 線で分割</button>
+        <button type="button" id="fmBtnSprayed" class="fm-btn fm-tool" style="background:#2E7D32; color:#fff;" onclick="setFieldMemoMode('sprayed')">🟢 散布</button>
+        <button type="button" id="fmBtnUnsprayed" class="fm-btn fm-tool" style="background:#E65100; color:#fff;" onclick="setFieldMemoMode('unsprayed')">🟠 未散布</button>
+      </div>
+      <div class="fm-btn-row">
+        <button type="button" class="fm-btn" style="background:#6D4C41; color:#fff;" onclick="undoFieldMemoLinePoint()">↩ 点取消</button>
+        <button type="button" class="fm-btn" style="background:#795548; color:#fff;" onclick="confirmFieldMemoLine()">✓ 線確定</button>
+        <button type="button" class="fm-btn" style="background:#BF360C; color:#fff;" onclick="clearFieldMemoDrawing()">クリア</button>
+      </div>
+      <div id="fieldMemoStats" style="background:#3E2723; border:1px solid #5D4037; border-radius:8px; padding:10px; margin-top:8px; font-size:13px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#A5D6A7;">
+          <span>散布合計</span>
+          <span id="fmStatSprayed">—</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px; color:#FFCC80;">
+          <span>未散布合計</span>
+          <span id="fmStatUnsprayed">—</span>
+        </div>
+        <div style="font-size:11px; color:#BCAAA4;">基準: 34袋/10a ・ 0.5車/10a</div>
+      </div>
+      <div class="fm-btn-row" style="margin-top:10px;">
+        <button type="button" id="fmBtnSave" class="fm-btn" style="background:#4CAF50; color:#fff;" onclick="saveFieldMemo()">💾 保存</button>
+        <button type="button" class="fm-btn" style="background:#1565C0; color:#fff;" onclick="openFieldMemoHistory()">📅 履歴</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="fieldMemoHistoryModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:13000; justify-content:center; align-items:center;">
+    <div style="background:#fff; color:#333; width:90%; max-width:360px; max-height:80vh; border-radius:12px; padding:16px; display:flex; flex-direction:column; box-shadow:0 4px 20px rgba(0,0,0,0.4);">
+      <h3 style="margin:0 0 12px; border-bottom:2px solid #795548; padding-bottom:8px; font-size:16px; text-align:center;">📅 圃場メモ履歴</h3>
+      <div id="fieldMemoHistoryList" style="flex:1; overflow-y:auto; margin-bottom:12px;"></div>
+      <button type="button" onclick="closeFieldMemoHistory()" style="width:100%; background:#666; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <script src="map-loading.js?v=1786243000000"></script>
+  <script>
+    window.initMap = function () { window._manureNeedInit = true; };
+  </script>
+  <script src="manure.js?v=1787550000001"></script>
+  <script src="field-memo.js?v=1785200000001"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry&language=ja&v=weekly&callback=initMap" async defer></script>
+</body>
+</html>

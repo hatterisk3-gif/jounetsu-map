@@ -48,6 +48,17 @@ const OPS_BUILTIN = [
       { name: '栽培計画を登録', url: 'schedule.html?register=cultivation' },
       { name: '予定MAPを開く', url: 'schedule.html' }
     ]
+  },
+  {
+    key: 'page:manure',
+    name: '鶏糞散布',
+    icon: '🐔',
+    kind: 'page',
+    keywords: ['鶏糞', 'けいふん', '堆肥', '散布', '畑'],
+    meta: '鶏糞散布アプリ',
+    actions: [
+      { name: '鶏糞散布を開く', url: 'manure.html' }
+    ]
   }
 ];
 

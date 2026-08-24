@@ -2789,6 +2789,22 @@
     alertMsg(`昼休憩を登録しました（${start}〜${end}）。\n次の作業開始時間は ${end} になります。`);
   };
 
+  window.registerLunchBreakDirect_ = function (start, end, dateYmd) {
+    const ls = timeToMins(start);
+    const le = timeToMins(end);
+    if (ls == null || le == null || le === ls) {
+      throw new Error('昼休憩の開始・終了時刻を正しく入力してください');
+    }
+    finishLunchRegistration({
+      registered: true,
+      enabled: true,
+      dateYmd: dateYmd || getActiveClockInDateYmd(),
+      start: start,
+      end: end
+    });
+    return { start: start, end: end };
+  };
+
   window.skipLunchBreak = function () {
     syncClockInTimeFromModalIfChanged();
     finishLunchRegistration({
