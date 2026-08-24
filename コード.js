@@ -1581,6 +1581,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const loc = (typeof value === 'object' && value) ? value : { name: value };
       const polyId = String(loc.polyId || '').trim();
       const polyName = String(loc.polyName || '').trim();
+      const locationName = String(loc.locationName || '').trim();
       const commonDir = String(loc.direction || '').trim();
       const commonNote = String(loc.note || '').trim();
       // 一括: plots:[{name,direction}] または names:['区画1','区画2']
@@ -1606,7 +1607,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const addedNames = [];
       plotItems.forEach(function(p) {
         const newId = 'NUR-' + Utilities.getUuid().substring(0, 8);
-        sheet.appendRow([newId, p.name, polyId, polyName, p.direction || '', p.note || '']);
+        sheet.appendRow([newId, p.name, polyId, polyName, p.direction || '', p.note || '', locationName]);
         addedNames.push(p.name);
       });
       writeLog(userName, "マスタ追加", addedNames.join(', '), `対象: ${sheetName} / カテゴリ: ${polyName || '-'} / ${addedNames.length}件`);
@@ -1887,6 +1888,26 @@ function manageMasterData(masterType, manageAction, value, userName) {
       }
       if (!found) throw new Error('対象の肥料マスタ行が見つかりません');
       writeLog(userName, "マスタ編集", newData.name, `対象: ${sheetName} / id: ${id}`);
+    } else if (masterType === 'nurseryLocation') {
+      const polyName = String(value.originalName || value.polyName || '').trim();
+      if (!polyName) throw new Error('場所カテゴリ名がありません');
+      const newData = value.newData || {};
+      const latest = sheet.getDataRange().getValues();
+      const locIdx = headers.indexOf('拠点');
+      const locCol = locIdx >= 0 ? locIdx + 1 : 7;
+      let updated = 0;
+      if (newData.locationName != null) {
+        const locationName = String(newData.locationName || '').trim();
+        for (let i = 1; i < latest.length; i++) {
+          if (String(latest[i][3] || '').trim() !== polyName) continue;
+          sheet.getRange(i + 1, locCol).setValue(locationName);
+          updated++;
+        }
+        if (!updated) throw new Error('場所カテゴリ「' + polyName + '」が見つかりません');
+        writeLog(userName, "マスタ編集", polyName + '→' + (locationName || '未設定'), `対象: ${sheetName} / 拠点紐づけ`);
+      } else {
+        throw new Error('更新内容がありません');
+      }
     }
   } 
   else if (manageAction === 'delete') {
@@ -11818,7 +11839,7 @@ function assignCultivationPlanTags_(plans, options) {
 }
 
 // ===== 育苗場所マスタ / 作物栽培設定 / 播種記録 =====
-const NURSERY_LOCATION_HEADERS_ = ['ID', '場所名', '圃場ID', '圃場名', '方向', '備考'];
+const NURSERY_LOCATION_HEADERS_ = ['ID', '場所名', '圃場ID', '圃場名', '方向', '備考', '拠点'];
 const CROP_CULT_SETTING_HEADERS_ = ['作物名', '播種穴数', '備考'];
 const SOWING_RECORD_HEADERS_ = ['記録時間', '記録者', 'TAG', '作物名', '品種名', '区画', '方向', '播種日', '枚数', '穴数', '計画ID', 'システムID', '備考'];
 
@@ -11877,14 +11898,16 @@ function readNurseryLocationList_() {
   const sheet = ensureNurseryLocationSheet_();
   const last = sheet.getLastRow();
   if (last < 2) return [];
-  const values = sheet.getRange(2, 1, last - 1, 6).getValues();
+  const colCount = Math.max(NURSERY_LOCATION_HEADERS_.length, 6);
+  const values = sheet.getRange(2, 1, last - 1, colCount).getValues();
   return values.map(r => ({
     id: String(r[0] || '').trim(),
     name: String(r[1] || '').trim(),
     polyId: String(r[2] || '').trim(),
     polyName: String(r[3] || '').trim(),
     direction: String(r[4] || '').trim(),
-    note: String(r[5] || '').trim()
+    note: String(r[5] || '').trim(),
+    locationName: String(r[6] || '').trim()
   })).filter(x => x.id || x.name);
 }
 
@@ -12930,7 +12953,11 @@ function getSowingNurseryFormOptions(params) {
     const plotMap = {};
     const directions = [];
     const dirSeen = {};
+    let locationName = '';
     rows.forEach(function(n) {
+      if (!locationName && String(n.locationName || '').trim()) {
+        locationName = String(n.locationName || '').trim();
+      }
       const d = String(n.direction || '').trim();
       if (d && !dirSeen[d]) { dirSeen[d] = true; directions.push(d); }
       const pname = String(n.name || '').trim();
@@ -12952,7 +12979,7 @@ function getSowingNurseryFormOptions(params) {
       return String(a).localeCompare(String(b), 'ja');
     }).map(function(k) { return plotMap[k]; });
     directions.sort(function(a, b) { return String(a).localeCompare(String(b), 'ja'); });
-    return { name: cat, plots: plots, directions: directions };
+    return { name: cat, plots: plots, directions: directions, locationName: locationName };
   });
 
   const cropSet = {};

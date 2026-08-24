@@ -3758,9 +3758,9 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         })();
         const crops = opts.crops || [];
-        const catNames = window.buildSowingNurseryLocCatOptions_();
+        const catItems = window.buildSowingNurseryLocCatOptions_();
         const locNames = window.getSowingNurseryLocationNames_();
-        const catOpts = catNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+        const catOpts = catItems.map(c => `<option value="${esc(c.name)}">${esc(c.label)}</option>`).join('');
         const locMasterOpts = locNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
         return `<div id="sowingNurseryAddForm" style="border:none; padding:0; background:transparent;">
           <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px;">
@@ -3807,19 +3807,34 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
                 <button type="button" onclick="toggleSowingNurseryAddLocCatPanel_()" title="場所カテゴリを追加"
                   style="flex-shrink:0; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋追加</button>
               </div>
+              <div id="snr_loc_cat_link_row" style="display:none; margin-top:6px;">
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <label style="font-size:10px; color:#666; white-space:nowrap; margin:0;">紐づけ拠点</label>
+                  <select id="snr_loc_cat_location" class="form-input" style="margin:0; flex:1; min-width:0;">
+                    <option value="">未設定</option>${locMasterOpts}
+                  </select>
+                  <button type="button" onclick="submitLinkSnrLocCategoryLocation_()" title="選択中の場所カテゴリに拠点を紐づけ"
+                    style="flex-shrink:0; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">紐づける</button>
+                </div>
+                <div id="snr_loc_cat_link_msg" style="font-size:10px; font-weight:bold; margin-top:4px;"></div>
+              </div>
               <div id="snr_add_loc_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
                 <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">場所カテゴリを新規追加</div>
                 <div style="display:grid; gap:8px;">
                   <div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">場所カテゴリ名 *</label>
+                    <input type="text" id="snr_new_loc_cat" class="form-input" style="margin:0; width:100%;" placeholder="例: ハウスA・育苗ハウス">
+                  </div>
+                  <div>
                     <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
-                      <label style="font-size:10px; color:#666; margin:0;">拠点名（マスタから選択）</label>
+                      <label style="font-size:10px; color:#666; margin:0;">紐づけ拠点（任意）</label>
                       <button type="button" onclick="toggleSowingNurseryAddLocationPanel_()" title="拠点名を追加"
                         style="margin-left:auto; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:10px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋拠点</button>
                     </div>
-                    <select id="snr_new_loc_from_master" class="form-input" style="margin:0; width:100%;" onchange="onSnrNewLocFromMasterChange_()">
-                      <option value="">選択してください（任意）</option>${locMasterOpts}
+                    <select id="snr_new_loc_from_master" class="form-input" style="margin:0; width:100%;">
+                      <option value="">未設定</option>${locMasterOpts}
                     </select>
-                    <div style="font-size:10px; color:#888; margin-top:4px;">拠点を選ぶと下のカテゴリ名に反映されます</div>
+                    <div style="font-size:10px; color:#888; margin-top:4px;">拠点マスタから選んで場所カテゴリに紐づけます</div>
                     <div id="snr_add_location_panel" style="display:none; margin-top:8px; padding:8px; background:#fafafa; border:1px dashed #ddd; border-radius:6px;">
                       <div style="font-size:10px; font-weight:bold; color:#6a1b9a; margin-bottom:6px;">拠点名を新規追加</div>
                       <input type="text" id="snr_new_location_name" class="form-input" style="margin:0 0 6px; width:100%;" placeholder="例: 本社農場・育苗センター">
@@ -3831,10 +3846,6 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
                       </div>
                       <div id="snr_add_location_msg" style="font-size:11px; font-weight:bold; margin-top:4px;"></div>
                     </div>
-                  </div>
-                  <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">場所カテゴリ名 *</label>
-                    <input type="text" id="snr_new_loc_cat" class="form-input" style="margin:0; width:100%;" placeholder="拠点を選択、または手入力（例: ハウスA）">
                   </div>
                   <div>
                     <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画（複数可）*</label>
@@ -4124,13 +4135,13 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
       };
       window.getSowingNurseryLocCategory_ = (name) => {
         const cats = (window.getSowingNurseryFormOpts_() || {}).locationCategories || [];
-        const found = cats.find(c => String(c.name) === String(name));
-        if (found) return found;
-        const locNames = window.getSowingNurseryLocationNames_();
-        if (locNames.some(function(n) { return String(n) === String(name); })) {
-          return { name: name, plots: [], directions: [] };
-        }
-        return null;
+        return cats.find(c => String(c.name) === String(name)) || null;
+      };
+
+      window.formatSnrLocCatLabel_ = (cat) => {
+        const name = String((typeof cat === 'string' ? cat : (cat && cat.name)) || '').trim();
+        const loc = String((cat && cat.locationName) || '').trim();
+        return loc ? name + '（' + loc + '）' : name;
       };
 
       window.getSowingNurseryLocationNames_ = () => {
@@ -4141,47 +4152,51 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
       };
 
       window.buildSowingNurseryLocCatOptions_ = () => {
-        const opts = window.getSowingNurseryFormOpts_() || {};
-        const categories = opts.locationCategories || [];
-        const seen = {};
-        const merged = [];
-        categories.forEach(function(c) {
-          const n = String((c && c.name) || '').trim();
-          if (!n || seen[n]) return;
-          seen[n] = true;
-          merged.push(n);
+        const categories = (window.getSowingNurseryFormOpts_() || {}).locationCategories || [];
+        return categories.map(function(c) {
+          const name = String((c && c.name) || '').trim();
+          const locationName = String((c && c.locationName) || '').trim();
+          return {
+            name: name,
+            locationName: locationName,
+            label: window.formatSnrLocCatLabel_(c)
+          };
+        }).filter(function(c) { return !!c.name; }).sort(function(a, b) {
+          return String(a.name).localeCompare(String(b.name), 'ja');
         });
-        window.getSowingNurseryLocationNames_().forEach(function(n) {
-          if (!seen[n]) { seen[n] = true; merged.push(n); }
+      };
+
+      window.refreshSnrLocationSelects_ = (preferLoc) => {
+        const esc = window.escSowingNurseryHtml_;
+        const locNames = window.getSowingNurseryLocationNames_();
+        ['snr_new_loc_from_master', 'snr_loc_cat_location'].forEach(function(id) {
+          const sel = document.getElementById(id);
+          if (!sel) return;
+          const keep = preferLoc || sel.value || '';
+          const emptyLabel = id === 'snr_loc_cat_location' ? '未設定' : '未設定';
+          sel.innerHTML = '<option value="">' + emptyLabel + '</option>' + locNames.map(function(n) {
+            return `<option value="${esc(n)}">${esc(n)}</option>`;
+          }).join('');
+          if (keep && locNames.some(function(n) { return String(n) === String(keep); })) {
+            sel.value = keep;
+          }
         });
-        merged.sort(function(a, b) { return String(a).localeCompare(String(b), 'ja'); });
-        return merged;
       };
 
       window.refreshSnrLocCatSelects_ = (preferCat, preferLoc) => {
         const esc = window.escSowingNurseryHtml_;
-        const catNames = window.buildSowingNurseryLocCatOptions_();
-        const locNames = window.getSowingNurseryLocationNames_();
+        const catItems = window.buildSowingNurseryLocCatOptions_();
         const catSel = document.getElementById('snr_loc_cat');
         if (catSel) {
           const keep = preferCat || catSel.value || '';
-          catSel.innerHTML = '<option value="">選択してください</option>' + catNames.map(function(n) {
-            return `<option value="${esc(n)}">${esc(n)}</option>`;
+          catSel.innerHTML = '<option value="">選択してください</option>' + catItems.map(function(c) {
+            return `<option value="${esc(c.name)}">${esc(c.label)}</option>`;
           }).join('');
-          if (keep && catNames.some(function(n) { return String(n) === String(keep); })) {
+          if (keep && catItems.some(function(c) { return String(c.name) === String(keep); })) {
             catSel.value = keep;
           }
         }
-        const masterSel = document.getElementById('snr_new_loc_from_master');
-        if (masterSel) {
-          const keepLoc = preferLoc || masterSel.value || '';
-          masterSel.innerHTML = '<option value="">選択してください（任意）</option>' + locNames.map(function(n) {
-            return `<option value="${esc(n)}">${esc(n)}</option>`;
-          }).join('');
-          if (keepLoc && locNames.some(function(n) { return String(n) === String(keepLoc); })) {
-            masterSel.value = keepLoc;
-          }
-        }
+        window.refreshSnrLocationSelects_(preferLoc);
       };
 
       window.applySowingNurseryLocationList_ = (list, preferName) => {
@@ -4190,17 +4205,9 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         st.formOptions.locations = (list || []).map(function(l) {
           return typeof l === 'string' ? { name: l } : { name: String((l && l.name) || '').trim() };
         }).filter(function(l) { return !!l.name; });
-        window.refreshSnrLocCatSelects_(preferName, preferName);
-        if (preferName && typeof window.onSowingNurseryLocCatChange_ === 'function') {
-          window.onSowingNurseryLocCatChange_();
-        }
-      };
-
-      window.onSnrNewLocFromMasterChange_ = () => {
-        const sel = document.getElementById('snr_new_loc_from_master');
-        const input = document.getElementById('snr_new_loc_cat');
-        if (!sel || !input || !sel.value) return;
-        input.value = sel.value;
+        window.refreshSnrLocationSelects_(preferName);
+        const masterSel = document.getElementById('snr_new_loc_from_master');
+        if (preferName && masterSel) masterSel.value = preferName;
       };
 
       window.toggleSowingNurseryAddLocationPanel_ = (forceShow) => {
@@ -4246,9 +4253,7 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
             userName: userName
           });
           window.applySowingNurseryLocationList_(Array.isArray(list) ? list : [], locName);
-          const catInput = document.getElementById('snr_new_loc_cat');
           const masterSel = document.getElementById('snr_new_loc_from_master');
-          if (catInput) catInput.value = locName;
           if (masterSel) masterSel.value = locName;
           if (msg) { msg.style.color = '#2e7d32'; msg.textContent = '「' + locName + '」を拠点マスタに追加しました'; }
           const input = document.getElementById('snr_new_location_name');
@@ -4276,7 +4281,11 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           const plotMap = {};
           const directions = [];
           const dirSeen = {};
+          let locationName = '';
           rows.forEach(function(n) {
+            if (!locationName && String(n.locationName || '').trim()) {
+              locationName = String(n.locationName || '').trim();
+            }
             const d = String(n.direction || '').trim();
             if (d && !dirSeen[d]) { dirSeen[d] = true; directions.push(d); }
             const isDirOnly = String(n.note || '') === 'direction-only'
@@ -4294,7 +4303,7 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
             return String(a).localeCompare(String(b), "ja");
           }).map(function(k) { return plotMap[k]; });
           directions.sort(function(a, b) { return String(a).localeCompare(String(b), "ja"); });
-          return { name: cat, plots: plots, directions: directions };
+          return { name: cat, plots: plots, directions: directions, locationName: locationName };
         });
       };
       window.applySowingNurseryLocMasterList_ = (list, preferCat, preferPlotId) => {
@@ -4418,9 +4427,8 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         return names;
       };
       window.submitAddSowingNurseryLocCategory_ = async () => {
-        const catFromMaster = String((document.getElementById('snr_new_loc_from_master') || {}).value || '').trim();
-        const catFromText = String((document.getElementById('snr_new_loc_cat') || {}).value || '').trim();
-        const catName = catFromText || catFromMaster;
+        const catName = String((document.getElementById('snr_new_loc_cat') || {}).value || '').trim();
+        const locationName = String((document.getElementById('snr_new_loc_from_master') || {}).value || '').trim();
         const plotNames = window.parseSowingNurseryPlotNames_((document.getElementById('snr_new_plot') || {}).value || '');
         const dirNames = window.parseSowingNurseryDirNames_((document.getElementById('snr_new_dir') || {}).value || '');
         const msg = document.getElementById('snr_add_loc_msg');
@@ -4454,6 +4462,7 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
             value: {
               polyId: '',
               polyName: catName,
+              locationName: locationName,
               note: '',
               plots: plotItems
             },
@@ -4512,12 +4521,15 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           const userName = localStorage.getItem('passionMapUserName')
             || localStorage.getItem('passionMapUserId')
             || 'ユーザー';
+          const cat = window.getSowingNurseryLocCategory_(catName);
+          const locationName = cat ? String(cat.locationName || '').trim() : '';
           const list = await callGAS('manageMaster', {
             masterType: 'nurseryLocation',
             manageAction: 'add',
             value: {
               polyId: '',
               polyName: catName,
+              locationName: locationName,
               note: '',
               plots: plotItems
             },
@@ -4544,11 +4556,18 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         const cat = window.getSowingNurseryLocCategory_(catName);
         const plotSel = document.getElementById('snr_plot');
         const dirSel = document.getElementById('snr_direction');
+        const linkRow = document.getElementById('snr_loc_cat_link_row');
+        const linkSel = document.getElementById('snr_loc_cat_location');
+        const linkMsg = document.getElementById('snr_loc_cat_link_msg');
         const esc = window.escSowingNurseryHtml_;
+        if (linkMsg) linkMsg.textContent = '';
+        if (linkRow) linkRow.style.display = catName ? 'block' : 'none';
+        if (linkSel && cat) linkSel.value = String(cat.locationName || '');
         if (!plotSel || !dirSel) return;
         if (!cat) {
           plotSel.innerHTML = '<option value="">場所カテゴリを選択</option>';
           dirSel.innerHTML = '<option value="">場所カテゴリを選択</option>';
+          if (linkSel) linkSel.value = '';
           return;
         }
         const plots = cat.plots || [];
@@ -4558,6 +4577,42 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         const dirs = cat.directions || [];
         dirSel.innerHTML = '<option value="">選択してください</option>' + dirs.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
       };
+
+      window.submitLinkSnrLocCategoryLocation_ = async () => {
+        const catName = String((document.getElementById('snr_loc_cat') || {}).value || '').trim();
+        const locationName = String((document.getElementById('snr_loc_cat_location') || {}).value || '').trim();
+        const msg = document.getElementById('snr_loc_cat_link_msg');
+        if (!catName) {
+          if (typeof customAlert === 'function') customAlert('場所カテゴリを選択してください');
+          else alert('場所カテゴリを選択してください');
+          return;
+        }
+        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '拠点を紐づけています...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName')
+            || localStorage.getItem('passionMapUserId')
+            || 'ユーザー';
+          const list = await callGAS('manageMaster', {
+            masterType: 'nurseryLocation',
+            manageAction: 'edit',
+            value: {
+              originalName: catName,
+              newData: { locationName: locationName }
+            },
+            userName: userName
+          });
+          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, '');
+          if (msg) {
+            msg.style.color = '#2e7d32';
+            msg.textContent = locationName
+              ? '「' + catName + '」に拠点「' + locationName + '」を紐づけました'
+              : '「' + catName + '」の拠点紐づけを解除しました';
+          }
+        } catch (e) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '紐づけに失敗: ' + (e.message || e); }
+        }
+      };
+
       window.onSowingNurseryPlotChange_ = () => {
         const plotSel = document.getElementById('snr_plot');
         const dirSel = document.getElementById('snr_direction');
