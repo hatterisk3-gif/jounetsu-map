@@ -3448,281 +3448,281 @@ async function fetchWeatherAndUpdateUI() {
         window.renderSowingNurseryBody_();
       };
 
-            window.SNR_DEFAULT_HOLES_ = [72, 128, 200, 288];
-      window.SNR_HOLES_LS_KEY_ = 'snrHolesOptions';
-      window.SNR_HOLES_HIDDEN_KEY_ = 'snrHolesHidden';
-
-      window.snrChipStyle_ = (active, tone) => {
-        const tones = {
-          crop:  { on: '#6a1b9a', bd: '#4a148c', offBg: '#fff', offBd: '#ce93d8', offFg: '#6a1b9a' },
-          in:    { on: '#2e7d32', bd: '#1b5e20', offBg: '#e8f5e9', offBd: '#81c784', offFg: '#1b5e20' },
-          soon:  { on: '#ef6c00', bd: '#e65100', offBg: '#fff3e0', offBd: '#ffb74d', offFg: '#e65100' },
-          after: { on: '#546e7a', bd: '#37474f', offBg: '#eceff1', offBd: '#90a4ae', offFg: '#37474f' },
-          none:  { on: '#7b1fa2', bd: '#4a148c', offBg: '#f3e5f5', offBd: '#ce93d8', offFg: '#6a1b9a' }
-        };
-        const t = tones[tone] || tones.crop;
-        if (active) {
-          return 'display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border-radius:999px;border:1.5px solid ' + t.bd + ';background:' + t.on + ';color:#fff;font-size:12px;font-weight:bold;cursor:pointer;line-height:1.2;';
-        }
-        return 'display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border-radius:999px;border:1.5px solid ' + t.offBd + ';background:' + t.offBg + ';color:' + t.offFg + ';font-size:12px;font-weight:normal;cursor:pointer;line-height:1.2;';
-      };
-
-      window.loadSnrHolesOptions_ = () => {
-        const opts = window.getSowingNurseryFormOpts_() || {};
-        const fromServer = Array.isArray(opts.holesOptions) ? opts.holesOptions : [];
-        let fromLs = [], hidden = [];
-        try { fromLs = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e) { fromLs = []; }
-        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e2) { hidden = []; }
-        const hiddenSet = {};
-        (hidden || []).forEach(function(v) { hiddenSet[String(Number(v))] = true; });
-        const seen = {}, out = [];
-        const push = (v) => {
-          const n = Number(v);
-          if (!isFinite(n) || n < 0) return;
-          const key = String(n);
-          if (seen[key] || hiddenSet[key]) return;
-          seen[key] = true;
-          out.push(n);
-        };
-        (window.SNR_DEFAULT_HOLES_ || []).forEach(push);
-        fromServer.forEach(push);
-        (fromLs || []).forEach(push);
-        out.sort(function(a, b) { return a - b; });
-        return out;
-      };
-
-      window.rememberSnrHoleOption_ = (val) => {
-        const n = Number(val);
-        if (!isFinite(n) || n < 0) return;
-        let local = [];
-        try { local = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e) { local = []; }
-        if (!local.some(function(v) { return Number(v) === n; })) {
-          local.push(n);
-          local.sort(function(a, b) { return Number(a) - Number(b); });
-          localStorage.setItem(window.SNR_HOLES_LS_KEY_, JSON.stringify(local));
-        }
-        let hidden = [];
-        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e2) { hidden = []; }
-        hidden = (hidden || []).filter(function(v) { return Number(v) !== n; });
-        localStorage.setItem(window.SNR_HOLES_HIDDEN_KEY_, JSON.stringify(hidden));
-      };
-
-      window.hideSnrHoleOption_ = (val) => {
-        const n = Number(val);
-        let hidden = [];
-        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e) { hidden = []; }
-        if (!hidden.some(function(v) { return Number(v) === n; })) hidden.push(n);
-        localStorage.setItem(window.SNR_HOLES_HIDDEN_KEY_, JSON.stringify(hidden));
-        let local = [];
-        try { local = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e2) { local = []; }
-        local = (local || []).filter(function(v) { return Number(v) !== n; });
-        localStorage.setItem(window.SNR_HOLES_LS_KEY_, JSON.stringify(local));
-      };
-
-      window.refreshSnrTraysSelect_ = (prefer) => {
-        const sel = document.getElementById('snr_trays');
-        const custom = document.getElementById('snr_trays_custom');
-        if (!sel) return;
-        const keep = (prefer != null && prefer !== '') ? String(prefer) : String(sel.value || '');
-        if (custom) { custom.style.display = 'none'; custom.value = ''; }
-        let html = '<option value="">選択してください</option>';
-        for (let i = 1; i <= 100; i++) html += '<option value="' + i + '">' + i + '枚</option>';
-        html += '<option value="__custom__">手入力…</option>';
-        sel.innerHTML = html;
-        if (keep && keep !== '__custom__') {
-          if (!Array.from(sel.options).some(function(o) { return o.value === keep; })) {
-            const opt = document.createElement('option');
-            opt.value = keep;
-            opt.textContent = keep + '枚';
-            const customOpt = Array.from(sel.options).find(function(o) { return o.value === '__custom__'; });
-            if (customOpt) sel.insertBefore(opt, customOpt);
-            else sel.appendChild(opt);
-          }
-          sel.value = keep;
-        }
-      };
-
-      window.refreshSnrHolesSelect_ = (prefer) => {
-        const sel = document.getElementById('snr_holes');
-        const custom = document.getElementById('snr_holes_custom');
-        if (!sel) return;
-        const keep = (prefer != null && prefer !== '') ? String(prefer) : String(sel.value || '');
-        if (custom) { custom.style.display = 'none'; custom.value = ''; }
-        const list = window.loadSnrHolesOptions_();
-        let html = '<option value="">選択してください</option>';
-        list.forEach(function(n) { html += '<option value="' + n + '">' + n + '</option>'; });
-        html += '<option value="__custom__">手入力…</option>';
-        sel.innerHTML = html;
-        if (keep && keep !== '__custom__') {
-          if (!Array.from(sel.options).some(function(o) { return o.value === keep; })) {
-            const opt = document.createElement('option');
-            opt.value = keep;
-            opt.textContent = keep;
-            const customOpt = Array.from(sel.options).find(function(o) { return o.value === '__custom__'; });
-            if (customOpt) sel.insertBefore(opt, customOpt);
-            else sel.appendChild(opt);
-          }
-          sel.value = keep;
-        }
-      };
-
-      window.onSnrTraysSelectChange_ = () => {
-        const sel = document.getElementById('snr_trays');
-        const custom = document.getElementById('snr_trays_custom');
-        if (!sel || !custom) return;
-        if (sel.value === '__custom__') { custom.style.display = 'block'; custom.focus(); }
-        else { custom.style.display = 'none'; custom.value = ''; }
-      };
-
-      window.onSnrHolesSelectChange_ = () => {
-        const sel = document.getElementById('snr_holes');
-        const custom = document.getElementById('snr_holes_custom');
-        if (!sel || !custom) return;
-        if (sel.value === '__custom__') { custom.style.display = 'block'; custom.focus(); }
-        else { custom.style.display = 'none'; custom.value = ''; }
-      };
-
-      window.getSnrTraysValue_ = () => {
-        const sel = document.getElementById('snr_trays');
-        const custom = document.getElementById('snr_trays_custom');
-        if (!sel) return NaN;
-        if (sel.value === '__custom__') return Number(custom && custom.value);
-        return Number(sel.value);
-      };
-
-      window.getSnrHolesValue_ = () => {
-        const sel = document.getElementById('snr_holes');
-        const custom = document.getElementById('snr_holes_custom');
-        if (!sel) return '';
-        if (sel.value === '__custom__') return custom ? String(custom.value || '').trim() : '';
-        return sel.value;
-      };
-
-      window.setSnrHolesValue_ = (val) => {
-        if (val === '' || val == null) { window.refreshSnrHolesSelect_(''); return; }
-        window.rememberSnrHoleOption_(val);
-        window.refreshSnrHolesSelect_(val);
-      };
-
-      window.snrAddHoleOption_ = async () => {
-        const input = prompt('登録する穴数を入力してください', '');
-        if (input == null || String(input).trim() === '') return;
-        const n = Number(input);
-        if (!isFinite(n) || n < 0 || !Number.isInteger(n)) { alert('0以上の整数を入力してください'); return; }
-        window.rememberSnrHoleOption_(n);
-        try {
-          await callGAS('manageCultivationListOption', {
-            field: 'holes', manageAction: 'add', value: n,
-            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
-          });
-        } catch (e) { console.warn(e); }
-        window.setSnrHolesValue_(n);
-      };
-
-      window.snrEditHoleOption_ = async () => {
-        const sel = document.getElementById('snr_holes');
-        if (!sel || !sel.value || sel.value === '__custom__') { alert('編集する穴数を選択してください'); return; }
-        const oldVal = Number(sel.value);
-        const input = prompt('穴数を編集', String(oldVal));
-        if (input == null || String(input).trim() === '') return;
-        const n = Number(input);
-        if (!isFinite(n) || n < 0 || !Number.isInteger(n)) { alert('0以上の整数を入力してください'); return; }
-        window.hideSnrHoleOption_(oldVal);
-        window.rememberSnrHoleOption_(n);
-        try {
-          await callGAS('manageCultivationListOption', {
-            field: 'holes', manageAction: 'edit', oldValue: oldVal, value: n,
-            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
-          });
-        } catch (e) { console.warn(e); }
-        window.setSnrHolesValue_(n);
-      };
-
-      window.snrDeleteHoleOption_ = async () => {
-        const sel = document.getElementById('snr_holes');
-        if (!sel || !sel.value || sel.value === '__custom__') { alert('削除する穴数を選択してください'); return; }
-        const val = Number(sel.value);
-        if (!confirm('穴数「' + val + '」を選択肢から削除しますか？')) return;
-        window.hideSnrHoleOption_(val);
-        try {
-          await callGAS('manageCultivationListOption', {
-            field: 'holes', manageAction: 'delete', value: val,
-            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
-          });
-        } catch (e) { console.warn(e); }
-        window.refreshSnrHolesSelect_('');
-      };
-
-      window.renderSnrCropChips_ = (preferName) => {
-        const box = document.getElementById('snr_crop_chips');
-        const hidden = document.getElementById('snr_crop');
-        if (!box || !hidden) return;
-        const crops = ((window.getSowingNurseryFormOpts_() || {}).crops) || [];
-        const esc = window.escSowingNurseryHtml_;
-        const current = (preferName != null) ? preferName : (hidden.value || '');
-        if (preferName != null) hidden.value = preferName;
-        box.innerHTML = crops.map(function(c) {
-          const active = String(c) === String(current);
-          const safe = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          return '<button type="button" onclick="selectSnrCropChip_(\\'' + safe + '\\')" style="' + window.snrChipStyle_(active, 'crop') + '">' + esc(c) + '</button>';
-        }).join('') || '<span style="font-size:12px;color:#888;">作物がありません。＋追加で登録できます</span>';
-      };
-
-      window.selectSnrCropChip_ = (crop) => {
-        const hidden = document.getElementById('snr_crop');
-        if (!hidden) return;
-        hidden.value = crop || '';
-        window.renderSnrCropChips_(crop);
-        if (typeof window.onSowingNurseryCropChange_ === 'function') window.onSowingNurseryCropChange_();
-      };
-
-      window.renderSnrTagChips_ = () => {
-        const box = document.getElementById('snr_tag_chips');
-        const hidden = document.getElementById('snr_tag');
-        if (!box) return;
-        const crop = (document.getElementById('snr_crop') || {}).value || '';
-        const esc = window.escSowingNurseryHtml_;
-        if (!crop) {
-          box.innerHTML = '<span style="font-size:12px;color:#888;">先に作物名を選択してください</span>';
-          if (hidden) hidden.value = '';
-          return;
-        }
-        const plans = window.getSowingNurseryPlansFiltered_(crop);
-        const current = hidden ? hidden.value : '';
-        const groups = [
-          { key: 'soon', label: '期間前', tone: 'soon' },
-          { key: 'in', label: '期間内', tone: 'in' },
-          { key: 'after', label: '期間外', tone: 'after' }
-        ];
-        let html = '<div style="margin-bottom:8px;"><button type="button" onclick="selectSnrTagChip_(\\'\\')" style="' + window.snrChipStyle_(!current, 'none') + '">TAGなし</button></div>';
-        groups.forEach(function(g) {
-          const items = plans.filter(function(p) { return String(p.phase || '') === g.key; });
-          if (!items.length) return;
-          html += '<div style="margin-bottom:8px;">';
-          html += '<div style="font-size:10px;font-weight:bold;color:#666;margin-bottom:4px;">' + g.label + '（' + items.length + '）</div>';
-          html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
-          items.forEach(function(p) {
-            const pid = String(p.planId || '');
-            const active = String(current) === pid;
-            const tag = p.tag || '(TAGなし)';
-            const variety = p.variety ? ' / ' + p.variety : '';
-            const remain = (p.remainTrays != null) ? ' 残' + p.remainTrays : '';
-            const safePid = pid.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            html += '<button type="button" title="' + esc(tag + variety + remain) + '" onclick="selectSnrTagChip_(\\'' + safePid + '\\')" style="' + window.snrChipStyle_(active, g.tone) + '">' + esc(tag) + (variety ? '<span style="opacity:.85;font-weight:normal;">' + esc(variety) + '</span>' : '') + '</button>';
-          });
-          html += '</div></div>';
-        });
-        if (!plans.length) html += '<div style="font-size:12px;color:#888;">この作物の予定TAGはありません（TAGなしで登録可）</div>';
-        box.innerHTML = html;
-      };
-
-      window.selectSnrTagChip_ = (planId) => {
-        const hidden = document.getElementById('snr_tag');
-        if (hidden) hidden.value = planId || '';
-        window.renderSnrTagChips_();
-        if (typeof window.onSowingNurseryTagChange_ === 'function') window.onSowingNurseryTagChange_();
-      };
-
+            window.SNR_DEFAULT_HOLES_ = [72, 128, 200, 288];
+      window.SNR_HOLES_LS_KEY_ = 'snrHolesOptions';
+      window.SNR_HOLES_HIDDEN_KEY_ = 'snrHolesHidden';
+
+      window.snrChipStyle_ = (active, tone) => {
+        const tones = {
+          crop:  { on: '#6a1b9a', bd: '#4a148c', offBg: '#fff', offBd: '#ce93d8', offFg: '#6a1b9a' },
+          in:    { on: '#2e7d32', bd: '#1b5e20', offBg: '#e8f5e9', offBd: '#81c784', offFg: '#1b5e20' },
+          soon:  { on: '#ef6c00', bd: '#e65100', offBg: '#fff3e0', offBd: '#ffb74d', offFg: '#e65100' },
+          after: { on: '#546e7a', bd: '#37474f', offBg: '#eceff1', offBd: '#90a4ae', offFg: '#37474f' },
+          none:  { on: '#7b1fa2', bd: '#4a148c', offBg: '#f3e5f5', offBd: '#ce93d8', offFg: '#6a1b9a' }
+        };
+        const t = tones[tone] || tones.crop;
+        if (active) {
+          return 'display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border-radius:999px;border:1.5px solid ' + t.bd + ';background:' + t.on + ';color:#fff;font-size:12px;font-weight:bold;cursor:pointer;line-height:1.2;';
+        }
+        return 'display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border-radius:999px;border:1.5px solid ' + t.offBd + ';background:' + t.offBg + ';color:' + t.offFg + ';font-size:12px;font-weight:normal;cursor:pointer;line-height:1.2;';
+      };
+
+      window.loadSnrHolesOptions_ = () => {
+        const opts = window.getSowingNurseryFormOpts_() || {};
+        const fromServer = Array.isArray(opts.holesOptions) ? opts.holesOptions : [];
+        let fromLs = [], hidden = [];
+        try { fromLs = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e) { fromLs = []; }
+        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e2) { hidden = []; }
+        const hiddenSet = {};
+        (hidden || []).forEach(function(v) { hiddenSet[String(Number(v))] = true; });
+        const seen = {}, out = [];
+        const push = (v) => {
+          const n = Number(v);
+          if (!isFinite(n) || n < 0) return;
+          const key = String(n);
+          if (seen[key] || hiddenSet[key]) return;
+          seen[key] = true;
+          out.push(n);
+        };
+        (window.SNR_DEFAULT_HOLES_ || []).forEach(push);
+        fromServer.forEach(push);
+        (fromLs || []).forEach(push);
+        out.sort(function(a, b) { return a - b; });
+        return out;
+      };
+
+      window.rememberSnrHoleOption_ = (val) => {
+        const n = Number(val);
+        if (!isFinite(n) || n < 0) return;
+        let local = [];
+        try { local = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e) { local = []; }
+        if (!local.some(function(v) { return Number(v) === n; })) {
+          local.push(n);
+          local.sort(function(a, b) { return Number(a) - Number(b); });
+          localStorage.setItem(window.SNR_HOLES_LS_KEY_, JSON.stringify(local));
+        }
+        let hidden = [];
+        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e2) { hidden = []; }
+        hidden = (hidden || []).filter(function(v) { return Number(v) !== n; });
+        localStorage.setItem(window.SNR_HOLES_HIDDEN_KEY_, JSON.stringify(hidden));
+      };
+
+      window.hideSnrHoleOption_ = (val) => {
+        const n = Number(val);
+        let hidden = [];
+        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e) { hidden = []; }
+        if (!hidden.some(function(v) { return Number(v) === n; })) hidden.push(n);
+        localStorage.setItem(window.SNR_HOLES_HIDDEN_KEY_, JSON.stringify(hidden));
+        let local = [];
+        try { local = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e2) { local = []; }
+        local = (local || []).filter(function(v) { return Number(v) !== n; });
+        localStorage.setItem(window.SNR_HOLES_LS_KEY_, JSON.stringify(local));
+      };
+
+      window.refreshSnrTraysSelect_ = (prefer) => {
+        const sel = document.getElementById('snr_trays');
+        const custom = document.getElementById('snr_trays_custom');
+        if (!sel) return;
+        const keep = (prefer != null && prefer !== '') ? String(prefer) : String(sel.value || '');
+        if (custom) { custom.style.display = 'none'; custom.value = ''; }
+        let html = '<option value="">選択してください</option>';
+        for (let i = 1; i <= 100; i++) html += '<option value="' + i + '">' + i + '枚</option>';
+        html += '<option value="__custom__">手入力…</option>';
+        sel.innerHTML = html;
+        if (keep && keep !== '__custom__') {
+          if (!Array.from(sel.options).some(function(o) { return o.value === keep; })) {
+            const opt = document.createElement('option');
+            opt.value = keep;
+            opt.textContent = keep + '枚';
+            const customOpt = Array.from(sel.options).find(function(o) { return o.value === '__custom__'; });
+            if (customOpt) sel.insertBefore(opt, customOpt);
+            else sel.appendChild(opt);
+          }
+          sel.value = keep;
+        }
+      };
+
+      window.refreshSnrHolesSelect_ = (prefer) => {
+        const sel = document.getElementById('snr_holes');
+        const custom = document.getElementById('snr_holes_custom');
+        if (!sel) return;
+        const keep = (prefer != null && prefer !== '') ? String(prefer) : String(sel.value || '');
+        if (custom) { custom.style.display = 'none'; custom.value = ''; }
+        const list = window.loadSnrHolesOptions_();
+        let html = '<option value="">選択してください</option>';
+        list.forEach(function(n) { html += '<option value="' + n + '">' + n + '</option>'; });
+        html += '<option value="__custom__">手入力…</option>';
+        sel.innerHTML = html;
+        if (keep && keep !== '__custom__') {
+          if (!Array.from(sel.options).some(function(o) { return o.value === keep; })) {
+            const opt = document.createElement('option');
+            opt.value = keep;
+            opt.textContent = keep;
+            const customOpt = Array.from(sel.options).find(function(o) { return o.value === '__custom__'; });
+            if (customOpt) sel.insertBefore(opt, customOpt);
+            else sel.appendChild(opt);
+          }
+          sel.value = keep;
+        }
+      };
+
+      window.onSnrTraysSelectChange_ = () => {
+        const sel = document.getElementById('snr_trays');
+        const custom = document.getElementById('snr_trays_custom');
+        if (!sel || !custom) return;
+        if (sel.value === '__custom__') { custom.style.display = 'block'; custom.focus(); }
+        else { custom.style.display = 'none'; custom.value = ''; }
+      };
+
+      window.onSnrHolesSelectChange_ = () => {
+        const sel = document.getElementById('snr_holes');
+        const custom = document.getElementById('snr_holes_custom');
+        if (!sel || !custom) return;
+        if (sel.value === '__custom__') { custom.style.display = 'block'; custom.focus(); }
+        else { custom.style.display = 'none'; custom.value = ''; }
+      };
+
+      window.getSnrTraysValue_ = () => {
+        const sel = document.getElementById('snr_trays');
+        const custom = document.getElementById('snr_trays_custom');
+        if (!sel) return NaN;
+        if (sel.value === '__custom__') return Number(custom && custom.value);
+        return Number(sel.value);
+      };
+
+      window.getSnrHolesValue_ = () => {
+        const sel = document.getElementById('snr_holes');
+        const custom = document.getElementById('snr_holes_custom');
+        if (!sel) return '';
+        if (sel.value === '__custom__') return custom ? String(custom.value || '').trim() : '';
+        return sel.value;
+      };
+
+      window.setSnrHolesValue_ = (val) => {
+        if (val === '' || val == null) { window.refreshSnrHolesSelect_(''); return; }
+        window.rememberSnrHoleOption_(val);
+        window.refreshSnrHolesSelect_(val);
+      };
+
+      window.snrAddHoleOption_ = async () => {
+        const input = prompt('登録する穴数を入力してください', '');
+        if (input == null || String(input).trim() === '') return;
+        const n = Number(input);
+        if (!isFinite(n) || n < 0 || !Number.isInteger(n)) { alert('0以上の整数を入力してください'); return; }
+        window.rememberSnrHoleOption_(n);
+        try {
+          await callGAS('manageCultivationListOption', {
+            field: 'holes', manageAction: 'add', value: n,
+            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
+          });
+        } catch (e) { console.warn(e); }
+        window.setSnrHolesValue_(n);
+      };
+
+      window.snrEditHoleOption_ = async () => {
+        const sel = document.getElementById('snr_holes');
+        if (!sel || !sel.value || sel.value === '__custom__') { alert('編集する穴数を選択してください'); return; }
+        const oldVal = Number(sel.value);
+        const input = prompt('穴数を編集', String(oldVal));
+        if (input == null || String(input).trim() === '') return;
+        const n = Number(input);
+        if (!isFinite(n) || n < 0 || !Number.isInteger(n)) { alert('0以上の整数を入力してください'); return; }
+        window.hideSnrHoleOption_(oldVal);
+        window.rememberSnrHoleOption_(n);
+        try {
+          await callGAS('manageCultivationListOption', {
+            field: 'holes', manageAction: 'edit', oldValue: oldVal, value: n,
+            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
+          });
+        } catch (e) { console.warn(e); }
+        window.setSnrHolesValue_(n);
+      };
+
+      window.snrDeleteHoleOption_ = async () => {
+        const sel = document.getElementById('snr_holes');
+        if (!sel || !sel.value || sel.value === '__custom__') { alert('削除する穴数を選択してください'); return; }
+        const val = Number(sel.value);
+        if (!confirm('穴数「' + val + '」を選択肢から削除しますか？')) return;
+        window.hideSnrHoleOption_(val);
+        try {
+          await callGAS('manageCultivationListOption', {
+            field: 'holes', manageAction: 'delete', value: val,
+            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
+          });
+        } catch (e) { console.warn(e); }
+        window.refreshSnrHolesSelect_('');
+      };
+
+      window.renderSnrCropChips_ = (preferName) => {
+        const box = document.getElementById('snr_crop_chips');
+        const hidden = document.getElementById('snr_crop');
+        if (!box || !hidden) return;
+        const crops = ((window.getSowingNurseryFormOpts_() || {}).crops) || [];
+        const esc = window.escSowingNurseryHtml_;
+        const current = (preferName != null) ? preferName : (hidden.value || '');
+        if (preferName != null) hidden.value = preferName;
+        box.innerHTML = crops.map(function(c) {
+          const active = String(c) === String(current);
+          const safe = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return '<button type="button" onclick="selectSnrCropChip_(\'' + safe + '\')" style="' + window.snrChipStyle_(active, 'crop') + '">' + esc(c) + '</button>';
+        }).join('') || '<span style="font-size:12px;color:#888;">作物がありません。＋追加で登録できます</span>';
+      };
+
+      window.selectSnrCropChip_ = (crop) => {
+        const hidden = document.getElementById('snr_crop');
+        if (!hidden) return;
+        hidden.value = crop || '';
+        window.renderSnrCropChips_(crop);
+        if (typeof window.onSowingNurseryCropChange_ === 'function') window.onSowingNurseryCropChange_();
+      };
+
+      window.renderSnrTagChips_ = () => {
+        const box = document.getElementById('snr_tag_chips');
+        const hidden = document.getElementById('snr_tag');
+        if (!box) return;
+        const crop = (document.getElementById('snr_crop') || {}).value || '';
+        const esc = window.escSowingNurseryHtml_;
+        if (!crop) {
+          box.innerHTML = '<span style="font-size:12px;color:#888;">先に作物名を選択してください</span>';
+          if (hidden) hidden.value = '';
+          return;
+        }
+        const plans = window.getSowingNurseryPlansFiltered_(crop);
+        const current = hidden ? hidden.value : '';
+        const groups = [
+          { key: 'soon', label: '期間前', tone: 'soon' },
+          { key: 'in', label: '期間内', tone: 'in' },
+          { key: 'after', label: '期間外', tone: 'after' }
+        ];
+        let html = '<div style="margin-bottom:8px;"><button type="button" onclick="selectSnrTagChip_(\'\')" style="' + window.snrChipStyle_(!current, 'none') + '">TAGなし</button></div>';
+        groups.forEach(function(g) {
+          const items = plans.filter(function(p) { return String(p.phase || '') === g.key; });
+          if (!items.length) return;
+          html += '<div style="margin-bottom:8px;">';
+          html += '<div style="font-size:10px;font-weight:bold;color:#666;margin-bottom:4px;">' + g.label + '（' + items.length + '）</div>';
+          html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+          items.forEach(function(p) {
+            const pid = String(p.planId || '');
+            const active = String(current) === pid;
+            const tag = p.tag || '(TAGなし)';
+            const variety = p.variety ? ' / ' + p.variety : '';
+            const remain = (p.remainTrays != null) ? ' 残' + p.remainTrays : '';
+            const safePid = pid.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            html += '<button type="button" title="' + esc(tag + variety + remain) + '" onclick="selectSnrTagChip_(\'' + safePid + '\')" style="' + window.snrChipStyle_(active, g.tone) + '">' + esc(tag) + (variety ? '<span style="opacity:.85;font-weight:normal;">' + esc(variety) + '</span>' : '') + '</button>';
+          });
+          html += '</div></div>';
+        });
+        if (!plans.length) html += '<div style="font-size:12px;color:#888;">この作物の予定TAGはありません（TAGなしで登録可）</div>';
+        box.innerHTML = html;
+      };
+
+      window.selectSnrTagChip_ = (planId) => {
+        const hidden = document.getElementById('snr_tag');
+        if (hidden) hidden.value = planId || '';
+        window.renderSnrTagChips_();
+        if (typeof window.onSowingNurseryTagChange_ === 'function') window.onSowingNurseryTagChange_();
+      };
+
 
 window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._sowingNurseryState.formOptions) || null;
 
