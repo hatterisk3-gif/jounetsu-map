@@ -3422,7 +3422,161 @@ async function fetchWeatherAndUpdateUI() {
         data: null,
         showAddForm: false,
         formOptions: null,
-        formBusy: false
+        formBusy: false,
+        loadToken: 0,
+        formStep: 0
+      };
+
+      window.SNR_WIZARD_STEPS_ = ['作物', 'TAG・品種', '育苗場所', '播種内容', '確認'];
+
+      window.syncSnrStepUi_ = () => {
+        const st = window._sowingNurseryState;
+        const step = Math.max(0, Math.min(window.SNR_WIZARD_STEPS_.length - 1, st.formStep || 0));
+        st.formStep = step;
+        document.querySelectorAll('#sowingNurseryAddForm .snr-step').forEach(function(el) {
+          el.style.display = Number(el.getAttribute('data-step')) === step ? 'block' : 'none';
+        });
+        const prog = document.getElementById('snr_wizard_progress');
+        if (prog) {
+          const labels = window.SNR_WIZARD_STEPS_;
+          let html = '<div class="snr-progress-bar"><div class="snr-progress-fill" style="width:' + Math.round((step + 1) / labels.length * 100) + '%;"></div></div>';
+          html += '<div class="snr-progress-labels">';
+          labels.forEach(function(lbl, i) {
+            const cls = i < step ? 'done' : (i === step ? 'active' : '');
+            html += '<span class="snr-progress-item ' + cls + '"><span class="snr-progress-num">' + (i + 1) + '</span><span class="snr-progress-text">' + lbl + '</span></span>';
+          });
+          html += '</div>';
+          prog.innerHTML = html;
+        }
+        const prevBtn = document.getElementById('snr_prev_btn');
+        const nextBtn = document.getElementById('snr_next_btn');
+        const labels = window.SNR_WIZARD_STEPS_;
+        if (prevBtn) prevBtn.style.visibility = step === 0 ? 'hidden' : 'visible';
+        if (nextBtn) {
+          nextBtn.textContent = step === labels.length - 1 ? '登録する' : '次へ';
+          nextBtn.classList.toggle('snr-btn-submit', step === labels.length - 1);
+        }
+        if (step === labels.length - 1 && typeof window.renderSnrConfirmSummary_ === 'function') {
+          window.renderSnrConfirmSummary_();
+        }
+      };
+
+      window.snrValidateStep_ = (step) => {
+        const msg = document.getElementById('snr_form_msg');
+        if (msg) { msg.textContent = ''; msg.style.color = '#c62828'; }
+        if (step === 0) {
+          const crop = (document.getElementById('snr_crop') || {}).value || '';
+          if (!crop) {
+            if (msg) msg.textContent = '作物名を選択してください';
+            return false;
+          }
+        }
+        if (step === 3) {
+          const trays = window.getSnrTraysValue_();
+          if (!(trays > 0)) {
+            if (msg) msg.textContent = '枚数を選択してください';
+            return false;
+          }
+        }
+        return true;
+      };
+
+      window.snrNextStep_ = () => {
+        const st = window._sowingNurseryState;
+        const step = st.formStep || 0;
+        const last = window.SNR_WIZARD_STEPS_.length - 1;
+        if (step < last) {
+          if (!window.snrValidateStep_(step)) return;
+          st.formStep = step + 1;
+          window.syncSnrStepUi_();
+          const body = document.getElementById('sowingNurseryAddModalBody');
+          if (body) body.scrollTop = 0;
+          return;
+        }
+        window.submitSowingNurseryRecord_();
+      };
+
+      window.snrPrevStep_ = () => {
+        const st = window._sowingNurseryState;
+        if ((st.formStep || 0) > 0) {
+          st.formStep--;
+          const msg = document.getElementById('snr_form_msg');
+          if (msg) msg.textContent = '';
+          window.syncSnrStepUi_();
+          const body = document.getElementById('sowingNurseryAddModalBody');
+          if (body) body.scrollTop = 0;
+        }
+      };
+
+      window.renderSnrConfirmSummary_ = () => {
+        const box = document.getElementById('snr_confirm_summary');
+        if (!box) return;
+        const esc = window.escSowingNurseryHtml_;
+        const crop = (document.getElementById('snr_crop') || {}).value || '-';
+        const planId = (document.getElementById('snr_tag') || {}).value || '';
+        const plans = window.getSowingNurseryPlansFiltered_(crop === '-' ? '' : crop);
+        const plan = plans.find(function(p) { return String(p.planId || '') === String(planId); });
+        const tag = plan ? (plan.tag || 'TAGなし') : 'TAGなし';
+        const variety = (document.getElementById('snr_variety') || {}).value || '—';
+        const locCat = (document.getElementById('snr_loc_cat') || {}).value || '—';
+        const plotSel = document.getElementById('snr_plot');
+        let plot = '—';
+        if (plotSel && plotSel.value && plotSel.selectedIndex >= 0) {
+          plot = plotSel.options[plotSel.selectedIndex].getAttribute('data-name')
+            || plotSel.options[plotSel.selectedIndex].textContent || '—';
+        }
+        const dir = (document.getElementById('snr_direction') || {}).value || '—';
+        const date = (document.getElementById('snr_date') || {}).value || '—';
+        const trays = window.getSnrTraysValue_();
+        const holesRaw = window.getSnrHolesValue_();
+        const holes = (holesRaw === '' || holesRaw == null) ? '—' : String(holesRaw);
+        const rows = [
+          ['作物', crop],
+          ['TAG', tag],
+          ['品種', variety],
+          ['場所カテゴリ', locCat],
+          ['区画', plot],
+          ['方向', dir],
+          ['播種日', date],
+          ['枚数', trays > 0 ? trays + '枚' : '—'],
+          ['穴数', holes]
+        ];
+        box.innerHTML = '<div class="snr-confirm-card">' + rows.map(function(r) {
+          return '<div class="snr-confirm-row"><span class="snr-confirm-key">' + esc(r[0]) + '</span><span class="snr-confirm-val">' + esc(String(r[1])) + '</span></div>';
+        }).join('') + '</div>';
+      };
+
+      window.applySowingNurseryFormOptions_ = (res) => {
+        const st = window._sowingNurseryState;
+        if (!st) return;
+        st.formOptions = res || { plans: [], crops: [], locationCategories: [] };
+        if (Array.isArray(st.formOptions.nurseryLocations)) {
+          st.formOptions.locationCategories = window.rebuildSowingNurseryLocCategories_(st.formOptions.nurseryLocations);
+        }
+      };
+
+      window.fetchSowingNurseryBundle_ = async (year) => {
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return callGAS('getSowingNurseryBundle', {
+          year: year,
+          today: today,
+          includeDone: true,
+          includePastPlans: true
+        });
+      };
+
+      window.refreshSowingNurseryData_ = async (year, opts) => {
+        const st = window._sowingNurseryState;
+        if (!st) return null;
+        const y = year || st.year || String(new Date().getFullYear());
+        const token = ++st.loadToken;
+        const bundle = await window.fetchSowingNurseryBundle_(y);
+        if (token !== st.loadToken) return null;
+        st.year = y;
+        st.data = (bundle && bundle.progress) || { cropSummary: [], rows: [], records: [] };
+        if (bundle && bundle.formOptions) window.applySowingNurseryFormOptions_(bundle.formOptions);
+        return bundle;
       };
 
       window.escSowingNurseryHtml_ = (v) => String(v == null ? '' : v).replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -3759,210 +3913,196 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         const st = window._sowingNurseryState;
         const opts = st.formOptions;
         if (!opts) {
-          return `<div id="sowingNurseryAddForm" style="border:none; padding:0; background:transparent;">
-            <div style="color:#888;">フォーム用データを読み込み中...</div>
+          return `<div id="sowingNurseryAddForm" class="snr-wizard">
+            <div style="color:#888; padding:20px 0; text-align:center;">フォーム用データを読み込み中...</div>
           </div>`;
         }
         const today = opts.today || (() => {
           const d = new Date();
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         })();
-        const crops = opts.crops || [];
         const catItems = window.buildSowingNurseryLocCatOptions_();
         const locNames = window.getSowingNurseryLocationNames_();
         const catOpts = catItems.map(c => `<option value="${esc(c.name)}">${esc(c.label)}</option>`).join('');
         const locMasterOpts = locNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
-        return `<div id="sowingNurseryAddForm" style="border:none; padding:0; background:transparent;">
-          <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px;">
-            <div style="grid-column:1 / -1;">
-              <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
-                <label style="font-size:11px; font-weight:bold; color:#555; margin:0;">作物名</label>
-                <button type="button" onclick="toggleSowingNurseryAddCropPanel_()" title="作物名を追加"
-                  style="margin-left:auto; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋追加</button>
+        return `<div id="sowingNurseryAddForm" class="snr-wizard">
+          <div id="snr_wizard_progress" class="snr-wizard-progress"></div>
+          <div id="snr_form_msg" class="snr-form-msg"></div>
+
+          <div class="snr-step" data-step="0">
+            <div class="snr-step-title">① 作物を選ぶ</div>
+            <div class="snr-step-hint">登録する作物名をタップしてください</div>
+            <div class="snr-field">
+              <div class="snr-field-head">
+                <label class="snr-label">作物名 *</label>
+                <button type="button" class="snr-btn-add" onclick="toggleSowingNurseryAddCropPanel_()">＋追加</button>
               </div>
               <input type="hidden" id="snr_crop" value="">
-              <div id="snr_crop_chips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
-              <div id="snr_add_crop_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
-                <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">作物名を新規追加（予定にない播種用）</div>
-                <div style="display:grid; gap:8px;">
-                  <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">作物名 *</label>
-                    <input type="text" id="snr_new_crop" class="form-input" style="margin:0; width:100%;" placeholder="例: レタス・ブロッコリー">
-                  </div>
-                  <div style="display:flex; gap:6px;">
-                    <button type="button" id="snr_add_crop_btn" onclick="submitAddSowingNurseryCrop_()"
-                      style="flex:1; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">マスタに登録</button>
-                    <button type="button" onclick="toggleSowingNurseryAddCropPanel_(false)"
-                      style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>
-                  </div>
-                  <div id="snr_add_crop_msg" style="font-size:11px; font-weight:bold;"></div>
+              <div id="snr_crop_chips" class="snr-chips"></div>
+              <div id="snr_add_crop_panel" class="snr-sub-panel" style="display:none;">
+                <div class="snr-sub-panel-title">作物名を新規追加</div>
+                <input type="text" id="snr_new_crop" class="form-input snr-input" placeholder="例: レタス・ブロッコリー">
+                <div class="snr-sub-actions">
+                  <button type="button" id="snr_add_crop_btn" class="snr-btn-primary" onclick="submitAddSowingNurseryCrop_()">マスタに登録</button>
+                  <button type="button" class="snr-btn-ghost" onclick="toggleSowingNurseryAddCropPanel_(false)">閉じる</button>
                 </div>
+                <div id="snr_add_crop_msg" class="snr-inline-msg"></div>
               </div>
             </div>
-            <div style="grid-column:1 / -1;">
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">TAG（期間前・期間内・期間外）</label>
+          </div>
+
+          <div class="snr-step" data-step="1">
+            <div class="snr-step-title">② TAG・品種</div>
+            <div class="snr-step-hint">栽培計画のTAGがあれば選んでください（なくても次へ進めます）</div>
+            <div class="snr-field">
+              <label class="snr-label">TAG</label>
               <input type="hidden" id="snr_tag" value="">
-              <div id="snr_tag_chips"></div>
+              <div id="snr_tag_chips" class="snr-chips"></div>
             </div>
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">品種名</label>
-              <input type="text" id="snr_variety" class="form-input" style="margin:0; width:100%;" placeholder="TAG選択で自動、または手入力">
+            <div class="snr-field">
+              <label class="snr-label">品種名</label>
+              <input type="text" id="snr_variety" class="form-input snr-input" placeholder="TAG選択で自動、または手入力">
             </div>
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">場所カテゴリ</label>
-              <div style="display:flex; gap:6px; align-items:center;">
-                <select id="snr_loc_cat" class="form-input" style="margin:0; flex:1; min-width:0;" onchange="onSowingNurseryLocCatChange_()">
-                  <option value="">選択してください</option>${catOpts}
-                </select>
-                <button type="button" onclick="toggleSowingNurseryAddLocCatPanel_()" title="場所カテゴリを追加"
-                  style="flex-shrink:0; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋追加</button>
+            <div id="snr_period_box" class="snr-period-box" style="display:none;">
+              <div class="snr-period-title">栽培時期（TAGから自動）</div>
+              <div>播種期: <span id="snr_period_sow">-</span></div>
+              <div>定植期: <span id="snr_period_plant">-</span></div>
+              <div>収穫期: <span id="snr_period_harvest">-</span></div>
+              <div id="snr_remain_hint" class="snr-remain-hint"></div>
+            </div>
+          </div>
+
+          <div class="snr-step" data-step="2">
+            <div class="snr-step-title">③ 育苗場所</div>
+            <div class="snr-step-hint">場所カテゴリ → 区画 → 方向の順に選びます（任意）</div>
+            <div class="snr-field">
+              <div class="snr-field-head">
+                <label class="snr-label">場所カテゴリ</label>
+                <button type="button" class="snr-btn-add" onclick="toggleSowingNurseryAddLocCatPanel_()">＋追加</button>
               </div>
-              <div id="snr_loc_cat_link_row" style="display:none; margin-top:6px;">
-                <div style="display:flex; gap:6px; align-items:center;">
-                  <label style="font-size:10px; color:#666; white-space:nowrap; margin:0;">紐づけ拠点</label>
-                  <select id="snr_loc_cat_location" class="form-input" style="margin:0; flex:1; min-width:0;">
+              <select id="snr_loc_cat" class="form-input snr-input" onchange="onSowingNurseryLocCatChange_()">
+                <option value="">選択してください</option>${catOpts}
+              </select>
+              <div id="snr_loc_cat_link_row" class="snr-link-row" style="display:none;">
+                <label class="snr-label-sm">紐づけ拠点</label>
+                <div class="snr-action-row">
+                  <select id="snr_loc_cat_location" class="form-input snr-input">
                     <option value="">未設定</option>${locMasterOpts}
                   </select>
-                  <button type="button" onclick="submitLinkSnrLocCategoryLocation_()" title="選択中の場所カテゴリに拠点を紐づけ"
-                    style="flex-shrink:0; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">紐づける</button>
+                  <button type="button" class="snr-btn-secondary" onclick="submitLinkSnrLocCategoryLocation_()">紐づける</button>
                 </div>
-                <div id="snr_loc_cat_link_msg" style="font-size:10px; font-weight:bold; margin-top:4px;"></div>
+                <div id="snr_loc_cat_link_msg" class="snr-inline-msg"></div>
               </div>
-              <div id="snr_add_loc_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
-                <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">場所カテゴリを新規追加</div>
-                <div style="display:grid; gap:8px;">
-                  <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">場所カテゴリ名 *</label>
-                    <input type="text" id="snr_new_loc_cat" class="form-input" style="margin:0; width:100%;" placeholder="例: ハウスA・育苗ハウス">
-                  </div>
-                  <div>
-                    <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
-                      <label style="font-size:10px; color:#666; margin:0;">紐づけ拠点（任意）</label>
-                      <button type="button" onclick="toggleSowingNurseryAddLocationPanel_()" title="拠点名を追加"
-                        style="margin-left:auto; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:10px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋拠点</button>
-                    </div>
-                    <select id="snr_new_loc_from_master" class="form-input" style="margin:0; width:100%;">
-                      <option value="">未設定</option>${locMasterOpts}
-                    </select>
-                    <div style="font-size:10px; color:#888; margin-top:4px;">拠点マスタから選んで場所カテゴリに紐づけます</div>
-                    <div id="snr_add_location_panel" style="display:none; margin-top:8px; padding:8px; background:#fafafa; border:1px dashed #ddd; border-radius:6px;">
-                      <div style="font-size:10px; font-weight:bold; color:#6a1b9a; margin-bottom:6px;">拠点名を新規追加</div>
-                      <input type="text" id="snr_new_location_name" class="form-input" style="margin:0 0 6px; width:100%;" placeholder="例: 本社農場・育苗センター">
-                      <div style="display:flex; gap:6px;">
-                        <button type="button" id="snr_add_location_btn" onclick="submitAddSowingNurseryLocation_()"
-                          style="flex:1; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:7px; font-size:11px; font-weight:bold; cursor:pointer;">拠点マスタに登録</button>
-                        <button type="button" onclick="toggleSowingNurseryAddLocationPanel_(false)"
-                          style="background:#eee; color:#555; border:none; border-radius:6px; padding:7px 10px; font-size:11px; font-weight:bold; cursor:pointer;">閉じる</button>
-                      </div>
-                      <div id="snr_add_location_msg" style="font-size:11px; font-weight:bold; margin-top:4px;"></div>
-                    </div>
-                  </div>
-                  <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画（複数可）*</label>
-                    <textarea id="snr_new_plot" class="form-input" rows="4" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1つ、またはカンマ区切り&#10;例:&#10;1列&#10;2列&#10;3列"></textarea>
-                    <div style="font-size:10px; color:#888; margin-top:4px;">改行・カンマ（,、）区切りで一括登録</div>
-                  </div>
-                  <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">方向（複数可・任意）</label>
-                    <textarea id="snr_new_dir" class="form-input" rows="3" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1つ、またはカンマ区切り&#10;例:&#10;東&#10;西&#10;南"></textarea>
-                    <div style="font-size:10px; color:#888; margin-top:4px;">区画×方向の組み合わせで登録されます</div>
-                  </div>
-                  <div style="display:flex; gap:6px;">
-                    <button type="button" id="snr_add_loc_btn" onclick="submitAddSowingNurseryLocCategory_()"
-                      style="flex:1; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">マスタに登録</button>
-                    <button type="button" onclick="toggleSowingNurseryAddLocCatPanel_(false)"
-                      style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>
-                  </div>
-                  <div id="snr_add_loc_msg" style="font-size:11px; font-weight:bold;"></div>
+              <div id="snr_add_loc_panel" class="snr-sub-panel" style="display:none;">
+                <div class="snr-sub-panel-title">場所カテゴリを新規追加</div>
+                <label class="snr-label-sm">場所カテゴリ名 *</label>
+                <input type="text" id="snr_new_loc_cat" class="form-input snr-input" placeholder="例: ハウスA・育苗ハウス">
+                <div class="snr-field-head" style="margin-top:8px;">
+                  <label class="snr-label-sm">紐づけ拠点（任意）</label>
+                  <button type="button" class="snr-btn-add" onclick="toggleSowingNurseryAddLocationPanel_()">＋拠点</button>
                 </div>
-              </div>
-            </div>
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">区画</label>
-              <div style="display:flex; gap:6px; align-items:center;">
-                <select id="snr_plot" class="form-input" style="margin:0; flex:1; min-width:0;" onchange="onSowingNurseryPlotChange_()">
-                  <option value="">場所カテゴリを選択</option>
+                <select id="snr_new_loc_from_master" class="form-input snr-input">
+                  <option value="">未設定</option>${locMasterOpts}
                 </select>
-                <button type="button" onclick="toggleSowingNurseryAddPlotPanel_()" title="このカテゴリに区画を追加"
-                  style="flex-shrink:0; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋区画/方向</button>
-                <button type="button" onclick="openSnrPlotMapPick_()" title="地図から圃場を選んで区画登録"
-                  style="flex-shrink:0; background:#4527a0; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">🗺️ 地図</button>
-                <button type="button" id="snr_delete_plot_btn" onclick="deleteSnrPlot_()" title="選択中の区画を削除"
-                  style="flex-shrink:0; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">削除</button>
-              </div>
-              <div id="snr_delete_plot_msg" style="font-size:10px; font-weight:bold; margin-top:4px; min-height:14px;"></div>
-              <div id="snr_add_plot_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
-                <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">区画・方向を追加（選択中の場所カテゴリ）</div>
-                <div style="display:grid; gap:8px;">
-                  <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画（複数可）</label>
-                    <textarea id="snr_add_plot_name" class="form-input" rows="4" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1つ、またはカンマ区切り&#10;例:&#10;4列&#10;5列&#10;6列"></textarea>
-                    <div style="font-size:10px; color:#888; margin-top:4px;">改行・カンマ（,、）区切りで一括登録</div>
+                <div id="snr_add_location_panel" class="snr-sub-panel" style="display:none; margin-top:8px;">
+                  <input type="text" id="snr_new_location_name" class="form-input snr-input" placeholder="拠点名（例: 本社農場）">
+                  <div class="snr-sub-actions">
+                    <button type="button" id="snr_add_location_btn" class="snr-btn-primary" onclick="submitAddSowingNurseryLocation_()">拠点マスタに登録</button>
+                    <button type="button" class="snr-btn-ghost" onclick="toggleSowingNurseryAddLocationPanel_(false)">閉じる</button>
                   </div>
-                  <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">方向（複数可・任意）</label>
-                    <textarea id="snr_add_plot_dir" class="form-input" rows="3" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1つ、またはカンマ区切り&#10;例:&#10;東&#10;西"></textarea>
-                    <div style="font-size:10px; color:#888; margin-top:4px;">区画と方向の組み合わせで登録。方向だけなら既存区画に追加</div>
-                  </div>
-                  <div style="display:flex; gap:6px;">
-                    <button type="button" id="snr_add_plot_btn" onclick="submitAddSowingNurseryPlot_()"
-                      style="flex:1; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">区画・方向を登録</button>
-                    <button type="button" onclick="toggleSowingNurseryAddPlotPanel_(false)"
-                      style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>
-                  </div>
-                  <div id="snr_add_plot_msg" style="font-size:11px; font-weight:bold;"></div>
+                  <div id="snr_add_location_msg" class="snr-inline-msg"></div>
                 </div>
+                <label class="snr-label-sm" style="margin-top:8px;">区画（複数可）*</label>
+                <textarea id="snr_new_plot" class="form-input snr-input" rows="3" placeholder="1行1つ、またはカンマ区切り"></textarea>
+                <label class="snr-label-sm">方向（任意）</label>
+                <textarea id="snr_new_dir" class="form-input snr-input" rows="2" placeholder="1行1つ、またはカンマ区切り"></textarea>
+                <div class="snr-sub-actions">
+                  <button type="button" id="snr_add_loc_btn" class="snr-btn-primary" onclick="submitAddSowingNurseryLocCategory_()">マスタに登録</button>
+                  <button type="button" class="snr-btn-ghost" onclick="toggleSowingNurseryAddLocCatPanel_(false)">閉じる</button>
+                </div>
+                <div id="snr_add_loc_msg" class="snr-inline-msg"></div>
               </div>
             </div>
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">方向</label>
-              <div style="display:flex; gap:6px; align-items:center;">
-                <select id="snr_direction" class="form-input" style="margin:0; flex:1; min-width:0;">
-                  <option value="">場所カテゴリを選択</option>
-                </select>
-                <button type="button" id="snr_delete_dir_btn" onclick="deleteSnrDirection_()" title="選択中の方向を削除"
-                  style="flex-shrink:0; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">削除</button>
+            <div class="snr-field">
+              <div class="snr-field-head">
+                <label class="snr-label">区画</label>
+                <button type="button" class="snr-btn-add" onclick="toggleSowingNurseryAddPlotPanel_()">＋区画</button>
               </div>
-              <div id="snr_delete_dir_msg" style="font-size:10px; font-weight:bold; margin-top:4px; min-height:14px;"></div>
-            </div>
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">播種日</label>
-              <input type="date" id="snr_date" class="form-input" style="margin:0; width:100%;" value="${esc(today)}">
-            </div>
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">枚数</label>
-              <select id="snr_trays" class="form-input" style="margin:0; width:100%;" onchange="onSnrTraysSelectChange_()"></select>
-              <input type="number" id="snr_trays_custom" class="form-input" style="display:none; margin:6px 0 0; width:100%;" min="1" step="1" placeholder="枚数を手入力">
-            </div>
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">穴数</label>
-              <div style="display:flex; gap:6px; align-items:center;">
-                <select id="snr_holes" class="form-input" style="margin:0; flex:1; min-width:0;" onchange="onSnrHolesSelectChange_()"></select>
-                <button type="button" onclick="snrAddHoleOption_()" title="穴数を登録" style="flex-shrink:0; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:7px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋</button>
-                <button type="button" onclick="snrEditHoleOption_()" title="編集" style="flex-shrink:0; background:#fff; color:#6a1b9a; border:1px solid #ce93d8; border-radius:6px; padding:7px 8px; font-size:11px; font-weight:bold; cursor:pointer;">編集</button>
-                <button type="button" onclick="snrDeleteHoleOption_()" title="削除" style="flex-shrink:0; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:7px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+              <select id="snr_plot" class="form-input snr-input" onchange="onSowingNurseryPlotChange_()">
+                <option value="">場所カテゴリを選択</option>
+              </select>
+              <div class="snr-action-row snr-action-row-wrap">
+                <button type="button" class="snr-btn-map" onclick="openSnrPlotMapPick_()">🗺️ 地図から選択</button>
+                <button type="button" id="snr_delete_plot_btn" class="snr-btn-danger-outline" onclick="deleteSnrPlot_()">区画を削除</button>
               </div>
-              <input type="number" id="snr_holes_custom" class="form-input" style="display:none; margin:6px 0 0; width:100%;" min="0" step="1" placeholder="穴数を手入力">
-              <div style="font-size:10px; color:#888; margin-top:4px;">計画と同じ穴数候補（登録・編集・削除可）</div>
+              <div id="snr_delete_plot_msg" class="snr-inline-msg"></div>
+              <div id="snr_add_plot_panel" class="snr-sub-panel" style="display:none;">
+                <div class="snr-sub-panel-title">区画・方向を追加</div>
+                <textarea id="snr_add_plot_name" class="form-input snr-input" rows="3" placeholder="区画名（複数可）"></textarea>
+                <textarea id="snr_add_plot_dir" class="form-input snr-input" rows="2" placeholder="方向（任意）"></textarea>
+                <div class="snr-sub-actions">
+                  <button type="button" id="snr_add_plot_btn" class="snr-btn-primary" onclick="submitAddSowingNurseryPlot_()">登録</button>
+                  <button type="button" class="snr-btn-ghost" onclick="toggleSowingNurseryAddPlotPanel_(false)">閉じる</button>
+                </div>
+                <div id="snr_add_plot_msg" class="snr-inline-msg"></div>
+              </div>
+            </div>
+            <div class="snr-field">
+              <div class="snr-field-head">
+                <label class="snr-label">方向</label>
+                <button type="button" id="snr_delete_dir_btn" class="snr-btn-danger-outline" onclick="deleteSnrDirection_()">削除</button>
+              </div>
+              <select id="snr_direction" class="form-input snr-input">
+                <option value="">場所カテゴリを選択</option>
+              </select>
+              <div id="snr_delete_dir_msg" class="snr-inline-msg"></div>
             </div>
           </div>
+
+          <div class="snr-step" data-step="3">
+            <div class="snr-step-title">④ 播種内容</div>
+            <div class="snr-step-hint">播種日・枚数・穴数を入力してください</div>
+            <div class="snr-field">
+              <label class="snr-label">播種日</label>
+              <input type="date" id="snr_date" class="form-input snr-input" value="${esc(today)}">
+            </div>
+            <div class="snr-field">
+              <label class="snr-label">枚数 *</label>
+              <select id="snr_trays" class="form-input snr-input" onchange="onSnrTraysSelectChange_()"></select>
+              <input type="number" id="snr_trays_custom" class="form-input snr-input snr-input-custom" style="display:none;" min="1" step="1" placeholder="枚数を手入力">
+            </div>
+            <div class="snr-field">
+              <label class="snr-label">穴数</label>
+              <select id="snr_holes" class="form-input snr-input" onchange="onSnrHolesSelectChange_()"></select>
+              <input type="number" id="snr_holes_custom" class="form-input snr-input snr-input-custom" style="display:none;" min="0" step="1" placeholder="穴数を手入力">
+              <div class="snr-action-row snr-action-row-wrap" style="margin-top:8px;">
+                <button type="button" class="snr-btn-add" onclick="snrAddHoleOption_()">＋穴数</button>
+                <button type="button" class="snr-btn-ghost" onclick="snrEditHoleOption_()">編集</button>
+                <button type="button" class="snr-btn-danger-outline" onclick="snrDeleteHoleOption_()">削除</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="snr-step" data-step="4">
+            <div class="snr-step-title">⑤ 確認して登録</div>
+            <div class="snr-step-hint">内容を確認し、問題なければ「登録する」を押してください</div>
+            <div id="snr_confirm_summary"></div>
+          </div>
+
           <input type="hidden" id="snr_plan_id" value="">
-          <div id="snr_period_box" style="display:none; margin-top:10px; padding:10px; background:#fff; border:1px solid #e1bee7; border-radius:6px; font-size:12px; color:#4a148c;">
-            <div style="font-weight:bold; margin-bottom:4px;">栽培時期（TAGから自動）</div>
-            <div>播種期: <span id="snr_period_sow">-</span></div>
-            <div>定植期: <span id="snr_period_plant">-</span></div>
-            <div>収穫期: <span id="snr_period_harvest">-</span></div>
-            <div id="snr_remain_hint" style="margin-top:4px; color:#6a1b9a;"></div>
+          <button type="button" id="snr_save_btn" style="display:none;" onclick="submitSowingNurseryRecord_()"></button>
+
+          <div class="snr-wizard-footer">
+            <button type="button" id="snr_prev_btn" class="snr-btn-ghost snr-footer-btn" onclick="snrPrevStep_()">戻る</button>
+            <button type="button" id="snr_next_btn" class="snr-btn-primary snr-footer-btn snr-btn-next" onclick="snrNextStep_()">次へ</button>
           </div>
-          <div style="display:flex; gap:8px; margin-top:12px;">
-            <button type="button" id="snr_save_btn" onclick="submitSowingNurseryRecord_()" style="flex:1; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:10px; font-weight:bold; cursor:pointer;">登録する</button>
-            <button type="button" onclick="cancelSowingNurseryAddForm_()" style="background:#eee; color:#555; border:none; border-radius:6px; padding:10px 14px; font-weight:bold; cursor:pointer;">キャンセル</button>
-          </div>
-          <div id="snr_form_msg" style="margin-top:8px; font-size:12px; font-weight:bold;"></div>
         </div>`;
       };
 
-      window.renderSowingNurseryAddFormIntoModal_ = () => {
+      window.renderSowingNurseryAddFormIntoModal_ = (opts) => {
+        opts = opts || {};
+        const st = window._sowingNurseryState;
+        if (!opts.keepStep) st.formStep = 0;
         const body = document.getElementById('sowingNurseryAddModalBody');
         if (!body) return;
         body.innerHTML = window.buildSowingNurseryAddFormHtml_();
@@ -3972,31 +4112,29 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         if (typeof window.refreshSowingNurseryTagOptions_ === 'function') {
           window.refreshSowingNurseryTagOptions_();
         }
+        window.syncSnrStepUi_();
       };
       window.openSowingNurseryAddForm_ = async () => {
         const st = window._sowingNurseryState;
         const modal = document.getElementById('sowingNurseryAddModal');
         if (!modal) return;
         st.showAddForm = true;
+        st.formStep = 0;
         st.tab = 'records';
         window.syncSowingNurseryTabButtons_();
         window.renderSowingNurseryBody_();
         modal.style.display = 'flex';
+        const year = st.year || String(new Date().getFullYear());
+        if (st.formOptions && st.year === year) {
+          window.renderSowingNurseryAddFormIntoModal_();
+          return;
+        }
         window.renderSowingNurseryAddFormIntoModal_();
         try {
-          const year = st.year || String(new Date().getFullYear());
-          const d = new Date();
-          const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          const res = await callGAS('getSowingNurseryFormOptions', {
-            year: year,
-            today: today,
-            includeDone: true,
-            includePastPlans: true
-          });
-          st.formOptions = res || { plans: [], crops: [], locationCategories: [] };
-          if (Array.isArray(st.formOptions.nurseryLocations)) {
-            st.formOptions.locationCategories = window.rebuildSowingNurseryLocCategories_(st.formOptions.nurseryLocations);
-          }
+          const bundle = await window.fetchSowingNurseryBundle_(year);
+          st.year = year;
+          if (bundle && bundle.formOptions) window.applySowingNurseryFormOptions_(bundle.formOptions);
+          if (bundle && bundle.progress) st.data = bundle.progress;
           if (st.showAddForm) window.renderSowingNurseryAddFormIntoModal_();
         } catch (e) {
           window.cancelSowingNurseryAddForm_();
@@ -4948,7 +5086,7 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         const st = window._sowingNurseryState;
         if (st.formBusy) return;
         const msg = document.getElementById('snr_form_msg');
-        const btn = document.getElementById('snr_save_btn');
+        const btn = document.getElementById('snr_next_btn') || document.getElementById('snr_save_btn');
         const crop = (document.getElementById('snr_crop') || {}).value || '';
         const planId = (document.getElementById('snr_tag') || {}).value || (document.getElementById('snr_plan_id') || {}).value || '';
         const plansForTag = window.getSowingNurseryPlansFiltered_(crop);
@@ -4992,11 +5130,9 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
             }
           });
           st.showAddForm = false;
-          st.formOptions = null;
           window.cancelSowingNurseryAddForm_();
           const year = st.year || String(new Date().getFullYear());
-          const res = await callGAS('getSowingProgress', { year });
-          st.data = res || { cropSummary: [], rows: [], records: [] };
+          await window.refreshSowingNurseryData_(year);
           window.renderSowingNurseryBody_();
           if (typeof customAlert === 'function') customAlert('育苗記録を登録しました');
         } catch (e) {
@@ -5140,9 +5276,15 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         if (!modal || !body) return;
         window.cancelSowingNurseryAddForm_();
         modal.style.display = 'flex';
-        window._sowingNurseryState.tab = window._sowingNurseryState.tab || 'records';
+        const st = window._sowingNurseryState;
+        st.tab = st.tab || 'records';
         window.syncSowingNurseryTabButtons_();
-        const loading = window.AppLoading
+        const year = String(new Date().getFullYear());
+        const hasCached = !!(st.data && st.year === year);
+        if (hasCached) {
+          window.renderSowingNurseryBody_();
+        }
+        const loading = (!hasCached && window.AppLoading)
           ? AppLoading.inline(body, {
               label: '播種・育苗を読み込み中...',
               detail: '進捗と記録を集計しています',
@@ -5150,15 +5292,16 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
             })
           : null;
         try {
-          const year = String(new Date().getFullYear());
-          const res = await callGAS('getSowingProgress', { year });
-          window._sowingNurseryState.year = year;
-          window._sowingNurseryState.data = res || { cropSummary: [], rows: [], records: [] };
+          const bundle = await window.refreshSowingNurseryData_(year);
           if (loading) loading.done();
-          window.renderSowingNurseryBody_();
+          if (bundle) window.renderSowingNurseryBody_();
         } catch (e) {
           if (loading) loading.done();
-          body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g, '&lt;')}</div>`;
+          if (!hasCached) {
+            body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g, '&lt;')}</div>`;
+          } else if (typeof customAlert === 'function') {
+            customAlert('最新データの取得に失敗しました: ' + (e.message || e));
+          }
         }
       };
 

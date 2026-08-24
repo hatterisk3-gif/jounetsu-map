@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1787770000000">
+  <link rel="stylesheet" href="schedule.css?v=1787790000000">
 </head>
 
 <body>
@@ -393,12 +393,12 @@
   </div>
 
   <div id="sowingNurseryAddModal" class="sowing-nursery-add-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10040; align-items:center; justify-content:center; padding:12px; box-sizing:border-box;" onclick="if(event.target===this)cancelSowingNurseryAddForm_()">
-    <div style="background:#fff; width:min(720px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,.35);" onclick="event.stopPropagation()">
+    <div class="snr-add-modal-panel" style="background:#fff; width:min(720px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,.35);" onclick="event.stopPropagation()">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#6a1b9a; color:#fff; flex-shrink:0;">
         <span style="font-weight:bold; font-size:15px;">＋ 育苗記録を新規追加</span>
         <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="cancelSowingNurseryAddForm_()" title="閉じる">×</span>
       </div>
-      <div id="sowingNurseryAddModalBody" style="padding:12px 16px; overflow:auto; flex:1; background:#faf5fc; -webkit-overflow-scrolling:touch;">
+      <div id="sowingNurseryAddModalBody" class="snr-add-modal-body" style="padding:12px 16px; overflow:auto; flex:1; background:#faf5fc; -webkit-overflow-scrolling:touch;">
       </div>
     </div>
   </div>
@@ -693,7 +693,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1787783200000';
+    const cacheBust = '1787790000000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',

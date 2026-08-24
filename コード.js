@@ -71,6 +71,7 @@ function doPost(e) {
     else if (action === "deleteCropWorkPlan") result = deleteCropWorkPlan(params);
     else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
     else if (action === "getSowingProgress") result = getSowingProgress(params);
+    else if (action === "getSowingNurseryBundle") result = getSowingNurseryBundle(params);
     else if (action === "getCurrentSowingPlanOptions") result = getCurrentSowingPlanOptions(params);
     else if (action === "getSowingNurseryFormOptions") result = getSowingNurseryFormOptions(params);
     else if (action === "manageCultivationListOption") result = manageCultivationListOption(params);
@@ -12075,16 +12076,10 @@ function removeSowingRecordAfterScheduleUndo_(rowData) {
   return false;
 }
 
-/** 完了済み播種の作業予定から計画ID別の実績枚数を集計 */
-function buildCompletedSowTraysByPlanId_() {
+/** 作業予定データから完了済み播種の計画ID別実績枚数を集計 */
+function buildCompletedSowTraysByPlanIdFromData_(sData, planLookup) {
   const map = {};
-  const ss = TENANT_SS;
-  const schedSheet = ss.getSheetByName('作業予定');
-  if (!schedSheet || schedSheet.getLastRow() < 2) return map;
-  const numRows = schedSheet.getLastRow() - 1;
-  const sData = schedSheet.getRange(2, 1, numRows, 11).getValues();
-  const planLookup = buildCultivationPlanLookupById_();
-  sData.forEach(function(row) {
+  (sData || []).forEach(function(row) {
     if (!String(row[8] || '').trim()) return;
     const placeId = String(row[10] || '');
     const workName = String(row[0] || '').trim();
@@ -12098,6 +12093,35 @@ function buildCompletedSowTraysByPlanId_() {
     });
   });
   return map;
+}
+
+/** 完了済み播種の作業予定から計画ID別の実績枚数を集計 */
+function buildCompletedSowTraysByPlanId_() {
+  const ss = TENANT_SS;
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet || schedSheet.getLastRow() < 2) return {};
+  const numRows = schedSheet.getLastRow() - 1;
+  const sData = schedSheet.getRange(2, 1, numRows, 11).getValues();
+  const planLookup = buildCultivationPlanLookupById_();
+  return buildCompletedSowTraysByPlanIdFromData_(sData, planLookup);
+}
+
+/** 播種・育苗で共通利用するシート読込（1回だけ） */
+function loadSowingSharedContext_() {
+  const planLookup = buildCultivationPlanLookupById_();
+  const records = readSowingRecordList_();
+  let sData = [];
+  const schedSheet = TENANT_SS.getSheetByName('作業予定');
+  if (schedSheet && schedSheet.getLastRow() > 1) {
+    sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+  }
+  return {
+    planLookup: planLookup,
+    records: records,
+    sData: sData,
+    scheduleState: buildCpScheduleProgressState_(sData),
+    scheduleDoneByPlan: buildCompletedSowTraysByPlanIdFromData_(sData, planLookup)
+  };
 }
 
 function buildCultivationPlanLookupById_() {
@@ -12722,15 +12746,19 @@ function getWeatherPlantingPriorities(params) {
 }
 
 function getSowingProgress(params) {
+  return getSowingProgressFromContext_(loadSowingSharedContext_(), params);
+}
+
+function getSowingProgressFromContext_(ctx, params) {
   const yearFilter = (params && params.year) ? String(params.year) : '';
-  const planLookup = buildCultivationPlanLookupById_();
+  const planLookup = ctx.planLookup;
   const plans = Object.keys(planLookup).map(k => planLookup[k]).filter(p => {
     if (!p || p.status !== 'executed') return false;
     if (yearFilter && String(p.year) !== yearFilter) return false;
     const sowing = (p.tasks && p.tasks.sowing) ? p.tasks.sowing : [];
     return sowing.length > 0;
   });
-  const records = readSowingRecordList_();
+  const records = ctx.records;
   const byPlanId = {};
   const byTag = {};
   records.forEach(r => {
@@ -12742,8 +12770,7 @@ function getSowingProgress(params) {
     byTag[key].trays += trays;
     byTag[key].records.push(r);
   });
-  // 作業一覧で播種完了済みの計画も実績に含める（播種記録未作成の既存データ向け）
-  const scheduleDoneByPlan = buildCompletedSowTraysByPlanId_();
+  const scheduleDoneByPlan = ctx.scheduleDoneByPlan;
   const rows = plans.map(p => {
     const plannedTrays = Number(p.trays) || 0;
     const fromPlanId = byPlanId[String(p.id)] || 0;
@@ -12817,6 +12844,10 @@ function getSowingProgress(params) {
  * params: { today?, crop?, year?, includeDone?, includePastPlans? }
  */
 function getCurrentSowingPlanOptions(params) {
+  return getCurrentSowingPlanOptionsFromContext_(null, params);
+}
+
+function getCurrentSowingPlanOptionsFromContext_(ctx, params) {
   params = params || {};
   const todayStr = String(params.today || '').trim()
     || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
@@ -12830,20 +12861,16 @@ function getCurrentSowingPlanOptions(params) {
   const yearFilter = String(params.year || '').trim() || String(today.getFullYear());
   const includeDone = params.includeDone === true || params.includeDone === 'true';
   const includePastPlans = params.includePastPlans === true || params.includePastPlans === 'true';
-  const BEFORE_DAYS = 7;   // 期間開始の何日前から候補に出すか
-  const AFTER_DAYS = 14;   // 期間終了後も未播種なら何日まで出すか
+  const lightProgress = params.lightProgress === true || params.lightProgress === 'true';
+  const BEFORE_DAYS = 7;
+  const AFTER_DAYS = 14;
 
-  const planLookup = buildCultivationPlanLookupById_();
-  const ss = TENANT_SS;
-  const schedSheet = ss.getSheetByName('作業予定');
-  let sData = [];
-  if (schedSheet && schedSheet.getLastRow() > 1) {
-    sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
-  }
-  const state = buildCpScheduleProgressState_(sData);
+  if (!ctx) ctx = loadSowingSharedContext_();
+  const planLookup = ctx.planLookup;
+  const state = ctx.scheduleState;
+  const records = ctx.records;
+  const scheduleDoneByPlan = ctx.scheduleDoneByPlan;
 
-  // 播種実績（計画ID／TAG／作業予定完了）
-  const records = readSowingRecordList_();
   const traysByPlanId = {};
   const traysByTag = {};
   records.forEach(function(r) {
@@ -12854,7 +12881,6 @@ function getCurrentSowingPlanOptions(params) {
     if (!tag) return;
     traysByTag[tag] = (traysByTag[tag] || 0) + trays;
   });
-  const scheduleDoneByPlan = buildCompletedSowTraysByPlanId_();
 
   const items = [];
   Object.keys(planLookup).forEach(function(k) {
@@ -12883,8 +12909,18 @@ function getCurrentSowingPlanOptions(params) {
     const earlyMs = startMs - BEFORE_DAYS * 86400000;
     const lateMs = endMs + AFTER_DAYS * 86400000;
 
-    const prog = computePlanCropWorkProgress_(plan, state, []);
-    // 定植済み以降は候補から外す（播種のタイミングではない）
+    let prog;
+    if (lightProgress && includePastPlans) {
+      const pst = state[String(plan.id)];
+      prog = {
+        plantDone: !!(pst && pst.plantDone),
+        sowDone: !!(pst && pst.sowDone),
+        stageCode: '',
+        statusLabel: ''
+      };
+    } else {
+      prog = computePlanCropWorkProgress_(plan, state, []);
+    }
     if (prog.plantDone && !includePastPlans) return;
     const sowDone = !!prog.sowDone;
     const plannedTrays = Number(plan.trays) || 0;
@@ -12895,7 +12931,6 @@ function getCurrentSowingPlanOptions(params) {
     const traysDone = plannedTrays > 0 ? (doneTrays >= plannedTrays) : sowDone;
     if (!includePastPlans && !includeDone && traysDone && sowDone) return;
 
-    // 今の期間: 開始前少し〜終了後少し、またはまだ播種未完で開始済み
     const inCurrentWindow = todayMs >= earlyMs && todayMs <= lateMs;
     const overdueOpen = todayMs > endMs && !sowDone && !traysDone;
     if (!includePastPlans && !inCurrentWindow && !overdueOpen) return;
@@ -12961,10 +12996,34 @@ function getCurrentSowingPlanOptions(params) {
  */
 function getSowingNurseryFormOptions(params) {
   params = params || {};
+  const includePastPlans = params.includePastPlans != null ? params.includePastPlans : true;
   const planRes = getCurrentSowingPlanOptions(Object.assign({}, params, {
     includeDone: params.includeDone != null ? params.includeDone : true,
-    includePastPlans: params.includePastPlans != null ? params.includePastPlans : true
+    includePastPlans: includePastPlans,
+    lightProgress: includePastPlans === true || includePastPlans === 'true'
   }));
+  return buildSowingNurseryFormOptionsPayload_(planRes, params);
+}
+
+/** 進捗＋フォーム用データを1回のシート読込でまとめて返す */
+function getSowingNurseryBundle(params) {
+  params = params || {};
+  const ctx = loadSowingSharedContext_();
+  const year = String(params.year || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy'));
+  const includePastPlans = params.includePastPlans != null ? params.includePastPlans : true;
+  const progress = getSowingProgressFromContext_(ctx, { year: year });
+  const planRes = getCurrentSowingPlanOptionsFromContext_(ctx, Object.assign({}, params, {
+    year: year,
+    includeDone: params.includeDone != null ? params.includeDone : true,
+    includePastPlans: includePastPlans,
+    lightProgress: includePastPlans === true || includePastPlans === 'true'
+  }));
+  const formOptions = buildSowingNurseryFormOptionsPayload_(planRes, params);
+  return { success: true, progress: progress, formOptions: formOptions };
+}
+
+function buildSowingNurseryFormOptionsPayload_(planRes, params) {
+  params = params || {};
   const items = (planRes && planRes.items) || [];
   const nurseryLocations = readNurseryLocationList_();
   const cropCultSettings = readCropCultSettingList_();
