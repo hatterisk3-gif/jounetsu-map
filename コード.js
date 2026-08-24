@@ -1897,7 +1897,47 @@ function manageMasterData(masterType, manageAction, value, userName) {
     const keyIdx = masterType === 'work' ? headers.indexOf('作業名') : 0;
     let deleted = false;
 
-    for (let i = 1; i < data.length; i++) {
+    if (masterType === 'nurseryLocation') {
+      const val = (typeof value === 'object' && value) ? value : { id: value, name: value };
+      const targetId = String(val.id || '').trim();
+      const polyName = String(val.polyName || '').trim();
+      const plotName = String(val.plotName || val.name || '').trim();
+      const direction = String(val.direction || '').trim();
+      const rowsToDelete = [];
+      for (let i = 1; i < data.length; i++) {
+        let match = false;
+        if (targetId) {
+          match = String(data[i][0] || '').trim() === targetId;
+        } else if (polyName) {
+          const rowPoly = String(data[i][3] || '').trim();
+          if (rowPoly !== polyName) continue;
+          const rowName = String(data[i][1] || '').trim();
+          const rowDir = String(data[i][4] || '').trim();
+          if (plotName && direction) {
+            match = rowName === plotName && rowDir === direction;
+          } else if (plotName) {
+            match = rowName === plotName;
+          } else if (direction) {
+            match = rowDir === direction;
+          }
+        } else {
+          const tv = targetVal;
+          match = String(data[i][0] || '').trim() === String(tv || '').trim()
+            || String(data[i][1] || '').trim() === String(tv || '').trim();
+        }
+        if (match) rowsToDelete.push(i + 1);
+      }
+      if (!rowsToDelete.length) throw new Error('削除対象の育苗場所が見つかりません');
+      rowsToDelete.sort(function(a, b) { return b - a; }).forEach(function(rowNum) {
+        sheet.deleteRow(rowNum);
+      });
+      deleted = true;
+      const labelParts = [];
+      if (plotName) labelParts.push(plotName);
+      if (direction) labelParts.push(direction);
+      const label = labelParts.length ? labelParts.join('/') : (targetId || String(targetVal || ''));
+      writeLog(userName, "マスタ削除", label + (rowsToDelete.length > 1 ? ' (' + rowsToDelete.length + '件)' : ''), `対象: ${sheetName} / ${polyName || '-'}`);
+    } else for (let i = 1; i < data.length; i++) {
       let match = false;
       if (masterType === 'work') {
           if (keyIdx >= 0 && data[i][keyIdx] === targetVal) match = true;
@@ -1909,8 +1949,6 @@ function manageMasterData(masterType, manageAction, value, userName) {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'fertilizer') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
-      } else if (masterType === 'nurseryLocation') {
-          if (String(data[i][0] || '').trim() === String(targetVal || '').trim() || String(data[i][1] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'cropCultSetting') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup') {
@@ -12945,6 +12983,13 @@ function getSowingNurseryFormOptions(params) {
     crops: crops,
     locationCategories: locationCategories,
     nurseryLocations: nurseryLocations,
+    locations: (function() {
+      try {
+        return readLocationMasterDetails_().map(function(l) {
+          return { name: String(l.name || '').trim() };
+        }).filter(function(l) { return !!l.name; });
+      } catch (eLoc) { return []; }
+    })(),
     holesOptions: (function() {
       var holesOptions = [72, 128, 200, 288];
       try {
